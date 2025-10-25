@@ -243,6 +243,15 @@ struct {{ model.name }}Policy {
     // Default constructor (lazy initialization, no immediate resource allocation)
     {{ model.name }}Policy() = default;
 
+    {% if model.has_parallel_states %}
+    // W3C SCXML 3.4/3.12.1: Get active states for parallel state configurations
+    // Thread-safe: Uses mutex to protect activeStates_ from concurrent access
+    std::vector<State> getActiveStates() const {
+        std::lock_guard<std::mutex> lock(activeStatesMutex_);
+        return activeStates_;
+    }
+    {% endif %}
+
     {% if model.needs_jsengine %}
     // Destructor: Clean up JSEngine session if initialized (RAII pattern)
     ~{{ model.name }}Policy() {
