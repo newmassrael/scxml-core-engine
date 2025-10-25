@@ -456,6 +456,22 @@ class SCXMLParser:
             # Recursively parse child states
             self._parse_states(state_elem, state_id)
 
+            # W3C SCXML 3.6: If compound state has no explicit initial, use first child in document order
+            if not state.initial:
+                # Find first child state (lowest document_order)
+                # Exclude history states (they are tracked separately in model.history_states)
+                first_child = None
+                for child_id, child_state in self.model.states.items():
+                    if child_state.parent == state_id:
+                        # Skip history states (not in model.states, tracked in model.history_states)
+                        if child_id in self.model.history_states:
+                            continue
+                        if first_child is None or child_state.document_order < first_child.document_order:
+                            first_child = child_state
+                
+                if first_child:
+                    state.initial = first_child.id
+
         # Parse <final> elements
         for final_elem in ns_findall(parent_elem, 'final'):
             final_id = final_elem.get('id')

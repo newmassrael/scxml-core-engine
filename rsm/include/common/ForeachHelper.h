@@ -167,6 +167,19 @@ public:
                                                  const std::string &indexVar) {
         auto arrayValues = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
 
+        // W3C SCXML 4.6: Declare item and index variables even for empty arrays
+        if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
+            LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
+            throw std::runtime_error("Foreach variable declaration failed for item");
+        }
+
+        if (!indexVar.empty()) {
+            if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
+                LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
+                throw std::runtime_error("Foreach variable declaration failed for index");
+            }
+        }
+
         for (size_t i = 0; i < arrayValues.size(); ++i) {
             setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i);
         }
@@ -234,6 +247,20 @@ public:
         try {
             // Evaluate array expression
             auto arrayValues = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
+
+            // W3C SCXML 4.6: Declare item and index variables BEFORE iteration
+            // Variables MUST be declared even for empty arrays
+            if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
+                LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
+                throw std::runtime_error("Foreach variable declaration failed for item");
+            }
+
+            if (!indexVar.empty()) {
+                if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
+                    LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
+                    throw std::runtime_error("Foreach variable declaration failed for index");
+                }
+            }
 
             // W3C SCXML 4.6: Execute foreach loop with error handling
             for (size_t i = 0; i < arrayValues.size(); ++i) {

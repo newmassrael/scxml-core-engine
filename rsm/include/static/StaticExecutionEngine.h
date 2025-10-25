@@ -94,33 +94,69 @@ private:
         LOG_DEBUG("AOT handleHierarchicalTransition: Transition {} -> {}", static_cast<int>(oldState),
                   static_cast<int>(newState));
 
-        // W3C SCXML 3.13: Internal transitions do not exit source state
-        // For internal transitions, treat source state as LCA (exit only descendants)
+        // W3C SCXML 5.9.2: Determine LCA based on transition type
         std::optional<State> lca;
-        State effectiveOldState = oldState;
         if (policy_.lastTransitionIsInternal_) {
-            // W3C SCXML 3.13: Internal transition - use target as oldState (exit and re-enter target)
-            // The transition source is the compound state, but we need to exit/re-enter the target child
-            effectiveOldState = newState;  // Exit from and re-enter to the same state
-            lca = oldState;                // Source is the LCA - don't exit it
-            LOG_DEBUG(
-                "AOT handleHierarchicalTransition: Internal transition - source {} is LCA, exit/re-enter target {}",
-                static_cast<int>(oldState), static_cast<int>(newState));
+            // W3C SCXML 5.9.2: Internal transitions whose target is NOT a proper descendant behave as external
+            bool isSelfTransition = (oldState == newState);
+            bool isProperDescendant =
+                !isSelfTransition &&
+                RSM::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(newState, oldState);
+
+            if (isProperDescendant) {
+                // W3C SCXML 3.13: Internal transition to proper descendant - source is LCA (don't exit source)
+                lca = oldState;  // Source is the LCA - don't exit it
+                LOG_DEBUG(
+                    "AOT handleHierarchicalTransition: Internal transition (proper descendant) - source {} is LCA",
+                    static_cast<int>(oldState));
+            } else {
+                // W3C SCXML 5.9.2: Internal self-transition or non-descendant - behaves as external
+                // Use normal LCA calculation, then target==LCA check handles exit/re-entry
+                lca = RSM::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
+                LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-descendant/self) - behaves as "
+                          "external, LCA={}",
+                          lca.has_value() ? static_cast<int>(lca.value()) : -1);
+            }
         } else {
-            // W3C SCXML 3.12: Find LCA and build exit/entry chains
+            // W3C SCXML 3.12: External transition - find LCA normally
             lca = RSM::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
         }
 
-        // Use effectiveOldState for exit chain calculation
-        State oldStateForExit = effectiveOldState;
-
         if (lca.has_value()) {
+            // W3C SCXML 3.13: First exit any active descendants of oldState (deepest first)
+            std::vector<State> descendantsToExit;
+            for (State activeState : preTransitionStates) {
+                if (activeState != oldState &&
+                    RSM::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(activeState, oldState)) {
+                    descendantsToExit.push_back(activeState);
+                }
+            }
+            // Sort by state enum value (proxy for document order - deeper states have higher values)
+            std::sort(descendantsToExit.begin(), descendantsToExit.end(),
+                      [](State a, State b) { return static_cast<int>(a) > static_cast<int>(b); });
+
+            for (State descendant : descendantsToExit) {
+                LOG_DEBUG("AOT handleHierarchicalTransition: Exit descendant {} of oldState {}",
+                          static_cast<int>(descendant), static_cast<int>(oldState));
+                executeOnExit(descendant, preTransitionStates);
+            }
+
             // W3C SCXML 3.13: Exit states from oldState up to (but not including) LCA
-            auto exitChain =
-                RSM::Common::HierarchicalStateHelper<StatePolicy>::buildExitChain(oldStateForExit, lca.value());
+            auto exitChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildExitChain(oldState, lca.value());
             for (const auto &state : exitChain) {
                 LOG_DEBUG("AOT handleHierarchicalTransition: Hierarchical exit state {}", static_cast<int>(state));
                 executeOnExit(state, preTransitionStates);
+            }
+
+            // W3C SCXML 3.10 (test 579): Ancestor transition (target == LCA)
+            // When transitioning to self or ancestor, the target must also be exited and re-entered
+            // This is how Interpreter handles internal self-transitions to satisfy W3C 5.9.2
+            bool isTargetActive = std::find(preTransitionStates.begin(), preTransitionStates.end(), newState) !=
+                                  preTransitionStates.end();
+            if (newState == lca.value() && isTargetActive) {
+                LOG_DEBUG("AOT handleHierarchicalTransition: Ancestor/self transition - exit target {} (W3C 3.10)",
+                          static_cast<int>(newState));
+                executeOnExit(newState, preTransitionStates);
             }
 
             // W3C SCXML 3.13: Execute transition actions AFTER exit, BEFORE entry
@@ -128,11 +164,38 @@ private:
             transitionAction();
 
             // W3C SCXML 3.13: Enter states from LCA down to newState (including initial children)
-            auto entryChain =
-                RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChainFromParent(newState, lca.value());
+            std::vector<State> entryChain;
+
+            // W3C SCXML 3.10: If target == LCA (ancestor/self transition), enter full subtree from target
+            if (newState == lca.value()) {
+                LOG_DEBUG("AOT handleHierarchicalTransition: Ancestor/self transition - enter target {} and its "
+                          "initial children (W3C 3.10)",
+                          static_cast<int>(newState));
+                // Build full entry chain from root, then keep only states at/below LCA
+                auto fullChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState);
+                for (State s : fullChain) {
+                    // Include state if it's at or below LCA (check if LCA is ancestor of s or s == LCA)
+                    if (s == lca.value() ||
+                        RSM::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(s, lca.value())) {
+                        entryChain.push_back(s);
+                    }
+                }
+            } else {
+                // Normal case: enter from LCA's child down to newState
+                entryChain =
+                    RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChainFromParent(newState, lca.value());
+            }
+
             for (const auto &state : entryChain) {
                 LOG_DEBUG("AOT handleHierarchicalTransition: Hierarchical entry state {}", static_cast<int>(state));
                 executeOnEntry(state);
+            }
+
+            // W3C SCXML 3.11: Update currentState to deepest entered state
+            if (!entryChain.empty()) {
+                currentState_ = entryChain.back();
+                LOG_DEBUG("AOT handleHierarchicalTransition: Updated currentState_ to {}",
+                          static_cast<int>(currentState_));
             }
         } else {
             // No LCA (top-level transition) - exit all ancestors of oldState
@@ -159,6 +222,13 @@ private:
             for (const auto &state : entryChain) {
                 LOG_DEBUG("AOT handleHierarchicalTransition: Entry state {} (from root)", static_cast<int>(state));
                 executeOnEntry(state);
+            }
+
+            // W3C SCXML 3.11: Update currentState to deepest entered state
+            if (!entryChain.empty()) {
+                currentState_ = entryChain.back();
+                LOG_DEBUG("AOT handleHierarchicalTransition: Updated currentState_ to {}",
+                          static_cast<int>(currentState_));
             }
         }
     }
@@ -322,8 +392,12 @@ protected:
                     "AOT processEventQueues (internal): processTransition returned {}, oldState={}, currentState={}",
                     transitionTaken, static_cast<int>(oldState), static_cast<int>(currentState_));
                 if (transitionTaken) {
-                    // Transition occurred: execute hierarchical exit/entry actions
-                    if (oldState != currentState_) {
+                    // W3C SCXML 5.9.2: Internal self-transitions (non-descendant) behave as external
+                    bool isSelfTransition = (oldState == currentState_);
+                    bool needsHierarchicalHandling =
+                        (oldState != currentState_) || (isSelfTransition && policy_.lastTransitionIsInternal_);
+
+                    if (needsHierarchicalHandling) {
                         LOG_DEBUG("AOT processEventQueues: State transition {} -> {}", static_cast<int>(oldState),
                                   static_cast<int>(currentState_));
 
@@ -367,8 +441,12 @@ protected:
                     "AOT processEventQueues (external): processTransition returned {}, oldState={}, currentState={}",
                     transitionTaken, static_cast<int>(oldState), static_cast<int>(currentState_));
                 if (transitionTaken) {
-                    // Transition occurred: execute hierarchical exit/entry actions
-                    if (oldState != currentState_) {
+                    // W3C SCXML 5.9.2: Internal self-transitions (non-descendant) behave as external
+                    bool isSelfTransition = (oldState == currentState_);
+                    bool needsHierarchicalHandling =
+                        (oldState != currentState_) || (isSelfTransition && policy_.lastTransitionIsInternal_);
+
+                    if (needsHierarchicalHandling) {
                         // ARCHITECTURE.md: Zero Duplication - use shared helper
                         // W3C SCXML 3.13: Pass transition action callback for correct execution order
                         handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
