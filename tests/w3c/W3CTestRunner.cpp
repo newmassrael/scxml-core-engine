@@ -1486,14 +1486,25 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
             return report;
         }
 
-        // Read and convert TXML
-        std::string txmlPath = testSuite_->getTXMLPath(testDirectory);
-        LOG_DEBUG("W3C Single Test (HTTP): Reading TXML from {}", txmlPath);
-        std::ifstream txmlFile(txmlPath);
-        std::string txml((std::istreambuf_iterator<char>(txmlFile)), std::istreambuf_iterator<char>());
+        // Check if SCXML file exists directly (for tests like 513 with direct SCXML)
+        std::string scxmlPath = testDirectory + "/test" + report.testId + ".scxml";
+        std::string scxml;
 
-        LOG_DEBUG("W3C Single Test (HTTP): Converting TXML to SCXML for test {}", report.testId);
-        std::string scxml = converter_->convertTXMLToSCXML(txml);
+        std::ifstream scxmlFile(scxmlPath);
+        if (scxmlFile.good()) {
+            // Use existing SCXML file directly
+            LOG_DEBUG("W3C Single Test (HTTP): Using existing SCXML from {}", scxmlPath);
+            scxml = std::string((std::istreambuf_iterator<char>(scxmlFile)), std::istreambuf_iterator<char>());
+        } else {
+            // Read and convert TXML
+            std::string txmlPath = testSuite_->getTXMLPath(testDirectory);
+            LOG_DEBUG("W3C Single Test (HTTP): Reading TXML from {}", txmlPath);
+            std::ifstream txmlFile(txmlPath);
+            std::string txml((std::istreambuf_iterator<char>(txmlFile)), std::istreambuf_iterator<char>());
+
+            LOG_DEBUG("W3C Single Test (HTTP): Converting TXML to SCXML for test {}", report.testId);
+            scxml = converter_->convertTXMLToSCXML(txml);
+        }
 
         // Create custom executor with HTTP server integration
         auto startTime = std::chrono::steady_clock::now();

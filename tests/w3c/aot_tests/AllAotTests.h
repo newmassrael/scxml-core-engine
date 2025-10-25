@@ -115,6 +115,7 @@
 #include "Test506.h"
 #include "Test509.h"
 #include "Test510.h"
+#include "Test513.h"
 #include "Test579.h"
 
 // Scheduled tests (event scheduler polling)

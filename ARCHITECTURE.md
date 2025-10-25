@@ -248,60 +248,68 @@ Generated code works for ALL SCXML (W3C 100%)
 - Zero runtime overhead for feature detection
 - **Static Hybrid**: Embedded JSEngine for ECMAScript expression evaluation (lazy-initialized, RAII pattern)
 
-#### Interpreter Wrapper (Runtime Resolution Required)
+#### Static Hybrid (Compile-Time Structure + Runtime ECMAScript)
 
-**Requirements**: SCXML features require runtime evaluation or dynamic resolution
+**Requirements**: Static state machine structure with ECMAScript expressions
 
 **Criteria**:
-- 🔴 **Dynamic Expressions**: `sendidexpr`, `targetexpr`, `delayexpr` with variables
-- 🔴 **Runtime Metadata**: `_event.origintype`, `_event.sendid`, `_event.data`
-- 🔴 **Dynamic Invoke**: `<invoke srcexpr>` (runtime URL resolution), `<invoke contentExpr>` (runtime expression)
-- 🔴 **Unsupported Processors**: Non-SCXML event processor types (BasicHTTP, custom)
-- 🔴 **Runtime Validation**: TypeRegistry lookups, platform-specific features
-- 🔴 **Dynamic Parallel States**: Parallel states with runtime-determined structure (initial state expressions, dynamic child creation)
+- 🟡 **ECMAScript Expressions**: Conditions, assign values, log messages using ECMAScript
+- 🟡 **Static + JSEngine**: Compile-time state structure + runtime expression evaluation
+- 🟡 **HTTP URL Targets**: `<send target="http://...">` with static URL (W3C SCXML C.2)
+- 🟡 **External Infrastructure**: HTTP server, I/O processors provided externally (not engine mixing)
 
 **Examples**:
 ```xml
-<!-- Dynamic: Expression-based sendid -->
-<cancel sendidexpr="variableName"/>
-<cancel sendidexpr="_event.sendid"/>
+<!-- Static Hybrid: Static target URL + External HTTP infrastructure -->
+<send event="test" target="http://localhost:8080/test"
+      type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
 
-<!-- Dynamic: Runtime metadata access -->
-<transition event="*" cond="_event.origintype == 'http://...'"/>
+<!-- Static Hybrid: Static state machine + ECMAScript condition -->
+<transition event="e" cond="x > 10" target="pass"/>
 
-<!-- Dynamic: Expression-based target -->
-<send targetexpr="'#_' + targetVar" event="msg"/>
-
-<!-- Dynamic: Unsupported processor type -->
-<send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+<!-- Static Hybrid: Static structure + ECMAScript assign -->
+<assign location="result" expr="x * 2 + 5"/>
 ```
 
+**Key Distinction - HTTP Targets**:
+- ✅ **Static Target URL** (`target="http://localhost:8080"`): Compatible with Static/Static Hybrid
+  - URL known at compile-time
+  - SendHelper.isHttpTarget() detects and routes to external queue
+  - W3CHttpTestServer provides external HTTP infrastructure (not engine mixing)
+  - Examples: test509, test510, test513
+
+- ❌ **Dynamic Target Expression** (`targetexpr="baseUrl + path"`): Requires Interpreter
+  - URL evaluated at runtime from variables
+  - Cannot determine HTTP routing at compile-time
+
 **Rationale**:
-- Expressions require JavaScript evaluation at runtime
-- Metadata available only during event processing
-- TypeRegistry validation requires runtime infrastructure
-- `srcexpr`/`contentExpr` require runtime URL/expression resolution (external world interaction)
+- Static state machine structure enables AOT code generation
+- JSEngine embedded for expression evaluation (not full Interpreter)
+- External infrastructure (HTTP server) doesn't violate All-or-Nothing strategy
+- No engine mixing: AOT state machine independently uses external services
 
 #### Decision Matrix
 
-| SCXML Feature | Static Possible? | Interpreter Needed? | Reason |
-|---------------|------------------|---------------------|---------|
-| `<cancel sendid="foo"/>` | ✅ Yes | No | Literal string, compile-time known |
-| `<cancel sendidexpr="var"/>` | ❌ No | Yes | Variable evaluation at runtime |
-| `<send id="x" delay="1s"/>` | ✅ Yes | No | Literal sendid and delay |
-| `<send delayexpr="varDelay"/>` | ❌ No | Yes | Variable evaluation at runtime |
-| `_event.origintype` | ❌ No | Yes | Runtime metadata not available at compile-time |
-| `<send type="scxml"/>` | ✅ Yes | No | Standard SCXML processor |
-| `<send type="BasicHTTP"/>` | ❌ No | Yes | Optional processor, TypeRegistry validation |
-| `<invoke src="child.scxml"/>` | ✅ Yes | No | Static child SCXML, compile-time known |
-| `<invoke><content><scxml>...</scxml></content></invoke>` | ✅ Yes | No | Inline SCXML (test338), static AOT with inline extraction |
-| `<invoke srcexpr="pathVar"/>` | ❌ No | Yes | Dynamic SCXML loading at runtime (external world) |
-| `<invoke contentExpr="expr"/>` | ❌ No | Yes | Runtime expression evaluation (external world) |
-| `<send target="#_parent"/>` | ✅ Yes | No | Literal target, CRTP parent pointer |
-| `<param name="x" expr="1"/>` | ✅ Yes | No | Static param, direct member access |
-| `typeof _event !== 'undefined'` | ✅ Yes (Hybrid) | No | ECMAScript expression, JSEngine evaluation |
-| `<if cond="_event.name">` | ✅ Yes (Hybrid) | No | System variable access, JSEngine evaluation |
-| `In('state1')` | ✅ Yes (Hybrid) | No | W3C SCXML predicate, JSEngine evaluation |
+| SCXML Feature | Static | Static Hybrid | Interpreter | Reason |
+|---------------|--------|---------------|-------------|---------|
+| `<cancel sendid="foo"/>` | ✅ | ✅ | ✅ | Literal string, compile-time known |
+| `<cancel sendidexpr="var"/>` | ❌ | ❌ | ✅ | Variable evaluation at runtime |
+| `<send id="x" delay="1s"/>` | ✅ | ✅ | ✅ | Literal sendid and delay |
+| `<send delayexpr="varDelay"/>` | ❌ | ❌ | ✅ | Variable evaluation at runtime |
+| `<send target="http://..."/>` | ✅ | ✅ | ✅ | **Static URL** (W3C C.2 test509/510/513) |
+| `<send targetexpr="urlVar"/>` | ❌ | ❌ | ✅ | Dynamic expression evaluation |
+| `_event.origintype` | ❌ | ❌ | ✅ | Runtime metadata not available at compile-time |
+| `<send type="scxml"/>` | ✅ | ✅ | ✅ | Standard SCXML processor |
+| `<transition cond="x > 5"/>` | ❌ | ✅ | ✅ | ECMAScript expression (Static Hybrid) |
+| `<invoke src="child.scxml"/>` | ✅ | ✅ | ✅ | Static child SCXML, compile-time known |
+| `<invoke><content>...</content></invoke>` | ✅ | ✅ | ✅ | Inline SCXML (test338), static AOT |
+| `<invoke srcexpr="pathVar"/>` | ❌ | ❌ | ✅ | Dynamic SCXML loading at runtime |
+| `<invoke contentExpr="expr"/>` | ❌ | ❌ | ✅ | Runtime expression evaluation |
+| `<send target="#_parent"/>` | ✅ | ✅ | ✅ | Literal target, CRTP parent pointer |
+| `<param name="x" expr="1"/>` | ✅ | ✅ | ✅ | Static param, direct member access |
+| `typeof _event !== 'undefined'` | ❌ | ✅ | ✅ | ECMAScript expression, JSEngine evaluation |
+| `<if cond="_event.name">` | ❌ | ✅ | ✅ | System variable access, JSEngine evaluation |
+| `In('state1')` | ❌ | ✅ | ✅ | W3C SCXML predicate, JSEngine evaluation |
 
 #### Static Hybrid: ECMAScript Expression Handling
 
