@@ -57,6 +57,36 @@ public:
     }
 
     /**
+     * @brief Check if target is HTTP URL (W3C SCXML C.2)
+     *
+     * Single Source of Truth for HTTP target detection logic.
+     * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
+     *
+     * Usage:
+     * - Interpreter: EventTargetFactoryImpl::createTarget() (rsm/src/events/EventTargetFactoryImpl.cpp)
+     * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
+     *
+     * W3C SCXML C.2 (test509, test510, test513): BasicHTTP Event I/O Processor
+     * accepts HTTP/HTTPS URLs as targets. Events sent to HTTP targets must:
+     * - Use external event queue (not internal)
+     * - Trigger HTTP POST request to target URL
+     * - Validate HTTP 200 OK response (test513)
+     *
+     * ARCHITECTURE.md Static Hybrid Strategy:
+     * HTTP URL targets are compatible with Static/Static Hybrid approach because:
+     * - Target URL is known at compile-time (static string)
+     * - HTTP infrastructure is external (W3CHttpTestServer)
+     * - No engine mixing: AOT state machine + external HTTP server
+     *
+     * @param target Target to check
+     * @return true if target is HTTP/HTTPS URL, false otherwise
+     */
+    static bool isHttpTarget(const std::string &target) {
+        // W3C SCXML C.2: HTTP/HTTPS URLs indicate BasicHTTP Event I/O Processor
+        return target.starts_with("http://") || target.starts_with("https://");
+    }
+
+    /**
      * @brief Validate send target according to W3C SCXML 6.2
      *
      * W3C SCXML 6.2 (tests 159, 194): Invalid target values (e.g., starting with "!")

@@ -66,16 +66,32 @@ function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
 
     # Step 1: TXML -> SCXML conversion with name attribute
     # ARCHITECTURE.MD: CMake portability - Use ${CMAKE_COMMAND} instead of bash
-    add_custom_command(
-        OUTPUT "${SCXML_FILE}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-        COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
-        COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/" || ${CMAKE_COMMAND} -E true
-        DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
-        COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
-        VERBATIM
-    )
+    # Check if SCXML file already exists in resources (for tests with direct SCXML, e.g., test513)
+    set(RESOURCE_SCXML "${RESOURCE_DIR}/test${TEST_NUM}.scxml")
+    if(EXISTS "${RESOURCE_SCXML}")
+        # Use existing SCXML file directly (skip TXML conversion)
+        add_custom_command(
+            OUTPUT "${SCXML_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+            COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/" || ${CMAKE_COMMAND} -E true
+            DEPENDS "${RESOURCE_SCXML}" ${SUB_SCXML_DEPENDENCIES}
+            COMMENT "Using existing SCXML: test${TEST_NUM}.scxml"
+            VERBATIM
+        )
+    else()
+        # Convert TXML to SCXML (standard path)
+        add_custom_command(
+            OUTPUT "${SCXML_FILE}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+            COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
+            COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/" || ${CMAKE_COMMAND} -E true
+            DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
+            COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
+            VERBATIM
+        )
+    endif()
 
     # Step 2: SCXML -> C++ code generation (parent + inline children)
     # W3C SCXML 6.2/6.4: Parent header must depend on child headers (template detection)
