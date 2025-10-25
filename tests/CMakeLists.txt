@@ -601,6 +601,7 @@ rsm_generate_static_w3c_test(503 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: ta
 rsm_generate_static_w3c_test(504 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: external transition exit sets (LCCA) (Static Hybrid)
 rsm_generate_static_w3c_test(505 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: internal transition does not exit source state (Static Hybrid)
 rsm_generate_static_w3c_test(506 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: internal transition with non-descendant target behaves as external (Static Hybrid)
+rsm_generate_static_w3c_test(509 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP Event I/O Processor POST method validation (Static Hybrid)
 rsm_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: default history content execution
 rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history state not in configuration (parallel)
 rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml
