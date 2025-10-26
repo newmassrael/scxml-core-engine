@@ -673,6 +673,9 @@ class SCXMLParser:
 
                 if action['event']:
                     self.model.events.add(action['event'])
+                elif action['content'] and not action['eventexpr']:
+                    # W3C SCXML C.2: content-only send (test 520) - empty event name
+                    self.model.events.add('')
 
             elif tag == 'assign':
                 # W3C SCXML 5.4: <assign>

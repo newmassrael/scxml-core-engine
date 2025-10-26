@@ -130,6 +130,15 @@ if (::RSM::SendHelper::isInvalidTarget("{{ action.target }}")) {
     }
 {% endif %}
 }
+{% elif action.content and not action.event and not action.contentexpr %}
+// W3C SCXML C.2: BasicHTTP content-only send (test 520)
+// Event name is empty - content will be sent as HTTP POST body
+{% if model.needs_jsengine or model.needs_event_origin %}
+engine.raiseExternal(typename Engine::EventWithMetadata(Event::Empty, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{{ action.send_type }}", "", "{{ action.target }}"));
+{% else %}
+// W3C SCXML C.2: HTTP send requires EventWithMetadata with target/type
+engine.raiseExternal(typename Engine::EventWithMetadata(Event::Empty, "{{ action.content | escape_cpp }}", "", sendId, "", "{{ action.send_type }}", "", "{{ action.target }}"));
+{% endif %}
 {% elif action.event %}
 {% if action.delay or action.delayexpr %}
 // W3C SCXML 6.2: Delayed send with event scheduling

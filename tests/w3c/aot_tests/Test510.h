@@ -1,5 +1,5 @@
 #pragma once
-#include "SimpleAotTest.h"
+#include "HttpAotTest.h"
 #include "test510_sm.h"
 
 namespace RSM::W3C::AotTests {
@@ -12,15 +12,16 @@ namespace RSM::W3C::AotTests {
  *
  * Expected behavior:
  * - Send HTTP event via BasicHTTPEventProcessor with target="http://localhost:8080/test"
- * - SendHelper detects HTTP target and calls raiseExternal() to place event in external queue
+ * - StaticExecutionEngine detects HTTP target and performs real HTTP POST
+ * - HTTP server responds, event placed in external queue via callback
  * - Raise internal event via <raise> action (goes to internal queue with higher priority)
  * - Process internal event first (transition to s1)
  * - Process HTTP event second (transition to pass)
  *
- * Uses Static Hybrid approach: SendHelper.isInternalTarget() detects HTTP URLs and
- * routes to external queue. W3CTestRunner provides HTTP server infrastructure automatically.
+ * Uses Static Hybrid approach: StaticExecutionEngine.raiseExternal() detects HTTP URLs
+ * and performs real HTTP POST. HttpAotTest provides HTTP server infrastructure.
  */
-struct Test510 : public SimpleAotTest<Test510, 510> {
+struct Test510 : public HttpAotTest<Test510, 510> {
     static constexpr const char *DESCRIPTION = "BasicHTTP external queue (W3C C.2 AOT Static Hybrid)";
     using SM = RSM::Generated::test510::test510;
 };

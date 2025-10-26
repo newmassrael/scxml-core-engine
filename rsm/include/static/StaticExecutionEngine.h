@@ -9,7 +9,10 @@
 #include "core/EventProcessingAlgorithms.h"
 #include "core/EventQueueAdapters.h"
 #include "core/EventQueueManager.h"
+#include "events/EventDescriptor.h"
+#include "events/HttpEventTarget.h"
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 #include <string>
 
@@ -66,14 +69,16 @@ public:
         std::string type;        // W3C SCXML 5.10.1: _event.type
         std::string originType;  // W3C SCXML 5.10.1: _event.origintype
         std::string invokeId;    // W3C SCXML 5.10.1: _event.invokeid
+        std::string target;      // W3C SCXML C.2: HTTP POST target URL
 
         // Default constructor for aggregate initialization
         EventWithMetadata() = default;
 
-        // Constructor with positional parameters (event, data, origin, sendId, type, originType, invokeId)
+        // Constructor with positional parameters (event, data, origin, sendId, type, originType, invokeId, target)
         EventWithMetadata(Event e, const std::string &d = "", const std::string &o = "", const std::string &s = "",
-                          const std::string &t = "", const std::string &ot = "", const std::string &i = "")
-            : event(e), data(d), origin(o), sendId(s), type(t), originType(ot), invokeId(i) {}
+                          const std::string &t = "", const std::string &ot = "", const std::string &i = "",
+                          const std::string &tgt = "")
+            : event(e), data(d), origin(o), sendId(s), type(t), originType(ot), invokeId(i), target(tgt) {}
     };
 
 private:
@@ -309,14 +314,46 @@ public:
      * @param eventWithMetadata Event with metadata (including invokeid)
      */
     void raiseExternal(const EventWithMetadata &eventWithMetadata) {
-        // W3C SCXML C.1: Enqueue event with full metadata
-        LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
-                  static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
-        externalQueue_.raise(eventWithMetadata);
+        // W3C SCXML C.2: Check if this is a BasicHTTP Event I/O Processor send
+        bool isHttpSend = !eventWithMetadata.originType.empty() &&
+                          (eventWithMetadata.originType.find("BasicHTTPEventProcessor") != std::string::npos);
 
-        // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
-        if constexpr (requires { policy_.nextEventIsExternal_; }) {
-            policy_.nextEventIsExternal_ = true;
+        if (isHttpSend && !eventWithMetadata.target.empty()) {
+            // W3C SCXML C.2: Send actual HTTP POST via HttpEventTarget
+            LOG_DEBUG("AOT raiseExternal: Sending HTTP POST (event={}, target={})",
+                      static_cast<int>(eventWithMetadata.event), eventWithMetadata.target);
+
+            // Create EventDescriptor for HTTP POST
+            RSM::EventDescriptor descriptor;
+            descriptor.eventName = policy_.getEventName(eventWithMetadata.event);
+            descriptor.target = eventWithMetadata.target;
+            descriptor.sendId = eventWithMetadata.sendId;
+            descriptor.type = "http";
+
+            // W3C SCXML C.2: For content-only sends (empty event name),
+            // the data IS the content to be sent as HTTP POST body
+            if (descriptor.eventName.empty()) {
+                descriptor.content = eventWithMetadata.data;
+            } else {
+                descriptor.data = eventWithMetadata.data;
+            }
+
+            // Create and use HttpEventTarget
+            auto httpTarget = std::make_shared<RSM::HttpEventTarget>(eventWithMetadata.target);
+            auto result = httpTarget->send(descriptor);
+
+            // Fire and forget - HTTP response will come back asynchronously
+            // Test infrastructure will handle the response via W3CHttpTestServer
+        } else {
+            // Normal internal/external queue processing
+            LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
+                      static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
+            externalQueue_.raise(eventWithMetadata);
+
+            // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
+            if constexpr (requires { policy_.nextEventIsExternal_; }) {
+                policy_.nextEventIsExternal_ = true;
+            }
         }
     }
 

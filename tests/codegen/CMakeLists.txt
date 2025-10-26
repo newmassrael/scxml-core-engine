@@ -1,24 +1,24 @@
-# 정적 코드 생성기 테스트
+# Static code generator tests
 
-# 테스트 실행 파일
+# Test executable
 add_executable(test_static_codegen
     test_static_codegen.cpp
 )
 
-# 테스트 의존성
+# Test dependencies
 target_link_libraries(test_static_codegen
     PRIVATE
     GTest::GTest
     GTest::Main
-    # 나중에 추가: static_codegen_lib
+    # Add later: static_codegen_lib
 )
 
-# 테스트 include 경로
+# Test include paths
 target_include_directories(test_static_codegen
     PRIVATE
     ${PROJECT_SOURCE_DIR}
     ${PROJECT_SOURCE_DIR}/rsm/include
 )
 
-# CTest에 등록
+# Register with CTest
 add_test(NAME StaticCodegenTests COMMAND test_static_codegen)
