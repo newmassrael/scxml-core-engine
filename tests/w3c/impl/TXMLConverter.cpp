@@ -485,8 +485,18 @@ std::string TXMLConverter::convertConfAttributes(const std::string &content) {
     result = std::regex_replace(result, CONF_EVENTDATA_SOME_VAL_ATTR, R"(name="$1")");
 
     // conf:eventNamedParamHasValue should be converted to platform-specific event parameter validation
-    // For ECMAScript datamodel, map to 'expr' attribute for conditional checks
-    result = std::regex_replace(result, CONF_EVENT_NAMED_PARAM_HAS_VALUE_ATTR, R"(expr="$1")");
+    // For ECMAScript datamodel, convert "name value" to "name == value" or "name == 'value'"
+    // W3C SCXML: Event data parameters are accessible as variables in ECMAScript datamodel
+
+    // Step 1: Handle numeric values (e.g., "param1 1" -> "param1 == 1")
+    std::regex event_named_param_numeric(R"vwx(conf:eventNamedParamHasValue="(\S+)\s+(\d+)")vwx", std::regex::optimize);
+    result = std::regex_replace(result, event_named_param_numeric, R"(expr="_event.data[&quot;$1&quot;] == $2")");
+
+    // Step 2: Handle string values (e.g., "_scxmleventname test" -> "_scxmleventname == \"test\"")
+    // Use double quotes inside expr to avoid quote nesting issues in ECMAScript
+    std::regex event_named_param_string(R"vwx(conf:eventNamedParamHasValue="(\S+)\s+(\S+)")vwx", std::regex::optimize);
+    result =
+        std::regex_replace(result, event_named_param_string, R"(expr="_event.data[&quot;$1&quot;] == &quot;$2&quot;")");
 
     // Convert conf:quoteExpr to quoted string expressions
     // conf:quoteExpr="event1" -> expr="'event1'" (string literal)

@@ -595,7 +595,8 @@ class SCXMLParser:
 
     def _parse_transition(self, trans_elem) -> Transition:
         """Parse <transition> element (W3C SCXML 3.3)"""
-        cond = trans_elem.get('cond', '')
+        # W3C SCXML 3.13: Guard condition can be specified via 'cond' or 'expr' attribute
+        cond = trans_elem.get('cond', '') or trans_elem.get('expr', '')
         
         # W3C SCXML 5.9.2: Check if condition is pure In() predicate
         is_pure_in = False
@@ -1128,10 +1129,23 @@ class SCXMLParser:
             if feature in expr:
                 return True
 
+        # W3C SCXML 5.9 & C.2: System-reserved identifiers starting with underscore
+        # Examples: _event, _scxmleventname, _name (require JSEngine for runtime access)
+        import re
+        if re.search(r'\b_[a-zA-Z]\w*\b', expr):
+            return True
+
+        # W3C SCXML 5.9: ECMAScript comparison and logical operators require JSEngine
+        # Examples: ==, !=, ===, !==, &&, ||, <, >, <=, >=
+        # These operators indicate ECMAScript expressions that must be evaluated by JSEngine
+        ecmascript_operators = ['==', '!=', '===', '!==', '&&', '||', '<=', '>=', '<', '>']
+        for op in ecmascript_operators:
+            if op in expr:
+                return True
+
         # W3C SCXML B.2: ECMAScript string/number literals require JSEngine for proper boolean conversion
         # Examples: 'foo' (non-empty string → true), '' (empty string → false), 0 (→ false), 1 (→ true)
         # Must use JSEngine to ensure ECMAScript semantics (test 449)
-        import re
         # Check for string literals (single or double quotes)
         if re.search(r"['\"]", expr):
             return True
