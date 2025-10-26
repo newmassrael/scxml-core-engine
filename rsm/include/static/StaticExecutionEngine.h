@@ -108,17 +108,23 @@ private:
                 !isSelfTransition &&
                 RSM::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(newState, oldState);
 
-            if (isProperDescendant) {
-                // W3C SCXML 3.13: Internal transition to proper descendant - source is LCA (don't exit source)
+            // W3C SCXML 3.13: Check if source is compound state (test 533)
+            // Parallel states and atomic states are NOT compound - internal transitions from them behave as external
+            bool isSourceCompound = StatePolicy::isCompoundState(oldState);
+
+            if (isProperDescendant && isSourceCompound) {
+                // W3C SCXML 3.13: Internal transition to proper descendant in compound state - source is LCA (don't
+                // exit source)
                 lca = oldState;  // Source is the LCA - don't exit it
-                LOG_DEBUG(
-                    "AOT handleHierarchicalTransition: Internal transition (proper descendant) - source {} is LCA",
-                    static_cast<int>(oldState));
+                LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (proper descendant, compound source) "
+                          "- source {} is LCA",
+                          static_cast<int>(oldState));
             } else {
-                // W3C SCXML 5.9.2: Internal self-transition or non-descendant - behaves as external
+                // W3C SCXML 3.13/5.9.2: Non-compound source or non-descendant - behaves as external
                 // Use normal LCA calculation, then target==LCA check handles exit/re-entry
                 lca = RSM::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
-                LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-descendant/self) - behaves as "
+                LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-compound source or "
+                          "non-descendant) - behaves as "
                           "external, LCA={}",
                           lca.has_value() ? static_cast<int>(lca.value()) : -1);
             }
