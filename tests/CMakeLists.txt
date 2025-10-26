@@ -623,6 +623,7 @@ rsm_generate_static_w3c_test(551 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: e
 rsm_generate_static_w3c_test(552 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: external data loading via src attribute (Static Hybrid)
 rsm_generate_static_w3c_test(553 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4 & 5.11: send namelist error handling (Static Hybrid)
 rsm_generate_static_w3c_test(554 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4 & B.1: invoke with invalid namelist error handling (Pure Static)
+rsm_generate_static_w3c_test(557 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2: ECMAScript XML DOM assignment with inline and file content (Static Hybrid)
 rsm_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: default history content execution
 rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history state not in configuration (parallel)
 rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml

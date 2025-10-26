@@ -85,7 +85,15 @@
 {% endif %}
 
 {% for var in model.variables %}
-{% if var.expr %}
+{% if var.src %}
+        // W3C SCXML 5.2.2: Load datamodel variable from external file
+        // basePath is relative to test execution directory (e.g., "w3c_static_generated" for W3C tests)
+        ::RSM::DataModelInitHelper::initializeVariableFromSrc(
+            jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}", "{{ base_path }}",
+            [&engine](const ::std::string& msg) {
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            });
+{% elif var.expr %}
 {# ARCHITECTURE.md: Zero Duplication - Function detection matches DataModelInitHelper::isFunctionExpression() #}
 {# W3C SCXML B.2: Template-time detection (Python) for code generation optimization #}
 {% set is_function_expr = var.expr.strip().startswith('function') %}
@@ -111,12 +119,14 @@
             });
 {% endif %}
 {% elif var.content %}
+        // W3C SCXML B.2: Initialize with inline XML content (DOM creation)
         ::RSM::DataModelInitHelper::initializeVariable(
-            jsEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content | escape_cpp }})",
+            jsEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content }})",
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
             });
 {% elif var.type == 'runtime' %}
+        // W3C SCXML 5.2: Runtime datamodel variable (late binding)
         ::RSM::DataModelInitHelper::initializeVariable(
             jsEngine, sessionId_.value(), "{{ var.id }}", "",
             [&engine](const ::std::string& msg) {
