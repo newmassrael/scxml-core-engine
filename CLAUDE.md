@@ -170,10 +170,16 @@ If a test cannot be statically generated, it should **NOT be added to AOT tests*
 
 **Common Scenarios for Exclusion**:
 - ❌ **No initial state**: W3C SCXML 3.6 defaults to first child - requires runtime logic
-- ❌ **Dynamic invoke**: `<invoke srcexpr>`, `<invoke><content>`, `<invoke contentExpr>` - dynamic expressions
+- ❌ **Dynamic file invoke**: `<invoke srcexpr="pathVar"/>` - requires runtime file I/O
 - ❌ **Dynamic event names**: Events generated at runtime (e.g., HTTP.POST from content-only sends)
 - ❌ **Parallel initial state**: Space-separated state IDs - requires parsing at runtime
 - ❌ **Invalid initial state**: Initial state not found in model - requires validation
+
+**Static Hybrid Invoke (Interpreter-Only Currently)**:
+- ⚠️ **Content expression invoke**: `<invoke><content expr="var"/></invoke>` - Requires runtime child SCXML parsing and dynamic invocation
+- ⚠️ **ContentExpr invoke**: `<invoke contentExpr="expr"/>` - Requires runtime child SCXML parsing and dynamic invocation
+- **Note**: AOT engine currently lacks runtime invoke infrastructure. Tests with contentexpr invoke run on Interpreter engine only.
+- **Future Enhancement**: AOT invoke with InvokeHelper for runtime child loading (requires AOT parent-child communication infrastructure)
 
 **Exclusion Procedure**:
 1. **Do NOT add to `tests/CMakeLists.txt`** for static generation

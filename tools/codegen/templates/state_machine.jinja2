@@ -9,10 +9,17 @@
 
 // Child SCXML headers (static invokes)
 {% for invoke_info in model.static_invokes %}
+{% if invoke_info.child_name %}
 #include "{{ invoke_info.child_name }}_sm.h"
+{% endif %}
 {% endfor %}
 {% endif %}
 {% if model.static_invokes %}
+#include "common/InvokeHelper.h"
+{% endif %}
+{% if model.hybrid_invokes %}
+// W3C SCXML 6.4: Hybrid invoke support (AOT parent + Interpreter child)
+#include "runtime/StateMachine.h"
 #include "common/InvokeHelper.h"
 {% endif %}
 {% if model.needs_send_helper %}
@@ -99,6 +106,13 @@ struct TransitionInfo {
 template<typename ParentStateMachine>
 {% elif model.static_invokes %}
 template<typename SelfType>
+{% elif model.hybrid_invokes %}
+{# Hybrid invokes don't need SelfType template parameter because:
+   - Interpreter children (StateMachine instances) don't use CRTP (Curiously Recurring Template Pattern)
+   - No parent pointer needed - children are isolated Interpreter instances
+   - AOT parent communicates via done.invoke events, not direct pointers to parent
+   - See ARCHITECTURE.md "Hybrid Strategy" for memory efficiency details
+   - Parent stays AOT (~300 bytes), child is Interpreter (~100KB) #}
 {% endif %}
 struct {{ model.name }}Policy {
     using State = ::RSM::Generated::{{ model.name }}::State;
@@ -188,8 +202,18 @@ struct {{ model.name }}Policy {
     {% for invoke_info in model.static_invokes %}
     mutable bool pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
     {% endfor %}
+    {% endif %}
+    {% if model.hybrid_invokes %}
 
-    // W3C SCXML 6.4: Child session tracking
+    // W3C SCXML 6.4: Hybrid invoke child state machines (Interpreter instances)
+    // ARCHITECTURE.md: Hybrid Strategy - AOT parent + Interpreter child
+    {% for invoke_info in model.hybrid_invokes %}
+    mutable std::shared_ptr<::RSM::StateMachine> hybridChild_{{ invoke_info.invoke_id }}_;
+    {% endfor %}
+    {% endif %}
+    {% if model.static_invokes %}
+
+    // W3C SCXML 6.4: Child session tracking (static invokes only)
     struct ChildSession {
         std::string sessionId;           // Child's session ID
         std::string invokeId;            // Invoke element ID
@@ -198,14 +222,21 @@ struct {{ model.name }}Policy {
         std::string finalizeScript;      // W3C 6.5: Finalize handler script
     };
 
-    // W3C SCXML 6.4: Pending invoke structure for macrostep-end execution
+    {% endif %}
+    {% if model.static_invokes or model.hybrid_invokes %}
+
+    // W3C SCXML 6.4: Pending invoke structure for defer/cancel/execute pattern
+    // ARCHITECTURE.md Zero Duplication: Used with InvokeHelper (Single Source of Truth)
+    // Pattern: defer (onentry) → cancel (onexit) → execute (macrostep end)
     struct PendingInvoke {
-        std::string invokeId;
-        State state;
+        std::string invokeId;  // W3C SCXML 6.4.1: Unique invoke identifier
+        State state;           // State containing the invoke element
     };
 
-    // Active child sessions indexed by invokeId
+    {% if model.static_invokes %}
+    // Active child sessions indexed by invokeId (static invokes only)
     mutable std::unordered_map<std::string, ChildSession> activeInvokes_;
+    {% endif %}
     // W3C SCXML 6.4: Pending invokes (deferred until macrostep end)
     mutable std::vector<PendingInvoke> pendingInvokes_;
     {% endif %}
@@ -419,12 +450,6 @@ public:
         this->policy_.setParamInJSEngine(paramName, paramExpr);
     }
 {% endif %}
-
-    {% if model.has_invoke %}
-    ~{{ model.name }}() {
-        // W3C SCXML 6.4: Cleanup child state machines on destruction
-    }
-    {% endif %}
 };
 
 } // namespace RSM::Generated::{{ model.name }}

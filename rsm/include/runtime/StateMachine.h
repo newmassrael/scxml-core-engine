@@ -116,6 +116,41 @@ public:
     bool loadSCXMLFromString(const std::string &scxmlContent);
 
     /**
+     * @brief Create StateMachine instance from SCXML string (factory method)
+     *
+     * W3C SCXML 6.4: Hybrid invoke support - AOT parent creates Interpreter child at runtime
+     * ARCHITECTURE.md: Hybrid Strategy - contentexpr evaluates to SCXML string, this creates child
+     *
+     * @param scxmlContent SCXML content as string
+     * @param sessionId Optional session ID (for invoke scenarios)
+     * @return Shared pointer to StateMachine instance, or nullptr if parsing failed
+     *
+     * @example Hybrid Invoke Usage (AOT parent + Interpreter child)
+     * @code
+     * // AOT parent evaluates contentexpr via JSEngine
+     * auto scxmlStr = jsEngine.evaluateExpression(sessionId, "Var1").get().getValue<std::string>();
+     *
+     * // Create Interpreter child from SCXML string
+     * auto child = StateMachine::createFromSCXMLString(scxmlStr);
+     * if (child) {
+     *     child->setCompletionCallback([&engine]() { engine.raise(Event::Done_invoke); });
+     *     child->start();
+     * }
+     * @endcode
+     */
+    static std::shared_ptr<StateMachine> createFromSCXMLString(const std::string &scxmlContent,
+                                                               const std::string &sessionId = "") {
+        auto sm = sessionId.empty() ? std::make_shared<StateMachine>() : std::make_shared<StateMachine>(sessionId);
+
+        if (!sm->loadSCXMLFromString(scxmlContent)) {
+            LOG_ERROR("StateMachine::createFromSCXMLString: Failed to load SCXML from string");
+            return nullptr;
+        }
+
+        return sm;
+    }
+
+    /**
      * @brief Load pre-parsed SCXML model directly
      *
      * This method is used by StaticCodeGenerator when dynamic invoke is detected.
