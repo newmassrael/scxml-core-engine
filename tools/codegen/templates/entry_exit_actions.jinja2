@@ -1,7 +1,7 @@
 {#
     Entry/Exit Actions Template (Jinja2)
 
-    Last Modified: 2025-10-24
+    Last Modified: 2025-10-26
     ARCHITECTURE.md Version: 2025-10-23
 
     ARCHITECTURE.md Compliance (Lines 311-491):
@@ -21,6 +21,14 @@
     - W3C SCXML 3.8: Onexit handlers with datamodel updates
     - W3C SCXML 3.9: Entry/exit action execution
     - W3C SCXML 6.4: Static invoke lifecycle management
+
+    Bug Fixes:
+    - 2025-10-26: eventData propagation to done.state events (W3C SCXML test 527)
+      Issue: DoneDataHelper evaluated eventData but EventWithMetadata was created without it
+      Root Cause: Template generated done.state event without passing evaluated eventData parameter
+      Fix: Conditional {% if state.donedata %} to pass eventData to EventWithMetadata constructor
+      Impact: W3C SCXML 5.5 _event.data now correctly populated for all donedata content/param tests
+      Verification: Test 527 (donedata content expr) passes with _event.data == 'foo' guard evaluation
 #}
 
     template<typename Engine>
@@ -116,14 +124,20 @@
 {% endif %}
 
                     LOG_DEBUG("Final state {{ state_id }} reached with event data: {}", eventData);
-                }
 {% endif %}
 {% if state.is_final and state.parent %}
                 // W3C SCXML 3.7: Generate done.state.{parentId} event for compound state completion
                 {
                     LOG_DEBUG("Final state {{ state_id }} entered, generating done.state.{{ state.parent }}");
+{% if state.donedata %}
+                    engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}, eventData));
+{% else %}
                     engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}));
+{% endif %}
                 }
+{% if state.donedata %}
+                }
+{% endif %}
 {% if model.states[state.parent].parent and model.states[model.states[state.parent].parent].is_parallel %}
                 // W3C SCXML 3.4: Check if parent's parent (parallel state) is complete
                 // W3C SCXML 3.7.1: Generate done.state event when all regions reach final states
