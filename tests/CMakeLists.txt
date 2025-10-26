@@ -618,6 +618,7 @@ rsm_generate_static_w3c_test(531 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: _sc
 rsm_generate_static_w3c_test(532 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: HTTP method name fallback for event naming (Pure Static)
 rsm_generate_static_w3c_test(533 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: internal transition exit set for non-compound states (Static Hybrid)
 rsm_generate_static_w3c_test(534 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP _scxmleventname parameter transmission (Static Hybrid)
+rsm_generate_static_w3c_test(550 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding with expr attribute for data variable (Static Hybrid)
 rsm_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: default history content execution
 rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history state not in configuration (parallel)
 rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml
