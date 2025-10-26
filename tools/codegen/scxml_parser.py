@@ -48,6 +48,7 @@ class State:
     datamodel: List[Dict] = field(default_factory=list)
     invokes: List[Dict] = field(default_factory=list)
     static_invokes: List[Dict] = field(default_factory=list)  # Static invoke info for member generation
+    hybrid_invokes: List[Dict] = field(default_factory=list)  # Hybrid invoke (contentexpr): AOT parent + Interpreter child
     donedata: Optional[Dict] = None  # W3C SCXML 5.5: Donedata for final states
     document_order: int = 0  # W3C SCXML 3.13: Document order for exit order tie-breaking
     initial_transition_actions: List[Dict] = field(default_factory=list)  # W3C SCXML 3.3.2: <initial> transition executable content
@@ -71,7 +72,9 @@ class SCXMLModel:
     has_parallel_states: bool = False
     has_history_states: bool = False
     has_invoke: bool = False
-    has_dynamic_invoke: bool = False  # True if any invoke is dynamic (srcexpr, content, etc.)
+    has_dynamic_invoke: bool = False  # Deprecated: use has_dynamic_file_invoke or has_hybrid_invoke
+    has_hybrid_invoke: bool = False  # True if any invoke uses contentexpr (AOT parent + Interpreter child)
+    has_dynamic_file_invoke: bool = False  # True if any invoke uses srcexpr (Full Interpreter wrapper)
     has_event_metadata: bool = False
     has_parent_communication: bool = False  # True if <send target="#_parent"> detected
     has_child_communication: bool = False  # True if <send target="#_child"> detected
@@ -96,6 +99,8 @@ class SCXMLModel:
 
     # Static invoke information (for code generation)
     static_invokes: List[Dict] = field(default_factory=list)
+    # Hybrid invoke information (contentexpr): AOT parent + Interpreter child
+    hybrid_invokes: List[Dict] = field(default_factory=list)
     
     # W3C SCXML 3.4: Parallel state regions (parallel_id -> [child_region_ids])
     parallel_regions: Dict[str, List[str]] = field(default_factory=dict)
@@ -124,6 +129,7 @@ class SCXMLParser:
     def __init__(self):
         self.model = None
         self.document_order_counter = 0  # W3C SCXML 3.13: Track document order
+        self.invoke_counter = 0  # W3C SCXML 6.4.1: Generate invoke IDs when missing
 
     def parse_file(self, scxml_path: str) -> SCXMLModel:
         """
@@ -433,23 +439,38 @@ class SCXMLParser:
                 state.invokes.append(invoke)
                 self.model.has_invoke = True
                 
-                # Track dynamic vs static invoke
-                if not invoke.get('is_static', False):
-                    self.model.has_dynamic_invoke = True
-                else:
-                    # Build static invoke info (matches C++ StaticInvokeInfo)
-                    static_invoke = {
+                # Track invoke types (static, hybrid, dynamic file)
+                if invoke.get('is_hybrid', False):
+                    # Hybrid invoke: AOT parent + Interpreter child
+                    hybrid_invoke = {
                         'invoke_id': invoke.get('id', ''),
-                        'child_name': '',  # Will be set after parsing child file name
                         'state_name': state_id,
+                        'contentexpr': invoke.get('contentexpr', ''),
                         'autoforward': invoke.get('autoforward', 'false') == 'true',
-                        'finalize_content': '',  # TODO: extract finalize script
-                        'src': invoke.get('src', ''),
                         'params': invoke.get('params', []),
-                        'idlocation': invoke.get('idlocation', '')  # W3C SCXML 6.4.1
+                        'idlocation': invoke.get('idlocation', '')
                     }
-                    state.static_invokes.append(static_invoke)
-                    self.model.static_invokes.append(static_invoke)
+                    state.hybrid_invokes.append(hybrid_invoke)
+                    self.model.hybrid_invokes.append(hybrid_invoke)
+                elif invoke.get('is_dynamic_file', False):
+                    # Handled by has_dynamic_file_invoke flag (set in parseInvokeElement)
+                    pass
+                elif invoke.get('is_static', False):
+                    # Pure static invoke: compile-time known child SCXML (src or inline content)
+                        # Pure static invoke: compile-time known child SCXML (src or inline content)
+                        # Build static invoke info (matches C++ StaticInvokeInfo)
+                        static_invoke = {
+                            'invoke_id': invoke.get('id', ''),
+                            'child_name': '',  # Will be set after parsing child file name
+                            'state_name': state_id,
+                            'autoforward': invoke.get('autoforward', 'false') == 'true',
+                            'finalize_content': '',  # TODO: extract finalize script
+                            'src': invoke.get('src', ''),
+                            'params': invoke.get('params', []),
+                            'idlocation': invoke.get('idlocation', '')  # W3C SCXML 6.4.1
+                        }
+                        state.static_invokes.append(static_invoke)
+                        self.model.static_invokes.append(static_invoke)
 
             self.model.states[state_id] = state
 
@@ -681,6 +702,24 @@ class SCXMLParser:
                 # W3C SCXML 5.4: <assign>
                 action['location'] = child.get('location', '')
                 action['expr'] = child.get('expr', '')
+                
+                # W3C SCXML 5.4: Handle XML child content (e.g., <assign location="Var1"><scxml>...</scxml></assign>)
+                # Serialize child elements to string for expression
+                if len(child) > 0:  # Has child elements
+                    # Serialize all child elements to string
+                    children_xml = ''
+                    for child_elem in child:
+                        if isinstance(child_elem.tag, str):  # Skip comments/text nodes
+                            # Serialize with c14n (canonical XML, no namespace prefixes)
+                            elem_bytes = etree.tostring(child_elem, method='c14n')
+                            elem_str = elem_bytes.decode('utf-8')
+                            # Strip whitespace and newlines for single-line expression
+                            elem_str = ' '.join(elem_str.split())
+                            children_xml += elem_str
+                    if children_xml:
+                        action['content'] = children_xml
+                else:
+                    action['content'] = ''
 
                 # W3C SCXML 5.3: All assignments in ECMAScript datamodel require JSEngine
                 # This matches C++ generator behavior
@@ -858,11 +897,17 @@ class SCXMLParser:
 
     def _parse_invoke(self, invoke_elem) -> Dict:
         """Parse <invoke> element (W3C SCXML 6.4)"""
+        # W3C SCXML 6.4.1: Generate invoke ID if not provided
+        invoke_id = invoke_elem.get('id', '')
+        if not invoke_id:
+            invoke_id = f"_invoke_{self.invoke_counter}"
+            self.invoke_counter += 1
+        
         invoke = {
             'type': invoke_elem.get('type', ''),
             'src': invoke_elem.get('src', ''),
             'srcexpr': invoke_elem.get('srcexpr', ''),
-            'id': invoke_elem.get('id', ''),
+            'id': invoke_id,
             'idlocation': invoke_elem.get('idlocation', ''),
             'autoforward': invoke_elem.get('autoforward', 'false'),
             'params': [],
@@ -901,25 +946,63 @@ class SCXMLParser:
         if finalize_elem is not None:
             invoke['finalize'] = self._parse_executable_content(finalize_elem)
 
-        # Classify invoke as static or dynamic (matches C++ generator logic)
-        # Static invoke: type is "scxml", has (src OR inline content SCXML), no dynamic features
+        # ARCHITECTURE.md All-or-Nothing Strategy: Classify invoke as static or dynamic
+        # W3C SCXML 6.4: Invoke types and their code generation strategies
+        # 
+        # Static invoke (Pure AOT):
+        #   - type="scxml" (or empty/default)
+        #   - src="file.scxml" (compile-time known child SCXML file) OR
+        #   - <content><scxml>...</scxml></content> (inline child, extracted to file)
+        #   - No dynamic features (srcexpr, contentexpr)
+        # 
+        # Hybrid invoke (AOT parent + Interpreter child):
+        #   - contentexpr="expr" OR <content expr="var"/> (runtime SCXML content evaluation)
+        #   - Parent: AOT code with JSEngine for contentexpr evaluation
+        #   - Child: Runtime Interpreter instance via StateMachine::createFromSCXMLString()
+        # 
+        # Dynamic invoke (Full Interpreter wrapper):
+        #   - srcexpr="expr" (runtime file path evaluation - requires file I/O)
+        #   - Reason: Cannot know which file to load at compile-time
+
         has_static_child = (
             invoke['src'] != '' or  # External child SCXML file
             invoke.get('has_inline_scxml', False)  # Inline <content><scxml>...</scxml></content>
         )
 
+        # Classify invoke type
         is_static_invoke = (
             (invoke['type'] == '' or invoke['type'] == 'scxml' or
              invoke['type'] == 'http://www.w3.org/TR/scxml/') and
-            has_static_child and
-            invoke['srcexpr'] == '' and
-            invoke['contentexpr'] == ''
+            invoke['srcexpr'] == '' and  # No dynamic file path
+            invoke['contentexpr'] == '' and  # No runtime content expression
+            has_static_child  # Must have compile-time known child
         )
         
-        invoke['is_static'] = is_static_invoke
+        is_hybrid_invoke = (
+            (invoke['type'] == '' or invoke['type'] == 'scxml' or
+             invoke['type'] == 'http://www.w3.org/TR/scxml/') and
+            invoke['srcexpr'] == '' and  # No dynamic file path
+            invoke['contentexpr'] != ''  # Runtime content expression (Hybrid)
+        )
         
+        is_dynamic_file_invoke = (
+            invoke['srcexpr'] != ''  # Dynamic file path (requires Interpreter wrapper)
+        )
+
+        invoke['is_static'] = is_static_invoke
+        invoke['is_hybrid'] = is_hybrid_invoke
+        invoke['is_dynamic_file'] = is_dynamic_file_invoke
+
         # Set model flags
-        if not is_static_invoke:
+        # Hybrid Strategy: contentexpr → AOT parent + Interpreter child
+        # Dynamic file invoke (srcexpr) → Full Interpreter wrapper
+
+        if is_hybrid_invoke:
+            self.model.has_hybrid_invoke = True
+            self.model.needs_jsengine = True  # JSEngine for contentexpr evaluation
+        
+        if is_dynamic_file_invoke:
+            self.model.has_dynamic_file_invoke = True
             self.model.has_dynamic_expressions = True
 
         return invoke

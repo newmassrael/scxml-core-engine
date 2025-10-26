@@ -597,6 +597,7 @@ rsm_generate_static_w3c_test(488 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.7: err
 rsm_generate_static_w3c_test(527 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.5: donedata content expr evaluation
 rsm_generate_static_w3c_test(528 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.5: donedata content expr error.execution
 rsm_generate_static_w3c_test(529 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.5: donedata content integer literal
+rsm_generate_static_w3c_test(530 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: Hybrid invoke contentexpr evaluation (Static Hybrid)
 rsm_generate_static_w3c_test(495 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2: SCXML Event I/O Processor internal vs external queue handling
 rsm_generate_static_w3c_test(496 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.1: error.communication for unreachable target (Static Hybrid)
 rsm_generate_static_w3c_test(500 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3.1: SCXML Event I/O processor location field access (Static Hybrid)

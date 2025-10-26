@@ -356,10 +356,14 @@ class CodeGenerator:
         # Since all current W3C tests use static parallel structure, no wrapper needed
         # Future: Check for dynamic parallel features (initial state expressions, etc.)
 
-        # Dynamic invoke requires Interpreter wrapper (matches C++ All-or-Nothing strategy)
-        # Static invoke (type="scxml" src="file:...") can be handled statically
-        if model.has_dynamic_invoke:
-            print(f"    Reason: Dynamic invoke detected (srcexpr, content, or contentexpr)")
+        # Hybrid invoke (contentexpr): AOT parent + Interpreter child (no wrapper needed)
+        # - <content expr="var"/>: Parent evaluates expr via JSEngine, creates Interpreter child at runtime
+        # - Hybrid Strategy: Parent is AOT, child is Interpreter
+        
+        # Dynamic file invoke requires full Interpreter wrapper
+        # - srcexpr="expr": Runtime file path evaluation (requires file I/O)
+        if model.has_dynamic_file_invoke:
+            print(f"    Reason: Dynamic file invoke detected (srcexpr requires runtime file I/O)")
             return True
 
         # Dynamic expressions: eventexpr, targetexpr, delayexpr can be handled statically via JSEngine
