@@ -607,6 +607,7 @@ rsm_generate_static_w3c_test(510 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: Bas
 rsm_generate_static_w3c_test(513 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: manual test - BasicHTTP success response (Integration test only)
 rsm_generate_static_w3c_test(518 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP namelist encoding as POST parameters (Static Hybrid)
 rsm_generate_static_w3c_test(519 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP param encoding as POST parameters (Static)
+rsm_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP content element as message body (Static)
 rsm_generate_static_w3c_test(521 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4/6.2.5: error.communication on invalid targetexpr (Static Hybrid)
 rsm_generate_static_w3c_test(522 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP location field usage (Pure Static)
 rsm_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: default history content execution
