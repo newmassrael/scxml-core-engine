@@ -223,39 +223,27 @@ class SCXMLParser:
                 expr = data.get('expr', '')
                 src = data.get('src', '')
 
-                # Get text content
-                content = data.text or ''
-
-                # W3C SCXML 5.2.2: Load external content from src attribute
-                # ARCHITECTURE.MD: Zero Duplication - Same logic as FileLoadingHelper (Single Source of Truth)
-                if src:
-                    # FileLoadingHelper::normalizePath() equivalent
-                    # Remove "file://" or "file:" prefix
-                    file_path = src
-                    if file_path.startswith('file://'):
-                        file_path = file_path[7:]  # Remove "file://"
-                    elif file_path.startswith('file:'):
-                        file_path = file_path[5:]  # Remove "file:"
-
-                    # Resolve relative to SCXML file directory
-                    scxml_dir = Path(self.scxml_path).parent
-                    full_path = scxml_dir / file_path
-
-                    try:
-                        # FileLoadingHelper::loadFileContent() equivalent
-                        with open(full_path, 'r', encoding='utf-8') as f:
-                            content = f.read()
-
-                        # W3C SCXML 5.2.2: Trim whitespace for consistency
-                        content = content.strip()
-                    except FileNotFoundError:
-                        import logging
-                        logging.warning(f"External data file not found: {full_path}")
-                        content = ''
-                    except Exception as e:
-                        import logging
-                        logging.warning(f"Failed to read external data file {full_path}: {e}")
-                        content = ''
+                # W3C SCXML 5.2.2 & B.2: Get inline XML/text content only
+                # ARCHITECTURE.md Zero Duplication: For src files, DataModelInitHelper loads at runtime
+                # Parser only handles inline content, runtime handles src files (matches Interpreter)
+                content = ''
+                
+                # W3C SCXML 5.2.2: src attribute handled by DataModelInitHelper at runtime
+                # AOT code generation: Pass empty content for src files, Helper loads file dynamically
+                if not src:
+                    # No src attribute - check for inline XML child elements (W3C SCXML B.2)
+                    if len(data) > 0:
+                        # Has child elements - serialize all children as XML string
+                        # This matches Interpreter behavior: DataModelParser::parseDataModelItem()
+                        # Example: <data id="var1"><books><book title="x"/></books></data>
+                        child_xml_parts = []
+                        for child in data:
+                            child_str = etree.tostring(child, encoding='unicode', method='xml')
+                            child_xml_parts.append(child_str)
+                        content = ''.join(child_xml_parts)
+                    else:
+                        # No child elements - use text content
+                        content = data.text or ''
 
                 self.model.variables.append({
                     'id': var_id,

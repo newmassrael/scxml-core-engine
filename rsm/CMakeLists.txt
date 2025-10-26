@@ -113,6 +113,7 @@ add_library(rsm_unified
     src/common/JsonUtils.cpp
     src/common/HttpResponseUtils.cpp
     src/common/UrlEncodingHelper.cpp
+    src/common/DataModelInitHelper.cpp
 
     # Runtime implementation
     src/runtime/SCXMLEngineImpl.cpp

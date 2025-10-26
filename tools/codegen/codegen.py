@@ -280,8 +280,13 @@ class CodeGenerator:
             # Load template
             template = self.env.get_template('state_machine.jinja2')
 
+            # Calculate base_path for DataModelInitHelper file loading
+            # W3C tests run from build/tests/, so output_dir "build/tests/w3c_static_generated" → base_path "w3c_static_generated"
+            # General case: use directory name of output_dir as relative path from execution directory
+            base_path = Path(output_dir).name
+
             # Render template
-            output = template.render(model=model)
+            output = template.render(model=model, base_path=base_path)
 
             # Use input filename (without extension) for output filename
             # W3C SCXML 6.4: Multiple tests may use same SCXML name attribute (e.g., test338 and test347 both use "machineName")

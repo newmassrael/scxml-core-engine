@@ -1,134 +1,89 @@
 #pragma once
 
-#include "scripting/JSEngine.h"
+#include "scripting/IJSExecutionEngine.h"
 #include <functional>
 #include <string>
 
+/**
+ * @brief Helper for initializing datamodel variables with XML DOM support
+ *
+ * W3C SCXML B.2: ECMAScript datamodel must convert XML content to DOM structures
+ * ARCHITECTURE.MD: Zero Duplication - Shared by Interpreter and AOT engines
+ *
+ * This helper provides a unified way to initialize datamodel variables:
+ * - Inline XML content → DOM object with getElementsByTagName(), getAttribute()
+ * - External file (src attribute) → Load file content and convert to DOM
+ * - expr attribute → Evaluate expression directly
+ */
+
 namespace RSM {
 
-/**
- * @brief Single Source of Truth for datamodel variable initialization (W3C SCXML 5.2, 5.3)
- *
- * ARCHITECTURE.MD: Zero Duplication Principle
- * Shared by Interpreter engine and AOT (Static) Code Generator to eliminate duplication
- * of datamodel initialization error handling logic.
- *
- * W3C SCXML 5.2: "When the document is loaded, the SCXML Processor must evaluate the
- * expressions in the 'expr' or 'src' attributes and assign the resulting value to the
- * data element."
- *
- * W3C SCXML 5.3: "If the value specified (by 'src', 'srcexpr' or children) is not a
- * legal data value, the SCXML Processor MUST raise error.execution and place the
- * error.execution event on the internal event queue."
- */
+// Forward declaration
+class JSEngine;
+
 class DataModelInitHelper {
 public:
     /**
-     * @brief Initialize a datamodel variable with expression evaluation and error handling
+     * @brief Check if expression is a JavaScript function literal
      *
-     * W3C SCXML 5.2/5.3: Evaluate expression and set variable, or raise error.execution
+     * @param expr Expression to check
+     * @return true if expr is function literal (function() {...} or () => ...)
      *
-     * @param jsEngine JSEngine instance for expression evaluation
-     * @param sessionId Session ID for JSEngine context
-     * @param varId Variable identifier (name)
-     * @param expr Expression to evaluate for initial value
-     * @param onError Callback for error.execution events (W3C SCXML 5.3)
-     * @return true if initialization succeeded, false if error occurred
-     *
-     * Usage Example (matches DoneDataHelper pattern):
-     * ```cpp
-     * // Interpreter engine (StateMachine.cpp)
-     * DataModelInitHelper::initializeVariable(
-     *     jsEngine, sessionId, "Var1", "undefined.invalidProperty",
-     *     [this](const std::string& msg) {
-     *         eventRaiser_->raiseEvent("error.execution", msg);
-     *     });
-     *
-     * // AOT engine (generated code from template)
-     * DataModelInitHelper::initializeVariable(
-     *     jsEngine, sessionId.value(), "Var1", "undefined.invalidProperty",
-     *     [&engine](const std::string& msg) {
-     *         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-     *     });
-     * ```
+     * W3C SCXML B.2: Function expressions must preserve function type
+     * Test 453: ECMAScript function literals stored as functions, not converted
      */
-    static bool initializeVariable(JSEngine &jsEngine, const std::string &sessionId, const std::string &varId,
-                                   const std::string &expr,
-                                   std::function<void(const std::string &)> onError = nullptr) {
-        if (expr.empty()) {
-            // W3C SCXML 5.2: Empty expression → undefined value
-            auto result = jsEngine.evaluateExpression(sessionId, "undefined").get();
-            if (JSEngine::isSuccess(result)) {
-                jsEngine.setVariable(sessionId, varId, result.getInternalValue());
-                return true;
-            }
-            // Fallback: even undefined evaluation failed
-            if (onError) {
-                onError("Failed to initialize variable '" + varId + "' with undefined");
-            }
-            return false;
-        }
-
-        // W3C SCXML 5.2: Evaluate expression for initial value
-        auto result = jsEngine.evaluateExpression(sessionId, expr).get();
-
-        if (JSEngine::isSuccess(result)) {
-            // Success: Set variable value
-            jsEngine.setVariable(sessionId, varId, result.getInternalValue());
-            return true;
-        }
-
-        // W3C SCXML 5.3: Raise error.execution for initialization failure
-        if (onError) {
-            onError("Failed to evaluate data expression for '" + varId + "'");
-        }
-        return false;
-    }
+    static bool isFunctionExpression(const std::string &expr);
 
     /**
-     * @brief Detect if expression is a function expression requiring special handling
+     * @brief Initialize a datamodel variable in JSEngine
      *
-     * W3C SCXML B.2: Function expressions must use executeScript() for direct JavaScript
-     * assignment to preserve function type. ECMAScript evaluateExpression() would convert
-     * function -> C++ ScriptValue -> function, losing the function type.
+     * @param jsEngine JSEngine instance for variable storage and expression evaluation
+     * @param sessionId Session ID for JSEngine context
+     * @param varId Variable identifier (e.g., "var1")
+     * @param content Inline XML content or empty if using src/expr
+     * @param errorCallback Function to call on error (receives error message)
+     * @return true if initialization succeeded, false otherwise
      *
-     * @param expr Expression string to check (may have leading/trailing whitespace)
-     * @return true if expression is a function literal (starts with "function" keyword)
+     * W3C SCXML 5.2.2: content, src, and expr are mutually exclusive
+     * - If content is non-empty and starts with '<', create DOM object
+     * - Otherwise, evaluate content as JavaScript expression
      *
-     * Test coverage: test453 (function expression assignment and invocation)
-     *
-     * ARCHITECTURE.md: Zero Duplication Principle - Single Source of Truth
-     * Used by:
-     * - Interpreter engine: StateMachine.cpp:1616
-     * - AOT engine: jsengine_helpers.jinja2:73
-     * - JSEngine fallback: JSEngineImpl.cpp:102
-     *
-     * Example:
-     *   isFunctionExpression("function(x) { return x + 1; }") // true
-     *   isFunctionExpression("  function foo() {} ") // true
-     *   isFunctionExpression("() => x + 1") // false (arrow functions not yet supported)
-     *   isFunctionExpression("myVar + 1") // false
-     *
-     * Future enhancements:
-     * - Arrow functions: () => expr, x => expr
-     * - Async functions: async function() {}, async () => {}
-     * - Generator functions: function* gen() {}
-     * See: https://www.w3.org/TR/scxml/#ecmascript-profile
+     * W3C SCXML 5.3: Raises error.execution if initialization fails
      */
-    static inline bool isFunctionExpression(const std::string &expr) {
-        // Trim leading whitespace
-        size_t start = 0;
-        while (start < expr.length() && std::isspace(static_cast<unsigned char>(expr[start]))) {
-            ++start;
-        }
+    static bool initializeVariable(JSEngine &jsEngine, const std::string &sessionId, const std::string &varId,
+                                   const std::string &content, std::function<void(const std::string &)> errorCallback);
 
-        // Check if starts with "function" keyword (8 characters)
-        if (start + 8 > expr.length()) {
-            return false;
-        }
+    /**
+     * @brief Initialize a datamodel variable with external file loading
+     *
+     * @param jsEngine JSEngine instance
+     * @param sessionId Session ID
+     * @param varId Variable identifier
+     * @param src File URL (e.g., "file:test557.txt")
+     * @param errorCallback Error callback
+     * @return true if initialization succeeded, false otherwise
+     *
+     * W3C SCXML 5.2.2: Load content from external source and initialize
+     */
+    static bool initializeVariableFromSrc(JSEngine &jsEngine, const std::string &sessionId, const std::string &varId,
+                                          const std::string &src, const std::string &basePath,
+                                          std::function<void(const std::string &)> errorCallback);
 
-        return expr.compare(start, 8, "function") == 0;
-    }
+    /**
+     * @brief Initialize a datamodel variable with expression
+     *
+     * @param jsEngine JSEngine instance
+     * @param sessionId Session ID
+     * @param varId Variable identifier
+     * @param expr JavaScript expression to evaluate
+     * @param errorCallback Error callback
+     * @return true if initialization succeeded, false otherwise
+     *
+     * W3C SCXML 5.2.2: Evaluate expr and assign to variable
+     */
+    static bool initializeVariableFromExpr(JSEngine &jsEngine, const std::string &sessionId, const std::string &varId,
+                                           const std::string &expr,
+                                           std::function<void(const std::string &)> errorCallback);
 };
 
 }  // namespace RSM
