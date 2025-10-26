@@ -40,7 +40,9 @@ class CodeGenerator:
     def _capitalize_state(self, state_id):
         """Capitalize state/event names for C++ enums"""
         if not state_id:
-            return ""
+            # W3C SCXML C.2: Empty event for BasicHTTP content-only send (test 520)
+            # Static Hybrid: Use Event::Empty enum value for sends without event name
+            return "Empty"
         # Handle special cases
         if state_id.lower() == 'pass':
             return 'Pass'

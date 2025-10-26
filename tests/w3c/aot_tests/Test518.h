@@ -1,5 +1,5 @@
 #pragma once
-#include "SimpleAotTest.h"
+#include "HttpAotTest.h"
 #include "test518_sm.h"
 
 namespace RSM::W3C::AotTests {
@@ -56,7 +56,7 @@ namespace RSM::W3C::AotTests {
  * compatible with Static Hybrid approach when using external infrastructure
  * and shared Helper functions for namelist evaluation and POST encoding.
  */
-struct Test518 : public SimpleAotTest<Test518, 518> {
+struct Test518 : public HttpAotTest<Test518, 518> {
     static constexpr const char *DESCRIPTION = "BasicHTTP namelist encoding (W3C C.2 AOT Static Hybrid)";
     using SM = RSM::Generated::test518::test518;
 };

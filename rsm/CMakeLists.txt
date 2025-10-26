@@ -214,10 +214,10 @@ target_include_directories(rsm_unified
 # Make rsm_unified depend on the external libxml2 and libxml++ builds
 add_dependencies(rsm_unified libxml2_external libxmlxx_external)
 
-# RSM 코드베이스에서 std::cout 사용 금지 설정  
-# printf 계열은 시스템 헤더 충돌로 인해 비활성화됨
+# RSM codebase: Disable std::cout usage  
+# printf family disabled due to system header conflicts
 
-# DisableStdOut.h를 전역적으로 강제 포함
+# Force include DisableStdOut.h globally
 target_compile_options(rsm_unified 
     PRIVATE
         -include common/DisableStdOut.h

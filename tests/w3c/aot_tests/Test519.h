@@ -1,5 +1,5 @@
 #pragma once
-#include "SimpleAotTest.h"
+#include "HttpAotTest.h"
 #include "test519_sm.h"
 
 namespace RSM::W3C::AotTests {
@@ -55,7 +55,7 @@ namespace RSM::W3C::AotTests {
  * This validates that HTTP URL targets with param encoding are fully
  * compatible with Pure Static approach when parameter values are static literals.
  */
-struct Test519 : public SimpleAotTest<Test519, 519> {
+struct Test519 : public HttpAotTest<Test519, 519> {
     static constexpr const char *DESCRIPTION = "BasicHTTP param encoding (W3C C.2 AOT Static)";
     using SM = RSM::Generated::test519::test519;
 };

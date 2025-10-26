@@ -159,42 +159,108 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
    - AOT test auto-registered via `AotTestRegistrar`
    - Both Interpreter and AOT tests pass with pure static code
 
-### Adding W3C Tests Requiring Interpreter Wrappers
-**When**: Static code generation fails (no initial state, dynamic invoke, parallel initial state format, etc.)
+### Handling Tests That Cannot Use Pure Static Generation
+**IMPORTANT**: Interpreter wrappers are **NOT USED** in this project. All tests must either:
+1. Use **Pure Static Generation** (all features are static)
+2. Use **Static Hybrid** (static structure with JSEngine for ECMAScript expressions)
+3. Be **excluded from AOT testing** if they cannot be statically generated
+
+**When Static Code Generation Fails**:
+If a test cannot be statically generated, it should **NOT be added to AOT tests**.
+
+**Common Scenarios for Exclusion**:
+- ❌ **No initial state**: W3C SCXML 3.6 defaults to first child - requires runtime logic
+- ❌ **Dynamic invoke**: `<invoke srcexpr>`, `<invoke><content>`, `<invoke contentExpr>` - dynamic expressions
+- ❌ **Dynamic event names**: Events generated at runtime (e.g., HTTP.POST from content-only sends)
+- ❌ **Parallel initial state**: Space-separated state IDs - requires parsing at runtime
+- ❌ **Invalid initial state**: Initial state not found in model - requires validation
+
+**Exclusion Procedure**:
+1. **Do NOT add to `tests/CMakeLists.txt`** for static generation
+2. **Do NOT create AOT test registry file** in `tests/w3c/aot_tests/`
+3. **Test only with Interpreter engine** - Interpreter tests will still run and pass
+4. **Document the reason** in code comments or test documentation
+
+**Result**:
+- Test passes with Interpreter engine (100% W3C SCXML compliance)
+- AOT engine skips the test (no false failures)
+- Clear separation between Pure Static/Static Hybrid and dynamic features
+
+### Adding W3C Tests Requiring HTTP Infrastructure (BasicHTTP Event I/O Processor)
+**IMPORTANT**: W3C SCXML C.2 BasicHTTP Event I/O Processor tests require special infrastructure setup in AOT engine.
+
+**When**: Test uses `<send type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor">` with HTTP target URLs
 
 **Required Steps**:
 1. **Add to `tests/CMakeLists.txt`**:
    - Use `rsm_generate_static_w3c_test(TEST_NUM ${STATIC_W3C_OUTPUT_DIR})`
-   - Add comment explaining why wrapper is needed
-   - Examples:
+   - Add W3C SCXML C.2 specification reference comment
+   - Example:
      ```cmake
-     rsm_generate_static_w3c_test(355 ${STATIC_W3C_OUTPUT_DIR})  # no initial state
-     rsm_generate_static_w3c_test(364 ${STATIC_W3C_OUTPUT_DIR})  # parallel initial state format
+     rsm_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP content element
      ```
 
-2. **Add to `tests/w3c/W3CTestRunner.cpp`**:
-   - Add test case to `runAotTest()` dynamic invoke section
-   - Ensures AOT engine recognizes these as Interpreter wrapper tests
+2. **Create AOT Test Registry File** `tests/w3c/aot_tests/TestXXX.h`:
+   - Use `HttpAotTest` base class (NOT SimpleAotTest)
+   - Include W3C SCXML C.2 specification reference in docstring
    - Example:
      ```cpp
-     case 355:
-     case 364:
-         LOG_WARN("W3C AOT Test: Test {} uses dynamic invoke - tested via Interpreter engine", testId);
-         report.validationResult = ValidationResult(true, TestResult::PASS, "Tested via Interpreter engine (dynamic invoke)");
-         report.executionContext.finalState = "pass";
-         return report;
+     #pragma once
+     #include "HttpAotTest.h"
+     #include "testXXX_sm.h"
+
+     namespace RSM::W3C::AotTests {
+
+     /**
+      * @brief W3C SCXML C.2: BasicHTTP feature description
+      *
+      * Detailed test description referencing W3C SCXML spec.
+      */
+     struct TestXXX : public HttpAotTest<TestXXX, XXX> {
+         static constexpr const char *DESCRIPTION = "BasicHTTP feature (W3C C.2 AOT)";
+         using SM = RSM::Generated::testXXX::testXXX;
+     };
+
+     // Auto-register
+     inline static AotTestRegistrar<TestXXX> registrar_TestXXX;
+
+     }  // namespace RSM::W3C::AotTests
      ```
 
-3. **Result**:
-   - Wrapper generated automatically by Python code generator
-   - Test runs using perfect Interpreter engine
-   - Both Interpreter and AOT tests pass
+3. **Add to `tests/w3c/aot_tests/AllAotTests.h`**:
+   - Include new test header in BasicHTTP section
+   - Group with other HTTP tests for clarity
 
-**Common Scenarios**:
-- No initial state: W3C SCXML 3.6 defaults to first child in document order
-- Dynamic invoke: `<invoke srcexpr>`, `<invoke><content>`, `<invoke contentExpr>`
-- Parallel initial state: Space-separated state IDs (e.g., "s11p112 s11p122")
-- Invalid initial state: Initial state not found in model
+4. **Result**:
+   - Static code generated with HTTP send support (EventWithMetadata with target/type fields)
+   - HttpAotTest starts W3CHttpTestServer on localhost:8080/test
+   - StaticExecutionEngine.raiseExternal() detects HTTP target and sends real HTTP POST
+   - Server response triggers event → HttpAotTest callback routes to state machine
+   - State machine processes event and transitions to pass
+
+**HttpAotTest Architecture**:
+- **HTTP Server**: Starts W3CHttpTestServer on localhost:8080/test
+- **Event Callback**: Maps HTTP response event names to state machine Event enum
+- **Dynamic Event Mapping**: Iterates Event enum to find matching event name string
+- **Async Processing**: Polls state machine until final state or timeout
+- **Direct Integration**: StaticExecutionEngine uses HttpEventTarget directly (no EventTargetFactory)
+
+**Key Differences from SimpleAotTest**:
+- **SimpleAotTest**: Synchronous, self-contained (initialize → tick → check final state)
+- **HttpAotTest**: Asynchronous, HTTP server lifecycle management + event callback routing
+- **HTTP Detection**: StaticExecutionEngine checks EventWithMetadata.originType for BasicHTTPEventProcessor
+- **Zero Duplication**: Reuses Interpreter's HttpEventTarget, W3CHttpTestServer
+
+**Common HTTP Test Patterns**:
+- **Namelist encoding** (test 518): `<send event="test" namelist="Var1" type="BasicHTTP" target="http://localhost:8080/test">`
+- **Param encoding** (test 519): `<send event="test" type="BasicHTTP"><param name="x" expr="1"/></send>`
+- **Content-only** (test 520): `<send type="BasicHTTP" target="http://localhost:8080/test"><content>text</content></send>`
+
+**Architecture Compliance**:
+- ✅ **Zero Duplication**: HTTP infrastructure shared with Interpreter (HttpEventTarget, W3CHttpTestServer)
+- ✅ **All-or-Nothing**: Pure AOT structure + external HTTP server (no engine mixing)
+- ✅ **W3C Compliance**: Real HTTP POST operations, not fake/mock implementation
+- ✅ **No False Positives**: Verified by execution time (307ms vs 1ms) and debug logs showing actual network traffic
 
 ## Code Review Guidelines
 
@@ -228,11 +294,6 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
   - [ ] Wrapper tests: CMakeLists.txt + W3CTestRunner.cpp dynamic invoke section?
 - [ ] **Implementation Completeness**: No TODO, no partial features, no placeholders?
 - [ ] **Git Quality**: Semantic commits with professional descriptions?
-
-### Review Output Location
-- Place all code review reports in `claudedocs/` directory
-- Format: `code_review_YYYY_MM_DD.md`
-- Include compliance scores and action items
 
 ## Git Commit Guidelines
 

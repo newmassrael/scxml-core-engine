@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 
-# GoogleTest 설정 - FetchContent 방식
+# GoogleTest setup - FetchContent approach
 find_package(GTest QUIET)
 
 if(NOT GTest_FOUND)
@@ -15,7 +15,7 @@ if(NOT GTest_FOUND)
         GIT_PROGRESS TRUE
     )
 
-    # GoogleTest 옵션 설정 (빌드 시간 단축)
+    # GoogleTest options (reduce build time)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     set(BUILD_GMOCK ON CACHE BOOL "" FORCE)
     set(BUILD_GTEST ON CACHE BOOL "" FORCE)
@@ -23,7 +23,7 @@ if(NOT GTest_FOUND)
 
     FetchContent_MakeAvailable(googletest)
 
-    # 별칭 생성 (find_package와 동일한 인터페이스 제공)
+    # Create alias (provides same interface as find_package)
     add_library(GTest::GTest ALIAS gtest)
     add_library(GTest::Main ALIAS gtest_main)
     add_library(GTest::gtest ALIAS gtest)
@@ -35,26 +35,26 @@ else()
 endif()
 
 # ============================================================================
-# RSM 테스트 설정: std::cout 사용 금지 적용
+# RSM test configuration: Disable std::cout usage
 # ============================================================================
 function(apply_rsm_test_policies target_name)
-    # DisableStdOut.h를 모든 테스트 타겟에 강제 포함
+    # Force include DisableStdOut.h to all test targets
     target_compile_options(${target_name}
         PRIVATE
             -include ${CMAKE_SOURCE_DIR}/rsm/include/common/DisableStdOut.h
     )
 
-    # RSM 테스트 정책 정의
+    # RSM test policy definitions
     target_compile_definitions(${target_name}
         PRIVATE
-            RSM_TEST_TARGET=1  # 테스트 타겟 식별용
+            RSM_TEST_TARGET=1  # For test target identification
     )
 endfunction()
 
 # ============================================================================
 # Performance Benchmarks (Optional)
 # ============================================================================
-# 모든 테스트 타겟 이름 리스트
+# List of all test target names
 set(RSM_TEST_TARGETS
     rsm_scxml_tests
     js_engine_tests
@@ -74,7 +74,7 @@ set(RSM_TEST_TARGETS
 )
 
 # ============================================================================
-# 1. RSM SCXML Builtin Tests (현재 작동하는 테스트)
+# 1. RSM SCXML Builtin Tests (currently working tests)
 # ============================================================================
 add_executable(rsm_scxml_tests
     simple_scxml_test.cpp
@@ -97,13 +97,13 @@ target_link_libraries(rsm_scxml_tests
         pthread
 )
 
-# RSM 테스트 정책 적용 (cout 금지 등)
+# Apply RSM test policy (disable cout, etc.)
 apply_rsm_test_policies(rsm_scxml_tests)
 
-# CTest 등록은 하단에서 최적화된 순서로 일괄 처리
+# CTest registration is handled below in optimized order
 
 # ============================================================================
-# 2. JavaScript Engine Tests (완전히 RSM으로 업데이트됨)
+# 2. JavaScript Engine Tests (fully updated to RSM)
 # ============================================================================
 add_executable(js_engine_tests
     engine/SessionManagementTest.cpp
@@ -128,7 +128,7 @@ target_link_libraries(js_engine_tests
         pthread
 )
 
-# RSM 테스트 정책 적용
+# Apply RSM test policy
 apply_rsm_test_policies(js_engine_tests)
 
 # ============================================================================
@@ -286,7 +286,7 @@ target_link_libraries(core_parser_tests
 # ============================================================================
 # 5. Concurrent States Foundation Tests
 # ============================================================================
-# 테스트 파일들이 제거되어 비활성화됨
+# Disabled - test files removed
 # add_executable(concurrent_foundation_tests
 #     states/concurrent/foundation/ConcurrentStateFoundationTest.cpp
 #     mocks/MockActionExecutor.cpp
@@ -324,7 +324,7 @@ target_link_libraries(core_parser_tests
 #     mocks/MockActionExecutor.cpp
 # )
 
-# 테스트 설정들이 제거되어 비활성화됨
+# Disabled - test configurations removed
 
 # ============================================================================
 # 6. Integration Tests (RSM architecture)
@@ -677,15 +677,15 @@ add_dependencies(w3c_test_cli libxmlxx_external rsm_unified)
 # add_dependencies(static_codegen_tests libxmlxx_external rsm_unified)
 
 # ============================================================================
-# CTest 실행 순서 최적화 (빠른 피드백 → 종합 검증 → 성능 측정)
+# CTest execution order optimization (fast feedback → comprehensive validation → performance measurement)
 # ============================================================================
 
-# Phase 1: 빠른 단위 테스트 (개발 중 빠른 피드백, <1초)
+# Priority Level 1: Fast unit tests (quick feedback during development, <1s)
 add_test(NAME CoreParserTests COMMAND core_parser_tests)
 add_test(NAME StatesTests COMMAND states_tests)
 add_test(NAME HistoryTests COMMAND history_tests)
 
-# Phase 2: 핵심 컴포넌트 테스트 (기본 기능 검증, ~1-5초)
+# Priority Level 2: Core component tests (basic functionality validation, ~1-5s)
 add_test(NAME StateMachineTests COMMAND state_machine_tests)
 add_test(NAME JSEngineTests COMMAND js_engine_tests)
 add_test(NAME ActionTests COMMAND action_tests)
@@ -693,41 +693,41 @@ add_test(NAME RSMSCXMLTests COMMAND rsm_scxml_tests)
 # add_test(NAME StaticCodegenTests COMMAND static_codegen_tests)  # Disabled: C++ codegen replaced by Python
 # add_test(NAME ReadySCXMLEngineTests COMMAND simple_scxml_engine_tests)  # Temporarily disabled
 
-# Phase 3: 통합 및 동시성 테스트 (시스템 레벨 검증, ~5-15초)
+# Priority Level 3: Integration and concurrency tests (system-level validation, ~5-15s)
 add_test(NAME TXMLConverterTests COMMAND txml_converter_tests)
 add_test(NAME ConcurrencyTests COMMAND concurrency_tests)
 add_test(NAME IntegrationTests COMMAND integration_tests)
 
-# Phase 4: W3C 표준 준수 검증 (종합 검증, ~40초)
+# Priority Level 4: W3C SCXML compliance validation (comprehensive validation, ~40s)
 add_test(NAME W3CFullComplianceTests COMMAND w3c_test_cli)
 
 # ============================================================================
-# CTest 실행 순서 제어: COST 속성으로 우선순위 설정
-# CTest는 높은 COST를 가진 테스트를 먼저 실행하므로,
-# 벤치마크(COST=1000)보다 높은 값을 메인 테스트에 부여하여 순서 보장
+# CTest execution order control: Set priority using COST property
+# CTest executes tests with higher COST values first,
+# so assign higher values to main tests than benchmarks (COST=1000) to ensure proper order
 # ============================================================================
 
-# Phase 1: COST 5000 (가장 먼저 실행)
+# Priority Level 1: COST 5000 (execute first)
 set_tests_properties(CoreParserTests PROPERTIES COST 5000)
 set_tests_properties(StatesTests PROPERTIES COST 5000)
 set_tests_properties(HistoryTests PROPERTIES COST 5000)
 
-# Phase 2: COST 4000
+# Priority Level 2: COST 4000
 set_tests_properties(StateMachineTests PROPERTIES COST 4000)
 set_tests_properties(JSEngineTests PROPERTIES COST 4000)
 set_tests_properties(ActionTests PROPERTIES COST 4000)
 set_tests_properties(RSMSCXMLTests PROPERTIES COST 4000)
 # set_tests_properties(StaticCodegenTests PROPERTIES COST 4000)  # Disabled
 
-# Phase 3: COST 3000
+# Priority Level 3: COST 3000
 set_tests_properties(TXMLConverterTests PROPERTIES COST 3000)
 set_tests_properties(ConcurrencyTests PROPERTIES COST 3000)
 set_tests_properties(IntegrationTests PROPERTIES COST 3000)
 
-# Phase 4: COST 2000 (벤치마크보다 높음)
+# Priority Level 4: COST 2500 (W3C SCXML compliance validation, higher priority than benchmarks)
 set_tests_properties(W3CFullComplianceTests PROPERTIES COST 2500)
 
-# Phase 5: 성능 벤치마크 (기능 검증 후 성능 측정, 마지막 실행)
+# Priority Level 5: Performance benchmarks (measure performance after functional validation, execute last)
 # Benchmark subdirectory must be included AFTER all main tests to ensure proper execution order
 option(BUILD_BENCHMARKS "Build performance benchmarks" ON)
 if(BUILD_BENCHMARKS)
@@ -736,23 +736,23 @@ if(BUILD_BENCHMARKS)
 endif()
 
 # ============================================================================
-# 테스트 의존성 및 우선순위 설정
+# Test dependency and priority configuration
 # ============================================================================
 
-# 핵심 테스트들이 먼저 통과해야 고급 테스트 실행
+# Advanced tests run only after core tests pass
 set_tests_properties(ActionTests PROPERTIES DEPENDS "JSEngineTests;StateMachineTests")
 set_tests_properties(HistoryTests PROPERTIES DEPENDS "StateMachineTests")
 set_tests_properties(StatesTests PROPERTIES DEPENDS "StateMachineTests")
 
-# 통합 테스트는 핵심 컴포넌트들이 통과한 후 실행
+# Integration tests run after core components pass
 set_tests_properties(IntegrationTests PROPERTIES DEPENDS "JSEngineTests;StateMachineTests;ActionTests")
 set_tests_properties(ConcurrencyTests PROPERTIES DEPENDS "StateMachineTests;StatesTests")
 
-# W3C 테스트는 모든 기본 기능이 검증된 후 실행
+# W3C tests run after all basic functionality is validated
 set_tests_properties(TXMLConverterTests PROPERTIES DEPENDS "CoreParserTests")
 set_tests_properties(W3CFullComplianceTests PROPERTIES DEPENDS "IntegrationTests;TXMLConverterTests")
 
-# 테스트 타임아웃 설정 (초 단위)
+# Test timeout configuration (in seconds)
 set_tests_properties(RSMSCXMLTests PROPERTIES TIMEOUT 30)
 # set_tests_properties(StaticCodegenTests PROPERTIES TIMEOUT 30)  # Disabled
 # set_tests_properties(ReadySCXMLEngineTests PROPERTIES TIMEOUT 30)  # Temporarily disabled
@@ -762,11 +762,11 @@ set_tests_properties(IntegrationTests ConcurrencyTests PROPERTIES TIMEOUT 180)
 set_tests_properties(TXMLConverterTests PROPERTIES TIMEOUT 120)
 set_tests_properties(W3CFullComplianceTests PROPERTIES TIMEOUT 300)
 
-# 병렬 실행 제한 (리소스 집약적 테스트)
+# Limit parallel execution (resource-intensive tests)
 set_tests_properties(W3CFullComplianceTests PROPERTIES RUN_SERIAL TRUE)
 set_tests_properties(ConcurrencyTests PROPERTIES RUN_SERIAL TRUE)
 
-# 모든 테스트 타겟에 RSM 정책 일괄 적용
+# Apply RSM policy to all test targets
 foreach(test_target ${RSM_TEST_TARGETS})
     if(TARGET ${test_target})
         apply_rsm_test_policies(${test_target})
