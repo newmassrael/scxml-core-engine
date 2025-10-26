@@ -38,6 +38,8 @@ namespace RSM::W3C::AotTests {
  *
  * Implementation Details:
  * - NamelistHelper::evaluateNamelist() uses JSEngine.getVariable() to check variable existence
+ * - W3C SCXML 6.2.4: Variable existence must be checked at runtime (not parse-time)
+ *   because datamodel variables may be undefined or deleted during execution
  * - Returns false if any namelist variable is undefined
  * - Early return prevents event dispatch when namelist validation fails
  * - ScheduledAotTest polls event scheduler for delayed timeout event (1s)
