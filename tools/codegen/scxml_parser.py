@@ -664,6 +664,12 @@ class SCXMLParser:
                 action['id'] = child.get('id', '')
                 action['idlocation'] = child.get('idlocation', '')
                 action['namelist'] = child.get('namelist', '')  # W3C SCXML C.1: namelist for event data
+                
+                # W3C SCXML 6.2.4 & 5.11: Namelist requires JSEngine for variable existence checking
+                # W3C SCXML C.1: NamelistHelper::evaluateNamelist() uses JSEngine.getVariable()
+                # Even if namelist contains static variable names, we need JSEngine to check if they exist at runtime
+                if action['namelist']:
+                    self.model.needs_jsengine = True
 
                 # Parse <param> children
                 action['params'] = []
