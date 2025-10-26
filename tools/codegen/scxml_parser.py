@@ -667,11 +667,27 @@ class SCXMLParser:
                 # Parse <param> children
                 action['params'] = []
                 for param in ns_findall(child, 'param'):
+                    param_expr = param.get('expr', '')
+                    
+                    # W3C SCXML Appendix B.2: Detect static string literals for Pure Static optimization (test 531)
+                    is_static_literal = False
+                    static_value = ''
+                    if param_expr and self._is_static_string_literal(param_expr):
+                        is_static_literal = True
+                        static_value = self._extract_static_string_literal(param_expr)
+                    
                     action['params'].append({
                         'name': param.get('name'),
-                        'expr': param.get('expr', ''),
-                        'location': param.get('location', '')
+                        'expr': param_expr,
+                        'location': param.get('location', ''),
+                        'is_static_literal': is_static_literal,
+                        'static_value': static_value
                     })
+                    
+                    # W3C SCXML 6.2: Non-static param expr requires JSEngine evaluation
+                    # Static literals (e.g., 'test') can be handled at parse time (Pure Static)
+                    if param_expr and not is_static_literal and self._requires_jsengine(param_expr):
+                        self.model.needs_jsengine = True
 
                 # Parse <content>
                 content_elems = ns_findall(child, 'content')
@@ -1146,6 +1162,56 @@ class SCXMLParser:
                 return True
 
         return False
+
+    def _is_static_string_literal(self, expr: str) -> bool:
+        """
+        Detect if expression is a static string literal (e.g., 'test', "test")
+        
+        Returns True only for simple quoted strings without:
+        - Variables or expressions
+        - String concatenation
+        - Escape sequences beyond basic ones
+        
+        W3C SCXML Appendix B.2: ECMAScript string literals like 'test' can be
+        evaluated at parse time for Pure Static code generation (test 531 optimization)
+        """
+        if not expr:
+            return False
+        
+        import re
+        expr_stripped = expr.strip()
+        
+        # Match simple single-quoted or double-quoted string literals
+        # Pattern: quote + any chars except that quote or backslash + quote
+        # This excludes complex strings with variables, concatenation, or escape sequences
+        single_quote_pattern = r"^'([^'\\]*)'$"
+        double_quote_pattern = r'^"([^"\\]*)"$'
+        
+        if re.match(single_quote_pattern, expr_stripped) or re.match(double_quote_pattern, expr_stripped):
+            return True
+        
+        return False
+    
+    def _extract_static_string_literal(self, expr: str) -> str:
+        """
+        Extract the value from a static string literal
+        
+        Assumes expr has been validated with _is_static_string_literal()
+        Returns the string value without quotes
+        """
+        import re
+        expr_stripped = expr.strip()
+        
+        # Extract content between quotes
+        single_quote_match = re.match(r"^'([^'\\]*)'$", expr_stripped)
+        if single_quote_match:
+            return single_quote_match.group(1)
+
+        double_quote_match = re.match(r'^"([^"\\]*)"$', expr_stripped)
+        if double_quote_match:
+            return double_quote_match.group(1)
+        
+        return expr_stripped  # Fallback (should not happen)
 
     def _process_static_invokes(self):
         """

@@ -139,6 +139,40 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Empty, "{{ action
 // W3C SCXML C.2: HTTP send requires EventWithMetadata with target/type
 engine.raiseExternal(typename Engine::EventWithMetadata(Event::Empty, "{{ action.content | escape_cpp }}", "", sendId, "", "{{ action.send_type }}", "", "{{ action.target }}"));
 {% endif %}
+{% elif action.params and not action.event %}
+// W3C SCXML C.2: _scxmleventname parameter event name override (test 531)
+// When no event attribute, _scxmleventname param value becomes event name
+std::map<std::string, std::vector<std::string>> params;
+{% set needs_jsengine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
+{% if needs_jsengine %}
+// W3C SCXML C.2: Dynamic param expr requires JSEngine evaluation (Static Hybrid)
+this->ensureJSEngine();
+auto& jsEngine = ::RSM::JSEngine::instance();
+{% endif %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+// W3C SCXML Appendix B.2: Static string literal (Pure Static optimization)
+params["{{ param.name }}"].push_back("{{ param.static_value }}");
+{% else %}
+// W3C SCXML C.2: Dynamic param expr evaluation
+{
+    auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+    if (::RSM::JSEngine::isSuccess(paramResult)) {
+        params["{{ param.name }}"].push_back(::RSM::JSEngine::resultToString(paramResult));
+    } else {
+        LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+        params["{{ param.name }}"].push_back("");
+    }
+}
+{% endif %}
+{% endfor %}
+std::string eventData = ::RSM::EventDataHelper::buildJsonFromParams(params);
+// W3C SCXML C.2: HTTP send with param-based event data
+{% if needs_jsengine %}
+engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, sessionId_.value_or(""), sendId, "", "{{ action.send_type }}", "", "{{ action.target }}"));
+{% else %}
+engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, "", sendId, "", "{{ action.send_type }}", "", "{{ action.target }}"));
+{% endif %}
 {% elif action.event %}
 {% if action.delay or action.delayexpr %}
 // W3C SCXML 6.2: Delayed send with event scheduling
