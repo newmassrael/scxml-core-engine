@@ -292,7 +292,7 @@ if (::RSM::SendHelper::isInternalTarget(dynamicTarget)) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }}, eventData);
 {% endif %}
@@ -302,7 +302,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }}, eventData);
 {% endif %}
@@ -314,7 +314,7 @@ if (::RSM::SendHelper::isInternalTarget(dynamicTarget)) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }}, eventData);
 {% endif %}
@@ -324,7 +324,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }}, eventData);
 {% endif %}
@@ -339,7 +339,7 @@ if (::RSM::SendHelper::isInternalTarget(dynamicTarget)) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}"));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}");
 {% endif %}
@@ -349,7 +349,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}"));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}");
 {% endif %}
@@ -361,7 +361,7 @@ if (::RSM::SendHelper::isInternalTarget(dynamicTarget)) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}"));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}");
 {% endif %}
@@ -371,7 +371,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}"));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }}, "{{ action.content | escape_cpp }}");
 {% endif %}
@@ -398,7 +398,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
         engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData));
     } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
         engine.raiseExternal(Event::{{ action.event | capitalize }}, eventData);
 {% endif %}
@@ -408,7 +408,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
         engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData));
     } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
         engine.raiseExternal(Event::{{ action.event | capitalize }}, eventData);
 {% endif %}
@@ -420,7 +420,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
         engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData));
     } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
         engine.raiseExternal(Event::{{ action.event | capitalize }}, eventData);
 {% endif %}
@@ -430,7 +430,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
         engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData));
     } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
         engine.raiseExternal(Event::{{ action.event | capitalize }}, eventData);
 {% endif %}
@@ -446,7 +446,7 @@ if (::RSM::SendHelper::isInternalTarget(dynamicTarget)) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }});
 {% endif %}
@@ -456,7 +456,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }});
 {% endif %}
@@ -468,7 +468,7 @@ if (::RSM::SendHelper::isInternalTarget(dynamicTarget)) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }});
 {% endif %}
@@ -478,7 +478,7 @@ if (::RSM::SendHelper::isInternalTarget("{{ action.target }}")) {
     engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}));
 } else {
 {% if model.needs_jsengine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}"));
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", "{% if action.send_type %}{{ action.send_type }}{% else %}http://www.w3.org/TR/scxml/#SCXMLEventProcessor{% endif %}", "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | capitalize }});
 {% endif %}

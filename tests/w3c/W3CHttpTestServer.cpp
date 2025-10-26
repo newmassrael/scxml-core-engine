@@ -108,7 +108,9 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
         std::string contentType = req.get_header_value("Content-Type");
         bool isFormData = (contentType.find("application/x-www-form-urlencoded") != std::string::npos);
 
-        // W3C SCXML C.2: For form data, extract parameters into JSON _event.data
+        // W3C SCXML C.2: BasicHTTP Event I/O Processor - Form Data Processing
+        // W3C SCXML Appendix C.2 specifies application/x-www-form-urlencoded format
+        // for HTTP event transmission. Parameters are parsed into _event.data object.
         if (isFormData) {
             // W3C SCXML test 531: Check _scxmleventname parameter with highest priority
             if (req.has_param("_scxmleventname")) {
@@ -116,13 +118,36 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
                 LOG_DEBUG("W3CHttpTestServer: Using _scxmleventname parameter: {}", eventName);
             }
 
-            // W3C SCXML test 518, 519: Map form parameters to _event.data fields
+            // W3C SCXML test 518, 519, 534: Map form parameters to _event.data fields
+            // _scxmleventname is used for both event name AND included in _event.data
             json dataObj = json::object();
             for (const auto &param : req.params) {
-                // Skip _scxmleventname as it's used for event name, not data
-                if (param.first != "_scxmleventname") {
-                    dataObj[param.first] = param.second;
+                // W3C SCXML C.2: Parse numeric values (test 519: param1 should be number, not string)
+                std::string value = param.second;
+                bool isNumeric = !value.empty() && (std::isdigit(value[0]) || value[0] == '-' || value[0] == '+');
+                if (isNumeric) {
+                    try {
+                        // Try parsing as integer first
+                        size_t pos;
+                        int intVal = std::stoi(value, &pos);
+                        if (pos == value.length()) {
+                            // Successfully parsed as integer
+                            dataObj[param.first] = intVal;
+                            continue;
+                        }
+                        // Try parsing as double
+                        double doubleVal = std::stod(value, &pos);
+                        if (pos == value.length()) {
+                            // Successfully parsed as double
+                            dataObj[param.first] = doubleVal;
+                            continue;
+                        }
+                    } catch (...) {
+                        // Fall through to string assignment
+                    }
                 }
+                // Use as string
+                dataObj[param.first] = value;
             }
 
             // Convert to JSON string for event data

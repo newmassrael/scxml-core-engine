@@ -112,6 +112,7 @@ add_library(rsm_unified
     src/common/UniqueIdGenerator.cpp
     src/common/JsonUtils.cpp
     src/common/HttpResponseUtils.cpp
+    src/common/UrlEncodingHelper.cpp
 
     # Runtime implementation
     src/runtime/SCXMLEngineImpl.cpp

@@ -1,5 +1,6 @@
 #include "events/HttpEventTarget.h"
 #include "common/Logger.h"
+#include "common/UrlEncodingHelper.h"
 #include <algorithm>
 #include <iomanip>
 #include <regex>
@@ -37,28 +38,15 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
             std::string payload;
             std::string contentType;
 
-            // W3C SCXML test 531: If params exist, use application/x-www-form-urlencoded
-            if (!event.params.empty()) {
-                // Build form-encoded payload
-                auto urlEncode = [](const std::string &str) -> std::string {
-                    std::ostringstream escaped;
-                    escaped.fill('0');
-                    escaped << std::hex;
-                    for (char c : str) {
-                        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
-                            escaped << c;
-                        } else {
-                            escaped << '%' << std::setw(2) << int((unsigned char)c);
-                        }
-                    }
-                    return escaped.str();
-                };
-
+            // W3C SCXML C.2: Use form-encoded format when event name or params exist (test 518, 534)
+            // This ensures _scxmleventname is sent as a form parameter per W3C spec
+            if (!event.eventName.empty() || !event.params.empty()) {
+                // Build form-encoded payload using UrlEncodingHelper (ARCHITECTURE.md: Zero Duplication)
                 // W3C SCXML C.2: Include event name as _scxmleventname parameter (test 518)
                 // But don't add if event name is empty (test 531: params define event name)
                 bool firstParam = true;
                 if (!event.eventName.empty()) {
-                    payload = "_scxmleventname=" + urlEncode(event.eventName);
+                    payload = "_scxmleventname=" + UrlEncodingHelper::urlEncode(event.eventName);
                     firstParam = false;
                 }
 
@@ -70,7 +58,7 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
                             payload += "&";
                         }
                         firstParam = false;
-                        payload += urlEncode(it->first) + "=" + urlEncode(value);
+                        payload += UrlEncodingHelper::urlEncode(it->first) + "=" + UrlEncodingHelper::urlEncode(value);
                     }
                 }
                 contentType = "application/x-www-form-urlencoded";

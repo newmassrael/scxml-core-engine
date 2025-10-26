@@ -13,6 +13,7 @@
 #include "events/HttpEventTarget.h"
 #include <cstdint>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
 
@@ -342,6 +343,32 @@ public:
                 descriptor.content = eventWithMetadata.data;
             } else {
                 descriptor.data = eventWithMetadata.data;
+
+                // W3C SCXML C.2: Parse JSON eventData to params for form-encoded POST (test 519)
+                // When send has <param> elements, eventData contains JSON like {"param1":"1"}
+                // HTTP POST requires params map for application/x-www-form-urlencoded format
+                if (!eventWithMetadata.data.empty() && eventWithMetadata.data.front() == '{') {
+                    try {
+                        using json = nlohmann::json;
+                        json dataObj = json::parse(eventWithMetadata.data);
+                        for (const auto &[key, value] : dataObj.items()) {
+                            std::string valueStr;
+                            if (value.is_string()) {
+                                valueStr = value.get<std::string>();
+                            } else if (value.is_number_integer()) {
+                                valueStr = std::to_string(value.get<int>());
+                            } else if (value.is_number_float()) {
+                                valueStr = std::to_string(value.get<double>());
+                            } else {
+                                valueStr = value.dump();
+                            }
+                            descriptor.params[key].push_back(valueStr);
+                        }
+                        LOG_DEBUG("AOT raiseExternal: Parsed {} params from JSON eventData", descriptor.params.size());
+                    } catch (const nlohmann::json::exception &e) {
+                        LOG_ERROR("Failed to parse eventData as JSON: {}", e.what());
+                    }
+                }
             }
 
             // Create and use HttpEventTarget
