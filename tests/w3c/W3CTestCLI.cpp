@@ -6,6 +6,9 @@
 #include <iostream>
 #include <set>
 
+// Maximum W3C SCXML test ID (for START~ range support)
+constexpr int MAX_W3C_TEST_ID = 580;
+
 /**
  * @brief Find project root by searching for resources directory
  *
@@ -96,6 +99,8 @@ int main(int argc, char *argv[]) {
         std::vector<std::string> specificTestIds;  // empty means run all tests (supports both "403" and "403a")
         bool runUpToMode = false;                  // true if using ~number format
         int upToTestId = 0;                        // maximum test ID when using ~number
+        int repeatCount = 1;                       // number of times to repeat tests
+        bool stopOnFailure = false;                // stop execution on first failure
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -103,15 +108,46 @@ int main(int argc, char *argv[]) {
                 resourcePath = argv[++i];
             } else if (arg == "--output" && i + 1 < argc) {
                 outputPath = argv[++i];
-            } else if (arg == "--help") {
-                printf("Usage: %s [options]\n", argv[0]);
+            } else if (arg == "--repeat" && i + 1 < argc) {
+                try {
+                    repeatCount = std::stoi(argv[++i]);
+                    if (repeatCount < 1) {
+                        fprintf(stderr, "Error: --repeat count must be >= 1\n");
+                        return 1;
+                    }
+                } catch (const std::exception &) {
+                    fprintf(stderr, "Error: Invalid --repeat count\n");
+                    return 1;
+                }
+            } else if (arg == "--stop-on-fail" || arg == "--fail-on-failure") {
+                stopOnFailure = true;
+            } else if (arg == "--help" || arg == "-h") {
+                printf("Usage: %s [options] [test_ids...]\n", argv[0]);
+                printf("\n");
+                printf("W3C SCXML Compliance Test Runner\n");
+                printf("\n");
                 printf("Options:\n");
-                printf("  --resources PATH  Path to W3C test resources (default: %s)\n", resourcePath.c_str());
-                printf("  --output FILE     XML output file (default: %s)\n", outputPath.c_str());
-                printf("  ID1 ID2 ...       Run specific test IDs (e.g., 150 151 152)\n");
-                printf("  START~END         Run tests in range START to END (e.g., 100~200)\n");
-                printf("  ~NUMBER           Run all tests up to NUMBER (e.g., ~176 runs tests 150-176)\n");
-                printf("  --help           Show this help message\n");
+                printf("  --resources PATH       Path to W3C test resources (auto-detected by default)\n");
+                printf("  --output FILE          XML output file (default: w3c_test_results.xml)\n");
+                printf("  --repeat N             Repeat tests N times (default: 1)\n");
+                printf("  --stop-on-fail         Stop execution on first test failure\n");
+                printf("  --fail-on-failure      Alias for --stop-on-fail\n");
+                printf("  -h, --help             Show this help message\n");
+                printf("\n");
+                printf("Test Selection:\n");
+                printf("  (no arguments)         Run all W3C SCXML tests\n");
+                printf("  ID1 ID2 ...            Run specific test IDs (e.g., 150 151 152)\n");
+                printf("  START~END              Run tests in range (e.g., 100~200)\n");
+                printf("  START~                 Run tests from START to end (e.g., 500~ runs tests 500-580)\n");
+                printf("  ~NUMBER                Run all tests up to NUMBER (e.g., ~176 runs tests 150-176)\n");
+                printf("\n");
+                printf("Examples:\n");
+                printf("  %s 201                 Run test 201\n", argv[0]);
+                printf("  %s 150~160             Run tests 150 through 160\n", argv[0]);
+                printf("  %s 500~                Run tests 500 to end (500-580)\n", argv[0]);
+                printf("  %s 201 --repeat 100    Run test 201 100 times\n", argv[0]);
+                printf("  %s --stop-on-fail      Run all tests, stop on first failure\n", argv[0]);
+                printf("\n");
                 return 0;
             } else if (arg.length() > 1 && arg[0] == '~') {
                 // Handle ~number format for "run up to" functionality
@@ -125,30 +161,38 @@ int main(int argc, char *argv[]) {
                     return 1;
                 }
             } else {
-                // Check if it's a range format: START~END
+                // Check if it's a range format: START~END or START~
                 size_t tildePos = arg.find('~');
                 if (tildePos != std::string::npos && tildePos > 0) {
-                    // Parse START~END range
+                    // Parse START~END or START~ range
                     std::string startStr = arg.substr(0, tildePos);
                     std::string endStr = arg.substr(tildePos + 1);
                     try {
                         int startId = std::stoi(startStr);
-                        int endId = std::stoi(endStr);
+                        int endId;
 
-                        if (startId > endId) {
-                            fprintf(stderr, "Invalid range: start (%d) must be <= end (%d)\n", startId, endId);
-                            return 1;
+                        if (endStr.empty()) {
+                            // START~ format: run from START to maximum test ID
+                            endId = MAX_W3C_TEST_ID;
+                            LOG_INFO("W3C CLI: Range mode enabled - will run tests from {} to end ({})", startId,
+                                     endId);
+                        } else {
+                            // START~END format: run from START to END
+                            endId = std::stoi(endStr);
+                            if (startId > endId) {
+                                fprintf(stderr, "Invalid range: start (%d) must be <= end (%d)\n", startId, endId);
+                                return 1;
+                            }
+                            LOG_INFO("W3C CLI: Range mode enabled - will run tests {}-{} ({} tests)", startId, endId,
+                                     endId - startId + 1);
                         }
 
                         // Add all test IDs in the range
                         for (int testId = startId; testId <= endId; testId++) {
                             specificTestIds.push_back(std::to_string(testId));
                         }
-
-                        LOG_INFO("W3C CLI: Range mode enabled - will run tests {}-{} ({} tests)", startId, endId,
-                                 endId - startId + 1);
                     } catch (const std::exception &) {
-                        fprintf(stderr, "Invalid range format: %s (expected START~END)\n", arg.c_str());
+                        fprintf(stderr, "Invalid range format: %s (expected START~END or START~)\n", arg.c_str());
                         return 1;
                     }
                 } else {
@@ -285,75 +329,105 @@ int main(int argc, char *argv[]) {
             runner.getReporter()->endTestRun();
 
         } else if (!specificTestIds.empty()) {
-            LOG_INFO("W3C CLI: Running {} specific W3C tests", specificTestIds.size());
+            LOG_INFO("W3C CLI: Running {} specific W3C tests (repeat {} times)", specificTestIds.size(), repeatCount);
 
             // Begin test run for consistent reporting
             auto testSuiteInfo = runner.getTestSuite()->getInfo();
-            runner.getReporter()->beginTestRun(testSuiteInfo.name + " (Specific Tests)");
+            std::string testRunName = testSuiteInfo.name + " (Specific Tests)";
+            if (repeatCount > 1) {
+                testRunName += " - " + std::to_string(repeatCount) + " iterations";
+            }
+            runner.getReporter()->beginTestRun(testRunName);
 
             std::vector<RSM::W3C::TestReport> reports;
-            for (const std::string &testId : specificTestIds) {
-                try {
-                    // Check if testId is purely numeric or has variant suffix (e.g., "403a")
-                    bool isNumeric = true;
-                    for (char c : testId) {
-                        if (!std::isdigit(c)) {
-                            isNumeric = false;
-                            break;
-                        }
-                    }
+            bool shouldStop = false;
 
-                    std::vector<RSM::W3C::TestReport> testReports;
-
-                    if (isNumeric) {
-                        // Numeric test ID - run all variants (e.g., "403" runs 403a, 403b, 403c)
-                        LOG_INFO("W3C CLI: Running test {} (including all variants)", testId);
-                        testReports = runner.runAllMatchingTests(std::stoi(testId));
-                    } else {
-                        // Test ID with variant suffix - run exact match only (e.g., "403a" runs only test403a.scxml)
-                        LOG_INFO("W3C CLI: Running exact test {}", testId);
-                        RSM::W3C::TestReport report = runner.runTest(testId);
-                        testReports.push_back(report);
-                    }
-
-                    reports.insert(reports.end(), testReports.begin(), testReports.end());
-
-                    // Show results for all variants
-                    for (const auto &report : testReports) {
-                        std::string status;
-                        switch (report.validationResult.finalResult) {
-                        case RSM::W3C::TestResult::PASS:
-                            status = "PASS";
-                            break;
-                        case RSM::W3C::TestResult::FAIL:
-                            status = "FAIL";
-                            break;
-                        case RSM::W3C::TestResult::ERROR:
-                            status = "ERROR";
-                            break;
-                        case RSM::W3C::TestResult::TIMEOUT:
-                            status = "TIMEOUT";
-                            break;
-                        }
-
-                        LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
-                                 report.executionContext.executionTime.count());
-                        if (report.validationResult.finalResult != RSM::W3C::TestResult::PASS) {
-                            LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
-                        }
-                    }
-
-                } catch (const std::exception &e) {
-                    std::string errorMsg = e.what();
-                    // Test not found is normal for sparse test IDs - log as debug instead of error
-                    if (errorMsg.find("not found") != std::string::npos) {
-                        LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
-                    } else {
-                        LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
-                    }
-                    // Continue with other tests instead of returning
+            for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
+                if (repeatCount > 1) {
+                    LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
+                    printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
                 }
-            }
+
+                for (const std::string &testId : specificTestIds) {
+                    if (shouldStop) {
+                        break;
+                    }
+                    try {
+                        // Check if testId is purely numeric or has variant suffix (e.g., "403a")
+                        bool isNumeric = true;
+                        for (char c : testId) {
+                            if (!std::isdigit(c)) {
+                                isNumeric = false;
+                                break;
+                            }
+                        }
+
+                        std::vector<RSM::W3C::TestReport> testReports;
+
+                        if (isNumeric) {
+                            // Numeric test ID - run all variants (e.g., "403" runs 403a, 403b, 403c)
+                            LOG_INFO("W3C CLI: Running test {} (including all variants)", testId);
+                            testReports = runner.runAllMatchingTests(std::stoi(testId));
+                        } else {
+                            // Test ID with variant suffix - run exact match only (e.g., "403a" runs only
+                            // test403a.scxml)
+                            LOG_INFO("W3C CLI: Running exact test {}", testId);
+                            RSM::W3C::TestReport report = runner.runTest(testId);
+                            testReports.push_back(report);
+                        }
+
+                        reports.insert(reports.end(), testReports.begin(), testReports.end());
+
+                        // Show results for all variants
+                        for (const auto &report : testReports) {
+                            std::string status;
+                            switch (report.validationResult.finalResult) {
+                            case RSM::W3C::TestResult::PASS:
+                                status = "PASS";
+                                break;
+                            case RSM::W3C::TestResult::FAIL:
+                                status = "FAIL";
+                                break;
+                            case RSM::W3C::TestResult::ERROR:
+                                status = "ERROR";
+                                break;
+                            case RSM::W3C::TestResult::TIMEOUT:
+                                status = "TIMEOUT";
+                                break;
+                            }
+
+                            LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
+                                     report.executionContext.executionTime.count());
+                            if (report.validationResult.finalResult != RSM::W3C::TestResult::PASS) {
+                                LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
+
+                                // Check if we should stop on failure
+                                if (stopOnFailure) {
+                                    LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                    printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
+                                    shouldStop = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Break out if we should stop
+                        if (shouldStop) {
+                            break;
+                        }
+
+                    } catch (const std::exception &e) {
+                        std::string errorMsg = e.what();
+                        // Test not found is normal for sparse test IDs - log as debug instead of error
+                        if (errorMsg.find("not found") != std::string::npos) {
+                            LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
+                        } else {
+                            LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
+                        }
+                        // Continue with other tests instead of returning
+                    }
+                }
+            }  // End iteration loop
 
             // Calculate summary for specific tests
             summary.totalTests = reports.size();
