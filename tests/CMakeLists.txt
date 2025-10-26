@@ -615,6 +615,7 @@ rsm_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: Bas
 rsm_generate_static_w3c_test(521 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4/6.2.5: error.communication on invalid targetexpr (Static Hybrid)
 rsm_generate_static_w3c_test(522 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP location field usage (Pure Static)
 rsm_generate_static_w3c_test(531 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: _scxmleventname param overrides event name (Pure Static)
+rsm_generate_static_w3c_test(532 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: HTTP method name fallback for event naming (Pure Static)
 rsm_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: default history content execution
 rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history state not in configuration (parallel)
 rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml
