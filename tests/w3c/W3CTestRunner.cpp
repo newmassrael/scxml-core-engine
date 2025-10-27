@@ -1362,41 +1362,43 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
 
         if (currentTestId == testId) {
             try {
-                // Check if HTTP test should be skipped in Docker TSAN environment
+                // Check if HTTP test should be skipped in Docker TSAN environment (Interpreter only)
+                // AOT tests will handle TSAN skip logic in HttpAotTest::run()
                 if (auto skipReport = shouldSkipHttpTestInDockerTsan(testDir, testId)) {
                     matchingReports.push_back(*skipReport);
                     reporter_->reportTestResult(*skipReport);
-                    continue;
-                }
-
-                // Check if test requires HTTP server using cached helper method
-                if (requiresHttpServer(testDir)) {
-                    LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
-
-                    W3CHttpTestServer httpServer(8080, "/test");
-
-                    if (!httpServer.start()) {
-                        LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
-                        throw std::runtime_error("Failed to start HTTP server for test " + std::to_string(testId));
-                    }
-
-                    LOG_INFO("W3C Test {}: HTTP server started successfully on localhost:8080/test", testId);
-
-                    try {
-                        TestReport result = runSingleTestWithHttpServer(testDir, &httpServer);
-                        httpServer.stop();
-                        LOG_INFO("W3C Test {}: HTTP server stopped successfully", testId);
-                        matchingReports.push_back(result);
-                        reporter_->reportTestResult(result);
-                    } catch (const std::exception &e) {
-                        httpServer.stop();
-                        LOG_ERROR("W3C Test {}: Test execution failed, HTTP server stopped: {}", testId, e.what());
-                        throw;
-                    }
+                    // Don't continue - still run AOT test below
                 } else {
-                    TestReport report = runSingleTest(testDir);
-                    matchingReports.push_back(report);
-                    reporter_->reportTestResult(report);
+                    // Normal Interpreter test execution
+                    // Check if test requires HTTP server using cached helper method
+                    if (requiresHttpServer(testDir)) {
+                        LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
+
+                        W3CHttpTestServer httpServer(8080, "/test");
+
+                        if (!httpServer.start()) {
+                            LOG_ERROR("W3C Test {}: Failed to start HTTP server on port 8080", testId);
+                            throw std::runtime_error("Failed to start HTTP server for test " + std::to_string(testId));
+                        }
+
+                        LOG_INFO("W3C Test {}: HTTP server started successfully on localhost:8080/test", testId);
+
+                        try {
+                            TestReport result = runSingleTestWithHttpServer(testDir, &httpServer);
+                            httpServer.stop();
+                            LOG_INFO("W3C Test {}: HTTP server stopped successfully", testId);
+                            matchingReports.push_back(result);
+                            reporter_->reportTestResult(result);
+                        } catch (const std::exception &e) {
+                            httpServer.stop();
+                            LOG_ERROR("W3C Test {}: Test execution failed, HTTP server stopped: {}", testId, e.what());
+                            throw;
+                        }
+                    } else {
+                        TestReport report = runSingleTest(testDir);
+                        matchingReports.push_back(report);
+                        reporter_->reportTestResult(report);
+                    }
                 }
 
                 // Run AOT engine test for each variant (unsupported tests will return FAIL)
