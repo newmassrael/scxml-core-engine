@@ -87,9 +87,10 @@
 {% for var in model.variables %}
 {% if var.src %}
         // W3C SCXML 5.2.2: Load datamodel variable from external file
-        // basePath is relative to test execution directory (e.g., "w3c_static_generated" for W3C tests)
+        // ARCHITECTURE.md: basePath resolved from executable location for execution independence
         ::RSM::DataModelInitHelper::initializeVariableFromSrc(
-            jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}", "{{ base_path }}",
+            jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
+            ::RSM::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
             });
@@ -111,8 +112,9 @@
             LOG_DEBUG("AOT initializeDataModel: Initialized function variable '{{ var.id }}'");
         }
 {% else %}
-        // W3C SCXML 5.2/5.3: Use shared Helper for datamodel initialization
-        ::RSM::DataModelInitHelper::initializeVariable(
+        // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
+        // Test 277: expr evaluation failure must raise error.execution (no fallback)
+        ::RSM::DataModelInitHelper::initializeVariableFromExpr(
             jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));

@@ -748,6 +748,18 @@ bool JSEngine::destroySessionInternal(const std::string &sessionId) {
         }
     }
 
+    // Clean up state query callback to prevent dangling pointer access
+    // CRITICAL: AOT state machines register lambda callbacks with [this] capture
+    // When state machine is destroyed, callback must be removed to prevent ASAN errors
+    {
+        std::lock_guard<std::mutex> lock(stateMachinesMutex_);
+        auto callbackIt = stateQueryCallbacks_.find(sessionId);
+        if (callbackIt != stateQueryCallbacks_.end()) {
+            stateQueryCallbacks_.erase(callbackIt);
+            LOG_DEBUG("JSEngine: Cleaned up state query callback for destroyed session: {}", sessionId);
+        }
+    }
+
     LOG_DEBUG("JSEngine: Destroyed session '{}'", sessionId);
     return true;
 }

@@ -74,7 +74,7 @@ function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
             OUTPUT "${SCXML_FILE}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
             COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/" || ${CMAKE_COMMAND} -E true
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/test${TEST_NUM}.txt" || ${CMAKE_COMMAND} -E true
             DEPENDS "${RESOURCE_SCXML}" ${SUB_SCXML_DEPENDENCIES}
             COMMENT "Using existing SCXML: test${TEST_NUM}.scxml"
             VERBATIM
@@ -86,7 +86,7 @@ function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
             COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
             COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/" || ${CMAKE_COMMAND} -E true
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/test${TEST_NUM}.txt" || ${CMAKE_COMMAND} -E true
             DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
             COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
             VERBATIM

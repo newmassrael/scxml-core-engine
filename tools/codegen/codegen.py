@@ -281,8 +281,8 @@ class CodeGenerator:
             template = self.env.get_template('state_machine.jinja2')
 
             # Calculate base_path for DataModelInitHelper file loading
-            # W3C tests run from build/tests/, so output_dir "build/tests/w3c_static_generated" → base_path "w3c_static_generated"
-            # General case: use directory name of output_dir as relative path from execution directory
+            # ARCHITECTURE.md: basePath is resolved from executable location at runtime
+            # Use simple directory name - resolveExecutableBasePath() will make it absolute
             base_path = Path(output_dir).name
 
             # Render template

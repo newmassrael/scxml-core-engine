@@ -1,8 +1,38 @@
 #include "common/DataModelInitHelper.h"
 #include "common/FileLoadingHelper.h"
 #include "common/Logger.h"
+#include "runtime/DataContentHelpers.h"
 #include "scripting/JSEngine.h"
 #include <algorithm>
+#include <filesystem>
+
+std::string RSM::DataModelInitHelper::resolveExecutableBasePath(const std::string &relativePath) {
+    // ARCHITECTURE.md: Execution location independence for AOT tests
+    // Convert relative basePath to absolute based on executable location
+
+    namespace fs = std::filesystem;
+
+    try {
+        // Get executable path (Linux-specific: /proc/self/exe)
+        // For portability, could add platform detection (Mac: _NSGetExecutablePath, Windows: GetModuleFileName)
+        fs::path exePath = fs::canonical("/proc/self/exe");
+
+        // Get executable directory
+        fs::path exeDir = exePath.parent_path();
+
+        // Resolve relative path from executable directory
+        fs::path absolutePath = exeDir / relativePath;
+
+        std::string result = absolutePath.string();
+        LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath: '{}' -> '{}'", relativePath, result);
+        return result;
+
+    } catch (const std::exception &e) {
+        LOG_ERROR("DataModelInitHelper::resolveExecutableBasePath failed for '{}': {}", relativePath, e.what());
+        // Fallback: return original relative path
+        return relativePath;
+    }
+}
 
 bool RSM::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
     // W3C SCXML B.2: Detect JavaScript function literals
@@ -75,28 +105,41 @@ bool RSM::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std:
         return true;
     }
 
-    // W3C SCXML B.2: Non-XML content - evaluate as JavaScript expression first (matches Interpreter)
-    // ARCHITECTURE.md Zero Duplication: Matches StateMachine.cpp:1772-1778
+    // W3C SCXML B.2: Non-XML content - try evaluating as JavaScript expression first
+    // ARCHITECTURE.md Zero Duplication: Matches StateMachine.cpp:1772-1778 (try eval first)
     auto evalResult = jsEngine.evaluateExpression(sessionId, content);
     evalResult.wait();
     auto evalJsResult = evalResult.get();
 
-    if (!evalJsResult.isSuccess()) {
-        errorCallback("Failed to evaluate expression for " + varId + ": " + evalJsResult.getErrorMessage());
+    if (evalJsResult.isSuccess()) {
+        // Successfully evaluated as JavaScript expression
+        auto setResult = jsEngine.setVariable(sessionId, varId, evalJsResult.getInternalValue());
+        setResult.wait();
+        auto setJsResult = setResult.get();
+
+        if (!setJsResult.isSuccess()) {
+            errorCallback("Failed to set variable " + varId + ": " + setJsResult.getErrorMessage());
+            return false;
+        }
+
+        LOG_DEBUG("DataModelInitHelper: Initialized {} with evaluated content", varId);
+        return true;
+    }
+
+    // W3C SCXML B.2 test 558: Evaluation failed - normalize whitespace and store as string
+    // ARCHITECTURE.md Zero Duplication: Matches StateMachine.cpp:1793-1811 (fallback to whitespace normalization)
+    std::string normalized = normalizeWhitespace(content);
+
+    auto setStrResult = jsEngine.setVariable(sessionId, varId, normalized);
+    setStrResult.wait();
+    auto setStrJsResult = setStrResult.get();
+
+    if (!setStrJsResult.isSuccess()) {
+        errorCallback("Failed to set normalized string for " + varId + ": " + setStrJsResult.getErrorMessage());
         return false;
     }
 
-    // Set variable with evaluated result
-    auto setResult = jsEngine.setVariable(sessionId, varId, evalJsResult.getInternalValue());
-    setResult.wait();
-    auto setJsResult = setResult.get();
-
-    if (!setJsResult.isSuccess()) {
-        errorCallback("Failed to set variable " + varId + ": " + setJsResult.getErrorMessage());
-        return false;
-    }
-
-    LOG_DEBUG("DataModelInitHelper: Initialized {} with evaluated content", varId);
+    LOG_DEBUG("DataModelInitHelper: Initialized {} with whitespace-normalized string: '{}'", varId, normalized);
     return true;
 }
 
@@ -127,16 +170,30 @@ bool RSM::DataModelInitHelper::initializeVariableFromSrc(JSEngine &jsEngine, con
 bool RSM::DataModelInitHelper::initializeVariableFromExpr(JSEngine &jsEngine, const std::string &sessionId,
                                                           const std::string &varId, const std::string &expr,
                                                           std::function<void(const std::string &)> errorCallback) {
-    // W3C SCXML 5.2.2: Evaluate expression and assign to variable
-    auto result = jsEngine.setVariable(sessionId, varId, expr);
-    result.wait();
-    auto jsResult = result.get();
+    // W3C SCXML 5.2/5.3: Evaluate expr attribute and assign to variable
+    // Test 277: expr evaluation failure must raise error.execution (no fallback to whitespace normalization)
+    // ARCHITECTURE.md Zero Duplication: Matches AOT engine template (jsengine_helpers.jinja2)
 
-    if (!jsResult.isSuccess()) {
-        errorCallback("Failed to initialize " + varId + " with expr: " + jsResult.getErrorMessage());
+    auto evalResult = jsEngine.evaluateExpression(sessionId, expr);
+    evalResult.wait();
+    auto evalJsResult = evalResult.get();
+
+    if (!evalJsResult.isSuccess()) {
+        // W3C SCXML 5.3: Evaluation failure raises error.execution, variable remains unbound
+        errorCallback("Failed to evaluate expr for variable " + varId + ": " + expr);
         return false;
     }
 
-    LOG_DEBUG("DataModelInitHelper: Initialized {} with expr: {}", varId, expr);
+    // Evaluation succeeded - set variable to evaluated result
+    auto setResult = jsEngine.setVariable(sessionId, varId, evalJsResult.getInternalValue());
+    setResult.wait();
+    auto setJsResult = setResult.get();
+
+    if (!setJsResult.isSuccess()) {
+        errorCallback("Failed to set variable " + varId + " after expr evaluation: " + setJsResult.getErrorMessage());
+        return false;
+    }
+
+    LOG_DEBUG("DataModelInitHelper: Initialized {} from expr: '{}'", varId, expr);
     return true;
 }
