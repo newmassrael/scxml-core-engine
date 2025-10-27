@@ -627,6 +627,7 @@ rsm_generate_static_w3c_test(557 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2: ECM
 rsm_generate_static_w3c_test(558 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2: ECMAScript whitespace normalization for non-XML content (Static Hybrid)
 rsm_generate_static_w3c_test(560 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10: _event.data param structure in ECMAScript datamodel (Static Hybrid)
 rsm_generate_static_w3c_test(561 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: ECMAScript DOM object for XML event data (Static Hybrid)
+rsm_generate_static_w3c_test(562 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: ECMAScript content space normalization (Static Hybrid)
 rsm_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: default history content execution
 rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history state not in configuration (parallel)
 rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml
