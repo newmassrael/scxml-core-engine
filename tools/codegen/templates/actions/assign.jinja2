@@ -1,3 +1,27 @@
+{#
+    Assign Action Template (Jinja2)
+
+    Last Modified: 2025-10-28
+    ARCHITECTURE.md Version: 2025-10-23
+
+    ARCHITECTURE.md Compliance (Lines 311-491):
+    - Zero Duplication: Uses shared AssignHelper for validation
+    - Zero Duplication: Uses shared AssignmentExecutionHelper for execution
+    - Single Source of Truth: Assignment strategy matches Interpreter engine exactly
+    - W3C SCXML 5.3: Data model assignment semantics
+    - W3C SCXML 5.10: System variable reference preservation (_event, _sessionid, etc.)
+    - W3C SCXML B.2: System variable immutability enforcement
+
+    Helper Classes Used:
+    - AssignHelper: W3C SCXML 5.3/5.4/B.2 location validation
+    - AssignmentExecutionHelper: W3C SCXML 5.3/5.10 assignment execution strategy
+
+    Critical Fix (2025-10-28):
+    - Refactored from inline executeScript to shared AssignmentExecutionHelper
+    - Eliminates divergence between Interpreter and AOT engines
+    - Ensures both engines use identical assignment logic (system variable detection, reference preservation)
+    - Test 329 (W3C SCXML 5.10 system variable immutability) validates correctness
+#}
 {
 // W3C SCXML 5.3, 5.4: Validate assignment location using shared AssignHelper
 if (::RSM::AssignHelper::isValidLocation("{{ action.location }}")) {
@@ -6,28 +30,37 @@ if (::RSM::AssignHelper::isValidLocation("{{ action.location }}")) {
     this->ensureJSEngine();
     LOG_DEBUG("AOT assign: After ensureJSEngine, sessionId={}", sessionId_.value_or("NONE"));
     auto& jsEngine = ::RSM::JSEngine::instance();
-    {
-        // W3C SCXML 5.3: Execute assignment as JavaScript expression to preserve object references
-        // Using direct assignment (location = expr) instead of getInternalValue() for reference semantics
-        {% if action.content %}
-        // W3C SCXML 5.4: Assign XML child content as string literal
-        LOG_DEBUG("AOT assign: Evaluating: {{ action.location }} = '{{ action.content | replace('"', '\\"') | replace("'", "\\'") }}'");
-        auto exprResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.location }} = '{{ action.content | replace('"', '\\"') | replace("'", "\\'") }}'").get();
-        {% else %}
-        // Remove trailing semicolon from expr to avoid syntax error in parenthesized expression
-        LOG_DEBUG("AOT assign: Evaluating: {{ action.location }} = ({{ action.expr.rstrip(';') }})");
-        auto exprResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.location }} = ({{ action.expr.rstrip(';') }})").get();
-        {% endif %}
-        LOG_DEBUG("AOT assign: Result - success={}", ::RSM::JSEngine::isSuccess(exprResult));
-        if (!::RSM::JSEngine::isSuccess(exprResult)) {
-            {% if action.content %}
-            std::string errorMsg = "Failed to evaluate assignment expression: {{ action.location }} = '{{ action.content | replace('"', '\\"') | replace("'", "\\'") }}'";
-            {% else %}
-            std::string errorMsg = "Failed to evaluate assignment expression: {{ action.location }} = ({{ action.expr.rstrip(';') }})";
-            {% endif %}
-            LOG_ERROR("{}", errorMsg);
-            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+
+    // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
+    // W3C SCXML 5.3/5.10: Assignment execution with proper system variable handling
+    {% if action.content %}
+    // W3C SCXML 5.4: XML content assignments use string literal expression
+    std::string expr = "'{{ action.content | replace('"', '\\"') | replace("'", "\\'") }}'";
+    {% else %}
+    std::string expr = "{{ action.expr.rstrip(';') }}";
+    {% endif %}
+
+    bool success = ::RSM::AssignmentExecutionHelper::executeAssignment(
+        jsEngine, sessionId_.value(), "{{ action.location }}", expr,
+        [&engine](const std::string& error) {
+            LOG_ERROR("AOT assign: {}", error);
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
         }
+    );
+
+    if (!success) {
+        // Assignment failed, error.execution already raised by callback
+        {% if action.content %}
+        LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = content");
+        {% else %}
+        LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = {{ action.expr.rstrip(';') }}");
+        {% endif %}
+    } else {
+        {% if action.content %}
+        LOG_DEBUG("AOT assign: Successfully assigned {{ action.location }} = content");
+        {% else %}
+        LOG_DEBUG("AOT assign: Successfully assigned {{ action.location }} = {{ action.expr.rstrip(';') }}");
+        {% endif %}
     }
 } else {
     // W3C SCXML 5.3/5.4/B.2: Invalid or read-only location

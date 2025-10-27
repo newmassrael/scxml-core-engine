@@ -462,8 +462,10 @@ public:
      */
     bool runUntilCompletion(std::chrono::milliseconds timeout,
                             std::chrono::milliseconds pollInterval = std::chrono::milliseconds(10)) {
+        // W3C SCXML: If already stopped but reached final state during initialize(), return true
+        // This handles tests like 580 where eventless transitions complete during initialization
         if (!isRunning_) {
-            return false;
+            return isInFinalState();
         }
 
         auto startTime = std::chrono::steady_clock::now();
@@ -481,6 +483,8 @@ public:
             tick();
         }
 
+        LOG_DEBUG("AOT runUntilCompletion: Exiting loop, isInFinalState()={}, getCurrentState()={}", isInFinalState(),
+                  static_cast<int>(getCurrentState()));
         return true;  // Reached final state
     }
 
@@ -713,6 +717,32 @@ protected:
                       "machine",
                       MAX_ITERATIONS);
             stop();
+        }
+
+        // W3C SCXML 3.13: Check if we reached a top-level final state after eventless transitions
+        // For parallel states, check if any active state is a top-level final state
+        if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
+            auto activeStates = getActiveStates();
+            for (const auto &state : activeStates) {
+                if (StatePolicy::isFinalState(state) && StatePolicy::getParent(state) == std::nullopt) {
+                    LOG_INFO("AOT checkEventlessTransitions: Reached top-level final state {}, halting processing (W3C "
+                             "SCXML 3.13)",
+                             static_cast<int>(state));
+                    currentState_ = state;  // W3C SCXML: Update currentState_ for getCurrentState()
+                    LOG_DEBUG("AOT checkEventlessTransitions: After update, getCurrentState() = {}",
+                              static_cast<int>(getCurrentState()));
+                    stop();
+                    break;
+                }
+            }
+        } else {
+            // For non-parallel states, check currentState_
+            if (StatePolicy::isFinalState(currentState_) && StatePolicy::getParent(currentState_) == std::nullopt) {
+                LOG_INFO("AOT checkEventlessTransitions: Reached top-level final state {}, halting processing (W3C "
+                         "SCXML 3.13)",
+                         static_cast<int>(currentState_));
+                stop();
+            }
         }
     }
 

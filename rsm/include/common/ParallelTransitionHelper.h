@@ -315,31 +315,43 @@ public:
                         current = parent.value();
                     }
                 } else {
-                    // W3C SCXML 3.13: Collect all active descendants of LCA (excluding LCA itself)
+                    // W3C SCXML 3.13: Collect all active descendants of LCA
+                    // External transitions must exit source state even if source == LCA
+                    bool shouldExitSource = !trans.isInternal && trans.source == lca.value();
+
                     for (const auto &activeState : activeStates) {
                         if (activeState == lca.value()) {
-                            continue;  // Exclude LCA from exit set
+                            // W3C SCXML 3.13: For external transitions where source == LCA, include source
+                            if (!shouldExitSource) {
+                                continue;  // Exclude LCA from exit set (internal or source != LCA)
+                            }
                         }
 
-                        // Check if activeState is a descendant of LCA
-                        bool isDescendant = false;
-                        auto current = activeState;
+                        // Check if activeState is a descendant of LCA or is LCA itself (for external source == LCA)
+                        bool shouldExit = false;
 
-                        while (true) {
-                            auto parent = PolicyType::getParent(current);
-                            if (!parent.has_value()) {
-                                break;  // Reached root without finding LCA
-                            }
+                        if (activeState == lca.value() && shouldExitSource) {
+                            shouldExit = true;  // Exit source state for external transition
+                        } else {
+                            // Check if activeState is a descendant of LCA
+                            auto current = activeState;
 
-                            if (parent.value() == lca.value()) {
-                                isDescendant = true;
-                                break;
+                            while (true) {
+                                auto parent = PolicyType::getParent(current);
+                                if (!parent.has_value()) {
+                                    break;  // Reached root without finding LCA
+                                }
+
+                                if (parent.value() == lca.value()) {
+                                    shouldExit = true;
+                                    break;
+                                }
+                                current = parent.value();
                             }
-                            current = parent.value();
                         }
 
-                        // Add to exit set if descendant and not already present
-                        if (isDescendant) {
+                        // Add to exit set if should exit and not already present
+                        if (shouldExit) {
                             bool alreadyInSet =
                                 std::find(statesToExit.begin(), statesToExit.end(), activeState) != statesToExit.end();
                             if (!alreadyInSet) {
