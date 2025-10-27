@@ -82,6 +82,20 @@
 
 {% endfor %}
 {% endif %}
+{% if state.initial_history_id %}
+                // W3C SCXML 3.11: Initial transition targets history state {{ state.initial_history_id }}
+                // Execute history default transition executable content if no history is stored
+                if (!history_{{ state.initial_history_id }}.has_value() || history_{{ state.initial_history_id }}->empty()) {
+                    LOG_DEBUG("AOT history: No stored history for {{ state.initial_history_id }}, executing default transition actions");
+{% for action in state.initial_history_default_actions %}
+                    {% set in_entry_exit = true %}
+                    {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+                } else {
+                    LOG_DEBUG("AOT history: Found stored history for {{ state.initial_history_id }}, skipping default transition actions");
+                }
+{% endif %}
 {% if state.is_final and state.donedata %}
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 {

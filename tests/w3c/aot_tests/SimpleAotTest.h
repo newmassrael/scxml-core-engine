@@ -96,23 +96,13 @@ public:
         SM sm;
         sm.initialize();
 
-        // W3C SCXML 6.2: Process scheduled events until completion or timeout
-        auto startTime = std::chrono::steady_clock::now();
-        const auto timeout = getTimeout();
+        // W3C SCXML 6.2: Use runUntilCompletion() for automatic event scheduler polling
+        bool completed = sm.runUntilCompletion(getTimeout());
 
-        while (!sm.isInFinalState()) {
-            // Check for timeout
-            if (std::chrono::steady_clock::now() - startTime > timeout) {
-                // Cleanup JSEngine session before returning to prevent stack-use-after-return
-                sm.getPolicy().ensureJSEngineSessionDestroyed();
-                return false;
-            }
-
-            // Sleep briefly to allow scheduled events to become ready
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-            // W3C SCXML 6.2: Poll scheduler with Event::NONE
-            sm.tick();
+        if (!completed) {
+            // Timeout - cleanup JSEngine session before returning
+            sm.getPolicy().ensureJSEngineSessionDestroyed();
+            return false;
         }
 
         bool result = sm.getCurrentState() == SM::State::Pass;

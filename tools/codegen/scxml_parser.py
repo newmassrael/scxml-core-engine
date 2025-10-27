@@ -52,6 +52,9 @@ class State:
     donedata: Optional[Dict] = None  # W3C SCXML 5.5: Donedata for final states
     document_order: int = 0  # W3C SCXML 3.13: Document order for exit order tie-breaking
     initial_transition_actions: List[Dict] = field(default_factory=list)  # W3C SCXML 3.3.2: <initial> transition executable content
+    initial_history_id: str = ""  # W3C SCXML 3.11: History state ID if initial targets history
+    initial_history_default_target: str = ""  # W3C SCXML 3.11: Default target of history state (fallback)
+    initial_history_default_actions: List[Dict] = field(default_factory=list)  # W3C SCXML 3.11: Executable content of history default transition
 
 
 @dataclass
@@ -59,6 +62,7 @@ class SCXMLModel:
     """Simplified SCXML model for code generation"""
     name: str
     initial: str = ""
+    initial_leaf: str = ""  # W3C SCXML 3.3: Resolved leaf state of initial (for compound states)
     binding: str = "early"  # W3C SCXML 5.3: early or late
     datamodel_type: str = "ecmascript"  # W3C SCXML B.1
 
@@ -203,6 +207,12 @@ class SCXMLParser:
         # Resolve history state transitions (W3C SCXML 3.11)
         # Replace history state targets with their default transition targets
         self._resolve_history_targets()
+        
+        # W3C SCXML 3.3: After history resolution, compute the actual leaf state for initial
+        # This handles cases where scxml initial points to a compound state whose initial was resolved
+        # Example: <scxml initial="s0"> where s0's initial was resolved from history to leaf
+        if self.model.initial:
+            self.model.initial_leaf = self._resolve_to_leaf_state(self.model.initial)
         
         # W3C SCXML 3.4: Compute parallel regions (child states of parallel states)
         self._compute_parallel_regions()
@@ -559,26 +569,30 @@ class SCXMLParser:
             history_type = history_elem.get('type', 'shallow')  # W3C SCXML 3.11: shallow or deep
 
             # W3C SCXML 3.11: History states have default transitions
-            # Extract the default target from the history's transition element
+            # Extract the default target and executable content from the history's transition element
             default_target = None
+            default_actions = []
             for trans_elem in ns_findall(history_elem, 'transition'):
                 target = trans_elem.get('target')
                 if target:
                     default_target = target
+                    # W3C SCXML 3.11: Parse executable content of history default transition
+                    default_actions = self._parse_executable_content(trans_elem)
                     break  # Use first transition as default
 
             if default_target:
                 # Map history state ID to its default transition target
                 self.model.history_default_targets[history_id] = default_target
-                
-                # Store comprehensive history state information  
+
+                # Store comprehensive history state information
                 # Leaf target will be resolved later in _resolve_history_targets()
                 self.model.history_states[history_id] = {
                     'parent': parent_id,  # Parent compound state
                     'type': history_type,  # shallow or deep
-                    'default_target': default_target  # Default transition target
+                    'default_target': default_target,  # Default transition target
+                    'default_actions': default_actions  # W3C SCXML 3.11: Executable content of default transition
                 }
-                
+
                 self.model.has_history_states = True
 
     def _parse_transition(self, trans_elem) -> Transition:
@@ -1482,13 +1496,22 @@ class SCXMLParser:
                         transition.history_target = transition.target
                     # Keep original target for template to generate restoration logic
         
-        # W3C SCXML 3.11: Resolve state.initial if it points to history state
+        # W3C SCXML 3.11: Mark states whose initial transition targets history
         # This handles <initial><transition target="h1"/></initial> where h1 is a history state
+        # Instead of replacing the target, we mark it for template to generate history restoration logic
         for state in self.model.states.values():
             if state.initial in self.model.history_default_targets:
-                # Replace history state ID with its default target's leaf state
                 history_info = self.model.history_states[state.initial]
                 leaf_target = history_info['leaf_target']
+                default_actions = history_info.get('default_actions', [])
+
+                # Mark this state as having initial->history transition
+                state.initial_history_id = state.initial
+                state.initial_history_default_target = leaf_target
+                state.initial_history_default_actions = default_actions
+
+                # Keep state.initial as the leaf target for fallback (when history is empty)
+                # This ensures getInitialChild() returns a valid state for entry chain building
                 state.initial = leaf_target
 
     def _resolve_to_leaf_state(self, state_id: str) -> str:

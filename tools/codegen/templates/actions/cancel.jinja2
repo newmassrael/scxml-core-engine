@@ -6,9 +6,9 @@
     auto sendidResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.sendidexpr | escape_cpp }}").get();
     if (::RSM::JSEngine::isSuccess(sendidResult)) {
         std::string sendidToCancel = ::RSM::JSEngine::resultToString(sendidResult);
-        eventScheduler_.cancelEvent(sendidToCancel);
+        engine.cancelEvent(sendidToCancel);
     }
 }
 {% elif action.sendid %}
-eventScheduler_.cancelEvent("{{ action.sendid }}");
+engine.cancelEvent("{{ action.sendid }}");
 {% endif %}
