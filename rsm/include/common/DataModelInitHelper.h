@@ -24,6 +24,24 @@ class JSEngine;
 class DataModelInitHelper {
 public:
     /**
+     * @brief Resolve basePath relative to executable location
+     *
+     * AOT tests need location-independent basePath resolution.
+     * Converts relative basePath to absolute based on executable location.
+     *
+     * @param relativePath Relative path from executable directory (e.g., "w3c_static_generated")
+     * @return Absolute basePath for FileLoadingHelper
+     *
+     * Example:
+     * - Executable: /home/user/project/build/tests/w3c_test_cli
+     * - relativePath: "w3c_static_generated"
+     * - Returns: "/home/user/project/build/tests/w3c_static_generated"
+     *
+     * ARCHITECTURE.md: Execution location independence for AOT tests
+     */
+    static std::string resolveExecutableBasePath(const std::string &relativePath);
+
+    /**
      * @brief Check if expression is a JavaScript function literal
      *
      * @param expr Expression to check

@@ -1635,8 +1635,9 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
             LOG_DEBUG("StateMachine: Initialized function variable '{}' from expression '{}'", id, expr);
         } else {
             // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-            // W3C SCXML 5.2/5.3: Standard evaluation for non-function expressions
-            bool success = DataModelInitHelper::initializeVariable(
+            // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
+            // Test 277: expr evaluation failure must raise error.execution (no fallback)
+            bool success = DataModelInitHelper::initializeVariableFromExpr(
                 RSM::JSEngine::instance(), sessionId_, id, expr, [this, &id](const std::string &msg) {
                     // W3C SCXML 5.3: Raise error.execution on initialization failure
                     if (eventRaiser_) {
@@ -1748,67 +1749,21 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
             }
         }
     } else if (!content.empty()) {
-        // W3C SCXML B.2: Check content type (XML/JSON/text) and handle appropriately
-        if (isXMLContent(content)) {
-            // W3C SCXML B.2 test 557: Parse XML content as DOM object
-            LOG_DEBUG("StateMachine: Parsing XML inline content as DOM for variable '{}'", id);
+        // W3C SCXML B.2: Initialize with inline content
+        // ARCHITECTURE.md: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
+        bool success = DataModelInitHelper::initializeVariable(RSM::JSEngine::instance(), sessionId_, id, content,
+                                                               [this, &id](const std::string &msg) {
+                                                                   LOG_ERROR("StateMachine: {}", msg);
+                                                                   if (eventRaiser_) {
+                                                                       eventRaiser_->raiseEvent("error.execution", msg);
+                                                                   }
+                                                               });
 
-            auto setVarFuture = RSM::JSEngine::instance().setVariableAsDOM(sessionId_, id, content);
-            auto setResult = setVarFuture.get();
-
-            if (!RSM::JSEngine::isSuccess(setResult)) {
-                LOG_ERROR("StateMachine: Failed to set XML content for variable '{}': {}", id,
-                          setResult.getErrorMessage());
-                if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", "Failed to set XML content for '" + id +
-                                                                    "': " + setResult.getErrorMessage());
-                }
-                return;
-            }
-
-            LOG_DEBUG("StateMachine: Set variable '{}' as XML DOM object", id);
-        } else {
-            // W3C SCXML B.2: Try evaluating as JSON/JS first, fall back to text (test 558)
-            auto future = RSM::JSEngine::instance().evaluateExpression(sessionId_, content);
-            auto result = future.get();
-
-            if (RSM::JSEngine::isSuccess(result)) {
-                // Successfully evaluated as JSON/JS expression
-                auto setVarFuture = RSM::JSEngine::instance().setVariable(sessionId_, id, result.getInternalValue());
-                auto setResult = setVarFuture.get();
-
-                if (!RSM::JSEngine::isSuccess(setResult)) {
-                    LOG_ERROR("StateMachine: Failed to set variable '{}' from content: {}", id,
-                              setResult.getErrorMessage());
-                    if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution",
-                                                 "Failed to set variable '" + id +
-                                                     "' from content: " + setResult.getErrorMessage());
-                    }
-                    return;
-                }
-
-                LOG_DEBUG("StateMachine: Initialized variable '{}' from content", id);
-            } else {
-                // W3C SCXML B.2 test 558: Non-JSON content - normalize whitespace and store as string
-                std::string normalized = normalizeWhitespace(content);
-
-                auto setVarFuture = RSM::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{normalized});
-                auto setResult = setVarFuture.get();
-
-                if (!RSM::JSEngine::isSuccess(setResult)) {
-                    LOG_ERROR("StateMachine: Failed to set normalized text for variable '{}': {}", id,
-                              setResult.getErrorMessage());
-                    if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution", "Failed to set text content for '" + id +
-                                                                        "': " + setResult.getErrorMessage());
-                    }
-                    return;
-                }
-
-                LOG_DEBUG("StateMachine: Set variable '{}' with normalized text content: '{}'", id, normalized);
-            }
+        if (!success) {
+            return;  // Error already handled by callback
         }
+
+        LOG_DEBUG("StateMachine: Initialized variable '{}' from content", id);
     } else {
         // W3C SCXML 5.3: No expression or content - create variable with undefined value (test 445)
         auto setVarFuture = RSM::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
