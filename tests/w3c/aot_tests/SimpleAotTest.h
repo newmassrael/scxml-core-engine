@@ -105,7 +105,10 @@ public:
             return false;
         }
 
-        bool result = sm.getCurrentState() == SM::State::Pass;
+        auto currentState = sm.getCurrentState();
+        LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}",
+                  static_cast<int>(currentState), static_cast<int>(SM::State::Pass));
+        bool result = currentState == SM::State::Pass;
 
         // W3C SCXML: Cleanup JSEngine session before stack unwinding
         // This prevents stack-use-after-return when JSEngine background thread

@@ -8,6 +8,7 @@
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
 #include "common/AssignHelper.h"
+#include "common/AssignmentExecutionHelper.h"
 #include "common/Constants.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
@@ -124,66 +125,20 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
         // Transform numeric variable names to JavaScript-compatible identifiers
         std::string jsLocation = transformVariableName(location);
 
-        // W3C SCXML 5.10: Special handling for system variable assignment
-        // When assigning a system variable to another variable, use direct script assignment
-        // to preserve object references (important for _event object comparison in test 329)
-        if (expr == "_sessionid" || expr == "_event" || expr == "_name" || expr == "_ioprocessors" || expr == "_x") {
-            std::string assignScript = jsLocation + " = " + expr + ";";
-            auto scriptResult = JSEngine::instance().executeScript(sessionId_, assignScript).get();
-            if (!scriptResult.isSuccess()) {
-                handleJSError("system variable assignment", "System variable assignment failed");
-                if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", "System variable assignment failed: " + expr);
-                }
-                return false;
-            }
-            LOG_DEBUG("Variable assigned (system variable reference): {} = {} (JS: {})", location, expr, jsLocation);
-            return true;
-        }
-
-        // Assign actions should not trigger _event updates
-        // Use direct JSEngine evaluation without ActionExecutor context
-        auto evalResult = JSEngine::instance().evaluateExpression(sessionId_, expr).get();
-        if (!evalResult.isSuccess()) {
-            handleJSError("expression evaluation for assignment", "Expression evaluation failed");
-            // W3C SCXML 5.9: Raise error.execution for illegal value expression
-            if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution", "Assignment expression evaluation failed - location: " +
-                                                                location + ", expr: " + expr);
-            }
-            return false;
-        }
-
-        // Then assign the result to the location
-        // For simple variable names, use setVariable
-        // For complex paths like "data.field", use executeScript
-        if (std::regex_match(jsLocation, std::regex("^[a-zA-Z_][a-zA-Z0-9_]*$"))) {
-            // Simple variable name - use setVariable
-            auto setResult =
-                JSEngine::instance().setVariable(sessionId_, jsLocation, evalResult.getInternalValue()).get();
-            if (!setResult.isSuccess()) {
-                handleJSError("variable assignment", "Variable assignment failed");
+        // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
+        // W3C SCXML 5.3/5.10: Assignment execution with proper system variable handling
+        bool success = AssignmentExecutionHelper::executeAssignment(
+            JSEngine::instance(), sessionId_, jsLocation, expr, [this, &location, &expr](const std::string &error) {
+                handleJSError("assignment execution", error);
                 // W3C SCXML 5.9: Raise error.execution for assignment failure
                 if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", "Variable assignment failed: " + location);
+                    eventRaiser_->raiseEvent("error.execution",
+                                             "Assignment failed - location: " + location + ", expr: " + expr);
                 }
-                return false;
-            }
-        } else {
-            // Complex path - use script assignment
-            std::ostringstream assignScript;
-            assignScript << jsLocation << " = (" << expr << ");";
-            LOG_DEBUG("DEBUG: Complex assignment script: '{}'", assignScript.str());
+            });
 
-            auto scriptResult = JSEngine::instance().executeScript(sessionId_, assignScript.str()).get();
-            if (!scriptResult.isSuccess()) {
-                handleJSError("complex variable assignment", "Complex variable assignment failed");
-                // W3C SCXML 5.9: Raise error.execution for complex assignment failure
-                if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", "Complex assignment failed: " + location);
-                }
-                return false;
-            }
+        if (!success) {
+            return false;
         }
 
         LOG_DEBUG("Variable assigned: {} = {} (JS: {})", location, expr, jsLocation);

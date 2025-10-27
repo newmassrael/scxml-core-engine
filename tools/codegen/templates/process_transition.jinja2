@@ -60,9 +60,44 @@
 {% macro transition_execution_or_collection(trans, trans_index) %}
 {% if trans.target %}
 {% if trans.history_target is defined %}
-                    // W3C SCXML 3.11: History transitions execute immediately (runtime target resolution)
-                    // Collection mode not supported for history transitions
-{{ restore_history_or_transition(trans) }}
+                    // W3C SCXML 3.11: History transition - resolve target at runtime
+                    State resolvedHistoryTarget_{{ trans.history_target }};
+                    // W3C SCXML 3.11: Restore history or use default transition (matches Interpreter logic)
+                    if (history_{{ trans.history_target }}.has_value()) {
+                        // Restore from recorded history (may contain multiple states for parallel regions)
+                        const auto& recordedStates = history_{{ trans.history_target }}.value();
+                        if (!recordedStates.empty()) {
+                            resolvedHistoryTarget_{{ trans.history_target }} = recordedStates[0];
+                            LOG_DEBUG("AOT processTransition: Resolved history {{ trans.history_target }} -> {} ({} states recorded)",
+                                     static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}), recordedStates.size());
+                        } else {
+{% set history_info = model.history_states[trans.history_target] %}
+{% set leaf_target = history_info.leaf_target %}
+                            // W3C SCXML 3.11: Empty history was recorded (valid scenario) - use default transition
+                            resolvedHistoryTarget_{{ trans.history_target }} = State::{{ leaf_target | capitalize }};
+                            LOG_DEBUG("AOT processTransition: Empty history for {{ trans.history_target }}, using default transition -> {}", static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
+                        }
+                    } else {
+{% set history_info = model.history_states[trans.history_target] %}
+{% set leaf_target = history_info.leaf_target %}
+                        // History never recorded - use default transition
+                        resolvedHistoryTarget_{{ trans.history_target }} = State::{{ leaf_target | capitalize }};
+                        LOG_DEBUG("AOT processTransition: No history recorded for {{ trans.history_target }}, using default transition -> {}", static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
+                    }
+
+                    // W3C SCXML Appendix D + 3.10: Support collection mode for history transitions
+                    // This ensures proper exit set computation (including active parent state)
+                    if (collectMode != nullptr) {
+                        // Collection mode: Store resolved history transition
+                        LOG_DEBUG("AOT processTransition: Collecting history transition {} -> {}", static_cast<int>(checkState), static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
+                        collectMode->push_back(TransitionInfo(checkState, resolvedHistoryTarget_{{ trans.history_target }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if trans.type == 'internal' else 'false' }}));
+                        transitionTaken = true;
+                    } else {
+                        // Immediate execution mode
+                        LOG_DEBUG("AOT processTransition: Immediate history transition {} -> {}", static_cast<int>(currentState), static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
+                        currentState = resolvedHistoryTarget_{{ trans.history_target }};
+                        transitionTaken = true;
+                    }
 {% else %}
                     // W3C SCXML Appendix D: Support collection mode for optimal transition set
                     if (collectMode != nullptr) {
@@ -131,7 +166,8 @@
 
 
         // W3C SCXML 5.10: Set _event variable in JSEngine
-        if (!pendingEventName_.empty() || !pendingEventData_.empty() || !pendingEventOrigin_.empty()) {
+        // Only set _event when processing actual events, not during eventless transition checks
+        if (event != Event() && (!pendingEventName_.empty() || !pendingEventData_.empty() || !pendingEventOrigin_.empty())) {
             LOG_DEBUG("AOT processTransition: Setting _event (name='{}', data='{}', type='{}', sendId='{}', origin='{}', invokeId='{}')",
                       pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventInvokeId_);
             setCurrentEventInJSEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_);
@@ -293,24 +329,6 @@
         }
 
 {% endif %}
-{% if model.needs_event_name or model.needs_event_data %}
-        // W3C SCXML 5.10: Clear event fields after processing
-{% if model.needs_event_name %}
-        pendingEventName_.clear();
-{% endif %}
-{% if model.needs_event_data %}
-        pendingEventData_.clear();
-{% endif %}
-{% if model.needs_event_type %}
-        pendingEventType_.clear();
-{% endif %}
-{% if model.needs_event_sendid %}
-        pendingEventSendId_.clear();
-{% endif %}
-{% if model.needs_event_invokeid %}
-        pendingEventInvokeId_.clear();
-{% endif %}
-{% endif %}
 
         return transitionTaken;
     }
@@ -324,7 +342,7 @@ private:
     // Exit all → Transition content all → Enter all
     template<typename Engine>
     void executeMicrostep(const ::std::vector<TransitionInfo>& transitions,
-                         State& currentState,
+                         [[maybe_unused]] State& currentState,
                          bool& transitionTaken,
                          Engine& engine) {
         if (transitions.empty()) {
@@ -585,7 +603,7 @@ private:
 {% if first_uses_jsengine %}
             {
                 this->ensureJSEngine();
-                auto& jsEngine = ::RSM::JSEngine::instance();
+                [[maybe_unused]] auto& jsEngine = ::RSM::JSEngine::instance();
 {% endif %}
 {% set first_trans = namespace(value=True) %}
 {% for transition in eventless_transitions %}
