@@ -185,22 +185,25 @@
                 executeMicrostep(enabledTransitions, currentState, transitionTaken, engine);
             }
         } else {
-            // ==================== EXTERNAL EVENTS: Preemption Rule ====================
-            // W3C SCXML 3.12: First matching transition wins (inner states have priority)
+            // ==================== EXTERNAL EVENTS: Collection → Execution ====================
+            // W3C SCXML Appendix D: For parallel states, ALL events use microstep (not just eventless)
+            // Collect ALL enabled transitions before executing (optimal transition set)
 
+            ::std::vector<TransitionInfo> enabledTransitions;
+
+            // W3C SCXML 3.12: Hierarchical event processing with collection (innermost to outermost)
             for (State activeState : activeStates_) {
                 LOG_DEBUG("AOT processTransition: Checking external event in active state {}", static_cast<int>(activeState));
 
-                // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
                 State checkState = activeState;
 
                 while (true) {
-                    // Try to find a matching transition in checkState
-                    bool foundTransition = tryTransitionInState(checkState, event, currentState, transitionTaken, engine);
+                    // Try to find a matching transition in checkState (collection mode)
+                    bool foundTransition = tryTransitionInState(checkState, event, currentState, transitionTaken, engine, &enabledTransitions);
 
                     if (foundTransition) {
                         LOG_DEBUG("AOT processTransition: Found transition in state {}", static_cast<int>(checkState));
-                        break;  // Transition taken, exit hierarchy check
+                        break;  // Transition collected, exit hierarchy check for this active state
                     }
 
                     // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
@@ -216,10 +219,23 @@
                 }
 
                 // W3C SCXML 3.12: Preemption rule - stop after first transition
-                if (transitionTaken) {
-                    LOG_DEBUG("AOT processTransition: External event transition taken, stopping (preemption rule)");
+                if (!enabledTransitions.empty()) {
+                    LOG_DEBUG("AOT processTransition: External event transition collected, stopping (preemption rule)");
                     break;
                 }
+            }
+
+            LOG_DEBUG("AOT processTransition: Collected {} enabled external transitions", enabledTransitions.size());
+
+            // W3C SCXML Appendix D.2: Remove conflicting transitions (optimal transition set)
+            if (!enabledTransitions.empty()) {
+                enabledTransitions = removeConflictingTransitions(enabledTransitions);
+                LOG_DEBUG("AOT processTransition: After conflict resolution: {} transitions", enabledTransitions.size());
+            }
+
+            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep (exit → transition → enter)
+            if (!enabledTransitions.empty()) {
+                executeMicrostep(enabledTransitions, currentState, transitionTaken, engine);
             }
         }
 {% else %}
@@ -376,7 +392,7 @@ private:
             }
         }
 
-        // W3C SCXML Appendix D.2 Step 4-5: Enter target states in document order (Helper)
+        // W3C SCXML Appendix D.2 Step 4-5: Enter target states with hierarchical entry (Helper)
         auto sortedByTarget = ::RSM::ParallelTransitionHelper::sortTransitionsByTarget<State, {{ model.name }}Policy>(
             helperTransitions
         );
@@ -386,23 +402,62 @@ private:
         for (const auto& trans : sortedByTarget) {
             if (!trans.targets.empty()) {
                 State target = trans.targets[0];
-                LOG_DEBUG("AOT executeMicrostep: Entering state {}", static_cast<int>(target));
+                LOG_DEBUG("AOT executeMicrostep: Building hierarchical entry chain for target {}", static_cast<int>(target));
                 
-                currentState = target;  // Update currentState to last target
+                // W3C SCXML 3.13: Build hierarchical entry chain from root to target
+                // This ensures parallel parents are re-entered with all their regions
+                auto entryChain = ::RSM::Common::HierarchicalStateHelper<{{ model.name }}Policy>::buildEntryChain(target);
                 
-                executeEntryActions(target, engine);
-                
-                // Add to activeStates_ if not already present
-                bool alreadyActive = false;
-                for (State s : activeStates_) {
-                    if (s == target) {
-                        alreadyActive = true;
-                        break;
+                for (State state : entryChain) {
+                    // Skip if already active (parallel states may have entered this via recursive entry)
+                    bool alreadyActive = false;
+                    for (State s : activeStates_) {
+                        if (s == state) {
+                            alreadyActive = true;
+                            break;
+                        }
                     }
+                    if (alreadyActive) {
+                        // W3C SCXML 3.13: Internal transitions - parallel state already active
+                        // Skip onentry actions, but still enter all parallel regions (they may have been exited)
+                        if (isParallelState(state)) {
+                            LOG_DEBUG("AOT executeMicrostep: Parallel state {} already active, re-entering regions", static_cast<int>(state));
+                            auto regions = getParallelRegions(state);
+                            for (const auto& region : regions) {
+                                // Check if region needs re-entry (may have been exited by transition)
+                                bool regionActive = false;
+                                for (State s : activeStates_) {
+                                    if (s == region) {
+                                        regionActive = true;
+                                        break;
+                                    }
+                                }
+                                if (!regionActive) {
+                                    LOG_DEBUG("AOT executeMicrostep: Re-entering parallel region {}", static_cast<int>(region));
+                                    executeEntryActions(region, engine);
+                                    
+                                    // W3C SCXML 3.3: If region is compound, enter initial child
+                                    if (isCompoundState(region)) {
+                                        State initialChild = getInitialChild(region);
+                                        if (initialChild != region) {
+                                            LOG_DEBUG("AOT executeMicrostep: Entering initial child {} of region {}",
+                                                     static_cast<int>(initialChild), static_cast<int>(region));
+                                            executeEntryActions(initialChild, engine);
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            LOG_DEBUG("AOT executeMicrostep: State {} already active, skipping entry", static_cast<int>(state));
+                        }
+                        continue;
+                    }
+                    
+                    LOG_DEBUG("AOT executeMicrostep: Hierarchical entry for state {}", static_cast<int>(state));
+                    executeEntryActions(state, engine);
                 }
-                if (!alreadyActive) {
-                    activeStates_.push_back(target);
-                }
+                
+                currentState = target;  // Update to deepest entered state
             }
         }
 

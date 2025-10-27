@@ -38,7 +38,7 @@
             desc.isInternal = trans.isInternal;  // W3C SCXML 3.13: Preserve internal transition type
 
             // W3C SCXML Appendix D.2: Compute exit set using shared Helper
-            desc.exitSet = Helper::computeExitSet(trans.source, trans.target);
+            desc.exitSet = Helper::computeExitSet(trans.source, trans.target, trans.isInternal);
 
             descriptors.push_back(desc);
         }

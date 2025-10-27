@@ -471,10 +471,18 @@ protected:
                         LOG_DEBUG("AOT processEventQueues: State transition {} -> {}", static_cast<int>(oldState),
                                   static_cast<int>(currentState_));
 
-                        // ARCHITECTURE.md: Zero Duplication - use shared helper
-                        // W3C SCXML 3.13: Pass transition action callback for correct execution order
-                        handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                                     [this] { policy_.executeTransitionActions(*this); });
+                        // W3C SCXML Appendix D: For parallel states, executeMicrostep already handled
+                        // exit/transition/entry Only call handleHierarchicalTransition for non-parallel state machines
+                        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+                            // ARCHITECTURE.md: Zero Duplication - use shared helper
+                            // W3C SCXML 3.13: Pass transition action callback for correct execution order
+                            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
+                                                         [this] { policy_.executeTransitionActions(*this); });
+                        } else {
+                            LOG_DEBUG(
+                                "AOT processEventQueues (internal): Parallel state machine - executeMicrostep handled "
+                                "all transitions");
+                        }
 
                         LOG_DEBUG("AOT processEventQueues: Calling checkEventlessTransitions after state entry");
                         // W3C SCXML 3.13: Check eventless transitions immediately after state entry
@@ -517,10 +525,18 @@ protected:
                         (oldState != currentState_) || (isSelfTransition && policy_.lastTransitionIsInternal_);
 
                     if (needsHierarchicalHandling) {
-                        // ARCHITECTURE.md: Zero Duplication - use shared helper
-                        // W3C SCXML 3.13: Pass transition action callback for correct execution order
-                        handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                                     [this] { policy_.executeTransitionActions(*this); });
+                        // W3C SCXML Appendix D: For parallel states, executeMicrostep already handled
+                        // exit/transition/entry Only call handleHierarchicalTransition for non-parallel state machines
+                        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+                            // ARCHITECTURE.md: Zero Duplication - use shared helper
+                            // W3C SCXML 3.13: Pass transition action callback for correct execution order
+                            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
+                                                         [this] { policy_.executeTransitionActions(*this); });
+                        } else {
+                            LOG_DEBUG(
+                                "AOT processEventQueues (external): Parallel state machine - executeMicrostep handled "
+                                "all transitions");
+                        }
 
                         // W3C SCXML 3.13: Check eventless transitions immediately after state entry
                         checkEventlessTransitions();
@@ -769,16 +785,26 @@ public:
     /**
      * @brief Get all active states (W3C SCXML 3.11)
      *
-     * For simple state machines (no parallel), returns vector with single current state.
-     * For parallel state machines, would return all active states in parallel regions.
+     * For simple state machines (no parallel), returns vector with single current state hierarchy.
+     * For parallel state machines, returns all active states across all parallel regions.
      *
-     * Used by history recording logic to match Interpreter HistoryManager behavior.
+     * Used by history recording logic and parallel completion checks.
      *
      * @return Vector of currently active states
      */
     std::vector<State> getActiveStates() const {
-        // W3C SCXML 3.11: Use shared HistoryHelper for full active hierarchy (Zero Duplication Principle)
-        // Returns [currentState, parent, grandparent, ...] for proper history recording
+        // W3C SCXML 3.4: For parallel state machines, use policy's activeStates_ tracking
+        if constexpr (requires { StatePolicy::HAS_PARALLEL_STATES; }) {
+            if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
+                // Parallel state machine - use policy's activeStates_ (tracks all parallel regions)
+                if constexpr (requires { policy_.getActiveStates(); }) {
+                    return policy_.getActiveStates();
+                }
+            }
+        }
+
+        // W3C SCXML 3.11: For non-parallel, use shared HistoryHelper for full active hierarchy (Zero Duplication
+        // Principle) Returns [currentState, parent, grandparent, ...] for proper history recording
         return ::RSM::HistoryHelper::getActiveHierarchy(currentState_,
                                                         [](State s) { return StatePolicy::getParent(s); });
     }
