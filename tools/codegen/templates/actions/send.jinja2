@@ -244,9 +244,9 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
 {% endif %}
 {% if action.params %}
     std::string eventData = ::RSM::EventDataHelper::buildJsonFromParams(params);
-    eventScheduler_.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId, eventData);
+    engine.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId, eventData);
 {% else %}
-    eventScheduler_.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId);
+    engine.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId);
 {% endif %}
 }
 {% else %}

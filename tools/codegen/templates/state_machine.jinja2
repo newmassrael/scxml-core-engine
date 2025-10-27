@@ -300,7 +300,7 @@ struct {{ model.name }}Policy {
     {% endif %}
 
     static State initialState() {
-        return State::{{ model.initial | capitalize }};
+        return State::{{ (model.initial_leaf if model.initial_leaf else model.initial) | capitalize }};
     }
 
     static bool isFinalState(State state) {
@@ -349,6 +349,28 @@ struct {{ model.name }}Policy {
         switch (state) {
             {% for state_id, state in model.states.items() %}
             {% if state.initial %}
+            case State::{{ state_id | capitalize }}:
+                return State::{{ state.initial | capitalize }};
+            {% endif %}
+            {% endfor %}
+            default:
+                return state;  // Not compound or no initial child
+        }
+    }
+
+    // W3C SCXML 3.11: Get initial or history-restored child of compound state
+    // Non-static version that checks history before returning initial child
+    State getInitialOrHistoryChild(State state) const {
+        switch (state) {
+            {% for state_id, state in model.states.items() %}
+            {% if state.initial_history_id %}
+            case State::{{ state_id | capitalize }}:
+                // W3C SCXML 3.11: Check history for {{ state.initial_history_id }}
+                if (history_{{ state.initial_history_id }}.has_value() && !history_{{ state.initial_history_id }}->empty()) {
+                    return history_{{ state.initial_history_id }}->front();  // Restore to first state in history
+                }
+                return State::{{ state.initial | capitalize }};  // No history, use default
+            {% elif state.initial %}
             case State::{{ state_id | capitalize }}:
                 return State::{{ state.initial | capitalize }};
             {% endif %}

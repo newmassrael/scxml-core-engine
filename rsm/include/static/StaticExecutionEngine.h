@@ -5,17 +5,20 @@
 #include "common/HierarchicalStateHelper.h"
 #include "common/HistoryHelper.h"
 #include "common/Logger.h"
+#include "common/SendSchedulingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
 #include "core/EventQueueAdapters.h"
 #include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
 #include "events/HttpEventTarget.h"
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 namespace RSM::Static {
 
@@ -184,7 +187,7 @@ private:
                           "initial children (W3C 3.10)",
                           static_cast<int>(newState));
                 // Build full entry chain from root, then keep only states at/below LCA
-                auto fullChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState);
+                auto fullChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
                 for (State s : fullChain) {
                     // Include state if it's at or below LCA (check if LCA is ancestor of s or s == LCA)
                     if (s == lca.value() ||
@@ -230,7 +233,7 @@ private:
             transitionAction();
 
             // Enter full hierarchy from root to newState
-            auto entryChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState);
+            auto entryChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
             for (const auto &state : entryChain) {
                 LOG_DEBUG("AOT handleHierarchicalTransition: Entry state {} (from root)", static_cast<int>(state));
                 executeOnEntry(state);
@@ -251,7 +254,8 @@ private:
     RSM::Core::EventQueueManager<EventWithMetadata>
         externalQueue_;  // W3C SCXML C.1: External event queue (low priority)
     bool isRunning_ = false;
-    std::function<void()> completionCallback_;  // W3C SCXML 6.4: Callback for done.invoke
+    std::function<void()> completionCallback_;                     // W3C SCXML 6.4: Callback for done.invoke
+    RSM::SendSchedulingHelper::SimpleScheduler<Event> scheduler_;  // W3C SCXML 6.2: Delayed event scheduler
 
 protected:
     StatePolicy policy_;  // Policy instance for stateful policies
@@ -388,6 +392,96 @@ public:
                 policy_.nextEventIsExternal_ = true;
             }
         }
+    }
+
+    /**
+     * @brief Schedule an event for delayed delivery (W3C SCXML 6.2)
+     *
+     * Used by AOT-generated code for <send delay="..."> elements.
+     *
+     * @param event Event to schedule
+     * @param delay Delay before delivery
+     * @param sendId Optional sendid for cancellation
+     * @param eventData Optional event data JSON
+     * @return The sendid assigned to this event
+     */
+    std::string scheduleEvent(Event event, std::chrono::milliseconds delay, const std::string &sendId = "",
+                              const std::string &eventData = "") {
+        return scheduler_.scheduleEvent(event, delay, sendId, eventData);
+    }
+
+    /**
+     * @brief Cancel a scheduled event (W3C SCXML 6.2.5)
+     *
+     * @param sendId Send ID to cancel
+     * @return true if event was cancelled
+     */
+    bool cancelEvent(const std::string &sendId) {
+        return scheduler_.cancelEvent(sendId);
+    }
+
+    /**
+     * @brief Check if scheduler has ready events
+     *
+     * @return true if events are ready to fire
+     */
+    bool hasReadyEvents() const {
+        return scheduler_.hasReadyEvents();
+    }
+
+    /**
+     * @brief Run state machine until completion or timeout (W3C SCXML 6.2)
+     *
+     * Convenience API for running state machines with delayed send operations.
+     * Internally polls the event scheduler and processes events until the state
+     * machine reaches a final state or the timeout expires.
+     *
+     * This is the recommended API for simple use cases where you just want to
+     * run the state machine to completion without manually managing the tick() loop.
+     *
+     * ARCHITECTURE NOTE: Polling Design Trade-off
+     * - Uses sleep-based polling loop (pollInterval) for timer checks
+     * - Trade-off: Simplicity and zero threading overhead vs. precise timer interrupts
+     * - Rationale: "You don't pay for what you don't use" - no background threads, no timers
+     * - Latency: Maximum delay = pollInterval (default 10ms) between event ready and processing
+     * - For precise timing control: Use explicit tick() calls in custom event loop
+     * - See ARCHITECTURE.md "All-or-Nothing Strategy" for AOT engine philosophy
+     *
+     * @param timeout Maximum time to wait for completion
+     * @param pollInterval Interval between tick() calls (default: 10ms)
+     * @return true if state machine reached final state, false if timeout
+     *
+     * @example Simple usage
+     * @code
+     * sm.initialize();
+     * bool success = sm.runUntilCompletion(std::chrono::seconds(3));
+     * if (success) {
+     *     bool pass = (sm.getCurrentState() == SM::State::Pass);
+     * }
+     * @endcode
+     */
+    bool runUntilCompletion(std::chrono::milliseconds timeout,
+                            std::chrono::milliseconds pollInterval = std::chrono::milliseconds(10)) {
+        if (!isRunning_) {
+            return false;
+        }
+
+        auto startTime = std::chrono::steady_clock::now();
+
+        while (!isInFinalState()) {
+            // Check for timeout
+            if (std::chrono::steady_clock::now() - startTime > timeout) {
+                return false;  // Timeout
+            }
+
+            // Sleep briefly to allow scheduled events to become ready
+            std::this_thread::sleep_for(pollInterval);
+
+            // W3C SCXML 6.2: Poll scheduler and process events
+            tick();
+        }
+
+        return true;  // Reached final state
     }
 
 protected:
@@ -836,47 +930,26 @@ public:
      * @brief Tick scheduler and process ready internal events (W3C SCXML 6.2)
      *
      * For single-threaded AOT engines with delayed send support.
-     * This method polls the event scheduler and processes any ready scheduled events
-     * without injecting an external event. Should be called periodically in a polling
-     * loop to allow delayed sends to fire at the correct time.
+     * This method polls the event scheduler and processes any ready scheduled events.
+     * Should be called periodically in a polling loop to allow delayed sends to fire
+     * at the correct time.
      *
-     * Implementation: Calls processTransition to trigger scheduler check, which
-     * raises ready scheduled events to the internal queue, then processes them.
-     * The dummy event parameter won't match transitions in final states.
+     * Implementation: Checks scheduler for ready events, raises them to external queue,
+     * then processes event queues and checks for eventless transitions.
      */
     void tick() {
         if (!isRunning_ || isInFinalState()) {
             return;
         }
 
-        // Trigger scheduler check by calling processTransition
-        // Use Event() which is typically the first enum value (e.g., Wildcard)
-        // This triggers the scheduler check in processTransition, which raises
-        // any ready scheduled events to the internal queue.
-        State oldState = currentState_;
-        std::vector<State> preTransitionStates = getActiveStates();  // W3C SCXML 3.11: Capture before transition
-        if (policy_.processTransition(currentState_, Event(), *this)) {
-            // Check if state actually changed (external transition) or just actions (internal transition)
-            if (oldState != currentState_) {
-                // W3C SCXML 3.13: External transition - exit old, execute actions, enter new
-                executeOnExit(oldState, preTransitionStates);
-                executeOnEntry(currentState_);
-                processEventQueues();
-                checkEventlessTransitions();
-
-                // W3C SCXML 6.4: Notify parent if reached final state
-                if (isInFinalState() && completionCallback_) {
-                    completionCallback_();
-                }
-            } else {
-                // W3C SCXML 3.4: Internal transition - no state change, but execute actions
-                LOG_DEBUG("AOT tick: Internal transition in state {}", static_cast<int>(currentState_));
-                policy_.executeTransitionActions(*this);
-            }
+        // W3C SCXML 6.2: Check for ready scheduled events and raise them
+        std::string eventData;
+        Event event;
+        while (scheduler_.popReadyEvent(event, eventData)) {
+            raiseExternal(event, eventData);
         }
 
-        // Even if no transition taken, process internal queue in case
-        // scheduler raised events that should be processed
+        // Process any events that were just raised (or existing events)
         processEventQueues();
         checkEventlessTransitions();
     }

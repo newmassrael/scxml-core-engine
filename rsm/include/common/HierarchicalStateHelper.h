@@ -179,6 +179,70 @@ public:
     }
 
     /**
+     * @brief Build entry chain with history restoration support (W3C SCXML 3.11)
+     *
+     * @details
+     * History-aware version that checks stored history before using static initial children.
+     * Calls policy.getInitialOrHistoryChild() to restore history states when available.
+     *
+     * @param leafState Target state (leaf or compound)
+     * @param policy Policy instance with history storage
+     * @return Vector of states from root to leaf in entry order
+     *
+     * @par W3C SCXML Compliance
+     * - 3.11: History pseudo-state restoration
+     * - 3.3: Hierarchical entry order (root to leaf)
+     *
+     * @par Thread Safety
+     * Thread-safe if policy is accessed exclusively.
+     *
+     * @par Performance
+     * O(depth) time, O(depth) space. Typical depth: 1-5.
+     */
+    static std::vector<State> buildEntryChain(State leafState, const StatePolicy &policy) {
+        constexpr size_t MAX_DEPTH = 16;
+        std::vector<State> chain;
+        chain.reserve(8);
+
+        State current = leafState;
+        size_t depth = 0;
+
+        // Build chain from leaf to root
+        while (depth < MAX_DEPTH) {
+            chain.push_back(current);
+            auto parent = StatePolicy::getParent(current);
+            if (!parent.has_value()) {
+                break;
+            }
+            current = parent.value();
+            ++depth;
+        }
+
+        if (depth >= MAX_DEPTH) {
+            LOG_ERROR("HierarchicalStateHelper::buildEntryChain() - Maximum depth ({}) exceeded", MAX_DEPTH);
+            throw std::runtime_error("Cyclic parent relationship detected");
+        }
+
+        // Reverse to root-to-leaf order
+        std::reverse(chain.begin(), chain.end());
+
+        // W3C SCXML 3.11: Add initial or history-restored children
+        State leafToCheck = leafState;
+        depth = 0;
+        while (depth < MAX_DEPTH && StatePolicy::isCompoundState(leafToCheck)) {
+            State initialChild = policy.getInitialOrHistoryChild(leafToCheck);  // History-aware!
+            if (initialChild == leafToCheck) {
+                break;
+            }
+            chain.push_back(initialChild);
+            leafToCheck = initialChild;
+            ++depth;
+        }
+
+        return chain;
+    }
+
+    /**
      * @brief Check if state has a parent (is a child of composite state)
      *
      * @details
