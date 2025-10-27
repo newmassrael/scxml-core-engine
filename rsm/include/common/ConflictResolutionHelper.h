@@ -90,12 +90,13 @@ public:
      * // Returns: [S011, S01] (exit both S011 and S01 to reach LCA S0)
      * @endcode
      */
-    static std::vector<State> computeExitSet(State source, State target) {
+    static std::vector<State> computeExitSet(State source, State target, bool isInternal = false) {
         // ARCHITECTURE.MD Zero Duplication: Delegate to ParallelTransitionHelper
         // Construct minimal Transition descriptor for exit set computation
         typename ParallelTransitionHelper::Transition<State> trans;
         trans.source = source;
         trans.targets = {target};
+        trans.isInternal = isInternal;  // W3C SCXML 3.13: Pass internal transition type
 
         // W3C SCXML Appendix D.2: Use shared Helper for exit set computation
         auto exitSetUnordered = ParallelTransitionHelper::computeExitSet<State, StatePolicy>(trans);

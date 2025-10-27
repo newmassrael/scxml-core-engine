@@ -71,16 +71,16 @@ JSResult JSEngine::executeScriptInternal(const std::string &sessionId, const std
 }
 
 JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, const std::string &expression) {
-    SPDLOG_DEBUG("JSEngine::evaluateExpressionInternal - Evaluating expression '{}' in session '{}'", expression,
-                 sessionId);
+    LOG_DEBUG("JSEngine::evaluateExpressionInternal - Evaluating expression '{}' in session '{}'", expression,
+              sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        SPDLOG_ERROR("JSEngine::evaluateExpressionInternal - Session not found: {}", sessionId);
+        LOG_ERROR("JSEngine::evaluateExpressionInternal - Session not found: {}", sessionId);
         return JSResult::createError("Session not found: " + sessionId);
     }
 
-    SPDLOG_DEBUG("JSEngine::evaluateExpressionInternal - Session found, context valid");
+    LOG_DEBUG("JSEngine::evaluateExpressionInternal - Session found, context valid");
 
     JSContext *ctx = session->jsContext;
 
@@ -89,8 +89,8 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
 
     // If it failed and the expression starts with '{', try wrapping in parentheses for object literals
     if (JS_IsException(result) && !expression.empty() && expression[0] == '{') {
-        SPDLOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
-                     "object literal");
+        LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
+                  "object literal");
         JS_FreeValue(ctx, result);  // Free the exception
 
         std::string wrappedExpression = "(" + expression + ")";
@@ -102,8 +102,8 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
     // W3C SCXML B.2: If it failed and the expression starts with 'function', try wrapping in parentheses for function
     // expressions Test 453: ECMAScript function literals must be accepted as value expressions
     if (JS_IsException(result) && DataModelInitHelper::isFunctionExpression(expression)) {
-        SPDLOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
-                     "function literal");
+        LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
+                  "function literal");
         JS_FreeValue(ctx, result);  // Free the exception
 
         std::string wrappedExpression = "(" + expression + ")";
@@ -112,7 +112,7 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
     }
 
     if (JS_IsException(result)) {
-        SPDLOG_ERROR("JSEngine::evaluateExpressionInternal - Final JS_Eval failed for expression '{}'", expression);
+        LOG_ERROR("JSEngine::evaluateExpressionInternal - Final JS_Eval failed for expression '{}'", expression);
 
         // Root cause analysis: Check _event object state when _event.data.aParam fails
         if (expression.find("_event.data") != std::string::npos) {
@@ -150,7 +150,7 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
         return error;
     }
 
-    SPDLOG_DEBUG("JSEngine::evaluateExpressionInternal - JS_Eval succeeded for expression '{}'", expression);
+    LOG_DEBUG("JSEngine::evaluateExpressionInternal - JS_Eval succeeded for expression '{}'", expression);
 
     ScriptValue jsResult = quickJSToJSValue(ctx, result);
     JS_FreeValue(ctx, result);
@@ -208,11 +208,11 @@ JSResult JSEngine::validateExpressionInternal(const std::string &sessionId, cons
 
 JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::string &name,
                                        const ScriptValue &value) {
-    SPDLOG_DEBUG("JSEngine::setVariableInternal - Setting variable '{}' in session '{}'", name, sessionId);
+    LOG_DEBUG("JSEngine::setVariableInternal - Setting variable '{}' in session '{}'", name, sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        SPDLOG_ERROR("JSEngine::setVariableInternal - Session not found: {}", sessionId);
+        LOG_ERROR("JSEngine::setVariableInternal - Session not found: {}", sessionId);
         return JSResult::createError("Session not found: " + sessionId);
     }
 
@@ -245,14 +245,14 @@ JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::
         },
         value);
 
-    SPDLOG_DEBUG("JSEngine::setVariableInternal - Variable '{}' value: {}", name, valueStr);
+    LOG_DEBUG("JSEngine::setVariableInternal - Variable '{}' value: {}", name, valueStr);
 
     ::JSValue qjsValue = jsValueToQuickJS(ctx, value);
 
     // Check if conversion was successful
     if (JS_IsException(qjsValue)) {
-        SPDLOG_ERROR("JSEngine::setVariableInternal - Failed to convert ScriptValue to QuickJS value for variable '{}'",
-                     name);
+        LOG_ERROR("JSEngine::setVariableInternal - Failed to convert ScriptValue to QuickJS value for variable '{}'",
+                  name);
         JS_FreeValue(ctx, global);
         return createErrorFromException(ctx);
     }
@@ -270,12 +270,12 @@ JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::
             JS_FreeCString(ctx, errStr);
             JS_FreeValue(ctx, exc);
 
-            SPDLOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}': {}", name, errorMsg);
+            LOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}': {}", name, errorMsg);
             JS_FreeValue(ctx, global);
             return JSResult::createError("Failed to set variable " + name + ": " + errorMsg);
         }
 
-        SPDLOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}' in global object", name);
+        LOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}' in global object", name);
         JS_FreeValue(ctx, global);
         return JSResult::createError("Failed to set variable: " + name);
     }
@@ -289,20 +289,20 @@ JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::
         session->preInitializedVars.insert(name);
     }
 
-    SPDLOG_DEBUG("JSEngine::setVariableInternal - Successfully set variable '{}' in session '{}'", name, sessionId);
+    LOG_DEBUG("JSEngine::setVariableInternal - Successfully set variable '{}' in session '{}'", name, sessionId);
     return JSResult::createSuccess();
 }
 
 JSResult JSEngine::getVariableInternal(const std::string &sessionId, const std::string &name) {
-    SPDLOG_DEBUG("JSEngine::getVariableInternal - Getting variable '{}' from session '{}'", name, sessionId);
+    LOG_DEBUG("JSEngine::getVariableInternal - Getting variable '{}' from session '{}'", name, sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        SPDLOG_ERROR("JSEngine::getVariableInternal - Session not found: {}", sessionId);
+        LOG_ERROR("JSEngine::getVariableInternal - Session not found: {}", sessionId);
         return JSResult::createError("Session not found: " + sessionId);
     }
 
-    SPDLOG_DEBUG("JSEngine::getVariableInternal - Session found, context valid");
+    LOG_DEBUG("JSEngine::getVariableInternal - Session found, context valid");
 
     JSContext *ctx = session->jsContext;
     ::JSValue global = JS_GetGlobalObject(ctx);
@@ -310,46 +310,46 @@ JSResult JSEngine::getVariableInternal(const std::string &sessionId, const std::
     // First check if the property exists before getting it
     JSAtom atom = JS_NewAtom(ctx, name.c_str());
     int hasProperty = JS_HasProperty(ctx, global, atom);
-    SPDLOG_DEBUG("JSEngine::getVariableInternal - JS_HasProperty('{}') returned: {}", name, hasProperty);
+    LOG_DEBUG("JSEngine::getVariableInternal - JS_HasProperty('{}') returned: {}", name, hasProperty);
     JS_FreeAtom(ctx, atom);
     (void)hasProperty;  // Suppress unused variable warning
 
     ::JSValue qjsValue = JS_GetPropertyStr(ctx, global, name.c_str());
 
     if (JS_IsException(qjsValue)) {
-        SPDLOG_ERROR("JSEngine::getVariableInternal - JS_GetPropertyStr failed for variable '{}'", name);
+        LOG_ERROR("JSEngine::getVariableInternal - JS_GetPropertyStr failed for variable '{}'", name);
         JS_FreeValue(ctx, global);
         return createErrorFromException(ctx);
     }
 
     // Check if the property actually exists (not just undefined)
     if (JS_IsUndefined(qjsValue)) {
-        SPDLOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' is undefined, checking if property exists", name);
+        LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' is undefined, checking if property exists", name);
         // Use JS_HasProperty to distinguish between "not set" and "set to
         // undefined"
         JSAtom atom2 = JS_NewAtom(ctx, name.c_str());
         int hasProperty2 = JS_HasProperty(ctx, global, atom2);
         JS_FreeAtom(ctx, atom2);  // Free the atom to prevent memory leak
-        SPDLOG_DEBUG("JSEngine::getVariableInternal - Second JS_HasProperty('{}') returned: {}", name, hasProperty2);
+        LOG_DEBUG("JSEngine::getVariableInternal - Second JS_HasProperty('{}') returned: {}", name, hasProperty2);
         if (hasProperty2 <= 0) {
             // Property doesn't exist - this is not an error, caller will handle
-            SPDLOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' does not exist in global context", name);
+            LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' does not exist in global context", name);
             JS_FreeValue(ctx, qjsValue);
             JS_FreeValue(ctx, global);
             return JSResult::createError("Variable not found: " + name);
         }
         // Property exists but is undefined - this is valid, continue with existing
         // qjsValue
-        SPDLOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' exists but is set to undefined", name);
+        LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' exists but is set to undefined", name);
     } else {
-        SPDLOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' found with value", name);
+        LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' found with value", name);
     }
 
     ScriptValue result = quickJSToJSValue(ctx, qjsValue);
     JS_FreeValue(ctx, qjsValue);
     JS_FreeValue(ctx, global);
 
-    SPDLOG_DEBUG("JSEngine::getVariableInternal - Successfully retrieved variable '{}'", name);
+    LOG_DEBUG("JSEngine::getVariableInternal - Successfully retrieved variable '{}'", name);
     return JSResult::createSuccess(result);
 }
 

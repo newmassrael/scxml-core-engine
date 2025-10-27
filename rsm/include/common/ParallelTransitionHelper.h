@@ -55,6 +55,37 @@ public:
     static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition) {
         std::unordered_set<StateType> exitSet;
 
+        // W3C SCXML 3.13: Internal transitions have special exit semantics
+        // Internal transition does NOT exit source state if:
+        // 1. transition.isInternal == true
+        // 2. source is a compound state (NOT parallel)
+        // 3. target is a proper descendant of source
+        if (transition.isInternal) {
+            // Check if source is compound state (NOT parallel, NOT atomic)
+            bool sourceIsCompound =
+                PolicyType::isCompoundState(transition.source) && !PolicyType::isParallelState(transition.source);
+
+            if (sourceIsCompound) {
+                // Check if all targets are proper descendants of source
+                bool allTargetsAreDescendants = true;
+                for (const auto &target : transition.targets) {
+                    if (!PolicyType::isDescendantOf(target, transition.source) || target == transition.source) {
+                        allTargetsAreDescendants = false;
+                        break;
+                    }
+                }
+
+                if (allTargetsAreDescendants) {
+                    // W3C SCXML 3.13: Internal transition to descendant - source stays active
+                    // Exit set is empty (source and its ancestors remain active)
+                    return exitSet;  // Empty set
+                }
+            }
+            // Otherwise: Internal transition but source is NOT compound or target is NOT descendant
+            // Treat as external transition (exit source)
+        }
+
+        // External transition (or internal transition that behaves as external)
         // Find LCA of source and all targets
         std::optional<StateType> lca = std::nullopt;
         for (const auto &target : transition.targets) {
@@ -233,11 +264,32 @@ public:
             }
 
             for (const auto &target : trans.targets) {
-                // W3C SCXML 3.13: Internal transitions do not exit source state
-                // For internal transitions, treat source state as LCA (exit only descendants)
+                // W3C SCXML 3.13: Internal transitions only skip exiting source if:
+                // 1. transition.isInternal == true
+                // 2. source is a compound state (NOT parallel)
+                // 3. target is a proper descendant of source
                 std::optional<StateType> lca;
                 if (trans.isInternal) {
-                    lca = trans.source;  // Source is the LCA - don't exit it
+                    // Check if source is compound state (NOT parallel, NOT atomic)
+                    bool sourceIsCompound =
+                        PolicyType::isCompoundState(trans.source) && !PolicyType::isParallelState(trans.source);
+
+                    if (sourceIsCompound) {
+                        // Check if target is proper descendant of source
+                        bool targetIsDescendant =
+                            PolicyType::isDescendantOf(target, trans.source) && target != trans.source;
+
+                        if (targetIsDescendant) {
+                            // W3C SCXML 3.13: Internal transition to descendant - source stays active
+                            lca = trans.source;  // Source is the LCA - don't exit it
+                        } else {
+                            // Target is not descendant - treat as external
+                            lca = RSM::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
+                        }
+                    } else {
+                        // Source is NOT compound (it's parallel or atomic) - treat as external per W3C SCXML 3.13
+                        lca = RSM::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
+                    }
                 } else {
                     lca = RSM::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
                 }

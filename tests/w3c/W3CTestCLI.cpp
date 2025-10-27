@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
                 printf("Options:\n");
                 printf("  --resources PATH       Path to W3C test resources (auto-detected by default)\n");
                 printf("  --output FILE          XML output file (default: w3c_test_results.xml)\n");
-                printf("  --repeat N             Repeat tests N times (default: 1)\n");
+                printf("  --repeat N             Repeat tests N times for all test selection formats (default: 1)\n");
                 printf("  --stop-on-fail         Stop execution on first test failure\n");
                 printf("  --fail-on-failure      Alias for --stop-on-fail\n");
                 printf("  -h, --help             Show this help message\n");
@@ -146,6 +146,8 @@ int main(int argc, char *argv[]) {
                 printf("  %s 150~160             Run tests 150 through 160\n", argv[0]);
                 printf("  %s 500~                Run tests 500 to end (500-580)\n", argv[0]);
                 printf("  %s 201 --repeat 100    Run test 201 100 times\n", argv[0]);
+                printf("  %s ~176 --repeat 10    Run tests up to 176, 10 times\n", argv[0]);
+                printf("  %s --repeat 5          Run all tests 5 times\n", argv[0]);
                 printf("  %s --stop-on-fail      Run all tests, stop on first failure\n", argv[0]);
                 printf("\n");
                 return 0;
@@ -249,56 +251,86 @@ int main(int argc, char *argv[]) {
                 upToTestIds.push_back(testId);
             }
 
-            LOG_INFO("W3C CLI: Running tests up to {} ({} tests: 150-{})", upToTestId, upToTestIds.size(), upToTestId);
+            LOG_INFO("W3C CLI: Running tests up to {} ({} tests: 150-{}) (repeat {} times)", upToTestId,
+                     upToTestIds.size(), upToTestId, repeatCount);
 
             // Begin test run for consistent reporting
             auto testSuiteInfo = runner.getTestSuite()->getInfo();
-            runner.getReporter()->beginTestRun(testSuiteInfo.name + " (Up To Tests)");
+            std::string testRunName = testSuiteInfo.name + " (Up To Tests)";
+            if (repeatCount > 1) {
+                testRunName += " - " + std::to_string(repeatCount) + " iterations";
+            }
+            runner.getReporter()->beginTestRun(testRunName);
 
             std::vector<RSM::W3C::TestReport> reports;
-            for (int testId : upToTestIds) {
-                try {
-                    LOG_INFO("W3C CLI: Running test {} (including variants if any)", testId);
-                    std::vector<RSM::W3C::TestReport> testReports = runner.runAllMatchingTests(testId);
-                    reports.insert(reports.end(), testReports.begin(), testReports.end());
-                    allReports.insert(allReports.end(), testReports.begin(), testReports.end());
+            bool shouldStop = false;
 
-                    // Show results for all variants
-                    for (const auto &report : testReports) {
-                        std::string status;
-                        switch (report.validationResult.finalResult) {
-                        case RSM::W3C::TestResult::PASS:
-                            status = "PASS";
-                            break;
-                        case RSM::W3C::TestResult::FAIL:
-                            status = "FAIL";
-                            break;
-                        case RSM::W3C::TestResult::ERROR:
-                            status = "ERROR";
-                            break;
-                        case RSM::W3C::TestResult::TIMEOUT:
-                            status = "TIMEOUT";
-                            break;
-                        }
-
-                        LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
-                                 report.executionContext.executionTime.count());
-                        if (report.validationResult.finalResult != RSM::W3C::TestResult::PASS) {
-                            LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
-                        }
-                    }
-
-                } catch (const std::exception &e) {
-                    std::string errorMsg = e.what();
-                    // Test not found is normal for sparse test IDs - log as debug instead of error
-                    if (errorMsg.find("not found") != std::string::npos) {
-                        LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
-                    } else {
-                        LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
-                    }
-                    // Continue with other tests instead of returning
+            for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
+                if (repeatCount > 1) {
+                    LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
+                    printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
                 }
-            }
+
+                for (int testId : upToTestIds) {
+                    if (shouldStop) {
+                        break;
+                    }
+                    try {
+                        LOG_INFO("W3C CLI: Running test {} (including variants if any)", testId);
+                        std::vector<RSM::W3C::TestReport> testReports = runner.runAllMatchingTests(testId);
+                        reports.insert(reports.end(), testReports.begin(), testReports.end());
+                        allReports.insert(allReports.end(), testReports.begin(), testReports.end());
+
+                        // Show results for all variants
+                        for (const auto &report : testReports) {
+                            std::string status;
+                            switch (report.validationResult.finalResult) {
+                            case RSM::W3C::TestResult::PASS:
+                                status = "PASS";
+                                break;
+                            case RSM::W3C::TestResult::FAIL:
+                                status = "FAIL";
+                                break;
+                            case RSM::W3C::TestResult::ERROR:
+                                status = "ERROR";
+                                break;
+                            case RSM::W3C::TestResult::TIMEOUT:
+                                status = "TIMEOUT";
+                                break;
+                            }
+
+                            LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
+                                     report.executionContext.executionTime.count());
+                            if (report.validationResult.finalResult != RSM::W3C::TestResult::PASS) {
+                                LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
+
+                                // Check if we should stop on failure
+                                if (stopOnFailure) {
+                                    LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                    printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
+                                    shouldStop = true;
+                                    break;
+                                }
+                            }
+                        }
+
+                        // Break out if we should stop
+                        if (shouldStop) {
+                            break;
+                        }
+
+                    } catch (const std::exception &e) {
+                        std::string errorMsg = e.what();
+                        // Test not found is normal for sparse test IDs - log as debug instead of error
+                        if (errorMsg.find("not found") != std::string::npos) {
+                            LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
+                        } else {
+                            LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
+                        }
+                        // Continue with other tests instead of returning
+                    }
+                }
+            }  // End iteration loop
 
             // Calculate summary for "up to" tests
             summary.totalTests = reports.size();
@@ -461,84 +493,118 @@ int main(int argc, char *argv[]) {
             runner.getReporter()->endTestRun();
 
         } else {
-            RSM::Logger::info("W3C CLI: Running all W3C SCXML compliance tests...");
+            LOG_INFO("W3C CLI: Running all W3C SCXML compliance tests (repeat {} times)...", repeatCount);
 
-            // Run all tests with interpreter engine (skip reporting to avoid duplicate XML write)
-            summary = runner.runAllTests(/* skipReporting = */ true);
-
-            // Get all interpreter engine reports from reporter
-            allReports = runner.getReporter()->getAllReports();
-
-            // Extract all test IDs (including variants) from interpreter engine reports
-            std::vector<std::string> allTestIds;
-            for (const auto &report : allReports) {
-                if (report.engineType == "interpreter") {
-                    allTestIds.push_back(report.testId);
-                }
+            // Begin test run for consistent reporting
+            auto testSuiteInfo = runner.getTestSuite()->getInfo();
+            std::string testRunName = testSuiteInfo.name + " (All Tests)";
+            if (repeatCount > 1) {
+                testRunName += " - " + std::to_string(repeatCount) + " iterations";
             }
+            runner.getReporter()->beginTestRun(testRunName);
 
-            // Run AOT engine tests for all test IDs (including variants)
-            LOG_INFO("W3C CLI: Running AOT engine tests for all {} tests (including variants)", allTestIds.size());
-            for (const std::string &testIdStr : allTestIds) {
-                try {
-                    // Extract numeric portion from testId (e.g., "403a" -> 403)
-                    std::string numericPart;
-                    for (char c : testIdStr) {
-                        if (std::isdigit(c)) {
-                            numericPart += c;
-                        } else {
-                            break;  // Stop at first non-digit
+            bool shouldStop = false;
+
+            for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
+                if (repeatCount > 1) {
+                    LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
+                    printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
+                }
+
+                // Run all tests with interpreter engine (skip reporting to avoid duplicate XML write)
+                summary = runner.runAllTests(/* skipReporting = */ true);
+
+                // Get all interpreter engine reports from reporter
+                allReports = runner.getReporter()->getAllReports();
+
+                // Extract all test IDs (including variants) from interpreter engine reports
+                std::vector<std::string> allTestIds;
+                for (const auto &report : allReports) {
+                    if (report.engineType == "interpreter") {
+                        allTestIds.push_back(report.testId);
+                    }
+                }
+
+                // Run AOT engine tests for all test IDs (including variants)
+                LOG_INFO("W3C CLI: Running AOT engine tests for all {} tests (including variants)", allTestIds.size());
+                for (const std::string &testIdStr : allTestIds) {
+                    if (shouldStop) {
+                        break;
+                    }
+                    try {
+                        // Extract numeric portion from testId (e.g., "403a" -> 403)
+                        std::string numericPart;
+                        for (char c : testIdStr) {
+                            if (std::isdigit(c)) {
+                                numericPart += c;
+                            } else {
+                                break;  // Stop at first non-digit
+                            }
                         }
-                    }
 
-                    if (numericPart.empty()) {
-                        continue;
-                    }
+                        if (numericPart.empty()) {
+                            continue;
+                        }
 
-                    int testId = std::stoi(numericPart);
-                    RSM::W3C::TestReport aotReport = runner.runAotTest(testId);
-                    // Preserve the original testId (with variant suffix if present)
-                    aotReport.testId = testIdStr;
-                    allReports.push_back(aotReport);
-                    runner.getReporter()->reportTestResult(aotReport);
+                        int testId = std::stoi(numericPart);
+                        RSM::W3C::TestReport aotReport = runner.runAotTest(testId);
+                        // Preserve the original testId (with variant suffix if present)
+                        aotReport.testId = testIdStr;
+                        allReports.push_back(aotReport);
+                        runner.getReporter()->reportTestResult(aotReport);
 
-                    // Update summary with AOT results
-                    summary.totalTests++;
-                    switch (aotReport.validationResult.finalResult) {
-                    case RSM::W3C::TestResult::PASS:
-                        summary.passedTests++;
-                        break;
-                    case RSM::W3C::TestResult::FAIL:
-                        summary.failedTests++;
-                        summary.failedTestIds.push_back(aotReport.testId);
-                        break;
-                    case RSM::W3C::TestResult::ERROR:
-                    case RSM::W3C::TestResult::TIMEOUT:
+                        // Update summary with AOT results
+                        summary.totalTests++;
+                        switch (aotReport.validationResult.finalResult) {
+                        case RSM::W3C::TestResult::PASS:
+                            summary.passedTests++;
+                            break;
+                        case RSM::W3C::TestResult::FAIL:
+                            summary.failedTests++;
+                            summary.failedTestIds.push_back(aotReport.testId);
+                            if (stopOnFailure) {
+                                LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                printf("❌ Stopping on failure: AOT Test %s failed\n", aotReport.testId.c_str());
+                                shouldStop = true;
+                            }
+                            break;
+                        case RSM::W3C::TestResult::ERROR:
+                        case RSM::W3C::TestResult::TIMEOUT:
+                            summary.errorTests++;
+                            summary.errorTestIds.push_back(aotReport.testId);
+                            if (stopOnFailure) {
+                                LOG_INFO("W3C CLI: Stopping execution due to test error (--stop-on-fail)");
+                                printf("❌ Stopping on error: AOT Test %s errored\n", aotReport.testId.c_str());
+                                shouldStop = true;
+                            }
+                            break;
+                        }
+                        summary.totalExecutionTime += aotReport.executionContext.executionTime;
+
+                        if (shouldStop) {
+                            break;
+                        }
+                    } catch (const std::exception &e) {
+                        LOG_ERROR("W3C CLI: AOT engine test {} failed: {}", testIdStr, e.what());
+
+                        // Create error report for failed AOT test
+                        RSM::W3C::TestReport errorReport;
+                        errorReport.testId = testIdStr;
+                        errorReport.engineType = "aot";
+                        errorReport.validationResult.finalResult = RSM::W3C::TestResult::ERROR;
+                        errorReport.validationResult.reason = std::string("AOT engine error: ") + e.what();
+                        errorReport.executionContext.executionTime = std::chrono::milliseconds(0);
+
+                        allReports.push_back(errorReport);
+                        runner.getReporter()->reportTestResult(errorReport);
+
+                        // Update summary
+                        summary.totalTests++;
                         summary.errorTests++;
-                        summary.errorTestIds.push_back(aotReport.testId);
-                        break;
+                        summary.errorTestIds.push_back(testIdStr);
                     }
-                    summary.totalExecutionTime += aotReport.executionContext.executionTime;
-                } catch (const std::exception &e) {
-                    LOG_ERROR("W3C CLI: AOT engine test {} failed: {}", testIdStr, e.what());
-
-                    // Create error report for failed AOT test
-                    RSM::W3C::TestReport errorReport;
-                    errorReport.testId = testIdStr;
-                    errorReport.engineType = "aot";
-                    errorReport.validationResult.finalResult = RSM::W3C::TestResult::ERROR;
-                    errorReport.validationResult.reason = std::string("AOT engine error: ") + e.what();
-                    errorReport.executionContext.executionTime = std::chrono::milliseconds(0);
-
-                    allReports.push_back(errorReport);
-                    runner.getReporter()->reportTestResult(errorReport);
-
-                    // Update summary
-                    summary.totalTests++;
-                    summary.errorTests++;
-                    summary.errorTestIds.push_back(testIdStr);
-                }
-            }
+                }  // End AOT test loop
+            }  // End iteration loop
 
             // Recalculate pass rate
             if (summary.totalTests > 0) {

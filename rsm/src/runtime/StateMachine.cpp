@@ -128,6 +128,12 @@ StateMachine::~StateMachine() {
     }
     // Clean up session only if JS environment was initialized
     if (jsEnvironmentReady_) {
+        // CRITICAL: Remove StateMachine pointer from JSEngine to prevent dangling pointer access
+        // JSEngine worker thread may still be executing JavaScript that calls In() function
+        // Clearing the StateMachine pointer ensures checkStateActive() won't access destroyed object
+        RSM::JSEngine::instance().setStateMachine(nullptr, sessionId_);
+        LOG_DEBUG("StateMachine: Removed StateMachine pointer from JSEngine before destruction");
+
         RSM::JSEngine::instance().destroySession(sessionId_);
     }
 }
