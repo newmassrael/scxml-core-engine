@@ -128,6 +128,48 @@ public:
     }
 
     /**
+     * @brief Check if send type requires target attribute (W3C SCXML C.2)
+     *
+     * Single Source of Truth for BasicHTTP target requirement validation.
+     * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
+     *
+     * Usage:
+     * - Interpreter: ActionExecutorImpl::executeSendAction() (rsm/src/runtime/ActionExecutorImpl.cpp)
+     * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
+     *
+     * W3C SCXML C.2 (test 577): BasicHTTP Event I/O Processor requires
+     * target URL attribute. Missing target raises error.communication.
+     *
+     * @param sendType Event I/O Processor type URI
+     * @return true if send type requires target attribute (BasicHTTP), false otherwise
+     */
+    static bool requiresTargetAttribute(const std::string &sendType) {
+        // W3C SCXML C.2: BasicHTTP Event I/O Processor requires target URL
+        return sendType == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor";
+    }
+
+    /**
+     * @brief Validate BasicHTTP send parameters (W3C SCXML C.2)
+     *
+     * Single Source of Truth for BasicHTTP validation logic.
+     * Checks if required target attribute is present for event processors that require it.
+     *
+     * @param sendType Event I/O Processor type URI
+     * @param target Static target value (empty if not specified)
+     * @param targetExpr Dynamic target expression (empty if not specified)
+     * @param errorMsg Output parameter for error message if validation fails
+     * @return true if valid, false if validation failed (error.communication should be raised)
+     */
+    static bool validateBasicHttpSend(const std::string &sendType, const std::string &target,
+                                      const std::string &targetExpr, std::string &errorMsg) {
+        if (requiresTargetAttribute(sendType) && target.empty() && targetExpr.empty()) {
+            errorMsg = "BasicHTTPEventProcessor requires target attribute";
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * @brief Generate unique sendid (Single Source of Truth)
      *
      * Used by both Interpreter and AOT engines to ensure consistent sendid format.

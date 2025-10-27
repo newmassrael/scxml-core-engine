@@ -97,6 +97,13 @@ if (::RSM::SendHelper::isInvalidTarget("{{ action.target }}")) {
 {% endif %}
 {% else %}
 // W3C SCXML 6.2.4: No target attribute → external queue (to self)
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and action.event %}
+// W3C SCXML C.2 (test 577): Validate BasicHTTP target requirement using SendHelper (Zero Duplication)
+if (::RSM::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
+    return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
+}
+{% endif %}
 {% endif %}
 
 {% if action.target != '#_parent' and action.target != '#_child' %}

@@ -815,13 +815,12 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             return false;
         }
 
-        // W3C SCXML 5.10.2 (test 577): BasicHTTPEventProcessor requires target attribute
-        // If no target is specified for HTTP event processor, generate error.communication
-        if (isHttpEventProcessor && target.empty() && action.getTargetExpr().empty()) {
-            LOG_ERROR("ActionExecutorImpl: BasicHTTPEventProcessor requires target attribute");
+        // W3C SCXML C.2 (test 577): Validate BasicHTTP send using SendHelper (Zero Duplication)
+        std::string errorMsg;
+        if (!SendHelper::validateBasicHttpSend(sendType, target, action.getTargetExpr(), errorMsg)) {
+            LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
             if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.communication", "BasicHTTPEventProcessor requires target attribute",
-                                         sendId, false /* overload discriminator for sendId variant */);
+                eventRaiser_->raiseEvent("error.communication", errorMsg, sendId, false);
             }
             return false;
         }
