@@ -688,8 +688,24 @@ class SCXMLParser:
                 content_elems = ns_findall(child, 'content')
                 if content_elems:
                     content_elem = content_elems[0]
-                    action['content'] = content_elem.text or ''
                     action['contentexpr'] = content_elem.get('expr', '')
+
+                    # W3C SCXML 6.2 & 5.9.2: Serialize XML child elements (matches <data> parsing behavior)
+                    # This enables ECMAScript DOM object creation for _event.data (test 561)
+                    content = ''
+                    if len(content_elem) > 0:
+                        # Has child elements - serialize all children as XML string
+                        # Matches DataModelParser behavior for inline XML (test 557)
+                        child_xml_parts = []
+                        for child_node in content_elem:
+                            child_str = etree.tostring(child_node, encoding='unicode', method='xml')
+                            child_xml_parts.append(child_str)
+                        content = ''.join(child_xml_parts)
+                    else:
+                        # No child elements - use text content
+                        content = content_elem.text or ''
+
+                    action['content'] = content.strip()
                 else:
                     action['content'] = ''
                     action['contentexpr'] = ''
