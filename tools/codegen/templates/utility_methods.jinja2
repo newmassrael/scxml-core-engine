@@ -34,7 +34,7 @@
         switch (event) {
             case Event::NONE: return "";
 {% for event_name in model.events | sort %}
-            case Event::{{ event_name | replace('.', '_') | capitalize }}: return "{{ event_name }}";
+            case Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }}: return "{{ event_name }}";
 {% endfor %}
             default: return "";
         }

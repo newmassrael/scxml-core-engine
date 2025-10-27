@@ -78,7 +78,7 @@ enum class State : uint8_t {
 enum class Event : uint8_t {
     NONE,  // W3C SCXML 6.2: Default event for scheduler polling (no semantic meaning)
     {% for event_name in model.events | sort %}
-    {{ event_name | replace('.', '_') | capitalize }}{{ "," if not loop.last }}
+    {{ event_name | replace('.', '_') | replace('-', '_') | capitalize }}{{ "," if not loop.last }}
     {% endfor %}
 };
 
