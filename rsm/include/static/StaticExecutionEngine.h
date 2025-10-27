@@ -354,11 +354,11 @@ public:
                         for (const auto &[key, value] : dataObj.items()) {
                             std::string valueStr;
                             if (value.is_string()) {
-                                valueStr = value.get<std::string>();
+                                valueStr = value.template get<std::string>();
                             } else if (value.is_number_integer()) {
-                                valueStr = std::to_string(value.get<int>());
+                                valueStr = std::to_string(value.template get<int>());
                             } else if (value.is_number_float()) {
-                                valueStr = std::to_string(value.get<double>());
+                                valueStr = std::to_string(value.template get<double>());
                             } else {
                                 valueStr = value.dump();
                             }
