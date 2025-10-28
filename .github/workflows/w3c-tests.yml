@@ -153,7 +153,6 @@ jobs:
         fail_on_failure: false
         check_name: 'W3C SCXML Test Results'
         summary: '📊 [View Detailed HTML Report](https://newmassrael.github.io/reactive-state-machine/test-results/test-results.html)'
-        group_suite: true
         annotate_only: false
 
     - name: Upload Test Results Artifact
