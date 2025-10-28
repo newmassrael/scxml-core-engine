@@ -1,4 +1,5 @@
 #pragma once
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -143,9 +144,13 @@ struct {{ model.name }}Policy {
 
     // W3C SCXML 6.2: Parent state machine pointer for #_parent support
     ParentStateMachine* parent_ = nullptr;
-    
+
     // W3C SCXML 6.4.1: Invokeid for child-to-parent communication (test338)
     ::std::string invokeId_;
+
+    // W3C SCXML 6.4.5: Delayed sends to parent scheduler (using SendSchedulingHelper)
+    // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
+    mutable ::RSM::SendSchedulingHelper::SimpleScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
     {% endif %}
 
     {% if model.needs_jsengine or model.static_invokes %}
@@ -284,16 +289,22 @@ struct {{ model.name }}Policy {
     }
     {% endif %}
 
-    {% if model.needs_jsengine %}
-    // Destructor: Clean up JSEngine session if initialized (RAII pattern)
+    {% if model.needs_jsengine or model.has_parent_communication %}
+    // Destructor: Clean up resources (RAII pattern)
     ~{{ model.name }}Policy() {
+        {% if model.has_parent_communication %}
+        // W3C SCXML 6.4.5: Cancel all pending delayed sends to parent on child termination
+        // SimpleScheduler destructor automatically cleans up pending events
+        {% endif %}
+        {% if model.needs_jsengine or model.static_invokes %}
         if (sessionId_.has_value()) {
             auto& jsEngine = ::RSM::JSEngine::instance();
             jsEngine.destroySession(sessionId_.value());
         }
+        {% endif %}
     }
 
-    // Prevent copy/move to maintain session ownership
+    // Prevent copy/move to maintain resource ownership
     {{ model.name }}Policy(const {{ model.name }}Policy&) = delete;
     {{ model.name }}Policy& operator=(const {{ model.name }}Policy&) = delete;
     {{ model.name }}Policy({{ model.name }}Policy&&) = delete;

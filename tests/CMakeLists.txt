@@ -451,8 +451,7 @@ rsm_generate_static_w3c_test(179 ${STATIC_W3C_OUTPUT_DIR})
 rsm_generate_static_w3c_test(183 ${STATIC_W3C_OUTPUT_DIR})
 rsm_generate_static_w3c_test(185 ${STATIC_W3C_OUTPUT_DIR})
 rsm_generate_static_w3c_test(186 ${STATIC_W3C_OUTPUT_DIR})
-# W3C SCXML 6.4: test187 uses dynamic invoke - generates Interpreter wrapper
-rsm_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR})
+rsm_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.5: Delayed send cancellation on session termination (Pure Static)
 rsm_generate_static_w3c_test(189 ${STATIC_W3C_OUTPUT_DIR})
 rsm_generate_static_w3c_test(190 ${STATIC_W3C_OUTPUT_DIR})
 # W3C SCXML 6.4: Dynamic invoke tests (inline content, srcexpr, contentExpr) - generate Interpreter wrappers

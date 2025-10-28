@@ -58,8 +58,44 @@ if (::RSM::SendHelper::isUnreachableTarget(dynamicTarget)) {
 }
 {% elif action.target %}
 {% if action.target == '#_parent' %}
-// W3C SCXML 6.2: Send to parent state machine with invokeid (test338)
+{% if action.delay or action.delayexpr %}
+// W3C SCXML 6.2/6.4.5: Delayed send to parent (stored in child, cancelled on termination)
+{
+{% if action.delayexpr %}
+    std::string delayStr;
+{% if model.needs_jsengine or model.needs_event_origin %}
+    this->ensureJSEngine();
+    auto& jsEngine = ::RSM::JSEngine::instance();
+    auto delayResult = jsEngine.getVariable(sessionId_.value(), "{{ action.delayexpr }}").get();
+    if (::RSM::JSEngine::isSuccess(delayResult)) {
+        delayStr = ::RSM::JSEngine::resultToString(delayResult);
+    }
+{% else %}
+    delayStr = {{ action.delayexpr }};
+{% endif %}
+    auto delayMs = ::RSM::SendSchedulingHelper::parseDelayString(delayStr);
+{% else %}
+    auto delayMs = ::RSM::SendSchedulingHelper::parseDelayString("{{ action.delay }}");
+{% endif %}
+
+    // W3C SCXML 6.4.5: Schedule delayed send using SendSchedulingHelper
+    // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
+    // When child terminates, SimpleScheduler destructor automatically cleans up pending events
+    if (parent_) {
+        parentSendScheduler_.scheduleEvent(
+            ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
+            delayMs,
+            sendId
+        );
+        LOG_DEBUG("Scheduled delayed send to parent: event={{ action.event }}, delay={{ action.delay if action.delay else action.delayexpr }}, sendId={}", sendId);
+    } else {
+        LOG_ERROR("Cannot send to parent: parent pointer is null");
+    }
+}
+{% else %}
+// W3C SCXML 6.2: Immediate send to parent state machine with invokeid (test338)
 ::RSM::SendHelper::sendToParent(parent_, ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, invokeId_);
+{% endif %}
 {% elif action.target == '#_child' %}
 // W3C SCXML 6.4.1: Send to invoked child state machine (test347)
 {% if model.static_invokes %}
