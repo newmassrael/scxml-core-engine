@@ -117,7 +117,7 @@
 {% endmacro %}
 
     template<typename Engine>
-{% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_transition_actions and not model.has_parallel_states %}    static bool processTransition(State& currentState, Event event, Engine& engine) {
+{% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_transition_actions and not model.has_parallel_states and not model.has_parent_communication %}    static bool processTransition(State& currentState, Event event, Engine& engine) {
 {% else %}    bool processTransition(State& currentState, Event event, Engine& engine) {
 {% endif %}
 {% if model.static_invokes %}
@@ -308,6 +308,18 @@
         }
 {% endif %}
 
+{% if model.has_parent_communication %}
+        // W3C SCXML 6.4.5: Process ready delayed sends to parent
+        // ARCHITECTURE.md Zero Duplication: Uses SendSchedulingHelper (Single Source of Truth)
+        {
+            typename ParentStateMachine::Event readyEvent;
+            while (parentSendScheduler_.popReadyEvent(readyEvent)) {
+                LOG_DEBUG("Delivering delayed send to parent");
+                parent_->raiseExternal(readyEvent);
+            }
+        }
+
+{% endif %}
 {% if model.needs_event_scheduler %}
         // W3C SCXML 6.2: Process ready scheduled events
         {

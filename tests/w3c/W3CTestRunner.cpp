@@ -642,19 +642,49 @@ std::unique_ptr<ITestReporter> TestComponentFactory::createXMLReporter(const std
                     }
                 }
 
+                // Helper function to escape XML special characters (W3C XML compliance)
+                auto escapeXml = [](const std::string &str) -> std::string {
+                    std::string escaped;
+                    escaped.reserve(str.size());
+                    for (char c : str) {
+                        switch (c) {
+                        case '&':
+                            escaped += "&amp;";
+                            break;
+                        case '<':
+                            escaped += "&lt;";
+                            break;
+                        case '>':
+                            escaped += "&gt;";
+                            break;
+                        case '"':
+                            escaped += "&quot;";
+                            break;
+                        case '\'':
+                            escaped += "&apos;";
+                            break;
+                        default:
+                            escaped += c;
+                            break;
+                        }
+                    }
+                    return escaped;
+                };
+
                 // Helper function to write XML testcase element (Zero Duplication Principle)
-                auto writeTestCase = [](std::ofstream &xmlFile, const TestReport &report,
-                                        const std::string &classname) {
+                auto writeTestCase = [&escapeXml](std::ofstream &xmlFile, const TestReport &report,
+                                                  const std::string &classname) {
                     xmlFile << "    <testcase classname=\"" << classname << "\" "
                             << "name=\"Test_" << report.testId << "\" "
                             << "time=\"" << (report.executionContext.executionTime.count() / 1000.0) << "\" "
                             << "type=\"" << report.testType << "\" "
                             << "result=\"" << testResultToString(report.validationResult.finalResult) << "\" "
-                            << "description=\"" << report.validationResult.reason << "\"";
+                            << "description=\"" << escapeXml(report.validationResult.reason) << "\"";
 
                     if (report.validationResult.finalResult != TestResult::PASS) {
                         xmlFile << ">" << std::endl;
-                        xmlFile << "      <failure message=\"" << report.validationResult.reason << "\"/>" << std::endl;
+                        xmlFile << "      <failure message=\"" << escapeXml(report.validationResult.reason) << "\"/>"
+                                << std::endl;
                         xmlFile << "    </testcase>" << std::endl;
                     } else {
                         xmlFile << "/>" << std::endl;
@@ -1708,7 +1738,6 @@ TestReport W3CTestRunner::runAotTest(int testId) {
         case 201:
 
         // W3C SCXML 6.4: Dynamic invoke tests - run on Interpreter engine via wrapper
-        case 187:
         case 189:
         case 190:
         case 191:
