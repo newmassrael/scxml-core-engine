@@ -94,7 +94,8 @@ if (::RSM::SendHelper::isUnreachableTarget(dynamicTarget)) {
 }
 {% else %}
 // W3C SCXML 6.2: Immediate send to parent state machine with invokeid (test338)
-::RSM::SendHelper::sendToParent(parent_, ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, invokeId_);
+// Access parent and invokeId through engine policy (supports both static and non-static contexts)
+::RSM::SendHelper::sendToParent(engine.getPolicy().parent_, ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, engine.getPolicy().invokeId_);
 {% endif %}
 {% elif action.target == '#_child' %}
 // W3C SCXML 6.4.1: Send to invoked child state machine (test347)

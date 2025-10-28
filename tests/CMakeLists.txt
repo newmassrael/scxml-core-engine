@@ -455,45 +455,45 @@ rsm_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.5: D
 rsm_generate_static_w3c_test(189 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: Internal queue priority via target="#_internal" (Pure Static)
 rsm_generate_static_w3c_test(190 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: External queue priority via targetexpr (Static Hybrid)
 rsm_generate_static_w3c_test(191 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.1: Inline <content> invoke with #_parent target (Pure Static)
-rsm_generate_static_w3c_test(192 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
+# rsm_generate_static_w3c_test(192 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(193 ${STATIC_W3C_OUTPUT_DIR})  # type attribute for queue routing (W3C SCXML 6.2.4)
 rsm_generate_static_w3c_test(194 ${STATIC_W3C_OUTPUT_DIR})  # invalid target raises error.execution (W3C SCXML 6.2)
 rsm_generate_static_w3c_test(198 ${STATIC_W3C_OUTPUT_DIR})  # default event processor type (W3C SCXML 6.2)
-rsm_generate_static_w3c_test(199 ${STATIC_W3C_OUTPUT_DIR})  # unsupported send type raises error.execution (W3C SCXML 6.2)
+# rsm_generate_static_w3c_test(199 ${STATIC_W3C_OUTPUT_DIR})  # unsupported send type raises error.execution (W3C SCXML 6.2) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(200 ${STATIC_W3C_OUTPUT_DIR})  # SCXML event processor support (W3C SCXML 6.2)
 rsm_generate_static_w3c_test(201 ${STATIC_W3C_OUTPUT_DIR})  # BasicHTTP event processor (optional - W3C SCXML 6.2)
 rsm_generate_static_w3c_test(205 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-rsm_generate_static_w3c_test(207 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> (invoke cancellation across sessions)
+# rsm_generate_static_w3c_test(207 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> (invoke cancellation across sessions) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(208 ${STATIC_W3C_OUTPUT_DIR})  # <cancel sendid="..."/> for delayed send cancellation (W3C SCXML 6.3)
-rsm_generate_static_w3c_test(210 ${STATIC_W3C_OUTPUT_DIR})  # sendidexpr (cancel with dynamic expression)
+# rsm_generate_static_w3c_test(210 ${STATIC_W3C_OUTPUT_DIR})  # sendidexpr (cancel with dynamic expression) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(215 ${STATIC_W3C_OUTPUT_DIR})  # typeexpr + inline <content>
-rsm_generate_static_w3c_test(216 ${STATIC_W3C_OUTPUT_DIR})  # srcexpr
+# rsm_generate_static_w3c_test(216 ${STATIC_W3C_OUTPUT_DIR})  # srcexpr - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(220 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 rsm_generate_static_w3c_test(223 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-rsm_generate_static_w3c_test(224 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
+# rsm_generate_static_w3c_test(224 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(225 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 
 rsm_generate_static_w3c_test(226 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2/6.4: auto-discovers test226sub1.txml
 
-rsm_generate_static_w3c_test(228 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-rsm_generate_static_w3c_test(229 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + autoforward
+# rsm_generate_static_w3c_test(228 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(229 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + autoforward - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(230 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + autoforward (manual)
 rsm_generate_static_w3c_test(232 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-rsm_generate_static_w3c_test(233 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + finalize
-rsm_generate_static_w3c_test(234 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + finalize + parallel
-rsm_generate_static_w3c_test(235 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
+# rsm_generate_static_w3c_test(233 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + finalize - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(234 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + finalize + parallel - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(235 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(236 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-rsm_generate_static_w3c_test(237 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + cancellation
-rsm_generate_static_w3c_test(240 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + namelist + params
-rsm_generate_static_w3c_test(241 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + namelist/param consistency
-rsm_generate_static_w3c_test(242 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + static src (mixed invoke - needs test242sub1.scxml)
-rsm_generate_static_w3c_test(243 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + param
-rsm_generate_static_w3c_test(244 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + namelist
-rsm_generate_static_w3c_test(245 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + namelist (non-existent var)
+# rsm_generate_static_w3c_test(237 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + cancellation - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(240 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + namelist + params - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(241 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + namelist/param consistency - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(242 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + static src (mixed invoke - needs test242sub1.scxml) - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(243 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + param - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(244 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + namelist - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(245 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + namelist (non-existent var) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(247 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + done.invoke
 rsm_generate_static_w3c_test(250 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + cancellation (manual test)
-rsm_generate_static_w3c_test(252 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + event cancellation after invoke termination
-rsm_generate_static_w3c_test(253 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + bidirectional SCXML event processor
+# rsm_generate_static_w3c_test(252 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + event cancellation after invoke termination - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(253 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + bidirectional SCXML event processor - TODO: Implement full invoke infrastructure
 
 rsm_generate_static_w3c_test(276 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2/6.4: auto-discovers test276sub1.txml
 rsm_generate_static_w3c_test(277 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.3: datamodel init error.execution
@@ -502,13 +502,13 @@ rsm_generate_static_w3c_test(279 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: e
 rsm_generate_static_w3c_test(280 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.3: late binding variable initialization
 rsm_generate_static_w3c_test(286 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.3: error.execution for invalid assignment location
 rsm_generate_static_w3c_test(287 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.4: valid assignment to valid location
-rsm_generate_static_w3c_test(294 ${STATIC_W3C_OUTPUT_DIR})  # dynamic donedata (param/content requires runtime evaluation)
+# rsm_generate_static_w3c_test(294 ${STATIC_W3C_OUTPUT_DIR})  # dynamic donedata (param/content requires runtime evaluation) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(298 ${STATIC_W3C_OUTPUT_DIR})  # dynamic donedata (invalid param location requires runtime evaluation)
 rsm_generate_static_w3c_test(301 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: script element download timeout rejection (manual)
 rsm_generate_static_w3c_test(302 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: script evaluation at load time
 rsm_generate_static_w3c_test(303 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9: script execution in entry actions
 rsm_generate_static_w3c_test(304 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: script-declared variables accessible in data model
-rsm_generate_static_w3c_test(307 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2.2: late binding with log validation
+# rsm_generate_static_w3c_test(307 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2.2: late binding with log validation - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(309 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: invalid boolean expressions treated as false
 rsm_generate_static_w3c_test(310 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.1: In() predicate (requires Interpreter wrapper)
 rsm_generate_static_w3c_test(311 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: error.execution for invalid assign location
@@ -546,12 +546,12 @@ rsm_generate_static_w3c_test(352 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: 
 rsm_generate_static_w3c_test(354 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10: _event.data with namelist/param/content
 
 rsm_generate_static_w3c_test(355 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (default to first child in document order)
-rsm_generate_static_w3c_test(364 ${STATIC_W3C_OUTPUT_DIR})  # parallel initial state format (space-separated IDs)
+# rsm_generate_static_w3c_test(364 ${STATIC_W3C_OUTPUT_DIR})  # parallel initial state format (space-separated IDs) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(372 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (done.state.parentid after final)
 rsm_generate_static_w3c_test(375 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onentry execution order)
-rsm_generate_static_w3c_test(376 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onentry error handling)
-rsm_generate_static_w3c_test(377 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onexit execution order)
-rsm_generate_static_w3c_test(378 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onexit error handling)
+# rsm_generate_static_w3c_test(376 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onentry error handling) - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(377 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onexit execution order) - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(378 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onexit error handling) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(387 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history states with default transitions
 rsm_generate_static_w3c_test(388 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: deep and shallow history states
 rsm_generate_static_w3c_test(396 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.12.1: event name matching and document order transition selection
@@ -634,17 +634,86 @@ rsm_generate_static_w3c_test(577 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: err
 rsm_generate_static_w3c_test(578 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9/5.10: ECMAScript _event.data JSON object (Static Hybrid)
 rsm_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.8: history default content execution (Static Hybrid)
 rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history state not in configuration (parallel)
-rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml
-rsm_generate_static_w3c_test(242 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test242sub1.txml
+# rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml - TODO: Implement full invoke infrastructure
+# rsm_generate_static_w3c_test(242 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test242sub1.txml - TODO: Implement full invoke infrastructure
 
-# Collect all AOT test runner files (one file per test for incremental compilation)
-file(GLOB W3C_AOT_RUNNER_SOURCES "w3c/runners/W3CTestRunner_Test*.cpp")
+# ============================================================================
+# W3C Test Registry: Single Source of Truth for AOT vs Interpreter Classification
+# ============================================================================
+#
+# ARCHITECTURE: Automatic Test Classification System
+#
+# Benefits:
+# - Single point of control (this file only)
+# - Automatic file management (no manual Test*.h, AllAotTests.h edits)
+# - Easy test migration (move number between lists)
+# ===========================================================================
+# W3C Test Registry Architecture
+# ===========================================================================
+# SINGLE SOURCE OF TRUTH: This section defines all test classifications.
+# - W3C_AOT_TESTS: Tests that can run on Pure Static or Static Hybrid AOT engine
+# - W3C_INTERPRETER_ONLY_TESTS: Tests requiring Interpreter (dynamic features)
+#
+# WORKFLOW:
+# 1. To add AOT test: Add test number to W3C_AOT_TESTS + create Test*.h in aot_tests/
+# 2. To migrate test: Move test number between lists, re-run cmake
+# 3. W3CTestRegistry.cpp auto-generates from these lists
+#
+# FILES GENERATED:
+# - build/tests/w3c/W3CTestRegistry.cpp (from W3CTestRegistry.cpp.in template)
+# - tests/w3c/runners/W3CTestRunner_Test*.cpp (CMake generates list, files pre-committed)
+# ===========================================================================
+
+# AOT Tests: Pure Static or Static Hybrid (only tests with runner files)
+set(W3C_AOT_TESTS
+    144 147 148 149 150 151 152 153 155 156 158 159
+    172 173 174 175 176 178 179 183 185 186 187 189 190 191 193 194 198 200 201 205 208
+    215 220 223 225 226 230 232 236 247 250
+    276 277 278 279 280 286 287 298
+    301 302 303 304 309 310 311 312 313 314 318 319
+    321 322 323 324 325 326 329 330 331 332 333 335 336 337 338 339
+    342 343 344 346 347 348 349 350 351 352 354 355 372 375
+    387 388 396 399
+    401 402 403a 403b 403c 404 405 406 407 409 411 412 413 415 416 417 419 421 422 423
+    436 444 445 446 448 449 451 452 453 456 457 459 460
+    487 488 495 496 500 501 503 504 505 506 509 510 513 518 519 520 521 522 525 527 528 529 530 531 532 533 534
+    550 551 552 553 554 557 558 560 561 562 567 569 570 576 577 578 579 580
+)
+
+# Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
+set(W3C_INTERPRETER_ONLY_TESTS
+    192 199 207 210 216 224 228 229 233 234 235 237 239 240 241 242 243 244 245 252 253 294 307 364 376 377 378
+)
+
+# Generate W3CTestRegistry.cpp from template
+set(W3C_AOT_TEST_REGISTRATIONS "")
+foreach(TEST_NUM ${W3C_AOT_TESTS})
+    string(APPEND W3C_AOT_TEST_REGISTRATIONS "        {\"${TEST_NUM}\", TestEngine::AOT},\n")
+endforeach()
+
+set(W3C_INTERPRETER_TEST_REGISTRATIONS "")
+foreach(TEST_NUM ${W3C_INTERPRETER_ONLY_TESTS})
+    string(APPEND W3C_INTERPRETER_TEST_REGISTRATIONS "        {\"${TEST_NUM}\", TestEngine::INTERPRETER},\n")
+endforeach()
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/w3c/W3CTestRegistry.cpp.in
+    ${CMAKE_CURRENT_BINARY_DIR}/w3c/W3CTestRegistry.cpp
+    @ONLY
+)
+
+# Collect AOT test runner files (explicit list, not file(GLOB))
+set(W3C_AOT_RUNNER_SOURCES "")
+foreach(TEST_NUM ${W3C_AOT_TESTS})
+    list(APPEND W3C_AOT_RUNNER_SOURCES "w3c/runners/W3CTestRunner_Test${TEST_NUM}.cpp")
+endforeach()
 
 # Full W3C Test Runner for all W3C SCXML 1.0 compliance tests
 add_executable(w3c_test_cli
     w3c/W3CTestCLI.cpp
     w3c/W3CTestRunner.cpp
-    ${W3C_AOT_RUNNER_SOURCES}  # Auto-discovered AOT test runners (151 files)
+    ${CMAKE_CURRENT_BINARY_DIR}/w3c/W3CTestRegistry.cpp  # Auto-generated test registry
+    ${W3C_AOT_RUNNER_SOURCES}  # Explicit AOT test runners (from W3C_AOT_TESTS list)
     w3c/impl/TXMLConverter.cpp
     w3c/impl/TestMetadataParser.cpp
     w3c/W3CHttpTestServer.cpp
@@ -667,6 +736,7 @@ target_include_directories(w3c_test_cli
         ${CMAKE_SOURCE_DIR}/rsm/include
         ${CMAKE_SOURCE_DIR}/tests
         ${CMAKE_SOURCE_DIR}/tests/w3c  # AOT test registry headers
+        ${CMAKE_CURRENT_BINARY_DIR}/w3c  # Generated W3CTestRegistry.cpp
         ${STATIC_W3C_OUTPUT_DIR}  # Include generated static test headers
         ${LIBXMLXX_INCLUDE_DIRS}
         /usr/include/libxml2

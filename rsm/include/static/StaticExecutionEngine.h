@@ -805,6 +805,17 @@ public:
             processEventQueues();
             checkEventlessTransitions();
         }
+
+        // W3C SCXML 6.4: Invoke completion callback if in final state after initialization
+        // Child state machines may reach final state immediately (e.g., initial="subFinal")
+        // and must notify parent to generate done.invoke event
+        if (isInFinalState() && completionCallback_) {
+            LOG_DEBUG("AOT initialize: Reached final state during initialization, invoking completion callback");
+            // W3C SCXML 3.8: Execute onexit actions for final state before notifying parent
+            std::vector<State> activeStates = getActiveStates();
+            executeOnExit(currentState_, activeStates);
+            completionCallback_();
+        }
     }
 
     /**
@@ -977,6 +988,12 @@ public:
         Event event;
         while (scheduler_.popReadyEvent(event, eventData)) {
             raiseExternal(event, eventData);
+        }
+
+        // W3C SCXML 6.4: Tick child state machines to process their events
+        // Children need to run independently during parent's event loop
+        if constexpr (requires { policy_.tickChildren(*this); }) {
+            policy_.tickChildren(*this);
         }
 
         // Process any events that were just raised (or existing events)

@@ -466,7 +466,8 @@ class SCXMLParser:
                             'finalize_content': '',  # TODO: extract finalize script
                             'src': invoke.get('src', ''),
                             'params': invoke.get('params', []),
-                            'idlocation': invoke.get('idlocation', '')  # W3C SCXML 6.4.1
+                            'idlocation': invoke.get('idlocation', ''),  # W3C SCXML 6.4.1
+                            'namelist': invoke.get('namelist', '')  # W3C SCXML 6.4.1: namelist validation
                         }
                         state.static_invokes.append(static_invoke)
                         self.model.static_invokes.append(static_invoke)
@@ -956,6 +957,7 @@ class SCXMLParser:
             'id': invoke_id,
             'idlocation': invoke_elem.get('idlocation', ''),
             'autoforward': invoke_elem.get('autoforward', 'false'),
+            'namelist': invoke_elem.get('namelist', ''),
             'params': [],
             'finalize': [],
             'content': '',
@@ -1067,6 +1069,10 @@ class SCXMLParser:
         if is_hybrid_invoke:
             self.model.has_hybrid_invoke = True
             self.model.needs_jsengine = True  # JSEngine for srcexpr/contentexpr evaluation
+
+        # W3C SCXML 6.4.1: Namelist validation requires JSEngine (even for static invokes)
+        if is_static_invoke and invoke['namelist']:
+            self.model.needs_jsengine = True  # JSEngine for namelist variable validation
         
         if is_dynamic_file_invoke:
             # Deprecated: srcexpr now handled as hybrid invoke

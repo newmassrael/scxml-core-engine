@@ -1,3 +1,4 @@
+#include "W3CTestRegistry.h"
 #include "W3CTestRunner.h"
 #include "common/Logger.h"
 #include <chrono>
