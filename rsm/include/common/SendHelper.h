@@ -57,6 +57,69 @@ public:
     }
 
     /**
+     * @brief Check if target is child invoke session (W3C SCXML 6.4)
+     *
+     * Single Source of Truth for child invoke target detection logic.
+     * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
+     *
+     * Usage:
+     * - Interpreter: EventTargetFactoryImpl::createTarget() (rsm/src/events/EventTargetFactoryImpl.cpp)
+     * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
+     *
+     * W3C SCXML 6.4 (test192): Events with target="#_<invokeid>" must be routed
+     * to the child state machine identified by <invokeid>.
+     *
+     * Examples:
+     * - "#_invokedChild" → child invoke target (returns true)
+     * - "#_parent" → parent target (returns false)
+     * - "#_internal" → internal queue (returns false)
+     * - "#_scxml_sessionid" → SCXML session target (returns false)
+     *
+     * @param target Target to check
+     * @return true if target is child invoke (#_<invokeid>), false otherwise
+     */
+    static bool isChildInvokeTarget(const std::string &target) {
+        // W3C SCXML 6.4: #_<invokeid> format indicates child invoke target
+        // Must start with #_ but not be #_parent or #_internal
+        if (!target.starts_with("#_")) {
+            return false;
+        }
+        // Exclude special reserved targets
+        if (target == "#_parent" || target == "#_internal") {
+            return false;
+        }
+        // Exclude SCXML session targets (#_scxml_<sessionid>)
+        if (target.starts_with("#_scxml_")) {
+            return false;
+        }
+        // All other #_<invokeid> are child invoke targets
+        return true;
+    }
+
+    /**
+     * @brief Extract invoke ID from child target (W3C SCXML 6.4)
+     *
+     * Single Source of Truth for invoke ID extraction logic.
+     * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
+     *
+     * W3C SCXML 6.4 (test192): Extract invokeid from target="#_<invokeid>".
+     *
+     * Example:
+     * - "#_invokedChild" → "invokedChild"
+     * - "#_myChild" → "myChild"
+     *
+     * @param target Child invoke target (must start with "#_")
+     * @return Invoke ID (substring after "#_")
+     */
+    static std::string extractInvokeId(const std::string &target) {
+        // W3C SCXML 6.4: Extract invokeid from #_<invokeid>
+        if (target.starts_with("#_")) {
+            return target.substr(2);  // Skip "#_" prefix
+        }
+        return target;  // Fallback: return as-is
+    }
+
+    /**
      * @brief Check if target is HTTP URL (W3C SCXML C.2)
      *
      * Single Source of Truth for HTTP target detection logic.

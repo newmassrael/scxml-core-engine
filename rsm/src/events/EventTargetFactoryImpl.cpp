@@ -68,9 +68,10 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::st
         return createExternalTarget(sessionId);
     }
 
-    // Handle invoke ID target URI (#_invokeId)
-    if (targetUri.starts_with("#_") && targetUri != "#_internal" && targetUri != "#_parent") {
-        std::string invokeId = targetUri.substr(2);  // Remove "#_" prefix
+    // W3C SCXML 6.4 (test192): Handle child invoke target (#_<invokeid>)
+    // ARCHITECTURE.md Zero Duplication: Uses SendHelper (Single Source of Truth)
+    if (SendHelper::isChildInvokeTarget(targetUri)) {
+        std::string invokeId = SendHelper::extractInvokeId(targetUri);
         LOG_DEBUG("EventTargetFactoryImpl::createTarget() - Creating invoke target for ID: {}", invokeId);
         return createInvokeTarget(invokeId, sessionId);
     }

@@ -118,6 +118,49 @@ if (child_{{ invoke_id }}_) {
 // No static invokes found - this should not happen for #_child target
 LOG_ERROR("Cannot send to #_child: no static invokes in model");
 {% endif %}
+{% elif action.target.startswith('#_') and action.target not in ['#_parent', '#_internal', '#_child'] %}
+// W3C SCXML 6.4: Send to child invoke via #_<invokeid> target (test192)
+// ARCHITECTURE.md Zero Duplication: Uses SendHelper::isChildInvokeTarget() (Single Source of Truth)
+if (::RSM::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
+    std::string invokeId = ::RSM::SendHelper::extractInvokeId("{{ action.target }}");
+{% if model.static_invokes %}
+{% for invoke in model.static_invokes %}
+{% if loop.first %}
+    if (invokeId == "{{ invoke.invoke_id }}") {
+        if (child_{{ invoke.invoke_id }}_) {
+            // W3C SCXML 6.4: Send event to child using child's Event enum
+            using ChildEvent = ::RSM::Generated::{{ invoke.child_name }}::Event;
+            LOG_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
+            child_{{ invoke.invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+            LOG_DEBUG("Processing child {} event queues", invokeId);
+            // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
+            child_{{ invoke.invoke_id }}_->step();
+            LOG_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
+        } else {
+            LOG_WARN("Child {} not initialized, cannot send event", invokeId);
+        }
+{% else %}
+    } else if (invokeId == "{{ invoke.invoke_id }}") {
+        if (child_{{ invoke.invoke_id }}_) {
+            using ChildEvent = ::RSM::Generated::{{ invoke.child_name }}::Event;
+            LOG_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
+            child_{{ invoke.invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+            child_{{ invoke.invoke_id }}_->step();
+            LOG_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
+        } else {
+            LOG_WARN("Child {} not initialized, cannot send event", invokeId);
+        }
+{% endif %}
+{% endfor %}
+    } else {
+        LOG_ERROR("Child invoke target #{} not found in static invokes", invokeId);
+    }
+{% else %}
+    LOG_ERROR("Cannot send to child invoke: no static invokes in model");
+{% endif %}
+} else {
+    LOG_ERROR("Invalid child invoke target: {{ action.target }}");
+}
 {% else %}
 // W3C SCXML 6.2 (tests 159, 194): Validate send target using SendHelper
 if (::RSM::SendHelper::isInvalidTarget("{{ action.target }}")) {
@@ -143,7 +186,8 @@ if (::RSM::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 {% endif %}
 {% endif %}
 
-{% if action.target != '#_parent' and action.target != '#_child' %}
+{# W3C SCXML 6.4: Skip fallback queue routing for child invoke targets (already handled above) #}
+{% if action.target != '#_parent' and action.target != '#_child' and not (action.target.startswith('#_') and action.target not in ['#_parent', '#_internal', '#_child']) %}
 {% if action.eventexpr %}
 // W3C SCXML 6.2: Dynamic event evaluation (test172)
 {
