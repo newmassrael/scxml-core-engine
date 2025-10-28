@@ -18,8 +18,8 @@
 #include <optional>
 #include <thread>
 
-// AOT Test Registry (new modular system)
-#include "aot_tests/AllAotTests.h"
+// AOT Test Registry (for registry-based test execution)
+#include "aot_tests/AotTestRegistry.h"
 
 // Include generated static test headers for Interpreter engine fallback
 // These tests require Interpreter wrappers due to dynamic features or metadata requirements
@@ -30,7 +30,19 @@
 #include "test199_sm.h"
 #include "test201_sm.h"
 #include "test226_sm.h"
+// test230_sm.h excluded: code generation bug (_event not declared in static code)
+// test236_sm.h excluded: code generation bug (static method accessing non-static members)
 #include "test239_sm.h"
+#include "test240_sm.h"
+#include "test241_sm.h"
+#include "test243_sm.h"
+#include "test244_sm.h"
+#include "test245_sm.h"
+// test250_sm.h excluded: code generation bug (single quotes instead of double quotes in strings)
+#include "test253_sm.h"
+#include "test307_sm.h"
+
+// test364_sm.h excluded: code generation bug (malformed return statements)
 
 namespace RSM::W3C {
 

@@ -22,6 +22,7 @@
 // W3C SCXML 6.4: Hybrid invoke support (AOT parent + Interpreter child)
 #include "runtime/StateMachine.h"
 #include "common/InvokeHelper.h"
+#include "common/FileLoadingHelper.h"
 {% endif %}
 {% if model.needs_send_helper %}
 #include "common/SendHelper.h"
@@ -41,12 +42,11 @@
 #include "common/ConflictResolutionHelper.h"
 #include "common/ParallelCompletionHelper.h"
 {% endif %}
-{% if model.needs_event_data_helper %}
 #include "common/EventDataHelper.h"
-{% endif %}
 {% if model.needs_donedata_helper %}
 #include "common/DoneDataHelper.h"
 {% endif %}
+#include "common/InPredicateHelper.h"
 {% if model.needs_jsengine %}
 #include "common/DataModelInitHelper.h"
 #include "common/EventTypeHelper.h"
@@ -59,7 +59,6 @@
 #include "common/ForeachValidator.h"
 #include "common/ForeachHelper.h"
 #include "common/GuardHelper.h"
-#include "common/InPredicateHelper.h"
 {% endif %}
 
 namespace RSM::Generated::{{ model.name }} {

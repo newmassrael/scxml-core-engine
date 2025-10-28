@@ -12,15 +12,11 @@ function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
     set(GENERATED_HEADER "${OUTPUT_DIR}/test${TEST_NUM}_sm.h")
 
-    # Collect all code generator dependencies for proper incremental builds
-    # When any template or Python script changes, all generated code must be rebuilt
-    file(GLOB CODEGEN_TEMPLATES "${CMAKE_SOURCE_DIR}/tools/codegen/templates/*.jinja2")
-    file(GLOB CODEGEN_ACTION_TEMPLATES "${CMAKE_SOURCE_DIR}/tools/codegen/templates/actions/*.jinja2")
-    set(CODEGEN_DEPENDENCIES
+    # Code generator Python scripts as base dependencies
+    # Template dependencies are tracked via DEPFILE for fine-grained incremental builds
+    set(CODEGEN_SCRIPTS
         "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py"
         "${CMAKE_SOURCE_DIR}/tools/codegen/scxml_parser.py"
-        ${CODEGEN_TEMPLATES}
-        ${CODEGEN_ACTION_TEMPLATES}
     )
 
     # Check if main TXML file exists
@@ -52,8 +48,9 @@ function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         # Generate C++ code for sub SCXML (as invoked child)
         add_custom_command(
             OUTPUT "${SUB_HEADER_FILE}"
-            COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SUB_SCXML_FILE}" -o "${OUTPUT_DIR}" --as-child
-            DEPENDS "${SUB_SCXML_FILE}" ${CODEGEN_DEPENDENCIES}
+            COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SUB_SCXML_FILE}" -o "${OUTPUT_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
+            DEPENDS "${SUB_SCXML_FILE}" ${CODEGEN_SCRIPTS}
+            DEPFILE "${SUB_HEADER_FILE}.d"
             COMMENT "Generating C++ code: ${SUB_TXML_NAME}_sm.h"
             VERBATIM
         )
@@ -121,9 +118,10 @@ function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
 
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
-        COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SCXML_FILE}" -o "${OUTPUT_DIR}"
+        COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SCXML_FILE}" -o "${OUTPUT_DIR}" --write-deps "${GENERATED_HEADER}.d"
         COMMAND ${CMAKE_COMMAND} -P "${PROCESS_CHILDREN_SCRIPT}"
-        DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} ${CODEGEN_DEPENDENCIES}
+        DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} ${CODEGEN_SCRIPTS}
+        DEPFILE "${GENERATED_HEADER}.d"
         COMMENT "Generating C++ code: test${TEST_NUM}_sm.h (with inline children)"
         VERBATIM
     )
