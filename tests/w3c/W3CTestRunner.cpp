@@ -1763,7 +1763,6 @@ TestReport W3CTestRunner::runAotTest(int testId) {
         case 226:
         case 228:
         case 229:
-        case 230:
         case 232:
         case 233:
         case 234:

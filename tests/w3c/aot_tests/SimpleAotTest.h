@@ -106,9 +106,22 @@ public:
         }
 
         auto currentState = sm.getCurrentState();
-        LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}",
-                  static_cast<int>(currentState), static_cast<int>(SM::State::Pass));
-        bool result = currentState == SM::State::Pass;
+
+        // W3C SCXML: Check success state (default: Pass, override with PASS_STATE)
+        // Policy-based design: Derived class can define PASS_STATE for custom success states
+        bool isPass;
+        if constexpr (requires { Derived::PASS_STATE; }) {
+            // Manual test or custom success state
+            isPass = (currentState == Derived::PASS_STATE);
+            LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, PASS_STATE={}, isPass={}",
+                      static_cast<int>(currentState), static_cast<int>(Derived::PASS_STATE), isPass);
+        } else {
+            // Standard test: success = Pass state
+            isPass = (currentState == SM::State::Pass);
+            LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}, isPass={}",
+                      static_cast<int>(currentState), static_cast<int>(SM::State::Pass), isPass);
+        }
+        bool result = isPass;
 
         // W3C SCXML: Cleanup JSEngine session before stack unwinding
         // This prevents stack-use-after-return when JSEngine background thread

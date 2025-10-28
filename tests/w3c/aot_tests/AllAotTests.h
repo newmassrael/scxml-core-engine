@@ -47,6 +47,7 @@
 #include "Test226.h"
 #include "Test228.h"
 #include "Test229.h"
+#include "Test230.h"
 #include "Test232.h"
 #include "Test233.h"
 #include "Test234.h"
