@@ -455,7 +455,7 @@ rsm_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.5: D
 rsm_generate_static_w3c_test(189 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: Internal queue priority via target="#_internal" (Pure Static)
 rsm_generate_static_w3c_test(190 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: External queue priority via targetexpr (Static Hybrid)
 rsm_generate_static_w3c_test(191 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.1: Inline <content> invoke with #_parent target (Pure Static)
-# rsm_generate_static_w3c_test(192 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(192 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: Inline <content> invoke with #_<invokeid> target (Pure Static)
 rsm_generate_static_w3c_test(193 ${STATIC_W3C_OUTPUT_DIR})  # type attribute for queue routing (W3C SCXML 6.2.4)
 rsm_generate_static_w3c_test(194 ${STATIC_W3C_OUTPUT_DIR})  # invalid target raises error.execution (W3C SCXML 6.2)
 rsm_generate_static_w3c_test(198 ${STATIC_W3C_OUTPUT_DIR})  # default event processor type (W3C SCXML 6.2)
@@ -667,7 +667,7 @@ rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: hi
 # AOT Tests: Pure Static or Static Hybrid (only tests with runner files)
 set(W3C_AOT_TESTS
     144 147 148 149 150 151 152 153 155 156 158 159
-    172 173 174 175 176 178 179 183 185 186 187 189 190 191 193 194 198 200 201 205 208
+    172 173 174 175 176 178 179 183 185 186 187 189 190 191 192 193 194 198 200 201 205 208
     215 220 223 225 226 230 232 236 247 250
     276 277 278 279 280 286 287 298
     301 302 303 304 309 310 311 312 313 314 318 319
@@ -682,7 +682,7 @@ set(W3C_AOT_TESTS
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
-    192 199 207 210 216 224 228 229 233 234 235 237 239 240 241 242 243 244 245 252 253 294 307 364 376 377 378
+    199 207 210 216 224 228 229 233 234 235 237 239 240 241 242 243 244 245 252 253 294 307 364 376 377 378
 )
 
 # Generate W3CTestRegistry.cpp from template
