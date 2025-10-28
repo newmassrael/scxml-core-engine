@@ -465,7 +465,7 @@ rsm_generate_static_w3c_test(201 ${STATIC_W3C_OUTPUT_DIR})  # BasicHTTP event pr
 rsm_generate_static_w3c_test(205 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 rsm_generate_static_w3c_test(207 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3: cancel tag - cannot cancel events in different sessions (invoke + delayed send)
 rsm_generate_static_w3c_test(208 ${STATIC_W3C_OUTPUT_DIR})  # <cancel sendid="..."/> for delayed send cancellation (W3C SCXML 6.3)
-# rsm_generate_static_w3c_test(210 ${STATIC_W3C_OUTPUT_DIR})  # sendidexpr (cancel with dynamic expression) - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(210 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3: sendidexpr for dynamic cancel (Static Hybrid)
 rsm_generate_static_w3c_test(215 ${STATIC_W3C_OUTPUT_DIR})  # typeexpr + inline <content>
 # rsm_generate_static_w3c_test(216 ${STATIC_W3C_OUTPUT_DIR})  # srcexpr - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(220 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
@@ -666,7 +666,7 @@ rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: hi
 # AOT Tests: Pure Static or Static Hybrid (only tests with runner files)
 set(W3C_AOT_TESTS
     144 147 148 149 150 151 152 153 155 156 158 159
-    172 173 174 175 176 178 179 183 185 186 187 189 190 191 192 193 194 198 199 200 201 205 208
+    172 173 174 175 176 178 179 183 185 186 187 189 190 191 192 193 194 198 199 200 201 205 207 208 210
     215 220 223 225 226 230 232 236 247 250
     276 277 278 279 280 286 287 298
     301 302 303 304 309 310 311 312 313 314 318 319
@@ -681,7 +681,7 @@ set(W3C_AOT_TESTS
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
-    207 210 216 224 228 229 233 234 235 237 239 240 241 242 243 244 245 252 253 294 307 364 376 377 378
+    216 224 228 229 233 234 235 237 239 240 241 242 243 244 245 252 253 294 307 364 376 377 378
 )
 
 # Generate W3CTestRegistry.cpp from template
@@ -701,9 +701,14 @@ configure_file(
     @ONLY
 )
 
-# Collect AOT test runner files (explicit list, not file(GLOB))
+# Auto-generate AOT test runner files
 set(W3C_AOT_RUNNER_SOURCES "")
 foreach(TEST_NUM ${W3C_AOT_TESTS})
+    set(RUNNER_FILE "${CMAKE_CURRENT_SOURCE_DIR}/w3c/runners/W3CTestRunner_Test${TEST_NUM}.cpp")
+    file(WRITE "${RUNNER_FILE}" 
+"// Auto-generated runner file for W3C SCXML Test ${TEST_NUM}
+#include \"aot_tests/Test${TEST_NUM}.h\"
+")
     list(APPEND W3C_AOT_RUNNER_SOURCES "w3c/runners/W3CTestRunner_Test${TEST_NUM}.cpp")
 endforeach()
 
