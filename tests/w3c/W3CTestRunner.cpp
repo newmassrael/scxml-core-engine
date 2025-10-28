@@ -1738,7 +1738,6 @@ TestReport W3CTestRunner::runAotTest(int testId) {
         case 201:
 
         // W3C SCXML 6.4: Dynamic invoke tests - run on Interpreter engine via wrapper
-        case 190:
         case 191:
         case 192:
         case 205:
