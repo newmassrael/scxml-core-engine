@@ -105,28 +105,34 @@ public:
      * W3C SCXML 6.4.3: srcexpr evaluates to URI that identifies the SCXML file to invoke.
      * Protocol stripping: "file:path" → "path" (W3C SCXML file: URI scheme)
      *
+     * W3C SCXML Standard Behavior:
+     * - Relative paths are resolved relative to parent SCXML file location
+     * - Example: parent="/app/workflows/main.scxml", child="sub.scxml" → "/app/workflows/sub.scxml"
+     *
      * Differences from loadFromSrc():
      * - Throws exceptions instead of returning bool (for generated code error handling)
      * - Does NOT trim whitespace (SCXML files need exact content preservation)
      * - Validates non-empty content
+     * - Resolves relative paths based on parent SCXML location (W3C standard)
      *
      * @param filePath File path or URI to load (may include "file:" protocol)
+     * @param parentScxmlPath Optional parent SCXML file path for relative resolution (W3C standard)
      * @return SCXML file content as string (exact content, no trimming)
      * @throws std::runtime_error if file cannot be opened, is empty, or read fails
      *
-     * Usage (AOT generated code):
+     * Usage (AOT generated code with parent path):
      * @code
-     * std::string scxmlContent = ::RSM::FileLoadingHelper::loadScxmlFile(filePath);
+     * std::string scxmlContent = ::RSM::FileLoadingHelper::loadScxmlFile(filePath, parentScxmlPath);
      * auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, invokeId);
      * @endcode
      *
      * Usage (Interpreter):
      * @code
-     * std::string scxmlContent = FileLoadingHelper::loadScxmlFile(srcUri);
+     * std::string scxmlContent = FileLoadingHelper::loadScxmlFile(srcUri, parentPath);
      * auto child = StateMachine::createFromSCXMLString(scxmlContent, invokeId);
      * @endcode
      */
-    static std::string loadScxmlFile(const std::string &filePath) {
+    static std::string loadScxmlFile(const std::string &filePath, const std::string &parentScxmlPath = "") {
         // W3C SCXML 6.4.3: Strip "file:" protocol prefix if present
         std::string actualPath = normalizePath(filePath);
 
@@ -136,19 +142,26 @@ public:
             throw std::runtime_error("Empty SCXML file path");
         }
 
-        // W3C SCXML 6.4: Attempt to load SCXML file with multiple path resolution strategies
+        // W3C SCXML 6.4: Resolve child SCXML relative to parent SCXML location
         std::ifstream scxmlFile(actualPath);
 
-        // If direct path fails and path is relative, try common base directories
+        // If direct path fails and path is relative, resolve relative to parent
         if (!scxmlFile.is_open() && !std::filesystem::path(actualPath).is_absolute()) {
-            // For AOT tests: try tests/w3c_static_generated/ directory (relative to build/)
-            std::filesystem::path aotBasePath = "tests/w3c_static_generated";
-            std::filesystem::path aotPath = aotBasePath / actualPath;
-            scxmlFile.open(aotPath);
+            // W3C SCXML Standard: Child SCXML must be resolved relative to parent SCXML file location
+            if (!parentScxmlPath.empty()) {
+                std::filesystem::path parentPath(parentScxmlPath);
+                std::filesystem::path parentDir = parentPath.parent_path();
+                std::filesystem::path resolvedPath = parentDir / actualPath;
 
-            if (scxmlFile.is_open()) {
-                actualPath = aotPath.string();
-                LOG_DEBUG("FileLoadingHelper: Resolved relative path via AOT base directory: {}", actualPath);
+                scxmlFile.open(resolvedPath);
+                if (scxmlFile.is_open()) {
+                    actualPath = resolvedPath.string();
+                    LOG_DEBUG("FileLoadingHelper: Resolved child SCXML relative to parent: {} (parent: {})", actualPath,
+                              parentScxmlPath);
+                }
+            } else {
+                LOG_ERROR("FileLoadingHelper: Relative path '{}' requires parent SCXML path for W3C SCXML compliance",
+                          actualPath);
             }
         }
 

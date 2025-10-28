@@ -159,6 +159,11 @@ struct {{ model.name }}Policy {
     {% if model.needs_jsengine %}
     mutable bool jsEngineInitialized_ = false;
     {% endif %}
+    {% if model.has_hybrid_invoke or model.static_invokes %}
+    // W3C SCXML 6.4: Source SCXML file path for child invoke resolution
+    // Required for resolving relative child SCXML paths (e.g., "subflow.scxml")
+    mutable ::std::string scxmlSourcePath_ = "{{ model.scxml_source_path | replace('\\', '\\\\') }}";
+    {% endif %}
     {% if model.needs_event_name %}
     // W3C SCXML 5.10: Event name storage for _event.name access (test318)
     mutable ::std::string pendingEventName_;
