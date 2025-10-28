@@ -266,6 +266,10 @@ class CodeGenerator:
             parser = SCXMLParser()
             model = parser.parse_file(scxml_path)
 
+            # W3C SCXML 6.4: Store source path for child invoke resolution
+            # Resolve to absolute path for consistent child resolution
+            model.scxml_source_path = str(Path(scxml_path).resolve())
+
             # W3C SCXML 6.4: Force template generation for invoked children
             if as_child:
                 model.has_parent_communication = True

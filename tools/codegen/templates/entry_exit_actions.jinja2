@@ -488,7 +488,8 @@
                         std::string filePath = pathResult.getValue<std::string>();
 
                         // W3C SCXML 6.4.3: Load SCXML file via FileLoadingHelper (ARCHITECTURE.md Zero Duplication)
-                        std::string scxmlContent = ::RSM::FileLoadingHelper::loadScxmlFile(filePath);
+                        // W3C SCXML Standard: Resolve child relative to parent SCXML location
+                        std::string scxmlContent = ::RSM::FileLoadingHelper::loadScxmlFile(filePath, this->scxmlSourcePath_);
 
                         // Create Interpreter child from SCXML string
                         auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, "{{ invoke_info.invoke_id }}");
