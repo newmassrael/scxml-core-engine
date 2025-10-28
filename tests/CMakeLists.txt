@@ -454,8 +454,7 @@ rsm_generate_static_w3c_test(186 ${STATIC_W3C_OUTPUT_DIR})
 rsm_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.5: Delayed send cancellation on session termination (Pure Static)
 rsm_generate_static_w3c_test(189 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: Internal queue priority via target="#_internal" (Pure Static)
 rsm_generate_static_w3c_test(190 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: External queue priority via targetexpr (Static Hybrid)
-# W3C SCXML 6.4: Dynamic invoke tests (inline content, srcexpr, contentExpr) - generate Interpreter wrappers
-rsm_generate_static_w3c_test(191 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
+rsm_generate_static_w3c_test(191 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.1: Inline <content> invoke with #_parent target (Pure Static)
 rsm_generate_static_w3c_test(192 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 rsm_generate_static_w3c_test(193 ${STATIC_W3C_OUTPUT_DIR})  # type attribute for queue routing (W3C SCXML 6.2.4)
 rsm_generate_static_w3c_test(194 ${STATIC_W3C_OUTPUT_DIR})  # invalid target raises error.execution (W3C SCXML 6.2)
