@@ -439,11 +439,12 @@ class SCXMLParser:
                 
                 # Track invoke types (static, hybrid, dynamic file)
                 if invoke.get('is_hybrid', False):
-                    # Hybrid invoke: AOT parent + Interpreter child
+                    # Hybrid invoke: AOT parent + Interpreter child (srcexpr or contentexpr)
                     hybrid_invoke = {
                         'invoke_id': invoke.get('id', ''),
                         'state_name': state_id,
-                        'contentexpr': invoke.get('contentexpr', ''),
+                        'srcexpr': invoke.get('srcexpr', ''),  # W3C SCXML 6.4: Runtime file path evaluation
+                        'contentexpr': invoke.get('contentexpr', ''),  # W3C SCXML 6.4: Runtime content evaluation
                         'autoforward': invoke.get('autoforward', 'false') == 'true',
                         'params': invoke.get('params', []),
                         'idlocation': invoke.get('idlocation', '')
@@ -997,38 +998,59 @@ class SCXMLParser:
         #   - No dynamic features (srcexpr, contentexpr)
         # 
         # Hybrid invoke (AOT parent + Interpreter child):
+        #   - srcexpr="expr" (runtime file path evaluation via JSEngine)
         #   - contentexpr="expr" OR <content expr="var"/> (runtime SCXML content evaluation)
-        #   - Parent: AOT code with JSEngine for contentexpr evaluation
-        #   - Child: Runtime Interpreter instance via StateMachine::createFromSCXMLString()
+        #   - Parent: AOT code with JSEngine for expression evaluation
+        #   - Child: Runtime Interpreter instance via InvokeHelper
         # 
-        # Dynamic invoke (Full Interpreter wrapper):
-        #   - srcexpr="expr" (runtime file path evaluation - requires file I/O)
-        #   - Reason: Cannot know which file to load at compile-time
+        # Note: srcexpr is now Static Hybrid (was Full Interpreter wrapper)
+        #   - Rationale: srcexpr only requires JSEngine for path evaluation, not full wrapper
+        #   - Implementation: JSEngine evaluates srcexpr → InvokeHelper loads child SCXML
 
         has_static_child = (
             invoke['src'] != '' or  # External child SCXML file
             invoke.get('has_inline_scxml', False)  # Inline <content><scxml>...</scxml></content>
         )
 
-        # Classify invoke type
+        # W3C SCXML 6.4: Classify invoke type
+        # 
+        # Pure Static Strategy (ARCHITECTURE.md lines 285-315):
+        # - All invoke parameters known at compile-time (src, id, namelist, params)
+        # - Child SCXML file or inline content available at build-time
+        # - No runtime expression evaluation required
+        # - Fully compile-time type-safe parent-child communication
+        # 
+        # W3C SCXML 6.4: <invoke src="child.scxml"/> or <invoke><content>...</content></invoke>
         is_static_invoke = (
             (invoke['type'] == '' or invoke['type'] == 'scxml' or
              invoke['type'] == 'http://www.w3.org/TR/scxml/') and
-            invoke['srcexpr'] == '' and  # No dynamic file path
-            invoke['contentexpr'] == '' and  # No runtime content expression
+            invoke['srcexpr'] == '' and  # No dynamic file path (W3C SCXML 6.4.3)
+            invoke['contentexpr'] == '' and  # No runtime content expression (W3C SCXML 6.4.4)
             has_static_child  # Must have compile-time known child
         )
         
+        # W3C SCXML 6.4: Classify invoke as Static Hybrid (AOT parent + Interpreter child)
+        # 
+        # Static Hybrid Strategy (ARCHITECTURE.md lines 316-375):
+        # - srcexpr/contentexpr require runtime expression evaluation via JSEngine
+        # - SCXML content loaded/evaluated at runtime (not compile-time)
+        # - AOT parent maintains static state machine structure (enums, switch statements)
+        # - Interpreter child handles dynamic SCXML from runtime-evaluated expression
+        # 
+        # W3C SCXML 6.4.3: srcexpr attribute evaluates to URI identifying SCXML file
+        # W3C SCXML 6.4.4: contentexpr attribute evaluates to SCXML content string
+        # 
+        # Example (srcexpr): <invoke srcexpr="pathVar"/> → JSEngine evaluates pathVar at runtime
+        # Example (contentexpr): <invoke contentexpr="scxmlVar"/> → JSEngine evaluates scxmlVar at runtime
         is_hybrid_invoke = (
             (invoke['type'] == '' or invoke['type'] == 'scxml' or
-             invoke['type'] == 'http://www.w3.org/TR/scxml/') and
-            invoke['srcexpr'] == '' and  # No dynamic file path
-            invoke['contentexpr'] != ''  # Runtime content expression (Hybrid)
+             invoke['type'] == 'http://www.w3.org/TR/scxml' or   # W3C SCXML type (no trailing slash)
+             invoke['type'] == 'http://www.w3.org/TR/scxml/') and # W3C SCXML type (with trailing slash - legacy)
+            (invoke['srcexpr'] != '' or invoke['contentexpr'] != '')  # Runtime expression (srcexpr or contentexpr)
         )
         
-        is_dynamic_file_invoke = (
-            invoke['srcexpr'] != ''  # Dynamic file path (requires Interpreter wrapper)
-        )
+        # Note: srcexpr is no longer considered dynamic file invoke (now Static Hybrid)
+        is_dynamic_file_invoke = False  # Deprecated: srcexpr now handled as hybrid invoke
 
         invoke['is_static'] = is_static_invoke
         invoke['is_hybrid'] = is_hybrid_invoke
@@ -1040,9 +1062,10 @@ class SCXMLParser:
 
         if is_hybrid_invoke:
             self.model.has_hybrid_invoke = True
-            self.model.needs_jsengine = True  # JSEngine for contentexpr evaluation
+            self.model.needs_jsengine = True  # JSEngine for srcexpr/contentexpr evaluation
         
         if is_dynamic_file_invoke:
+            # Deprecated: srcexpr now handled as hybrid invoke
             self.model.has_dynamic_file_invoke = True
             self.model.has_dynamic_expressions = True
 

@@ -1,13 +1,6 @@
-#pragma once
+// Auto-generated file. Do not edit manually.
+// Include this file to register all AOT tests.
 
-/**
- * @brief Single include file for all AOT tests
- *
- * Include this file to register all AOT tests.
- * Tests are automatically registered via inline static AotTestRegistrar instances.
- */
-
-// Simple tests (basic pattern)
 #include "Test144.h"
 #include "Test147.h"
 #include "Test148.h"
@@ -23,12 +16,46 @@
 #include "Test172.h"
 #include "Test173.h"
 #include "Test174.h"
+#include "Test175.h"
 #include "Test176.h"
+#include "Test178.h"
 #include "Test179.h"
 #include "Test183.h"
+#include "Test185.h"
+#include "Test186.h"
+#include "Test187.h"
+#include "Test189.h"
+#include "Test190.h"
+#include "Test191.h"
+#include "Test192.h"
 #include "Test193.h"
 #include "Test194.h"
+#include "Test198.h"
+#include "Test199.h"
 #include "Test200.h"
+#include "Test201.h"
+#include "Test205.h"
+#include "Test207.h"
+#include "Test208.h"
+#include "Test210.h"
+#include "Test215.h"
+#include "Test216.h"
+#include "Test220.h"
+#include "Test223.h"
+#include "Test224.h"
+#include "Test225.h"
+#include "Test226.h"
+#include "Test228.h"
+#include "Test229.h"
+#include "Test232.h"
+#include "Test233.h"
+#include "Test234.h"
+#include "Test235.h"
+#include "Test237.h"
+#include "Test239.h"
+#include "Test242.h"
+#include "Test247.h"
+#include "Test252.h"
 #include "Test276.h"
 #include "Test277.h"
 #include "Test278.h"
@@ -36,7 +63,14 @@
 #include "Test280.h"
 #include "Test286.h"
 #include "Test287.h"
+#include "Test294.h"
+#include "Test298.h"
 #include "Test301.h"
+#include "Test302.h"
+#include "Test303.h"
+#include "Test304.h"
+#include "Test309.h"
+#include "Test310.h"
 #include "Test311.h"
 #include "Test312.h"
 #include "Test313.h"
@@ -70,6 +104,13 @@
 #include "Test351.h"
 #include "Test352.h"
 #include "Test354.h"
+#include "Test355.h"
+#include "Test364.h"
+#include "Test372.h"
+#include "Test375.h"
+#include "Test376.h"
+#include "Test377.h"
+#include "Test378.h"
 #include "Test387.h"
 #include "Test388.h"
 #include "Test396.h"
@@ -77,6 +118,8 @@
 #include "Test401.h"
 #include "Test402.h"
 #include "Test403a.h"
+#include "Test403b.h"
+#include "Test403c.h"
 #include "Test404.h"
 #include "Test405.h"
 #include "Test406.h"
@@ -90,6 +133,8 @@
 #include "Test417.h"
 #include "Test419.h"
 #include "Test421.h"
+#include "Test422.h"
+#include "Test423.h"
 #include "Test436.h"
 #include "Test444.h"
 #include "Test445.h"
@@ -148,24 +193,3 @@
 #include "Test578.h"
 #include "Test579.h"
 #include "Test580.h"
-
-// Scheduled tests (event scheduler polling)
-#include "Test175.h"
-#include "Test185.h"
-#include "Test186.h"
-#include "Test187.h"
-#include "Test189.h"
-#include "Test190.h"
-#include "Test191.h"
-#include "Test208.h"
-#include "Test422.h"
-#include "Test423.h"
-
-// Special tests (custom final states or logic)
-#include "Test178.h"
-
-// Note: Tests not listed here require Interpreter engine wrappers
-// - Dynamic invoke tests: 187, 189-192, 205, 207, 210, 215-216, 220, etc.
-// - Metadata-dependent tests: 198-199, 201 (require _event metadata or TypeRegistry)
-// - Complex tests: 226, 239 (parent-child communication, hierarchical states)
-// These use Interpreter wrappers due to runtime-only features (see ARCHITECTURE.md)

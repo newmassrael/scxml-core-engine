@@ -14,6 +14,33 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from scxml_parser import SCXMLParser, SCXMLModel
 
 
+class DependencyTrackingLoader(FileSystemLoader):
+    """
+    Jinja2 loader that tracks which templates are actually loaded during rendering.
+    
+    Used for CMake DEPFILE generation - only templates that are actually used
+    will be listed as dependencies, enabling fine-grained incremental builds.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.loaded_templates = set()
+        self.template_dir = args[0] if args else kwargs.get('searchpath')
+    
+    def get_source(self, environment, template):
+        """Track template load and delegate to parent"""
+        self.loaded_templates.add(template)
+        return super().get_source(environment, template)
+    
+    def get_dependency_paths(self):
+        """Get absolute paths of loaded templates for CMake DEPFILE"""
+        paths = []
+        for template_name in self.loaded_templates:
+            template_path = Path(self.template_dir) / template_name
+            if template_path.exists():
+                paths.append(str(template_path.resolve()))
+        return paths
+
+
 class CodeGenerator:
     """
     Static code generator for W3C SCXML state machines
@@ -25,9 +52,10 @@ class CodeGenerator:
         if template_dir is None:
             template_dir = Path(__file__).parent / 'templates'
 
-        # Setup Jinja2 environment
+        # Setup Jinja2 environment with dependency tracking
+        self.loader = DependencyTrackingLoader(str(template_dir))
         self.env = Environment(
-            loader=FileSystemLoader(str(template_dir)),
+            loader=self.loader,
             autoescape=select_autoescape(['html', 'xml']),
             trim_blocks=True,
             lstrip_blocks=True
@@ -222,7 +250,7 @@ class CodeGenerator:
                 var['type'] = 'runtime'
                 model.needs_jsengine = True
 
-    def generate(self, scxml_path: str, output_dir: str, as_child: bool = False) -> bool:
+    def generate(self, scxml_path: str, output_dir: str, as_child: bool = False, depfile_path: str = None) -> bool:
         """
         Generate C++ code from SCXML file
 
@@ -313,6 +341,22 @@ class CodeGenerator:
                             f.write(f"{child_name}\n")
                 print(f"  ✓ Child metadata: {children_file}")
 
+            # CMake DEPFILE: Write dependency file for incremental builds
+            # Makefile format: output: dep1 dep2 dep3
+            if depfile_path:
+                template_deps = self.loader.get_dependency_paths()
+                python_deps = [
+                    str(Path(__file__).resolve()),  # codegen.py
+                    str((Path(__file__).parent / 'scxml_parser.py').resolve())  # scxml_parser.py
+                ]
+                all_deps = template_deps + python_deps
+                
+                with open(depfile_path, 'w') as f:
+                    # Makefile format: escape spaces in paths
+                    output_escaped = str(output_path).replace(' ', '\\ ')
+                    deps_escaped = ' '.join(d.replace(' ', '\\ ') for d in all_deps)
+                    f.write(f"{output_escaped}: {deps_escaped}\n")
+
             return True
 
         except Exception as e:
@@ -365,12 +409,9 @@ class CodeGenerator:
         # - <content expr="var"/>: Parent evaluates expr via JSEngine, creates Interpreter child at runtime
         # - Hybrid Strategy: Parent is AOT, child is Interpreter
         
-        # Dynamic file invoke requires full Interpreter wrapper
-        # - srcexpr="expr": Runtime file path evaluation (requires file I/O)
-        if model.has_dynamic_file_invoke:
-            print(f"    Reason: Dynamic file invoke detected (srcexpr requires runtime file I/O)")
-            return True
-
+        # Note: srcexpr is now handled as Static Hybrid (JSEngine + InvokeHelper)
+        # Removed has_dynamic_file_invoke check - srcexpr no longer requires full Interpreter wrapper
+        
         # Dynamic expressions: eventexpr, targetexpr, delayexpr can be handled statically via JSEngine
         # Only check for other dynamic features (parallel, history, etc.)
         # Note: has_dynamic_expressions includes eventexpr/targetexpr/delayexpr which are JSEngine-compatible
@@ -479,6 +520,8 @@ def main():
                         help='Template directory (default: ./templates)')
     parser.add_argument('--as-child', action='store_true',
                         help='Generate as invoked child (force template generation)')
+    parser.add_argument('--write-deps', metavar='DEPFILE',
+                        help='Write Makefile dependency file for CMake DEPFILE')
 
     args = parser.parse_args()
 
@@ -489,7 +532,12 @@ def main():
 
     # Generate code
     generator = CodeGenerator(template_dir=args.template_dir)
-    success = generator.generate(args.scxml_file, args.output_dir, as_child=args.as_child)
+    success = generator.generate(
+        args.scxml_file, 
+        args.output_dir, 
+        as_child=args.as_child,
+        depfile_path=args.write_deps
+    )
 
     return 0 if success else 1
 

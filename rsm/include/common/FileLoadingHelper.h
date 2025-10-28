@@ -93,6 +93,88 @@ public:
     }
 
     /**
+     * @brief W3C SCXML 6.4.3: Load SCXML file for invoke srcexpr
+     *
+     * Single Source of Truth for srcexpr invoke file loading shared between:
+     * - Interpreter engine: StateMachine invoke processing
+     * - AOT engine: Generated code for srcexpr invoke (entry_exit_actions.jinja2)
+     *
+     * ARCHITECTURE.md Zero Duplication: Removes inline file I/O from generated AOT code.
+     * This Helper method encapsulates the W3C SCXML 6.4.3 file loading logic.
+     *
+     * W3C SCXML 6.4.3: srcexpr evaluates to URI that identifies the SCXML file to invoke.
+     * Protocol stripping: "file:path" → "path" (W3C SCXML file: URI scheme)
+     *
+     * Differences from loadFromSrc():
+     * - Throws exceptions instead of returning bool (for generated code error handling)
+     * - Does NOT trim whitespace (SCXML files need exact content preservation)
+     * - Validates non-empty content
+     *
+     * @param filePath File path or URI to load (may include "file:" protocol)
+     * @return SCXML file content as string (exact content, no trimming)
+     * @throws std::runtime_error if file cannot be opened, is empty, or read fails
+     *
+     * Usage (AOT generated code):
+     * @code
+     * std::string scxmlContent = ::RSM::FileLoadingHelper::loadScxmlFile(filePath);
+     * auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, invokeId);
+     * @endcode
+     *
+     * Usage (Interpreter):
+     * @code
+     * std::string scxmlContent = FileLoadingHelper::loadScxmlFile(srcUri);
+     * auto child = StateMachine::createFromSCXMLString(scxmlContent, invokeId);
+     * @endcode
+     */
+    static std::string loadScxmlFile(const std::string &filePath) {
+        // W3C SCXML 6.4.3: Strip "file:" protocol prefix if present
+        std::string actualPath = normalizePath(filePath);
+
+        // Security validation: Reject empty paths
+        if (actualPath.empty()) {
+            LOG_ERROR("FileLoadingHelper: Empty file path after protocol stripping");
+            throw std::runtime_error("Empty SCXML file path");
+        }
+
+        // W3C SCXML 6.4: Attempt to load SCXML file with multiple path resolution strategies
+        std::ifstream scxmlFile(actualPath);
+
+        // If direct path fails and path is relative, try common base directories
+        if (!scxmlFile.is_open() && !std::filesystem::path(actualPath).is_absolute()) {
+            // For AOT tests: try tests/w3c_static_generated/ directory (relative to build/)
+            std::filesystem::path aotBasePath = "tests/w3c_static_generated";
+            std::filesystem::path aotPath = aotBasePath / actualPath;
+            scxmlFile.open(aotPath);
+
+            if (scxmlFile.is_open()) {
+                actualPath = aotPath.string();
+                LOG_DEBUG("FileLoadingHelper: Resolved relative path via AOT base directory: {}", actualPath);
+            }
+        }
+
+        if (!scxmlFile.is_open()) {
+            LOG_ERROR("FileLoadingHelper: Failed to open SCXML file: {}", actualPath);
+            throw std::runtime_error("Failed to open SCXML file: " + actualPath);
+        }
+
+        // Read entire file content WITHOUT trimming (SCXML needs exact content)
+        std::stringstream buffer;
+        buffer << scxmlFile.rdbuf();
+        scxmlFile.close();
+
+        std::string content = buffer.str();
+        LOG_DEBUG("FileLoadingHelper: Loaded {} bytes from SCXML file: {}", content.size(), actualPath);
+
+        // Validate non-empty content
+        if (content.empty()) {
+            LOG_ERROR("FileLoadingHelper: Empty SCXML file content: {}", actualPath);
+            throw std::runtime_error("Empty SCXML file: " + actualPath);
+        }
+
+        return content;
+    }
+
+    /**
      * @brief Load external script with security validation
      *
      * Single Source of Truth for W3C SCXML 5.8 external script loading.

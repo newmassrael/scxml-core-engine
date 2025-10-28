@@ -637,10 +637,14 @@ rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: hi
 rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml
 rsm_generate_static_w3c_test(242 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test242sub1.txml
 
+# Collect all AOT test runner files (one file per test for incremental compilation)
+file(GLOB W3C_AOT_RUNNER_SOURCES "w3c/runners/W3CTestRunner_Test*.cpp")
+
 # Full W3C Test Runner for all W3C SCXML 1.0 compliance tests
 add_executable(w3c_test_cli
     w3c/W3CTestCLI.cpp
     w3c/W3CTestRunner.cpp
+    ${W3C_AOT_RUNNER_SOURCES}  # Auto-discovered AOT test runners (151 files)
     w3c/impl/TXMLConverter.cpp
     w3c/impl/TestMetadataParser.cpp
     w3c/W3CHttpTestServer.cpp

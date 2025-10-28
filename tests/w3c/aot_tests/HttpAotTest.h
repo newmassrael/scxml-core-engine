@@ -1,5 +1,6 @@
 #pragma once
 #include "AotTestBase.h"
+#include "AotTestRegistry.h"
 #include "W3CHttpTestServer.h"
 #include "common/TestUtils.h"
 #include <chrono>
