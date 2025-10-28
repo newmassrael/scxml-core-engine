@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ScheduledAotTest.h"
+#include "SimpleAotTest.h"
 #include "test207_sm.h"
 
 namespace RSM::W3C::AotTests {
