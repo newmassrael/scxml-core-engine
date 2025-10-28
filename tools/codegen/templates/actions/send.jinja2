@@ -10,6 +10,16 @@ if (!sessionId_.has_value()) {
     sessionId_ = "session_" + std::to_string(reinterpret_cast<uintptr_t>(this));
 }
 {% endif %}
+{% if action.send_type %}
+// W3C SCXML 6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
+if (!::RSM::SendHelper::isSupportedSendType("{{ action.send_type }}")) {
+    // W3C SCXML 6.2: Unsupported send type raises error.execution on internal queue
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+{% if in_entry_exit is defined and in_entry_exit %}
+    return;  // W3C SCXML 5.10: Stop execution of subsequent actions in entry/exit/transition
+{% endif %}
+}
+{% endif %}
 {% if action.idlocation %}
 // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332)
 {% if model.needs_jsengine or model.needs_event_origin %}

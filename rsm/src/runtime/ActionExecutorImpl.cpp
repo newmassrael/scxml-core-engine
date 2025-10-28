@@ -780,33 +780,16 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             return false;
         }
 
-        // W3C SCXML 6.2: Validate send type - generate error.execution for unsupported types
-        // Note: sendType already declared earlier for HTTP event processor check
-        if (!sendType.empty()) {
-            // Use TypeRegistry to validate event processor types
-            TypeRegistry &typeRegistry = TypeRegistry::getInstance();
-
-            // Check if the send type is registered as a valid event processor
-            if (!typeRegistry.isRegisteredType(TypeRegistry::Category::EVENT_PROCESSOR, sendType)) {
-                // Only reject explicitly unsupported types like "unsupported_type" (from conf:invalidSendType)
-                if (sendType == "unsupported_type") {
-                    LOG_ERROR("ActionExecutorImpl: Unsupported send type: {}", sendType);
-                    // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
-                    if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution", "Unsupported send type: " + sendType, sendId,
-                                                 false /* overload discriminator for sendId variant */);
-                    }
-                    return false;
-                }
-                // For other unregistered types, log warning but allow (for compatibility)
-                LOG_WARN("ActionExecutorImpl: Send type '{}' not registered in TypeRegistry, proceeding anyway",
-                         sendType);
-            } else {
-                // Log successful type validation
-                std::string canonicalType =
-                    typeRegistry.getCanonicalName(TypeRegistry::Category::EVENT_PROCESSOR, sendType);
-                LOG_DEBUG("ActionExecutorImpl: Send type '{}' validated (canonical: '{}')", sendType, canonicalType);
+        // W3C SCXML 6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
+        // ARCHITECTURE.md: Single Source of Truth - both Interpreter and AOT use SendHelper
+        if (!SendHelper::isSupportedSendType(sendType)) {
+            LOG_ERROR("ActionExecutorImpl: Unsupported send type: {}", sendType);
+            // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
+            if (eventRaiser_) {
+                eventRaiser_->raiseEvent("error.execution", "Unsupported send type: " + sendType, sendId,
+                                         false /* overload discriminator for sendId variant */);
             }
+            return false;
         }
 
         // W3C SCXML 6.2.4: All send actions without explicit target go to external queue

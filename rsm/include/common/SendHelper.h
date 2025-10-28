@@ -212,6 +212,40 @@ public:
     }
 
     /**
+     * @brief Check if send type is supported (W3C SCXML 6.2)
+     *
+     * Single Source of Truth for send type validation logic.
+     * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
+     *
+     * Usage:
+     * - Interpreter: ActionExecutorImpl::executeSendAction() (rsm/src/runtime/ActionExecutorImpl.cpp)
+     * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
+     *
+     * W3C SCXML 6.2 (test 199): If the SCXML Processor does not support the type
+     * that is specified in <send>, it MUST place the event error.execution on the
+     * internal event queue.
+     *
+     * Supported Event I/O Processor types:
+     * - http://www.w3.org/TR/scxml/#SCXMLEventProcessor (default)
+     * - http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor
+     *
+     * @param sendType Event I/O Processor type URI (empty = default SCXMLEventProcessor)
+     * @return true if send type is supported, false if unsupported (error.execution required)
+     */
+    static bool isSupportedSendType(const std::string &sendType) {
+        // W3C SCXML 6.2: Empty or default type is SCXMLEventProcessor (always supported)
+        if (sendType.empty() || sendType == "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") {
+            return true;
+        }
+        // W3C SCXML C.2: BasicHTTP Event I/O Processor is supported
+        if (sendType == "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor") {
+            return true;
+        }
+        // W3C SCXML 6.2: All other types are unsupported
+        return false;
+    }
+
+    /**
      * @brief Validate BasicHTTP send parameters (W3C SCXML C.2)
      *
      * Single Source of Truth for BasicHTTP validation logic.
