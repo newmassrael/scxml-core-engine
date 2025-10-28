@@ -463,7 +463,7 @@ rsm_generate_static_w3c_test(199 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2: uns
 rsm_generate_static_w3c_test(200 ${STATIC_W3C_OUTPUT_DIR})  # SCXML event processor support (W3C SCXML 6.2)
 rsm_generate_static_w3c_test(201 ${STATIC_W3C_OUTPUT_DIR})  # BasicHTTP event processor (optional - W3C SCXML 6.2)
 rsm_generate_static_w3c_test(205 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-# rsm_generate_static_w3c_test(207 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> (invoke cancellation across sessions) - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(207 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3: cancel tag - cannot cancel events in different sessions (invoke + delayed send)
 rsm_generate_static_w3c_test(208 ${STATIC_W3C_OUTPUT_DIR})  # <cancel sendid="..."/> for delayed send cancellation (W3C SCXML 6.3)
 # rsm_generate_static_w3c_test(210 ${STATIC_W3C_OUTPUT_DIR})  # sendidexpr (cancel with dynamic expression) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(215 ${STATIC_W3C_OUTPUT_DIR})  # typeexpr + inline <content>
