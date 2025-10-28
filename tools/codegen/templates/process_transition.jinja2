@@ -120,17 +120,6 @@
 {% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_transition_actions and not model.has_parallel_states and not model.has_parent_communication %}    static bool processTransition(State& currentState, Event event, Engine& engine) {
 {% else %}    bool processTransition(State& currentState, Event event, Engine& engine) {
 {% endif %}
-{% if model.static_invokes %}
-        // W3C SCXML 6.4: Check for pending done.invoke events
-{% for invoke_info in model.static_invokes %}
-        if (pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
-            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
-            LOG_DEBUG("Raising done.invoke for {{ invoke_info.invoke_id }}");
-            // W3C SCXML 6.4.3: done.invoke MUST be placed on external event queue
-            engine.raiseExternal(typename Engine::EventWithMetadata(Event::Done_invoke));
-        }
-{% endfor %}
-{% endif %}
 {%- if model.needs_jsengine %}
         // W3C SCXML 5.3: Ensure JSEngine initialized (lazy init for runtime operations)
         // Note: Datamodel initialization happens in StaticExecutionEngine::initialize()

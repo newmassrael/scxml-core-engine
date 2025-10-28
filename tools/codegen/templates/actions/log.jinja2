@@ -14,7 +14,8 @@
     }
 }
 {% else %}
-LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", {{ action.expr }});
+// Convert JavaScript single quotes to C++ double quotes for string literals
+LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", {{ action.expr | replace("'", '"') }});
 {% endif %}
 {% else %}
 LOG_INFO("{{ action.label }}");

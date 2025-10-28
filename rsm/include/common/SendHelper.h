@@ -226,15 +226,20 @@ public:
      */
     template <typename ParentStateMachine, typename EventType>
     static bool sendToParent(ParentStateMachine *parent, EventType event, const std::string &invokeId) {
+        LOG_DEBUG("SendHelper::sendToParent called - parent={}, event={}, invokeId={}", (void *)parent,
+                  static_cast<int>(event), invokeId);
         if (parent) {
             // W3C SCXML 6.4.1: Create event with invokeid metadata
             typename ParentStateMachine::EventWithMetadata eventWithMetadata(event);
             eventWithMetadata.invokeId = invokeId;
 
             // W3C SCXML 6.2: Send to parent's external event queue
+            LOG_DEBUG("SendHelper::sendToParent - calling parent->raiseExternal()");
             parent->raiseExternal(eventWithMetadata);
+            LOG_DEBUG("SendHelper::sendToParent - parent->raiseExternal() completed");
             return true;
         }
+        LOG_DEBUG("SendHelper::sendToParent - parent is nullptr, not sending event");
         return false;
     }
 

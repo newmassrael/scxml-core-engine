@@ -21,28 +21,8 @@
 // AOT Test Registry (for registry-based test execution)
 #include "aot_tests/AotTestRegistry.h"
 
-// Include generated static test headers for Interpreter engine fallback
-// These tests require Interpreter wrappers due to dynamic features or metadata requirements
-#include "test187_sm.h"
-#include "test189_sm.h"
-#include "test190_sm.h"
-#include "test198_sm.h"
-#include "test199_sm.h"
-#include "test201_sm.h"
-#include "test226_sm.h"
-// test230_sm.h excluded: code generation bug (_event not declared in static code)
-// test236_sm.h excluded: code generation bug (static method accessing non-static members)
-#include "test239_sm.h"
-#include "test240_sm.h"
-#include "test241_sm.h"
-#include "test243_sm.h"
-#include "test244_sm.h"
-#include "test245_sm.h"
-// test250_sm.h excluded: code generation bug (single quotes instead of double quotes in strings)
-#include "test253_sm.h"
-#include "test307_sm.h"
-
-// test364_sm.h excluded: code generation bug (malformed return statements)
+// W3C Test Registry (Single Source of Truth for AOT vs Interpreter classification)
+#include "W3CTestRegistry.h"
 
 namespace RSM::W3C {
 
@@ -1443,7 +1423,7 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
                     }
                 }
 
-                // Run AOT engine test for each variant (unsupported tests will return FAIL)
+                // Run AOT engine test (runAotTest will use Interpreter fallback if needed)
                 try {
                     LOG_INFO("W3C Test {}: Running AOT engine test for variant", testId);
                     TestReport aotReport = runAotTest(testId);
@@ -1664,6 +1644,43 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
 }
 
 TestReport W3CTestRunner::runAotTest(int testId) {
+    // Check W3CTestRegistry to determine if test should use Interpreter fallback
+    if (W3CTestRegistry::isInterpreterTest(testId)) {
+        LOG_INFO("AOT Test {}: Using Interpreter fallback (Interpreter-only per W3CTestRegistry)", testId);
+
+        // Run with Interpreter engine as fallback
+        auto testDirectories = testSuite_->discoverTests();
+        for (const auto &testDir : testDirectories) {
+            std::filesystem::path path(testDir);
+            std::string dirName = path.filename().string();
+            int currentTestId = 0;
+            try {
+                currentTestId = std::stoi(dirName);
+            } catch (...) {
+                continue;
+            }
+
+            if (currentTestId == testId) {
+                TestReport report = runSingleTest(testDir);
+                // Mark as AOT engine but using Interpreter fallback
+                report.engineType = "aot";
+                report.testType = "interpreter_fallback";
+                return report;
+            }
+        }
+
+        // Test not found in test suite
+        TestReport report;
+        report.timestamp = std::chrono::system_clock::now();
+        report.testId = std::to_string(testId);
+        report.engineType = "aot";
+        report.testType = "interpreter_fallback";
+        report.validationResult = ValidationResult(false, TestResult::ERROR, "Test not found in test suite");
+        report.executionContext.finalState = "error";
+        report.executionContext.executionTime = std::chrono::milliseconds(0);
+        return report;
+    }
+
     // Try registry-based test first (new modular system)
     auto registryTest = RSM::W3C::AotTests::AotTestRegistry::instance().createTest(testId);
     if (registryTest) {
@@ -1709,145 +1726,20 @@ TestReport W3CTestRunner::runAotTest(int testId) {
         }
     }
 
-    // Fallback to switch-case for Interpreter wrapper tests
+    // Fallback: Test not registered in AOT system
+    // This should not happen if W3CTestRegistry is properly maintained
     TestReport report;
     report.timestamp = std::chrono::system_clock::now();
     report.testId = std::to_string(testId);
-    report.engineType = "aot";                 // AOT engine execution (static generated code)
-    report.testType = "interpreter_fallback";  // Uses Interpreter engine via wrapper
+    report.engineType = "aot";
+    report.testType = "not_registered";
 
-    auto startTime = std::chrono::steady_clock::now();
+    LOG_WARN("W3C AOT Test: Test {} not registered in AotTestRegistry - check CMakeLists.txt", testId);
+    report.validationResult = ValidationResult(false, TestResult::FAIL, "Test not registered in AOT system");
+    report.executionContext.finalState = "fail";
+    report.executionContext.executionTime = std::chrono::milliseconds(0);
 
-    try {
-        bool testPassed = false;
-        std::string testDescription;
-
-        // Macro to define an AOT test case with automatic state machine initialization
-        // Usage: AOT_TEST_CASE(test_number, "description")
-        // Requires: Corresponding testXXX_sm.h include and CMake test generation
-#define AOT_TEST_CASE(num, desc)                                                                                       \
-    case num:                                                                                                          \
-        testPassed = []() {                                                                                            \
-            RSM::Generated::test##num::test##num sm;                                                                   \
-            sm.initialize();                                                                                           \
-            return sm.isInFinalState() && sm.getCurrentState() == RSM::Generated::test##num::State::Pass;              \
-        }();                                                                                                           \
-        testDescription = desc;                                                                                        \
-        break;
-
-        // Execute the appropriate generated static test based on testId
-        switch (testId) {
-        // W3C SCXML 6.2 (test198): Default event processor type
-        // Uses Interpreter wrapper due to _event.origintype metadata requirement
-        case 198:
-
-        // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
-        // Uses Interpreter wrapper due to TypeRegistry validation requirement
-        case 199:
-
-        // W3C SCXML 6.2 (test201): BasicHTTP event processor (optional)
-        // Uses Interpreter wrapper due to unsupported optional event processor type
-        case 201:
-
-        // W3C SCXML 6.4: Dynamic invoke tests - run on Interpreter engine via wrapper
-        case 192:
-        case 205:
-        case 207:
-        case 210:
-        case 215:
-        case 216:
-        case 220:
-        case 223:
-        case 224:
-        case 225:
-        case 226:
-        case 228:
-        case 229:
-        case 232:
-        case 233:
-        case 234:
-        case 235:
-        case 236:
-        case 237:
-        case 239:
-        case 240:
-        case 241:
-        case 242:
-        case 243:
-        case 244:
-        case 245:
-        case 247:
-        case 250:
-        case 252:
-        case 253:
-        case 294:
-        case 298:  // W3C SCXML 5.7/5.9.2: invalid param location in donedata
-        case 302:  // W3C SCXML 5.8: script evaluation at load time
-        case 303:  // W3C SCXML 5.9: script execution in entry actions
-        case 304:  // W3C SCXML 5.8: script-declared variables accessible in data model
-        case 307:  // W3C SCXML B.2.2: late binding with log validation
-        case 309:  // W3C SCXML 5.9.2: invalid boolean expressions treated as false
-        case 310:  // W3C SCXML 5.9.1: In() predicate in conditional expressions
-            LOG_WARN("W3C AOT Test: Test {} uses In() predicate - tested via Interpreter engine", testId);
-            report.validationResult =
-                ValidationResult(true, TestResult::PASS, "Tested via Interpreter engine (In() predicate)");
-            report.executionContext.finalState = "pass";
-            return report;
-        case 355:
-        case 364:
-        case 372:
-        case 375:
-        case 376:
-        case 377:
-        case 378:
-            LOG_WARN("W3C AOT Test: Test {} uses dynamic features - tested via Interpreter engine", testId);
-            report.validationResult =
-                ValidationResult(true, TestResult::PASS, "Tested via Interpreter engine (dynamic invoke)");
-            report.executionContext.finalState = "pass";
-            return report;
-
-        default:
-            LOG_WARN("W3C AOT Test: Test {} not yet implemented in AOT engine", testId);
-            report.validationResult =
-                ValidationResult(false, TestResult::FAIL, "Test not yet implemented in AOT engine");
-            report.executionContext.finalState = "fail";
-            return report;
-        }
-
-#undef AOT_TEST_CASE  // Clean up macro after use
-
-        auto endTime = std::chrono::steady_clock::now();
-        report.executionContext.executionTime =
-            std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-
-        // Set metadata
-        report.metadata.id = testId;
-        report.metadata.description = testDescription;
-
-        // Set validation result
-        if (testPassed) {
-            report.validationResult = ValidationResult(true, TestResult::PASS, "AOT engine test passed");
-            report.executionContext.finalState = "pass";
-            LOG_DEBUG("W3C AOT Test: Test {} PASS ({}ms)", testId, report.executionContext.executionTime.count());
-        } else {
-            report.validationResult = ValidationResult(true, TestResult::FAIL, "AOT engine test failed");
-            report.executionContext.finalState = "fail";
-            LOG_DEBUG("W3C AOT Test: Test {} FAIL ({}ms)", testId, report.executionContext.executionTime.count());
-        }
-
-        return report;
-
-    } catch (const std::exception &e) {
-        auto endTime = std::chrono::steady_clock::now();
-        report.executionContext.executionTime =
-            std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
-        report.validationResult =
-            ValidationResult(false, TestResult::ERROR, "AOT engine exception: " + std::string(e.what()));
-        report.executionContext.finalState = "error";
-        report.executionContext.errorMessage = e.what();
-        LOG_ERROR("W3C AOT Test: Exception in test {}: {}", testId, e.what());
-        return report;
-    }
+    return report;
 }
 
 }  // namespace RSM::W3C

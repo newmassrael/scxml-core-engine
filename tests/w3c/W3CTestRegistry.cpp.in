@@ -1,0 +1,49 @@
+// Auto-generated file by CMake. Do not edit manually.
+// Generated from: tests/CMakeLists.txt test lists
+
+#include "W3CTestRegistry.h"
+#include <string>
+
+namespace RSM::W3C {
+
+const std::unordered_map<std::string, TestEngine>& W3CTestRegistry::getRegistry() {
+    static const std::unordered_map<std::string, TestEngine> registry = {
+        // AOT tests (Pure Static or Static Hybrid)
+@W3C_AOT_TEST_REGISTRATIONS@
+        // Interpreter tests (dynamic features)
+@W3C_INTERPRETER_TEST_REGISTRATIONS@
+    };
+    return registry;
+}
+
+TestEngine W3CTestRegistry::getEngine(const std::string& testId) {
+    const auto& registry = getRegistry();
+    auto it = registry.find(testId);
+    if (it != registry.end()) {
+        return it->second;
+    }
+    // Safe fallback: unknown tests use Interpreter
+    return TestEngine::INTERPRETER;
+}
+
+TestEngine W3CTestRegistry::getEngine(int testNum) {
+    return getEngine(std::to_string(testNum));
+}
+
+bool W3CTestRegistry::isAotTest(const std::string& testId) {
+    return getEngine(testId) == TestEngine::AOT;
+}
+
+bool W3CTestRegistry::isAotTest(int testNum) {
+    return isAotTest(std::to_string(testNum));
+}
+
+bool W3CTestRegistry::isInterpreterTest(const std::string& testId) {
+    return getEngine(testId) == TestEngine::INTERPRETER;
+}
+
+bool W3CTestRegistry::isInterpreterTest(int testNum) {
+    return isInterpreterTest(std::to_string(testNum));
+}
+
+}  // namespace RSM::W3C

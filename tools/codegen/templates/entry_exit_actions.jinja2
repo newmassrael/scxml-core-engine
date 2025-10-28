@@ -318,8 +318,14 @@
                 // W3C SCXML 6.4: Cleanup already-running static invoke child (if started in previous macrostep)
                 if (child_{{ invoke_info.invoke_id }}_) {
                     LOG_DEBUG("Stopping static invoke: id={{ invoke_info.invoke_id }}");
-                    // W3C SCXML 6.4: Send cancel.invoke platform event
-                    engine.raise(typename Engine::EventWithMetadata(Event::Cancel_invoke));
+                    // W3C SCXML 6.4: Only send cancel.invoke if child hasn't completed yet
+                    // Matches Interpreter logic: don't cancel completed invokes (test 236)
+                    if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
+                        LOG_DEBUG("Sending cancel.invoke for active child {{ invoke_info.invoke_id }}");
+                        engine.raise(typename Engine::EventWithMetadata(Event::Cancel_invoke));
+                    } else {
+                        LOG_DEBUG("Skipping cancel.invoke - child {{ invoke_info.invoke_id }} already completed");
+                    }
                     child_{{ invoke_info.invoke_id }}_.reset();  // Destroy child state machine
                 }
                 activeInvokes_.erase("{{ invoke_info.invoke_id }}");
@@ -377,9 +383,38 @@
                 if (pending.state == State::{{ state_id | capitalize }}) {
                     {% for invoke_info in state.static_invokes %}
                     if (pending.invokeId == "{{ invoke_info.invoke_id }}") {
+                        {% if invoke_info.namelist %}
+                        // W3C SCXML 6.4.1: Validate namelist variables before creating child
+                        {
+                            ensureJSEngine();
+                            auto& jsEngine = ::RSM::JSEngine::instance();
+                            std::map<std::string, std::vector<std::string>> namelistParams;
+
+                            bool namelistValid = ::RSM::NamelistHelper::evaluateNamelist(
+                                jsEngine,
+                                sessionId_.value(),
+                                "{{ invoke_info.namelist }}",
+                                namelistParams,
+                                [&engine](const std::string& errorMsg) {
+                                    LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
+                                    // W3C SCXML 6.4.1: Raise error.execution on namelist error
+                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+                                }
+                            );
+
+                            if (!namelistValid) {
+                                // W3C SCXML 6.4.1: Invoke cancelled due to namelist validation failure
+                                LOG_DEBUG("Skipping invoke {{ invoke_info.invoke_id }} due to namelist validation failure");
+                                return;  // Skip this invoke - don't create child
+                            }
+
+                            LOG_DEBUG("Namelist validation passed for invoke {{ invoke_info.invoke_id }}");
+                        }
+                        {% endif %}
+
                         // W3C SCXML 6.4: Instantiate and initialize child state machine
                         LOG_DEBUG("Creating child state machine: {{ invoke_info.child_name }} for invoke {{ invoke_info.invoke_id }}");
-                        
+
                         // Create child instance with parent pointer and invokeId
                         child_{{ invoke_info.invoke_id }}_ = std::make_shared<::RSM::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, "{{ invoke_info.invoke_id }}");
 
@@ -405,15 +440,22 @@
                         {% endfor %}
                         {% endif %}
 
+                        // W3C SCXML 6.4: Register completion callback BEFORE initialize
+                        // Child may reach final state during initialize() and needs callback ready
+                        child_{{ invoke_info.invoke_id }}_->setCompletionCallback([this]() {
+                            // W3C SCXML 6.4: Send done.invoke immediately (matches Interpreter logic - test 236)
+                            // Interpreter sends done.invoke in completion callback, not deferred
+                            LOG_DEBUG("Child state machine {{ invoke_info.invoke_id }} completed, sending done.invoke");
+
+                            // Mark as completed (for Cancel_invoke logic - test 236)
+                            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
+
+                            // Send done.invoke to external queue (matches Interpreter event ordering)
+                            self_->raiseExternal(typename SelfType::EventWithMetadata(Event::Done_invoke));
+                        });
+
                         // W3C SCXML 6.4: Initialize child state machine
                         child_{{ invoke_info.invoke_id }}_->initialize();
-                        
-                        // W3C SCXML 6.4: Register completion callback for done.invoke event
-                        child_{{ invoke_info.invoke_id }}_->setCompletionCallback([this]() {
-                            // W3C SCXML 6.4: Mark done.invoke as pending
-                            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
-                            LOG_DEBUG("Child state machine {{ invoke_info.invoke_id }} completed, done.invoke pending");
-                        });
                         
                         // W3C SCXML 6.4: Track active invoke session
                         activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
@@ -501,5 +543,23 @@
         );
         
         LOG_DEBUG("All pending invokes executed");
+    }
+
+    // W3C SCXML 6.4: Tick all active child state machines to process their events
+    // Child state machines need to run independently during parent's event loop
+    template<typename Engine>
+    void tickChildren(Engine& engine) {
+        (void)engine;
+        {% for state_id, state in model.states.items() %}
+        {% if state.static_invokes %}
+        {% for invoke_info in state.static_invokes %}
+        // Tick child {{ invoke_info.invoke_id }} if active
+        if (child_{{ invoke_info.invoke_id }}_) {
+            LOG_DEBUG("Ticking child {{ invoke_info.invoke_id }}");
+            child_{{ invoke_info.invoke_id }}_->tick();
+        }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
     }
 {% endif %}
