@@ -80,8 +80,8 @@
         if (!setupResult.isSuccess()) {
             LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
-{% if not model.variables %}
-        (void)engine;  // No variables to initialize
+{% if not model.variables and not (model.states.values() | selectattr('datamodel') | list) and not model.global_scripts %}
+        (void)engine;  // No variables or scripts to initialize
 {% endif %}
 
 {% for var in model.variables %}
@@ -136,6 +136,41 @@
             });
 {% endif %}
 {% endfor %}
+
+{% if model.states.values() | selectattr('datamodel') | list %}
+        // W3C SCXML 5.10: Initialize state-level datamodel variables in global scope
+        // All datamodel variables are globally accessible regardless of state entry
+{% for state_id, state in model.states.items() %}
+{% if state.datamodel %}
+        // State {{ state_id }} datamodel variables
+{% for var in state.datamodel %}
+{% if var.expr %}
+        ::RSM::DataModelInitHelper::initializeVariableFromExpr(
+            jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
+            [&engine](const ::std::string& msg) {
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            });
+        LOG_DEBUG("AOT initializeDataModel: Initialized state {{ state_id }} variable '{{ var.id }}' from expr");
+{% elif var.content %}
+        ::RSM::DataModelInitHelper::initializeVariable(
+            jsEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content }})",
+            [&engine](const ::std::string& msg) {
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            });
+        LOG_DEBUG("AOT initializeDataModel: Initialized state {{ state_id }} variable '{{ var.id }}' from content");
+{% elif var.src %}
+        ::RSM::DataModelInitHelper::initializeVariableFromSrc(
+            jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
+            ::RSM::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
+            [&engine](const ::std::string& msg) {
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            });
+        LOG_DEBUG("AOT initializeDataModel: Initialized state {{ state_id }} variable '{{ var.id }}' from src");
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
 
 {% if model.global_scripts %}
         // W3C SCXML 5.8: Execute global (top-level) scripts at document load time

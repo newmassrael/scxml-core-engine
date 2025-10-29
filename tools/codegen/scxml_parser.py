@@ -229,8 +229,15 @@ class SCXMLParser:
         return self.model
 
     def _parse_datamodel(self, root):
-        """Parse <datamodel> elements (W3C SCXML 5.2)"""
-        for datamodel in root.findall('.//sc:datamodel', SCXML_NS):
+        """
+        Parse <datamodel> elements (W3C SCXML 5.2)
+
+        ARCHITECTURE.md Zero Duplication: Match Interpreter behavior
+        - Interpreter: ParsingCommon::findFirstChildElement() searches direct children only
+        - AOT: Use './sc:datamodel' (not './/sc:datamodel') to search direct children only
+        - Prevents false "scoped datamodel" detection for parent/child state machines
+        """
+        for datamodel in root.findall('./sc:datamodel', SCXML_NS):
             for data in ns_findall(datamodel, 'data'):
                 var_id = data.get('id')
                 expr = data.get('expr', '')
@@ -428,10 +435,13 @@ class SCXMLParser:
             # Parse datamodel
             for datamodel in ns_findall(state_elem, 'datamodel'):
                 for data in ns_findall(datamodel, 'data'):
+                    # W3C SCXML 5.2: Extract content from text node or content attribute
+                    content = (data.text or '').strip() if data.text else ''
                     state.datamodel.append({
                         'id': data.get('id'),
                         'expr': data.get('expr', ''),
-                        'src': data.get('src', '')
+                        'src': data.get('src', ''),
+                        'content': content
                     })
 
             # Parse invoke
