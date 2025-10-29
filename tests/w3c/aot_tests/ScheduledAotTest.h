@@ -1,0 +1,97 @@
+#pragma once
+
+#include "AotTestBase.h"
+#include "AotTestRegistry.h"
+#include <thread>
+
+namespace RSM::W3C::AotTests {
+
+/**
+ * @brief CRTP template for AOT tests requiring event scheduler polling
+ *
+ * Used for tests with delayed send or invoke that need tick() polling.
+ * Calls runUntilCompletion() to process:
+ * - Deferred invoke execution (W3C SCXML 6.4)
+ * - Child state machine lifecycle
+ * - Event scheduler polling for delayed send
+ *
+ * Usage:
+ * @code
+ * #include "test175_sm.h"
+ * struct Test175 : public ScheduledAotTest<Test175, 175> {
+ *     static constexpr const char* DESCRIPTION = "Send delayexpr";
+ *     using SM = RSM::Generated::test175::test175;
+ * };
+ * REGISTER_AOT_TEST(Test175);
+ * @endcode
+ */
+template <typename Derived, int TestNum> class ScheduledAotTest : public AotTestBase {
+public:
+    static constexpr int TEST_ID = TestNum;
+
+    bool run() override {
+        using SM = typename Derived::SM;
+        SM sm;
+        sm.initialize();
+
+        // W3C SCXML 6.2: Use runUntilCompletion() for automatic event scheduler polling
+        bool completed = sm.runUntilCompletion(getTimeout());
+
+        if (!completed) {
+            // Timeout - cleanup JSEngine session before returning
+            sm.getPolicy().ensureJSEngineSessionDestroyed();
+            return false;
+        }
+
+        auto currentState = sm.getCurrentState();
+
+        // W3C SCXML: Check success state (default: Pass, override with PASS_STATE)
+        // Policy-based design: Derived class can define PASS_STATE for custom success states
+        bool isPass;
+        if constexpr (requires { Derived::PASS_STATE; }) {
+            // Manual test or custom success state
+            isPass = (currentState == Derived::PASS_STATE);
+            LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, PASS_STATE={}, isPass={}",
+                      static_cast<int>(currentState), static_cast<int>(Derived::PASS_STATE), isPass);
+        } else {
+            // Standard test: success = Pass state
+            isPass = (currentState == SM::State::Pass);
+            LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}, isPass={}",
+                      static_cast<int>(currentState), static_cast<int>(SM::State::Pass), isPass);
+        }
+        bool result = isPass;
+
+        // W3C SCXML: Cleanup JSEngine session before stack unwinding
+        // This prevents stack-use-after-return when JSEngine background thread
+        // tries to call In() predicate callbacks after sm is destroyed
+        sm.getPolicy().ensureJSEngineSessionDestroyed();
+
+        return result;
+    }
+
+    int getTestId() const override {
+        return TEST_ID;
+    }
+
+    const char *getDescription() const override {
+        return Derived::DESCRIPTION;
+    }
+
+    bool needsSchedulerPolling() const override {
+        return true;
+    }
+
+    /**
+     * @brief Get test type: pure_static or static_hybrid
+     *
+     * Uses Policy::NEEDS_JSENGINE to determine if test uses JSEngine
+     * for ECMAScript expression evaluation (In(), typeof, _event, etc.)
+     */
+    const char *getTestType() const {
+        using SM = typename Derived::SM;
+        using Policy = typename SM::PolicyType;
+        return Policy::NEEDS_JSENGINE ? "static_hybrid" : "pure_static";
+    }
+};
+
+}  // namespace RSM::W3C::AotTests
