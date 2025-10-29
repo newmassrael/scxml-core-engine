@@ -1,5 +1,5 @@
 #pragma once
-#include "SimpleAotTest.h"
+#include "ScheduledAotTest.h"
 #include "test412_sm.h"
 
 namespace RSM::W3C::AotTests {

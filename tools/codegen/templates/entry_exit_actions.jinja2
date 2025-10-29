@@ -50,23 +50,58 @@
 {% if state.on_entry or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.static_invokes %}
-                // W3C SCXML 6.4: Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
+                // ============================================================
+                // W3C SCXML 6.4: STATIC INVOKE - Pure AOT Strategy
+                // ARCHITECTURE.md All-or-Nothing: Parent and child both use statically generated code
+                // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
+                // ============================================================
 {% for invoke_info in state.static_invokes %}
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                // Include invoke index to ensure uniqueness for multiple invokes in same state
+                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+
+                {% if invoke_info.idlocation %}
+                // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
+                {
+                    ensureJSEngine();
+                    auto& jsEngine = ::RSM::JSEngine::instance();
+                    jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
+                    LOG_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                }
+                {% endif %}
+
                 // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }})
                 ::RSM::InvokeHelper::deferInvoke(pendingInvokes_,
-                    PendingInvoke{"{{ invoke_info.invoke_id }}", State::{{ state_id | capitalize }}});
-                LOG_DEBUG("Deferred invoke: {{ invoke_info.invoke_id }} in state {{ state_id }}");
+                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
+                LOG_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
 {% endif %}
 {% if state.hybrid_invokes %}
-                // W3C SCXML 6.4: Hybrid invoke (srcexpr or contentexpr) - defer execution until macrostep end
-                // ARCHITECTURE.md: Hybrid Strategy - AOT parent + Interpreter child
+                // ============================================================
+                // W3C SCXML 6.4: HYBRID INVOKE - Static Hybrid Strategy
+                // ARCHITECTURE.md Hybrid Strategy: AOT parent evaluates expr + creates Interpreter child
+                // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
+                // ============================================================
                 {% for invoke_info in state.hybrid_invokes %}
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                // Include invoke index to ensure uniqueness for multiple invokes in same state
+                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+
+                {% if invoke_info.idlocation %}
+                // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
+                {
+                    ensureJSEngine();
+                    auto& jsEngine = ::RSM::JSEngine::instance();
+                    jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
+                    LOG_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                }
+                {% endif %}
+
                 // Defer hybrid invoke: {{ invoke_info.invoke_id }} {% if invoke_info.srcexpr %}(srcexpr: {{ invoke_info.srcexpr }}){% elif invoke_info.contentexpr %}(contentexpr: {{ invoke_info.contentexpr }}){% endif %}
 
                 ::RSM::InvokeHelper::deferInvoke(pendingInvokes_,
-                    PendingInvoke{"{{ invoke_info.invoke_id }}", State::{{ state_id | capitalize }}});
-                LOG_DEBUG("Deferred hybrid invoke: {{ invoke_info.invoke_id }} in state {{ state_id }}");
+                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
+                LOG_DEBUG("Deferred hybrid invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
 {% endif %}
 {% for action in state.on_entry %}
@@ -382,7 +417,10 @@
                 {% if state.static_invokes %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
                     {% for invoke_info in state.static_invokes %}
-                    if (pending.invokeId == "{{ invoke_info.invoke_id }}") {
+                    // W3C SCXML 3.12.1: Match runtime-generated invoke ID (stateid.platformid.index format)
+                    // Full ID example: "s0.123456789._invoke_0" where 123456789 is runtime platformid (pointer address)
+                    // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
+                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
                         {% if invoke_info.namelist %}
                         // W3C SCXML 6.4.1: Validate namelist variables before creating child
                         {
@@ -415,18 +453,8 @@
                         // W3C SCXML 6.4: Instantiate and initialize child state machine
                         LOG_DEBUG("Creating child state machine: {{ invoke_info.child_name }} for invoke {{ invoke_info.invoke_id }}");
 
-                        // Create child instance with parent pointer and invokeId
-                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::RSM::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, "{{ invoke_info.invoke_id }}");
-
-                        {% if invoke_info.idlocation %}
-                        // W3C SCXML 6.4.1: Store invokeId in parent datamodel via idlocation
-                        {
-                            ensureJSEngine();
-                            auto& jsEngine = ::RSM::JSEngine::instance();
-                            jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", "{{ invoke_info.invoke_id }}").get();
-                            LOG_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {{ invoke_info.invoke_id }}");
-                        }
-                        {% endif %}
+                        // Create child instance with parent pointer and invokeId (using generated ID from defer)
+                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::RSM::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId);
 
                         {% if invoke_info.params %}
                         // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
@@ -475,7 +503,10 @@
                 {% if state.hybrid_invokes %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
                     {% for invoke_info in state.hybrid_invokes %}
-                    if (pending.invokeId == "{{ invoke_info.invoke_id }}") {
+                    // W3C SCXML 3.12.1: Match runtime-generated invoke ID (stateid.platformid.index format)
+                    // Full ID example: "s0.123456789._invoke_0" where 123456789 is runtime platformid (pointer address)
+                    // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
+                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
                         // W3C SCXML 6.4: Hybrid invoke (srcexpr or contentexpr) - AOT parent + Interpreter child
                         // ARCHITECTURE.md: Hybrid Strategy
                         {% if invoke_info.srcexpr %}
@@ -491,8 +522,8 @@
                         // W3C SCXML Standard: Resolve child relative to parent SCXML location
                         std::string scxmlContent = ::RSM::FileLoadingHelper::loadScxmlFile(filePath, this->scxmlSourcePath_);
 
-                        // Create Interpreter child from SCXML string
-                        auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, "{{ invoke_info.invoke_id }}");
+                        // Create Interpreter child from SCXML string (use runtime-generated invoke ID)
+                        auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
                         {% elif invoke_info.contentexpr %}
                         LOG_DEBUG("Executing hybrid invoke: {{ invoke_info.invoke_id }} (contentexpr: {{ invoke_info.contentexpr }})");
 
@@ -504,8 +535,8 @@
 
                         LOG_DEBUG("Hybrid invoke contentexpr evaluated to {} bytes SCXML", scxmlContent.size());
 
-                        // Create Interpreter child from SCXML string
-                        auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, "{{ invoke_info.invoke_id }}");
+                        // Create Interpreter child from SCXML string (use runtime-generated invoke ID)
+                        auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
                         {% endif %}
                         if (!child) {
                             LOG_ERROR("Failed to create child state machine from contentexpr for invoke {{ invoke_info.invoke_id }}");
@@ -514,12 +545,6 @@
 
                         // Store child instance
                         hybridChild_{{ invoke_info.invoke_id }}_ = child;
-
-                        {% if invoke_info.idlocation %}
-                        // W3C SCXML 6.4.1: Store invokeId in parent datamodel via idlocation
-                        jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", "{{ invoke_info.invoke_id }}").get();
-                        LOG_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {{ invoke_info.invoke_id }}");
-                        {% endif %}
 
                         // W3C SCXML 6.4: Set completion callback for done.invoke event
                         child->setCompletionCallback([this, &engine]() {

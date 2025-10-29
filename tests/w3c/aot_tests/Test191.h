@@ -1,5 +1,5 @@
 #pragma once
-#include "SimpleAotTest.h"
+#include "ScheduledAotTest.h"
 #include "test191_sm.h"
 
 namespace RSM::W3C::AotTests {
@@ -20,11 +20,18 @@ namespace RSM::W3C::AotTests {
  * 3. Parent receives "childToParent" event from child → transitions to pass
  * 4. If timeout occurs first → transitions to fail
  *
+ * Uses ScheduledAotTest for runUntilCompletion() to process:
+ * - Deferred static invoke execution (W3C SCXML 6.4)
+ * - AOT child state machine lifecycle
+ * - Event scheduler polling for timeout and child events
+ *
  * ARCHITECTURE.md Compliance - Pure Static Approach:
  * - Fully static state machine (compile-time states/transitions)
  * - No JSEngine needed (datamodel declared but unused)
  * - Child SCXML from inline <content> compiled to separate test191_child0 state machine
  * - Uses Helper functions: SendHelper for #_parent routing, InvokeHelper for child lifecycle
+ * - W3C SCXML 3.12.1: Automatic invoke ID generation in "stateid.platformid.index" format
+ *   (index suffix ensures uniqueness for multiple invokes in same state)
  *
  * W3C SCXML Features:
  * - W3C SCXML 6.4.1: <invoke type="scxml"> with inline <content> element
@@ -33,7 +40,7 @@ namespace RSM::W3C::AotTests {
  * - W3C SCXML 6.2: <send> with target attribute
  * - W3C SCXML 6.2.5: Delayed send for timeout handling
  */
-struct Test191 : public SimpleAotTest<Test191, 191> {
+struct Test191 : public ScheduledAotTest<Test191, 191> {
     static constexpr const char *DESCRIPTION = "Inline content invoke with #_parent (W3C 6.4.1 AOT Pure Static)";
     using SM = RSM::Generated::test191::test191;
 };
