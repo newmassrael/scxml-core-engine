@@ -53,6 +53,7 @@ jobs:
           meson \
           ninja-build \
           lld \
+          ccache \
           pkg-config \
           libxml2-dev \
           libspdlog-dev \
@@ -79,6 +80,14 @@ jobs:
         key: ${{ runner.os }}-cmake-${{ hashFiles('**/CMakeLists.txt') }}
         restore-keys: |
           ${{ runner.os }}-cmake-
+
+    - name: Setup ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
 
     - name: Verify lld Installation
       run: |

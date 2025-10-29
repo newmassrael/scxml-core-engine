@@ -26,6 +26,7 @@ ThreadSanitizer (TSAN) is essential for detecting race conditions, but running i
 - `ignore_noninstrumented_modules=1` for system libraries
 - Complete race detection in your application code
 - **lld linker**: Automatically used for 35% faster linking (vs GNU ld)
+- **ccache**: Automatically used for 90% faster rebuilds
 
 ## Prerequisites
 
@@ -163,6 +164,7 @@ If you still see crashes:
 │  + nscd disabled                   │
 │  + nsswitch.conf configured        │
 │  + lld linker (35% faster)         │
+│  + ccache (90% faster rebuilds)    │
 ├─────────────────────────────────────┤
 │  Your Project (mounted volume)      │
 │  (/workspace)                       │
@@ -215,6 +217,7 @@ rm docker-tsan-build.log
 | Suppressions | N/A | None needed ✅ |
 | DNS crashes | N/A | Prevented ✅ |
 | Linker | GNU ld / lld (auto) | lld (35% faster) ✅ |
+| Compile cache | ccache (auto) | ccache (90% faster rebuilds) ✅ |
 | Performance | 2x slower | 5-10x slower |
 | Disk space | Minimal | ~1GB |
 
