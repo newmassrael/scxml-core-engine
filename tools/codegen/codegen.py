@@ -397,12 +397,11 @@ class CodeGenerator:
                 print(f"    Reason: Initial state '{model.initial}' not found in model")
                 return True
 
-        # Scoped datamodel (duplicate variable names - test240, test241, test244)
-        var_names = [var['id'] for var in model.variables]
-        if len(var_names) != len(set(var_names)):
-            duplicates = [name for name in var_names if var_names.count(name) > 1]
-            print(f"    Reason: Scoped datamodel detected (duplicate variables: {set(duplicates)})")
-            return True
+        # Note: Scoped datamodel check removed (fixed in scxml_parser.py)
+        # - scxml_parser now uses './sc:datamodel' (direct children only) instead of './/sc:datamodel' (all descendants)
+        # - Matches Interpreter behavior: ParsingCommon::findFirstChildElement()
+        # - Parent and child state machines have separate scopes (W3C SCXML 5.2)
+        # - No false positives for test240, test241, test244 (parent Var1 vs child Var1)
 
         # Parallel states: Static parallel states (compile-time structure) can be generated statically
         # Only dynamic parallel states (runtime-determined structure) require wrapper

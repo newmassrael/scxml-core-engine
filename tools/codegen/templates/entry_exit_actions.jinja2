@@ -423,11 +423,13 @@
                     // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
                     if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
                         {% if invoke_info.namelist %}
-                        // W3C SCXML 6.4.1: Validate namelist variables before creating child
+                        // W3C SCXML 6.4.1: Namelist handling - validate and pass values to child
+                        std::map<std::string, std::vector<std::string>> namelistParams;
+
+                        // Step 1: Validate namelist variables before creating child
                         {
                             ensureJSEngine();
                             auto& jsEngine = ::RSM::JSEngine::instance();
-                            std::map<std::string, std::vector<std::string>> namelistParams;
 
                             bool namelistValid = ::RSM::NamelistHelper::evaluateNamelist(
                                 jsEngine,
@@ -460,6 +462,21 @@
                         
                         // Create child instance with parent pointer, invokeId, and childSessionId
                         child_{{ invoke_info.invoke_id }}_ = std::make_shared<::RSM::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+
+                        {% if invoke_info.namelist %}
+                        // W3C SCXML 6.4.1: Pass namelist values to child datamodel (Step 2)
+                        {% if invoke_info.child_needs_jsengine %}
+                        for (const auto& [varName, values] : namelistParams) {
+                            if (!values.empty()) {
+                                LOG_DEBUG("Setting namelist variable '{}' = '{}' in child {{ invoke_info.invoke_id }}", varName, values[0]);
+                                child_{{ invoke_info.invoke_id }}_->setParamInJSEngine(varName, values[0]);
+                            }
+                        }
+                        {% else %}
+                        // Child does not use JSEngine - namelist handled via static datamodel
+                        LOG_DEBUG("Namelist variables - child uses static datamodel");
+                        {% endif %}
+                        {% endif %}
 
                         {% if invoke_info.params %}
                         // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
