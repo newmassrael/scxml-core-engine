@@ -70,6 +70,29 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# =============================================================================
+# Linker Configuration - Use lld for faster linking
+# =============================================================================
+# lld (LLVM linker) provides 30-50% faster linking compared to GNU ld
+# Benchmark results (621MB binary):
+#   - GNU ld:  45.89 seconds
+#   - lld:     29.58 seconds (35.5% improvement)
+#
+# This is especially important for w3c_test_cli which links 240+ test runners
+
+# Check if lld is available
+find_program(LLD_LINKER NAMES ld.lld lld)
+
+if(LLD_LINKER)
+    # Use lld for all linking
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fuse-ld=lld")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -fuse-ld=lld")
+    set(CMAKE_MODULE_LINKER_FLAGS "${CMAKE_MODULE_LINKER_FLAGS} -fuse-ld=lld")
+    message(STATUS "✅ Using lld linker (35% faster than GNU ld)")
+else()
+    message(STATUS "⚠️  lld not found, using default linker (consider: sudo apt install lld)")
+endif()
+
 # Sanitizer options for Debug builds
 # Docker TSAN environment auto-detection
 if(DEFINED ENV{IN_DOCKER_TSAN})

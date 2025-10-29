@@ -52,6 +52,7 @@ jobs:
           g++ \
           meson \
           ninja-build \
+          lld \
           pkg-config \
           libxml2-dev \
           libspdlog-dev \
@@ -79,6 +80,12 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cmake-
 
+    - name: Verify lld Installation
+      run: |
+        echo "=== Checking lld installation ==="
+        which ld.lld || echo "Warning: ld.lld not found in PATH"
+        ld.lld --version || echo "Warning: ld.lld version check failed"
+
     - name: Configure CMake
       run: |
         cmake -B build \
@@ -87,7 +94,9 @@ jobs:
           -G Ninja
 
     - name: Build
-      run: cmake --build build --parallel $(nproc)
+      run: |
+        echo "=== Starting build with timing ==="
+        time cmake --build build --parallel $(nproc)
 
     - name: Verify Resources
       run: |
