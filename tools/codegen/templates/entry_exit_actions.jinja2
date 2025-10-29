@@ -468,6 +468,16 @@
                         {% endfor %}
                         {% endif %}
 
+                        // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+                        // Child may send events during initialize() that need autoforward
+                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
+                            "{{ invoke_info.invoke_id }}",
+                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID (same)
+                            {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.6: autoforward
+                            ""      // finalize
+                        };
+
                         // W3C SCXML 6.4: Register completion callback BEFORE initialize
                         // Child may reach final state during initialize() and needs callback ready
                         child_{{ invoke_info.invoke_id }}_->setCompletionCallback([this]() {
@@ -494,14 +504,8 @@
                         // W3C SCXML 6.4: Initialize child state machine
                         child_{{ invoke_info.invoke_id }}_->initialize();
                         
-                        // W3C SCXML 6.4: Track active invoke session
-                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
-                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
-                            "{{ invoke_info.invoke_id }}",
-                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID (same)
-                            false,  // autoforward
-                            ""      // finalize
-                        };
+                        // activeInvokes_ already registered above BEFORE initialize()
+                        // This ensures child events during initialize() can use autoforward
                         
                         LOG_DEBUG("Child state machine {{ invoke_info.invoke_id }} initialized and running");
                         return;  // Found and executed the invoke
@@ -601,6 +605,36 @@
         if (child_{{ invoke_info.invoke_id }}_) {
             LOG_DEBUG("Ticking child {{ invoke_info.invoke_id }}");
             child_{{ invoke_info.invoke_id }}_->tick();
+        }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+    }
+
+    // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
+    // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent
+    template<typename Engine>
+    void forwardToAutoforwardChildren(const std::string& eventName, Engine& engine) {
+        (void)engine;
+        
+        {% for state_id, state in model.states.items() %}
+        {% if state.static_invokes %}
+        {% for invoke_info in state.static_invokes %}
+        // Check if child {{ invoke_info.invoke_id }} has autoforward enabled
+        {
+            auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+            LOG_DEBUG("AOT autoforward check: invokeId='{{ invoke_info.invoke_id }}', found={}, autoforward={}, childPtr={}", 
+                      (it != activeInvokes_.end()), 
+                      (it != activeInvokes_.end() ? it->second.autoforward : false),
+                      (child_{{ invoke_info.invoke_id }}_ != nullptr));
+            
+            if (it != activeInvokes_.end() && it->second.autoforward && child_{{ invoke_info.invoke_id }}_) {
+                LOG_DEBUG("AOT autoforward: Forwarding event '{}' to child {{ invoke_info.invoke_id }}", eventName);
+
+                // W3C SCXML 6.4.6: Forward by event name string to child
+                // Child's raiseExternal(string) will convert to its Event enum and handle gracefully if not found
+                child_{{ invoke_info.invoke_id }}_->raiseExternal(eventName);
+            }
         }
         {% endfor %}
         {% endif %}
