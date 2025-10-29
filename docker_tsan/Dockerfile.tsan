@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     python3-pip \
     ninja-build \
+    lld \
     libxml2-dev \
     libboost-dev \
     libssl-dev \

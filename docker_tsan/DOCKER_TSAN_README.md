@@ -25,6 +25,7 @@ ThreadSanitizer (TSAN) is essential for detecting race conditions, but running i
 - System glibc with nscd workarounds
 - `ignore_noninstrumented_modules=1` for system libraries
 - Complete race detection in your application code
+- **lld linker**: Automatically used for 35% faster linking (vs GNU ld)
 
 ## Prerequisites
 
@@ -102,6 +103,22 @@ ENV TSAN_OPTIONS="ignore_noninstrumented_modules=1"
 ```
 Ignores memory accesses in non-instrumented system libraries.
 
+### Linker Optimization (lld)
+
+**Problem:**
+- Large binaries (600+ MB) with 240+ test runners take 45+ seconds to link with GNU ld
+- Relink triggered on every CMakeLists.txt change (registry regeneration)
+
+**Solution: lld (LLVM Linker)**
+```dockerfile
+RUN apt-get install -y lld
+```
+
+CMakeLists.txt automatically detects and uses lld when available:
+- **GNU ld**: 45.89 seconds relink time
+- **lld**: 29.58 seconds relink time
+- **Improvement**: 35.5% faster (16.3 seconds saved per relink)
+
 ## Troubleshooting
 
 ### Build fails with "Permission denied"
@@ -145,6 +162,7 @@ If you still see crashes:
 │  System glibc 2.35                 │
 │  + nscd disabled                   │
 │  + nsswitch.conf configured        │
+│  + lld linker (35% faster)         │
 ├─────────────────────────────────────┤
 │  Your Project (mounted volume)      │
 │  (/workspace)                       │
@@ -196,6 +214,7 @@ rm docker-tsan-build.log
 | Race detection | None | Full ✅ |
 | Suppressions | N/A | None needed ✅ |
 | DNS crashes | N/A | Prevented ✅ |
+| Linker | GNU ld / lld (auto) | lld (35% faster) ✅ |
 | Performance | 2x slower | 5-10x slower |
 | Disk space | Minimal | ~1GB |
 

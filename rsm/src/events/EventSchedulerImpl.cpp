@@ -310,6 +310,14 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
         sessionExecuting_.clear();
     }
 
+    // Clear callback queue to prevent memory leak
+    {
+        std::unique_lock<std::mutex> callbackLock(callbackQueueMutex_);
+        while (!callbackQueue_.empty()) {
+            callbackQueue_.pop();
+        }
+    }
+
     LOG_DEBUG("EventSchedulerImpl: Scheduler shutdown complete");
 }
 
