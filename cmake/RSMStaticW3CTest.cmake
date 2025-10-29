@@ -1,6 +1,12 @@
 # RSM Static W3C Test Code Generation
 # Generates C++ state machine code from W3C SCXML test suite
 
+# Set CMake policy CMP0116 to NEW (Ninja DEPFILE transformation)
+# This suppresses warnings for add_custom_command DEPFILE usage
+if(POLICY CMP0116)
+    cmake_policy(SET CMP0116 NEW)
+endif()
+
 # rsm_generate_static_w3c_test: Generate C++ code for a single W3C test
 #
 # This does NOT create executable - just generates C++ header from TXML
