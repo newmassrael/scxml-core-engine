@@ -1,6 +1,7 @@
 #include "runtime/InvokeExecutor.h"
 #include "SCXMLTypes.h"
 #include "common/Constants.h"
+#include "common/InvokeHelper.h"
 #include "common/Logger.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
@@ -236,7 +237,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             }
 
             // W3C SCXML 6.5: Generate done.invoke.id event
-            std::string doneEvent = "done.invoke." + invokeid;
+            // ARCHITECTURE.md: Use InvokeHelper for Single Source of Truth (Zero Duplication with AOT)
+            std::string doneEvent = InvokeHelper::createDoneInvokeEventName(invokeid);
 
             if (eventDispatcher) {
                 EventDescriptor event;

@@ -46,6 +46,32 @@ EventSchedulerImpl::~EventSchedulerImpl() {
         timerThread_.join();
     }
 
+    // MEMORY LEAK FIX: Explicitly clear all internal data structures
+    // This ensures no pending events or hash map entries leak
+    {
+        std::unique_lock<std::shared_mutex> queueLock(queueMutex_);
+        std::unique_lock<std::shared_mutex> indexLock(indexMutex_);
+
+        // Clear priority queue by creating empty queue and swapping
+        std::priority_queue<std::shared_ptr<ScheduledEvent>, std::vector<std::shared_ptr<ScheduledEvent>>,
+                            ExecutionTimeComparator>
+            emptyQueue;
+        executionQueue_.swap(emptyQueue);
+
+        // Clear hash maps
+        sendIdIndex_.clear();
+        sessionQueues_.clear();
+        sessionExecuting_.clear();
+
+        // Clear callback queue
+        std::queue<std::function<void()>> emptyCallbackQueue;
+        std::swap(callbackQueue_, emptyCallbackQueue);
+
+        // Reset atomic counters
+        queueSize_.store(0);
+        indexSize_.store(0);
+    }
+
     // Now safe to destroy other members
     running_ = false;
 }
