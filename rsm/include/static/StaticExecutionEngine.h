@@ -1045,6 +1045,12 @@ public:
         // Process any events that were just raised (or existing events)
         processEventQueues();
         checkEventlessTransitions();
+
+        // W3C SCXML 6.4: Execute pending invokes after stable configuration is reached
+        // Macrostep has completed - entered-and-not-exited states ready for invoke execution
+        if constexpr (requires { policy_.executePendingInvokes(*this); }) {
+            policy_.executePendingInvokes(*this);
+        }
     }
 
     /**

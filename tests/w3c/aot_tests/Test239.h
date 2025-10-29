@@ -1,5 +1,5 @@
 #pragma once
-#include "SimpleAotTest.h"
+#include "ScheduledAotTest.h"
 #include "test239_sm.h"
 
 namespace RSM::W3C::AotTests {
@@ -28,10 +28,12 @@ namespace RSM::W3C::AotTests {
  * - W3C SCXML 6.3.1: done.invoke event on child completion
  * - W3C SCXML 6.2: Delayed send with timeout
  */
-struct Test239 : public SimpleAotTest<Test239, 239> {
+struct Test239 : public ScheduledAotTest<Test239, 239> {
     static constexpr const char *DESCRIPTION = "invoke src + content (W3C 6.4 AOT Pure Static)";
     using SM = RSM::Generated::test239::test239;
 };
+
+;
 
 // Auto-register
 inline static AotTestRegistrar<Test239> registrar_Test239;
