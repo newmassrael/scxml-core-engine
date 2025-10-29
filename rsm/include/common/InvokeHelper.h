@@ -191,6 +191,73 @@ public:
         return std::any_of(pending.begin(), pending.end(),
                            [&invokeId](const auto &p) { return p.invokeId == invokeId; });
     }
+
+    /**
+     * @brief W3C SCXML 6.3.1: Create done.invoke event name
+     *
+     * Single Source of Truth for done.invoke event naming logic.
+     * Used by both Interpreter and AOT engines.
+     *
+     * W3C SCXML 6.3.1: When an invoked child process completes, it generates
+     * a done.invoke.{invokeid} event where invokeid is the ID of the invoke element.
+     *
+     * ARCHITECTURE.md Compliance:
+     * - Zero Duplication: Shared naming logic between Interpreter and AOT
+     * - Single Source of Truth: W3C SCXML 6.3.1 event naming specification
+     *
+     * @param invokeId Invoke element identifier
+     * @return Event name in "done.invoke.{invokeid}" format
+     *
+     * @example
+     * @code
+     * // Interpreter usage (InvokeExecutor.cpp)
+     * std::string doneEvent = InvokeHelper::createDoneInvokeEventName("foo");
+     * // Returns: "done.invoke.foo"
+     *
+     * // AOT usage (generated code)
+     * std::string eventName = InvokeHelper::createDoneInvokeEventName("{{ invoke_info.invoke_id }}");
+     * @endcode
+     */
+    static std::string createDoneInvokeEventName(const std::string &invokeId) {
+        // W3C SCXML 6.3.1: done.invoke.{invokeid} event naming
+        return "done.invoke." + invokeId;
+    }
+
+    /**
+     * @brief W3C SCXML 3.12.1: Validate invoke ID format
+     *
+     * Single Source of Truth for invoke ID validation.
+     * Used by both Interpreter and AOT engines.
+     *
+     * W3C SCXML 3.12.1: Invoke IDs must be unique within the session.
+     * Format can be:
+     * - User-provided ID (e.g., "foo", "myInvoke")
+     * - Auto-generated ID (e.g., "stateid.platformid.index" format)
+     *
+     * ARCHITECTURE.md Compliance:
+     * - Zero Duplication: Shared validation logic
+     * - Single Source of Truth: W3C SCXML 3.12.1 ID requirements
+     *
+     * @param invokeId Invoke element identifier to validate
+     * @return true if valid (non-empty), false otherwise
+     *
+     * @example
+     * @code
+     * // Validate user-provided ID
+     * if (!InvokeHelper::isValidInvokeId(userProvidedId)) {
+     *     throw std::invalid_argument("W3C SCXML 3.12.1: Invoke ID must not be empty");
+     * }
+     *
+     * // Validate auto-generated ID
+     * std::string autoId = "s0.123456789._invoke_0";
+     * assert(InvokeHelper::isValidInvokeId(autoId));
+     * @endcode
+     */
+    static bool isValidInvokeId(const std::string &invokeId) {
+        // W3C SCXML 3.12.1: Invoke ID must not be empty
+        // Both user-provided and auto-generated IDs must satisfy this requirement
+        return !invokeId.empty();
+    }
 };
 
 }  // namespace RSM

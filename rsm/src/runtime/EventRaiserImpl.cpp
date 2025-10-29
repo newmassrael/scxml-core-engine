@@ -53,6 +53,21 @@ void EventRaiserImpl::shutdown() {
         processingThread_.join();
     }
 
+    // MEMORY LEAK FIX: Explicitly clear all internal data structures
+    // This ensures no pending events leak
+    {
+        std::lock_guard<std::mutex> queueLock(queueMutex_);
+        std::lock_guard<std::mutex> syncQueueLock(synchronousQueueMutex_);
+
+        // Clear async event queue by creating empty queue and swapping
+        std::queue<QueuedEvent> emptyQueue;
+        eventQueue_.swap(emptyQueue);
+
+        // Clear synchronous priority queue by creating empty queue and swapping
+        std::priority_queue<QueuedEvent, std::vector<QueuedEvent>, QueuedEventComparator> emptySyncQueue;
+        synchronousQueue_.swap(emptySyncQueue);
+    }
+
     isRunning_.store(false);
     LOG_DEBUG("EventRaiserImpl: Shutdown complete");
 }

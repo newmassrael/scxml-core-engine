@@ -478,8 +478,17 @@
                             // Mark as completed (for Cancel_invoke logic - test 236)
                             pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
 
+                            // W3C SCXML 6.3.1: Include invoke ID in done.invoke event (_event.invokeid)
                             // Send done.invoke to external queue (matches Interpreter event ordering)
-                            self_->raiseExternal(typename SelfType::EventWithMetadata(Event::Done_invoke));
+                            self_->raiseExternal(typename SelfType::EventWithMetadata(
+                                Event::Done_invoke,  // event
+                                "",                  // data
+                                "",                  // origin
+                                "",                  // sendId
+                                "",                  // type
+                                "",                  // originType
+                                "{{ invoke_info.invoke_id }}"  // invokeId - W3C SCXML 6.3.1
+                            ));
                         });
 
                         // W3C SCXML 6.4: Initialize child state machine
@@ -549,7 +558,16 @@
                         // W3C SCXML 6.4: Set completion callback for done.invoke event
                         child->setCompletionCallback([this, &engine]() {
                             LOG_DEBUG("Hybrid child {{ invoke_info.invoke_id }} completed, raising done.invoke");
-                            engine.raise(Event::Done_invoke);
+                            // W3C SCXML 6.3.1: Include invoke ID in done.invoke event (_event.invokeid)
+                            engine.raise(typename Engine::EventWithMetadata(
+                                Event::Done_invoke,  // event
+                                "",                  // data
+                                "",                  // origin
+                                "",                  // sendId
+                                "",                  // type
+                                "",                  // originType
+                                "{{ invoke_info.invoke_id }}"  // invokeId - W3C SCXML 6.3.1
+                            ));
                         });
 
                         // W3C SCXML 6.4: Start child state machine
