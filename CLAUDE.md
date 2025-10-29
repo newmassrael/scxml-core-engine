@@ -146,15 +146,7 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
      }  // namespace RSM::W3C::AotTests
      ```
 
-3. **Add to `tests/w3c/aot_tests/AllAotTests.h`**:
-   - Include new test header in appropriate section
-   - Example:
-     ```cpp
-     #include "Test278.h"
-     #include "Test279.h"  // Add here
-     ```
-
-4. **Result**:
+3. **Result**:
    - Static code generated to `build/tests/w3c_static_generated/testXXX_sm.h`
    - AOT test auto-registered via `AotTestRegistrar`
    - Both Interpreter and AOT tests pass with pure static code
@@ -233,11 +225,7 @@ If a test cannot be statically generated, it should **NOT be added to AOT tests*
      }  // namespace RSM::W3C::AotTests
      ```
 
-3. **Add to `tests/w3c/aot_tests/AllAotTests.h`**:
-   - Include new test header in BasicHTTP section
-   - Group with other HTTP tests for clarity
-
-4. **Result**:
+3. **Result**:
    - Static code generated with HTTP send support (EventWithMetadata with target/type fields)
    - HttpAotTest starts W3CHttpTestServer on localhost:8080/test
    - StaticExecutionEngine.raiseExternal() detects HTTP target and sends real HTTP POST
