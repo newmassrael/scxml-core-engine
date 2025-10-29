@@ -1094,10 +1094,13 @@ bool JSEngine::checkStateActive(const std::string &stateName) const {
     }
 
     // Fall back to StateMachine pointers (for Interpreter engine)
+    // RACE CONDITION FIX: Use weak_ptr::lock() to safely access StateMachine
+    // W3C Test 530: Prevents heap-use-after-free during invoke exit
     for (const auto &pair : stateMachines_) {
-        StateMachine *sm = pair.second;
-        if (sm && sm->isStateActive(stateName)) {
-            return true;
+        if (auto sm = pair.second.lock()) {
+            if (sm->isStateActive(stateName)) {
+                return true;
+            }
         }
     }
     return false;
@@ -1131,10 +1134,10 @@ void JSEngine::queueInternalEvent(const std::string &sessionId, const std::strin
     LOG_DEBUG("JSEngine: Queued internal event '{}' for session '{}'", eventName, sessionId);
 }
 
-void JSEngine::setStateMachine(StateMachine *stateMachine, const std::string &sessionId) {
+void JSEngine::setStateMachine(std::shared_ptr<StateMachine> stateMachine, const std::string &sessionId) {
     std::lock_guard<std::mutex> lock(stateMachinesMutex_);
     if (stateMachine) {
-        stateMachines_[sessionId] = stateMachine;
+        stateMachines_[sessionId] = stateMachine;  // weak_ptr assignment from shared_ptr
         LOG_DEBUG("JSEngine: StateMachine set for session: {}", sessionId);
     } else {
         auto it = stateMachines_.find(sessionId);
