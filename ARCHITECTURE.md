@@ -811,6 +811,34 @@ class EventQueueManager {
   - Test coverage: test354 (W3C 5.10 - namelist, param, and content event data)
 - Benefits: Zero code duplication, consistent namelist evaluation across engines, proper W3C SCXML C.1/6.2 compliance
 
+**RSM::InvokeHelper::deferInvoke() / cancelInvokesForState() / executePendingInvokes()**:
+- W3C SCXML 6.4: Invoke lifecycle management (defer/cancel/execute pattern)
+- Single Source of Truth for invoke execution timing shared between engines
+- Location: `rsm/include/common/InvokeHelper.h`
+- Used by: Interpreter engine (InvokeManager), AOT engine (generated code from entry_exit_actions.jinja2)
+- Features:
+  - **deferInvoke()**: Add invoke to pending list during state entry (W3C SCXML 6.4)
+    - Template-based design supports both AOT (enum State) and Interpreter (int stateId)
+    - Defers execution until macrostep completion
+  - **cancelInvokesForState()**: Remove pending invokes when state is exited (W3C SCXML 6.4)
+    - Ensures only entered-and-not-exited states have active invokes
+    - Efficient batch removal with std::remove_if + erase idiom
+  - **executePendingInvokes()**: Execute all deferred invokes at macrostep end (W3C SCXML 6.4)
+    - Copy-and-clear pattern prevents iterator invalidation
+    - Exception handling ensures robustness (continue on individual invoke failure)
+    - Executor callback pattern allows engine-specific invoke logic
+  - **createDoneInvokeEventName()**: Generate done.invoke.{invokeid} event names (W3C SCXML 6.3.1)
+    - Single Source of Truth for done.invoke event naming
+    - Used by both engines for child completion events
+  - **isValidInvokeId()**: Validate invoke ID format (W3C SCXML 3.12.1)
+    - Ensures non-empty invoke IDs
+    - Supports both user-provided and auto-generated IDs
+  - **Macrostep Timing Semantics**: Prevents invoking in immediately-exited states
+    - Pattern: Entry → defer, Exit → cancel, Macrostep end → execute
+    - Ensures correct W3C SCXML 6.4 behavior (test422 compliance)
+- Test coverage: test239 (static invoke with child SCXML), test240 (invoke with namelist/param), test422 (macrostep timing)
+- Benefits: Zero code duplication, guaranteed W3C SCXML 6.4 compliance across engines, eliminates invoke timing bugs
+
 **RSM::Common::HierarchicalStateHelper / HierarchicalStateHelperString**:
 - W3C SCXML 3.12, 3.7, 3.8: Hierarchical state transition logic (LCA calculation, entry/exit chains)
 - Single Source of Truth for hierarchical state operations shared between engines

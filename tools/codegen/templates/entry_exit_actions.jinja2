@@ -10,11 +10,14 @@
     - Long-Term Correctness: No workarounds, complete W3C SCXML implementation
 
     Helper Classes Used:
-    - DoneDataHelper: W3C SCXML 5.5/5.7 (donedata param/content evaluation)
-    - EventMetadataHelper: W3C SCXML 6.3.1 (done.invoke event metadata construction)
-    - ParallelCompletionHelper: W3C SCXML 3.4/3.7.1 (parallel state completion detection)
-    - HistoryHelper: W3C SCXML 3.11 (history state recording)
-    - AssignHelper: W3C SCXML 5.3/5.4 (location validation)
+    - ForeachHelper: W3C SCXML 5.6 (ARCHITECTURE.md lines 738-748)
+    - SendHelper: W3C SCXML 6.2 (ARCHITECTURE.md lines 750-764)
+    - AssignHelper: W3C SCXML 5.3/5.4 (ARCHITECTURE.md lines 766-779)
+    - DoneDataHelper: W3C SCXML 5.5/5.7 (ARCHITECTURE.md lines 781-797)
+    - NamelistHelper: W3C SCXML C.1/6.2 (ARCHITECTURE.md lines 799-812)
+    - InvokeHelper: W3C SCXML 6.4 (ARCHITECTURE.md lines 814-840)
+    - HierarchicalStateHelper: W3C SCXML 3.12/3.7/3.8 (ARCHITECTURE.md lines 842-871)
+    - SendSchedulingHelper: W3C SCXML 6.2 (ARCHITECTURE.md lines 873-884)
 
     Features Implemented:
     - W3C SCXML 3.4: Parallel state auto-entry (enter all child regions)
