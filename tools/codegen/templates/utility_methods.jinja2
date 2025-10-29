@@ -50,6 +50,54 @@
         return std::nullopt;
     }
 
+{% if model.static_invokes %}
+    // W3C SCXML 6.5: Execute finalize for events from invoked children
+    // Finalize runs BEFORE the event is processed, with _event set to child's event
+    template<typename Engine>
+    void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, Engine& engine) {
+        (void)engine;  // Unused in this implementation
+        
+        // W3C SCXML 6.5: Only execute finalize for events from child invokes
+        // origin field contains child's session ID
+        if (eventWithMeta.origin.empty()) {
+            return;  // Not from a child
+        }
+
+        // Find which invoke sent this event by matching child session ID
+        for (const auto& [invokeId, childSession] : activeInvokes_) {
+            if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
+                LOG_DEBUG("AOT finalize: Executing finalize for invoke '{}' before processing event", invokeId);
+                
+{% if model.needs_jsengine %}
+                // W3C SCXML 6.5: Use FinalizeHelper (ARCHITECTURE.md Zero Duplication)
+                // Single Source of Truth for finalize execution shared with Interpreter
+                std::string eventName = this->getEventName(eventWithMeta.event);
+                
+                this->ensureJSEngine();
+                auto& jsEngine = ::RSM::JSEngine::instance();
+                
+                ::RSM::FinalizeHelper::executeFinalizeWithEvent(
+                    jsEngine,
+                    sessionId_.value(),
+                    childSession.finalizeScript,
+                    eventName,
+                    eventWithMeta.data,
+                    eventWithMeta.sendId,
+                    eventWithMeta.origin,
+                    eventWithMeta.originType,
+                    eventWithMeta.invokeId
+                );
+{% else %}
+                // Pure Static: finalize script should be empty (no ECMAScript expressions)
+                LOG_WARN("AOT finalize: Finalize script present but JSEngine not available for invoke '{}'", invokeId);
+{% endif %}
+                
+                return;  // Found and executed
+            }
+        }
+    }
+{% endif %}
+
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // Helper: Convert State enum to string for In() predicate (W3C SCXML 5.9.2)
     static std::string getStateName(State state) {
@@ -92,12 +140,14 @@ private:
     }
 {% endif %}
 
-{% if model.needs_jsengine and (model.needs_event_name or model.needs_event_data) %}
+public:
     // Helper: Set _event variable in JSEngine (W3C SCXML 5.10)
-    void setCurrentEventInJSEngine(const std::string& eventName, const std::string& eventData = "",
-                                const std::string& eventType = "", const std::string& sendId = "",
-                                const std::string& origin = "", const std::string& originType = "", 
-                                const std::string& invokeId = "") {
+    // Always generated for compile-time compatibility, but no-op if JSEngine not needed
+    void setCurrentEventInJSEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
+                                [[maybe_unused]] const std::string& eventType = "", [[maybe_unused]] const std::string& sendId = "",
+                                [[maybe_unused]] const std::string& origin = "", [[maybe_unused]] const std::string& originType = "", 
+                                [[maybe_unused]] const std::string& invokeId = "") {
+{% if model.needs_jsengine and (model.needs_event_name or model.needs_event_data) %}
         if (eventName.empty()) return;
         ensureJSEngine();
         std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
@@ -106,10 +156,12 @@ private:
         // W3C SCXML 5.10: Wait for setCurrentEvent to complete before proceeding (synchronous)
         ::RSM::JSEngine::instance().setCurrentEvent(sessionId_.value(), eventName, eventData,
                                                     actualType, sendId, origin, originType, invokeId).get();
-    }
+{% else %}
+        // No-op: This state machine doesn't use JSEngine
+        (void)eventName; (void)eventData; (void)eventType; (void)sendId; (void)origin; (void)originType; (void)invokeId;
 {% endif %}
+    }
 
-public:
     // Helper: Ensure JSEngine session is destroyed before stack unwinding
     // This prevents stack-use-after-return when JSEngine background thread
     // tries to call In() predicate callbacks after the state machine is destroyed

@@ -477,7 +477,7 @@ rsm_generate_static_w3c_test(228 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3.1: i
 rsm_generate_static_w3c_test(229 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.6: autoforward with inline content (Pure Static)
 rsm_generate_static_w3c_test(230 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + autoforward (manual)
 rsm_generate_static_w3c_test(232 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-# rsm_generate_static_w3c_test(233 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + finalize - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(233 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.5: finalize before done.invoke event processing (Static Hybrid)
 # rsm_generate_static_w3c_test(234 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + finalize + parallel - TODO: Implement full invoke infrastructure
 # rsm_generate_static_w3c_test(235 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(236 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
@@ -663,7 +663,7 @@ rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: hi
 set(W3C_AOT_TESTS
     144 147 148 149 150 151 152 153 155 156 158 159
     172 173 174 175 176 178 179 183 185 186 187 189 190 191 192 193 194 198 199 200 201 205 207 208 210
-    215 216 220 223 224 225 226 228 229 230 232 236 247 250
+    215 216 220 223 224 225 226 228 229 230 232 233 236 247 250
     276 277 278 279 280 286 287 298
     301 302 303 304 309 310 311 312 313 314 318 319
     321 322 323 324 325 326 329 330 331 332 333 335 336 337 338 339
@@ -677,7 +677,7 @@ set(W3C_AOT_TESTS
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
-    233 234 235 237 239 240 241 242 243 244 245 252 253 294 307 364 376 377 378
+    234 235 237 239 240 241 242 243 244 245 252 253 294 307 364 376 377 378
 )
 
 # Generate W3CTestRegistry.cpp from template
