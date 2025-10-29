@@ -6,6 +6,34 @@
 - **Single Source of Truth**: Duplicate implementations prohibited, shared Helper classes required
   - Examples: SendHelper, TransitionHelper, ForeachHelper, GuardHelper
 
+### AOT-First Migration Strategy (CRITICAL)
+- **🚨 NEVER FALLBACK TO INTERPRETER**: When migrating tests to AOT, NEVER accept Interpreter fallback as a solution
+- **Fix Root Cause**: If AOT migration fails, fix the code generator or implement missing infrastructure
+- **All-or-Nothing Principle**: Tests must run EITHER on Interpreter OR on AOT, never mixed (see ARCHITECTURE.md)
+- **Forbidden Approaches**:
+  - ❌ **ABSOLUTELY FORBIDDEN**: "This test is too hard for AOT, let's use Interpreter wrapper"
+  - ❌ **ABSOLUTELY FORBIDDEN**: "Let's use Interpreter fallback for this edge case"
+  - ❌ **ABSOLUTELY FORBIDDEN**: "AOT migration failed, keep as Interpreter-only"
+  - ❌ **ABSOLUTELY FORBIDDEN**: "Code generator has bugs, let's skip AOT migration"
+- **Required Approach**:
+  - ✅ **Analyze Interpreter engine logic**: Understand how Interpreter handles this feature
+  - ✅ **Fix code generator**: Modify Jinja2 templates to match Interpreter's logic
+  - ✅ **Implement new Helper**: Create shared Helper functions following ARCHITECTURE.md Zero Duplication
+  - ✅ **Extend AOT infrastructure**: Add missing features to StaticExecutionEngine
+  - ✅ **Complete migration**: Ensure test passes on AOT with 100% W3C SCXML compliance
+- **Examples**:
+  - ❌ Bad: "Test 243 has code generation bugs, keeping as Interpreter-only"
+  - ✅ Good: "Test 243 exposes SendHelper bug with wildcard events, fixing code generator"
+  - ❌ Bad: "Dynamic invoke needs runtime parsing, using Interpreter wrapper"
+  - ✅ Good: "Dynamic invoke needs runtime parsing, implementing Static Hybrid with JSEngine file loading"
+  - ❌ Bad: "Parallel state is too complex for AOT, using Interpreter"
+  - ✅ Good: "Parallel state needs ParallelRegionOrchestrator Helper, implementing now"
+- **Rationale**:
+  - Interpreter fallback violates All-or-Nothing principle
+  - Code generator bugs must be fixed, not worked around
+  - Every Interpreter-only test is technical debt
+  - AOT engine must achieve 100% W3C SCXML feature parity with Interpreter
+
 ### No Workarounds or Band-Aid Solutions
 - **Temporary Fixes Prohibited**: Never implement quick fixes that mask root causes
 - **Analyze Before Acting**: When facing compilation/runtime errors, identify the true source of the problem
@@ -64,6 +92,17 @@
   - Generates JSEngine-embedded code for expression evaluation
   - Maintains static state machine structure (enums, switch statements)
   - See ARCHITECTURE.md "Static Hybrid: ECMAScript Expression Handling" for philosophy
+- **Automatic Child→Parent Event Collection** (scxml_parser.py:1761-1849):
+  - **W3C SCXML 6.2**: Scans child state machines for `<send target="#_parent" event="xxx"/>`
+  - **Auto-adds events to parent Event enum** for compile-time type safety
+  - **Prevents compilation errors** when child sends events only caught by wildcard transitions
+  - **Example (Test 243)**:
+    - Child sends: `<send target="#_parent" event="failure"/>`
+    - Parent handles: `<transition event="*" target="fail"/>`
+    - Without auto-collection: `ParentStateMachine::Event::Failure` → compilation error
+    - With auto-collection: Failure automatically added to parent Event enum → success
+  - **Implementation**: `_collect_child_to_parent_events()` method in SCXMLParser
+  - **Zero Duplication**: Matches Interpreter's dynamic string-based approach with AOT type safety
 
 ### Code Comments and Documentation
 - **No Phase Markers**: Never use "Phase 1", "Phase 2", "Phase 3", "Phase 4" in production code comments or documentation
@@ -111,7 +150,7 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
 **When**: Static code generation succeeds (all features are static, no dynamic expressions)
 
 **Required Steps**:
-1. **Add to `tests/CMakeLists.txt`**:
+1. **Add to `tests/CMakeLists.txt` - Code Generation** (line ~430-490):
    - Use `rsm_generate_static_w3c_test(TEST_NUM ${STATIC_W3C_OUTPUT_DIR})`
    - Add W3C SCXML specification reference comment
    - Example:
@@ -119,7 +158,21 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
      rsm_generate_static_w3c_test(279 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding variable initialization
      ```
 
-2. **Create AOT Test Registry File** `tests/w3c/aot_tests/TestXXX.h`:
+2. **Add to `tests/CMakeLists.txt` - AOT Test Registry** (line ~663-676):
+   - **CRITICAL**: Add test number to `W3C_AOT_TESTS` list
+   - Remove from `W3C_INTERPRETER_ONLY_TESTS` if present
+   - Example:
+     ```cmake
+     set(W3C_AOT_TESTS
+         ...
+         215 216 220 ... 240 241 242 243 247 250  # Add 243 here
+         ...
+     )
+     ```
+   - **Why needed**: Generates `W3CTestRunner_TestXXX.cpp` runner file
+   - **Without this**: Test falls back to Interpreter (type="interpreter_fallback")
+
+3. **Create AOT Test Registry File** `tests/w3c/aot_tests/TestXXX.h`:
    - Follow SimpleAotTest pattern for standard tests
    - Include W3C SCXML specification reference in docstring
    - Example:
@@ -146,10 +199,12 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
      }  // namespace RSM::W3C::AotTests
      ```
 
-3. **Result**:
+4. **Result**:
    - Static code generated to `build/tests/w3c_static_generated/testXXX_sm.h`
+   - Runner file generated to `tests/w3c/runners/W3CTestRunner_TestXXX.cpp`
    - AOT test auto-registered via `AotTestRegistrar`
    - Both Interpreter and AOT tests pass with pure static code
+   - Verify AOT execution with `type="pure_static"` (NOT `type="interpreter_fallback"`)
 
 ### Handling Tests That Cannot Use Pure Static Generation
 **IMPORTANT**: Interpreter wrappers are **NOT USED** in this project. All tests must either:
@@ -284,8 +339,13 @@ If a test cannot be statically generated, it should **NOT be added to AOT tests*
 - [ ] **W3C References**: All comments use W3C SCXML specification references?
 - [ ] **Template Modifications**: Jinja2 templates updated (not direct code generation)?
 - [ ] **Test Integration**:
-  - [ ] Static tests: CMakeLists.txt + AOT registry (TestXXX.h + AllAotTests.h)?
-  - [ ] Wrapper tests: CMakeLists.txt + W3CTestRunner.cpp dynamic invoke section?
+  - [ ] Static tests: Both CMakeLists.txt steps completed?
+    - [ ] rsm_generate_static_w3c_test() call added (line ~430-490)?
+    - [ ] Test number added to W3C_AOT_TESTS list (line ~663-676)?
+    - [ ] Test number removed from W3C_INTERPRETER_ONLY_TESTS?
+  - [ ] TestXXX.h created in tests/w3c/aot_tests/?
+  - [ ] Runner file auto-generated: tests/w3c/runners/W3CTestRunner_TestXXX.cpp exists?
+  - [ ] Verified AOT execution: type="pure_static" or "static_hybrid" (NOT "interpreter_fallback")?
 - [ ] **Implementation Completeness**: No TODO, no partial features, no placeholders?
 - [ ] **Git Quality**: Semantic commits with professional descriptions?
 

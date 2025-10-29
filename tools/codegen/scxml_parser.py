@@ -226,6 +226,11 @@ class SCXMLParser:
         # W3C SCXML 6.4: Set invoke event flags (specific vs generic done.invoke)
         self._set_invoke_event_flags()
 
+        # W3C SCXML 6.2: Collect events from child state machines that send to parent
+        # ARCHITECTURE.md AOT-First Migration: Auto-add child→parent events to parent Event enum
+        # Prevents compilation errors when child sends events only caught by wildcard transitions (test 243)
+        self._collect_child_to_parent_events()
+
         return self.model
 
     def _parse_datamodel(self, root):
@@ -1758,6 +1763,91 @@ class SCXMLParser:
                 invoke_id = invoke_info['invoke_id']
                 specific_event = f"done.invoke.{invoke_id}"
                 invoke_info['use_specific_event'] = specific_event in used_done_invoke_events
+
+    def _collect_child_to_parent_events(self):
+        """
+        Collect events from child state machines that send to parent (#_parent)
+        
+        W3C SCXML 6.2: Child state machines can send events to parent via &lt;send target="#_parent" event="xxx"/&gt;
+        These events must be added to parent's Event enum for compile-time type safety.
+        
+        ARCHITECTURE.md Zero Duplication &amp; AOT-First Migration:
+        - Matches Interpreter behavior where parent handles child events dynamically as strings
+        - AOT approach: Auto-generate parent Event enum entries from child send actions
+        - Prevents compilation errors when child sends events only caught by wildcard transitions
+        
+        Example (test 243):
+        - Child: &lt;send target="#_parent" event="failure"/&gt;
+        - Parent: &lt;transition event="*" target="fail"/&gt;
+        - Without this method: ParentStateMachine::Event::Failure → compilation error
+        - With this method: Failure automatically added to parent Event enum
+        """
+        if not self.model.static_invokes:
+            return  # No static invokes, no children to scan
+        
+        # Track already-parsed children to avoid re-parsing
+        parsed_children = {}
+        
+        # Scan all static invokes for child SCXML files
+        for static_invoke in self.model.static_invokes:
+            child_name = static_invoke.get('child_name', '')
+            if not child_name:
+                continue
+            
+            # Skip if already parsed
+            if child_name in parsed_children:
+                continue
+            
+            # Construct child SCXML path
+            parent_dir = Path(self.scxml_path).parent if hasattr(self, 'scxml_path') else Path('.')
+            child_scxml_path = parent_dir / f"{child_name}.scxml"
+            
+            if not child_scxml_path.exists():
+                continue
+            
+            try:
+                # Parse child SCXML to get its send actions
+                child_parser = SCXMLParser()
+                child_model = child_parser.parse_file(str(child_scxml_path))
+                parsed_children[child_name] = child_model
+                
+                # Scan child for &lt;send target="#_parent"&gt; actions
+                child_parent_events = set()
+                
+                # Scan all states in child
+                for child_state in child_model.states.values():
+                    # Check entry/exit actions
+                    for action in child_state.on_entry + child_state.on_exit:
+                        if action.get('type') == 'send' and action.get('target') == '#_parent':
+                            event = action.get('event', '')
+                            if event:
+                                child_parent_events.add(event)
+                    
+                    # Check transition actions
+                    for transition in child_state.transitions:
+                        for action in transition.actions:
+                            if action.get('type') == 'send' and action.get('target') == '#_parent':
+                                event = action.get('event', '')
+                                if event:
+                                    child_parent_events.add(event)
+                    
+                    # W3C SCXML 3.3.2: Check initial transition actions
+                    for action in child_state.initial_transition_actions:
+                        if action.get('type') == 'send' and action.get('target') == '#_parent':
+                            event = action.get('event', '')
+                            if event:
+                                child_parent_events.add(event)
+                
+                # Add collected events to parent's event set
+                for event in child_parent_events:
+                    self.model.events.add(event)
+                    
+            except Exception as e:
+                # If child parsing fails, log warning but continue
+                # This prevents parent parsing failure due to child SCXML errors
+                import logging
+                logging.warning(f"Failed to parse child SCXML {child_scxml_path} for parent event collection: {e}")
+                continue
 
     def _detect_features(self):
         """
