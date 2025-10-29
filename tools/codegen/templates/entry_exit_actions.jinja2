@@ -453,8 +453,12 @@
                         // W3C SCXML 6.4: Instantiate and initialize child state machine
                         LOG_DEBUG("Creating child state machine: {{ invoke_info.child_name }} for invoke {{ invoke_info.invoke_id }}");
 
-                        // Create child instance with parent pointer and invokeId (using generated ID from defer)
-                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::RSM::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId);
+                        // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                        // Format: "parentSessionId.invokeId" (e.g., "session123._invoke_0")
+                        std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
+                        
+                        // Create child instance with parent pointer, invokeId, and childSessionId
+                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::RSM::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
 
                         {% if invoke_info.params %}
                         // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
@@ -471,11 +475,11 @@
                         // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
                         // Child may send events during initialize() that need autoforward
                         activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
-                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
+                            childSessionId,  // W3C SCXML 6.5: Child session ID for finalize origin matching
                             "{{ invoke_info.invoke_id }}",
-                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID (same)
+                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
                             {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.6: autoforward
-                            ""      // finalize
+                            "{{ invoke_info.finalize_content | replace('"', '\"') }}"  // W3C SCXML 6.5: finalize
                         };
 
                         // W3C SCXML 6.4: Register completion callback BEFORE initialize

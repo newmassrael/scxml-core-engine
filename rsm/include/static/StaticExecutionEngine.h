@@ -642,6 +642,17 @@ protected:
                 RSM::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
 
+                // W3C SCXML 6.5: Execute finalize BEFORE processing child events
+                // Finalize runs when child sends event to parent
+                // _event is set inside executeFinalizeForChildEvent (matches Interpreter pattern)
+                if constexpr (requires {
+                                  policy_.executeFinalizeForChildEvent(
+                                      std::declval<const EventWithMetadata &>(),
+                                      std::declval<StaticExecutionEngine<StatePolicy> &>());
+                              }) {
+                    policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
+                }
+
                 // Process event through transition logic
                 State oldState = currentState_;
                 std::vector<State> preTransitionStates =

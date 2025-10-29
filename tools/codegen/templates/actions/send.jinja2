@@ -104,8 +104,50 @@ if (::RSM::SendHelper::isUnreachableTarget(dynamicTarget)) {
 }
 {% else %}
 // W3C SCXML 6.2: Immediate send to parent state machine with invokeid (test338)
-// Access parent and invokeId through engine policy (supports both static and non-static contexts)
-::RSM::SendHelper::sendToParent(engine.getPolicy().parent_, ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, engine.getPolicy().invokeId_);
+// W3C SCXML 6.5: Send with child session ID in origin for finalize support (test233)
+{% if action.params %}
+// W3C SCXML 5.10: Build event data from params for finalize access (test233)
+{
+    std::map<std::string, std::vector<std::string>> params;
+{% set needs_jsengine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
+{% if needs_jsengine %}
+    this->ensureJSEngine();
+    auto& jsEngine = ::RSM::JSEngine::instance();
+{% endif %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+    // W3C SCXML Appendix B.2: Static string literal (Pure Static optimization)
+    params["{{ param.name }}"].push_back("{{ param.static_value }}");
+{% else %}
+    // W3C SCXML 5.10: Dynamic param expr evaluation
+    {
+        auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        if (::RSM::JSEngine::isSuccess(paramResult)) {
+            params["{{ param.name }}"].push_back(::RSM::JSEngine::resultToString(paramResult));
+        } else {
+            LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+            params["{{ param.name }}"].push_back("");
+        }
+    }
+{% endif %}
+{% endfor %}
+    std::string eventData = ::RSM::EventDataHelper::buildJsonFromParams(params);
+    ::RSM::SendHelper::sendToParentWithOrigin(
+        engine.getPolicy().parent_,
+        ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
+        engine.getPolicy().invokeId_,
+        engine.getPolicy().childSessionId_,
+        eventData
+    );
+}
+{% else %}
+::RSM::SendHelper::sendToParentWithOrigin(
+    engine.getPolicy().parent_,
+    ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
+    engine.getPolicy().invokeId_,
+    engine.getPolicy().childSessionId_
+);
+{% endif %}
 {% endif %}
 {% elif action.target == '#_child' %}
 // W3C SCXML 6.4.1: Send to invoked child state machine (test347)

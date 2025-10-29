@@ -341,6 +341,44 @@ public:
     }
 
     /**
+     * @brief Send event to parent state machine with origin (W3C SCXML 6.5 finalize)
+     *
+     * W3C SCXML 6.5: Set origin to child session ID for finalize execution.
+     * Finalize runs BEFORE the event is processed, with access to _event.data.
+     *
+     * @tparam ParentStateMachine Parent state machine type
+     * @tparam EventType Parent's event enum type
+     * @param parent Pointer to parent state machine
+     * @param event Event to send
+     * @param invokeId Invokeid of the child (from parent's invoke element)
+     * @param childSessionId Child's session ID for finalize origin matching
+     * @return true if event was sent successfully, false if parent is null
+     */
+    template <typename ParentStateMachine, typename EventType>
+    static bool sendToParentWithOrigin(ParentStateMachine *parent, EventType event, const std::string &invokeId,
+                                       const std::string &childSessionId, const std::string &eventData = "") {
+        LOG_DEBUG("SendHelper::sendToParentWithOrigin called - parent={}, event={}, invokeId={}, childSessionId={}, "
+                  "eventData='{}'",
+                  (void *)parent, static_cast<int>(event), invokeId, childSessionId, eventData);
+        if (parent) {
+            // W3C SCXML 6.4.1: Create event with invokeid metadata
+            // W3C SCXML 6.5: Add origin (child session ID) for finalize support
+            // W3C SCXML 5.10: Add event data from params/namelist (test 233)
+            typename ParentStateMachine::EventWithMetadata eventWithMetadata(event, eventData);
+            eventWithMetadata.invokeId = invokeId;
+            eventWithMetadata.origin = childSessionId;  // W3C SCXML 6.5: For finalize matching
+
+            // W3C SCXML 6.2: Send to parent's external event queue
+            LOG_DEBUG("SendHelper::sendToParentWithOrigin - calling parent->raiseExternal()");
+            parent->raiseExternal(eventWithMetadata);
+            LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent->raiseExternal() completed");
+            return true;
+        }
+        LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent is nullptr, not sending event");
+        return false;
+    }
+
+    /**
      * @brief Store sendid in idlocation variable (Single Source of Truth)
      *
      * W3C SCXML 6.2.4 (test 183): The idlocation attribute specifies a variable

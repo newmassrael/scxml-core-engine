@@ -458,12 +458,16 @@ class SCXMLParser:
                     # Pure static invoke: compile-time known child SCXML (src or inline content)
                         # Pure static invoke: compile-time known child SCXML (src or inline content)
                         # Build static invoke info (matches C++ StaticInvokeInfo)
+                        # W3C SCXML 6.5: Convert finalize actions to JavaScript code
+                        finalize_actions = invoke.get('finalize', [])
+                        finalize_script = self._actions_to_javascript(finalize_actions) if finalize_actions else ''
+                        
                         static_invoke = {
                             'invoke_id': invoke.get('id', ''),
                             'child_name': '',  # Will be set after parsing child file name
                             'state_name': state_id,
                             'autoforward': invoke.get('autoforward', 'false') == 'true',
-                            'finalize_content': '',  # TODO: extract finalize script
+                            'finalize_content': finalize_script,
                             'src': invoke.get('src', ''),
                             'params': invoke.get('params', []),
                             'idlocation': invoke.get('idlocation', ''),  # W3C SCXML 6.4.1
@@ -694,10 +698,12 @@ class SCXMLParser:
                         'is_static_literal': is_static_literal,
                         'static_value': static_value
                     })
-                    
-                    # W3C SCXML 6.2: Non-static param expr requires JSEngine evaluation
-                    # Static literals (e.g., 'test') can be handled at parse time (Pure Static)
-                    if param_expr and not is_static_literal and self._requires_jsengine(param_expr):
+
+                    # W3C SCXML 5.10/6.2: Param expr requires JSEngine evaluation (test 233)
+                    # Per W3C spec, all expr attributes are ECMAScript expressions
+                    # Static literals (e.g., 'test') can be optimized at parse time (Pure Static)
+                    # Dynamic expressions (including number literals like '2') require JSEngine
+                    if param_expr and not is_static_literal:
                         self.model.needs_jsengine = True
 
                 # Parse <content>
@@ -1154,6 +1160,77 @@ class SCXMLParser:
         cpp_expr = re.sub(r"In\('([^']+)'\)", r'this->isStateActive("\1")', cpp_expr)
         
         return cpp_expr
+
+    def _actions_to_javascript(self, actions: List[Dict]) -> str:
+        """
+        Convert finalize actions to JavaScript code (W3C SCXML 6.5)
+        
+        Supports: assign, script, log, if/elseif/else
+        Returns: JavaScript code string (semicolon-separated statements)
+        """
+        if not actions:
+            return ''
+        
+        js_lines = []
+        
+        for action in actions:
+            action_type = action.get('type', '')
+            
+            if action_type == 'assign':
+                # W3C SCXML 5.4: <assign location="Var1" expr="_event.data.aParam"/>
+                location = action.get('location', '')
+                expr = action.get('expr', '')
+                if location and expr:
+                    js_lines.append(f"{location} = {expr};")
+            
+            elif action_type == 'script':
+                # W3C SCXML 5.8: <script>code</script>
+                content = action.get('content', '')
+                if content:
+                    js_lines.append(content)
+            
+            elif action_type == 'log':
+                # W3C SCXML 5.10: <log expr="expr" label="label"/>
+                expr = action.get('expr', '')
+                label = action.get('label', '')
+                if expr:
+                    log_msg = f'"{label}: " + {expr}' if label else expr
+                    js_lines.append(f"console.log({log_msg});")
+            
+            elif action_type == 'if':
+                # W3C SCXML 3.12.1: <if cond="...">...</if>
+                cond = action.get('cond', '')
+                then_actions = action.get('then', [])
+                elseif_branches = action.get('elseif', [])
+                else_actions = action.get('else', [])
+                
+                if cond:
+                    js_lines.append(f"if ({cond}) {{")
+                    if then_actions:
+                        then_js = self._actions_to_javascript(then_actions)
+                        if then_js:
+                            js_lines.append(f"  {then_js}")
+                    js_lines.append("}")
+                    
+                    for elseif in elseif_branches:
+                        elseif_cond = elseif.get('cond', '')
+                        elseif_actions = elseif.get('actions', [])
+                        if elseif_cond:
+                            js_lines.append(f"else if ({elseif_cond}) {{")
+                            if elseif_actions:
+                                elseif_js = self._actions_to_javascript(elseif_actions)
+                                if elseif_js:
+                                    js_lines.append(f"  {elseif_js}")
+                            js_lines.append("}")
+                    
+                    if else_actions:
+                        js_lines.append("else {")
+                        else_js = self._actions_to_javascript(else_actions)
+                        if else_js:
+                            js_lines.append(f"  {else_js}")
+                        js_lines.append("}")
+        
+        return ' '.join(js_lines)
 
     def _requires_jsengine(self, expr: str) -> bool:
         """

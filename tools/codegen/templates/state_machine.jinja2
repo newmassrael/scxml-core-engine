@@ -28,6 +28,9 @@
 #include "common/SendHelper.h"
 #include "common/NamelistHelper.h"
 {% endif %}
+{% if model.needs_jsengine %}
+#include "common/FinalizeHelper.h"
+{% endif %}
 {% if model.needs_event_scheduler %}
 #include "common/SendSchedulingHelper.h"
 {% endif %}
@@ -146,6 +149,9 @@ struct {{ model.name }}Policy {
 
     // W3C SCXML 6.4.1: Invokeid for child-to-parent communication (test338)
     ::std::string invokeId_;
+
+    // W3C SCXML 6.5: Child session ID for finalize origin matching (test233)
+    ::std::string childSessionId_;
 
     // W3C SCXML 6.4.5: Delayed sends to parent scheduler (using SendSchedulingHelper)
     // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
@@ -467,9 +473,11 @@ public:
 
 {% if model.has_parent_communication %}
     // W3C SCXML 6.2: Parent state machine pointer for #_parent support (Zero Overhead)
-    explicit {{ model.name }}(ParentStateMachine* parent, const std::string& invokeId = "") {
+    // W3C SCXML 6.5: childSessionId for finalize origin matching (test233)
+    explicit {{ model.name }}(ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = "") {
         this->policy_.parent_ = parent;
         this->policy_.invokeId_ = invokeId;
+        this->policy_.childSessionId_ = childSessionId;
         {% if model.static_invokes %}
         this->policy_.self_ = this;
         {% endif %}
