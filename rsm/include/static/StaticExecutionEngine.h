@@ -317,6 +317,25 @@ public:
     }
 
     /**
+     * @brief Raise external event by name (W3C SCXML 6.4.6)
+     *
+     * Used for autoforward - converts event name string to Event enum and raises.
+     * If event name doesn't match any enum value, silently ignores (child may not have that event).
+     *
+     * @param eventName Event name string (e.g., "childToParent")
+     * @param eventData Optional event data
+     */
+    void raiseExternal(const std::string &eventName, const std::string &eventData = "") {
+        // Convert event name to Event enum using Policy's getEventFromName() (O(n) if-chain)
+        // ARCHITECTURE.md: Generated code provides efficient event name lookup
+        if (auto event = policy_.getEventFromName(eventName)) {
+            raiseExternal(*event, eventData);
+        } else {
+            LOG_DEBUG("AOT raiseExternal: Event '{}' not found in Event enum, ignoring", eventName);
+        }
+    }
+
+    /**
      * @brief Raise external event with full metadata (W3C SCXML 6.4.1)
      *
      * Used for child-to-parent communication where invokeid must be preserved.
@@ -385,6 +404,22 @@ public:
             // Normal internal/external queue processing
             LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
                       static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
+
+            // W3C SCXML 6.4.6: Autoforward - forward external events to children with autoforward=true
+            // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
+            LOG_DEBUG("AOT raiseExternal: About to check autoforward capability");
+            if constexpr (requires {
+                              policy_.forwardToAutoforwardChildren(
+                                  std::declval<const std::string &>(),
+                                  std::declval<StaticExecutionEngine<StatePolicy> &>());
+                          }) {
+                LOG_DEBUG("AOT raiseExternal: Policy has autoforward capability");
+                const std::string eventName = policy_.getEventName(eventWithMetadata.event);
+                policy_.forwardToAutoforwardChildren(eventName, *this);
+            } else {
+                LOG_DEBUG("AOT raiseExternal: Policy does NOT have autoforward capability");
+            }
+
             externalQueue_.raise(eventWithMetadata);
 
             // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)

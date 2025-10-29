@@ -40,6 +40,16 @@
         }
     }
 
+    // Helper: Convert event name string to Event enum (W3C SCXML 6.4.6 autoforward)
+    // Used for forwarding events by name to child state machines
+    static std::optional<Event> getEventFromName(const std::string& eventName) {
+        if (eventName.empty()) return std::nullopt;
+{% for event_name in model.events | sort %}
+        if (eventName == "{{ event_name }}") return Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }};
+{% endfor %}
+        return std::nullopt;
+    }
+
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // Helper: Convert State enum to string for In() predicate (W3C SCXML 5.9.2)
     static std::string getStateName(State state) {
