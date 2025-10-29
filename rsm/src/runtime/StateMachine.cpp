@@ -126,16 +126,13 @@ StateMachine::~StateMachine() {
     if (isRunning_) {
         stop();
     }
-    // Clean up session only if JS environment was initialized
-    if (jsEnvironmentReady_) {
-        // CRITICAL: Remove StateMachine pointer from JSEngine to prevent dangling pointer access
-        // JSEngine worker thread may still be executing JavaScript that calls In() function
-        // Clearing the StateMachine pointer ensures checkStateActive() won't access destroyed object
-        RSM::JSEngine::instance().setStateMachine(nullptr, sessionId_);
-        LOG_DEBUG("StateMachine: Removed StateMachine pointer from JSEngine before destruction");
 
-        RSM::JSEngine::instance().destroySession(sessionId_);
-    }
+    // FUNDAMENTAL FIX: Two-Phase Destruction Pattern
+    // LIFECYCLE: RAII Destruction Stage
+    // Destructor handles only internal resource cleanup (no external dependencies)
+    // JSEngine session already destroyed in stop() to prevent deadlock
+    // See stop() method for explicit cleanup of external dependencies
+    LOG_DEBUG("StateMachine: Destruction complete (JSEngine session cleaned up in stop())");
 }
 
 bool StateMachine::loadSCXML(const std::string &filename) {
@@ -414,6 +411,17 @@ void StateMachine::stop() {
     // W3C Test 415: isRunning_=false may be set in top-level final state before destructor calls stop()
     RSM::JSEngine::instance().setStateMachine(nullptr, sessionId_);
     LOG_DEBUG("StateMachine: Unregistered from JSEngine");
+
+    // FUNDAMENTAL FIX: Two-Phase Destruction Pattern
+    // LIFECYCLE: Explicit Cleanup Stage
+    // W3C SCXML: Destroy JSEngine session before RAII destruction
+    // Ensures JSEngine singleton is alive during cleanup (prevents deadlock)
+    // Required for StaticExecutionEngine wrapper lifecycle management
+    if (jsEnvironmentReady_) {
+        RSM::JSEngine::instance().destroySession(sessionId_);
+        jsEnvironmentReady_ = false;
+        LOG_DEBUG("StateMachine: Destroyed JSEngine session in stop(): {}", sessionId_);
+    }
 
     updateStatistics();
     LOG_INFO("StateMachine: Stopped");
@@ -2768,7 +2776,9 @@ bool StateMachine::setupJSEnvironment() {
     }
 
     // Register this StateMachine instance with JSEngine for In() function support
-    RSM::JSEngine::instance().setStateMachine(this, sessionId_);
+    // RACE CONDITION FIX: Use shared_from_this() to enable weak_ptr safety
+    // W3C Test 530: Prevents heap-use-after-free during invoke child destruction
+    RSM::JSEngine::instance().setStateMachine(shared_from_this(), sessionId_);
     LOG_DEBUG("StateMachine: Registered with JSEngine for In() function support");
 
     // W3C SCXML 5.3: Initialize data model with binding mode support (early/late binding)

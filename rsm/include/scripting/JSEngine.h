@@ -252,7 +252,7 @@ public:
      * @param stateMachine Pointer to the StateMachine instance
      * @param sessionId Session ID to associate with this state machine
      */
-    void setStateMachine(StateMachine *stateMachine, const std::string &sessionId);
+    void setStateMachine(std::shared_ptr<StateMachine> stateMachine, const std::string &sessionId);
 
     /**
      * @brief Set state query callback for In() function integration (for static engines)
@@ -581,7 +581,9 @@ private:
     std::unordered_map<std::string, std::function<ScriptValue(const std::vector<ScriptValue> &)>> globalFunctions_;
     std::mutex globalFunctionsMutex_;
     // === StateMachine Integration ===
-    std::unordered_map<std::string, StateMachine *> stateMachines_;  // sessionId -> StateMachine*
+    // RACE CONDITION FIX: Use weak_ptr to prevent heap-use-after-free (W3C Test 530)
+    // Worker threads can safely check validity with lock() before accessing StateMachine
+    std::unordered_map<std::string, std::weak_ptr<StateMachine>> stateMachines_;  // sessionId -> weak_ptr<StateMachine>
     // === StateMachine Integration (Callback-based for static engines) ===
     std::unordered_map<std::string, StateQueryCallback> stateQueryCallbacks_;  // sessionId -> callback
     mutable std::mutex stateMachinesMutex_;
