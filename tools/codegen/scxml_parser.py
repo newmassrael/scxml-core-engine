@@ -223,6 +223,9 @@ class SCXMLParser:
         # W3C SCXML 3.7: Add done.state events for states with final children
         self._add_done_state_events()
 
+        # W3C SCXML 6.4: Set invoke event flags (specific vs generic done.invoke)
+        self._set_invoke_event_flags()
+
         return self.model
 
     def _parse_datamodel(self, root):
@@ -1714,6 +1717,37 @@ class SCXMLParser:
             if has_final_child:
                 done_event = f"done.state.{state_id}"
                 self.model.events.add(done_event)
+
+    def _set_invoke_event_flags(self):
+        """
+        W3C SCXML 6.4: Determine which invokes use specific done.invoke.id events
+        
+        After parsing all transitions, check if any transition waits for done.invoke.id event.
+        If yes, set use_specific_event flag so template generates Event::Done_invoke_id.
+        If no, use generic Event::Done_invoke (matches Interpreter behavior).
+        
+        Example:
+        - test235: <transition event="done.invoke.foo"/> → use Event::Done_invoke_foo
+        - test192: <transition event="done.invoke"/> → use Event::Done_invoke
+        """
+        # Build set of done.invoke.* events that are actually used in transitions
+        used_done_invoke_events = set()
+        for state in self.model.states.values():
+            for transition in state.transitions:
+                if transition.event and transition.event.startswith('done.invoke.'):
+                    used_done_invoke_events.add(transition.event)
+        
+        # Update each invoke with flag indicating if specific event is used
+        for state in self.model.states.values():
+            for invoke_info in state.static_invokes:
+                invoke_id = invoke_info['invoke_id']
+                specific_event = f"done.invoke.{invoke_id}"
+                invoke_info['use_specific_event'] = specific_event in used_done_invoke_events
+            
+            for invoke_info in state.hybrid_invokes:
+                invoke_id = invoke_info['invoke_id']
+                specific_event = f"done.invoke.{invoke_id}"
+                invoke_info['use_specific_event'] = specific_event in used_done_invoke_events
 
     def _detect_features(self):
         """

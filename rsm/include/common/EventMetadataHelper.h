@@ -197,6 +197,69 @@ public:
             policy.pendingEventInvokeId_.clear();
         }
     }
+
+    /**
+     * @brief W3C SCXML 6.3.1: Create done.invoke event with invokeId
+     *
+     * Single Source of Truth for done.invoke event metadata construction.
+     * Complements InvokeHelper::createDoneInvokeEventName() (event name)
+     * with EventMetadataHelper::createDoneInvokeEvent() (event metadata).
+     *
+     * ARCHITECTURE.md Compliance:
+     * - Zero Duplication: Shared event metadata construction
+     * - Single Source of Truth: W3C SCXML 6.3.1 _event.invokeid requirement
+     * - Helper Pattern: Follows SendHelper, InvokeHelper, DoneDataHelper
+     *
+     * @tparam EventEnum Event enumeration type (e.g., State machine's Event enum)
+     * @tparam MetadataType EventWithMetadata structure type
+     * @param event Event enum value (e.g., Event::Done_invoke, Event::Done_invoke_foo)
+     * @param invokeId Invoke ID to populate _event.invokeid (W3C SCXML 6.3.1)
+     * @return EventWithMetadata with invokeId populated, all other fields empty
+     *
+     * @note All metadata fields except event and invokeId are empty strings
+     * @note This is the canonical way to create done.invoke events across engines
+     *
+     * W3C SCXML 6.3.1: "The 'invokeid' field of the event is set to the invoke id
+     * of the invocation that was finished"
+     *
+     * @example AOT Static invoke completion callback
+     * @code
+     * // In entry_exit_actions.jinja2 - Pure Static invoke
+     * auto doneEvent = ::RSM::Common::EventMetadataHelper::createDoneInvokeEvent<
+     *     typename SelfType::Event, typename SelfType::EventWithMetadata>(
+     *     Event::Done_invoke_foo, "foo");
+     * self_->raiseExternal(doneEvent);
+     * @endcode
+     *
+     * @example AOT Hybrid invoke completion callback
+     * @code
+     * // In entry_exit_actions.jinja2 - Static Hybrid invoke
+     * auto doneEvent = ::RSM::Common::EventMetadataHelper::createDoneInvokeEvent<
+     *     Event, typename Engine::EventWithMetadata>(
+     *     Event::Done_invoke, "bar");
+     * engine.raise(doneEvent);
+     * @endcode
+     *
+     * @example Interpreter invoke completion
+     * @code
+     * // In InvokeExecutor.cpp - Interpreter engine
+     * auto event = std::make_shared<Event>("done.invoke.foo", "platform");
+     * EventMetadataHelper::setEventMetadata(*event, "", "", "", "foo");
+     * raiseExternal(event);
+     * @endcode
+     */
+    template <typename EventEnum, typename MetadataType>
+    static MetadataType createDoneInvokeEvent(EventEnum event, const std::string &invokeId) {
+        return MetadataType(event,     // event - W3C SCXML 6.3.1: done.invoke or done.invoke.id
+                            "",        // data - empty for basic done.invoke (donedata handled separately)
+                            "",        // origin - empty (child completion doesn't specify origin)
+                            "",        // sendId - empty (not a send event)
+                            "",        // type - empty (internal event, not external)
+                            "",        // originType - empty (not external event)
+                            invokeId,  // invokeId - W3C SCXML 6.3.1: _event.invokeid field
+                            ""         // target - empty (not a send event)
+        );
+    }
 };
 
 }  // namespace RSM::Common

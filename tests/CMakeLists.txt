@@ -479,7 +479,7 @@ rsm_generate_static_w3c_test(230 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> +
 rsm_generate_static_w3c_test(232 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 rsm_generate_static_w3c_test(233 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.5: finalize before done.invoke event processing (Static Hybrid)
 rsm_generate_static_w3c_test(234 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.6: finalize only in invoking state (Static Hybrid)
-# rsm_generate_static_w3c_test(235 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(235 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: done.invoke.id event with inline content child (Pure Static)
 rsm_generate_static_w3c_test(236 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 # rsm_generate_static_w3c_test(237 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + cancellation - TODO: Implement full invoke infrastructure
 # rsm_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: auto-discovers test239sub1.txml - TODO: Implement full invoke infrastructure
@@ -663,7 +663,7 @@ rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: hi
 set(W3C_AOT_TESTS
     144 147 148 149 150 151 152 153 155 156 158 159
     172 173 174 175 176 178 179 183 185 186 187 189 190 191 192 193 194 198 199 200 201 205 207 208 210
-    215 216 220 223 224 225 226 228 229 230 232 233 234 236 247 250
+    215 216 220 223 224 225 226 228 229 230 232 233 234 235 236 247 250
     276 277 278 279 280 286 287 298
     301 302 303 304 309 310 311 312 313 314 318 319
     321 322 323 324 325 326 329 330 331 332 333 335 336 337 338 339

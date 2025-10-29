@@ -11,6 +11,7 @@
 
     Helper Classes Used:
     - DoneDataHelper: W3C SCXML 5.5/5.7 (donedata param/content evaluation)
+    - EventMetadataHelper: W3C SCXML 6.3.1 (done.invoke event metadata construction)
     - ParallelCompletionHelper: W3C SCXML 3.4/3.7.1 (parallel state completion detection)
     - HistoryHelper: W3C SCXML 3.11 (history state recording)
     - AssignHelper: W3C SCXML 5.3/5.4 (location validation)
@@ -492,16 +493,13 @@
                             // Mark as completed (for Cancel_invoke logic - test 236)
                             pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
 
-                            // W3C SCXML 6.3.1: Include invoke ID in done.invoke event (_event.invokeid)
+                            // W3C SCXML 6.3.1: Create done.invoke event with invokeId via EventMetadataHelper
+                            // ARCHITECTURE.md Zero Duplication: Single Source of Truth for event metadata
                             // Send done.invoke to external queue (matches Interpreter event ordering)
-                            self_->raiseExternal(typename SelfType::EventWithMetadata(
-                                Event::Done_invoke,  // event
-                                "",                  // data
-                                "",                  // origin
-                                "",                  // sendId
-                                "",                  // type
-                                "",                  // originType
-                                "{{ invoke_info.invoke_id }}"  // invokeId - W3C SCXML 6.3.1
+                            self_->raiseExternal(::RSM::Common::EventMetadataHelper::createDoneInvokeEvent<
+                                typename SelfType::Event, typename SelfType::EventWithMetadata>(
+                                {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
+                                "{{ invoke_info.invoke_id }}"
                             ));
                         });
 
@@ -566,15 +564,12 @@
                         // W3C SCXML 6.4: Set completion callback for done.invoke event
                         child->setCompletionCallback([this, &engine]() {
                             LOG_DEBUG("Hybrid child {{ invoke_info.invoke_id }} completed, raising done.invoke");
-                            // W3C SCXML 6.3.1: Include invoke ID in done.invoke event (_event.invokeid)
-                            engine.raise(typename Engine::EventWithMetadata(
-                                Event::Done_invoke,  // event
-                                "",                  // data
-                                "",                  // origin
-                                "",                  // sendId
-                                "",                  // type
-                                "",                  // originType
-                                "{{ invoke_info.invoke_id }}"  // invokeId - W3C SCXML 6.3.1
+                            // W3C SCXML 6.3.1: Create done.invoke event with invokeId via EventMetadataHelper
+                            // ARCHITECTURE.md Zero Duplication: Single Source of Truth for event metadata
+                            engine.raise(::RSM::Common::EventMetadataHelper::createDoneInvokeEvent<
+                                Event, typename Engine::EventWithMetadata>(
+                                {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
+                                "{{ invoke_info.invoke_id }}"
                             ));
                         });
 
