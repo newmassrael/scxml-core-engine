@@ -10,7 +10,7 @@
     if (::RSM::JSEngine::isSuccess(logResult)) {
         LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::RSM::JSEngine::resultToString(logResult));
     } else {
-        LOG_ERROR("Failed to evaluate log expression: {{ action.expr }}");
+        LOG_ERROR("Failed to evaluate log expression: {{ action.expr | escape_cpp }}");
     }
 }
 {% else %}
