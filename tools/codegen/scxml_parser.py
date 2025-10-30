@@ -44,8 +44,10 @@ class State:
     is_parallel: bool = False
     parent: Optional[str] = None
     transitions: List[Transition] = field(default_factory=list)
-    on_entry: List[Dict] = field(default_factory=list)
+    on_entry: List[Dict] = field(default_factory=list)  # Deprecated: Use on_entry_blocks for W3C SCXML 3.8 compliance
+    on_entry_blocks: List[List[Dict]] = field(default_factory=list)  # W3C SCXML 3.8: Each <onentry> is a separate independent block
     on_exit: List[Dict] = field(default_factory=list)
+    on_exit_blocks: List[List[Dict]] = field(default_factory=list)  # W3C SCXML 3.9: Each <onexit> is a separate independent block
     datamodel: List[Dict] = field(default_factory=list)
     invokes: List[Dict] = field(default_factory=list)
     static_invokes: List[Dict] = field(default_factory=list)  # Static invoke info for member generation
@@ -418,13 +420,21 @@ class SCXMLParser:
                                 # Regular event - add to enum
                                 self.model.events.add(event)
 
-            # Parse onentry
+            # Parse onentry blocks (W3C SCXML 3.8: Each <onentry> is a separate independent block)
             for entry_elem in ns_findall(state_elem, 'onentry'):
-                state.on_entry.extend(self._parse_executable_content(entry_elem))
+                block = self._parse_executable_content(entry_elem)
+                if block:  # Only add non-empty blocks
+                    state.on_entry_blocks.append(block)
+                # Backward compatibility: Also add to flat list for templates not yet updated
+                state.on_entry.extend(block)
 
-            # Parse onexit
+            # Parse onexit blocks (W3C SCXML 3.9: Each <onexit> is a separate independent block)
             for exit_elem in ns_findall(state_elem, 'onexit'):
-                state.on_exit.extend(self._parse_executable_content(exit_elem))
+                block = self._parse_executable_content(exit_elem)
+                if block:  # Only add non-empty blocks
+                    state.on_exit_blocks.append(block)
+                # Backward compatibility: Also add to flat list for templates not yet updated
+                state.on_exit.extend(block)
 
             # W3C SCXML 3.3.2: Parse <initial> transition executable content
             # This content executes AFTER parent onentry and BEFORE child state entry

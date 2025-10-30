@@ -29,6 +29,22 @@ class TransitionNode;
 class ActionExecutorImpl;  // Forward declaration for cached pointer optimization
 
 /**
+ * @brief Dummy policy struct for EntryExitHelper template instantiation
+ *
+ * EntryExitHelper requires a Policy template parameter for type mapping.
+ * For Interpreter engine, no state/event enums are needed (runtime strings).
+ * This empty struct satisfies template requirements while enabling Zero Duplication.
+ *
+ * ARCHITECTURE.md Compliance:
+ * - Zero Duplication: Enables Interpreter to share EntryExitHelper with AOT engine
+ * - Helper Pattern: Policy-based template design for cross-engine compatibility
+ */
+struct InterpreterPolicy {
+    // Empty struct - Interpreter uses runtime string-based state/event handling
+    // No compile-time enums needed (unlike AOT's generated Policy)
+};
+
+/**
  * @brief SCXML-based State Machine Implementation
  *
  * This class provides a complete implementation of SCXML state machine

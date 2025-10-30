@@ -546,7 +546,7 @@ rsm_generate_static_w3c_test(355 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (
 rsm_generate_static_w3c_test(364 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.6/3.4: Default initial states and parallel configurations (Pure Static)
 rsm_generate_static_w3c_test(372 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (done.state.parentid after final)
 rsm_generate_static_w3c_test(375 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onentry execution order)
-# rsm_generate_static_w3c_test(376 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onentry error handling) - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(376 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.8: Independent onentry handler execution (Static Hybrid)
 # rsm_generate_static_w3c_test(377 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onexit execution order) - TODO: Implement full invoke infrastructure
 # rsm_generate_static_w3c_test(378 ${STATIC_W3C_OUTPUT_DIR})  # no initial state (onexit error handling) - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(387 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history states with default transitions
@@ -667,7 +667,7 @@ set(W3C_AOT_TESTS
     276 277 278 279 280 286 287 294 298
     301 302 303 304 307 309 310 311 312 313 314 318 319
     321 322 323 324 325 326 329 330 331 332 333 335 336 337 338 339
-    342 343 344 346 347 348 349 350 351 352 354 355 364 372 375
+    342 343 344 346 347 348 349 350 351 352 354 355 364 372 375 376
     387 388 396 399
     401 402 403a 403b 403c 404 405 406 407 409 411 412 413 415 416 417 419 421 422 423
     436 444 445 446 448 449 451 452 453 456 457 459 460
@@ -678,7 +678,7 @@ set(W3C_AOT_TESTS
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
-    376 377 378
+    377 378
 )
 
 # Generate W3CTestRegistry.cpp from template

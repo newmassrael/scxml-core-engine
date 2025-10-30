@@ -3,6 +3,7 @@
 #include "common/ConflictResolutionHelper.h"
 #include "common/DataModelInitHelper.h"
 #include "common/DoneDataHelper.h"
+#include "common/EntryExitHelper.h"
 #include "common/FileLoadingHelper.h"
 #include "common/Logger.h"
 #include "common/ParallelTransitionHelper.h"
@@ -3186,12 +3187,21 @@ bool StateMachine::executeExitActions(const std::string &stateId) {
         if (!parallelExitBlocks.empty()) {
             LOG_DEBUG("W3C SCXML 3.9: executing {} exit action blocks for parallel state itself: {}",
                       parallelExitBlocks.size(), stateId);
-            for (size_t i = 0; i < parallelExitBlocks.size(); ++i) {
-                if (!executeActionNodes(parallelExitBlocks[i], false)) {
-                    LOG_WARN("W3C SCXML 3.9: Parallel exit block {}/{} failed, continuing", i + 1,
-                             parallelExitBlocks.size());
-                }
+
+            // W3C SCXML 3.9: Build lambda blocks for EntryExitHelper
+            // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
+            std::vector<std::function<void()>> exitLambdas;
+            for (const auto &exitBlock : parallelExitBlocks) {
+                exitLambdas.push_back([&, exitBlock]() {
+                    if (!executeActionNodes(exitBlock, false)) {
+                        LOG_WARN("W3C SCXML 3.9: Parallel exit block failed");
+                        // Lambda return stops THIS block only, next block continues
+                    }
+                });
             }
+
+            // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
+            EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeExitBlocks(exitLambdas, *eventRaiser_, stateId);
         }
 
         return true;
@@ -3202,18 +3212,21 @@ bool StateMachine::executeExitActions(const std::string &stateId) {
     if (!exitBlocks.empty()) {
         LOG_DEBUG("W3C SCXML 3.9: Executing {} exit action blocks for state: {}", exitBlocks.size(), stateId);
 
-        for (size_t i = 0; i < exitBlocks.size(); ++i) {
-            LOG_DEBUG("W3C SCXML 3.9: Executing exit action block {}/{} for state: {}", i + 1, exitBlocks.size(),
-                      stateId);
-
-            // W3C SCXML 3.9: Each onexit handler is a separate block
-            // If one block fails, continue with remaining blocks
-            if (!executeActionNodes(exitBlocks[i], false)) {
-                LOG_WARN("W3C SCXML 3.9: Exit action block {}/{} failed, continuing with remaining blocks", i + 1,
-                         exitBlocks.size());
-                // Don't break - continue with next block per W3C spec
-            }
+        // W3C SCXML 3.9: Build lambda blocks for EntryExitHelper
+        // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
+        std::vector<std::function<void()>> exitLambdas;
+        for (const auto &exitBlock : exitBlocks) {
+            exitLambdas.push_back([&, exitBlock]() {
+                // W3C SCXML 3.9: Each onexit handler is a separate block
+                if (!executeActionNodes(exitBlock, false)) {
+                    LOG_WARN("W3C SCXML 3.9: Exit action block failed, continuing with remaining blocks");
+                    // Lambda return stops THIS block only, next block continues per W3C spec
+                }
+            });
         }
+
+        // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
+        EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeExitBlocks(exitLambdas, *eventRaiser_, stateId);
 
         // W3C SCXML: State exit succeeds even if some action blocks fail
         return true;
@@ -3471,48 +3484,48 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
         }
     }
 
-    // W3C SCXML 3.8: Execute each onentry handler as a separate block
-    for (size_t blockIndex = 0; blockIndex < entryBlocks.size(); ++blockIndex) {
-        const auto &actionBlock = entryBlocks[blockIndex];
-
-        LOG_DEBUG("W3C SCXML 3.8: Executing onentry block {}/{} with {} actions for state: {}", blockIndex + 1,
-                  entryBlocks.size(), actionBlock.size(), stateId);
-
-        // Execute all actions in this block
-        for (const auto &action : actionBlock) {
-            if (!action) {
-                LOG_WARN("Null onentry action found in state: {}", stateId);
-                continue;
-            }
-
-            LOG_DEBUG("StateMachine: Executing onentry action: {} in state: {}", action->getActionType(), stateId);
-
-            // Create execution context for the action
-            if (actionExecutor_) {
-                auto sharedActionExecutor =
-                    std::shared_ptr<IActionExecutor>(actionExecutor_.get(), [](IActionExecutor *) {});
-                ExecutionContextImpl context(sharedActionExecutor, sessionId_);
-
-                // Execute the action
-                if (!action->execute(context)) {
-                    LOG_WARN("StateMachine: Failed to execute onentry action: {} in block {}/{} - W3C SCXML 3.8: "
-                             "stopping remaining actions in THIS block only",
-                             action->getActionType(), blockIndex + 1, entryBlocks.size());
-                    // W3C SCXML 3.8: If error occurs, stop processing remaining actions IN THIS BLOCK
-                    // but CONTINUE with next onentry handler block
-                    break;
-                } else {
-                    LOG_DEBUG("StateMachine: Successfully executed onentry action: {} in state: {}",
-                              action->getActionType(), stateId);
+    // W3C SCXML 3.8: Build lambda blocks for EntryExitHelper
+    // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
+    std::vector<std::function<void()>> lambdaBlocks;
+    for (const auto &actionBlock : entryBlocks) {
+        lambdaBlocks.push_back([&, actionBlock]() {
+            // Execute all actions in this block
+            for (const auto &action : actionBlock) {
+                if (!action) {
+                    LOG_WARN("Null onentry action found in state: {}", stateId);
+                    continue;
                 }
-            } else {
-                LOG_ERROR("Cannot execute onentry action: ActionExecutor is null");
-            }
-        }
 
-        // Continue with next block even if this block had failures
-        // W3C SCXML 3.8: Each onentry handler is independent
+                LOG_DEBUG("StateMachine: Executing onentry action: {} in state: {}", action->getActionType(), stateId);
+
+                // Create execution context for the action
+                if (actionExecutor_) {
+                    auto sharedActionExecutor =
+                        std::shared_ptr<IActionExecutor>(actionExecutor_.get(), [](IActionExecutor *) {});
+                    ExecutionContextImpl context(sharedActionExecutor, sessionId_);
+
+                    // Execute the action
+                    if (!action->execute(context)) {
+                        LOG_WARN("StateMachine: Failed to execute onentry action: {} - W3C SCXML 3.8: "
+                                 "stopping remaining actions in THIS block only",
+                                 action->getActionType());
+                        // W3C SCXML 3.8: If error occurs, stop THIS block via lambda return
+                        return;
+                    } else {
+                        LOG_DEBUG("StateMachine: Successfully executed onentry action: {} in state: {}",
+                                  action->getActionType(), stateId);
+                    }
+                } else {
+                    LOG_ERROR("Cannot execute onentry action: ActionExecutor is null");
+                    return;
+                }
+            }
+        });
     }
+
+    // W3C SCXML 3.8: Delegate to EntryExitHelper (Single Source of Truth)
+    // ARCHITECTURE.md Zero Duplication: Shared block orchestration between Interpreter and AOT
+    EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeEntryBlocks(lambdaBlocks, *eventRaiser_, stateId);
 
     // W3C SCXML compliance: Restore immediate mode (but DON'T process queued events yet)
     // Events must be processed AFTER the entire state tree entry completes, not during onentry
