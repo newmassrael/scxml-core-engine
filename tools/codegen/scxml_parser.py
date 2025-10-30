@@ -39,6 +39,7 @@ class State:
     """W3C SCXML 3.3: State element"""
     id: str
     initial: str = ""
+    initial_children: List[str] = field(default_factory=list)  # W3C SCXML 3.6: Parsed list from space-separated initial attribute
     is_final: bool = False
     is_parallel: bool = False
     parent: Optional[str] = None
@@ -230,6 +231,9 @@ class SCXMLParser:
         # ARCHITECTURE.md AOT-First Migration: Auto-add child→parent events to parent Event enum
         # Prevents compilation errors when child sends events only caught by wildcard transitions (test 243)
         self._collect_child_to_parent_events()
+
+        # W3C SCXML 3.6: Parse space-separated initial attributes into lists
+        self._parse_initial_children()
 
         return self.model
 
@@ -1856,6 +1860,35 @@ class SCXMLParser:
                 import logging
                 logging.warning(f"Failed to parse child SCXML {child_scxml_path} for parent event collection: {e}")
                 continue
+
+    def _parse_initial_children(self):
+        """
+        Parse space-separated initial attributes into lists with validation
+        
+        W3C SCXML 3.6: The initial attribute can contain space-separated descendant state IDs.
+        Example: <state id="s1" initial="s11p112 s11p122">
+        
+        This method ONLY parses the attribute - ancestor path calculation is delegated
+        to StateEntryHelper (ARCHITECTURE.md Zero Duplication Principle).
+        
+        Validation:
+        - All initial targets must exist in the model
+        - Invalid targets result in code generation error (reject invalid SCXML)
+        """
+        for state in self.model.states.values():
+            if state.initial:
+                # W3C SCXML 3.6: Split space-separated initial attribute
+                state.initial_children = state.initial.split()
+                
+                # Validate all targets exist (reject invalid SCXML)
+                for child_id in state.initial_children:
+                    if child_id not in self.model.states:
+                        raise ValueError(
+                            f"W3C SCXML 3.6: Invalid initial target '{child_id}' in state '{state.id}'. "
+                            f"Initial attribute references non-existent state."
+                        )
+            else:
+                state.initial_children = []
 
     def _detect_features(self):
         """
