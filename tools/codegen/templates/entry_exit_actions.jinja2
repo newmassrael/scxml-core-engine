@@ -469,7 +469,17 @@
                         {% if invoke_info.namelist %}
                         // W3C SCXML 6.4.1: Pass namelist values to child datamodel (Step 2)
                         {% if invoke_info.child_needs_jsengine %}
+                        // W3C SCXML 6.3.2: Child datamodel variables for validation
+                        // ARCHITECTURE.md Zero Duplication: Matches InvokeExecutor.cpp:322-359 logic
+                        static const std::set<std::string> childDatamodelVars_{{ invoke_info.invoke_id }} = DatamodelValidationHelper::buildChildDatamodelSet({{ '{' }}{% for var in invoke_info.child_datamodel_vars %}"{{ var }}"{{ ", " if not loop.last }}{% endfor %}{{ '}' }});
+                        
                         for (const auto& [varName, values] : namelistParams) {
+                            // W3C SCXML 6.3.2: Only set variable if it exists in child's datamodel
+                            if (!DatamodelValidationHelper::isVariableDeclaredInChild(varName, childDatamodelVars_{{ invoke_info.invoke_id }})) {
+                                LOG_DEBUG("Skipping namelist variable '{}' - not defined in child's datamodel", varName);
+                                continue;
+                            }
+                            
                             if (!values.empty()) {
                                 LOG_DEBUG("Setting namelist variable '{}' = '{}' in child {{ invoke_info.invoke_id }}", varName, values[0]);
                                 child_{{ invoke_info.invoke_id }}_->setParamInJSEngine(varName, values[0]);

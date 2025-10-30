@@ -1439,13 +1439,16 @@ class SCXMLParser:
                     matching_static['src'] = f"{child_name}.scxml"
                     matching_static['child_name'] = child_name
 
-                    # Parse extracted child to detect JSEngine needs
+                    # Parse extracted child to detect JSEngine needs and datamodel variables
                     try:
                         child_parser = SCXMLParser()
                         child_model = child_parser.parse_file(str(child_scxml_path))
                         matching_static['child_needs_jsengine'] = child_model.needs_jsengine
+                        # W3C SCXML 6.3.2: Extract child datamodel variable names for namelist validation
+                        matching_static['child_datamodel_vars'] = [var['id'] for var in child_model.variables]
                     except Exception:
                         matching_static['child_needs_jsengine'] = True
+                        matching_static['child_datamodel_vars'] = []  # Empty list for safety
 
                 # Handle external src (existing logic)
                 elif invoke['src']:
@@ -1467,15 +1470,19 @@ class SCXMLParser:
                         child_scxml_path = parent_dir / f"{child_name}.scxml"
 
                         if child_scxml_path.exists():
-                            # Parse child to check needs_jsengine
+                            # Parse child to check needs_jsengine and extract datamodel variables
                             child_parser = SCXMLParser()
                             child_model = child_parser.parse_file(str(child_scxml_path))
                             child_needs_jsengine = child_model.needs_jsengine
+                            # W3C SCXML 6.3.2: Extract child datamodel variable names for namelist validation
+                            child_datamodel_vars = [var['id'] for var in child_model.variables]
                     except Exception:
                         # If we can't parse child, assume it needs JSEngine for safety
                         child_needs_jsengine = True
+                        child_datamodel_vars = []  # Empty list for safety
 
                     matching_static['child_needs_jsengine'] = child_needs_jsengine
+                    matching_static['child_datamodel_vars'] = child_datamodel_vars
 
                 # Generate invoke ID if not specified (matches C++ generator logic)
                 if not matching_static['invoke_id']:

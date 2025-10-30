@@ -811,6 +811,22 @@ class EventQueueManager {
   - Test coverage: test354 (W3C 5.10 - namelist, param, and content event data)
 - Benefits: Zero code duplication, consistent namelist evaluation across engines, proper W3C SCXML C.1/6.2 compliance
 
+**RSM::DatamodelValidationHelper::buildChildDatamodelSet() / isVariableDeclaredInChild()**:
+- W3C SCXML 6.3.2: Child datamodel variable validation for namelist and param binding
+- Single Source of Truth for invoke parameter validation logic shared between engines
+- Location: `rsm/include/common/DatamodelValidationHelper.h`
+- Used by: Interpreter engine (InvokeExecutor.cpp), AOT engine (entry_exit_actions.jinja2 template)
+- Features:
+  - **buildChildDatamodelSet()**: Convert child datamodel variable vector to set for O(log n) lookup
+    - Accepts `std::vector<std::string>` from child SCXML parsing
+    - Returns `std::set<std::string>` for efficient membership testing
+  - **isVariableDeclaredInChild()**: Validate variable existence before binding to child
+    - W3C SCXML 6.3.2: "If the name of a param element or the key of a namelist item do not match the name of a data element in the invoked process, the Processor MUST NOT add the value to the invoked session's data model"
+    - Returns boolean (no exceptions), matches W3C "MUST NOT add" semantics
+    - Used in: Namelist binding (`<invoke namelist="Var1 Var2">`), Param binding (`<invoke><param name="x" expr="1"/></invoke>`)
+  - Test coverage: test244 (W3C 6.3.2 - namelist with existing variable), test245 (W3C 6.3.2 - namelist with non-existent variable)
+- Benefits: Zero code duplication, prevents undeclared variable injection in child sessions, proper W3C SCXML 6.3.2 compliance
+
 **RSM::InvokeHelper::deferInvoke() / cancelInvokesForState() / executePendingInvokes()**:
 - W3C SCXML 6.4: Invoke lifecycle management (defer/cancel/execute pattern)
 - Single Source of Truth for invoke execution timing shared between engines
