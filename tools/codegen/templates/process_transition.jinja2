@@ -10,13 +10,16 @@
     - Event Matching: Uses EventMatchingHelper for W3C SCXML 5.9.3 compliance
     - Long-Term Correctness: Complete Interpreter replication, no simplified workarounds
 
-    Helper Classes Used:
-    - ParallelTransitionHelper: W3C SCXML Appendix D.2 (microstep execution)
-    - EventMatchingHelper: W3C SCXML 5.9.3 (event descriptor matching)
-    - HistoryHelper: W3C SCXML 3.11 (history state recording)
-    - GuardHelper: W3C SCXML 5.9.2 (condition evaluation)
-    - SendHelper: W3C SCXML 6.2 (event scheduling and sending)
-    - ForeachHelper: W3C SCXML 4.6 (foreach loop execution)
+    Helper Classes Used (in this template):
+    - ParallelTransitionHelper: W3C SCXML Appendix D.2 (microstep execution) - lines 355-390, 414-416
+    - EventMatchingHelper: W3C SCXML 5.9.3 (event descriptor matching) - lines 525-531
+    - HierarchicalStateHelper: W3C SCXML 3.7/3.8 (hierarchical entry/exit chains) - line 427
+    
+    Helper Classes Used by Other Templates (referenced for context):
+    - HistoryHelper: W3C SCXML 3.11 (history state recording) - see entry_exit_actions.jinja2
+    - GuardHelper: W3C SCXML 5.9.2 (condition evaluation) - inline in this template
+    - SendHelper: W3C SCXML 6.2 (event scheduling) - see send.jinja2
+    - ForeachHelper: W3C SCXML 4.6 (foreach loop) - see foreach.jinja2
 
     Critical Fix (2025-10-23):
     - Fixed lastTransitionSourceState_ tracking for transitions without actions
@@ -91,7 +94,7 @@
                         // Collection mode: Store resolved history transition
                         LOG_DEBUG("AOT processTransition: Collecting history transition {} -> {}", static_cast<int>(checkState), static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
                         collectMode->push_back(TransitionInfo(checkState, resolvedHistoryTarget_{{ trans.history_target }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if trans.type == 'internal' else 'false' }}));
-                        transitionTaken = true;
+                        // Note: transitionTaken will be set by caller after processing collected transitions
                     } else {
                         // Immediate execution mode
                         LOG_DEBUG("AOT processTransition: Immediate history transition {} -> {}", static_cast<int>(currentState), static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
@@ -104,7 +107,7 @@
                         // Collection mode: Store transition info, don't execute
                         LOG_DEBUG("AOT processTransition: Collecting transition {} -> {}", static_cast<int>(checkState), static_cast<int>(State::{{ trans.target | capitalize }}));
                         collectMode->push_back(TransitionInfo(checkState, State::{{ trans.target | capitalize }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if trans.type == 'internal' else 'false' }}));
-                        transitionTaken = true;
+                        // Note: transitionTaken will be set by caller after processing collected transitions
                     } else {
                         // Immediate execution mode
 {{ restore_history_or_transition(trans) }}
@@ -117,9 +120,8 @@
 {% endmacro %}
 
     template<typename Engine>
-{% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_transition_actions and not model.has_parallel_states and not model.has_parent_communication %}    static bool processTransition(State& currentState, Event event, Engine& engine) {
-{% else %}    bool processTransition(State& currentState, Event event, Engine& engine) {
-{% endif %}
+    // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ via tryTransitionInState)
+    bool processTransition(State& currentState, Event event, Engine& engine) {
 {%- if model.needs_jsengine %}
         // W3C SCXML 5.3: Ensure JSEngine initialized (lazy init for runtime operations)
         // Note: Datamodel initialization happens in StaticExecutionEngine::initialize()
@@ -490,16 +492,11 @@ private:
     // - collectMode = nullptr: Immediate execution (traditional behavior)
     // - collectMode = vector: Collection only (for optimal transition set)
     template<typename Engine>
-    // W3C SCXML 3.13: Conditional static based on transition actions (Zero Overhead)
-{% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_transition_actions and not model.has_parallel_states %}    static bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Event event,
-                                      [[maybe_unused]] State& currentState, [[maybe_unused]] bool& transitionTaken,
-                                      [[maybe_unused]] Engine& engine,
-                                      [[maybe_unused]] ::std::vector<TransitionInfo>* collectMode = nullptr) {
-{% else %}    bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Event event,
+    // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ and lastTransitionIsInternal_)
+    bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Event event,
                               [[maybe_unused]] State& currentState, [[maybe_unused]] bool& transitionTaken,
                               [[maybe_unused]] Engine& engine,
                               [[maybe_unused]] ::std::vector<TransitionInfo>* collectMode = nullptr) {
-{% endif %}
         switch (checkState) {
 {% for state_id, state in model.states.items() %}
         case State::{{ state_id | capitalize }}:
@@ -553,38 +550,30 @@ private:
                 if ({{ trans.cond }}) {
 {% endif %}
                     LOG_DEBUG("AOT processTransition: Event matched descriptor '{{ trans.event }}' in state {}", static_cast<int>(checkState));
-{% if model.needs_jsengine or model.static_invokes or model.needs_event_scheduler or model.has_transition_actions %}
-// W3C SCXML 3.4: Track transition source for hierarchical exit/entry
+// W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
                     lastTransitionSourceState_ = checkState;
-{% endif %}
 {% if model.has_transition_actions %}
 // W3C SCXML 3.13: Store transition for deferred execution (use original index)
                     lastTransitionIndex_ = {{ event_transition_indices[loop.index0] }};
                     hasTransitionActions_ = {{ 'true' if trans.actions else 'false' }};
 {% endif %}
-{% if model.needs_jsengine or model.static_invokes or model.needs_event_scheduler or model.has_transition_actions %}
-// W3C SCXML 3.13: Track internal transition type
+// W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if trans.type == 'internal' else 'false' }};
-{% endif %}
 {{ transition_execution_or_collection(trans, event_transition_indices[loop.index0]) }}
                     return true;  // Transition found
                 }
 {% else %}
                 {  // Unconditional transition
                     LOG_DEBUG("AOT processTransition: Event matched descriptor '{{ trans.event }}' in state {}", static_cast<int>(checkState));
-{% if model.needs_jsengine or model.static_invokes or model.needs_event_scheduler or model.has_transition_actions %}
-// W3C SCXML 3.4: Track transition source for hierarchical exit/entry
+// W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
                     lastTransitionSourceState_ = checkState;
-{% endif %}
 {% if model.has_transition_actions %}
 // W3C SCXML 3.13: Store transition for deferred execution (use original index)
                     lastTransitionIndex_ = {{ event_transition_indices[loop.index0] }};
                     hasTransitionActions_ = {{ 'true' if trans.actions else 'false' }};
 {% endif %}
-{% if model.needs_jsengine or model.static_invokes or model.needs_event_scheduler or model.has_transition_actions %}
-// W3C SCXML 3.13: Track internal transition type
+// W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if trans.type == 'internal' else 'false' }};
-{% endif %}
 {{ transition_execution_or_collection(trans, event_transition_indices[loop.index0]) }}
                     return true;  // Transition found
                 }
@@ -637,19 +626,15 @@ private:
 {% endif %}
 {% set first_trans.value = False %}
 {% endif %}
-{% if model.needs_jsengine or model.static_invokes or model.needs_event_scheduler or model.has_transition_actions %}
-// W3C SCXML 3.4: Track transition source for hierarchical exit/entry
+// W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
                     lastTransitionSourceState_ = checkState;
-{% endif %}
 {% if model.has_transition_actions %}
 // W3C SCXML 3.13: Store transition for deferred execution (use original index)
                     lastTransitionIndex_ = {{ eventless_transition_indices[loop.index0] }};
                     hasTransitionActions_ = {{ 'true' if transition.actions else 'false' }};
 {% endif %}
-{% if model.needs_jsengine or model.static_invokes or model.needs_event_scheduler or model.has_transition_actions %}
-// W3C SCXML 3.13: Track internal transition type
+// W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if transition.type == 'internal' else 'false' }};
-{% endif %}
 {{ transition_execution_or_collection(transition, eventless_transition_indices[loop.index0]) }}
                     return true;  // Eventless transition found
 {% endfor %}
@@ -665,19 +650,15 @@ private:
 {% endif %}
 {% else %}
 {% for transition in eventless_transitions %}
-{% if model.needs_jsengine or model.static_invokes or model.needs_event_scheduler or model.has_transition_actions %}
-// W3C SCXML 3.4: Track transition source for hierarchical exit/entry
+// W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
                     lastTransitionSourceState_ = checkState;
-{% endif %}
 {% if model.has_transition_actions %}
 // W3C SCXML 3.13: Store transition for deferred execution (use original index)
                     lastTransitionIndex_ = {{ eventless_transition_indices[loop.index0] }};
                     hasTransitionActions_ = {{ 'true' if transition.actions else 'false' }};
 {% endif %}
-{% if model.needs_jsengine or model.static_invokes or model.needs_event_scheduler or model.has_transition_actions %}
-// W3C SCXML 3.13: Track internal transition type
+// W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if transition.type == 'internal' else 'false' }};
-{% endif %}
 {{ transition_execution_or_collection(transition, eventless_transition_indices[loop.index0]) }}
                     return true;  // Unconditional eventless transition
 {% endfor %}
