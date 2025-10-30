@@ -921,8 +921,9 @@ class SCXMLParser:
                 action['label'] = child.get('label', '')
                 action['expr'] = child.get('expr', '')
                 
-                # W3C SCXML 5.10: _event system variable requires JSEngine
-                if action['expr'] and '_event.' in action['expr']:
+                # W3C SCXML 5.10: Any expr attribute requires JSEngine for variable/expression evaluation
+                # This includes: _event, Var1, or any ECMAScript expression
+                if action['expr']:
                     self.model.needs_jsengine = True
 
             elif tag == 'script':

@@ -1,5 +1,5 @@
 #pragma once
-#include "SimpleAotTest.h"
+#include "HttpAotTest.h"
 #include "test513_sm.h"
 
 namespace RSM::W3C::AotTests {
@@ -47,7 +47,7 @@ namespace RSM::W3C::AotTests {
  * are fully compatible with Static Hybrid approach when using external
  * infrastructure (not implementing the processor itself).
  */
-struct Test513 : public SimpleAotTest<Test513, 513> {
+struct Test513 : public HttpAotTest<Test513, 513> {
     static constexpr const char *DESCRIPTION = "BasicHTTP success response (W3C C.2 AOT Static Hybrid)";
     using SM = RSM::Generated::test513::test513;
 };

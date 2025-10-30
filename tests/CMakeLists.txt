@@ -506,7 +506,7 @@ rsm_generate_static_w3c_test(301 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: scr
 rsm_generate_static_w3c_test(302 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: script evaluation at load time
 rsm_generate_static_w3c_test(303 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9: script execution in entry actions
 rsm_generate_static_w3c_test(304 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: script-declared variables accessible in data model
-# rsm_generate_static_w3c_test(307 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2.2: late binding with log validation - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(307 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: late binding variable access error handling (Static Hybrid)
 rsm_generate_static_w3c_test(309 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: invalid boolean expressions treated as false
 rsm_generate_static_w3c_test(310 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.1: In() predicate (requires Interpreter wrapper)
 rsm_generate_static_w3c_test(311 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: error.execution for invalid assign location
@@ -665,7 +665,7 @@ set(W3C_AOT_TESTS
     172 173 174 175 176 178 179 183 185 186 187 189 190 191 192 193 194 198 199 200 201 205 207 208 210
     215 216 220 223 224 225 226 228 229 230 232 233 234 235 236 237 239 240 241 242 243 244 245 247 250
     276 277 278 279 280 286 287 294 298
-    301 302 303 304 309 310 311 312 313 314 318 319
+    301 302 303 304 307 309 310 311 312 313 314 318 319
     321 322 323 324 325 326 329 330 331 332 333 335 336 337 338 339
     342 343 344 346 347 348 349 350 351 352 354 355 372 375
     387 388 396 399
@@ -678,7 +678,7 @@ set(W3C_AOT_TESTS
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
-    307 364 376 377 378
+    364 376 377 378
 )
 
 # Generate W3CTestRegistry.cpp from template
