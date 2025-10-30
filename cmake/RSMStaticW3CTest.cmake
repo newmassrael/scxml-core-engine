@@ -7,6 +7,69 @@ if(POLICY CMP0116)
     cmake_policy(SET CMP0116 NEW)
 endif()
 
+# rsm_generate_aot_test_header: Generate AOT test header (TestXXX.h) from metadata.txt
+#
+# Single Source of Truth: metadata.txt description is used for both Interpreter and AOT
+# Eliminates description duplication between metadata.txt and TestXXX.h
+#
+function(rsm_generate_aot_test_header TEST_NUM TEST_TYPE)
+    # Set TEST_NUMBER for template substitution (@TEST_NUMBER@ in .in files)
+    set(TEST_NUMBER ${TEST_NUM})
+
+    set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
+    set(METADATA_FILE "${RESOURCE_DIR}/metadata.txt")
+    set(AOT_TEST_HEADER "${CMAKE_SOURCE_DIR}/tests/w3c/aot_tests/Test${TEST_NUM}.h")
+
+    # Select template based on test type
+    if("${TEST_TYPE}" STREQUAL "HTTP")
+        set(TEMPLATE_FILE "${CMAKE_SOURCE_DIR}/tests/w3c/aot_tests/HttpAotTestTemplate.h.in")
+    else()
+        set(TEMPLATE_FILE "${CMAKE_SOURCE_DIR}/tests/w3c/aot_tests/SimpleAotTestTemplate.h.in")
+    endif()
+
+    # Check if metadata file exists
+    if(NOT EXISTS "${METADATA_FILE}")
+        message(WARNING "Metadata file not found: ${METADATA_FILE} - Skipping AOT header generation for test ${TEST_NUM}")
+        return()
+    endif()
+
+    # Check if template exists
+    if(NOT EXISTS "${TEMPLATE_FILE}")
+        message(WARNING "Template file not found: ${TEMPLATE_FILE} - Skipping AOT header generation for test ${TEST_NUM}")
+        return()
+    endif()
+
+    # Extract description and specnum from metadata.txt using Python script
+    execute_process(
+        COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/read_test_metadata.py" "${METADATA_FILE}"
+        OUTPUT_VARIABLE TEST_DESCRIPTION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE READ_METADATA_RESULT
+    )
+
+    if(NOT READ_METADATA_RESULT EQUAL 0)
+        message(WARNING "Failed to read metadata for test ${TEST_NUM} - Skipping AOT header generation")
+        return()
+    endif()
+
+    # Extract specnum from metadata.txt
+    execute_process(
+        COMMAND grep "^specnum:" "${METADATA_FILE}"
+        COMMAND sed "s/specnum: *//"
+        OUTPUT_VARIABLE SPECNUM
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+    # Generate TestXXX.h from template
+    configure_file(
+        "${TEMPLATE_FILE}"
+        "${AOT_TEST_HEADER}"
+        @ONLY
+    )
+
+    message(STATUS "Generated AOT test header: Test${TEST_NUM}.h (description from metadata.txt)")
+endfunction()
+
 # rsm_generate_static_w3c_test: Generate C++ code for a single W3C test
 #
 # This does NOT create executable - just generates C++ header from TXML

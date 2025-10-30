@@ -903,8 +903,8 @@ std::unique_ptr<TestResources> TestComponentFactory::createResources() {
  * with LOW RISK assessment). This information is used to mark tests with
  * a verified badge in XML/HTML reports.
  */
-static std::unordered_map<std::string, bool> loadVerificationStatus() {
-    std::unordered_map<std::string, bool> verified;
+static std::unordered_map<std::string, W3CTestRunner::VerificationInfo> loadVerificationStatus() {
+    std::unordered_map<std::string, W3CTestRunner::VerificationInfo> verified;
 
     // Look for verification file in tests/w3c directory
     std::vector<std::filesystem::path> searchPaths = {
@@ -918,6 +918,8 @@ static std::unordered_map<std::string, bool> loadVerificationStatus() {
                 std::string line;
                 bool inVerifiedTests = false;
                 int braceDepth = 0;  // Track brace nesting depth
+                std::string currentTestId;
+                std::string currentNotes;
 
                 while (std::getline(file, line)) {
                     // Simple JSON parsing for "verified_tests" section
@@ -943,11 +945,31 @@ static std::unordered_map<std::string, bool> loadVerificationStatus() {
                             if (quoteStart != std::string::npos) {
                                 size_t quoteEnd = line.find('"', quoteStart + 1);
                                 if (quoteEnd != std::string::npos) {
-                                    std::string testNum = line.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-                                    // Check if it's a number (test ID)
-                                    if (!testNum.empty() && std::all_of(testNum.begin(), testNum.end(), ::isdigit)) {
-                                        verified[testNum] = true;
-                                        LOG_DEBUG("Loaded verification status: Test {} is verified", testNum);
+                                    std::string key = line.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+
+                                    // Check if it's a test ID (number)
+                                    if (!key.empty() && std::all_of(key.begin(), key.end(), ::isdigit)) {
+                                        currentTestId = key;
+                                        currentNotes.clear();
+                                        LOG_DEBUG("Found verification entry for test {}", currentTestId);
+                                    }
+                                    // Check if it's a notes field
+                                    else if (key == "notes" && !currentTestId.empty()) {
+                                        // Extract notes value (between quotes after colon)
+                                        size_t colonPos = line.find(':', quoteEnd);
+                                        if (colonPos != std::string::npos) {
+                                            size_t notesStart = line.find('"', colonPos);
+                                            if (notesStart != std::string::npos) {
+                                                size_t notesEnd = line.find('"', notesStart + 1);
+                                                if (notesEnd != std::string::npos) {
+                                                    currentNotes =
+                                                        line.substr(notesStart + 1, notesEnd - notesStart - 1);
+                                                    verified[currentTestId] = {currentNotes};
+                                                    LOG_DEBUG("Loaded verification: Test {} - {}", currentTestId,
+                                                              currentNotes);
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1153,6 +1175,15 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
         // Validate result
         LOG_DEBUG("W3C Single Test: Validating result for test {}", report.testId);
         report.validationResult = validator_->validateResult(report.executionContext);
+
+        // Use verified description if available, otherwise use metadata
+        if (report.validationResult.finalResult == TestResult::PASS) {
+            // Single Source of Truth: Always use metadata.txt description (not verification JSON notes)
+            // This ensures Interpreter and AOT descriptions are always consistent
+            std::string specDescription = "W3C SCXML " + report.metadata.specnum + ": " + report.metadata.description;
+
+            report.validationResult = ValidationResult(true, TestResult::PASS, specDescription);
+        }
 
         LOG_DEBUG("W3C Single Test: Test {} completed with result: {}", report.testId,
                   static_cast<int>(report.validationResult.finalResult));
@@ -1721,6 +1752,15 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         // Validate result
         LOG_DEBUG("W3C Single Test (HTTP): Validating result for test {}", report.testId);
         report.validationResult = validator_->validateResult(report.executionContext);
+
+        // Use verified description if available, otherwise use metadata
+        if (report.validationResult.finalResult == TestResult::PASS) {
+            // Single Source of Truth: Always use metadata.txt description (not verification JSON notes)
+            // This ensures Interpreter and AOT descriptions are always consistent
+            std::string specDescription = "W3C SCXML " + report.metadata.specnum + ": " + report.metadata.description;
+
+            report.validationResult = ValidationResult(true, TestResult::PASS, specDescription);
+        }
 
         LOG_DEBUG("W3C Single Test (HTTP): Test {} completed with result: {}", report.testId,
                   static_cast<int>(report.validationResult.finalResult));

@@ -6,10 +6,10 @@
 namespace RSM::W3C::AotTests {
 
 /**
- * @brief Send eventexpr uses current datamodel value (AOT)
+ * @brief W3C SCXML 6.2: send eventexpr evaluates datamodel at execution time
  */
 struct Test172 : public SimpleAotTest<Test172, 172> {
-    static constexpr const char *DESCRIPTION = "Send eventexpr uses current datamodel value (AOT)";
+    static constexpr const char *DESCRIPTION = "W3C SCXML 6.2: send eventexpr evaluates datamodel at execution time";
     using SM = RSM::Generated::test172::test172;
 };
 

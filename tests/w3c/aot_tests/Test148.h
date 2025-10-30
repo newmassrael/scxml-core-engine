@@ -9,7 +9,7 @@ namespace RSM::W3C::AotTests {
  * @brief Else clause execution with datamodel
  */
 struct Test148 : public SimpleAotTest<Test148, 148> {
-    static constexpr const char *DESCRIPTION = "Else clause execution with datamodel";
+    static constexpr const char *DESCRIPTION = "W3C SCXML 4.3: else clause execution when if/elseif both false";
     using SM = RSM::Generated::test148::test148;
 };
 

@@ -61,6 +61,21 @@
       "verified_date": "2025-10-30",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 3.12.1: error causes subsequent elements to be skipped"
+    },
+    "172": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: send eventexpr evaluates datamodel at execution time"
+    },
+    "174": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: typeexpr evaluates current datamodel value at send execution time"
+    },
+    "173": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: targetexpr evaluates current datamodel value at send execution time"
     }
   }
 }

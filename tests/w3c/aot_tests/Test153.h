@@ -9,7 +9,7 @@ namespace RSM::W3C::AotTests {
  * @brief Foreach array iteration order (AOT JSEngine)
  */
 struct Test153 : public SimpleAotTest<Test153, 153> {
-    static constexpr const char *DESCRIPTION = "Foreach array iteration order (AOT JSEngine)";
+    static constexpr const char *DESCRIPTION = "W3C SCXML 4.6: foreach iteration order correctness";
     using SM = RSM::Generated::test153::test153;
 };
 

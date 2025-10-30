@@ -1,0 +1,19 @@
+#pragma once
+
+#include "SimpleAotTest.h"
+#include "test@TEST_NUMBER@_sm.h"
+
+namespace RSM::W3C::AotTests {
+
+/**
+ * @brief W3C SCXML @SPECNUM@: @TEST_DESCRIPTION@
+ */
+struct Test@TEST_NUMBER@ : public SimpleAotTest<Test@TEST_NUMBER@, @TEST_NUMBER@> {
+    static constexpr const char *DESCRIPTION = "W3C SCXML @SPECNUM@: @TEST_DESCRIPTION@";
+    using SM = RSM::Generated::test@TEST_NUMBER@::test@TEST_NUMBER@;
+};
+
+// Auto-register
+inline static AotTestRegistrar<Test@TEST_NUMBER@> registrar_Test@TEST_NUMBER@;
+
+}  // namespace RSM::W3C::AotTests
