@@ -113,6 +113,10 @@ private:
     mutable std::unordered_map<std::string, bool> httpRequirementCache_;
     mutable std::mutex cacheMutex_;
 
+    // Verification status tracking: tests that passed validate-test-execution
+    mutable std::unordered_map<std::string, bool> verifiedTests_;
+    mutable std::mutex verificationMutex_;
+
     /**
      * @brief Run a single test
      */

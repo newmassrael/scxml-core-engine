@@ -1,0 +1,66 @@
+{
+  "version": "1.0",
+  "description": "W3C SCXML test verification status tracking. Tests marked as verified have passed validate-test-execution with LOW RISK assessment (Interpreter and AOT engines execute identically with correct W3C SCXML semantics).",
+  "verified_tests": {
+    "144": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.2: raise element inserts events at rear of internal queue (FIFO ordering)"
+    },
+    "147": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.3: if/elseif/else conditional execution (first true clause only)"
+    },
+    "148": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.3: else clause execution when if/elseif both false"
+    },
+    "149": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.3: if/elseif/else - neither clause executes"
+    },
+    "150": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.6: foreach declares new variable if item doesn't exist"
+    },
+    "151": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.6: foreach variable declaration persistence"
+    },
+    "152": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.6: foreach error handling - illegal array/item raises error.execution"
+    },
+    "153": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.6: foreach iteration order correctness"
+    },
+    "155": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.6: foreach executes content once per item"
+    },
+    "156": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 4.6: foreach stops execution on child action error"
+    },
+    "158": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 3.12.1: executable content executes in document order"
+    },
+    "159": {
+      "verified_date": "2025-10-30",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 3.12.1: error causes subsequent elements to be skipped"
+    }
+  }
+}
