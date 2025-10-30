@@ -76,6 +76,11 @@
       "verified_date": "2025-10-30",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.2: targetexpr evaluates current datamodel value at send execution time"
+    },
+    "175": {
+      "verified_date": "2025-10-31",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: delayexpr evaluates current datamodel value at send execution time"
     }
   }
 }

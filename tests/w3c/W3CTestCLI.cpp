@@ -84,7 +84,6 @@ int main(int argc, char *argv[]) {
         }
 
         std::string resourcePath = findResourcesPath(executablePath);
-        std::string outputPath = "w3c_test_results.xml";
 
         // Validate resources path was found
         if (resourcePath.empty()) {
@@ -95,6 +94,11 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "       Or use --resources PATH to specify location manually.\n");
             return 1;
         }
+
+        // Set output path to project root (parent of resources/)
+        // This ensures w3c_test_results.xml/html are always created in project root
+        std::filesystem::path projectRoot = std::filesystem::path(resourcePath).parent_path();
+        std::string outputPath = (projectRoot / "w3c_test_results.xml").string();
 
         // Parse command line arguments
         std::vector<std::string> specificTestIds;  // empty means run all tests (supports both "403" and "403a")
@@ -108,7 +112,13 @@ int main(int argc, char *argv[]) {
             if (arg == "--resources" && i + 1 < argc) {
                 resourcePath = argv[++i];
             } else if (arg == "--output" && i + 1 < argc) {
-                outputPath = argv[++i];
+                std::filesystem::path userOutputPath = argv[++i];
+                // If relative path, make it relative to project root
+                if (userOutputPath.is_relative()) {
+                    outputPath = (projectRoot / userOutputPath).string();
+                } else {
+                    outputPath = userOutputPath.string();
+                }
             } else if (arg == "--repeat" && i + 1 < argc) {
                 try {
                     repeatCount = std::stoi(argv[++i]);
@@ -211,6 +221,11 @@ int main(int argc, char *argv[]) {
             RSM::Logger::error("W3C CLI: Make sure W3C tests are copied to the resources directory");
             return 1;
         }
+
+        // Change working directory to project root (parent of resources/)
+        // This ensures relative paths like "resources/XXX/metadata.txt" work correctly
+        std::filesystem::current_path(projectRoot);
+        LOG_DEBUG("W3C CLI: Changed working directory to: {}", projectRoot.string());
 
         RSM::Logger::info("W3C CLI: Starting W3C SCXML 1.0 Compliance Test Suite");
         LOG_INFO("W3C CLI: Resources: {}", resourcePath);
