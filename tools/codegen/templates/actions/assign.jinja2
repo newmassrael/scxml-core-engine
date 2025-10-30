@@ -1,7 +1,7 @@
 {#
     Assign Action Template (Jinja2)
 
-    Last Modified: 2025-10-28
+    Last Modified: 2025-10-30
     ARCHITECTURE.md Version: 2025-10-23
 
     ARCHITECTURE.md Compliance (Lines 311-491):
@@ -16,14 +16,15 @@
     - AssignHelper: W3C SCXML 5.3/5.4/B.2 location validation
     - AssignmentExecutionHelper: W3C SCXML 5.3/5.10 assignment execution strategy
 
-    Critical Fix (2025-10-28):
-    - Refactored from inline executeScript to shared AssignmentExecutionHelper
-    - Eliminates divergence between Interpreter and AOT engines
-    - Ensures both engines use identical assignment logic (system variable detection, reference preservation)
-    - Test 329 (W3C SCXML 5.10 system variable immutability) validates correctness
+    Critical Fixes:
+    - 2025-10-28: Refactored to use shared AssignmentExecutionHelper
+    - 2025-10-30: Conditional block scope based on context (foreach vs standalone)
 #}
-{
+{% if not in_foreach %}{{ '{' }}{% endif %}
 // W3C SCXML 5.3, 5.4: Validate assignment location using shared AssignHelper
+{% if not in_foreach %}bool success = false;
+{% else %}success = false;  // Use foreach-scope variable
+{% endif %}
 if (::RSM::AssignHelper::isValidLocation("{{ action.location }}")) {
     // Location is valid, proceed with assignment
     LOG_DEBUG("AOT assign: Before ensureJSEngine for {{ action.location }}");
@@ -40,7 +41,7 @@ if (::RSM::AssignHelper::isValidLocation("{{ action.location }}")) {
     std::string expr = "{{ action.expr.rstrip(';') }}";
     {% endif %}
 
-    bool success = ::RSM::AssignmentExecutionHelper::executeAssignment(
+    success = ::RSM::AssignmentExecutionHelper::executeAssignment(
         jsEngine, sessionId_.value(), "{{ action.location }}", expr,
         [&engine](const std::string& error) {
             LOG_ERROR("AOT assign: {}", error);
@@ -68,4 +69,4 @@ if (::RSM::AssignHelper::isValidLocation("{{ action.location }}")) {
     LOG_ERROR("W3C SCXML 5.3: {}", errorMsg);
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
 }
-}
+{% if not in_foreach %}{{ '}' }}{% endif %}

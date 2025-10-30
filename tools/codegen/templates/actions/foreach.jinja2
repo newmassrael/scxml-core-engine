@@ -12,24 +12,36 @@ try {
             "{{ action.array }}", "{{ action.item }}", "{{ action.index }}",
             [&](size_t i) -> bool {
                 (void)i;  // Iteration index available if needed
+                // W3C SCXML 4.6: Track overall success of all actions in this iteration
+                bool iterationSuccess = true;
+{% set has_assign = namespace(value=False) %}
 {% for body_action in action.actions %}
-{% if body_action.type == 'assign' %}
-                {
-                    // W3C SCXML 5.3, 5.4: Validate assignment location using shared AssignHelper
-                    if (!::RSM::AssignHelper::isValidLocation("{{ body_action.location }}")) {
-                        LOG_ERROR("W3C SCXML 5.3: {}", ::RSM::AssignHelper::getInvalidLocationErrorMessage("{{ body_action.location }}"));
-                        return false;  // W3C SCXML 4.6: Stop foreach execution on error
-                    }
-                    auto exprResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ body_action.expr | escape_cpp }}").get();
-                    if (!::RSM::JSEngine::isSuccess(exprResult)) {
-                        LOG_ERROR("Failed to evaluate expression in foreach: {{ body_action.expr | escape_cpp }}");
-                        return false;  // W3C SCXML 4.6: Stop foreach execution on error
-                    }
-                    jsEngine.setVariable(sessionId_.value(), "{{ body_action.location }}", exprResult.getInternalValue());
-                }
-{% endif %}
+{% if body_action.type == 'assign' %}{% set has_assign.value = True %}{% endif %}
 {% endfor %}
-                return true;  // Continue to next iteration
+{% if has_assign.value %}                bool success = false;  // Shared by all assign actions in this iteration
+{% endif %}
+{% for body_action in action.actions %}
+                // W3C SCXML 4.6: Execute child action {{ loop.index }}/{{ action.actions | length }}
+                {% if body_action.type == 'assign' %}
+                // Assign action: no block scope, success accessible in foreach lambda
+                {% with action=body_action, in_foreach=True %}
+                {% include 'actions/' + body_action.type + '.jinja2' %}
+                {% endwith %}
+                iterationSuccess = iterationSuccess && success;
+                if (!iterationSuccess) {
+                    LOG_DEBUG("Foreach: Action {{ loop.index }} (assign) failed, stopping loop (W3C SCXML 4.6)");
+                    return false;  // Stop foreach on error
+                }
+                {% else %}
+                // Non-assign action: no success tracking needed
+                {
+                    {% with action=body_action %}
+                    {% include 'actions/' + body_action.type + '.jinja2' %}
+                    {% endwith %}
+                }
+                {% endif %}
+{% endfor %}
+                return iterationSuccess;  // Return true only if all actions succeeded
             }
         );
     }

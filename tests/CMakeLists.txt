@@ -424,33 +424,46 @@ add_dependencies(txml_converter_tests libxmlxx_external rsm_unified)
 # ============================================================================
 # 8. W3C SCXML Compliance Tests (SOLID Architecture)
 # ============================================================================
+# This section defines W3C SCXML conformance tests that run on both:
+# - Interpreter Engine: Runtime SCXML parsing and execution
+# - AOT Engine: Ahead-of-Time compiled static state machines
+#
+# Test Validation:
+# - Use /validate-test-execution [test-number] to verify test correctness
+# - Validates both engines for false positives by comparing:
+#   1. Test intent (from resources/*/metadata.txt and *.txml)
+#   2. Interpreter execution logs (trace level)
+#   3. AOT execution logs (trace level)
+#   4. 1:1 behavioral comparison (state transitions, events, data)
+# - See .claude/commands/validate-test-execution.md for details
+#
 # Output directory for generated static W3C test code (used by both w3c_test_cli and w3c_static_test_cli)
 set(STATIC_W3C_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/w3c_static_generated")
 
 # Generate C++ code for W3C tests BEFORE defining executables
 include(${CMAKE_SOURCE_DIR}/cmake/RSMStaticW3CTest.cmake)
-rsm_generate_static_w3c_test(144 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(147 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(148 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(149 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(150 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(151 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(152 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(153 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(155 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(156 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(158 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(159 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(172 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(173 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(174 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(175 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(176 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(178 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(179 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(183 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(185 ${STATIC_W3C_OUTPUT_DIR})
-rsm_generate_static_w3c_test(186 ${STATIC_W3C_OUTPUT_DIR})
+rsm_generate_static_w3c_test(144 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.2: raise element inserts events at rear of internal queue (FIFO ordering) (Pure Static)
+rsm_generate_static_w3c_test(147 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.3: if/elseif/else conditional execution (first true clause only) (Static Hybrid)
+rsm_generate_static_w3c_test(148 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.3: else clause execution when if/elseif both false (Static Hybrid)
+rsm_generate_static_w3c_test(149 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.3: if/elseif/else - neither clause executes (Static Hybrid)
+rsm_generate_static_w3c_test(150 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.6: foreach declares new variable if item doesn't exist (Static Hybrid)
+rsm_generate_static_w3c_test(151 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.6: foreach variable declaration persistence (Static Hybrid)
+rsm_generate_static_w3c_test(152 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.6: foreach error handling - illegal array/item raises error.execution (Static Hybrid)
+rsm_generate_static_w3c_test(153 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.6: foreach iteration order correctness (Static Hybrid)
+rsm_generate_static_w3c_test(155 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.6: foreach executes content once per item (Static Hybrid)
+rsm_generate_static_w3c_test(156 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.6: foreach stops execution on child action error (Static Hybrid)
+rsm_generate_static_w3c_test(158 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.12.1: executable content executes in document order (Pure Static)
+rsm_generate_static_w3c_test(159 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.12.1: error causes subsequent elements to be skipped (Static Hybrid)
+rsm_generate_static_w3c_test(172 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.2: send eventexpr uses current value at evaluation time (Static Hybrid)
+rsm_generate_static_w3c_test(173 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.3: send targetexpr uses current value at evaluation time (Static Hybrid)
+rsm_generate_static_w3c_test(174 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4: send typeexpr uses current value at evaluation time (Static Hybrid)
+rsm_generate_static_w3c_test(175 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.5: send delayexpr uses current value at evaluation time (Static Hybrid)
+rsm_generate_static_w3c_test(176 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.1: param uses current value at evaluation time (Static Hybrid)
+rsm_generate_static_w3c_test(178 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.1: param - multiple key/value pairs with same keys (Static Hybrid)
+rsm_generate_static_w3c_test(179 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.6: content element populates message body (Pure Static)
+rsm_generate_static_w3c_test(183 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.7: send idlocation stores sendid value (Static Hybrid)
+rsm_generate_static_w3c_test(185 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.5: send respects delay specification (Pure Static)
+rsm_generate_static_w3c_test(186 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2: send evaluates args at evaluation time, not send time (Static Hybrid)
 rsm_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.5: Delayed send cancellation on session termination (Pure Static)
 rsm_generate_static_w3c_test(189 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: Internal queue priority via target="#_internal" (Pure Static)
 rsm_generate_static_w3c_test(190 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: External queue priority via targetexpr (Static Hybrid)
@@ -652,7 +665,12 @@ rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: hi
 # WORKFLOW:
 # 1. To add AOT test: Add test number to W3C_AOT_TESTS + create Test*.h in aot_tests/
 # 2. To migrate test: Move test number between lists, re-run cmake
-# 3. W3CTestRegistry.cpp auto-generates from these lists
+# 3. Validate test: Run /validate-test-execution [test-number] to verify correctness
+#    - Checks test intent (resources/*/metadata.txt, *.txml)
+#    - Compares Interpreter vs AOT execution logs
+#    - Detects false positives in both engines
+#    - See .claude/commands/validate-test-execution.md for details
+# 4. W3CTestRegistry.cpp auto-generates from these lists
 #
 # FILES GENERATED:
 # - build/tests/w3c/W3CTestRegistry.cpp (from W3CTestRegistry.cpp.in template)

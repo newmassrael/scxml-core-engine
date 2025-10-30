@@ -51,6 +51,7 @@ body{{background:#f6f8fa;padding:24px}}
 .Label--success{{color:#1a7f37;background-color:#dafbe1;border:1px solid #1a7f37}}
 .Label--warning{{color:#9a6700;background-color:#fff8c5;border:1px solid #d4a72c}}
 .Label--danger{{color:#cf222e;background-color:#ffebe9;border:1px solid #cf222e}}
+.Label--verified{{color:#0969da;background-color:#ddf4ff;border:1px solid #0969da}}
 table{{width:100%;border-collapse:collapse}}
 th{{padding:8px 16px;font-size:12px;font-weight:600;color:#57606a;text-align:left;background:#f6f8fa;border-bottom:1px solid #d0d7de}}
 td{{padding:8px 16px;font-size:14px;border-bottom:1px solid #d0d7de}}
@@ -120,6 +121,7 @@ Pass Rate: {pass_rate:.1f}%
 <th>Status</th>
 <th>Type</th>
 <th>Time</th>
+<th>Verified</th>
 <th>Description</th>
 </tr>
 </thead>
@@ -131,6 +133,7 @@ Pass Rate: {pass_rate:.1f}%
             time_val = testcase.get('time', '0')
             test_type = testcase.get('type', '')
             result = testcase.get('result', 'PASS')
+            verified = testcase.get('verified', 'false') == 'true'
             description = testcase.get('description', '')
 
             # GitHub-style icons
@@ -150,6 +153,13 @@ Pass Rate: {pass_rate:.1f}%
 </svg>'''
                 state_class = 'State--error'
 
+            # Verified badge
+            verified_badge = ''
+            if verified:
+                verified_badge = '''<svg class="octicon" style="color:#0969da" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+<path d="M9.585.52a2.678 2.678 0 0 0-3.17 0l-.928.68a1.178 1.178 0 0 1-.518.215L3.83 1.59a2.678 2.678 0 0 0-2.24 2.24l-.175 1.138a1.178 1.178 0 0 1-.215.518l-.68.928a2.678 2.678 0 0 0 0 3.17l.68.928c.113.153.186.33.215.518l.175 1.138a2.678 2.678 0 0 0 2.24 2.24l1.138.175c.187.029.365.102.518.215l.928.68a2.678 2.678 0 0 0 3.17 0l.928-.68a1.17 1.17 0 0 1 .518-.215l1.138-.175a2.678 2.678 0 0 0 2.241-2.241l.175-1.138c.029-.187.102-.364.215-.518l.68-.928a2.678 2.678 0 0 0 0-3.17l-.68-.928a1.179 1.179 0 0 1-.215-.518L14.41 3.83a2.678 2.678 0 0 0-2.24-2.24l-1.138-.175a1.179 1.179 0 0 1-.518-.215L9.585.52Zm-3.272 7.97a.75.75 0 0 1 1.06-.02l3 2.75a.75.75 0 1 1-1.02 1.1l-2.47-2.27L5.56 11.1a.75.75 0 0 1-1.06-1.06l1.82-1.82Z"></path>
+</svg><span class="Label Label--verified">VERIFIED</span>'''
+
             html += f'''
 <tr>
 <td><span class="test-name">{test_name}</span></td>
@@ -159,6 +169,7 @@ Pass Rate: {pass_rate:.1f}%
 </td>
 <td>{test_type}</td>
 <td><span class="time-value">{time_val}s</span></td>
+<td>{verified_badge if verified else '-'}</td>
 <td>{description if description else '-'}</td>
 </tr>
 '''
