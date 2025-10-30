@@ -1,6 +1,7 @@
 #include "events/InvokeEventTarget.h"
 #include "common/JsonUtils.h"
 #include "common/Logger.h"
+#include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
 #include "runtime/IEventRaiser.h"
 #include "scripting/JSEngine.h"
@@ -78,7 +79,7 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
 
         // W3C SCXML 5.10: Raise event with origin tracking and origintype (test 253)
         // Origin is parent session, origintype is SCXML processor
-        std::string originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+        std::string originType = Constants::SCXML_EVENT_PROCESSOR_TYPE;
         LOG_DEBUG("InvokeEventTarget::send() - Calling eventRaiser->raiseEvent('{}', '{}', origin: '{}', invokeId: "
                   "'{}', originType: '{}')",
                   eventName, eventData, parentSessionId_, invokeId_, originType);

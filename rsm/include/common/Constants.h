@@ -13,17 +13,9 @@ namespace RSM::Constants {
 // ============================================================================
 // W3C SCXML Event Processor URIs (W3C SCXML 6.2)
 // ============================================================================
-
-/**
- * @brief Standard SCXML Event Processor URI
- *
- * Default event processor for SCXML internal events.
- * Used when no type is specified in <send> elements.
- *
- * @see W3C SCXML 1.0 Section 6.2
- * @see W3C Test 200: Processors MUST support this type
- */
-constexpr const char *SCXML_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+// W3C SCXML Event Processor Types moved to SCXMLConstants.h for Single Source of Truth
+// See: rsm/include/common/SCXMLConstants.h
+// ============================================================================
 
 /**
  * @brief Basic HTTP Event Processor URI

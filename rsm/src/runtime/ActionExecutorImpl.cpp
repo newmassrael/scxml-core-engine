@@ -17,6 +17,7 @@
 #include "common/GuardHelper.h"
 #include "common/Logger.h"
 #include "common/NamelistHelper.h"
+#include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
 #include "common/StringUtils.h"
@@ -892,7 +893,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // W3C SCXML C.2: Set content for HTTP body
             event.content = action.getContent();
             // W3C SCXML 5.10: Set event type for origintype field (test 253, 331, 352, 372)
-            event.type = sendType.empty() ? Constants::SCXML_EVENT_PROCESSOR_URI : sendType;
+            event.type = sendType.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : sendType;
 
             // Send via dispatcher (handles both immediate and delayed events)
             auto resultFuture = eventDispatcher_->sendEvent(event);

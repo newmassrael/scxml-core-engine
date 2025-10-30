@@ -5,6 +5,7 @@
 #include "common/HierarchicalStateHelper.h"
 #include "common/HistoryHelper.h"
 #include "common/Logger.h"
+#include "common/SCXMLConstants.h"
 #include "common/SendSchedulingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
@@ -307,8 +308,10 @@ public:
      * @param eventData Optional event data as JSON string (W3C SCXML 5.10)
      */
     void raiseExternal(Event event, const std::string &eventData = "", const std::string &origin = "") {
-        // W3C SCXML C.1: Enqueue event with metadata (origin, data, sendid, type)
-        externalQueue_.raise(EventWithMetadata(event, eventData, origin, "", "external"));
+        // W3C SCXML C.1: Enqueue event with metadata (origin, data, sendid, type, originType)
+        // W3C SCXML 5.10.1: Set originType to SCXML Event I/O Processor for parent-child communication
+        externalQueue_.raise(
+            EventWithMetadata(event, eventData, origin, "", "external", RSM::Constants::SCXML_EVENT_PROCESSOR_TYPE));
 
         // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
         if constexpr (requires { policy_.nextEventIsExternal_; }) {

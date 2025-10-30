@@ -2,6 +2,7 @@
 #include "common/EventDataHelper.h"
 #include "common/JsonUtils.h"
 #include "common/Logger.h"
+#include "common/SCXMLConstants.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
 #include <future>
@@ -52,7 +53,7 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
         bool queueSuccess = false;
 
         // W3C SCXML 5.10: Pass origintype from EventDescriptor (test 253, 331, 352, 372)
-        std::string originType = event.type.empty() ? "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" : event.type;
+        std::string originType = event.type.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : event.type;
 
         if (eventRaiserImpl) {
             // Use priority-aware method with sendid and origintype for W3C SCXML compliance (test 351)

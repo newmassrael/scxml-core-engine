@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/SCXMLConstants.h"
 #include "common/UniqueIdGenerator.h"
 #include <string>
 
@@ -234,7 +235,7 @@ public:
      */
     static bool isSupportedSendType(const std::string &sendType) {
         // W3C SCXML 6.2: Empty or default type is SCXMLEventProcessor (always supported)
-        if (sendType.empty() || sendType == "http://www.w3.org/TR/scxml/#SCXMLEventProcessor") {
+        if (sendType.empty() || sendType == Constants::SCXML_EVENT_PROCESSOR_TYPE) {
             return true;
         }
         // W3C SCXML C.2: BasicHTTP Event I/O Processor is supported
@@ -367,6 +368,8 @@ public:
             typename ParentStateMachine::EventWithMetadata eventWithMetadata(event, eventData);
             eventWithMetadata.invokeId = invokeId;
             eventWithMetadata.origin = childSessionId;  // W3C SCXML 6.5: For finalize matching
+            eventWithMetadata.originType =
+                RSM::Constants::SCXML_EVENT_PROCESSOR_TYPE;  // W3C SCXML C.1: SCXML Event I/O Processor (test 253)
 
             // W3C SCXML 6.2: Send to parent's external event queue
             LOG_DEBUG("SendHelper::sendToParentWithOrigin - calling parent->raiseExternal()");
