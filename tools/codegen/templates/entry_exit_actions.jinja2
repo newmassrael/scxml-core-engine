@@ -108,11 +108,35 @@
                 LOG_DEBUG("Deferred hybrid invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
 {% endif %}
+{% if state.on_entry_blocks %}
+                {
+                    // W3C SCXML 3.8: Build onentry block lambdas for EntryExitHelper
+                    // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
+                    std::vector<std::function<void()>> entryBlocks;
+{% for block in state.on_entry_blocks %}
+                    entryBlocks.push_back([&]() {
+                        // Onentry block {{ loop.index }}/{{ state.on_entry_blocks|length }}
+{% for action in block %}
+                        {% set in_entry_exit = true %}
+                        {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+                    });
+{% endfor %}
+                    // W3C SCXML 3.8: Delegate to EntryExitHelper (Single Source of Truth)
+                    // This achieves ARCHITECTURE.md Zero Duplication between Interpreter and AOT engines
+                    ::RSM::EntryExitHelper<{{ model.name }}Policy, Engine>::executeEntryBlocks(
+                        entryBlocks, engine, "{{ state_id }}"
+                    );
+                }
+{% elif state.on_entry %}
+                // Backward compatibility: flat on_entry list (deprecated - use on_entry_blocks)
 {% for action in state.on_entry %}
                 {% set in_entry_exit = true %}
                 {% include 'actions/' + action.type + '.jinja2' %}
 
 {% endfor %}
+{% endif %}
 {% if state.initial_transition_actions %}
                 // W3C SCXML 3.3.2: Execute <initial> transition executable content
                 // This content executes AFTER parent onentry and BEFORE child state entry
@@ -409,11 +433,35 @@
                 }
 {% endfor %}
 {% endif %}
+{% if state.on_exit_blocks %}
+                {
+                    // W3C SCXML 3.9: Build onexit block lambdas for EntryExitHelper
+                    // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
+                    std::vector<std::function<void()>> exitBlocks;
+{% for block in state.on_exit_blocks %}
+                    exitBlocks.push_back([&]() {
+                        // Onexit block {{ loop.index }}/{{ state.on_exit_blocks|length }}
+{% for action in block %}
+                        {% set in_entry_exit = true %}
+                        {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+                    });
+{% endfor %}
+                    // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
+                    // This achieves ARCHITECTURE.md Zero Duplication between Interpreter and AOT engines
+                    ::RSM::EntryExitHelper<{{ model.name }}Policy, Engine>::executeExitBlocks(
+                        exitBlocks, engine, "{{ state_id }}"
+                    );
+                }
+{% elif state.on_exit %}
+                // Backward compatibility: flat on_exit list (deprecated - use on_exit_blocks)
 {% for action in state.on_exit %}
                 {% set in_entry_exit = true %}
                 {% include 'actions/' + action.type + '.jinja2' %}
 
 {% endfor %}
+{% endif %}
                 }
 {% endif %}
                 break;
