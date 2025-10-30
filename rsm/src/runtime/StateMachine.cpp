@@ -123,9 +123,10 @@ StateMachine::~StateMachine() {
         LOG_DEBUG("StateMachine: All processEvent calls completed, proceeding with destruction");
     }
 
-    if (isRunning_) {
-        stop();
-    }
+    // W3C SCXML 3.13: Always call stop() to ensure session cleanup
+    // Final state sets isRunning_=false but session must still be destroyed
+    // stop() is idempotent and handles cleanup even when isRunning_=false
+    stop();
 
     // FUNDAMENTAL FIX: Two-Phase Destruction Pattern
     // LIFECYCLE: RAII Destruction Stage
