@@ -127,8 +127,16 @@ public:
     }
 
     const char *getDescription() const override {
-        return Derived::DESCRIPTION;
+        // Lazy load description from metadata.txt (Single Source of Truth)
+        // Cached to avoid repeated file I/O
+        if (cachedDescription_.empty()) {
+            cachedDescription_ = AotTestBase::loadMetadataDescription(TEST_ID);
+        }
+        return cachedDescription_.c_str();
     }
+
+private:
+    mutable std::string cachedDescription_;
 };
 
 }  // namespace RSM::W3C::AotTests
