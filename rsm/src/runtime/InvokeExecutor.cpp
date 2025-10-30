@@ -1,6 +1,7 @@
 #include "runtime/InvokeExecutor.h"
 #include "SCXMLTypes.h"
 #include "common/Constants.h"
+#include "common/DatamodelValidationHelper.h"
 #include "common/InvokeHelper.h"
 #include "common/Logger.h"
 #include "common/UniqueIdGenerator.h"
@@ -352,7 +353,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             }
 
             // W3C SCXML 6.4: Only set variable if it exists in child's datamodel
-            if (childDatamodelVars.find(varName) == childDatamodelVars.end()) {
+            // ARCHITECTURE.md Zero Duplication: Use DatamodelValidationHelper
+            if (!DatamodelValidationHelper::isVariableDeclaredInChild(varName, childDatamodelVars)) {
                 LOG_DEBUG("SCXMLInvokeHandler: Skipping namelist variable '{}' - not defined in child's datamodel",
                           varName);
                 continue;
@@ -367,7 +369,8 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     for (const auto &[name, expr, location] : params) {
         if (!name.empty()) {
             // W3C SCXML 6.4: Only set variable if it exists in child's datamodel
-            if (childDatamodelVars.find(name) == childDatamodelVars.end()) {
+            // ARCHITECTURE.md Zero Duplication: Use DatamodelValidationHelper
+            if (!DatamodelValidationHelper::isVariableDeclaredInChild(name, childDatamodelVars)) {
                 LOG_DEBUG("SCXMLInvokeHandler: Skipping param '{}' - not defined in child's datamodel", name);
                 continue;
             }
