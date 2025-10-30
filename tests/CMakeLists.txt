@@ -491,7 +491,7 @@ rsm_generate_static_w3c_test(244 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3.2: i
 rsm_generate_static_w3c_test(245 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3.2: invoke namelist with non-existent variable handling (Static Hybrid)
 rsm_generate_static_w3c_test(247 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + done.invoke
 rsm_generate_static_w3c_test(250 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + cancellation (manual test)
-# rsm_generate_static_w3c_test(252 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + event cancellation after invoke termination - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(252 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: invoke cancellation ignores events from cancelled child (Pure Static)
 # rsm_generate_static_w3c_test(253 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + bidirectional SCXML event processor - TODO: Implement full invoke infrastructure
 rsm_generate_static_w3c_test(276 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2/6.4: auto-discovers test276sub1.txml
 rsm_generate_static_w3c_test(277 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.3: datamodel init error.execution
@@ -673,11 +673,12 @@ set(W3C_AOT_TESTS
     436 444 445 446 448 449 451 452 453 456 457 459 460
     487 488 495 496 500 501 503 504 505 506 509 510 513 518 519 520 521 522 525 527 528 529 530 531 532 533 534
     550 551 552 553 554 557 558 560 561 562 567 569 570 576 577 578 579 580
+    252
 )
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
-    252 253 294 307 364 376 377 378
+    253 294 307 364 376 377 378
 )
 
 # Generate W3CTestRegistry.cpp from template
