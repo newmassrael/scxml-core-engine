@@ -9,7 +9,7 @@ namespace RSM::W3C::AotTests {
  * @brief Error in executable content stops subsequent elements (AOT)
  */
 struct Test159 : public SimpleAotTest<Test159, 159> {
-    static constexpr const char *DESCRIPTION = "Error in executable content stops subsequent elements (AOT)";
+    static constexpr const char *DESCRIPTION = "W3C SCXML 3.12.1: error causes subsequent elements to be skipped";
     using SM = RSM::Generated::test159::test159;
 };
 

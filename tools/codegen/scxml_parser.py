@@ -699,6 +699,7 @@ class SCXMLParser:
                 elif action['target'] == '#_child':
                     self.model.has_child_communication = True
                 action['send_type'] = child.get('type', '')  # Renamed from 'type' to avoid conflict
+                action['typeexpr'] = child.get('typeexpr', '')  # W3C SCXML 6.2: Dynamic type evaluation (test174)
                 action['delay'] = child.get('delay', '')
                 action['delayexpr'] = child.get('delayexpr', '')
                 action['id'] = child.get('id', '')
@@ -765,7 +766,7 @@ class SCXMLParser:
                     action['contentexpr'] = ''
 
                 # Detect dynamic expressions
-                if action['eventexpr'] or action['targetexpr'] or action['delayexpr']:
+                if action['eventexpr'] or action['targetexpr'] or action['delayexpr'] or action['typeexpr']:
                     self.model.has_dynamic_expressions = True
                     self.model.needs_jsengine = True
 
