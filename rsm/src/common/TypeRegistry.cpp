@@ -1,6 +1,7 @@
 #include "common/TypeRegistry.h"
 #include "common/Constants.h"
 #include "common/Logger.h"
+#include "common/SCXMLConstants.h"
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -165,7 +166,7 @@ bool TypeRegistry::isScxmlEventProcessor(const std::string &uri) {
     std::string normalizedUri = normalizeUri(uri);
 
     // Direct W3C SCXMLEventProcessor URI
-    const std::string scxmlUri = normalizeUri(Constants::SCXML_EVENT_PROCESSOR_URI);
+    const std::string scxmlUri = normalizeUri(Constants::SCXML_EVENT_PROCESSOR_TYPE);
     if (normalizedUri == scxmlUri) {
         return true;
     }
@@ -253,8 +254,8 @@ void TypeRegistry::initializeDefaultTypes() {
     // SCXML Event Processor (internal)
     registerType(Category::EVENT_PROCESSOR, "scxml", "scxml");
     registerType(Category::EVENT_PROCESSOR, "internal", "scxml");
-    registerType(Category::EVENT_PROCESSOR, Constants::SCXML_EVENT_PROCESSOR_URI, "scxml");
-    registerType(Category::EVENT_PROCESSOR, std::string(Constants::SCXML_EVENT_PROCESSOR_URI) + "/", "scxml");
+    registerType(Category::EVENT_PROCESSOR, Constants::SCXML_EVENT_PROCESSOR_TYPE, "scxml");
+    registerType(Category::EVENT_PROCESSOR, std::string(Constants::SCXML_EVENT_PROCESSOR_TYPE) + "/", "scxml");
 
     // Basic HTTP Event Processor
     registerType(Category::EVENT_PROCESSOR, Constants::BASIC_HTTP_EVENT_PROCESSOR_URI, "basic-http");

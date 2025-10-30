@@ -1,6 +1,7 @@
 #include "events/ParentEventTarget.h"
 #include "common/JsonUtils.h"
 #include "common/Logger.h"
+#include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"
 #include "runtime/IEventRaiser.h"
@@ -143,7 +144,8 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
         // W3C SCXML 6.4: Pass child session ID as originSessionId for finalize support
         // W3C SCXML 5.10: Pass invoke ID for event.invokeid field (test 338)
         // W3C SCXML 5.10: Pass origintype as SCXML processor type (test 253, 331, 352, 372)
-        std::string originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+        // ARCHITECTURE.md: Use SCXMLConstants for Single Source of Truth
+        std::string originType = RSM::Constants::SCXML_EVENT_PROCESSOR_TYPE;
         LOG_DEBUG("ParentEventTarget::sendImmediately() - Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
                   "'{}', invokeId: '{}', originType: '{}')",
                   eventName, eventData, actualChildSessionId, invokeId, originType);
