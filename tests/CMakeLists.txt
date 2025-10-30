@@ -500,7 +500,7 @@ rsm_generate_static_w3c_test(279 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: e
 rsm_generate_static_w3c_test(280 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.3: late binding variable initialization
 rsm_generate_static_w3c_test(286 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.3: error.execution for invalid assignment location
 rsm_generate_static_w3c_test(287 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.4: valid assignment to valid location
-# rsm_generate_static_w3c_test(294 ${STATIC_W3C_OUTPUT_DIR})  # dynamic donedata (param/content requires runtime evaluation) - TODO: Implement full invoke infrastructure
+rsm_generate_static_w3c_test(294 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.7.2: donedata with param and content (Static Hybrid)
 rsm_generate_static_w3c_test(298 ${STATIC_W3C_OUTPUT_DIR})  # dynamic donedata (invalid param location requires runtime evaluation)
 rsm_generate_static_w3c_test(301 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: script element download timeout rejection (manual)
 rsm_generate_static_w3c_test(302 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: script evaluation at load time
@@ -664,7 +664,7 @@ set(W3C_AOT_TESTS
     144 147 148 149 150 151 152 153 155 156 158 159
     172 173 174 175 176 178 179 183 185 186 187 189 190 191 192 193 194 198 199 200 201 205 207 208 210
     215 216 220 223 224 225 226 228 229 230 232 233 234 235 236 237 239 240 241 242 243 244 245 247 250
-    276 277 278 279 280 286 287 298
+    276 277 278 279 280 286 287 294 298
     301 302 303 304 309 310 311 312 313 314 318 319
     321 322 323 324 325 326 329 330 331 332 333 335 336 337 338 339
     342 343 344 346 347 348 349 350 351 352 354 355 372 375
@@ -678,7 +678,7 @@ set(W3C_AOT_TESTS
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
-    294 307 364 376 377 378
+    307 364 376 377 378
 )
 
 # Generate W3CTestRegistry.cpp from template

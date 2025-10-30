@@ -183,8 +183,19 @@
                         }
                     );
 {% elif state.donedata.content %}
-                    // W3C SCXML 5.5: Literal <content>
-                    eventData = "{{ state.donedata.content | escape_cpp }}";
+                    // W3C SCXML 5.5: Evaluate <content> expression
+                    this->ensureJSEngine();
+                    auto& jsEngine = ::RSM::JSEngine::instance();
+                    ::RSM::DoneDataHelper::evaluateContent(
+                        jsEngine,
+                        sessionId_.value(),
+                        "{{ state.donedata.content | escape_cpp }}",
+                        eventData,
+                        [&engine](const std::string& msg) {
+                            LOG_WARN("Donedata content evaluation failed: {}", msg);
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                        }
+                    );
 {% endif %}
 
                     LOG_DEBUG("Final state {{ state_id }} reached with event data: {}", eventData);
