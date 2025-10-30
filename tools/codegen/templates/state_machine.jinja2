@@ -37,6 +37,7 @@
 {% endif %}
 #include "common/TransitionHelper.h"
 #include "common/HistoryHelper.h"
+#include "common/StateEntryHelper.h"
 #include "common/EventMatchingHelper.h"
 {% if model.has_parallel_states %}
 #include "common/ParallelStateHelper.h"
@@ -367,18 +368,28 @@ struct {{ model.name }}Policy {
         }
     }
 
-    // W3C SCXML 3.3: Get initial child of compound state
-    static State getInitialChild(State state) {
+    // W3C SCXML 3.6: Get initial children of compound state (supports space-separated descendant targets)
+    static std::vector<State> getInitialChildren(State state) {
         switch (state) {
             {% for state_id, state in model.states.items() %}
-            {% if state.initial %}
+            {% if state.initial_children %}
             case State::{{ state_id | capitalize }}:
-                return State::{{ state.initial | capitalize }};
+                return {
+                    {%- for child in state.initial_children -%}
+                    State::{{ child | capitalize }}{{ ", " if not loop.last else "" }}
+                    {%- endfor -%}
+                };
             {% endif %}
             {% endfor %}
             default:
-                return state;  // Not compound or no initial child
+                return {};  // Not compound or no initial child
         }
+    }
+
+    // W3C SCXML 3.3: Get single initial child (backward compatibility - returns first child)
+    static State getInitialChild(State state) {
+        auto children = getInitialChildren(state);
+        return children.empty() ? state : children[0];
     }
 
     // W3C SCXML 3.11: Get initial or history-restored child of compound state
@@ -392,16 +403,36 @@ struct {{ model.name }}Policy {
                 if (history_{{ state.initial_history_id }}.has_value() && !history_{{ state.initial_history_id }}->empty()) {
                     return history_{{ state.initial_history_id }}->front();  // Restore to first state in history
                 }
-                return State::{{ state.initial | capitalize }};  // No history, use default
-            {% elif state.initial %}
+                return getInitialChild(State::{{ state_id | capitalize }});  // No history, use default
+            {% elif state.initial_children %}
             case State::{{ state_id | capitalize }}:
-                return State::{{ state.initial | capitalize }};
+                return getInitialChild(State::{{ state_id | capitalize }});
             {% endif %}
             {% endfor %}
             default:
                 return state;  // Not compound or no initial child
         }
     }
+
+    // W3C SCXML 3.6: Enter deep initial targets (delegate to StateEntryHelper)
+    {% for state_id, state in model.states.items() %}
+    {% if state.initial_children and state.initial_children|length > 0 %}
+    template<typename Engine>
+    void enterDeepInitialTargets_{{ state_id | capitalize }}(Engine& engine) {
+        // W3C SCXML 3.6: Deep initial targets for {{ state_id }}: initial="{{ state.initial }}"
+        // Delegate to StateEntryHelper (ARCHITECTURE.md Zero Duplication Principle)
+        auto targets = getInitialChildren(State::{{ state_id | capitalize }});
+        
+        // W3C SCXML 3.6: Use StateEntryHelper as Single Source of Truth
+        ::RSM::StateEntryHelper::enterDeepTargets<State>(
+            State::{{ state_id | capitalize }},
+            targets,
+            [](State s) -> std::optional<State> { return {{ model.name }}Policy::getParent(s); },
+            [this, &engine](State s) { this->executeEntryActions(s, engine); }
+        );
+    }
+    {% endif %}
+    {% endfor %}
 
 {% if model.has_parallel_states %}
     // W3C SCXML 3.4: Check if state is a parallel state

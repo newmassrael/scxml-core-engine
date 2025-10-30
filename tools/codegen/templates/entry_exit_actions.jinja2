@@ -263,13 +263,28 @@
         }
 
         // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
-        // This ensures compound states behave like Interpreter (auto-enter initial child)
+        // W3C SCXML 3.6: Support deep initial targets (space-separated descendant state IDs)
         if (isCompoundState(state) && !isParallelState(state)) {
-            State initialChild = getInitialChild(state);
-            if (initialChild != state) {
-                LOG_DEBUG("AOT executeEntryActions: State {} is compound, entering initial child {}",
-                         static_cast<int>(state), static_cast<int>(initialChild));
-                executeEntryActions(initialChild, engine);
+            // W3C SCXML 3.6: Check if state has multiple or deep initial targets
+            switch (state) {
+                {% for state_id, state in model.states.items() %}
+                {% if state.initial_children and state.initial_children|length > 0 %}
+                case State::{{ state_id | capitalize }}:
+                    LOG_DEBUG("AOT executeEntryActions: State {} has initial children, delegating to StateEntryHelper",
+                             static_cast<int>(state));
+                    enterDeepInitialTargets_{{ state_id | capitalize }}(engine);
+                    break;
+                {% endif %}
+                {% endfor %}
+                default:
+                    // No explicit initial children - use single initial child
+                    State initialChild = getInitialChild(state);
+                    if (initialChild != state) {
+                        LOG_DEBUG("AOT executeEntryActions: State {} is compound, entering initial child {}",
+                                 static_cast<int>(state), static_cast<int>(initialChild));
+                        executeEntryActions(initialChild, engine);
+                    }
+                    break;
             }
         }
 {% endif %}
