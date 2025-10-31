@@ -6,7 +6,7 @@
 namespace RSM::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 6.4: Inline content invoke with parent-child bidirectional communication
+ * @brief W3C SCXML C.1: Parent-child communication via #_<invokeid> target
  *
  * This test validates the complete parent-child invoke infrastructure:
  * 1. Parent invokes child state machine via inline <content>
@@ -17,9 +17,9 @@ namespace RSM::W3C::AotTests {
  * 6. Parent receives done.invoke.invokedChild and enters Pass state
  *
  * Key W3C SCXML Features:
- * - 6.4: <invoke> element with inline content
- * - 6.4: #_parent target for child-to-parent communication
- * - 6.4: #_<invokeid> target for parent-to-child communication
+ * - C.1: SCXML Event I/O Processor with #_<invokeid> target
+ * - C.1: #_parent target for child-to-parent communication
+ * - C.1: #_<invokeid> target sends events to child session's external queue
  * - 6.4.1: done.invoke event on child completion
  *
  * ARCHITECTURE.md Compliance:
@@ -28,7 +28,7 @@ namespace RSM::W3C::AotTests {
  */
 struct Test192 : public ScheduledAotTest<Test192, 192> {
     static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.4: Inline content invoke with #_<invokeid> target (Pure Static AOT)";
+        "W3C SCXML C.1: #_<invokeid> target sends events to child session's external queue";
     using SM = RSM::Generated::test192::test192;
 
     std::chrono::seconds getTimeout() const override {

@@ -38,7 +38,8 @@ namespace RSM::W3C::AotTests {
  */
 struct Test187 : public ScheduledAotTest<Test187, 187> {
     static constexpr const char *DESCRIPTION =
-        "Delayed send cancellation on session termination (W3C 6.4.5 AOT Pure Static)";
+        "W3C SCXML 6.2: If the SCXML session terminates before the delay interval has elapsed, "
+        "the SCXML Processor MUST discard the message without attempting to deliver it.";
     using SM = RSM::Generated::test187::test187;
 };
 
