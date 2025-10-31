@@ -86,6 +86,11 @@
       "verified_date": "2025-10-31",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.2: param evaluates at send execution time with current datamodel values"
+    },
+    "178": {
+      "verified_date": "2025-10-31",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: param preserves duplicate keys with multiple values"
     }
   }
 }

@@ -7,11 +7,11 @@
 namespace RSM::W3C::AotTests {
 
 /**
- * @brief Send with duplicate param names (AOT)
+ * @brief W3C SCXML 6.2: param preserves duplicate keys with multiple values
  */
 struct Test178 : public AotTestBase {
     static constexpr int TEST_ID = 178;
-    static constexpr const char *DESCRIPTION = "Send with duplicate param names (AOT)";
+    static constexpr const char *DESCRIPTION = "W3C SCXML 6.2: param preserves duplicate keys with multiple values";
 
     bool run() override {
         RSM::Generated::test178::test178 sm;
