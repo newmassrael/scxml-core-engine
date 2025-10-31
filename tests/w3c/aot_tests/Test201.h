@@ -15,7 +15,9 @@ namespace RSM::W3C::AotTests {
  * W3C SCXML 6.2: send element with type attribute
  */
 struct Test201 : public HttpAotTest<Test201, 201> {
-    static constexpr const char *DESCRIPTION = "BasicHTTP Event I/O Processor support (W3C C.2 AOT)";
+    static constexpr const char *DESCRIPTION =
+        "W3C SCXML 6.2: Processors that support HTTP POST must use the value "
+        "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor for the \"type\" attribute";
     using SM = RSM::Generated::test201::test201;
 };
 

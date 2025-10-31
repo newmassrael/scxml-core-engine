@@ -44,7 +44,8 @@ namespace RSM::W3C::AotTests {
  * - If event1 was canceled, event2 fires → child sends "fail" to parent
  */
 struct Test207 : public ScheduledAotTest<Test207, 207> {
-    static constexpr const char *DESCRIPTION = "Cancel across sessions fails (W3C 6.3 AOT)";
+    static constexpr const char *DESCRIPTION =
+        "W3C SCXML 6.3: cancel operation scoped to originating session, cannot affect child session's delayed events";
     using SM = RSM::Generated::test207::test207;
 };
 
