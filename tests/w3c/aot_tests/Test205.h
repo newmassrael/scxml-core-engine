@@ -6,12 +6,15 @@
 namespace RSM::W3C::AotTests {
 
 /**
- * @brief W3C SCXML Test 205
+ * @brief W3C SCXML 6.2: The sending SCXML Interpreter MUST not alter the content of the send
  *
- * Auto-generated AOT test registry.
+ * Verifies that param data sent via send element is not modified during transmission.
+ * Test sends event with param aParam=1, then validates that _event.data.aParam == 1
+ * at the receiving state, ensuring data integrity throughout the event transmission process.
  */
 struct Test205 : public SimpleAotTest<Test205, 205> {
-    static constexpr const char *DESCRIPTION = "W3C SCXML test 205 (AOT)";
+    static constexpr const char *DESCRIPTION =
+        "W3C SCXML 6.2: The sending SCXML Interpreter MUST not alter the content of the send";
     using SM = RSM::Generated::test205::test205;
 };
 
