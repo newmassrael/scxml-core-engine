@@ -36,9 +36,11 @@
             desc.transitionIndex = trans.transitionIndex;
             desc.hasActions = trans.hasActions;  // W3C SCXML 3.13: Preserve action metadata
             desc.isInternal = trans.isInternal;  // W3C SCXML 3.13: Preserve internal transition type
+            desc.isTargetless = trans.isTargetless;  // W3C SCXML 5.9.2: Preserve targetless transition flag
 
             // W3C SCXML Appendix D.2: Compute exit set using shared Helper
-            desc.exitSet = Helper::computeExitSet(trans.source, trans.target, trans.isInternal);
+            // W3C SCXML 5.9.2: Pass targetless flag for correct exit set computation
+            desc.exitSet = Helper::computeExitSet(trans.source, trans.target, trans.isInternal, trans.isTargetless);
 
             descriptors.push_back(desc);
         }
@@ -52,7 +54,8 @@
         result.reserve(filtered.size());
 
         for (const auto& desc : filtered) {
-            result.push_back(TransitionInfo(desc.source, desc.target, desc.transitionIndex, desc.hasActions, desc.isInternal));
+            // W3C SCXML 5.9.2: Preserve targetless flag through conflict resolution
+            result.push_back(TransitionInfo(desc.source, desc.target, desc.transitionIndex, desc.hasActions, desc.isInternal, desc.isTargetless));
         }
 
         return result;

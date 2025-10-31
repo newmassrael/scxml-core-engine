@@ -26,7 +26,7 @@ struct Test403a : public SimpleAotTest<Test403a, 403> {
     using SM = RSM::Generated::test403a::test403a;
 };
 
-// Auto-register
-inline static AotTestRegistrar<Test403a> registrar_Test403a;
+// Auto-register with variant suffix
+inline static AotTestRegistrar<Test403a> registrar_Test403a("403a");
 
 }  // namespace RSM::W3C::AotTests

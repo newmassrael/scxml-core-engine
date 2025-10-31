@@ -27,17 +27,20 @@ public:
         std::unordered_set<StateType> exitSet;  // States exited by this transition
 
         // W3C SCXML 3.13: Additional metadata for AOT engine compatibility
-        int transitionIndex = 0;  // Index for executeTransitionActions
-        bool hasActions = false;  // Whether transition has executable content
-        bool isInternal = false;  // W3C SCXML 3.13: Whether transition is type="internal"
+        int transitionIndex = 0;    // Index for executeTransitionActions
+        bool hasActions = false;    // Whether transition has executable content
+        bool isInternal = false;    // W3C SCXML 3.13: Whether transition is type="internal"
+        bool isTargetless = false;  // W3C SCXML 5.9.2: Whether transition has no target (consumes event only)
 
         Transition() = default;
 
         Transition(StateType src, std::vector<StateType> tgts) : source(src), targets(std::move(tgts)) {}
 
         // Constructor with full metadata (for AOT engine)
-        Transition(StateType src, std::vector<StateType> tgts, int idx, bool actions, bool internal = false)
-            : source(src), targets(std::move(tgts)), transitionIndex(idx), hasActions(actions), isInternal(internal) {}
+        Transition(StateType src, std::vector<StateType> tgts, int idx, bool actions, bool internal = false,
+                   bool targetless = false)
+            : source(src), targets(std::move(tgts)), transitionIndex(idx), hasActions(actions), isInternal(internal),
+              isTargetless(targetless) {}
     };
 
     /**
@@ -54,6 +57,12 @@ public:
     template <typename StateType, typename PolicyType>
     static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition) {
         std::unordered_set<StateType> exitSet;
+
+        // W3C SCXML 5.9.2: Targetless internal transitions (consumes event only, no exit/enter)
+        // These transitions execute actions but do not change state - empty exit set
+        if (transition.isTargetless) {
+            return exitSet;  // Empty exit set for targetless transition
+        }
 
         // W3C SCXML 3.13: Internal transitions have special exit semantics
         // Internal transition does NOT exit source state if:
@@ -126,12 +135,17 @@ public:
      * W3C SCXML Algorithm C.1: Two transitions conflict if their exit sets intersect
      * (they would exit the same state, which is invalid).
      *
+     * W3C SCXML 3.13: Special case for parallel states - if a transition exits a parallel state,
+     * it conflicts with any transition whose source is a descendant of that parallel state,
+     * even if their exit sets don't explicitly intersect (because exiting the parallel state
+     * implicitly exits all its child regions).
+     *
      * @tparam StateType State enum or identifier type
      * @param t1 First transition
      * @param t2 Second transition
      * @return true if transitions conflict
      */
-    template <typename StateType>
+    template <typename StateType, typename PolicyType>
     static bool hasConflict(const Transition<StateType> &t1, const Transition<StateType> &t2) {
         // Check if exit sets intersect
         for (const auto &state : t1.exitSet) {
@@ -139,6 +153,27 @@ public:
                 return true;  // Conflict: both exit the same state
             }
         }
+
+        // W3C SCXML 3.13: Parallel state conflict detection
+        // If t1 exits a parallel state, it conflicts with any transition whose source is a descendant of that parallel
+        // state
+        for (const auto &exitState : t1.exitSet) {
+            if (PolicyType::isParallelState(exitState)) {
+                if (PolicyType::isDescendantOf(t2.source, exitState)) {
+                    return true;  // Conflict: t1 exits parallel ancestor of t2's source
+                }
+            }
+        }
+
+        // Check reverse: t2 exits parallel state that is ancestor of t1's source
+        for (const auto &exitState : t2.exitSet) {
+            if (PolicyType::isParallelState(exitState)) {
+                if (PolicyType::isDescendantOf(t1.source, exitState)) {
+                    return true;  // Conflict: t2 exits parallel ancestor of t1's source
+                }
+            }
+        }
+
         return false;
     }
 
@@ -180,7 +215,7 @@ public:
 
             // Check if this transition conflicts with any already selected
             for (const auto &selectedTransition : selectedTransitions) {
-                if (hasConflict<StateType>(transition, selectedTransition)) {
+                if (hasConflict<StateType, PolicyType>(transition, selectedTransition)) {
                     conflicts = true;
                     break;
                 }
@@ -258,6 +293,12 @@ public:
         // W3C SCXML Appendix D.2: For each transition, compute LCA-based exit set
         // Exit set = all active states that are descendants of LCA (excluding LCA itself)
         for (const auto &trans : transitions) {
+            // W3C SCXML 5.9.2: Targetless transitions do not exit any states
+            // These transitions execute actions but do not change state configuration
+            if (trans.isTargetless) {
+                continue;  // Skip exit computation for targetless transition
+            }
+
             // Handle each target separately (parallel states may have multiple targets)
             if (trans.targets.empty()) {
                 continue;  // No target, no exit needed

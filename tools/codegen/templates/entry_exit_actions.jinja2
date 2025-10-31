@@ -42,10 +42,23 @@
         (void)engine;
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        LOG_DEBUG("AOT executeEntryActions: Adding state {} to activeStates", static_cast<int>(state));
+        // Check for duplicates before adding (parallel region re-entry may call this multiple times)
         {
             ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
-            activeStates_.push_back(state);
+            bool alreadyActive = false;
+            for (State s : activeStates_) {
+                if (s == state) {
+                    alreadyActive = true;
+                    break;
+                }
+            }
+            if (!alreadyActive) {
+                LOG_DEBUG("AOT executeEntryActions: Adding state {} to activeStates", static_cast<int>(state));
+                activeStates_.push_back(state);
+            } else {
+                LOG_DEBUG("AOT executeEntryActions: State {} already in activeStates, skipping duplicate", static_cast<int>(state));
+                return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
+            }
         }
 {% endif %}
         switch (state) {

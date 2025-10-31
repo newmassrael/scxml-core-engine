@@ -27,39 +27,66 @@ public:
     }
 
     /**
-     * @brief Register a test factory
-     * @param testId Test number
+     * @brief Register a test factory (string variant)
+     * @param testId Test ID string (e.g., "144", "403a", "403b")
      * @param factory Function that creates test instance
      */
-    void registerTest(int testId, TestFactory factory) {
+    void registerTest(const std::string &testId, TestFactory factory) {
         tests_[testId] = std::move(factory);
     }
 
     /**
-     * @brief Create test instance by ID
+     * @brief Register a test factory (int variant for backward compatibility)
      * @param testId Test number
+     * @param factory Function that creates test instance
+     */
+    void registerTest(int testId, TestFactory factory) {
+        registerTest(std::to_string(testId), std::move(factory));
+    }
+
+    /**
+     * @brief Create test instance by ID (string variant)
+     * @param testId Test ID string (e.g., "144", "403a", "403b")
      * @return Unique pointer to test instance, or nullptr if not found
      */
-    std::unique_ptr<AotTestBase> createTest(int testId) const {
+    std::unique_ptr<AotTestBase> createTest(const std::string &testId) const {
         auto it = tests_.find(testId);
         return it != tests_.end() ? it->second() : nullptr;
     }
 
     /**
-     * @brief Check if test is registered
+     * @brief Create test instance by ID (int variant for backward compatibility)
      * @param testId Test number
+     * @return Unique pointer to test instance, or nullptr if not found
+     */
+    std::unique_ptr<AotTestBase> createTest(int testId) const {
+        return createTest(std::to_string(testId));
+    }
+
+    /**
+     * @brief Check if test is registered (string variant)
+     * @param testId Test ID string
      * @return true if test exists in registry
      */
-    bool hasTest(int testId) const {
+    bool hasTest(const std::string &testId) const {
         return tests_.find(testId) != tests_.end();
     }
 
     /**
-     * @brief Get all registered test IDs
-     * @return Vector of test IDs in ascending order
+     * @brief Check if test is registered (int variant)
+     * @param testId Test number
+     * @return true if test exists in registry
      */
-    std::vector<int> getAllTestIds() const {
-        std::vector<int> ids;
+    bool hasTest(int testId) const {
+        return hasTest(std::to_string(testId));
+    }
+
+    /**
+     * @brief Get all registered test IDs
+     * @return Vector of test ID strings
+     */
+    std::vector<std::string> getAllTestIds() const {
+        std::vector<std::string> ids;
         ids.reserve(tests_.size());
         for (const auto &[id, _] : tests_) {
             ids.push_back(id);
@@ -69,7 +96,7 @@ public:
 
 private:
     AotTestRegistry() = default;
-    std::map<int, TestFactory> tests_;
+    std::map<std::string, TestFactory> tests_;
 };
 
 /**
@@ -83,11 +110,24 @@ private:
  *     // ... implement interface
  * };
  * REGISTER_AOT_TEST(Test144);
+ *
+ * // For variant tests (403a, 403b, 403c):
+ * struct Test403a : public AotTestBase {
+ *     static constexpr int TEST_ID = 403;
+ *     // ... implement interface
+ * };
+ * inline static AotTestRegistrar<Test403a> registrar_Test403a("403a");
  * @endcode
  */
 template <typename TestClass> struct AotTestRegistrar {
+    // Default constructor: use TestClass::TEST_ID (int or convertible to int)
     AotTestRegistrar() {
         AotTestRegistry::instance().registerTest(TestClass::TEST_ID, []() { return std::make_unique<TestClass>(); });
+    }
+
+    // String variant constructor: for variant tests like "403a", "403b", "403c"
+    explicit AotTestRegistrar(const std::string &testId) {
+        AotTestRegistry::instance().registerTest(testId, []() { return std::make_unique<TestClass>(); });
     }
 };
 

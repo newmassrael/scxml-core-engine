@@ -93,7 +93,7 @@
                     if (collectMode != nullptr) {
                         // Collection mode: Store resolved history transition
                         LOG_DEBUG("AOT processTransition: Collecting history transition {} -> {}", static_cast<int>(checkState), static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
-                        collectMode->push_back(TransitionInfo(checkState, resolvedHistoryTarget_{{ trans.history_target }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if trans.type == 'internal' else 'false' }}));
+                        collectMode->push_back(TransitionInfo(checkState, resolvedHistoryTarget_{{ trans.history_target }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }}, false));
                         // Note: transitionTaken will be set by caller after processing collected transitions
                     } else {
                         // Immediate execution mode
@@ -106,7 +106,7 @@
                     if (collectMode != nullptr) {
                         // Collection mode: Store transition info, don't execute
                         LOG_DEBUG("AOT processTransition: Collecting transition {} -> {}", static_cast<int>(checkState), static_cast<int>(State::{{ trans.target | capitalize }}));
-                        collectMode->push_back(TransitionInfo(checkState, State::{{ trans.target | capitalize }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if trans.type == 'internal' else 'false' }}));
+                        collectMode->push_back(TransitionInfo(checkState, State::{{ trans.target | capitalize }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }}, false));
                         // Note: transitionTaken will be set by caller after processing collected transitions
                     } else {
                         // Immediate execution mode
@@ -114,8 +114,17 @@
                     }
 {% endif %}
 {% else %}
-                    // W3C SCXML 3.4: Internal transition (no target) - set transitionTaken flag
-                    transitionTaken = true;
+                    // W3C SCXML 5.9.2: Targetless internal transition (consumes event only, no exit/enter)
+                    if (collectMode != nullptr) {
+                        // Collection mode: Store targetless transition
+                        // Use source state as both source and target (will be handled specially by StaticExecutionEngine)
+                        LOG_DEBUG("AOT processTransition: Collecting targetless internal transition {}", static_cast<int>(checkState));
+                        collectMode->push_back(TransitionInfo(checkState, checkState, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, true, true));
+                        // Note: transitionTaken will be set by caller after processing collected transitions
+                    } else {
+                        // Immediate execution mode
+                        transitionTaken = true;
+                    }
 {% endif %}
 {% endmacro %}
 
@@ -192,7 +201,12 @@
 
             // W3C SCXML Appendix D Step 1: Collect all enabled eventless transitions (optimal transition set)
             for (State activeState : statesToCheck) {
-                LOG_DEBUG("AOT processTransition: Checking eventless in active state {}", static_cast<int>(activeState));
+                // W3C SCXML 3.13: Eventless transitions CAN originate from ANY active state
+                // Unlike external events (which require atomic states), eventless transitions
+                // are checked on atomic, compound, and parallel states
+                // Preemption rule still applies: transitions in child states preempt parent states
+                LOG_DEBUG("AOT processTransition: Checking eventless transition in state {} (compound={}, parallel={})",
+                         static_cast<int>(activeState), isCompoundState(activeState), isParallelState(activeState));
 
                 // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
                 // Only check the current active state (not hierarchy)
@@ -218,19 +232,49 @@
 
             ::std::vector<TransitionInfo> enabledTransitions;
 
-            // W3C SCXML 3.12: Hierarchical event processing with collection (innermost to outermost)
+            // Debug: Check activeStates_ for duplicates
+            LOG_DEBUG("AOT processTransition: activeStates_ contains {} states", activeStates_.size());
+            for (State s : activeStates_) {
+                LOG_DEBUG("AOT processTransition: activeStates_ entry: {}", static_cast<int>(s));
+            }
+
+            // W3C SCXML 3.13: Collect transitions from ALL active states (optimal transition set)
+            // IMPORTANT: Only check atomic states for normal events (W3C SCXML 3.13: "optimally enabled by E in an atomic state in C")
+            // EXCEPTION: done.state events MUST be checked on parallel/compound states (W3C SCXML 3.13 test570)
+            // Atomic state = neither compound nor parallel
             for (State activeState : activeStates_) {
-                LOG_DEBUG("AOT processTransition: Checking external event in active state {}", static_cast<int>(activeState));
+                bool isNonAtomic = isCompoundState(activeState) || isParallelState(activeState);
+                
+                // W3C SCXML 3.13: Check if this is a done.state event
+                // done.state events are generated when parallel/compound states complete
+                bool isDoneStateEvent = (event != Event::NONE) && 
+                    {{ model.name }}Policy::getEventName(event).find("done.state.") == 0;
+                
+                // Skip non-atomic states UNLESS processing done.state event
+                if (isNonAtomic && !isDoneStateEvent) {
+                    LOG_DEBUG("AOT processTransition: Skipping non-atomic state {} (compound={}, parallel={}) for non-done.state event",
+                              static_cast<int>(activeState), isCompoundState(activeState), isParallelState(activeState));
+                    continue;
+                }
+
+                if (isNonAtomic) {
+                    LOG_DEBUG("AOT processTransition: Checking done.state event in non-atomic state {} (compound={}, parallel={})",
+                              static_cast<int>(activeState), isCompoundState(activeState), isParallelState(activeState));
+                } else {
+                    LOG_DEBUG("AOT processTransition: Checking external event in atomic state {}", static_cast<int>(activeState));
+                }
 
                 State checkState = activeState;
 
+                // W3C SCXML 3.12: Hierarchical event bubbling (innermost to outermost)
+                // Check from current active state up through parent hierarchy
                 while (true) {
                     // Try to find a matching transition in checkState (collection mode)
                     bool foundTransition = tryTransitionInState(checkState, event, currentState, transitionTaken, engine, &enabledTransitions);
 
                     if (foundTransition) {
                         LOG_DEBUG("AOT processTransition: Found transition in state {}", static_cast<int>(checkState));
-                        break;  // Transition collected, exit hierarchy check for this active state
+                        break;  // Transition collected, exit hierarchy check for THIS active state
                     }
 
                     // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
@@ -245,11 +289,8 @@
                     checkState = parent.value();
                 }
 
-                // W3C SCXML 3.12: Preemption rule - stop after first transition
-                if (!enabledTransitions.empty()) {
-                    LOG_DEBUG("AOT processTransition: External event transition collected, stopping (preemption rule)");
-                    break;
-                }
+                // W3C SCXML 3.13: Continue checking other active states (parallel regions)
+                // Preemption rule applies within each atomic state's hierarchy, not globally
             }
 
             LOG_DEBUG("AOT processTransition: Collected {} enabled external transitions", enabledTransitions.size());
@@ -364,7 +405,8 @@ private:
                 ::std::vector<State>{trans.target},
                 trans.transitionIndex,
                 trans.hasActions,
-                trans.isInternal
+                trans.isInternal,
+                trans.isTargetless
             );
         }
 
@@ -423,6 +465,14 @@ private:
         for (const auto& trans : sortedByTarget) {
             if (!trans.targets.empty()) {
                 State target = trans.targets[0];
+
+                // W3C SCXML 5.9.2: Targetless internal transitions (consumes event only, no exit/enter)
+                // Actions already executed above, skip state entry (no state change)
+                if (trans.isTargetless) {
+                    LOG_DEBUG("AOT executeMicrostep: Targetless internal transition {} (actions executed, no state change)", static_cast<int>(trans.source));
+                    continue;  // Skip entry for targetless transition
+                }
+
                 LOG_DEBUG("AOT executeMicrostep: Building hierarchical entry chain for target {}", static_cast<int>(target));
                 
                 // W3C SCXML 3.13: Build hierarchical entry chain from root to target
@@ -477,8 +527,21 @@ private:
                     LOG_DEBUG("AOT executeMicrostep: Hierarchical entry for state {}", static_cast<int>(state));
                     executeEntryActions(state, engine);
                 }
-                
-                currentState = target;  // Update to deepest entered state
+
+                // W3C SCXML 3.4: For transitions within parallel states, maintain currentState at parallel level
+                // In parallel states, multiple regions are active - currentState should be the parallel state context
+                State finalState = target;
+                auto parentOpt = {{ model.name }}Policy::getParent(target);
+                if (parentOpt.has_value()) {
+                    State parent = parentOpt.value();
+                    if ({{ model.name }}Policy::isParallelState(parent)) {
+                        // Target is a child of a parallel state, set currentState to the parallel state
+                        finalState = parent;
+                        LOG_DEBUG("AOT executeMicrostep: Target {} is child of parallel state {}, setting currentState to parallel",
+                                  static_cast<int>(target), static_cast<int>(parent));
+                    }
+                }
+                currentState = finalState;  // Update to deepest entered state (or parallel state if within parallel)
             }
         }
 
@@ -558,7 +621,9 @@ private:
                     hasTransitionActions_ = {{ 'true' if trans.actions else 'false' }};
 {% endif %}
 // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
-                    lastTransitionIsInternal_ = {{ 'true' if trans.type == 'internal' else 'false' }};
+                    lastTransitionIsInternal_ = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
+// W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
+                    lastTransitionIsTargetless_ = {{ 'true' if not trans.target else 'false' }};
 {{ transition_execution_or_collection(trans, event_transition_indices[loop.index0]) }}
                     return true;  // Transition found
                 }
@@ -573,7 +638,9 @@ private:
                     hasTransitionActions_ = {{ 'true' if trans.actions else 'false' }};
 {% endif %}
 // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
-                    lastTransitionIsInternal_ = {{ 'true' if trans.type == 'internal' else 'false' }};
+                    lastTransitionIsInternal_ = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
+// W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
+                    lastTransitionIsTargetless_ = {{ 'true' if not trans.target else 'false' }};
 {{ transition_execution_or_collection(trans, event_transition_indices[loop.index0]) }}
                     return true;  // Transition found
                 }
@@ -635,6 +702,8 @@ private:
 {% endif %}
 // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if transition.type == 'internal' else 'false' }};
+// W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
+                    lastTransitionIsTargetless_ = {{ 'true' if not transition.target else 'false' }};
 {{ transition_execution_or_collection(transition, eventless_transition_indices[loop.index0]) }}
                     return true;  // Eventless transition found
 {% endfor %}
@@ -659,6 +728,8 @@ private:
 {% endif %}
 // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if transition.type == 'internal' else 'false' }};
+// W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
+                    lastTransitionIsTargetless_ = {{ 'true' if not transition.target else 'false' }};
 {{ transition_execution_or_collection(transition, eventless_transition_indices[loop.index0]) }}
                     return true;  // Unconditional eventless transition
 {% endfor %}

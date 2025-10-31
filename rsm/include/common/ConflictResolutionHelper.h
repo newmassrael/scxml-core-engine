@@ -53,13 +53,16 @@ public:
         State target;
         std::vector<State> exitSet;
         int transitionIndex = 0;
-        bool hasActions = false;  // W3C SCXML 3.13: Transition action metadata
-        bool isInternal = false;  // W3C SCXML 3.13: Whether transition is type="internal"
+        bool hasActions = false;    // W3C SCXML 3.13: Transition action metadata
+        bool isInternal = false;    // W3C SCXML 3.13: Whether transition is type="internal"
+        bool isTargetless = false;  // W3C SCXML 5.9.2: Whether transition has no target attribute
 
         TransitionDescriptor() = default;
 
-        TransitionDescriptor(State src, State tgt, int idx = 0, bool actions = false, bool internal = false)
-            : source(src), target(tgt), transitionIndex(idx), hasActions(actions), isInternal(internal) {}
+        TransitionDescriptor(State src, State tgt, int idx = 0, bool actions = false, bool internal = false,
+                             bool targetless = false)
+            : source(src), target(tgt), transitionIndex(idx), hasActions(actions), isInternal(internal),
+              isTargetless(targetless) {}
     };
 
     /**
@@ -90,13 +93,15 @@ public:
      * // Returns: [S011, S01] (exit both S011 and S01 to reach LCA S0)
      * @endcode
      */
-    static std::vector<State> computeExitSet(State source, State target, bool isInternal = false) {
+    static std::vector<State> computeExitSet(State source, State target, bool isInternal = false,
+                                             bool isTargetless = false) {
         // ARCHITECTURE.MD Zero Duplication: Delegate to ParallelTransitionHelper
         // Construct minimal Transition descriptor for exit set computation
         typename ParallelTransitionHelper::Transition<State> trans;
         trans.source = source;
         trans.targets = {target};
-        trans.isInternal = isInternal;  // W3C SCXML 3.13: Pass internal transition type
+        trans.isInternal = isInternal;      // W3C SCXML 3.13: Pass internal transition type
+        trans.isTargetless = isTargetless;  // W3C SCXML 5.9.2: Pass targetless transition flag
 
         // W3C SCXML Appendix D.2: Use shared Helper for exit set computation
         auto exitSetUnordered = ParallelTransitionHelper::computeExitSet<State, StatePolicy>(trans);
@@ -212,14 +217,83 @@ public:
             for (size_t i = 0; i < filteredTransitions.size(); ++i) {
                 const auto &t2 = filteredTransitions[i];
 
+                bool hasConflict = false;
+
                 // W3C SCXML Appendix D.2: Check if exit sets intersect (conflict)
                 if (hasIntersection(t1.exitSet, t2.exitSet)) {
+                    hasConflict = true;
+                }
+
+                // W3C SCXML Appendix D.2: Target/source conflict detection
+                // If t1 targets a state that t2 originates from, they conflict
+                // (can't enter and execute from same state in one microstep)
+                if (!hasConflict) {
+                    if (t1.target == t2.source || t2.target == t1.source) {
+                        hasConflict = true;
+                        LOG_DEBUG("ConflictResolutionHelper: Target/source conflict: {} -> {} conflicts with {} -> {}",
+                                  static_cast<int>(t1.source), static_cast<int>(t1.target), static_cast<int>(t2.source),
+                                  static_cast<int>(t2.target));
+                    }
+                }
+
+                // W3C SCXML 3.13: Parallel state conflict detection
+                // If t1 exits a parallel state, it conflicts with any NON-INTERNAL transition whose source is a
+                // descendant of that parallel state NOTE: Targetless internal transitions (source==target) don't
+                // conflict because they have no state change
+                if (!hasConflict && !(t2.isInternal && t2.source == t2.target)) {
+                    for (const auto &exitState : t1.exitSet) {
+                        if (StatePolicy::isParallelState(exitState)) {
+                            if (HierarchicalStateHelper<StatePolicy>::isDescendantOf(t2.source, exitState)) {
+                                hasConflict = true;
+                                LOG_DEBUG("ConflictResolutionHelper: Parallel conflict: t1 exits parallel state {} "
+                                          "which is ancestor of t2's source {}",
+                                          static_cast<int>(exitState), static_cast<int>(t2.source));
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Check reverse: t2 exits parallel state that is ancestor of t1's source
+                // NOTE: Targetless internal transitions (source==target) don't conflict because they have no state
+                // change
+                if (!hasConflict && !(t1.isInternal && t1.source == t1.target)) {
+                    for (const auto &exitState : t2.exitSet) {
+                        if (StatePolicy::isParallelState(exitState)) {
+                            if (HierarchicalStateHelper<StatePolicy>::isDescendantOf(t1.source, exitState)) {
+                                hasConflict = true;
+                                LOG_DEBUG("ConflictResolutionHelper: Parallel conflict: t2 exits parallel state {} "
+                                          "which is ancestor of t1's source {}",
+                                          static_cast<int>(exitState), static_cast<int>(t1.source));
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (hasConflict) {
                     LOG_DEBUG("ConflictResolutionHelper: Conflict detected: {} -> {} vs {} -> {}",
                               static_cast<int>(t1.source), static_cast<int>(t1.target), static_cast<int>(t2.source),
                               static_cast<int>(t2.target));
 
+                    // W3C SCXML Appendix D.2: Special case for target/source conflicts
+                    // If t1 targets the state that t2 originates from, t1 always preempts t2
+                    // (transition entering state preempts transition from that state)
+                    if (t1.target == t2.source) {
+                        LOG_DEBUG(
+                            "ConflictResolutionHelper: {} preempts {} (target/source conflict - entering state wins)",
+                            static_cast<int>(t1.source), static_cast<int>(t2.source));
+                        transitionsToRemove.push_back(i);
+                    }
+                    // If t2 targets the state that t1 originates from, t2 preempts t1
+                    else if (t2.target == t1.source) {
+                        LOG_DEBUG(
+                            "ConflictResolutionHelper: {} preempts {} (target/source conflict - entering state wins)",
+                            static_cast<int>(t2.source), static_cast<int>(t1.source));
+                        t1Preempted = true;
+                    }
                     // W3C SCXML Appendix D.2: If t1's source is descendant of t2's source, t1 preempts t2
-                    if (HierarchicalStateHelper<StatePolicy>::isDescendantOf(t1.source, t2.source)) {
+                    else if (HierarchicalStateHelper<StatePolicy>::isDescendantOf(t1.source, t2.source)) {
                         LOG_DEBUG("ConflictResolutionHelper: {} preempts {} (descendant rule)",
                                   static_cast<int>(t1.source), static_cast<int>(t2.source));
                         transitionsToRemove.push_back(i);
@@ -228,7 +302,8 @@ public:
                         LOG_DEBUG("ConflictResolutionHelper: {} preempts {} (document order)",
                                   static_cast<int>(t2.source), static_cast<int>(t1.source));
                         t1Preempted = true;
-                        break;
+                        // W3C SCXML 3.13: Don't break - continue checking against other transitions
+                        // t1 might preempt some transitions even if it's preempted by others
                     }
                 }
             }
@@ -276,12 +351,14 @@ struct ConflictResolutionHelperString {
         int transitionIndex = 0;
         bool hasActions = false;  // W3C SCXML 3.13: Transition action metadata
         bool isInternal = false;  // W3C SCXML 3.13: Whether transition is type="internal"
+        bool isExternal = false;  // W3C SCXML 3.13: Whether transition exits parallel state
 
         TransitionDescriptor() = default;
 
-        TransitionDescriptor(std::string src, std::string tgt, int idx = 0, bool actions = false, bool internal = false)
+        TransitionDescriptor(std::string src, std::string tgt, int idx = 0, bool actions = false, bool internal = false,
+                             bool external = false)
             : source(std::move(src)), target(std::move(tgt)), transitionIndex(idx), hasActions(actions),
-              isInternal(internal) {}
+              isInternal(internal), isExternal(external) {}
     };
 
     /**
@@ -392,13 +469,16 @@ struct ConflictResolutionHelperString {
      * @brief Remove conflicting transitions for Interpreter engine
      *
      * @tparam GetParentFunc Lambda/function: std::optional<std::string>(const std::string&)
+     * @tparam IsParallelFunc Lambda/function: bool(const std::string&)
      * @param enabledTransitions All enabled transitions (in document order)
      * @param getParent Function to get parent state ID
+     * @param isParallelState Function to check if state is parallel
      * @return Filtered non-conflicting transition set
      */
-    template <typename GetParentFunc>
+    template <typename GetParentFunc, typename IsParallelFunc>
     [[nodiscard]] static std::vector<TransitionDescriptor>
-    removeConflictingTransitions(const std::vector<TransitionDescriptor> &enabledTransitions, GetParentFunc getParent) {
+    removeConflictingTransitions(const std::vector<TransitionDescriptor> &enabledTransitions, GetParentFunc getParent,
+                                 IsParallelFunc isParallelState) {
         std::vector<TransitionDescriptor> filteredTransitions;
 
         LOG_DEBUG("ConflictResolutionHelperString::removeConflictingTransitions: Processing {} transitions",
@@ -411,13 +491,71 @@ struct ConflictResolutionHelperString {
             for (size_t i = 0; i < filteredTransitions.size(); ++i) {
                 const auto &t2 = filteredTransitions[i];
 
-                // Check if exit sets intersect (conflict)
+                bool hasConflict = false;
+
+                // W3C SCXML Appendix D.2: Check if exit sets intersect (conflict)
                 if (hasIntersection(t1.exitSet, t2.exitSet)) {
+                    hasConflict = true;
+                }
+
+                // W3C SCXML Appendix D.2: Target/source conflict detection
+                if (!hasConflict) {
+                    if (t1.target == t2.source || t2.target == t1.source) {
+                        hasConflict = true;
+                        LOG_DEBUG(
+                            "ConflictResolutionHelperString: Target/source conflict: {} -> {} conflicts with {} -> {}",
+                            t1.source, t1.target, t2.source, t2.target);
+                    }
+                }
+
+                // W3C SCXML 3.13: Parallel state conflict detection
+                if (!hasConflict && !(t2.isInternal && t2.source == t2.target)) {
+                    for (const auto &exitState : t1.exitSet) {
+                        if (isParallelState(exitState)) {
+                            if (isDescendantOf(t2.source, exitState, getParent)) {
+                                hasConflict = true;
+                                LOG_DEBUG("ConflictResolutionHelperString: Parallel conflict: t1 exits parallel state "
+                                          "{} which is ancestor of t2's source {}",
+                                          exitState, t2.source);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Check reverse: t2 exits parallel state that is ancestor of t1's source
+                if (!hasConflict && !(t1.isInternal && t1.source == t1.target)) {
+                    for (const auto &exitState : t2.exitSet) {
+                        if (isParallelState(exitState)) {
+                            if (isDescendantOf(t1.source, exitState, getParent)) {
+                                hasConflict = true;
+                                LOG_DEBUG("ConflictResolutionHelperString: Parallel conflict: t2 exits parallel state "
+                                          "{} which is ancestor of t1's source {}",
+                                          exitState, t1.source);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (hasConflict) {
                     LOG_DEBUG("ConflictResolutionHelperString: Conflict detected: {} -> {} vs {} -> {}", t1.source,
                               t1.target, t2.source, t2.target);
 
+                    // W3C SCXML Appendix D.2: Special case for target/source conflicts
+                    if (t1.target == t2.source) {
+                        LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (target/source conflict - entering "
+                                  "state wins)",
+                                  t1.source, t2.source);
+                        transitionsToRemove.push_back(i);
+                    } else if (t2.target == t1.source) {
+                        LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (target/source conflict - entering "
+                                  "state wins)",
+                                  t2.source, t1.source);
+                        t1Preempted = true;
+                    }
                     // If t1's source is descendant of t2's source, t1 preempts t2
-                    if (isDescendantOf(t1.source, t2.source, getParent)) {
+                    else if (isDescendantOf(t1.source, t2.source, getParent)) {
                         LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (descendant rule)", t1.source,
                                   t2.source);
                         transitionsToRemove.push_back(i);
@@ -426,7 +564,6 @@ struct ConflictResolutionHelperString {
                         LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (document order)", t2.source,
                                   t1.source);
                         t1Preempted = true;
-                        break;
                     }
                 }
             }

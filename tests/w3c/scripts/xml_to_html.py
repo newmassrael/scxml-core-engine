@@ -58,6 +58,8 @@ td{{padding:8px 16px;font-size:14px;border-bottom:1px solid #d0d7de}}
 tr:last-child td{{border-bottom:0}}
 .test-name{{font-weight:600;color:#24292f}}
 .time-value{{font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace;font-size:12px;color:#57606a}}
+.type-cell{{min-width:160px;width:160px}}
+.type-label{{display:inline-block;padding:2px 7px;font-size:11px;font-weight:500;line-height:18px;border-radius:2em;min-width:140px;text-align:center;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace}}
 .flash{{padding:16px;margin-bottom:16px;border:1px solid transparent;border-radius:6px}}
 .flash-error{{color:#cf222e;background-color:#ffebe9;border-color:#cf8f91}}
 </style>
@@ -160,6 +162,18 @@ Pass Rate: {pass_rate:.1f}%
 <path d="M9.585.52a2.678 2.678 0 0 0-3.17 0l-.928.68a1.178 1.178 0 0 1-.518.215L3.83 1.59a2.678 2.678 0 0 0-2.24 2.24l-.175 1.138a1.178 1.178 0 0 1-.215.518l-.68.928a2.678 2.678 0 0 0 0 3.17l.68.928c.113.153.186.33.215.518l.175 1.138a2.678 2.678 0 0 0 2.24 2.24l1.138.175c.187.029.365.102.518.215l.928.68a2.678 2.678 0 0 0 3.17 0l.928-.68a1.17 1.17 0 0 1 .518-.215l1.138-.175a2.678 2.678 0 0 0 2.241-2.241l.175-1.138c.029-.187.102-.364.215-.518l.68-.928a2.678 2.678 0 0 0 0-3.17l-.68-.928a1.179 1.179 0 0 1-.215-.518L14.41 3.83a2.678 2.678 0 0 0-2.24-2.24l-1.138-.175a1.179 1.179 0 0 1-.518-.215L9.585.52Zm-3.272 7.97a.75.75 0 0 1 1.06-.02l3 2.75a.75.75 0 1 1-1.02 1.1l-2.47-2.27L5.56 11.1a.75.75 0 0 1-1.06-1.06l1.82-1.82Z"></path>
 </svg><span class="Label Label--verified">VERIFIED</span>'''
 
+            # Type label styling
+            if test_type == 'interpreter':
+                type_style = 'background-color:#ddf4ff;color:#0969da;border:1px solid #0969da'
+            elif test_type == 'pure_static':
+                type_style = 'background-color:#dafbe1;color:#1a7f37;border:1px solid #1a7f37'
+            elif test_type == 'static_hybrid':
+                type_style = 'background-color:#fff8c5;color:#9a6700;border:1px solid #d4a72c'
+            elif test_type == 'interpreter_fallback':
+                type_style = 'background-color:#ffebe9;color:#cf222e;border:1px solid #cf222e'
+            else:
+                type_style = 'background-color:#f6f8fa;color:#57606a;border:1px solid #d0d7de'
+
             html += f'''
 <tr>
 <td><span class="test-name">{test_name}</span></td>
@@ -167,7 +181,7 @@ Pass Rate: {pass_rate:.1f}%
 {icon}
 <span class="State {state_class}">{result}</span>
 </td>
-<td>{test_type}</td>
+<td class="type-cell"><span class="type-label" style="{type_style}">{test_type}</span></td>
 <td><span class="time-value">{time_val}s</span></td>
 <td>{verified_badge if verified else '-'}</td>
 <td>{description if description else '-'}</td>
