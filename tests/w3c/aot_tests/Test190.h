@@ -37,7 +37,7 @@ namespace RSM::W3C::AotTests {
  * - W3C SCXML 5.2: ECMAScript datamodel with _sessionid system variable
  */
 struct Test190 : public SimpleAotTest<Test190, 190> {
-    static constexpr const char *DESCRIPTION = "External queue via targetexpr (W3C 5.10.1 AOT Static Hybrid)";
+    static constexpr const char *DESCRIPTION = "W3C SCXML C.1: External queue via #_scxml_sessionid target";
     using SM = RSM::Generated::test190::test190;
 };
 

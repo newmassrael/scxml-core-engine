@@ -91,6 +91,76 @@
       "verified_date": "2025-10-31",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.2: param preserves duplicate keys with multiple values"
+    },
+    "179": {
+      "verified_date": "2025-10-31",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: content element evaluation and data preservation in send"
+    },
+    "183": {
+      "verified_date": "2025-10-31",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: If 'idlocation' is present, the SCXML Processor MUST generate an id when the parent send element is evaluated and store it in this location"
+    },
+    "185": {
+      "verified_date": "2025-10-31",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: send delay specification - delayed event dispatched after interval elapses"
+    },
+    "186": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: send param evaluation at send execution time (not dispatch time)"
+    },
+    "187": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: If the SCXML session terminates before the delay interval has elapsed, the SCXML Processor MUST discard the message without attempting to deliver it."
+    },
+    "189": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML C.1: target='#_internal' adds event to internal queue (higher priority than external queue)"
+    },
+    "190": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML C.1: External queue via #_scxml_sessionid target - Validated with 1:1 log comparison"
+    },
+    "191": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML C.1: #_parent target sends events to parent session's external queue"
+    },
+    "192": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML C.1: #_<invokeid> target sends events to child session's external queue"
+    },
+    "193": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML C.1: SCXML Event I/O Processor without target routes events to external queue - Validated with 1:1 log comparison"
+    },
+    "194": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: If the value of the 'target' or 'targetexpr' attribute is not supported or invalid, the Processor MUST place the error error.execution on the internal event queue"
+    },
+    "198": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: Default send type is SCXMLEventProcessor when type/typeexpr not specified"
+    },
+    "199": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: If the SCXML Processor does not support the type that is specified, it MUST place the event error.execution on the internal event queue"
+    },
+    "200": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.2: SCXML Processors MUST support the type http://www.w3.org/TR/scxml/#SCXMLEventProcessor"
     }
   }
 }

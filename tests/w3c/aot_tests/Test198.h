@@ -6,12 +6,15 @@
 namespace RSM::W3C::AotTests {
 
 /**
- * @brief W3C SCXML Test 198
+ * @brief W3C SCXML 6.2: Default send type is SCXMLEventProcessor when type/typeexpr not specified
  *
- * Auto-generated AOT test registry.
+ * Tests that when neither 'type' nor 'typeexpr' attributes are specified in a <send> element,
+ * the SCXML Processor defaults to using the SCXML Event I/O Processor
+ * (http://www.w3.org/TR/scxml/#SCXMLEventProcessor), verifiable through _event.origintype.
  */
 struct Test198 : public SimpleAotTest<Test198, 198> {
-    static constexpr const char *DESCRIPTION = "W3C SCXML test 198 (AOT)";
+    static constexpr const char *DESCRIPTION =
+        "W3C SCXML 6.2: Default send type is SCXMLEventProcessor when type/typeexpr not specified";
     using SM = RSM::Generated::test198::test198;
 };
 

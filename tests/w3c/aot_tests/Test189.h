@@ -5,7 +5,7 @@
 namespace RSM::W3C::AotTests {
 
 /**
- * @brief W3C SCXML 5.10.1: Internal queue priority via target="#_internal"
+ * @brief W3C SCXML C.1: Internal queue priority via target="#_internal"
  *
  * Tests that events sent with target="#_internal" are placed on the internal event queue,
  * which has higher priority than the external event queue during event processing.
@@ -25,12 +25,13 @@ namespace RSM::W3C::AotTests {
  * - Uses Helper functions: SendHelper for internal/external queue routing
  *
  * W3C SCXML Features:
- * - W3C SCXML 5.10.1: #_internal target for internal event queue
+ * - W3C SCXML C.1: #_internal target for internal event queue
  * - W3C SCXML 5.9: Event processing order (internal queue > external queue)
  * - W3C SCXML 6.2: <send> element with event and target attributes
  */
 struct Test189 : public SimpleAotTest<Test189, 189> {
-    static constexpr const char *DESCRIPTION = "Internal queue priority (W3C 5.10.1 AOT Pure Static)";
+    static constexpr const char *DESCRIPTION =
+        "W3C SCXML C.1: target='#_internal' adds event to internal queue (higher priority than external queue)";
     using SM = RSM::Generated::test189::test189;
 };
 
