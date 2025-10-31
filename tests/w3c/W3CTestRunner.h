@@ -173,6 +173,21 @@ private:
     std::optional<TestReport> shouldSkipHttpTestInDockerTsan(const std::string &testDir,
                                                              const std::string &testId) const;
 
+    /**
+     * @brief W3C SCXML 6.2: Manual verification for Test 178 (duplicate param keys)
+     *
+     * Test 178 verifies that SCXML processors include all param key/value pairs,
+     * even when duplicate keys exist. This manual test validates that:
+     * 1. Send with duplicate param names (Var1=2, Var1=3) generates correct EventData
+     * 2. EventData contains both values: {"Var1":["2","3"]}
+     * 3. W3C SCXML 6.2 compliance: duplicates are preserved, not overwritten
+     *
+     * @param testDirectory Path to test directory
+     * @param report Test report to populate with results
+     * @return TestReport with validation results
+     */
+    TestReport runManualTest178(const std::string &testDirectory, TestReport &report);
+
 public:
     /**
      * @brief Constructor with dependency injection
