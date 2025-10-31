@@ -176,6 +176,11 @@
       "verified_date": "2025-11-01",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.3: cancel operation scoped to originating session, cannot affect child session's delayed events"
+    },
+    "208": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.3: The Processor SHOULD make its best attempt to cancel all delayed events with the specified id."
     }
   }
 }
