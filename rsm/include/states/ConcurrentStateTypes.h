@@ -7,6 +7,35 @@
 
 namespace RSM {
 
+/**
+ * @brief Transition descriptor for Interpreter engine parallel state conflict resolution
+ *
+ * @details
+ * Represents an enabled transition discovered during event processing in a concurrent region.
+ * Used to collect all enabled transitions before applying W3C SCXML Appendix D.2 conflict resolution.
+ *
+ * ARCHITECTURE.md Compliance:
+ * - Zero Duplication: Compatible with ConflictResolutionHelperString::TransitionDescriptor
+ * - W3C SCXML Appendix D.2: Optimal transition set selection
+ */
+struct TransitionDescriptorString {
+    std::string source;                // Source state ID
+    std::string target;                // Target state ID (empty for targetless transitions)
+    std::string event;                 // Event name that triggered this transition
+    std::vector<std::string> exitSet;  // States to be exited (computed by region)
+    int transitionIndex = 0;           // Document order index for preemption
+    bool hasActions = false;           // W3C SCXML 3.13: Whether transition has action nodes
+    bool isInternal = false;           // W3C SCXML 3.13: Whether transition is type="internal"
+    bool isExternal = false;           // W3C SCXML 3.13: Whether transition exits parallel state
+
+    TransitionDescriptorString() = default;
+
+    TransitionDescriptorString(std::string src, std::string tgt, std::string evt, int idx = 0, bool actions = false,
+                               bool internal = false, bool external = false)
+        : source(std::move(src)), target(std::move(tgt)), event(std::move(evt)), transitionIndex(idx),
+          hasActions(actions), isInternal(internal), isExternal(external) {}
+};
+
 // Forward declarations
 class IConcurrentRegion;
 class IStateNode;
@@ -26,6 +55,11 @@ struct ConcurrentOperationResult {
     std::string externalTransitionTarget;  // Empty if no external transition
     std::string externalTransitionEvent;   // Event that triggered the external transition
     std::string externalTransitionSource;  // Source state ID (safer than raw pointer)
+
+    // W3C SCXML Appendix D.2: Enabled transitions for conflict resolution
+    // Region collects all enabled transitions and returns them to StateMachine
+    // StateMachine applies ConflictResolutionHelperString to select optimal transition set
+    std::vector<TransitionDescriptorString> enabledTransitions;
 
     static ConcurrentOperationResult success(const std::string &regionId) {
         ConcurrentOperationResult result;

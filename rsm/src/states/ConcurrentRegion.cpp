@@ -158,9 +158,13 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
 
     LOG_DEBUG("Processing event '{}' in region: {}", event.eventName, id_);
 
-    // SCXML W3C specification section 3.4: Process event in region's current state
+    // W3C SCXML Appendix D.2: Collect enabled transitions instead of executing immediately
+    // This allows StateMachine to apply conflict resolution across all regions
+    ConcurrentOperationResult result = ConcurrentOperationResult::success(id_);
+
+    // W3C SCXML 3.13: Hierarchical event bubbling - check from current state up through parent hierarchy
     if (!currentState_.empty()) {
-        // Find current state node and check for event transitions
+        // Find current state node
         std::shared_ptr<IStateNode> stateNode = nullptr;
         if (currentState_ == rootState_->getId()) {
             stateNode = rootState_;
@@ -176,23 +180,26 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
         }
 
         if (stateNode) {
-            const auto &transitions = stateNode->getTransitions();
+            // W3C SCXML 3.12: Hierarchical event bubbling (innermost to outermost)
+            // Check from current active state up through parent hierarchy
+            IStateNode *checkStatePtr = stateNode.get();  // Use raw pointer for hierarchy traversal
+            int transitionIndex = 0;
 
-            // SCXML W3C compliant transition processing
-            for (const auto &transition : transitions) {
-                // W3C SCXML 3.13: Wildcard event matching - "*" matches any event
-                std::string transitionEvent = transition->getEvent();
-                bool eventMatches = (transitionEvent == event.eventName) || (transitionEvent == "*");
+            while (checkStatePtr) {
+                const auto &transitions = checkStatePtr->getTransitions();
 
-                if (transitionEvent == "*") {
-                    LOG_DEBUG("ConcurrentRegion: Wildcard transition found in {} - event='{}' matches '{}'", id_,
-                              event.eventName, transitionEvent);
-                }
+                // W3C SCXML 3.13: Find first enabled transition in document order
+                for (const auto &transition : transitions) {
+                    // W3C SCXML 3.13: Wildcard event matching - "*" matches any event
+                    std::string transitionEvent = transition->getEvent();
+                    bool eventMatches = (transitionEvent == event.eventName) || (transitionEvent == "*");
 
-                if (eventMatches) {
-                    LOG_DEBUG("ConcurrentRegion: Transition matched in {} - transition event='{}', incoming event='{}'",
-                              id_, transitionEvent, event.eventName);
-                    // W3C SCXML: Evaluate guard condition before executing transition
+                    if (!eventMatches) {
+                        transitionIndex++;
+                        continue;
+                    }
+
+                    // W3C SCXML: Evaluate guard condition before enabling transition
                     std::string guard = transition->getGuard();
                     bool conditionResult = true;  // Default to true if no guard condition
 
@@ -209,120 +216,101 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                         }
                     }
 
-                    // Only execute transition if condition is true
+                    // Skip this transition if condition is false
                     if (!conditionResult) {
                         LOG_DEBUG("ConcurrentRegion: Skipping transition due to false guard condition: {}", guard);
-                        continue;  // Try next transition
+                        transitionIndex++;
+                        continue;
                     }
 
-                    // W3C SCXML: Execute transition actions for ALL transitions (with or without targets)
-                    // Targetless transitions are internal transitions that execute actions without changing state
-                    const auto &actionNodes = transition->getActionNodes();
-                    if (!actionNodes.empty()) {
-                        // P1 refactoring: Use helper method for DRY principle
-                        std::string actionContext = fmt::format("transition event='{}'", transitionEvent);
-                        executeActionNodes(actionNodes, actionContext);
-                    }
-
+                    // Found enabled transition - collect it instead of executing
                     const auto &targets = transition->getTargets();
-                    if (!targets.empty()) {
-                        std::string targetState = targets[0];
+                    std::string targetState = targets.empty() ? checkStatePtr->getId() : targets[0];
+                    bool isInternal = transition->isInternal();
+                    bool hasActions = !transition->getActionNodes().empty();
 
-                        // W3C SCXML: Check if target is outside this region's scope
-                        // Transitions to states outside the region must be handled by parent (StateMachine)
-                        // Use recursive descendant check to handle deeply nested states
-                        bool isTargetInRegion = isDescendantOf(rootState_, targetState);
+                    LOG_DEBUG("ConcurrentRegion: Found enabled transition in state {}: {} -> {} (event='{}', "
+                              "internal={}, hasActions={})",
+                              checkStatePtr->getId(), checkStatePtr->getId(), targetState, transitionEvent, isInternal,
+                              hasActions);
 
-                        if (!isTargetInRegion) {
-                            LOG_DEBUG("ConcurrentRegion: Transition target '{}' is outside region '{}' - "
-                                      "external/cross-region transition",
-                                      targetState, id_);
+                    // W3C SCXML 3.13: Check if transition exits the parallel state
+                    // External: transition target is OUTSIDE the parallel state (e.g., p0s3 -> s1)
+                    // Internal: transition target is INSIDE the parallel state (e.g., p0s2 -> p0s1)
+                    IStateNode *parallelStatePtr = rootState_->getParent();
+                    bool isExternalTransition = true;  // Default to external for safety
 
-                            // W3C SCXML 3.13: Actions already executed above for ALL transitions
-                            // W3C SCXML 3.4: Return external transition info so parent can execute it
-                            // Parent (ConcurrentStateNode) will determine if this is cross-region or truly external
-                            return ConcurrentOperationResult::externalTransition(id_, targetState, event.eventName,
-                                                                                 currentState_);
-                        }
-
-                        LOG_DEBUG("Executing transition: {} -> {} on event: {}", currentState_, targetState,
-                                  event.eventName);
-
-                        // W3C SCXML: Actions already executed above for ALL transitions
-                        // Update current state
-                        currentState_ = targetState;
-                        LOG_DEBUG("Updated current state to: {}", currentState_);
-
-                        // SCXML W3C compliance: Execute entry actions for target state
-                        if (executionContext_) {
-                            // Find target state in children and execute entry actions
-                            const auto &children = rootState_->getChildren();
-                            for (const auto &child : children) {
-                                if (child && child->getId() == targetState) {
-                                    // W3C SCXML 3.8: Execute entry action blocks
-                                    const auto &entryBlocks = child->getEntryActionBlocks();
-                                    if (!entryBlocks.empty()) {
-                                        LOG_DEBUG(
-                                            "W3C SCXML 3.8: Executing {} entry action blocks for target state: {}",
-                                            entryBlocks.size(), targetState);
-
-                                        for (const auto &actionBlock : entryBlocks) {
-                                            for (const auto &actionNode : actionBlock) {
-                                                if (!actionNode) {
-                                                    LOG_WARN("Null entry ActionNode "
-                                                             "encountered, skipping");
-                                                    continue;
-                                                }
-
-                                                try {
-                                                    LOG_DEBUG("Executing entry "
-                                                              "ActionNode: {} (ID: {})",
-                                                              actionNode->getActionType(), actionNode->getId());
-                                                    if (actionNode->execute(*executionContext_)) {
-                                                        LOG_DEBUG("Successfully executed "
-                                                                  "entry ActionNode: {}",
-                                                                  actionNode->getActionType());
-                                                    } else {
-                                                        LOG_WARN("ConcurrentRegion::processEvent - Entry ActionNode "
-                                                                 "failed: {}",
-                                                                 actionNode->getActionType());
-                                                    }
-                                                } catch (const std::exception &e) {
-                                                    LOG_WARN("Entry ActionNode exception: "
-                                                             "{} Error: {}",
-                                                             actionNode->getActionType(), e.what());
-                                                }
-                                            }
-                                        }
-                                    }
-                                    break;  // Exit loop since target state found
-                                }
+                    if (parallelStatePtr) {
+                        // W3C SCXML: Check if target is a descendant of ANY region in the parallel state
+                        // Parallel state children = regions (p0s1, p0s2, p0s3, p0s4)
+                        const auto &parallelChildren = parallelStatePtr->getChildren();
+                        for (const auto &regionRoot : parallelChildren) {
+                            if (regionRoot && isDescendantOf(regionRoot, targetState)) {
+                                // Target is within this parallel state's regions -> internal transition
+                                isExternalTransition = false;
+                                LOG_DEBUG("ConcurrentRegion: Target '{}' is within parallel state '{}' -> internal "
+                                          "transition",
+                                          targetState, parallelStatePtr->getId());
+                                break;
                             }
                         }
-                        break;
+
+                        if (isExternalTransition) {
+                            LOG_DEBUG(
+                                "ConcurrentRegion: Target '{}' is outside parallel state '{}' -> external transition",
+                                targetState, parallelStatePtr->getId());
+                        }
                     }
+
+                    if (isExternalTransition) {
+                        LOG_DEBUG("ConcurrentRegion: Transition target '{}' is outside region '{}' - marking as "
+                                  "external for conflict resolution",
+                                  targetState, id_);
+                    }
+
+                    // Create transition descriptor for conflict resolution
+                    TransitionDescriptorString descriptor;
+                    descriptor.source = checkStatePtr->getId();
+                    descriptor.target = targetState;
+                    descriptor.event = event.eventName;
+                    descriptor.transitionIndex = transitionIndex;
+                    descriptor.hasActions = hasActions;
+                    descriptor.isInternal = isInternal;
+                    descriptor.isExternal = isExternalTransition;
+
+                    // Compute exit set (states to be exited)
+                    // W3C SCXML: Exit set is all states from source up to (but not including) LCA with target
+                    descriptor.exitSet = computeExitSet(checkStatePtr->getId(), targetState);
+
+                    LOG_DEBUG("ConcurrentRegion: Transition descriptor: {} -> {} (exitSet size: {}, transitionIndex: "
+                              "{}, external: {})",
+                              descriptor.source, descriptor.target, descriptor.exitSet.size(),
+                              descriptor.transitionIndex, descriptor.isExternal);
+
+                    result.enabledTransitions.push_back(descriptor);
+                    return result;  // W3C SCXML 3.13: First enabled transition wins in hierarchy
+                }
+
+                // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
+                // But STOP at region boundary - don't bubble beyond the region's root state
+                // This prevents regions from collecting transitions from the parallel state's ancestors
+                if (checkStatePtr == rootState_.get()) {
+                    LOG_DEBUG("ConcurrentRegion: Reached region boundary at {}, stopping hierarchy bubbling",
+                              checkStatePtr->getId());
+                    break;  // Reached region boundary, stop bubbling
+                }
+
+                checkStatePtr = checkStatePtr->getParent();
+                if (!checkStatePtr) {
+                    break;  // Reached model root, no more parents
                 }
             }
         }
     }
 
-    updateCurrentState();
-
-    // Check if we've reached a final state after event processing
-    if (determineIfInFinalState()) {
-        isInFinalState_ = true;
-        status_ = ConcurrentRegionStatus::FINAL;
-        LOG_DEBUG("Region {} reached final state", id_);
-
-        // W3C SCXML 3.4 test 570: Generate done.state.{parentId} event when region reaches final state
-        // The region ID corresponds to the parent composite state (e.g., p0s1)
-        if (doneStateCallback_) {
-            doneStateCallback_(id_);
-            LOG_DEBUG("Invoked done state callback for region: {}", id_);
-        }
-    }
-
-    return ConcurrentOperationResult::success(id_);
+    // No enabled transitions found - return success with empty enabledTransitions
+    LOG_DEBUG("ConcurrentRegion: No enabled transitions found in region: {}", id_);
+    return result;
 }
 
 std::shared_ptr<IStateNode> ConcurrentRegion::getRootState() const {
@@ -432,6 +420,23 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
 
     LOG_DEBUG("ConcurrentRegion: Setting currentState for region {} to: {}", id_, stateId);
     currentState_ = stateId;
+
+    // W3C SCXML 3.4: Update isInFinalState_ flag when currentState changes
+    // This is crucial for parallel state completion detection
+    isInFinalState_ = determineIfInFinalState();
+
+    // Update region status to FINAL if we entered a final state
+    if (isInFinalState_ && status_ != ConcurrentRegionStatus::FINAL) {
+        status_ = ConcurrentRegionStatus::FINAL;
+        LOG_DEBUG("ConcurrentRegion: Region {} entered final state '{}', updating status to FINAL", id_, stateId);
+
+        // W3C SCXML 3.13: Generate done.state.{regionId} event when compound state enters final
+        // test570: When p0s1 (compound region) reaches p0s1final, generate done.state.p0s1
+        if (doneStateCallback_) {
+            LOG_DEBUG("ConcurrentRegion: Calling doneStateCallback for region {}", id_);
+            doneStateCallback_(id_);
+        }
+    }
 }
 
 bool ConcurrentRegion::isInErrorState() const {
@@ -524,6 +529,140 @@ void ConcurrentRegion::updateCurrentState() {
     activeStates_.push_back(currentState_);
 
     LOG_DEBUG("Region {} current state: {}", id_, currentState_);
+}
+
+std::vector<std::string> ConcurrentRegion::computeExitSet(const std::string &source, const std::string &target) const {
+    std::vector<std::string> exitSet;
+
+    // W3C SCXML Appendix D: Compute exit set for transition
+    // Exit set = states from source up to (but not including) LCA with target
+
+    // Helper lambda to find state node by ID within a subtree
+    std::function<std::shared_ptr<IStateNode>(const std::shared_ptr<IStateNode> &, const std::string &)> findNode;
+    findNode = [&findNode](const std::shared_ptr<IStateNode> &node,
+                           const std::string &id) -> std::shared_ptr<IStateNode> {
+        if (!node) {
+            return nullptr;
+        }
+        if (node->getId() == id) {
+            return node;
+        }
+        for (const auto &child : node->getChildren()) {
+            if (auto found = findNode(child, id)) {
+                return found;
+            }
+        }
+        return nullptr;
+    };
+
+    // Helper lambda to search across all sibling regions (within parallel state)
+    auto findInParallelState = [&](const std::string &stateId) -> std::shared_ptr<IStateNode> {
+        IStateNode *parallelStatePtr = rootState_->getParent();
+        if (!parallelStatePtr) {
+            return nullptr;
+        }
+
+        // Search in all children (regions) of the parallel state
+        const auto &parallelChildren = parallelStatePtr->getChildren();
+        for (const auto &regionRoot : parallelChildren) {
+            if (regionRoot) {
+                if (auto found = findNode(regionRoot, stateId)) {
+                    return found;
+                }
+            }
+        }
+        return nullptr;
+    };
+
+    // Try to find target in current region first
+    auto targetNode = findNode(rootState_, target);
+    bool isCrossRegion = false;
+
+    // If not found in current region, check sibling regions
+    if (!targetNode) {
+        targetNode = findInParallelState(target);
+        if (targetNode) {
+            isCrossRegion = true;  // Target is in sibling region
+        }
+    }
+
+    // Build path from source to root
+    std::vector<std::string> sourcePath;
+    auto sourceNode = findNode(rootState_, source);
+    while (sourceNode) {
+        sourcePath.push_back(sourceNode->getId());
+        IStateNode *parent = sourceNode->getParent();
+        sourceNode = parent ? findNode(rootState_, parent->getId()) : nullptr;
+    }
+
+    // Calculate exitSet based on transition type
+    if (!targetNode) {
+        // External transition: target is outside parallel state entirely
+        // W3C SCXML: Exit all states from source to region root, include parallel state
+        for (const auto &state : sourcePath) {
+            exitSet.push_back(state);
+            if (state == rootState_->getId()) {
+                // Add parallel state to exitSet for external transitions
+                IStateNode *parallelStatePtr = rootState_->getParent();
+                if (parallelStatePtr) {
+                    exitSet.push_back(parallelStatePtr->getId());
+                }
+                break;
+            }
+        }
+    } else if (isCrossRegion) {
+        // Cross-region transition: LCA is the parallel state
+        // W3C SCXML: Exit all states from source up to (but not including) parallel state
+        // This means: exit states in source region up to and including region root
+        for (const auto &state : sourcePath) {
+            exitSet.push_back(state);
+            if (state == rootState_->getId()) {
+                // Reached region root, stop here (don't include parallel state)
+                break;
+            }
+        }
+    } else {
+        // Within-region transition: normal LCA calculation
+        // Build path from target to root
+        std::vector<std::string> targetPath;
+        auto targetNodeCopy = targetNode;
+        while (targetNodeCopy) {
+            targetPath.push_back(targetNodeCopy->getId());
+            IStateNode *parent = targetNodeCopy->getParent();
+            targetNodeCopy = parent ? findNode(rootState_, parent->getId()) : nullptr;
+        }
+
+        // Find LCA (first common ancestor)
+        std::string lca;
+        for (const auto &sourceState : sourcePath) {
+            for (const auto &targetState : targetPath) {
+                if (sourceState == targetState) {
+                    lca = sourceState;
+                    break;
+                }
+            }
+            if (!lca.empty()) {
+                break;
+            }
+        }
+
+        // Exit set = states from source up to (but not including) LCA
+        for (const auto &state : sourcePath) {
+            if (state == lca) {
+                break;  // Don't include LCA
+            }
+            exitSet.push_back(state);
+        }
+
+        LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} (within-region, LCA: {}, exitSet size: {})", source,
+                  target, lca, exitSet.size());
+        return exitSet;
+    }
+
+    const char *transitionType = !targetNode ? "external" : (isCrossRegion ? "cross-region" : "within-region");
+    LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} ({}, exitSet size: {})", source, target, transitionType,
+              exitSet.size());
+    return exitSet;
 }
 
 bool ConcurrentRegion::isDescendantOf(const std::shared_ptr<IStateNode> &root, const std::string &targetId) const {

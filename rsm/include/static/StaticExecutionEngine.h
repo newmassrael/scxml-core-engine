@@ -588,6 +588,35 @@ protected:
 
                 LOG_DEBUG("AOT processEventQueues: Processing internal event, currentState={}",
                           static_cast<int>(currentState_));
+
+                // W3C SCXML 5.4.1: Stop processing events if TOP-LEVEL final state reached
+                // Parallel state internal final states generate done.state events, not stop processing
+                if (StatePolicy::isFinalState(currentState_)) {
+                    bool shouldStop = false;
+
+                    // W3C SCXML 3.7: Top-level final state = direct child of SCXML root (no parent)
+                    // Compound state internal final states have parents and generate done.state events
+                    // Applies to both simple and parallel state machines
+                    auto parent = StatePolicy::getParent(currentState_);
+                    if (parent.has_value()) {
+                        // Has parent = compound/parallel state child = non-top-level
+                        shouldStop = false;
+                    } else {
+                        // No parent = SCXML root child = top-level
+                        shouldStop = true;
+                    }
+
+                    if (shouldStop) {
+                        LOG_DEBUG("AOT processEventQueues: Top-level final state {} reached, stopping event processing",
+                                  static_cast<int>(currentState_));
+                        return false;
+                    } else {
+                        LOG_DEBUG("AOT processEventQueues: Non-top-level final state {} (inside parallel/compound), "
+                                  "continue processing done.state events",
+                                  static_cast<int>(currentState_));
+                    }
+                }
+
                 // Process event through transition logic
                 State oldState = currentState_;
                 std::vector<State> preTransitionStates =
@@ -599,9 +628,11 @@ protected:
                     transitionTaken, static_cast<int>(oldState), static_cast<int>(currentState_));
                 if (transitionTaken) {
                     // W3C SCXML 5.9.2: Internal self-transitions (non-descendant) behave as external
+                    // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
                     bool isSelfTransition = (oldState == currentState_);
                     bool needsHierarchicalHandling =
-                        (oldState != currentState_) || (isSelfTransition && policy_.lastTransitionIsInternal_);
+                        (oldState != currentState_) ||
+                        (isSelfTransition && policy_.lastTransitionIsInternal_ && !policy_.lastTransitionIsTargetless_);
 
                     if (needsHierarchicalHandling) {
                         LOG_DEBUG("AOT processEventQueues: State transition {} -> {}", static_cast<int>(oldState),
@@ -667,9 +698,11 @@ protected:
                     transitionTaken, static_cast<int>(oldState), static_cast<int>(currentState_));
                 if (transitionTaken) {
                     // W3C SCXML 5.9.2: Internal self-transitions (non-descendant) behave as external
+                    // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
                     bool isSelfTransition = (oldState == currentState_);
                     bool needsHierarchicalHandling =
-                        (oldState != currentState_) || (isSelfTransition && policy_.lastTransitionIsInternal_);
+                        (oldState != currentState_) ||
+                        (isSelfTransition && policy_.lastTransitionIsInternal_ && !policy_.lastTransitionIsTargetless_);
 
                     if (needsHierarchicalHandling) {
                         // W3C SCXML Appendix D: For parallel states, executeMicrostep already handled

@@ -293,6 +293,20 @@ private:
      * @param targetId Target state ID to find
      * @return true if target is descendant of root (including root itself)
      */
+    /**
+     * @brief Compute exit set for transition from source to target state
+     * @param source Source state ID
+     * @param target Target state ID
+     * @return Exit set (state IDs to be exited)
+     */
+    std::vector<std::string> computeExitSet(const std::string &source, const std::string &target) const;
+
+    /**
+     * @brief Recursively check if target state is a descendant of root state
+     * @param root Root state to search from
+     * @param targetId Target state ID to find
+     * @return true if target is descendant of root (including root itself)
+     */
     bool isDescendantOf(const std::shared_ptr<IStateNode> &root, const std::string &targetId) const;
 
     /**

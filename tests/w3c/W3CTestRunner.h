@@ -219,6 +219,16 @@ public:
     TestReport runAotTest(int testId);
 
     /**
+     * @brief Run a single test with AOT engine (string variant)
+     *
+     * Supports variant test IDs like "403a", "403b", "403c"
+     *
+     * @param testId Test ID string (e.g., "144", "403a", "403b")
+     * @return TestReport with engineType="aot"
+     */
+    TestReport runAotTest(const std::string &testId);
+
+    /**
      * @brief Run filtered tests
      * @param conformanceLevel Filter by conformance level
      * @param specSection Filter by spec section

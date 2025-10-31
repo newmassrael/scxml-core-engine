@@ -44,12 +44,46 @@ public:
 
                     // Check if directory name is numeric (W3C test ID)
                     if (isNumericTestDir(dirName)) {
-                        // Verify required files exist
-                        std::string txmlPath = getTXMLPath(entry.path().string());
-                        std::string metadataPath = getMetadataPath(entry.path().string());
+                        // W3C SCXML: Check for variant test files (test403a.txml, test403b.txml, etc.)
+                        // Format: testNNNx.txml where NNN is test ID and x is variant suffix (a,b,c,...)
+                        std::string dirPath = entry.path().string();
+                        std::string metadataPath = getMetadataPath(dirPath);
 
-                        if (std::filesystem::exists(txmlPath) && std::filesystem::exists(metadataPath)) {
-                            testDirs.push_back(entry.path().string());
+                        // Metadata must exist for all tests
+                        if (!std::filesystem::exists(metadataPath)) {
+                            continue;
+                        }
+
+                        int testId = extractTestId(dirPath);
+                        std::string testPrefix = "test" + std::to_string(testId);
+
+                        // Scan for all testNNN*.txml files
+                        std::vector<std::string> txmlFiles;
+                        for (const auto &fileEntry : std::filesystem::directory_iterator(dirPath)) {
+                            if (fileEntry.is_regular_file() && fileEntry.path().extension() == ".txml") {
+                                std::string filename = fileEntry.path().filename().string();
+                                if (filename.find(testPrefix) == 0) {
+                                    txmlFiles.push_back(filename);
+                                }
+                            }
+                        }
+
+                        // Process each variant
+                        for (const auto &txmlFile : txmlFiles) {
+                            // Extract variant suffix if present
+                            // e.g., "test403a.txml" → variant suffix is "a"
+                            // e.g., "test403.txml" → no variant suffix
+                            std::string stem = txmlFile.substr(0, txmlFile.find(".txml"));  // "test403a" or "test403"
+
+                            if (stem == testPrefix) {
+                                // Base file without variant suffix
+                                testDirs.push_back(dirPath);
+                            } else if (stem.length() > testPrefix.length()) {
+                                // Variant file with suffix
+                                std::string variantSuffix = stem.substr(testPrefix.length());  // "a", "b", "c", etc.
+                                // Format: "dirPath:variantSuffix" (e.g., "resources/403:a")
+                                testDirs.push_back(dirPath + ":" + variantSuffix);
+                            }
                         }
                     }
                 }
@@ -58,24 +92,53 @@ public:
             throw std::runtime_error("Failed to discover W3C tests: " + std::string(e.what()));
         }
 
-        // Sort test directories by test ID
+        // Sort test directories by test ID and variant
         std::sort(testDirs.begin(), testDirs.end(), [](const std::string &a, const std::string &b) {
-            int idA = extractTestId(a);
-            int idB = extractTestId(b);
-            return idA < idB;
+            // Extract base test ID and variant suffix
+            auto extractIdAndVariant = [](const std::string &path) -> std::pair<int, std::string> {
+                size_t colonPos = path.find(':');
+                std::string basePath = (colonPos != std::string::npos) ? path.substr(0, colonPos) : path;
+                std::string variant = (colonPos != std::string::npos) ? path.substr(colonPos + 1) : "";
+                int id = extractTestId(basePath);
+                return {id, variant};
+            };
+
+            auto [idA, variantA] = extractIdAndVariant(a);
+            auto [idB, variantB] = extractIdAndVariant(b);
+
+            // Sort by test ID first, then by variant suffix
+            if (idA != idB) {
+                return idA < idB;
+            }
+            return variantA < variantB;
         });
 
         return testDirs;
     }
 
     std::string getTXMLPath(const std::string &testDirectory) override {
-        // Extract test ID from directory path
-        int testId = extractTestId(testDirectory);
-        return testDirectory + "/test" + std::to_string(testId) + ".txml";
+        // Handle variant format: "dirPath:variant" (e.g., "resources/403:a")
+        size_t colonPos = testDirectory.find(':');
+        std::string basePath = testDirectory;
+        std::string variantSuffix = "";
+
+        if (colonPos != std::string::npos) {
+            basePath = testDirectory.substr(0, colonPos);        // "resources/403"
+            variantSuffix = testDirectory.substr(colonPos + 1);  // "a"
+        }
+
+        int testId = extractTestId(basePath);
+        // For variant: "resources/403/test403a.txml"
+        // For base:    "resources/403/test403.txml"
+        return basePath + "/test" + std::to_string(testId) + variantSuffix + ".txml";
     }
 
     std::string getMetadataPath(const std::string &testDirectory) override {
-        return testDirectory + "/metadata.txt";
+        // Handle variant format: "dirPath:variant" (e.g., "resources/403:a")
+        // Metadata is shared across variants, so strip variant suffix
+        size_t colonPos = testDirectory.find(':');
+        std::string basePath = (colonPos != std::string::npos) ? testDirectory.substr(0, colonPos) : testDirectory;
+        return basePath + "/metadata.txt";
     }
 
     std::vector<std::string> filterTests(const std::string &conformanceLevel, const std::string &specSection) override {

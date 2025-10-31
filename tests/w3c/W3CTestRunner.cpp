@@ -1545,15 +1545,25 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
 
                 // Run AOT engine test (runAotTest will use Interpreter fallback if needed)
                 try {
-                    LOG_INFO("W3C Test {}: Running AOT engine test for variant", testId);
-                    TestReport aotReport = runAotTest(testId);
-                    // Preserve the variant suffix from interpreter test report (last added report)
-                    if (!matchingReports.empty()) {
+                    // Extract variant suffix from testDir (e.g., "path/403:a" -> "a")
+                    std::string variantSuffix;
+                    size_t colonPos = testDir.find(':');
+                    if (colonPos != std::string::npos) {
+                        variantSuffix = testDir.substr(colonPos + 1);
+                    }
+
+                    // Construct full test ID with variant suffix (e.g., "403" + "a" -> "403a")
+                    std::string fullTestId = std::to_string(testId) + variantSuffix;
+
+                    LOG_INFO("W3C Test {}: Running AOT engine test for variant", fullTestId);
+                    TestReport aotReport = runAotTest(fullTestId);
+                    // testId should already be set correctly by runAotTest, but preserve if needed
+                    if (aotReport.testId.empty() && !matchingReports.empty()) {
                         aotReport.testId = matchingReports.back().testId;
                     }
                     matchingReports.push_back(aotReport);
                     reporter_->reportTestResult(aotReport);
-                    LOG_INFO("W3C Test {}: AOT engine test completed for variant", testId);
+                    LOG_INFO("W3C Test {}: AOT engine test completed for variant", fullTestId);
                 } catch (const std::exception &e) {
                     LOG_ERROR("W3C Test {}: AOT engine test failed for variant: {}", testId, e.what());
                     // Don't throw - continue with other variants
@@ -1892,6 +1902,132 @@ TestReport W3CTestRunner::runAotTest(int testId) {
     TestReport report;
     report.timestamp = std::chrono::system_clock::now();
     report.testId = std::to_string(testId);
+    report.engineType = "aot";
+    report.testType = "not_registered";
+
+    LOG_WARN("W3C AOT Test: Test {} not registered in AotTestRegistry - check CMakeLists.txt", testId);
+    report.validationResult = ValidationResult(false, TestResult::FAIL, "Test not registered in AOT system");
+    report.executionContext.finalState = "fail";
+    report.executionContext.executionTime = std::chrono::milliseconds(0);
+
+    return report;
+}
+
+TestReport W3CTestRunner::runAotTest(const std::string &testId) {
+    // Check W3CTestRegistry to determine if test should use Interpreter fallback
+    if (W3CTestRegistry::isInterpreterTest(testId)) {
+        LOG_INFO("AOT Test {}: Using Interpreter fallback (Interpreter-only per W3CTestRegistry)", testId);
+
+        // Run with Interpreter engine as fallback
+        auto testDirectories = testSuite_->discoverTests();
+        for (const auto &testDir : testDirectories) {
+            // Extract test ID from directory (handle variant suffix)
+            // testDir format: "path/403:a" or "path/144"
+            std::string pathStr = testDir;
+            size_t colonPos = pathStr.find(':');
+            std::string variantSuffix;
+            if (colonPos != std::string::npos) {
+                variantSuffix = pathStr.substr(colonPos + 1);
+                pathStr = pathStr.substr(0, colonPos);
+            }
+
+            std::filesystem::path path(pathStr);
+            std::string dirName = path.filename().string();
+            std::string fullTestId = dirName + variantSuffix;
+
+            if (fullTestId == testId) {
+                TestReport report = runSingleTest(testDir);
+                // Mark as AOT engine but using Interpreter fallback
+                report.engineType = "aot";
+                report.testType = "interpreter_fallback";
+
+                // Check if test is verified (passed validate-test-execution with LOW RISK)
+                {
+                    std::lock_guard<std::mutex> lock(verificationMutex_);
+                    auto it = verifiedTests_.find(report.testId);
+                    if (it != verifiedTests_.end()) {
+                        report.verified = true;
+                        LOG_DEBUG("AOT Test {} (Interpreter fallback) is verified (passed validate-test-execution)",
+                                  report.testId);
+                    }
+                }
+
+                return report;
+            }
+        }
+
+        // Test not found in test suite
+        TestReport report;
+        report.timestamp = std::chrono::system_clock::now();
+        report.testId = testId;
+        report.engineType = "aot";
+        report.testType = "interpreter_fallback";
+        report.validationResult = ValidationResult(false, TestResult::ERROR, "Test not found in test suite");
+        report.executionContext.finalState = "error";
+        report.executionContext.executionTime = std::chrono::milliseconds(0);
+        return report;
+    }
+
+    // Try registry-based test first (new modular system)
+    auto registryTest = RSM::W3C::AotTests::AotTestRegistry::instance().createTest(testId);
+    if (registryTest) {
+        TestReport report;
+        report.timestamp = std::chrono::system_clock::now();
+        report.testId = testId;
+        report.engineType = "aot";
+        report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_JSENGINE
+
+        auto startTime = std::chrono::steady_clock::now();
+
+        try {
+            bool testPassed = registryTest->run();
+            std::string testDescription = registryTest->getDescription();
+
+            auto endTime = std::chrono::steady_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+            if (testPassed) {
+                report.validationResult = ValidationResult(true, TestResult::PASS, testDescription);
+                report.executionContext.finalState = "pass";
+            } else {
+                report.validationResult = ValidationResult(false, TestResult::FAIL, testDescription);
+                report.executionContext.finalState = "fail";
+            }
+
+            report.executionContext.executionTime = duration;
+
+            LOG_INFO("AOT Test {} ({}): {} in {}ms", testId, testDescription, testPassed ? "PASS" : "FAIL",
+                     duration.count());
+
+            // Check if test is verified (passed validate-test-execution with LOW RISK)
+            {
+                std::lock_guard<std::mutex> lock(verificationMutex_);
+                auto it = verifiedTests_.find(report.testId);
+                if (it != verifiedTests_.end()) {
+                    report.verified = true;
+                    LOG_DEBUG("AOT Test {} is verified (passed validate-test-execution)", report.testId);
+                }
+            }
+
+            return report;
+
+        } catch (const std::exception &e) {
+            auto endTime = std::chrono::steady_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime);
+
+            LOG_ERROR("AOT Test {} failed with exception: {}", testId, e.what());
+            report.validationResult = ValidationResult(false, TestResult::ERROR, e.what());
+            report.executionContext.finalState = "error";
+            report.executionContext.executionTime = duration;
+            return report;
+        }
+    }
+
+    // Fallback: Test not registered in AOT system
+    // This should not happen if W3CTestRegistry is properly maintained
+    TestReport report;
+    report.timestamp = std::chrono::system_clock::now();
+    report.testId = testId;
     report.engineType = "aot";
     report.testType = "not_registered";
 
