@@ -269,5 +269,126 @@ TEST_F(SCXMLParserBasicTest, ParseFinalStates) {
     EXPECT_EQ(failureDoneData.getContent(), "'failed'") << "failure_end donedata content incorrect";
 }
 
+// Test onentry/onexit actions
+TEST_F(SCXMLParserBasicTest, ParseOnentryOnexitActions) {
+    std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="active">
+    <state id="active">
+        <onentry>
+            <script>console.log('entering active');</script>
+            <assign location="entered" expr="true"/>
+        </onentry>
+        <onexit>
+            <script>console.log('exiting active');</script>
+            <assign location="exited" expr="true"/>
+        </onexit>
+        <transition event="done" target="end"/>
+    </state>
+    <final id="end"/>
+</scxml>)";
+
+    auto model = parser_->parseContent(scxmlContent);
+    ASSERT_NE(model, nullptr);
+    EXPECT_FALSE(parser_->hasErrors());
+
+    // Verify active state exists
+    auto activeState = model->findStateById("active");
+    ASSERT_NE(activeState, nullptr) << "Active state not found";
+
+    // Verify onentry actions
+    auto entryBlocks = activeState->getEntryActionBlocks();
+    ASSERT_EQ(entryBlocks.size(), 1) << "Should have 1 onentry block";
+    ASSERT_EQ(entryBlocks[0].size(), 2) << "Onentry block should have 2 actions";
+    EXPECT_EQ(entryBlocks[0][0]->getActionType(), "script") << "First onentry action should be script";
+    EXPECT_EQ(entryBlocks[0][1]->getActionType(), "assign") << "Second onentry action should be assign";
+
+    // Verify onexit actions
+    auto exitBlocks = activeState->getExitActionBlocks();
+    ASSERT_EQ(exitBlocks.size(), 1) << "Should have 1 onexit block";
+    ASSERT_EQ(exitBlocks[0].size(), 2) << "Onexit block should have 2 actions";
+    EXPECT_EQ(exitBlocks[0][0]->getActionType(), "script") << "First onexit action should be script";
+    EXPECT_EQ(exitBlocks[0][1]->getActionType(), "assign") << "Second onexit action should be assign";
+}
+
+// Test eventless transitions
+TEST_F(SCXMLParserBasicTest, ParseEventlessTransitions) {
+    std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="start">
+    <state id="start">
+        <transition target="automatic" cond="true"/>
+    </state>
+    <state id="automatic">
+        <transition target="end"/>
+    </state>
+    <final id="end"/>
+</scxml>)";
+
+    auto model = parser_->parseContent(scxmlContent);
+    ASSERT_NE(model, nullptr);
+    EXPECT_FALSE(parser_->hasErrors());
+
+    // Verify start state eventless transition
+    auto startState = model->findStateById("start");
+    ASSERT_NE(startState, nullptr) << "Start state not found";
+
+    auto startTransitions = startState->getTransitions();
+    ASSERT_EQ(startTransitions.size(), 1) << "Start state should have 1 transition";
+
+    auto eventlessTransition1 = startTransitions[0];
+    EXPECT_TRUE(eventlessTransition1->getEvent().empty()) << "Transition should be eventless (no event attribute)";
+    EXPECT_EQ(eventlessTransition1->getGuard(), "true") << "First eventless transition should have cond='true'";
+
+    // Verify automatic state eventless transition
+    auto automaticState = model->findStateById("automatic");
+    ASSERT_NE(automaticState, nullptr) << "Automatic state not found";
+
+    auto automaticTransitions = automaticState->getTransitions();
+    ASSERT_EQ(automaticTransitions.size(), 1) << "Automatic state should have 1 transition";
+
+    auto eventlessTransition2 = automaticTransitions[0];
+    EXPECT_TRUE(eventlessTransition2->getEvent().empty()) << "Transition should be eventless (no event attribute)";
+    EXPECT_TRUE(eventlessTransition2->getGuard().empty()) << "Second eventless transition should have no condition";
+}
+
+// Test explicit initial transition
+TEST_F(SCXMLParserBasicTest, ParseExplicitInitialTransition) {
+    std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="compound">
+    <state id="compound">
+        <initial>
+            <transition target="s1">
+                <script>console.log('initializing');</script>
+            </transition>
+        </initial>
+        <state id="s1">
+            <transition event="next" target="s2"/>
+        </state>
+        <state id="s2"/>
+    </state>
+</scxml>)";
+
+    auto model = parser_->parseContent(scxmlContent);
+    ASSERT_NE(model, nullptr);
+    EXPECT_FALSE(parser_->hasErrors());
+
+    // Verify compound state exists
+    auto compoundState = model->findStateById("compound");
+    ASSERT_NE(compoundState, nullptr) << "Compound state not found";
+
+    // Verify explicit initial transition
+    auto initialTransition = compoundState->getInitialTransition();
+    ASSERT_NE(initialTransition, nullptr) << "Compound state should have explicit initial transition";
+
+    // Verify initial transition target
+    auto targets = initialTransition->getTargets();
+    ASSERT_EQ(targets.size(), 1) << "Initial transition should have 1 target";
+    EXPECT_EQ(targets[0], "s1") << "Initial transition target should be 's1'";
+
+    // Verify initial transition has action (script)
+    auto actions = initialTransition->getActionNodes();
+    ASSERT_EQ(actions.size(), 1) << "Initial transition should have 1 action";
+    EXPECT_EQ(actions[0]->getActionType(), "script") << "Initial transition action should be script";
+}
+
 }  // namespace Tests
 }  // namespace RSM
