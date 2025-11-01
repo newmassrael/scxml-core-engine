@@ -455,23 +455,24 @@ TEST_F(StateMachineIntegrationTest, W3C_Test250_InvokeOnexitHandlers) {
     <final id="done"/>
 </scxml>)";
 
-    StateMachine sm;
-    ASSERT_TRUE(sm.loadSCXMLFromString(scxmlContent));
-    ASSERT_TRUE(sm.start());
+    // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
+    auto sm = std::make_shared<StateMachine>();
+    ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent));
+    ASSERT_TRUE(sm->start());
 
     // Verify machine entered nested states
-    EXPECT_EQ(sm.getCurrentState(), "sub01");
-    auto activeStates = sm.getActiveStates();
+    EXPECT_EQ(sm->getCurrentState(), "sub01");
+    auto activeStates = sm->getActiveStates();
     EXPECT_EQ(activeStates.size(), 2);  // sub0 and sub01
-    EXPECT_TRUE(sm.isStateActive("sub0"));
-    EXPECT_TRUE(sm.isStateActive("sub01"));
+    EXPECT_TRUE(sm->isStateActive("sub0"));
+    EXPECT_TRUE(sm->isStateActive("sub01"));
 
     // Now stop the machine - this simulates invoke cancellation
     // BUG: Currently only sub01's onexit executes, sub0's onexit is skipped
-    sm.stop();
+    sm->stop();
 
     // After stop(), machine should no longer be running
-    EXPECT_FALSE(sm.isRunning());
+    EXPECT_FALSE(sm->isRunning());
 
     // CRITICAL VERIFICATION:
     // Both exitedSub0 and exitedSub01 should be true
