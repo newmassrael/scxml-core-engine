@@ -9,7 +9,9 @@ namespace RSM {
 // === StateMachineFactory Implementation ===
 
 StateMachineFactory::CreationResult StateMachineFactory::createProduction() {
-    return createInternal("", true);
+    // Create production instance without auto-initialization
+    // User must call loadSCXMLFromString() and start() explicitly
+    return createInternal("", false);
 }
 
 StateMachineFactory::CreationResult StateMachineFactory::createWithSCXML(const std::string &scxmlContent) {
