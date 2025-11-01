@@ -111,6 +111,7 @@ add_executable(js_engine_tests
     engine/EventSystemTest.cpp
     engine/JSEngineBasicTest.cpp
     engine/JSResultTypeConversionTest.cpp
+    engine/ECMAScriptComplianceTest.cpp
     mocks/MockEventRaiser.cpp
 )
 
