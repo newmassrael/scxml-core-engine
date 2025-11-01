@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common/ClassBinding.h"  // C++ class binding infrastructure
 #include "common/HierarchicalStateHelper.h"
 #include "common/InvokeHelper.h"  // W3C SCXML 6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "events/IEventDispatcher.h"
@@ -248,11 +249,23 @@ public:
     bool isInitialStateFinal() const;
 
     /**
-     * @brief Bind C++ object for JavaScript access
+     * @brief Bind C++ object for JavaScript access (simple registerGlobalFunction approach)
      * @param name Object name in JavaScript
      * @param object Pointer to C++ object
+     * @param registerMethods Callback to register methods as global functions
+     *
+     * Example:
+     * @code
+     * Hardware hw;
+     * sm.bindObject("hardware", &hw, [&hw](auto& sm) {
+     *     sm.registerGlobalFunction("hardware.getTemperature", [&hw](auto&) {
+     *         return ScriptValue(hw.getTemperature());
+     *     });
+     * });
+     * @endcode
      */
-    template <typename T> void bindObject(const std::string &name, T *object);
+    template <typename T, typename RegisterFunc>
+    void bindObject(const std::string &name, T *object, RegisterFunc registerMethods);
 
     /**
      * @brief Get current event data (accessible from guards/actions)
@@ -644,12 +657,34 @@ private:
 };
 
 // Template implementation
-template <typename T> void StateMachine::bindObject(const std::string &name, T *object) {
-    (void)name;    // Unused parameter - C++ binding not implemented yet
-    (void)object;  // Unused parameter - C++ binding not implemented yet
-    // Implementation will use existing JSEngine binding
-    // This is a placeholder for the template
+template <typename T, typename RegisterFunc>
+void StateMachine::bindObject(const std::string &name, T *object, RegisterFunc registerMethods) {
     static_assert(std::is_class_v<T>, "Can only bind class objects");
+
+    // Ensure JavaScript environment is initialized
+    if (!ensureJSEnvironment()) {
+        LOG_ERROR("StateMachine::bindObject: Failed to initialize JS environment");
+        return;
+    }
+
+    // Get QuickJS context via JSEngine
+    JSContext *ctx = JSEngine::instance().getContextForBinding(sessionId_);
+    if (!ctx) {
+        LOG_ERROR("StateMachine::bindObject: Failed to get JSContext for session {}", sessionId_);
+        return;
+    }
+
+    // Create binder and register methods via callback
+    ClassBinder<T> binder(ctx, name, object);
+    registerMethods(binder);
+
+    // Finalize and register to JavaScript global object
+    JSValue jsObject = binder.finalize();
+    JSValue global = JS_GetGlobalObject(ctx);
+    JS_SetPropertyStr(ctx, global, name.c_str(), jsObject);  // Takes ownership of jsObject
+    JS_FreeValue(ctx, global);
+
+    LOG_DEBUG("StateMachine::bindObject: Bound object '{}' to JavaScript", name);
 }
 
 }  // namespace RSM
