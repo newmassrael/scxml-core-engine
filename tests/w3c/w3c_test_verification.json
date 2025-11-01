@@ -196,6 +196,11 @@
       "verified_date": "2025-11-01",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.4: srcexpr evaluates at invoke execution time (not parse time) - Validated with 1:1 log comparison"
+    },
+    "220": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.4: Platforms MUST support http://www.w3.org/TR/scxml/, as a value for the 'type' attribute"
     }
   }
 }
