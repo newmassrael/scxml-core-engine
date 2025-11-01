@@ -25,8 +25,9 @@ StateMachineFactory::CreationResult StateMachineFactory::createWithSCXML(const s
 StateMachineFactory::CreationResult StateMachineFactory::createInternal(const std::string &scxmlContent,
                                                                         bool autoInitialize) {
     try {
-        // Create StateMachine - uses JSEngine::instance() internally
-        auto stateMachine = std::make_unique<StateMachine>();
+        // Create StateMachine with shared_ptr (required for enable_shared_from_this)
+        // StateMachine uses shared_from_this() internally, so it must be managed by shared_ptr
+        auto stateMachine = std::make_shared<StateMachine>();
 
         // Load SCXML if provided
         if (!scxmlContent.empty()) {

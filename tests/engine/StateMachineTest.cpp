@@ -151,8 +151,8 @@ TEST_F(StateMachineTest, FactoryPattern_CreateProduction) {
     ASSERT_TRUE(result.has_value()) << "Factory failed: " << result.error;
     EXPECT_FALSE(result.value->isRunning());
 
-    // Convert to shared_ptr for proper lifecycle management
-    auto sm = std::shared_ptr<StateMachine>(result.value.release());
+    // Result.value is already shared_ptr (StateMachine requires shared_ptr for enable_shared_from_this)
+    auto sm = std::move(result.value);
 
     // Verify created instance is functional
     std::string scxml = createSimpleSCXML();

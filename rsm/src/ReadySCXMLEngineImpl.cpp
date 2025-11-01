@@ -1,6 +1,7 @@
 #include "ReadySCXMLEngine.h"
 #include "SCXMLEngine.h"
 #include "common/Logger.h"
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 
@@ -26,12 +27,17 @@ public:
     ReadySCXMLEngineImpl() {
         // Create SCXMLEngine instance
         scxmlEngine_ = createSCXMLEngine();
-        sessionId_ = "ready_default";
+        // Generate unique session ID to prevent conflicts between instances
+        static std::atomic<uint64_t> instanceCounter{0};
+        sessionId_ = "ready_session_" + std::to_string(instanceCounter.fetch_add(1));
     }
 
     ~ReadySCXMLEngineImpl() {
         if (initialized_ && scxmlEngine_) {
+            // Stop state machine and cleanup session
             scxmlEngine_->stopStateMachine(sessionId_);
+            // Destroy session to prevent resource leaks and session ID conflicts
+            scxmlEngine_->destroySession(sessionId_);
         }
     }
 
