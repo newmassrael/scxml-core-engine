@@ -42,9 +42,10 @@ Event::Event(const ::std::string &name, const ::std::string &type) : name_(name)
 SCXMLEngineImpl::SCXMLEngineImpl() = default;
 
 SCXMLEngineImpl::~SCXMLEngineImpl() {
-    if (initialized_) {
-        shutdown();
-    }
+    // Do NOT call shutdown() - JSEngine is a singleton shared by all SCXMLEngine instances
+    // Calling JSEngine::shutdown() from each SCXMLEngine destructor causes race conditions
+    // JSEngine lifecycle is managed at process level, not per-instance
+    initialized_ = false;
 }
 
 bool SCXMLEngineImpl::initialize() {
@@ -218,8 +219,12 @@ bool SCXMLEngineImpl::loadSCXMLFromString(const std::string &scxmlContent, const
             defaultSessionId_ = actualSessionId;
         }
 
-        // Create StateMachine with automatic dependency injection
-        auto result = StateMachineFactory::createWithSCXML(scxmlContent);
+        // Create StateMachine WITHOUT auto-initialization
+        // User must call startStateMachine() explicitly to start execution
+        auto result = StateMachineFactory::builder()
+                          .withSCXML(scxmlContent)
+                          .withAutoInitialize(false)  // Do not auto-start
+                          .build();
         if (!result.has_value()) {
             sessionErrors_[actualSessionId] = "Failed to create state machine: " + result.error;
             LOG_ERROR("SCXMLEngine: Failed to load SCXML content: {}", result.error);

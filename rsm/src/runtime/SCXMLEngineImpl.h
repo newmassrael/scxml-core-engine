@@ -85,7 +85,7 @@ private:
 
     // === High-Level State Machine Support ===
     std::string defaultSessionId_;
-    std::unique_ptr<StateMachine> stateMachine_;
+    std::shared_ptr<StateMachine> stateMachine_;  // shared_ptr required for enable_shared_from_this
     std::map<std::string, std::string> sessionErrors_;
 };
 

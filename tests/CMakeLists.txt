@@ -227,27 +227,26 @@ target_link_libraries(history_tests
 )
 
 # ============================================================================
-# 4.6. ReadySCXMLEngine API Tests (High-level Facade) - TEMPORARILY DISABLED
+# 4.6. ReadySCXMLEngine API Tests (High-level Facade)
 # ============================================================================
 
-# Temporarily disabled - will be re-enabled when converting existing tests
-# add_executable(simple_scxml_engine_tests
-#     api/ReadySCXMLEngineTest.cpp
-# )
-#
-# target_include_directories(simple_scxml_engine_tests
-#     PRIVATE
-#         ${CMAKE_SOURCE_DIR}
-#         ${CMAKE_SOURCE_DIR}/rsm/include
-#         ${CMAKE_SOURCE_DIR}/tests
-# )
-#
-# target_link_libraries(simple_scxml_engine_tests
-#     PRIVATE
-#         rsm_unified
-#         GTest::gtest_main
-#         pthread
-# )
+add_executable(ready_scxml_engine_tests
+    api/ReadySCXMLEngineTest.cpp
+)
+
+target_include_directories(ready_scxml_engine_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/rsm/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(ready_scxml_engine_tests
+    PRIVATE
+        rsm_unified
+        GTest::gtest_main
+        pthread
+)
 
 # ============================================================================
 # 5. Core Parser Tests (RSM namespace updated)
@@ -812,7 +811,7 @@ add_test(NAME JSEngineTests COMMAND js_engine_tests)
 add_test(NAME ActionTests COMMAND action_tests)
 add_test(NAME RSMSCXMLTests COMMAND rsm_scxml_tests)
 # add_test(NAME StaticCodegenTests COMMAND static_codegen_tests)  # Disabled: C++ codegen replaced by Python
-# add_test(NAME ReadySCXMLEngineTests COMMAND simple_scxml_engine_tests)  # Temporarily disabled
+add_test(NAME ReadySCXMLEngineTests COMMAND ready_scxml_engine_tests)
 
 # Priority Level 3: Integration and concurrency tests (system-level validation, ~5-15s)
 add_test(NAME TXMLConverterTests COMMAND txml_converter_tests)
@@ -876,7 +875,7 @@ set_tests_properties(W3CFullComplianceTests PROPERTIES DEPENDS "IntegrationTests
 # Test timeout configuration (in seconds)
 set_tests_properties(RSMSCXMLTests PROPERTIES TIMEOUT 30)
 # set_tests_properties(StaticCodegenTests PROPERTIES TIMEOUT 30)  # Disabled
-# set_tests_properties(ReadySCXMLEngineTests PROPERTIES TIMEOUT 30)  # Temporarily disabled
+set_tests_properties(ReadySCXMLEngineTests PROPERTIES TIMEOUT 30)
 set_tests_properties(JSEngineTests CoreParserTests StateMachineTests PROPERTIES TIMEOUT 60)
 set_tests_properties(ActionTests HistoryTests StatesTests PROPERTIES TIMEOUT 90)
 set_tests_properties(IntegrationTests ConcurrencyTests PROPERTIES TIMEOUT 180)

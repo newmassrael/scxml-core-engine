@@ -20,13 +20,16 @@ class StateMachineFactory {
 public:
     /**
      * @brief Result type for factory operations
+     *
+     * Uses shared_ptr because StateMachine inherits from enable_shared_from_this
+     * and requires shared ownership for shared_from_this() to work correctly.
      */
     struct CreationResult {
-        std::unique_ptr<StateMachine> value;
+        std::shared_ptr<StateMachine> value;
         std::string error;
         bool success;
 
-        CreationResult(std::unique_ptr<StateMachine> sm) : value(std::move(sm)), success(true) {}
+        CreationResult(std::shared_ptr<StateMachine> sm) : value(std::move(sm)), success(true) {}
 
         CreationResult(const std::string &err) : error(err), success(false) {}
 
