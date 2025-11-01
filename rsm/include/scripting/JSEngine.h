@@ -261,6 +261,17 @@ public:
      */
     void setStateQueryCallback(StateQueryCallback callback, const std::string &sessionId);
 
+    /**
+     * @brief Get JSContext for C++ object binding (thread-safe)
+     *
+     * Provides safe access to JSContext for ClassBinding infrastructure.
+     * Must be called from the same thread as JSEngine operations.
+     *
+     * @param sessionId Session identifier
+     * @return JSContext pointer or nullptr if session not found
+     */
+    JSContext *getContextForBinding(const std::string &sessionId);
+
     // === Session ID Generation ===
 
     /**

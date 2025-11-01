@@ -1162,6 +1162,12 @@ void JSEngine::setStateQueryCallback(StateQueryCallback callback, const std::str
     }
 }
 
+JSContext *JSEngine::getContextForBinding(const std::string &sessionId) {
+    std::lock_guard<std::mutex> lock(sessionsMutex_);
+    SessionContext *session = getSession(sessionId);
+    return session ? session->jsContext : nullptr;
+}
+
 // ===================================================================
 // INTEGRATED RESULT PROCESSING IMPLEMENTATION
 // ===================================================================
