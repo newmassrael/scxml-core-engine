@@ -2,6 +2,7 @@
 #include "common/Logger.h"
 #include "runtime/StateMachine.h"
 #include "scripting/JSEngine.h"
+#include <fstream>
 #include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
@@ -75,13 +76,13 @@ TEST_F(JSEngineBasicTest, ECMAScript_DataModel_VariableAssignment) {
     EXPECT_EQ(retrieveResult.getValue<std::string>(), "Hello World");
 }
 
-TEST_F(JSEngineBasicTest, SCXML_BuiltinFunction_InPredicate) {
-    // Test In() function exists
+TEST_F(JSEngineBasicTest, SCXML_BuiltinFunctions_GlobalObjectsAndFunctions) {
+    // Test In() function exists (W3C SCXML B.1)
     auto inTypeResult = engine_->evaluateExpression(sessionId_, "typeof In").get();
     ASSERT_TRUE(inTypeResult.isSuccess());
     EXPECT_EQ(inTypeResult.getValue<std::string>(), "function");
 
-    // Test console exists
+    // Test console exists (ECMAScript console API)
     auto consoleTypeResult = engine_->evaluateExpression(sessionId_, "typeof console").get();
     ASSERT_TRUE(consoleTypeResult.isSuccess());
     EXPECT_EQ(consoleTypeResult.getValue<std::string>(), "object");
@@ -91,13 +92,15 @@ TEST_F(JSEngineBasicTest, SCXML_BuiltinFunction_InPredicate) {
     ASSERT_TRUE(logTypeResult.isSuccess());
     EXPECT_EQ(logTypeResult.getValue<std::string>(), "function");
 
-    // Test Math exists
+    // Test Math exists (ECMAScript Math object)
     auto mathTypeResult = engine_->evaluateExpression(sessionId_, "typeof Math").get();
     ASSERT_TRUE(mathTypeResult.isSuccess());
     EXPECT_EQ(mathTypeResult.getValue<std::string>(), "object");
 }
 
-TEST_F(JSEngineBasicTest, SCXML_SystemVariables_EventAndSession) {
+TEST_F(JSEngineBasicTest, SCXML_SystemVariables_SessionNameIOProcessorsAndEvent) {
+    // W3C SCXML 5.10: Test all system variables
+
     // Test _sessionid exists and is string
     expectExpressionType("_sessionid", "string");
 
@@ -431,66 +434,76 @@ TEST_F(JSEngineBasicTest, W3C_ForeachAction_ArrayExpressionEvaluation) {
     // 1. Basic number array expression (for ForeachAction failure analysis)
     auto numberArrayResult = engine_->evaluateExpression(sessionId_, "[1, 2, 3]").get();
     ASSERT_TRUE(numberArrayResult.isSuccess()) << "Number array expression evaluation failed";
-
-    // Check return value type and contents
-    if (std::holds_alternative<std::string>(numberArrayResult.getInternalValue())) {
-        std::string resultStr = std::get<std::string>(numberArrayResult.getInternalValue());
-        LOG_DEBUG("Array result (string): '{}'", resultStr);
-        LOG_DEBUG("Length: {}", resultStr.length());
-        if (!resultStr.empty()) {
-            LOG_DEBUG("First char: '{}' (ASCII: {})", resultStr.front(), (int)resultStr.front());
-            LOG_DEBUG("Last char: '{}' (ASCII: {})", resultStr.back(), (int)resultStr.back());
-        }
-    } else if (std::holds_alternative<long>(numberArrayResult.getInternalValue())) {
-        LOG_DEBUG("Array result (integer): {}", std::get<long>(numberArrayResult.getInternalValue()));
-    } else if (std::holds_alternative<double>(numberArrayResult.getInternalValue())) {
-        LOG_DEBUG("Array result (double): {}", std::get<double>(numberArrayResult.getInternalValue()));
-    } else if (std::holds_alternative<bool>(numberArrayResult.getInternalValue())) {
-        LOG_DEBUG("Array result (boolean): {}", std::get<bool>(numberArrayResult.getInternalValue()));
-    }
+    EXPECT_TRUE(numberArrayResult.isArray()) << "Number array result should be recognized as array";
+    auto numArr = numberArrayResult.getArray();
+    ASSERT_NE(numArr, nullptr) << "Number array should not be null";
+    EXPECT_EQ(numArr->elements.size(), 3u) << "Number array should have 3 elements";
 
     // 2. String array expression
     auto stringArrayResult = engine_->evaluateExpression(sessionId_, "['first', 'second', 'third']").get();
     ASSERT_TRUE(stringArrayResult.isSuccess()) << "String array expression evaluation failed";
+    EXPECT_TRUE(stringArrayResult.isArray()) << "String array result should be recognized as array";
+    auto strArr = stringArrayResult.getArray();
+    ASSERT_NE(strArr, nullptr) << "String array should not be null";
+    EXPECT_EQ(strArr->elements.size(), 3u) << "String array should have 3 elements";
 
     // 3. Array access via variable
     auto varArraySetup = engine_->executeScript(sessionId_, "var testArray = [1, 2, 3]; testArray").get();
     ASSERT_TRUE(varArraySetup.isSuccess()) << "Array variable setup failed";
+    EXPECT_TRUE(varArraySetup.isArray()) << "Variable array setup should return array";
 
     auto varArrayResult = engine_->evaluateExpression(sessionId_, "testArray").get();
     ASSERT_TRUE(varArrayResult.isSuccess()) << "Array variable evaluation failed";
+    EXPECT_TRUE(varArrayResult.isArray()) << "Variable array evaluation should return array";
 
     // 4. Object.values() expression (complex array generation)
     auto objectValuesResult =
         engine_->evaluateExpression(sessionId_, "Object.values({a: 'first', b: 'second', c: 'third'})").get();
     ASSERT_TRUE(objectValuesResult.isSuccess()) << "Object.values expression evaluation failed";
+    EXPECT_TRUE(objectValuesResult.isArray()) << "Object.values should return array";
+    auto objValArr = objectValuesResult.getArray();
+    ASSERT_NE(objValArr, nullptr) << "Object.values array should not be null";
+    EXPECT_EQ(objValArr->elements.size(), 3u) << "Object.values should have 3 elements";
 
     // 5. Empty array expression
     auto emptyArrayResult = engine_->evaluateExpression(sessionId_, "[]").get();
     ASSERT_TRUE(emptyArrayResult.isSuccess()) << "Empty array expression evaluation failed";
+    EXPECT_TRUE(emptyArrayResult.isArray()) << "Empty array should be recognized as array";
+    auto emptyArr = emptyArrayResult.getArray();
+    ASSERT_NE(emptyArr, nullptr) << "Empty array should not be null";
+    EXPECT_EQ(emptyArr->elements.size(), 0u) << "Empty array should have 0 elements";
 
     // 6. Array length check (used in foreach to determine iteration count)
     auto lengthCheckResult = engine_->evaluateExpression(sessionId_, "[1, 2, 3].length").get();
     ASSERT_TRUE(lengthCheckResult.isSuccess()) << "Array length check failed";
-    if (lengthCheckResult.isSuccess()) {
-        EXPECT_EQ(lengthCheckResult.getValue<double>(), 3.0) << "Array length is not 3";
-    }
+    EXPECT_EQ(lengthCheckResult.getValue<double>(), 3.0) << "Array length should be 3";
 
     // 7. Individual array element access (used in foreach iteration)
     auto elementAccessResult1 = engine_->evaluateExpression(sessionId_, "[1, 2, 3][0]").get();
     ASSERT_TRUE(elementAccessResult1.isSuccess()) << "Array first element access failed";
+    double firstElement = 0.0;
+    if (std::holds_alternative<double>(elementAccessResult1.getInternalValue())) {
+        firstElement = std::get<double>(elementAccessResult1.getInternalValue());
+    } else if (std::holds_alternative<int64_t>(elementAccessResult1.getInternalValue())) {
+        firstElement = static_cast<double>(std::get<int64_t>(elementAccessResult1.getInternalValue()));
+    }
+    EXPECT_EQ(firstElement, 1.0) << "First element should be 1";
 
     auto elementAccessResult2 = engine_->evaluateExpression(sessionId_, "[1, 2, 3][1]").get();
     ASSERT_TRUE(elementAccessResult2.isSuccess()) << "Array second element access failed";
+    double secondElement = 0.0;
+    if (std::holds_alternative<double>(elementAccessResult2.getInternalValue())) {
+        secondElement = std::get<double>(elementAccessResult2.getInternalValue());
+    } else if (std::holds_alternative<int64_t>(elementAccessResult2.getInternalValue())) {
+        secondElement = static_cast<double>(std::get<int64_t>(elementAccessResult2.getInternalValue()));
+    }
+    EXPECT_EQ(secondElement, 2.0) << "Second element should be 2";
 
     // 8. Array string conversion via JSON.stringify (for debugging)
     auto stringifyResult = engine_->evaluateExpression(sessionId_, "JSON.stringify([1, 2, 3])").get();
     ASSERT_TRUE(stringifyResult.isSuccess()) << "JSON.stringify conversion failed";
-    if (stringifyResult.isSuccess()) {
-        std::string jsonString = stringifyResult.getValue<std::string>();
-        LOG_DEBUG("JSON.stringify result: '{}'", jsonString);
-        EXPECT_EQ(jsonString, "[1,2,3]") << "JSON string differs from expected";
-    }
+    std::string jsonString = stringifyResult.getValue<std::string>();
+    EXPECT_EQ(jsonString, "[1,2,3]") << "JSON string should be '[1,2,3]'";
 }
 
 // ===================================================================
@@ -864,4 +877,528 @@ TEST_F(JSEngineBasicTest, CppBinding_RegisterGlobalFunction_UsedInConditions) {
 
     ASSERT_TRUE(condResult.isSuccess());
     EXPECT_EQ(condResult.getValue<std::string>(), "cooling") << "Function should work in conditional expressions";
+}
+
+TEST_F(JSEngineBasicTest, CppBinding_ArrayParameters) {
+    // Test passing JavaScript arrays to C++ functions
+    std::vector<int64_t> receivedArray;
+
+    engine_->registerGlobalFunction("processArray", [&receivedArray](const std::vector<ScriptValue> &args) {
+        if (args.empty() || !std::holds_alternative<std::shared_ptr<ScriptArray>>(args[0])) {
+            return ScriptValue(static_cast<int64_t>(-1));
+        }
+
+        auto arr = std::get<std::shared_ptr<ScriptArray>>(args[0]);
+        receivedArray.clear();
+
+        for (const auto &elem : arr->elements) {
+            if (std::holds_alternative<int64_t>(elem)) {
+                receivedArray.push_back(std::get<int64_t>(elem));
+            }
+        }
+
+        return ScriptValue(static_cast<int64_t>(receivedArray.size()));
+    });
+
+    // Recreate session to bind function
+    engine_->destroySession(sessionId_);
+    engine_->createSession(sessionId_, "");
+
+    // Pass array [1, 2, 3, 4, 5] from JavaScript
+    auto result = engine_->evaluateExpression(sessionId_, "processArray([1, 2, 3, 4, 5])").get();
+
+    ASSERT_TRUE(result.isSuccess());
+    EXPECT_EQ(result.getValue<int64_t>(), 5) << "Should process 5 elements";
+    EXPECT_EQ(receivedArray.size(), 5);
+    EXPECT_EQ(receivedArray[0], 1);
+    EXPECT_EQ(receivedArray[4], 5);
+}
+
+TEST_F(JSEngineBasicTest, CppBinding_ObjectParameters) {
+    // Test passing JavaScript objects to C++ functions
+    std::string receivedName;
+    int64_t receivedAge = 0;
+
+    engine_->registerGlobalFunction("processUser", [&receivedName, &receivedAge](const std::vector<ScriptValue> &args) {
+        if (args.empty() || !std::holds_alternative<std::shared_ptr<ScriptObject>>(args[0])) {
+            return ScriptValue(false);
+        }
+
+        auto obj = std::get<std::shared_ptr<ScriptObject>>(args[0]);
+
+        // Extract name
+        if (obj->properties.count("name") && std::holds_alternative<std::string>(obj->properties.at("name"))) {
+            receivedName = std::get<std::string>(obj->properties.at("name"));
+        }
+
+        // Extract age
+        if (obj->properties.count("age") && std::holds_alternative<int64_t>(obj->properties.at("age"))) {
+            receivedAge = std::get<int64_t>(obj->properties.at("age"));
+        }
+
+        return ScriptValue(true);
+    });
+
+    // Recreate session to bind function
+    engine_->destroySession(sessionId_);
+    engine_->createSession(sessionId_, "");
+
+    // Pass object {name: 'Alice', age: 30} from JavaScript
+    auto result = engine_->evaluateExpression(sessionId_, "processUser({name: 'Alice', age: 30})").get();
+
+    ASSERT_TRUE(result.isSuccess());
+    EXPECT_TRUE(result.getValue<bool>());
+    EXPECT_EQ(receivedName, "Alice");
+    EXPECT_EQ(receivedAge, 30);
+}
+
+TEST_F(JSEngineBasicTest, CppBinding_NestedObjectParameters) {
+    // Test nested objects: {user: {name: 'Bob'}, settings: {theme: 'dark'}}
+    std::string receivedUserName;
+    std::string receivedTheme;
+
+    engine_->registerGlobalFunction(
+        "processConfig", [&receivedUserName, &receivedTheme](const std::vector<ScriptValue> &args) {
+            if (args.empty() || !std::holds_alternative<std::shared_ptr<ScriptObject>>(args[0])) {
+                return ScriptValue(false);
+            }
+
+            auto obj = std::get<std::shared_ptr<ScriptObject>>(args[0]);
+
+            // Extract user.name
+            if (obj->properties.count("user") &&
+                std::holds_alternative<std::shared_ptr<ScriptObject>>(obj->properties.at("user"))) {
+                auto userObj = std::get<std::shared_ptr<ScriptObject>>(obj->properties.at("user"));
+                if (userObj->properties.count("name") &&
+                    std::holds_alternative<std::string>(userObj->properties.at("name"))) {
+                    receivedUserName = std::get<std::string>(userObj->properties.at("name"));
+                }
+            }
+
+            // Extract settings.theme
+            if (obj->properties.count("settings") &&
+                std::holds_alternative<std::shared_ptr<ScriptObject>>(obj->properties.at("settings"))) {
+                auto settingsObj = std::get<std::shared_ptr<ScriptObject>>(obj->properties.at("settings"));
+                if (settingsObj->properties.count("theme") &&
+                    std::holds_alternative<std::string>(settingsObj->properties.at("theme"))) {
+                    receivedTheme = std::get<std::string>(settingsObj->properties.at("theme"));
+                }
+            }
+
+            return ScriptValue(true);
+        });
+
+    // Recreate session to bind function
+    engine_->destroySession(sessionId_);
+    engine_->createSession(sessionId_, "");
+
+    auto result =
+        engine_->evaluateExpression(sessionId_, "processConfig({user: {name: 'Bob'}, settings: {theme: 'dark'}})")
+            .get();
+
+    ASSERT_TRUE(result.isSuccess());
+    EXPECT_TRUE(result.getValue<bool>());
+    EXPECT_EQ(receivedUserName, "Bob");
+    EXPECT_EQ(receivedTheme, "dark");
+}
+
+TEST_F(JSEngineBasicTest, CppBinding_MixedTypeParameters) {
+    // Test function receiving multiple parameters of different types
+    int64_t receivedNumber = 0;
+    std::string receivedString;
+    bool receivedBool = false;
+
+    engine_->registerGlobalFunction(
+        "processMixed", [&receivedNumber, &receivedString, &receivedBool](const std::vector<ScriptValue> &args) {
+            if (args.size() < 3) {
+                return ScriptValue(false);
+            }
+
+            // Extract number
+            if (std::holds_alternative<int64_t>(args[0])) {
+                receivedNumber = std::get<int64_t>(args[0]);
+            } else if (std::holds_alternative<double>(args[0])) {
+                receivedNumber = static_cast<int64_t>(std::get<double>(args[0]));
+            }
+
+            // Extract string
+            if (std::holds_alternative<std::string>(args[1])) {
+                receivedString = std::get<std::string>(args[1]);
+            }
+
+            // Extract boolean
+            if (std::holds_alternative<bool>(args[2])) {
+                receivedBool = std::get<bool>(args[2]);
+            }
+
+            return ScriptValue(true);
+        });
+
+    // Recreate session to bind function
+    engine_->destroySession(sessionId_);
+    engine_->createSession(sessionId_, "");
+
+    auto result = engine_->evaluateExpression(sessionId_, "processMixed(42, 'hello', true)").get();
+
+    ASSERT_TRUE(result.isSuccess());
+    EXPECT_TRUE(result.getValue<bool>());
+    EXPECT_EQ(receivedNumber, 42);
+    EXPECT_EQ(receivedString, "hello");
+    EXPECT_TRUE(receivedBool);
+}
+
+TEST_F(JSEngineBasicTest, CppBinding_NullUndefinedParameters) {
+    // Test handling null and undefined values from JavaScript
+    bool receivedNull = false;
+    bool receivedUndefined = false;
+
+    engine_->registerGlobalFunction("checkNull", [&receivedNull](const std::vector<ScriptValue> &args) {
+        if (!args.empty() && std::holds_alternative<ScriptNull>(args[0])) {
+            receivedNull = true;
+        }
+        return ScriptValue(receivedNull);
+    });
+
+    engine_->registerGlobalFunction("checkUndefined", [&receivedUndefined](const std::vector<ScriptValue> &args) {
+        if (!args.empty() && std::holds_alternative<ScriptUndefined>(args[0])) {
+            receivedUndefined = true;
+        }
+        return ScriptValue(receivedUndefined);
+    });
+
+    // Recreate session to bind functions
+    engine_->destroySession(sessionId_);
+    engine_->createSession(sessionId_, "");
+
+    auto nullResult = engine_->evaluateExpression(sessionId_, "checkNull(null)").get();
+    auto undefinedResult = engine_->evaluateExpression(sessionId_, "checkUndefined(undefined)").get();
+
+    ASSERT_TRUE(nullResult.isSuccess());
+    ASSERT_TRUE(undefinedResult.isSuccess());
+    EXPECT_TRUE(receivedNull) << "Should detect null parameter";
+    EXPECT_TRUE(receivedUndefined) << "Should detect undefined parameter";
+}
+
+TEST_F(JSEngineBasicTest, CppBinding_ReturnArrayToJavaScript) {
+    // Test returning arrays from C++ to JavaScript
+    engine_->registerGlobalFunction("makeArray", [](const std::vector<ScriptValue> &) {
+        auto arr = std::make_shared<ScriptArray>();
+        arr->elements.push_back(ScriptValue(static_cast<int64_t>(10)));
+        arr->elements.push_back(ScriptValue(static_cast<int64_t>(20)));
+        arr->elements.push_back(ScriptValue(static_cast<int64_t>(30)));
+        return ScriptValue(arr);
+    });
+
+    // Recreate session to bind function
+    engine_->destroySession(sessionId_);
+    engine_->createSession(sessionId_, "");
+
+    // Get array and check its properties
+    auto setupResult = engine_->executeScript(sessionId_, "var myArray = makeArray();").get();
+    ASSERT_TRUE(setupResult.isSuccess());
+
+    auto lengthResult = engine_->evaluateExpression(sessionId_, "myArray.length").get();
+    ASSERT_TRUE(lengthResult.isSuccess());
+    EXPECT_EQ(lengthResult.getValue<int64_t>(), 3);
+
+    auto firstResult = engine_->evaluateExpression(sessionId_, "myArray[0]").get();
+    ASSERT_TRUE(firstResult.isSuccess());
+    EXPECT_EQ(firstResult.getValue<int64_t>(), 10);
+
+    auto lastResult = engine_->evaluateExpression(sessionId_, "myArray[2]").get();
+    ASSERT_TRUE(lastResult.isSuccess());
+    EXPECT_EQ(lastResult.getValue<int64_t>(), 30);
+}
+
+TEST_F(JSEngineBasicTest, CppBinding_ReturnObjectToJavaScript) {
+    // Test returning objects from C++ to JavaScript
+    engine_->registerGlobalFunction("makeObject", [](const std::vector<ScriptValue> &) {
+        auto obj = std::make_shared<ScriptObject>();
+        obj->properties["status"] = ScriptValue(std::string("success"));
+        obj->properties["code"] = ScriptValue(static_cast<int64_t>(200));
+        obj->properties["valid"] = ScriptValue(true);
+        return ScriptValue(obj);
+    });
+
+    // Recreate session to bind function
+    engine_->destroySession(sessionId_);
+    engine_->createSession(sessionId_, "");
+
+    // Get object and check its properties
+    auto setupResult = engine_->executeScript(sessionId_, "var myObj = makeObject();").get();
+    ASSERT_TRUE(setupResult.isSuccess());
+
+    auto statusResult = engine_->evaluateExpression(sessionId_, "myObj.status").get();
+    ASSERT_TRUE(statusResult.isSuccess());
+    EXPECT_EQ(statusResult.getValue<std::string>(), "success");
+
+    auto codeResult = engine_->evaluateExpression(sessionId_, "myObj.code").get();
+    ASSERT_TRUE(codeResult.isSuccess());
+    EXPECT_EQ(codeResult.getValue<int64_t>(), 200);
+
+    auto validResult = engine_->evaluateExpression(sessionId_, "myObj.valid").get();
+    ASSERT_TRUE(validResult.isSuccess());
+    EXPECT_TRUE(validResult.getValue<bool>());
+}
+
+// ============================================================================
+// W3C SCXML In() Predicate Function Tests (P0 - Critical)
+// ============================================================================
+
+TEST_F(JSEngineBasicTest, W3C_InPredicate_FunctionalStateMachineIntegration) {
+    // W3C SCXML B.1: In(stateID) must return true if state is active, false otherwise
+
+    // Create minimal SCXML with two states
+    std::string scxmlContent = R"(
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="stateA">
+            <state id="stateA">
+                <transition event="go.to.B" target="stateB"/>
+            </state>
+            <state id="stateB">
+                <transition event="go.to.A" target="stateA"/>
+            </state>
+        </scxml>
+    )";
+
+    // Create temporary SCXML file
+    std::string tempPath = "/tmp/test_in_predicate.scxml";
+    std::ofstream tempFile(tempPath);
+    ASSERT_TRUE(tempFile.is_open()) << "Failed to create temporary SCXML file";
+    tempFile << scxmlContent;
+    tempFile.close();
+
+    // Create StateMachine from SCXML
+    auto stateMachine = std::make_shared<RSM::StateMachine>();
+    bool loadResult = stateMachine->loadSCXML(tempPath);
+    ASSERT_TRUE(loadResult) << "Failed to load SCXML file";
+
+    // Start StateMachine
+    ASSERT_TRUE(stateMachine->start()) << "Failed to start StateMachine";
+
+    // Get the session ID used by StateMachine
+    std::string smSessionId = stateMachine->getSessionId();
+    ASSERT_FALSE(smSessionId.empty()) << "StateMachine should have session ID";
+
+    // Test In() with initial state (should be stateA)
+    auto inStateAResult = engine_->evaluateExpression(smSessionId, "In('stateA')").get();
+    ASSERT_TRUE(inStateAResult.isSuccess()) << "In('stateA') evaluation should succeed";
+    EXPECT_TRUE(inStateAResult.getValue<bool>()) << "In('stateA') should return true (currently in stateA)";
+
+    auto inStateBResult = engine_->evaluateExpression(smSessionId, "In('stateB')").get();
+    ASSERT_TRUE(inStateBResult.isSuccess()) << "In('stateB') evaluation should succeed";
+    EXPECT_FALSE(inStateBResult.getValue<bool>()) << "In('stateB') should return false (not in stateB)";
+
+    // Transition to stateB
+    stateMachine->processEvent("go.to.B");
+
+    // Test In() after transition (should be stateB)
+    auto inStateBAfterResult = engine_->evaluateExpression(smSessionId, "In('stateB')").get();
+    ASSERT_TRUE(inStateBAfterResult.isSuccess()) << "In('stateB') after transition should succeed";
+    EXPECT_TRUE(inStateBAfterResult.getValue<bool>()) << "In('stateB') should return true after transition";
+
+    auto inStateAAfterResult = engine_->evaluateExpression(smSessionId, "In('stateA')").get();
+    ASSERT_TRUE(inStateAAfterResult.isSuccess()) << "In('stateA') after transition should succeed";
+    EXPECT_FALSE(inStateAAfterResult.getValue<bool>()) << "In('stateA') should return false after leaving";
+
+    // Test In() with non-existent state
+    auto inInvalidResult = engine_->evaluateExpression(smSessionId, "In('nonExistentState')").get();
+    ASSERT_TRUE(inInvalidResult.isSuccess()) << "In('nonExistentState') should succeed";
+    EXPECT_FALSE(inInvalidResult.getValue<bool>()) << "In('nonExistentState') should return false";
+
+    // Cleanup
+    std::remove(tempPath.c_str());
+}
+
+TEST_F(JSEngineBasicTest, W3C_InPredicate_UsedInConditions) {
+    // W3C SCXML pattern: In() used in <transition cond="In('someState')">
+
+    std::string scxmlContent = R"(
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="idle">
+            <state id="idle">
+                <transition event="start" target="active"/>
+            </state>
+            <state id="active">
+                <transition event="stop" target="idle"/>
+            </state>
+        </scxml>
+    )";
+
+    std::string tempPath = "/tmp/test_in_cond.scxml";
+    std::ofstream tempFile(tempPath);
+    ASSERT_TRUE(tempFile.is_open());
+    tempFile << scxmlContent;
+    tempFile.close();
+
+    auto stateMachine = std::make_shared<RSM::StateMachine>();
+    ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
+    ASSERT_TRUE(stateMachine->start());
+
+    std::string smSessionId = stateMachine->getSessionId();
+
+    // Test In() in conditional expression (SCXML guard pattern)
+    auto guardResult = engine_->evaluateExpression(smSessionId, "In('idle') ? 'can_start' : 'already_active'").get();
+    ASSERT_TRUE(guardResult.isSuccess()) << "In() in conditional should work";
+    EXPECT_EQ(guardResult.getValue<std::string>(), "can_start") << "Should be in idle state";
+
+    // Transition to active
+    stateMachine->processEvent("start");
+
+    auto guardAfterResult =
+        engine_->evaluateExpression(smSessionId, "In('idle') ? 'can_start' : 'already_active'").get();
+    ASSERT_TRUE(guardAfterResult.isSuccess());
+    EXPECT_EQ(guardAfterResult.getValue<std::string>(), "already_active") << "Should be in active state";
+
+    // Test complex condition with multiple In() calls
+    auto complexCondResult = engine_->evaluateExpression(smSessionId, "In('idle') || In('active')").get();
+    ASSERT_TRUE(complexCondResult.isSuccess()) << "Complex In() condition should work";
+    EXPECT_TRUE(complexCondResult.getValue<bool>()) << "Should be in one of the states";
+
+    auto bothCondResult = engine_->evaluateExpression(smSessionId, "In('idle') && In('active')").get();
+    ASSERT_TRUE(bothCondResult.isSuccess());
+    EXPECT_FALSE(bothCondResult.getValue<bool>()) << "Cannot be in both states simultaneously";
+
+    std::remove(tempPath.c_str());
+}
+
+// ============================================================================
+// W3C SCXML 5.10: _ioprocessors System Variable Tests (P0 - Critical)
+// ============================================================================
+
+TEST_F(JSEngineBasicTest, W3C_SystemVariables_IOProcessorsDetailedStructure) {
+    // W3C SCXML 5.10: _ioprocessors must be an object containing I/O processor details
+
+    // Create SCXML with datamodel
+    std::string scxmlContent = R"(
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="main">
+            <state id="main"/>
+        </scxml>
+    )";
+
+    std::string tempPath = "/tmp/test_ioprocessors.scxml";
+    std::ofstream tempFile(tempPath);
+    ASSERT_TRUE(tempFile.is_open());
+    tempFile << scxmlContent;
+    tempFile.close();
+
+    auto stateMachine = std::make_shared<RSM::StateMachine>();
+    ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
+    ASSERT_TRUE(stateMachine->start());
+
+    std::string smSessionId = stateMachine->getSessionId();
+
+    // Test _ioprocessors exists and is object
+    auto typeResult = engine_->evaluateExpression(smSessionId, "typeof _ioprocessors").get();
+    ASSERT_TRUE(typeResult.isSuccess()) << "_ioprocessors type check should succeed";
+    EXPECT_EQ(typeResult.getValue<std::string>(), "object") << "_ioprocessors must be an object (W3C SCXML 5.10)";
+
+    // W3C SCXML 6.2: _ioprocessors.scxml must exist (SCXML Event I/O Processor)
+    auto hasSCXMLResult = engine_->evaluateExpression(smSessionId, "'scxml' in _ioprocessors").get();
+    ASSERT_TRUE(hasSCXMLResult.isSuccess()) << "Checking for scxml I/O processor should succeed";
+    EXPECT_TRUE(hasSCXMLResult.getValue<bool>()) << "_ioprocessors.scxml must exist (W3C SCXML 6.2.1)";
+
+    // Test scxml I/O processor is object
+    auto scxmlTypeResult = engine_->evaluateExpression(smSessionId, "typeof _ioprocessors.scxml").get();
+    ASSERT_TRUE(scxmlTypeResult.isSuccess());
+    EXPECT_EQ(scxmlTypeResult.getValue<std::string>(), "object") << "_ioprocessors.scxml must be object";
+
+    // W3C SCXML 6.2.1: _ioprocessors.scxml.location must exist
+    auto hasLocationResult = engine_->evaluateExpression(smSessionId, "'location' in _ioprocessors.scxml").get();
+    ASSERT_TRUE(hasLocationResult.isSuccess()) << "Checking for location property should succeed";
+    EXPECT_TRUE(hasLocationResult.getValue<bool>()) << "_ioprocessors.scxml.location must exist (W3C SCXML 6.2.1)";
+
+    // Test location is string
+    auto locationTypeResult = engine_->evaluateExpression(smSessionId, "typeof _ioprocessors.scxml.location").get();
+    ASSERT_TRUE(locationTypeResult.isSuccess());
+    EXPECT_EQ(locationTypeResult.getValue<std::string>(), "string") << "location must be string";
+
+    // Test location contains session identifier (W3C SCXML 6.2.1)
+    auto locationValueResult = engine_->evaluateExpression(smSessionId, "_ioprocessors.scxml.location").get();
+    ASSERT_TRUE(locationValueResult.isSuccess()) << "Getting location value should succeed";
+    std::string locationValue = locationValueResult.getValue<std::string>();
+    EXPECT_FALSE(locationValue.empty()) << "location should not be empty (W3C SCXML 6.2.1 requires session identifier)";
+    // Note: W3C SCXML 6.2.1 requires location to identify session, implementation-specific format allowed
+
+    // W3C SCXML C.2: Check for BasicHTTP I/O Processor (if supported)
+    auto hasBasicHTTPResult =
+        engine_
+            ->evaluateExpression(smSessionId, "'basichttp' in _ioprocessors || "
+                                              "'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' in _ioprocessors")
+            .get();
+    ASSERT_TRUE(hasBasicHTTPResult.isSuccess()) << "Checking for BasicHTTP I/O processor should succeed";
+    // Note: BasicHTTP is optional, so we don't assert true here
+
+    // Test _ioprocessors is enumerable
+    auto keysResult = engine_->evaluateExpression(smSessionId, "Object.keys(_ioprocessors)").get();
+    ASSERT_TRUE(keysResult.isSuccess()) << "Object.keys(_ioprocessors) should work";
+    EXPECT_TRUE(keysResult.isArray()) << "Object.keys should return array";
+
+    auto keysLengthResult = engine_->evaluateExpression(smSessionId, "Object.keys(_ioprocessors).length >= 1").get();
+    ASSERT_TRUE(keysLengthResult.isSuccess());
+    EXPECT_TRUE(keysLengthResult.getValue<bool>()) << "Should have at least scxml I/O processor";
+
+    // Test _ioprocessors.scxml structure completeness
+    auto scxmlKeysResult =
+        engine_->evaluateExpression(smSessionId, "Object.keys(_ioprocessors.scxml).sort().join(',')").get();
+    ASSERT_TRUE(scxmlKeysResult.isSuccess()) << "Getting scxml processor keys should succeed";
+    std::string scxmlKeys = scxmlKeysResult.getValue<std::string>();
+    EXPECT_NE(scxmlKeys.find("location"), std::string::npos) << "scxml processor must have location property";
+
+    std::remove(tempPath.c_str());
+}
+
+TEST_F(JSEngineBasicTest, W3C_SystemVariables_IOProcessorsInExpressions) {
+    // Test using _ioprocessors in SCXML expressions (common pattern)
+
+    std::string scxmlContent = R"(
+        <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" datamodel="ecmascript" initial="main">
+            <state id="main"/>
+        </scxml>
+    )";
+
+    std::string tempPath = "/tmp/test_ioprocessors_expr.scxml";
+    std::ofstream tempFile(tempPath);
+    ASSERT_TRUE(tempFile.is_open());
+    tempFile << scxmlContent;
+    tempFile.close();
+
+    auto stateMachine = std::make_shared<RSM::StateMachine>();
+    ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
+    ASSERT_TRUE(stateMachine->start());
+
+    std::string smSessionId = stateMachine->getSessionId();
+
+    // Pattern: Get target location for send
+    auto getLocationResult = engine_->evaluateExpression(smSessionId, "_ioprocessors.scxml.location").get();
+    ASSERT_TRUE(getLocationResult.isSuccess()) << "Getting I/O processor location should work";
+    EXPECT_FALSE(getLocationResult.getValue<std::string>().empty()) << "Location should be populated";
+
+    // Pattern: Check if specific I/O processor is available
+    auto checkAvailableResult =
+        engine_->evaluateExpression(smSessionId, "'scxml' in _ioprocessors ? 'available' : 'not_available'").get();
+    ASSERT_TRUE(checkAvailableResult.isSuccess());
+    EXPECT_EQ(checkAvailableResult.getValue<std::string>(), "available") << "SCXML I/O processor must be available";
+
+    // Pattern: Iterate over available I/O processors (W3C SCXML common use case)
+    auto iterateResult = engine_
+                             ->executeScript(smSessionId, R"(
+        var processors = Object.keys(_ioprocessors);
+        var hasScxml = false;
+        for (var i = 0; i < processors.length; i++) {
+            if (processors[i] === 'scxml') {
+                hasScxml = true;
+            }
+        }
+        hasScxml;
+    )")
+                             .get();
+    ASSERT_TRUE(iterateResult.isSuccess()) << "Iterating over I/O processors should work";
+    EXPECT_TRUE(iterateResult.getValue<bool>()) << "Should find scxml processor in iteration";
+
+    // Pattern: Access nested properties safely
+    auto safeAccessResult =
+        engine_->evaluateExpression(smSessionId, "_ioprocessors.scxml && _ioprocessors.scxml.location").get();
+    ASSERT_TRUE(safeAccessResult.isSuccess()) << "Safe property access should work";
+    EXPECT_FALSE(safeAccessResult.getValue<std::string>().empty()) << "Safe access should return location";
+
+    std::remove(tempPath.c_str());
 }
