@@ -217,4 +217,253 @@ TEST_F(ConcurrentRegionTest, ExecuteActionNode_MixedActionTypes_AllExecuted) {
     EXPECT_EQ(assignments.at("var1"), "value1") << "Correct assignment should have been made";
 }
 
+// ============================================================================
+// Phase 1: Exit Actions Tests (W3C SCXML 3.8)
+// ============================================================================
+
+// Test deactivate with valid exit actions
+TEST_F(ConcurrentRegionTest, DeactivateWithValidExitActions) {
+    auto scriptAction = std::make_shared<ScriptAction>("console.log('exiting')", "exit_action");
+
+    auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
+    // W3C SCXML 3.8: Use block-based API for exit actions
+    std::vector<std::shared_ptr<IActionNode>> exitBlock = {scriptAction};
+    testState->addExitActionBlock(exitBlock);
+
+    mockExecutor->setScriptExecutionResult(true);
+    region->setRootState(testState);
+
+    // First activate the region
+    auto activateResult = region->activate();
+    EXPECT_TRUE(activateResult.isSuccess) << "Activation should succeed";
+    EXPECT_TRUE(region->isActive()) << "Region should be active";
+
+    // Clear history to isolate exit actions
+    mockExecutor->clearHistory();
+
+    // Now deactivate and verify exit actions
+    auto deactivateResult = region->deactivate(executionContext);
+    EXPECT_TRUE(deactivateResult.isSuccess) << "Deactivation should succeed with valid exit action";
+    EXPECT_FALSE(region->isActive()) << "Region should be inactive after deactivation";
+
+    // Verify the exit action was executed
+    const auto &executedScripts = mockExecutor->getExecutedScripts();
+    EXPECT_EQ(executedScripts.size(), 1) << "Exit script should have been executed";
+    EXPECT_EQ(executedScripts[0], "console.log('exiting')") << "Correct exit script should have been executed";
+}
+
+// Test deactivate with multiple exit actions in order
+TEST_F(ConcurrentRegionTest, DeactivateWithMultipleExitActions) {
+    auto action1 = std::make_shared<ScriptAction>("exit1", "exit_1");
+    auto action2 = std::make_shared<ScriptAction>("exit2", "exit_2");
+    auto action3 = std::make_shared<ScriptAction>("exit3", "exit_3");
+
+    auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
+    // W3C SCXML 3.8: Use block-based API - all exit actions in same block
+    std::vector<std::shared_ptr<IActionNode>> exitBlock = {action1, action2, action3};
+    testState->addExitActionBlock(exitBlock);
+
+    mockExecutor->setScriptExecutionResult(true);
+    region->setRootState(testState);
+
+    // Activate first
+    region->activate();
+    mockExecutor->clearHistory();
+
+    // Deactivate and verify
+    auto result = region->deactivate(executionContext);
+    EXPECT_TRUE(result.isSuccess) << "Deactivation should succeed with multiple exit actions";
+
+    // Verify execution order (W3C SCXML 3.13: document order)
+    const auto &executedScripts = mockExecutor->getExecutedScripts();
+    EXPECT_EQ(executedScripts.size(), 3) << "All three exit actions should have been executed";
+    EXPECT_EQ(executedScripts[0], "exit1") << "First exit action should execute first";
+    EXPECT_EQ(executedScripts[1], "exit2") << "Second exit action should execute second";
+    EXPECT_EQ(executedScripts[2], "exit3") << "Third exit action should execute third";
+}
+
+// Test deactivate with mixed action types
+TEST_F(ConcurrentRegionTest, DeactivateWithMixedExitActionTypes) {
+    auto scriptAction = std::make_shared<ScriptAction>("console.log('exit')", "exit_script");
+    auto assignAction = std::make_shared<AssignAction>("exitVar", "exitValue", "exit_assign");
+
+    auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
+    // W3C SCXML 3.8: Mixed exit actions in same block
+    std::vector<std::shared_ptr<IActionNode>> exitBlock = {scriptAction, assignAction};
+    testState->addExitActionBlock(exitBlock);
+
+    mockExecutor->setScriptExecutionResult(true);
+    mockExecutor->setVariableAssignmentResult(true);
+    region->setRootState(testState);
+
+    // Activate first
+    region->activate();
+    mockExecutor->clearHistory();
+
+    // Deactivate and verify
+    auto result = region->deactivate(executionContext);
+    EXPECT_TRUE(result.isSuccess) << "Deactivation should succeed with mixed exit action types";
+
+    // Verify both types were executed
+    const auto &executedScripts = mockExecutor->getExecutedScripts();
+    const auto &assignments = mockExecutor->getAssignedVariables();
+
+    EXPECT_EQ(executedScripts.size(), 1) << "Exit script action should have been executed";
+    EXPECT_EQ(executedScripts[0], "console.log('exit')") << "Correct exit script should have been executed";
+
+    EXPECT_EQ(assignments.size(), 1) << "Exit assignment action should have been executed";
+    EXPECT_EQ(assignments.at("exitVar"), "exitValue") << "Correct exit assignment should have been made";
+}
+
+// Test deactivate with null ExecutionContext
+TEST_F(ConcurrentRegionTest, DeactivateWithNullExecutionContext) {
+    auto scriptAction = std::make_shared<ScriptAction>("console.log('exit')", "exit_action");
+
+    auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
+    // W3C SCXML 3.8: Use block-based API
+    std::vector<std::shared_ptr<IActionNode>> exitBlock = {scriptAction};
+    testState->addExitActionBlock(exitBlock);
+
+    mockExecutor->setScriptExecutionResult(true);
+    region->setRootState(testState);
+
+    // Activate first
+    region->activate();
+    mockExecutor->clearHistory();
+
+    // Deactivate with nullptr ExecutionContext - should skip exit actions gracefully
+    auto result = region->deactivate(nullptr);
+    EXPECT_TRUE(result.isSuccess) << "Deactivation should succeed even with null execution context";
+    EXPECT_FALSE(region->isActive()) << "Region should be inactive after deactivation";
+
+    // Verify exit actions were skipped (StateExitExecutor skips actions when executionContext is null)
+    const auto &executedScripts = mockExecutor->getExecutedScripts();
+    EXPECT_EQ(executedScripts.size(), 0) << "Exit actions should be skipped when executionContext is null";
+}
+
+// Test deactivate when already inactive
+TEST_F(ConcurrentRegionTest, DeactivateWhenAlreadyInactive) {
+    auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
+    region->setRootState(testState);
+
+    // Region starts inactive, try to deactivate
+    EXPECT_FALSE(region->isActive()) << "Region should start inactive";
+
+    auto result = region->deactivate(executionContext);
+    EXPECT_TRUE(result.isSuccess) << "Deactivation should succeed even when already inactive";
+    EXPECT_FALSE(region->isActive()) << "Region should remain inactive";
+}
+
+// ============================================================================
+// Phase 2: State Lifecycle Tests
+// ============================================================================
+
+// Test reset functionality
+TEST_F(ConcurrentRegionTest, Reset_ResetsToInactiveState) {
+    auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
+    region->setRootState(testState);
+
+    // Activate the region
+    region->activate();
+    EXPECT_TRUE(region->isActive()) << "Region should be active after activation";
+
+    // Reset the region
+    auto result = region->reset();
+    EXPECT_TRUE(result.isSuccess) << "Reset should succeed";
+    EXPECT_FALSE(region->isActive()) << "Region should be inactive after reset";
+    EXPECT_EQ(region->getCurrentState(), "") << "Current state should be cleared after reset";
+    EXPECT_FALSE(region->isInFinalState()) << "Should not be in final state after reset";
+}
+
+// Test getActiveStates returns current configuration
+TEST_F(ConcurrentRegionTest, GetActiveStates_ReturnsCurrentConfiguration) {
+    auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
+    region->setRootState(testState);
+
+    // Initially inactive, no active states
+    auto activeStatesInactive = region->getActiveStates();
+    EXPECT_TRUE(activeStatesInactive.empty()) << "Active states should be empty when inactive";
+
+    // Activate and check active states
+    region->activate();
+    auto activeStatesActive = region->getActiveStates();
+    EXPECT_FALSE(activeStatesActive.empty()) << "Active states should not be empty when active";
+    EXPECT_EQ(region->getCurrentState(), "testState") << "Current state should be testState";
+
+    // Deactivate and check again
+    region->deactivate(executionContext);
+    auto activeStatesAfterDeactivate = region->getActiveStates();
+    EXPECT_TRUE(activeStatesAfterDeactivate.empty()) << "Active states should be empty after deactivation";
+}
+
+// ============================================================================
+// Phase 3: Final State Detection Tests (W3C SCXML 3.4)
+// ============================================================================
+
+// Test isInFinalState after entering final state
+TEST_F(ConcurrentRegionTest, IsInFinalState_DetectsFinalState) {
+    auto finalState = std::make_shared<StateNode>("finalState", Type::FINAL);
+    region->setRootState(finalState);
+
+    // Initially not in final state
+    EXPECT_FALSE(region->isInFinalState()) << "Should not be in final state when inactive";
+
+    // Activate - final state should be detected automatically
+    region->activate();
+
+    // W3C SCXML 3.4: Final state is detected when region enters a final state
+    EXPECT_TRUE(region->isInFinalState()) << "Should be in final state after activating with FINAL root state";
+}
+
+// Test isInFinalState before entering final state
+TEST_F(ConcurrentRegionTest, IsInFinalState_FalseForNonFinalState) {
+    auto normalState = std::make_shared<StateNode>("normalState", Type::ATOMIC);
+    region->setRootState(normalState);
+
+    // Activate normal state
+    region->activate();
+
+    EXPECT_FALSE(region->isInFinalState()) << "Should not be in final state for normal atomic state";
+    EXPECT_TRUE(region->isActive()) << "Region should be active";
+}
+
+// ============================================================================
+// Phase 4: Validation Tests (W3C SCXML Compliance)
+// ============================================================================
+
+// Test validate with null root state
+TEST_F(ConcurrentRegionTest, Validate_DetectsNullRootState) {
+    // Create region without root state
+    auto regionNoRoot = std::make_unique<ConcurrentRegion>("testRegion", nullptr, executionContext);
+
+    auto errors = regionNoRoot->validate();
+    EXPECT_FALSE(errors.empty()) << "Validation should fail for null root state";
+
+    bool foundRootStateError = false;
+    for (const auto &error : errors) {
+        if (error.find("root state") != std::string::npos || error.find("rootState") != std::string::npos) {
+            foundRootStateError = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(foundRootStateError) << "Should have error about missing root state";
+}
+
+// Test validate with valid configuration
+TEST_F(ConcurrentRegionTest, Validate_PassesForValidConfiguration) {
+    auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
+    region->setRootState(testState);
+
+    auto errors = region->validate();
+
+    // Valid configuration should have no validation errors
+    if (!errors.empty()) {
+        for (const auto &error : errors) {
+            LOG_ERROR("Unexpected validation error: {}", error);
+        }
+    }
+
+    EXPECT_TRUE(errors.empty()) << "Valid configuration should pass validation with no errors";
+}
+
 }  // namespace RSM
