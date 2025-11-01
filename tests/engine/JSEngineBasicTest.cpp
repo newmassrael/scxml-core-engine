@@ -400,8 +400,9 @@ TEST_F(JSEngineBasicTest, W3C_InFunction_StateMachineIntegration_ShouldReturnCor
 </scxml>)";
 
     // Create StateMachine with controlled scope for proper lifecycle management
+    // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
     {
-        auto sm = std::make_unique<RSM::StateMachine>();
+        auto sm = std::make_shared<RSM::StateMachine>();
         ASSERT_TRUE(sm->loadSCXMLFromString(scxml)) << "Failed to load SCXML";
         ASSERT_TRUE(sm->start()) << "Failed to start StateMachine";
 
