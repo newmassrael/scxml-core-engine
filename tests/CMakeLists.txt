@@ -182,6 +182,7 @@ target_link_libraries(states_tests
 add_executable(action_tests
     actions/ScriptActionTest.cpp
     actions/AssignActionTest.cpp
+    actions/ForeachActionTest.cpp
     runtime/ActionExecutorImplTest.cpp
     mocks/MockActionExecutor.cpp
     mocks/MockEventRaiser.cpp
