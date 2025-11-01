@@ -29,18 +29,15 @@ protected:
     std::unique_ptr<ConcurrentRegion> region;
 };
 
-// Test executeActionNode with null ActionNode
-TEST_F(ConcurrentRegionTest, ExecuteActionNode_NullActionNode_ReturnsFalse) {
-    // This test uses reflection to access the private executeActionNode method
-    // Since executeActionNode is private, we'll test it indirectly through entry action execution
-
-    // Create a state with null entry action (simulated by not adding any actions)
+// Test activation with no entry actions
+TEST_F(ConcurrentRegionTest, NoEntryActions_ActivationSucceeds) {
+    // Create a state with no entry actions
     auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
 
     // No entry actions added - should handle gracefully
     region->setRootState(testState);
 
-    // Activate should succeed even with no entry actions
+    // Activation should succeed even with no entry actions
     auto result = region->activate();
     EXPECT_TRUE(result.isSuccess) << "Activation should succeed even with no entry actions";
 
@@ -145,8 +142,8 @@ TEST_F(ConcurrentRegionTest, ExecuteActionNode_ValidAssignAction_ReturnsTrue) {
     EXPECT_EQ(assignments.at("testVar"), "42") << "Correct variable should have been assigned";
 }
 
-// Test executeActionNode with null ExecutionContext
-TEST_F(ConcurrentRegionTest, ExecuteActionNode_NullExecutionContext_SkipsExecution) {
+// Test activation with null ExecutionContext
+TEST_F(ConcurrentRegionTest, NullExecutionContext_ActivationSucceeds) {
     auto scriptAction = std::make_shared<ScriptAction>("console.log('test')", "script_action");
 
     auto testState = std::make_shared<StateNode>("testState", Type::ATOMIC);
@@ -157,13 +154,12 @@ TEST_F(ConcurrentRegionTest, ExecuteActionNode_NullExecutionContext_SkipsExecuti
     // Create region without execution context
     auto regionWithoutContext = std::make_unique<ConcurrentRegion>("testRegion", testState, nullptr);
 
-    // Activation should succeed but skip action execution
+    // Activation should succeed without crashing
+    // Note: We cannot directly verify action execution was skipped because mockExecutor
+    // is not connected to regionWithoutContext. The test passes if activation succeeds
+    // without throwing exceptions, which indicates graceful handling of nullptr context.
     auto result = regionWithoutContext->activate();
     EXPECT_TRUE(result.isSuccess) << "Activation should succeed even without execution context";
-
-    // Verify no actions were executed (since no execution context)
-    EXPECT_EQ(mockExecutor->getExecutedScripts().size(), 0)
-        << "No scripts should be executed without execution context";
 }
 
 // Test multiple entry actions execution order
