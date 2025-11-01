@@ -191,6 +191,11 @@
       "verified_date": "2025-11-01",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.4: typeexpr evaluates at invoke execution time with current datamodel value - Validated with 1:1 log comparison"
+    },
+    "216": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.4: srcexpr evaluates at invoke execution time (not parse time) - Validated with 1:1 log comparison"
     }
   }
 }
