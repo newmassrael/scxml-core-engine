@@ -155,17 +155,13 @@ TEST_F(StaticCodegenIntegrationTest, IgnoresIrrelevantEvents) {
 }
 
 // Test that demonstrates zero-overhead: no virtual functions, all inline
-TEST_F(StaticCodegenIntegrationTest, VerifyCRTPPatternCompiles) {
-    // This test exists to verify that:
-    // 1. CRTP pattern compiles without errors
-    // 2. No virtual function overhead (can be verified with sizeof)
-    // 3. Friend declaration works correctly
-
+TEST_F(StaticCodegenIntegrationTest, VerifyCRTPPatternZeroOverhead) {
+    // CRTP pattern compilation check: if this compiles, pattern works
+    // Friend declaration allows derived class to access base class private members
     thermostat.initialize();
-    EXPECT_TRUE(true);  // If we got here, CRTP pattern works
 
-    // Verify base class has no vtable (size check)
-    // Size should be just the state variable (1 byte for enum)
-    // Plus padding, typically 4 bytes total
+    // Verify zero-overhead: no vtable pointer
+    // Expected size: sizeof(State) = 1 byte enum + padding = 4 bytes typical
+    // If virtual functions exist, vtable pointer adds 8 bytes (on 64-bit)
     EXPECT_LE(sizeof(ThermostatBase<ThermostatLogic>), 8);
 }
