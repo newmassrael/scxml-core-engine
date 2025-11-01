@@ -310,8 +310,9 @@ TEST_F(HistoryManagerTest, SOLID_DependencyInjection_InitializationSuccess) {
     EXPECT_TRUE(historyManager_->registerHistoryState("historyB", "stateB", HistoryType::DEEP, "stateB1"));
 }
 
-TEST_F(HistoryManagerTest, SOLID_InterfaceSegregation_ComponentIsolation) {
-    // Test that components work independently (Interface Segregation Principle)
+TEST_F(HistoryManagerTest, SOLID_BasicWorkflow_RegisterRecordRestore) {
+    // Test basic workflow: register → record → restore
+    // Verifies that core operations work together correctly
     EXPECT_TRUE(historyManager_->registerHistoryState("historyA", "stateA", HistoryType::SHALLOW));
     EXPECT_TRUE(historyManager_->recordHistory("stateA", {"stateA2"}));
 
@@ -371,6 +372,12 @@ TEST_F(HistoryManagerTest, W3C_HistoryRecording_ShallowHistory_ShouldRecordDirec
     bool result = historyManager_->recordHistory("stateA", activeStates);
 
     EXPECT_TRUE(result);
+
+    // Verify that direct child was actually recorded by restoring
+    auto restoreResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(restoreResult.success);
+    EXPECT_EQ(restoreResult.targetStateIds.size(), 1) << "Shallow history should record direct children only";
+    EXPECT_EQ(restoreResult.targetStateIds[0], "stateA2") << "Recorded state should match the direct child";
 }
 
 TEST_F(HistoryManagerTest, W3C_HistoryRecording_DeepHistory_ShouldRecordAllDescendants) {
@@ -378,10 +385,18 @@ TEST_F(HistoryManagerTest, W3C_HistoryRecording_DeepHistory_ShouldRecordAllDesce
     ASSERT_TRUE(historyManager_->registerHistoryState("historyB", "stateB", HistoryType::DEEP, "stateB1"));
 
     // Record history with nested active states
+    // W3C SCXML 3.11: stateB1 (compound) will be filtered out, only stateB1a (atomic) recorded
     std::vector<std::string> activeStates = {"stateB1", "stateB1a"};
     bool result = historyManager_->recordHistory("stateB", activeStates);
 
     EXPECT_TRUE(result);
+
+    // Verify that atomic descendants were actually recorded by restoring
+    auto restoreResult = historyManager_->restoreHistory("historyB");
+    EXPECT_TRUE(restoreResult.success);
+    EXPECT_EQ(restoreResult.targetStateIds.size(), 1) << "Deep history should record atomic descendants only";
+    EXPECT_EQ(restoreResult.targetStateIds[0], "stateB1a")
+        << "Recorded state should be atomic descendant (stateB1a), not compound (stateB1)";
 }
 
 TEST_F(HistoryManagerTest, W3C_HistoryRecording_InvalidParent_ShouldFail) {
@@ -400,6 +415,32 @@ TEST_F(HistoryManagerTest, W3C_HistoryRecording_EmptyActiveStates_ShouldSucceed)
     bool result = historyManager_->recordHistory("stateA", emptyStates);
 
     EXPECT_TRUE(result);
+}
+
+TEST_F(HistoryManagerTest, W3C_HistoryRecording_MultipleConsecutiveRecords_ShouldKeepLatest) {
+    // W3C SCXML 3.11: Recording history multiple times should keep only the latest record
+    ASSERT_TRUE(historyManager_->registerHistoryState("historyA", "stateA", HistoryType::SHALLOW, "stateA1"));
+
+    // First record
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA1"}));
+    auto firstResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(firstResult.success);
+    ASSERT_EQ(firstResult.targetStateIds.size(), 1) << "First restore should return exactly one state";
+    EXPECT_EQ(firstResult.targetStateIds[0], "stateA1");
+
+    // Second record - should overwrite first
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA2"}));
+    auto secondResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(secondResult.success);
+    ASSERT_EQ(secondResult.targetStateIds.size(), 1) << "Second restore should return exactly one state";
+    EXPECT_EQ(secondResult.targetStateIds[0], "stateA2") << "Latest record should overwrite previous";
+
+    // Third record - should overwrite second
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA1"}));
+    auto thirdResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(thirdResult.success);
+    ASSERT_EQ(thirdResult.targetStateIds.size(), 1) << "Third restore should return exactly one state";
+    EXPECT_EQ(thirdResult.targetStateIds[0], "stateA1") << "Latest record should overwrite previous";
 }
 
 // ============================================================================
@@ -459,6 +500,30 @@ TEST_F(HistoryManagerTest, W3C_HistoryRestoration_NonexistentHistory_ShouldFail)
     EXPECT_FALSE(result.errorMessage.empty());
 }
 
+TEST_F(HistoryManagerTest, W3C_HistoryRestoration_MultipleConsecutiveRestores_ShouldBeDeterministic) {
+    // W3C SCXML 3.11: Restoring history multiple times should return same result (idempotent)
+    ASSERT_TRUE(historyManager_->registerHistoryState("historyA", "stateA", HistoryType::SHALLOW, "stateA1"));
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA2"}));
+
+    // First restore
+    auto firstResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(firstResult.success);
+    EXPECT_EQ(firstResult.targetStateIds.size(), 1);
+    EXPECT_EQ(firstResult.targetStateIds[0], "stateA2");
+
+    // Second restore - should return same result
+    auto secondResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(secondResult.success);
+    EXPECT_EQ(secondResult.targetStateIds.size(), 1);
+    EXPECT_EQ(secondResult.targetStateIds[0], "stateA2") << "Multiple restores should be deterministic";
+
+    // Third restore - should still return same result
+    auto thirdResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(thirdResult.success);
+    EXPECT_EQ(thirdResult.targetStateIds.size(), 1);
+    EXPECT_EQ(thirdResult.targetStateIds[0], "stateA2") << "Multiple restores should be deterministic";
+}
+
 // ============================================================================
 // W3C SCXML History Type Differentiation Tests
 // ============================================================================
@@ -514,21 +579,69 @@ TEST_F(HistoryManagerTest, W3C_ErrorHandling_HistoryOfAtomicState_ShouldFail) {
     EXPECT_FALSE(result);
 }
 
+TEST_F(HistoryManagerTest, W3C_ErrorHandling_RecordWithoutRegistration_ShouldFail) {
+    // W3C SCXML 3.11: Recording history requires prior registration
+    // Attempt to record without registering history state first
+    std::vector<std::string> activeStates = {"stateA2"};
+    bool result = historyManager_->recordHistory("stateA", activeStates);
+
+    EXPECT_FALSE(result) << "Recording without registration should fail";
+
+    // Verify that attempting to restore also fails
+    auto restoreResult = historyManager_->restoreHistory("historyA");
+    EXPECT_FALSE(restoreResult.success) << "Restore should fail when history was never registered";
+    EXPECT_TRUE(restoreResult.targetStateIds.empty());
+}
+
+TEST_F(HistoryManagerTest, W3C_ErrorHandling_RestoreAfterClear_ShouldReturnEmpty) {
+    // W3C SCXML 3.11: Recording empty history means "no active children"
+    ASSERT_TRUE(historyManager_->registerHistoryState("historyA", "stateA", HistoryType::SHALLOW, "stateA1"));
+
+    // First record with actual state
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA2"}));
+    auto firstResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(firstResult.success);
+    EXPECT_EQ(firstResult.targetStateIds.size(), 1);
+    EXPECT_EQ(firstResult.targetStateIds[0], "stateA2");
+
+    // Record empty active states - means "no active children at exit"
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {}));
+
+    // Restore should return empty (no recorded states) - default state is used by caller
+    auto clearResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(clearResult.success);
+    EXPECT_EQ(clearResult.targetStateIds.size(), 0) << "Empty record means no active children were recorded";
+
+    // Verify subsequent record still works
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA1"}));
+    auto afterClearResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(afterClearResult.success);
+    EXPECT_EQ(afterClearResult.targetStateIds.size(), 1);
+    EXPECT_EQ(afterClearResult.targetStateIds[0], "stateA1");
+}
+
 TEST_F(HistoryManagerTest, W3C_ThreadSafety_ConcurrentOperations) {
     // Test thread safety of history operations
     ASSERT_TRUE(historyManager_->registerHistoryState("historyA", "stateA", HistoryType::SHALLOW, "stateA1"));
 
     std::vector<std::thread> threads;
     std::atomic<int> successCount{0};
+    std::atomic<int> validDataCount{0};
 
     // Launch multiple threads performing concurrent operations
     for (int i = 0; i < 10; ++i) {
-        threads.emplace_back([this, &successCount, i]() {
+        threads.emplace_back([this, &successCount, &validDataCount, i]() {
             std::vector<std::string> activeStates = {(i % 2 == 0) ? "stateA1" : "stateA2"};
             if (historyManager_->recordHistory("stateA", activeStates)) {
                 auto result = historyManager_->restoreHistory("historyA");
                 if (result.success) {
                     successCount++;
+
+                    // Verify data integrity: restored value must be one of the valid states
+                    if (result.targetStateIds.size() == 1 &&
+                        (result.targetStateIds[0] == "stateA1" || result.targetStateIds[0] == "stateA2")) {
+                        validDataCount++;
+                    }
                 }
             }
         });
@@ -540,7 +653,53 @@ TEST_F(HistoryManagerTest, W3C_ThreadSafety_ConcurrentOperations) {
     }
 
     // All operations should succeed without race conditions
-    EXPECT_EQ(successCount.load(), 10);
+    EXPECT_EQ(successCount.load(), 10) << "All concurrent operations should succeed";
+
+    // Verify data integrity: all restored values should be valid (no corruption)
+    EXPECT_EQ(validDataCount.load(), 10) << "All restored values should be valid (stateA1 or stateA2)";
+
+    // Final verification: last restore should return a valid state
+    auto finalResult = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(finalResult.success);
+    EXPECT_EQ(finalResult.targetStateIds.size(), 1);
+    EXPECT_TRUE(finalResult.targetStateIds[0] == "stateA1" || finalResult.targetStateIds[0] == "stateA2")
+        << "Final restored state should be either stateA1 or stateA2, got: " << finalResult.targetStateIds[0];
+}
+
+// ============================================================================
+// W3C SCXML History Lifecycle Pattern Tests
+// ============================================================================
+
+TEST_F(HistoryManagerTest, W3C_HistoryLifecycle_RecordRestoreRecordCycle) {
+    // W3C SCXML 3.11: Test realistic lifecycle pattern - record → restore → record → restore
+    ASSERT_TRUE(historyManager_->registerHistoryState("historyA", "stateA", HistoryType::SHALLOW, "stateA1"));
+
+    // Cycle 1: Record stateA1 and restore
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA1"}));
+    auto restore1 = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(restore1.success);
+    ASSERT_EQ(restore1.targetStateIds.size(), 1) << "Cycle 1: Should restore exactly one state";
+    EXPECT_EQ(restore1.targetStateIds[0], "stateA1");
+
+    // Cycle 2: Record stateA2 (overwrites previous) and restore
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA2"}));
+    auto restore2 = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(restore2.success);
+    ASSERT_EQ(restore2.targetStateIds.size(), 1) << "Cycle 2: Should restore exactly one state";
+    EXPECT_EQ(restore2.targetStateIds[0], "stateA2") << "Second record should overwrite first";
+
+    // Cycle 3: Record stateA1 again and restore
+    ASSERT_TRUE(historyManager_->recordHistory("stateA", {"stateA1"}));
+    auto restore3 = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(restore3.success);
+    ASSERT_EQ(restore3.targetStateIds.size(), 1) << "Cycle 3: Should restore exactly one state";
+    EXPECT_EQ(restore3.targetStateIds[0], "stateA1") << "Third record should overwrite second";
+
+    // Final verification: restore again should still return stateA1
+    auto restore4 = historyManager_->restoreHistory("historyA");
+    EXPECT_TRUE(restore4.success);
+    ASSERT_EQ(restore4.targetStateIds.size(), 1) << "Final restore: Should restore exactly one state";
+    EXPECT_EQ(restore4.targetStateIds[0], "stateA1") << "Restore should be idempotent";
 }
 
 // ============================================================================
