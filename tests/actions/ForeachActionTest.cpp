@@ -1,4 +1,5 @@
 #include "actions/ForeachAction.h"
+#include "actions/AssignAction.h"
 #include "mocks/MockActionExecutor.h"
 #include <gtest/gtest.h>
 #include <memory>
@@ -17,112 +18,264 @@ protected:
     std::shared_ptr<MockExecutionContext> context;
 };
 
-TEST_F(ForeachActionTest, DeclaresNewVariableForUndefinedItem) {
-    // Test that foreach declares a new variable when item doesn't exist
-    auto foreach = std::make_shared<ForeachAction>("var4", "", "myArray");
+TEST_F(ForeachActionTest, ConstructorAndBasicProperties) {
+    ForeachAction action("myArray", "item", "index", "test_foreach");
 
-    // Mock: var4 doesn't exist initially
-    EXPECT_CALL(*mockExecutor, hasVariable("var4")).WillOnce(testing::Return(false));
-
-    // Mock: var4 should be declared
-    EXPECT_CALL(*mockExecutor, declareVariable("var4", testing::_)).Times(1);
-
-    // Execute foreach action
-    foreach {
-        ->execute(context);
-    }
+    EXPECT_EQ(action.getId(), "test_foreach");
+    EXPECT_EQ(action.getActionType(), "foreach");
+    EXPECT_EQ(action.getArray(), "myArray");
+    EXPECT_EQ(action.getItem(), "item");
+    EXPECT_EQ(action.getIndex(), "index");
+    EXPECT_EQ(action.getIterationActionCount(), 0);
 }
 
-TEST_F(ForeachActionTest, PreservesExistingVariableForDefinedItem) {
-    // Test that foreach uses existing variable when item already exists
-    auto foreach = std::make_shared<ForeachAction>("existingVar", "", "myArray");
+TEST_F(ForeachActionTest, ConstructorDefaults) {
+    ForeachAction action;
 
-    // Mock: existingVar already exists
-    EXPECT_CALL(*mockExecutor, hasVariable("existingVar")).WillOnce(testing::Return(true));
-
-    // Mock: should NOT declare new variable
-    EXPECT_CALL(*mockExecutor, declareVariable("existingVar", testing::_)).Times(0);
-
-    // Execute foreach action
-    foreach {
-        ->execute(context);
-    }
+    EXPECT_TRUE(action.getId().empty());
+    EXPECT_EQ(action.getActionType(), "foreach");
+    EXPECT_TRUE(action.getArray().empty());
+    EXPECT_TRUE(action.getItem().empty());
+    EXPECT_TRUE(action.getIndex().empty());
+    EXPECT_EQ(action.getIterationActionCount(), 0);
 }
 
-TEST_F(ForeachActionTest, DeclaresIndexVariableWhenSpecified) {
-    // Test that foreach declares index variable when index attribute is present
-    auto foreach = std::make_shared<ForeachAction>("var4", "var5", "myArray");
+TEST_F(ForeachActionTest, ValidationTests_RequiredAttributes) {
+    // Valid foreach
+    ForeachAction validAction("users", "user");
+    auto errors = validAction.validate();
+    EXPECT_TRUE(errors.empty());
 
-    // Mock: neither var4 nor var5 exist
-    EXPECT_CALL(*mockExecutor, hasVariable("var4")).WillOnce(testing::Return(false));
-    EXPECT_CALL(*mockExecutor, hasVariable("var5")).WillOnce(testing::Return(false));
+    // Empty array attribute
+    ForeachAction emptyArrayAction("", "item");
+    errors = emptyArrayAction.validate();
+    EXPECT_FALSE(errors.empty());
+    EXPECT_TRUE(errors[0].find("array") != std::string::npos);
 
-    // Mock: both variables should be declared
-    EXPECT_CALL(*mockExecutor, declareVariable("var4", testing::_)).Times(1);
-    EXPECT_CALL(*mockExecutor, declareVariable("var5", testing::_)).Times(1);
+    // Empty item attribute
+    ForeachAction emptyItemAction("array", "");
+    errors = emptyItemAction.validate();
+    EXPECT_FALSE(errors.empty());
+    EXPECT_TRUE(errors[0].find("item") != std::string::npos);
 
-    // Execute foreach action
-    foreach {
-        ->execute(context);
-    }
+    // Both empty
+    ForeachAction bothEmptyAction("", "");
+    errors = bothEmptyAction.validate();
+    EXPECT_GE(errors.size(), 2);
 }
 
-TEST_F(ForeachActionTest, EmptyForeachStillDeclaresVariables) {
-    // Test that empty foreach (no child actions) still declares variables
-    auto foreach = std::make_shared<ForeachAction>("var4", "var5", "myArray");
-    // No child actions added - this is an empty foreach
+TEST_F(ForeachActionTest, ValidationTests_VariableNaming_Item) {
+    // Valid item names
+    ForeachAction validAlpha("arr", "item");
+    EXPECT_TRUE(validAlpha.validate().empty());
 
-    // Mock: variables don't exist
-    EXPECT_CALL(*mockExecutor, hasVariable("var4")).WillOnce(testing::Return(false));
-    EXPECT_CALL(*mockExecutor, hasVariable("var5")).WillOnce(testing::Return(false));
+    ForeachAction validUnderscore("arr", "_item");
+    EXPECT_TRUE(validUnderscore.validate().empty());
 
-    // Mock: variables should still be declared even if foreach is empty
-    EXPECT_CALL(*mockExecutor, declareVariable("var4", testing::_)).Times(1);
-    EXPECT_CALL(*mockExecutor, declareVariable("var5", testing::_)).Times(1);
+    ForeachAction validMixed("arr", "item123");
+    EXPECT_TRUE(validMixed.validate().empty());
 
-    // Execute empty foreach action
-    foreach {
-        ->execute(context);
-    }
+    // Invalid: starts with number
+    ForeachAction invalidNumber("arr", "123item");
+    auto errors = invalidNumber.validate();
+    EXPECT_FALSE(errors.empty());
+    EXPECT_TRUE(errors[0].find("must start with") != std::string::npos ||
+                errors[0].find("letter or underscore") != std::string::npos);
+
+    // Invalid: contains hyphen
+    ForeachAction invalidHyphen("arr", "item-name");
+    errors = invalidHyphen.validate();
+    EXPECT_FALSE(errors.empty());
+    EXPECT_TRUE(errors[0].find("invalid characters") != std::string::npos);
+
+    // Invalid: contains space
+    ForeachAction invalidSpace("arr", "item name");
+    errors = invalidSpace.validate();
+    EXPECT_FALSE(errors.empty());
 }
 
-TEST_F(ForeachActionTest, HandlesNumericVariableNames) {
-    // Test that numeric variable names are handled correctly (like conf:item="4" -> var4)
-    auto foreach = std::make_shared<ForeachAction>("var4", "var5", "var3");
+TEST_F(ForeachActionTest, ValidationTests_VariableNaming_Index) {
+    // Valid index names
+    ForeachAction validAlpha("arr", "item", "i");
+    EXPECT_TRUE(validAlpha.validate().empty());
 
-    // Mock: numeric-based variables don't exist
-    EXPECT_CALL(*mockExecutor, hasVariable("var4")).WillOnce(testing::Return(false));
-    EXPECT_CALL(*mockExecutor, hasVariable("var5")).WillOnce(testing::Return(false));
+    ForeachAction validUnderscore("arr", "item", "_index");
+    EXPECT_TRUE(validUnderscore.validate().empty());
 
-    // Mock: variables should be declared
-    EXPECT_CALL(*mockExecutor, declareVariable("var4", testing::_)).Times(1);
-    EXPECT_CALL(*mockExecutor, declareVariable("var5", testing::_)).Times(1);
+    // Invalid: starts with number
+    ForeachAction invalidNumber("arr", "item", "0index");
+    auto errors = invalidNumber.validate();
+    EXPECT_FALSE(errors.empty());
+    EXPECT_TRUE(errors[0].find("must start with") != std::string::npos ||
+                errors[0].find("letter or underscore") != std::string::npos);
 
-    // Execute foreach action
-    foreach {
-        ->execute(context);
-    }
+    // Invalid: contains special character
+    ForeachAction invalidSpecial("arr", "item", "index!");
+    errors = invalidSpecial.validate();
+    EXPECT_FALSE(errors.empty());
 }
 
-TEST_F(ForeachActionTest, VariableDeclarationFollowsECMAScriptRules) {
-    // Test that variable declaration follows ECMAScript naming rules
-    // This test ensures we don't try to declare invalid variable names like "4"
-    auto foreach = std::make_shared<ForeachAction>("var4", "var5", "validArray");
+TEST_F(ForeachActionTest, ValidationTests_ItemIndexConflict) {
+    // Item and index cannot be the same
+    ForeachAction conflictAction("array", "var", "var");
+    auto errors = conflictAction.validate();
+    EXPECT_FALSE(errors.empty());
+    EXPECT_TRUE(errors[0].find("Item") != std::string::npos);
+    EXPECT_TRUE(errors[0].find("index") != std::string::npos);
+    EXPECT_TRUE(errors[0].find("must be different") != std::string::npos);
+}
 
-    // Mock: variables don't exist
-    EXPECT_CALL(*mockExecutor, hasVariable("var4")).WillOnce(testing::Return(false));
-    EXPECT_CALL(*mockExecutor, hasVariable("var5")).WillOnce(testing::Return(false));
+TEST_F(ForeachActionTest, CloneOperation) {
+    ForeachAction original("originalArray", "item", "index", "original_id");
 
-    // Mock: ensure we're declaring valid ECMAScript variable names
-    EXPECT_CALL(*mockExecutor, declareVariable("var4", testing::_)).Times(1);
-    EXPECT_CALL(*mockExecutor, declareVariable("var5", testing::_)).Times(1);
+    // Add iteration actions
+    auto assignAction = std::make_shared<AssignAction>("item.processed", "true", "assign1");
+    auto scriptAction = std::make_shared<AssignAction>("counter", "counter + 1", "assign2");
+    original.addIterationAction(assignAction);
+    original.addIterationAction(scriptAction);
 
-    // Should NOT try to declare invalid names like "4" or "5"
-    EXPECT_CALL(*mockExecutor, declareVariable("4", testing::_)).Times(0);
-    EXPECT_CALL(*mockExecutor, declareVariable("5", testing::_)).Times(0);
+    auto cloned = original.clone();
+    ASSERT_NE(cloned, nullptr);
 
-    // Execute foreach action
-    foreach {
-        ->execute(context);
-    }
+    auto foreachCloned = std::dynamic_pointer_cast<ForeachAction>(cloned);
+    ASSERT_NE(foreachCloned, nullptr);
+
+    EXPECT_EQ(foreachCloned->getId(), "original_id");
+    EXPECT_EQ(foreachCloned->getActionType(), "foreach");
+    EXPECT_EQ(foreachCloned->getArray(), "originalArray");
+    EXPECT_EQ(foreachCloned->getItem(), "item");
+    EXPECT_EQ(foreachCloned->getIndex(), "index");
+    EXPECT_EQ(foreachCloned->getIterationActionCount(), 2);
+
+    // Verify independence (modify clone)
+    foreachCloned->setArray("modifiedArray");
+    foreachCloned->setItem("newItem");
+    foreachCloned->setIndex("newIndex");
+
+    EXPECT_EQ(original.getArray(), "originalArray");
+    EXPECT_EQ(original.getItem(), "item");
+    EXPECT_EQ(original.getIndex(), "index");
+
+    // Verify deep copy of iteration actions
+    foreachCloned->clearIterationActions();
+    EXPECT_EQ(foreachCloned->getIterationActionCount(), 0);
+    EXPECT_EQ(original.getIterationActionCount(), 2);
+}
+
+TEST_F(ForeachActionTest, CloneOperation_EmptyIterationActions) {
+    ForeachAction original("array", "item");
+
+    auto cloned = original.clone();
+    auto foreachCloned = std::dynamic_pointer_cast<ForeachAction>(cloned);
+    ASSERT_NE(foreachCloned, nullptr);
+
+    EXPECT_EQ(foreachCloned->getIterationActionCount(), 0);
+}
+
+TEST_F(ForeachActionTest, PropertyModification) {
+    ForeachAction action("initialArray", "initialItem", "initialIndex");
+
+    // Test array modification
+    EXPECT_EQ(action.getArray(), "initialArray");
+    action.setArray("modifiedArray");
+    EXPECT_EQ(action.getArray(), "modifiedArray");
+
+    // Test item modification
+    EXPECT_EQ(action.getItem(), "initialItem");
+    action.setItem("modifiedItem");
+    EXPECT_EQ(action.getItem(), "modifiedItem");
+
+    // Test index modification
+    EXPECT_EQ(action.getIndex(), "initialIndex");
+    action.setIndex("modifiedIndex");
+    EXPECT_EQ(action.getIndex(), "modifiedIndex");
+
+    // Clear index (empty string)
+    action.setIndex("");
+    EXPECT_TRUE(action.getIndex().empty());
+}
+
+TEST_F(ForeachActionTest, IterationActionManagement) {
+    ForeachAction action("array", "item");
+
+    EXPECT_EQ(action.getIterationActionCount(), 0);
+    EXPECT_TRUE(action.getIterationActions().empty());
+
+    // Add first action
+    auto action1 = std::make_shared<AssignAction>("var1", "value1");
+    action.addIterationAction(action1);
+    EXPECT_EQ(action.getIterationActionCount(), 1);
+    EXPECT_EQ(action.getIterationActions().size(), 1);
+
+    // Add second action
+    auto action2 = std::make_shared<AssignAction>("var2", "value2");
+    action.addIterationAction(action2);
+    EXPECT_EQ(action.getIterationActionCount(), 2);
+    EXPECT_EQ(action.getIterationActions().size(), 2);
+
+    // Add third action
+    auto action3 = std::make_shared<AssignAction>("var3", "value3");
+    action.addIterationAction(action3);
+    EXPECT_EQ(action.getIterationActionCount(), 3);
+
+    // Clear all actions
+    action.clearIterationActions();
+    EXPECT_EQ(action.getIterationActionCount(), 0);
+    EXPECT_TRUE(action.getIterationActions().empty());
+}
+
+TEST_F(ForeachActionTest, DescriptionGeneration) {
+    // Basic foreach
+    ForeachAction action("users", "user", "i", "user_loop");
+    std::string desc = action.getDescription();
+    EXPECT_TRUE(desc.find("foreach") != std::string::npos);
+    EXPECT_TRUE(desc.find("users") != std::string::npos);
+    EXPECT_TRUE(desc.find("user") != std::string::npos);
+
+    // Foreach without index
+    ForeachAction noIndexAction("data", "item");
+    desc = noIndexAction.getDescription();
+    EXPECT_TRUE(desc.find("foreach") != std::string::npos);
+    EXPECT_TRUE(desc.find("data") != std::string::npos);
+
+    // Foreach with iteration actions
+    ForeachAction withActions("items", "item");
+    withActions.addIterationAction(std::make_shared<AssignAction>("x", "1"));
+    withActions.addIterationAction(std::make_shared<AssignAction>("y", "2"));
+    desc = withActions.getDescription();
+    EXPECT_TRUE(desc.find("2") != std::string::npos || desc.find("action") != std::string::npos);
+}
+
+TEST_F(ForeachActionTest, ValidationTests_ChildActions) {
+    ForeachAction action("array", "item");
+
+    // Add valid child action
+    auto validChild = std::make_shared<AssignAction>("validVar", "42");
+    action.addIterationAction(validChild);
+    auto errors = action.validate();
+    EXPECT_TRUE(errors.empty());
+
+    // Add invalid child action
+    auto invalidChild = std::make_shared<AssignAction>("", "");  // Empty location and expr
+    action.addIterationAction(invalidChild);
+    errors = action.validate();
+    EXPECT_FALSE(errors.empty());
+}
+
+TEST_F(ForeachActionTest, ArrayExpressionVariety) {
+    // Variable reference
+    ForeachAction varAction("myArray", "item");
+    EXPECT_TRUE(varAction.validate().empty());
+
+    // Dot notation
+    ForeachAction dotAction("data.items", "item");
+    EXPECT_TRUE(dotAction.validate().empty());
+
+    // Array literal
+    ForeachAction literalAction("[1, 2, 3, 4, 5]", "num");
+    EXPECT_TRUE(literalAction.validate().empty());
+
+    // Expression
+    ForeachAction exprAction("users.filter(u => u.active)", "user");
+    EXPECT_TRUE(exprAction.validate().empty());
 }
