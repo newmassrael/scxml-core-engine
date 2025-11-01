@@ -38,7 +38,10 @@ namespace RSM::W3C::AotTests {
  * - Event scheduler polling for timeout
  */
 struct Test224 : public ScheduledAotTest<Test224, 224> {
-    static constexpr const char *DESCRIPTION = "invoke with idlocation (W3C 6.3.1 AOT Static Hybrid)";
+    static constexpr const char *DESCRIPTION =
+        "W3C SCXML 6.4: When the platform generates an identifier for 'idlocation', the identifier MUST have the form "
+        "stateid.platformid, where stateid is the id of the state containing this element and platformid is "
+        "automatically generated.";
     using SM = RSM::Generated::test224::test224;
 };
 
