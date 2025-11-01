@@ -133,28 +133,44 @@ TEST_F(StateMachineTest, Constructor) {
     // Default constructor succeeds safely
     StateMachine sm;
     EXPECT_FALSE(sm.isRunning());
-    // Calling getCurrentState() when SCXML is not loaded should be avoided
-    // This is correct behavior for SCXML standard compliance
+    EXPECT_TRUE(sm.getCurrentState().empty());
+    EXPECT_TRUE(sm.getActiveStates().empty());
+
+    // Verify statistics show initial state
+    auto stats = sm.getStatistics();
+    EXPECT_EQ(stats.totalTransitions, 0);
+    EXPECT_EQ(stats.totalEvents, 0);
+    EXPECT_FALSE(stats.isRunning);
 }
 
-TEST_F(StateMachineTest, FactoryPattern_CreateForTesting) {
-    // Factory pattern enables Mock-based testing
+TEST_F(StateMachineTest, FactoryPattern_CreateProduction) {
+    // Verify factory creates production StateMachine instance
     auto result = StateMachineFactory::createProduction();
 
-    // Factory uses Mock engine so it can succeed
-    if (result.has_value()) {
-        EXPECT_FALSE(result.value->isRunning());
-    } else {
-        // Even if failed, error message should exist
-        EXPECT_FALSE(result.error.empty());
-    }
+    // Factory should succeed
+    ASSERT_TRUE(result.has_value()) << "Factory failed: " << result.error;
+    EXPECT_FALSE(result.value->isRunning());
+
+    // Convert to shared_ptr for proper lifecycle management
+    auto sm = std::shared_ptr<StateMachine>(result.value.release());
+
+    // Verify created instance is functional
+    std::string scxml = createSimpleSCXML();
+    EXPECT_TRUE(sm->loadSCXMLFromString(scxml));
+    EXPECT_TRUE(sm->start());
+    EXPECT_EQ(sm->getCurrentState(), "idle");
 }
 
 TEST_F(StateMachineTest, LoadSimpleSCXML) {
-    StateMachine sm;
+    auto sm = std::make_shared<StateMachine>();
     std::string scxml = createSimpleSCXML();
 
-    EXPECT_TRUE(sm.loadSCXMLFromString(scxml));
+    EXPECT_TRUE(sm->loadSCXMLFromString(scxml));
+
+    // Verify loaded SCXML is functional
+    EXPECT_TRUE(sm->start());
+    EXPECT_TRUE(sm->isRunning());
+    EXPECT_EQ(sm->getCurrentState(), "idle");
 }
 
 TEST_F(StateMachineTest, StartStateMachine) {
@@ -247,10 +263,18 @@ TEST_F(StateMachineTest, Statistics) {
     EXPECT_EQ(stats1.totalEvents, 0);
     EXPECT_TRUE(stats1.isRunning);
 
-    // Make some transitions
-    sm->processEvent("start");
-    sm->processEvent("stop");
-    sm->processEvent("invalid");  // This should fail
+    // Make some transitions with verification
+    auto result1 = sm->processEvent("start");
+    EXPECT_TRUE(result1.success);
+    EXPECT_EQ(sm->getCurrentState(), "running");
+
+    auto result2 = sm->processEvent("stop");
+    EXPECT_TRUE(result2.success);
+    EXPECT_EQ(sm->getCurrentState(), "idle");
+
+    auto result3 = sm->processEvent("invalid");
+    EXPECT_FALSE(result3.success);             // This should fail
+    EXPECT_EQ(sm->getCurrentState(), "idle");  // Should stay in same state
 
     auto stats2 = sm->getStatistics();
     EXPECT_EQ(stats2.totalTransitions, 2);
@@ -259,7 +283,11 @@ TEST_F(StateMachineTest, Statistics) {
 }
 
 // JavaScript integration tests
-TEST_F(StateMachineTest, JavaScriptGuards) {
+TEST_F(StateMachineTest, JavaScriptDatamodel) {
+    // Test JavaScript datamodel (W3C SCXML 5.2)
+    // - Data variable initialization and modification
+    // - Conditional guards (cond attribute)
+    // - Script actions (onentry, transition)
     auto sm = std::make_shared<StateMachine>();
     std::string scxml = createSCXMLWithJS();
 
@@ -322,31 +350,35 @@ TEST_F(StateMachineTest, CppObjectBinding) {
 }
 
 // Integration with existing JSEngine tests
-TEST_F(StateMachineTest, JSEngineIntegration) {
+TEST_F(StateMachineTest, ScriptExecutionBasic) {
+    // Verify script execution affects state machine behavior (W3C SCXML 5.8)
     auto sm = std::make_shared<StateMachine>();
 
-    // Create simple SCXML with script
+    // Create SCXML with script that affects transition logic
     std::string scxml = R"(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="start">
+    <datamodel>
+        <data id="executed" expr="false"/>
+    </datamodel>
     <state id="start">
         <onentry>
-            <script>var testVar = "Hello from SCXML";</script>
+            <script>executed = true;</script>
         </onentry>
-        <transition event="next" target="end"/>
+        <transition event="check" cond="executed" target="success"/>
+        <transition event="check" target="failed"/>
     </state>
-    <final id="end"/>
+    <state id="success"/>
+    <state id="failed"/>
 </scxml>)";
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
     ASSERT_TRUE(sm->start());
 
-    // The script should have executed in onentry
-    // (We can't easily test this without exposing the JS session,
-    //  but it tests that the integration doesn't crash)
-
-    auto result = sm->processEvent("next");
+    // If script executed correctly, executed=true and transition should go to success
+    auto result = sm->processEvent("check");
     EXPECT_TRUE(result.success);
-    EXPECT_EQ(sm->getCurrentState(), "end");
+    EXPECT_EQ(sm->getCurrentState(), "success");
+    EXPECT_NE(sm->getCurrentState(), "failed");
 }
 
 // Error handling tests
