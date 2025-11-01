@@ -201,6 +201,11 @@
       "verified_date": "2025-11-01",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.4: Platforms MUST support http://www.w3.org/TR/scxml/, as a value for the 'type' attribute"
+    },
+    "223": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.4: If the 'idlocation' attribute is present, the SCXML Processor MUST generate an id automatically when the invoke element is evaluated and store it in the location specified by 'idlocation'."
     }
   }
 }
