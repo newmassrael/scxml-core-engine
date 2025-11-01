@@ -28,8 +28,8 @@ protected:
         // Reset JSEngine for test isolation (following SCXML specification pattern)
         RSM::JSEngine::instance().reset();
 
-        // Initialize state machine with history support
-        stateMachine = std::make_unique<StateMachine>();
+        // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
+        stateMachine = std::make_shared<StateMachine>();
 
         // Create JSEngine session for this test
         sessionId = "history_integration_test";
@@ -53,7 +53,7 @@ protected:
         RSM::JSEngine::instance().shutdown();
     }
 
-    std::unique_ptr<StateMachine> stateMachine;
+    std::shared_ptr<StateMachine> stateMachine;
     std::string sessionId;
 };
 
