@@ -181,6 +181,11 @@
       "verified_date": "2025-11-01",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.3: The Processor SHOULD make its best attempt to cancel all delayed events with the specified id."
+    },
+    "210": {
+      "verified_date": "2025-11-01",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.3: If the 'sendidexpr' attribute is present, the SCXML Processor MUST evaluate it when the parent cancel element is evaluated and treat the result as if it had been entered as the value of 'sendid'."
     }
   }
 }
