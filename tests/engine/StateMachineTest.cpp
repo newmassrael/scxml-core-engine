@@ -413,3 +413,97 @@ TEST_F(StateMachineTest, ProcessEventWithoutStarting) {
     EXPECT_FALSE(result.success);
     EXPECT_FALSE(result.errorMessage.empty());
 }
+
+// Final state and lifecycle tests
+TEST_F(StateMachineTest, FinalStateReached) {
+    // Verify behavior when final state is reached (W3C SCXML 3.7)
+    auto sm = std::make_shared<StateMachine>();
+    std::string scxml = createSimpleSCXML();
+
+    ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
+    ASSERT_TRUE(sm->start());
+    EXPECT_EQ(sm->getCurrentState(), "idle");
+
+    // Transition to final state: idle -> running -> done
+    auto result1 = sm->processEvent("start");
+    EXPECT_TRUE(result1.success);
+    EXPECT_EQ(sm->getCurrentState(), "running");
+
+    auto result2 = sm->processEvent("finish");
+    EXPECT_TRUE(result2.success);
+    EXPECT_EQ(result2.toState, "done");
+    EXPECT_EQ(sm->getCurrentState(), "done");
+
+    // Critical: Verify final state stops execution
+    // Note: When top-level final state is reached, state machine stops automatically
+    EXPECT_FALSE(sm->isRunning());
+}
+
+TEST_F(StateMachineTest, RestartAfterStop) {
+    // Verify state machine can restart after stop
+    auto sm = std::make_shared<StateMachine>();
+    std::string scxml = createSimpleSCXML();
+
+    // First run
+    ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
+    ASSERT_TRUE(sm->start());
+    EXPECT_EQ(sm->getCurrentState(), "idle");
+
+    auto result = sm->processEvent("start");
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(sm->getCurrentState(), "running");
+
+    // Stop
+    sm->stop();
+    EXPECT_FALSE(sm->isRunning());
+    EXPECT_TRUE(sm->getCurrentState().empty());
+
+    // Restart - Critical: Can we restart?
+    EXPECT_TRUE(sm->start());
+    EXPECT_TRUE(sm->isRunning());
+    EXPECT_EQ(sm->getCurrentState(), "idle");  // Should reset to initial state
+}
+
+TEST_F(StateMachineTest, CompletionCallback) {
+    // Verify completion callback is invoked on final state
+    auto sm = std::make_shared<StateMachine>();
+    std::string scxml = createSimpleSCXML();
+
+    ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
+
+    bool callbackInvoked = false;
+
+    sm->setCompletionCallback([&]() { callbackInvoked = true; });
+
+    ASSERT_TRUE(sm->start());
+    sm->processEvent("start");
+    sm->processEvent("finish");
+
+    // Callback should be invoked when final state is reached
+    EXPECT_TRUE(callbackInvoked);
+    EXPECT_EQ(sm->getCurrentState(), "done");
+    EXPECT_FALSE(sm->isRunning());
+}
+
+TEST_F(StateMachineTest, LoadSCXMLFromFile) {
+    // Verify loading SCXML from file
+    auto sm = std::make_shared<StateMachine>();
+
+    // Create temporary SCXML file
+    std::string tempPath = "/tmp/test_scxml_load.xml";
+    std::ofstream ofs(tempPath);
+    ofs << createSimpleSCXML();
+    ofs.close();
+
+    EXPECT_TRUE(sm->loadSCXML(tempPath));
+    EXPECT_TRUE(sm->start());
+    EXPECT_EQ(sm->getCurrentState(), "idle");
+
+    // Verify functionality
+    auto result = sm->processEvent("start");
+    EXPECT_TRUE(result.success);
+    EXPECT_EQ(sm->getCurrentState(), "running");
+
+    // Cleanup
+    std::remove(tempPath.c_str());
+}
