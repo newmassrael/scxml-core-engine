@@ -539,16 +539,18 @@ TEST_F(TXMLConverterTest, HandlesW3CIRPAttributesWithSpecialCharacters) {
 
 // Test conf:eventNamedParamHasValue attribute conversion for event parameter validation
 TEST_F(TXMLConverterTest, ConvertsEventNamedParamHasValueAttribute) {
+    // W3C SCXML IRP: conf:eventNamedParamHasValue="paramName value" validates event.data.paramName == value
     std::string txml = createValidTXML(R"xyz(
-        <if conf:eventNamedParamHasValue="event.data.param">
+        <if conf:eventNamedParamHasValue="param testValue">
             <transition target="pass"/>
         </if>
     )xyz");
 
     std::string result = converter.convertTXMLToSCXML(txml);
 
-    EXPECT_NE(result.find(R"abc(expr="event.data.param")abc"), std::string::npos)
-        << "conf:eventNamedParamHasValue should be converted to expr attribute";
+    // Should convert to: expr="_event.data[&quot;param&quot;] == &quot;testValue&quot;"
+    EXPECT_NE(result.find(R"abc(expr="_event.data[&quot;param&quot;] == &quot;testValue&quot;")abc"), std::string::npos)
+        << "conf:eventNamedParamHasValue should be converted to event data parameter comparison";
     EXPECT_EQ(result.find("conf:eventNamedParamHasValue"), std::string::npos)
         << "conf:eventNamedParamHasValue references should be removed";
     EXPECT_NE(result.find("<if"), std::string::npos) << "If element should be preserved";
@@ -564,7 +566,7 @@ TEST_F(TXMLConverterTest, ConvertsAllW3CIRPAttributesComprehensive) {
             <send conf:delay="1s" conf:invalidNamelist="Var1 Var2" event="timer" target="self"/>
         </onentry>
         <transition event="timer" target="checkParam">
-            <if conf:eventNamedParamHasValue="event.data.hasParam">
+            <if conf:eventNamedParamHasValue="hasParam true">
                 <transition target="pass"/>
             </if>
             <else>
@@ -591,8 +593,8 @@ TEST_F(TXMLConverterTest, ConvertsAllW3CIRPAttributesComprehensive) {
     // W3C test 553: conf:invalidNamelist converts to error-triggering undefined variable
     EXPECT_NE(result.find(R"mno(namelist="__undefined_variable_for_error__")mno"), std::string::npos)
         << "conf:invalidNamelist should be converted to error-triggering namelist";
-    EXPECT_NE(result.find(R"pqr(expr="event.data.hasParam")pqr"), std::string::npos)
-        << "conf:eventNamedParamHasValue should be converted to expr";
+    EXPECT_NE(result.find(R"pqr(expr="_event.data[&quot;hasParam&quot;] == &quot;true&quot;")pqr"), std::string::npos)
+        << "conf:eventNamedParamHasValue should be converted to event data comparison";
     EXPECT_NE(result.find(R"stu(name="resultParam")stu"), std::string::npos)
         << "conf:eventdataSomeVal should be converted to name";
 
@@ -623,8 +625,10 @@ TEST_F(TXMLConverterTest, HandlesW3CIRPEdgeCases) {
     // W3C test 553: Even empty conf:invalidNamelist converts to error-triggering variable
     EXPECT_NE(result.find(R"234(namelist="__undefined_variable_for_error__")234"), std::string::npos)
         << "Empty conf:invalidNamelist should convert to error-triggering namelist";
-    EXPECT_NE(result.find(R"567(expr="")567"), std::string::npos)
-        << "Empty conf:eventNamedParamHasValue should convert to empty expr";
+    // Empty conf:eventNamedParamHasValue doesn't match "paramName value" pattern
+    // It gets removed by CONF_ALL_ATTRIBUTES cleanup (TXMLConverter.cpp:636)
+    EXPECT_EQ(result.find("conf:eventNamedParamHasValue"), std::string::npos)
+        << "Empty conf:eventNamedParamHasValue should be removed by cleanup";
     EXPECT_NE(result.find(R"890(name="")890"), std::string::npos)
         << "Empty conf:eventdataSomeVal should convert to empty name";
     EXPECT_NE(result.find(R"abc(location="")abc"), std::string::npos)
