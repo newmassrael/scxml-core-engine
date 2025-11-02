@@ -31,7 +31,7 @@ void RSM::StateNodeParser::setRelatedParsers(std::shared_ptr<TransitionParser> t
     LOG_DEBUG("Related parsers set");
 }
 
-std::shared_ptr<RSM::IStateNode> RSM::StateNodeParser::parseStateNode(const xmlpp::Element *stateElement,
+std::shared_ptr<RSM::IStateNode> RSM::StateNodeParser::parseStateNode(const std::shared_ptr<IXMLElement> &stateElement,
                                                                       std::shared_ptr<RSM::IStateNode> parentState,
                                                                       const RSM::SCXMLContext &context) {
     if (!stateElement) {
@@ -41,12 +41,11 @@ std::shared_ptr<RSM::IStateNode> RSM::StateNodeParser::parseStateNode(const xmlp
 
     // Get state ID
     std::string stateId;
-    auto idAttr = stateElement->get_attribute("id");
-    if (idAttr) {
-        stateId = idAttr->get_value();
+    if (stateElement->hasAttribute("id")) {
+        stateId = stateElement->getAttribute("id");
     } else {
         // Auto-generate if ID is missing
-        stateId = "state_" + std::to_string(reinterpret_cast<uintptr_t>(stateElement));
+        stateId = "state_" + std::to_string(reinterpret_cast<uintptr_t>(stateElement.get()));
         LOG_WARN("State has no ID, generated: {}", stateId);
     }
 
@@ -75,9 +74,6 @@ std::shared_ptr<RSM::IStateNode> RSM::StateNodeParser::parseStateNode(const xmlp
     if (stateType == Type::HISTORY) {
         parseHistoryType(stateElement, stateNode);
     } else {
-        // Parse onentry/onexit elements (only for non-history states) - Feature available
-        // parseEntryExitElements(stateElement, stateNode);
-
         // Parse new IActionNode-based actions
         parseEntryExitActionNodes(stateElement, stateNode);
 
@@ -116,12 +112,11 @@ std::shared_ptr<RSM::IStateNode> RSM::StateNodeParser::parseStateNode(const xmlp
 
     // Parse <donedata> element in <final> state
     if (stateType == Type::FINAL && doneDataParser_) {
-        const xmlpp::Element *doneDataElement = ParsingCommon::findFirstChildElement(stateElement, "donedata");
+        auto doneDataElement = RSM::ParsingCommon::findFirstChildElement(stateElement, "donedata");
         if (doneDataElement) {
             bool success = doneDataParser_->parseDoneData(doneDataElement, stateNode.get());
             if (!success) {
                 LOG_WARN("Failed to parse <donedata> in final state: {}", stateId);
-                // Continue even with errors (not fatal)
             } else {
                 LOG_DEBUG("Successfully parsed <donedata> in final state: {}", stateId);
             }
@@ -130,24 +125,21 @@ std::shared_ptr<RSM::IStateNode> RSM::StateNodeParser::parseStateNode(const xmlp
 
     // Set initial state (for compound states)
     if (stateType == Type::COMPOUND && !stateNode->getChildren().empty()) {
-        if (stateType == Type::COMPOUND && !stateNode->getChildren().empty()) {
-            // Check for <initial> element
-            auto initialElement = ParsingCommon::findFirstChildElement(stateElement, "initial");
-            if (initialElement) {
-                // Parse <initial> element
-                parseInitialElement(initialElement, stateNode);
-                LOG_DEBUG("Parsed <initial> element for state: {}", stateId);
-            } else {
-                // Set initial state from initial attribute
-                auto initialAttr = stateElement->get_attribute("initial");
-                if (initialAttr) {
-                    stateNode->setInitialState(initialAttr->get_value());
-                    LOG_DEBUG("StateNodeParser: State '{}' initial attribute='{}'", stateId, initialAttr->get_value());
-                } else if (!stateNode->getChildren().empty()) {
-                    // Use first child if initial state is not specified
-                    stateNode->setInitialState(stateNode->getChildren().front()->getId());
-                    LOG_DEBUG("Set default initial state: {}", stateNode->getChildren().front()->getId());
-                }
+        // Check for <initial> element
+        auto initialElement = RSM::ParsingCommon::findFirstChildElement(stateElement, "initial");
+        if (initialElement) {
+            parseInitialElement(initialElement, stateNode);
+            LOG_DEBUG("Parsed <initial> element for state: {}", stateId);
+        } else {
+            // Set initial state from initial attribute
+            if (stateElement->hasAttribute("initial")) {
+                std::string initialAttr = stateElement->getAttribute("initial");
+                stateNode->setInitialState(initialAttr);
+                LOG_DEBUG("StateNodeParser: State '{}' initial attribute='{}'", stateId, initialAttr);
+            } else if (!stateNode->getChildren().empty()) {
+                // Use first child if initial state is not specified
+                stateNode->setInitialState(stateNode->getChildren().front()->getId());
+                LOG_DEBUG("Set default initial state: {}", stateNode->getChildren().front()->getId());
             }
         }
     }
@@ -156,13 +148,13 @@ std::shared_ptr<RSM::IStateNode> RSM::StateNodeParser::parseStateNode(const xmlp
     return stateNode;
 }
 
-RSM::Type RSM::StateNodeParser::determineStateType(const xmlpp::Element *stateElement) {
+RSM::Type RSM::StateNodeParser::determineStateType(const std::shared_ptr<IXMLElement> &stateElement) {
     if (!stateElement) {
         return Type::ATOMIC;
     }
 
     // Get node name
-    std::string nodeName = stateElement->get_name();
+    std::string nodeName = stateElement->getName();
 
     // Check for history element
     if (ParsingCommon::matchNodeName(nodeName, "history")) {
@@ -180,35 +172,27 @@ RSM::Type RSM::StateNodeParser::determineStateType(const xmlpp::Element *stateEl
     }
 
     // Distinguish between compound and atomic states
-    // Compound if has child states, atomic otherwise
     bool hasChildStates = false;
-    auto children = stateElement->get_children();
-    for (auto child : children) {
-        auto element = dynamic_cast<const xmlpp::Element *>(child);
-        if (element) {
-            std::string childName = element->get_name();
-            if (ParsingCommon::matchNodeName(childName, "state") ||
-                ParsingCommon::matchNodeName(childName, "parallel") ||
-                ParsingCommon::matchNodeName(childName, "final") ||
-                ParsingCommon::matchNodeName(childName, "history")) {
-                hasChildStates = true;
-                break;
-            }
-        }
-    }
+    auto stateChildren = RSM::ParsingCommon::findChildElements(stateElement, "state");
+    auto parallelChildren = RSM::ParsingCommon::findChildElements(stateElement, "parallel");
+    auto finalChildren = RSM::ParsingCommon::findChildElements(stateElement, "final");
+    auto historyChildren = RSM::ParsingCommon::findChildElements(stateElement, "history");
+
+    hasChildStates =
+        !stateChildren.empty() || !parallelChildren.empty() || !finalChildren.empty() || !historyChildren.empty();
 
     LOG_DEBUG("State type: {}", (hasChildStates ? "Compound" : "Standard"));
     return hasChildStates ? Type::COMPOUND : Type::ATOMIC;
 }
 
-void RSM::StateNodeParser::parseTransitions(const xmlpp::Element *parentElement,
+void RSM::StateNodeParser::parseTransitions(const std::shared_ptr<IXMLElement> &parentElement,
                                             std::shared_ptr<RSM::IStateNode> state) {
     if (!parentElement || !state || !transitionParser_) {
         return;
     }
 
-    auto transitionElements = ParsingCommon::findChildElements(parentElement, "transition");
-    for (auto *transitionElement : transitionElements) {
+    auto transitionElements = RSM::ParsingCommon::findChildElements(parentElement, "transition");
+    for (const auto &transitionElement : transitionElements) {
         auto transition = transitionParser_->parseTransitionNode(transitionElement, state.get());
         if (transition) {
             state->addTransition(transition);
@@ -218,27 +202,28 @@ void RSM::StateNodeParser::parseTransitions(const xmlpp::Element *parentElement,
     LOG_DEBUG("Parsed {} transitions", state->getTransitions().size());
 }
 
-void RSM::StateNodeParser::parseChildStates(const xmlpp::Element *stateElement,
+void RSM::StateNodeParser::parseChildStates(const std::shared_ptr<IXMLElement> &stateElement,
                                             std::shared_ptr<RSM::IStateNode> parentState,
                                             const RSM::SCXMLContext &context) {
     LOG_DEBUG("Parsing child states");
 
     // Search for child elements like state, parallel, final, history
-    std::vector<const xmlpp::Element *> childStateElements;
-    auto stateElements = ParsingCommon::findChildElements(stateElement, "state");
+    std::vector<std::shared_ptr<IXMLElement>> childStateElements;
+
+    auto stateElements = RSM::ParsingCommon::findChildElements(stateElement, "state");
     childStateElements.insert(childStateElements.end(), stateElements.begin(), stateElements.end());
 
-    auto parallelElements = ParsingCommon::findChildElements(stateElement, "parallel");
+    auto parallelElements = RSM::ParsingCommon::findChildElements(stateElement, "parallel");
     childStateElements.insert(childStateElements.end(), parallelElements.begin(), parallelElements.end());
 
-    auto finalElements = ParsingCommon::findChildElements(stateElement, "final");
+    auto finalElements = RSM::ParsingCommon::findChildElements(stateElement, "final");
     childStateElements.insert(childStateElements.end(), finalElements.begin(), finalElements.end());
 
-    auto historyElements = ParsingCommon::findChildElements(stateElement, "history");
+    auto historyElements = RSM::ParsingCommon::findChildElements(stateElement, "history");
     childStateElements.insert(childStateElements.end(), historyElements.begin(), historyElements.end());
 
     // Recursively parse each discovered child state
-    for (auto *childElement : childStateElements) {
+    for (const auto &childElement : childStateElements) {
         auto childState = parseStateNode(childElement, parentState, context);
         if (childState) {
             parentState->addChild(childState);
@@ -248,14 +233,14 @@ void RSM::StateNodeParser::parseChildStates(const xmlpp::Element *stateElement,
     LOG_DEBUG("Found {} child states", childStateElements.size());
 }
 
-void RSM::StateNodeParser::parseInvokeElements(const xmlpp::Element *parentElement,
+void RSM::StateNodeParser::parseInvokeElements(const std::shared_ptr<IXMLElement> &parentElement,
                                                std::shared_ptr<RSM::IStateNode> state) {
     if (!parentElement || !state || !invokeParser_) {
         return;
     }
 
-    auto invokeElements = ParsingCommon::findChildElements(parentElement, "invoke");
-    for (auto *invokeElement : invokeElements) {
+    auto invokeElements = RSM::ParsingCommon::findChildElements(parentElement, "invoke");
+    for (const auto &invokeElement : invokeElements) {
         auto invokeNode = invokeParser_->parseInvokeNode(invokeElement);
         if (invokeNode) {
             // W3C SCXML 6.4: Set parent state ID for invoke ID generation (test 224)
@@ -277,7 +262,7 @@ void RSM::StateNodeParser::parseInvokeElements(const xmlpp::Element *parentEleme
     LOG_DEBUG("Parsed {} invoke elements", state->getInvoke().size());
 }
 
-void RSM::StateNodeParser::parseHistoryType(const xmlpp::Element *historyElement,
+void RSM::StateNodeParser::parseHistoryType(const std::shared_ptr<IXMLElement> &historyElement,
                                             std::shared_ptr<RSM::IStateNode> state) {
     if (!historyElement || !state) {
         return;
@@ -287,8 +272,7 @@ void RSM::StateNodeParser::parseHistoryType(const xmlpp::Element *historyElement
     bool isDeep = false;
 
     // Check type attribute
-    auto typeAttr = historyElement->get_attribute("type");
-    if (typeAttr && typeAttr->get_value() == "deep") {
+    if (historyElement->hasAttribute("type") && historyElement->getAttribute("type") == "deep") {
         isDeep = true;
     }
 
@@ -303,7 +287,7 @@ void RSM::StateNodeParser::parseHistoryType(const xmlpp::Element *historyElement
     }
 }
 
-void RSM::StateNodeParser::parseReactiveGuards(const xmlpp::Element *parentElement,
+void RSM::StateNodeParser::parseReactiveGuards(const std::shared_ptr<IXMLElement> &parentElement,
                                                std::shared_ptr<RSM::IStateNode> state) {
     if (!parentElement || !state) {
         return;
@@ -311,13 +295,12 @@ void RSM::StateNodeParser::parseReactiveGuards(const xmlpp::Element *parentEleme
 
     // Find code:reactive-guard elements
     auto reactiveGuardElements =
-        ParsingCommon::findChildElementsWithNamespace(parentElement, "reactive-guard", "http://example.org/code");
+        RSM::ParsingCommon::findChildElementsWithNamespace(parentElement, "reactive-guard", "http://example.org/code");
 
-    for (auto *reactiveGuardElement : reactiveGuardElements) {
+    for (const auto &reactiveGuardElement : reactiveGuardElements) {
         // Get id attribute
-        auto idAttr = reactiveGuardElement->get_attribute("id");
-        if (idAttr) {
-            std::string guardId = idAttr->get_value();
+        if (reactiveGuardElement->hasAttribute("id")) {
+            std::string guardId = reactiveGuardElement->getAttribute("id");
             state->addReactiveGuard(guardId);
             LOG_DEBUG("Added reactive guard: {}", guardId);
         } else {
@@ -328,7 +311,7 @@ void RSM::StateNodeParser::parseReactiveGuards(const xmlpp::Element *parentEleme
     LOG_DEBUG("Parsed {} reactive guards", reactiveGuardElements.size());
 }
 
-void RSM::StateNodeParser::parseInitialElement(const xmlpp::Element *initialElement,
+void RSM::StateNodeParser::parseInitialElement(const std::shared_ptr<IXMLElement> &initialElement,
                                                std::shared_ptr<RSM::IStateNode> state) {
     if (!initialElement || !state || !transitionParser_) {
         return;
@@ -337,7 +320,7 @@ void RSM::StateNodeParser::parseInitialElement(const xmlpp::Element *initialElem
     LOG_DEBUG("Parsing initial element for state: {}", state->getId());
 
     // Find <transition> elements
-    const xmlpp::Element *transitionElement = ParsingCommon::findFirstChildElement(initialElement, "transition");
+    auto transitionElement = RSM::ParsingCommon::findFirstChildElement(initialElement, "transition");
     if (transitionElement) {
         // Parse transition - pass parent state together
         auto transition = transitionParser_->parseTransitionNode(transitionElement, state.get());
@@ -363,15 +346,15 @@ void RSM::StateNodeParser::parseInitialElement(const xmlpp::Element *initialElem
     }
 }
 
-void RSM::StateNodeParser::parseEntryExitActionNodes(const xmlpp::Element *parentElement,
+void RSM::StateNodeParser::parseEntryExitActionNodes(const std::shared_ptr<IXMLElement> &parentElement,
                                                      std::shared_ptr<RSM::IStateNode> state) {
     if (!parentElement || !state) {
         return;
     }
 
     // W3C SCXML 3.8: Process onentry elements - each onentry is a separate block
-    auto onentryElements = ParsingCommon::findChildElements(parentElement, "onentry");
-    for (auto *onentryElement : onentryElements) {
+    auto onentryElements = RSM::ParsingCommon::findChildElements(parentElement, "onentry");
+    for (const auto &onentryElement : onentryElements) {
         std::vector<std::shared_ptr<RSM::IActionNode>> actionBlock;
         parseExecutableContentBlock(onentryElement, actionBlock);
 
@@ -382,8 +365,8 @@ void RSM::StateNodeParser::parseEntryExitActionNodes(const xmlpp::Element *paren
     }
 
     // W3C SCXML 3.9: Process onexit elements - each onexit is a separate block
-    auto onexitElements = ParsingCommon::findChildElements(parentElement, "onexit");
-    for (auto *onexitElement : onexitElements) {
+    auto onexitElements = RSM::ParsingCommon::findChildElements(parentElement, "onexit");
+    for (const auto &onexitElement : onexitElements) {
         std::vector<std::shared_ptr<RSM::IActionNode>> actionBlock;
         parseExecutableContentBlock(onexitElement, actionBlock);
 
@@ -394,7 +377,7 @@ void RSM::StateNodeParser::parseEntryExitActionNodes(const xmlpp::Element *paren
     }
 }
 
-void RSM::StateNodeParser::parseExecutableContentBlock(const xmlpp::Element *parentElement,
+void RSM::StateNodeParser::parseExecutableContentBlock(const std::shared_ptr<IXMLElement> &parentElement,
                                                        std::vector<std::shared_ptr<RSM::IActionNode>> &actionBlock) {
     if (!parentElement) {
         return;
@@ -405,19 +388,14 @@ void RSM::StateNodeParser::parseExecutableContentBlock(const xmlpp::Element *par
         return;
     }
 
-    auto children = parentElement->get_children();
-    for (auto child : children) {
-        auto element = dynamic_cast<const xmlpp::Element *>(child);
-        if (!element) {
-            continue;
-        }
-
+    auto children = parentElement->getChildren();
+    for (const auto &element : children) {
         // W3C SCXML: Parse each executable content element into an action node
         auto action = actionParser_->parseActionNode(element);
         if (action) {
             actionBlock.push_back(action);
 
-            std::string elementName = element->get_name();
+            std::string elementName = element->getName();
             // Remove namespace prefix
             size_t colonPos = elementName.find(':');
             if (colonPos != std::string::npos && colonPos + 1 < elementName.length()) {
@@ -426,7 +404,7 @@ void RSM::StateNodeParser::parseExecutableContentBlock(const xmlpp::Element *par
 
             LOG_DEBUG("Parsed executable content '{}' into action block", elementName);
         } else {
-            std::string elementName = element->get_name();
+            std::string elementName = element->getName();
             LOG_DEBUG("Element '{}' not recognized as executable content by ActionParser", elementName);
         }
     }

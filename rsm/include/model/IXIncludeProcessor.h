@@ -1,15 +1,25 @@
 #pragma once
 
-#include <libxml++/libxml++.h>
+#include <memory>
 #include <string>
 #include <vector>
 
-/**
- * @brief Interface for XInclude processing
- */
-
 namespace RSM {
 
+// Forward declaration - platform-independent
+class IXMLDocument;
+
+/**
+ * @brief Interface for XInclude processing
+ *
+ * @deprecated This interface is legacy. XInclude processing is now handled
+ * by IXMLDocument::processXInclude() method. This interface is kept for
+ * API compatibility but is no longer used internally.
+ *
+ * Platform support:
+ * - Native builds: XIncludeProcessor (libxml++)
+ * - WASM builds: PugiXIncludeProcessor (pugixml) - stub implementation
+ */
 class IXIncludeProcessor {
 public:
     /**
@@ -19,10 +29,12 @@ public:
 
     /**
      * @brief Execute XInclude processing
-     * @param doc libxml++ document object
+     * @param doc Platform-independent XML document
      * @return Success status
+     *
+     * @deprecated Use IXMLDocument::processXInclude() instead
      */
-    virtual bool process(xmlpp::Document *doc) = 0;
+    virtual bool process(std::shared_ptr<IXMLDocument> doc) = 0;
 
     /**
      * @brief Set base search path

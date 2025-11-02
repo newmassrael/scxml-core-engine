@@ -1,16 +1,25 @@
 #pragma once
 
 #include "IXIncludeProcessor.h"
-#include <libxml++/libxml++.h>
+#include "parsing/IXMLDocument.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+#ifndef __EMSCRIPTEN__
+#include <libxml++/libxml++.h>
+#endif
+
 /**
  * @brief Class responsible for XInclude processing
  *
- * This class provides functionality to process XInclude directives in SCXML documents.
- * It handles loading and integrating external files, supporting both relative and absolute paths.
+ * @deprecated This class is legacy. XInclude processing is now handled
+ * by IXMLDocument::processXInclude() method. This class is kept for
+ * API compatibility.
+ *
+ * Platform support:
+ * - Native builds: Uses libxml++ for XInclude processing
+ * - WASM builds: Stub implementation (actual processing done by PugiXMLDocument)
  */
 
 namespace RSM {
@@ -29,10 +38,12 @@ public:
 
     /**
      * @brief Execute XInclude processing
-     * @param doc libxml++ document object
+     * @param doc Platform-independent XML document
      * @return Success status
+     *
+     * @deprecated Use IXMLDocument::processXInclude() instead
      */
-    bool process(xmlpp::Document *doc) override;
+    bool process(std::shared_ptr<IXMLDocument> doc) override;
 
     /**
      * @brief Set base search path
@@ -41,75 +52,42 @@ public:
     void setBasePath(const std::string &basePath) override;
 
     /**
-     * @brief Add search path
-     * @param searchPath Search path to add
-     */
-    void addSearchPath(const std::string &searchPath);
-
-    /**
      * @brief Return error messages that occurred during processing
      * @return List of error messages
      */
     const std::vector<std::string> &getErrorMessages() const override;
 
+#ifndef __EMSCRIPTEN__
     /**
-     * @brief Return warning messages that occurred during processing
+     * @brief Add search path (Native builds only)
+     * @param searchPath Search path to add
+     */
+    void addSearchPath(const std::string &searchPath);
+
+    /**
+     * @brief Return warning messages (Native builds only)
      * @return List of warning messages
      */
     const std::vector<std::string> &getWarningMessages() const;
 
     /**
-     * @brief Return list of already processed files
+     * @brief Return list of processed files (Native builds only)
      * @return List of processed files (path -> node count)
      */
     const std::unordered_map<std::string, int> &getProcessedFiles() const;
 
+    /**
+     * @brief Legacy method for libxml++ Document (Native builds only)
+     * @param doc libxml++ document object
+     * @return Success status
+     * @deprecated Use process(std::shared_ptr<IXMLDocument>) instead
+     */
+    bool processLegacy(xmlpp::Document *doc);
+#endif
+
 private:
-    /**
-     * @brief Find and process XInclude elements
-     * @param element Element to start search from
-     * @param baseDir Base directory
-     * @return Number of processed XInclude elements
-     */
-    int findAndProcessXIncludes(xmlpp::Element *element, const std::string &baseDir);
-
-    /**
-     * @brief Process single XInclude element
-     * @param xincludeElement XInclude element
-     * @param baseDir Base directory
-     * @return Success status
-     */
-    bool processXIncludeElement(xmlpp::Element *xincludeElement, const std::string &baseDir);
-
-    /**
-     * @brief Load and merge external file
-     * @param href File path
-     * @param xincludeElement XInclude element
-     * @param baseDir Base directory
-     * @return Success status
-     */
-    bool loadAndMergeFile(const std::string &href, xmlpp::Element *xincludeElement, const std::string &baseDir);
-
-    /**
-     * @brief Resolve file path
-     * @param href Original path
-     * @param baseDir Base directory
-     * @return Resolved absolute path
-     */
-    std::string resolveFilePath(const std::string &href, const std::string &baseDir);
-
-    /**
-     * @brief Add error message
-     * @param message Error message
-     */
-    void addError(const std::string &message);
-
-    /**
-     * @brief Add warning message
-     * @param message Warning message
-     */
-    void addWarning(const std::string &message);
-
+#ifndef __EMSCRIPTEN__
+    // Native implementation details
     std::string basePath_;
     std::vector<std::string> searchPaths_;
     std::vector<std::string> errorMessages_;
@@ -118,6 +96,18 @@ private:
     bool isProcessing_;
     int maxRecursionDepth_;
     int currentRecursionDepth_;
+
+    int findAndProcessXIncludes(xmlpp::Element *element, const std::string &baseDir);
+    bool processXIncludeElement(xmlpp::Element *xincludeElement, const std::string &baseDir);
+    bool loadAndMergeFile(const std::string &href, xmlpp::Element *xincludeElement, const std::string &baseDir);
+    std::string resolveFilePath(const std::string &href, const std::string &baseDir);
+    void addError(const std::string &message);
+    void addWarning(const std::string &message);
+#else
+    // WASM stub implementation
+    std::string basePath_;
+    std::vector<std::string> errorMessages_;
+#endif
 };
 
 }  // namespace RSM

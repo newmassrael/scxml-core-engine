@@ -1,21 +1,32 @@
 #pragma once
 
 #include "factory/NodeFactory.h"
+#include "model/IXIncludeProcessor.h"
 #include "model/SCXMLContext.h"
 #include "model/SCXMLModel.h"
 #include "parsing/ActionParser.h"
 #include "parsing/DataModelParser.h"
 #include "parsing/DoneDataParser.h"
 #include "parsing/GuardParser.h"
+#include "parsing/IXMLElement.h"
 #include "parsing/InvokeParser.h"
 #include "parsing/StateNodeParser.h"
 #include "parsing/TransitionParser.h"
 #include "parsing/XIncludeProcessor.h"
+
+#ifndef __EMSCRIPTEN__
 #include <libxml++/libxml++.h>
+#endif
+
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+// Forward declarations for platform-agnostic XML abstraction
+namespace RSM {
+class IXMLDocument;
+}
 
 /**
  * @brief Class that orchestrates SCXML parsing
@@ -140,33 +151,33 @@ public:
 
 private:
     /**
-     * @brief Execute XML document parsing
-     * @param doc libxml++ document object
+     * @brief Execute platform-agnostic XML document parsing
+     * @param doc Platform-agnostic XML document
      * @return Parsed SCXML model, nullptr on failure
      */
-    std::shared_ptr<SCXMLModel> parseDocument(xmlpp::Document *doc);
+    std::shared_ptr<SCXMLModel> parseAbstractDocument(std::shared_ptr<IXMLDocument> doc);
 
     /**
-     * @brief Parse SCXML root node
+     * @brief Parse SCXML root node (IXMLElement version)
      * @param scxmlNode Root node
      * @param model Target model
      * @return Success status
      */
-    bool parseScxmlNode(const xmlpp::Element *scxmlNode, std::shared_ptr<SCXMLModel> model);
+    bool parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlNode, std::shared_ptr<SCXMLModel> model);
 
     /**
-     * @brief Parse context properties
+     * @brief Parse context properties (IXMLElement version)
      * @param scxmlNode SCXML node
      * @param model Target model
      */
-    void parseContextProperties(const xmlpp::Element *scxmlNode, std::shared_ptr<SCXMLModel> model);
+    void parseContextProperties(const std::shared_ptr<IXMLElement> &scxmlNode, std::shared_ptr<SCXMLModel> model);
 
     /**
-     * @brief Parse dependency injection points
+     * @brief Parse dependency injection points (IXMLElement version)
      * @param scxmlNode SCXML node
      * @param model Target model
      */
-    void parseInjectPoints(const xmlpp::Element *scxmlNode, std::shared_ptr<SCXMLModel> model);
+    void parseInjectPoints(const std::shared_ptr<IXMLElement> &scxmlNode, std::shared_ptr<SCXMLModel> model);
 
     /**
      * @brief Initialize parsing task

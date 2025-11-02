@@ -2,7 +2,15 @@
 #include "GuardUtils.h"
 #include "common/LogUtils.h"
 #include "common/Logger.h"
+#include "parsing/IXMLParser.h"
 #include "parsing/ParsingCommon.h"
+
+#ifndef __EMSCRIPTEN__
+#include "parsing/LibXMLParser.h"
+#else
+#include "parsing/PugiXMLParser.h"
+#endif
+
 #include <algorithm>
 #include <filesystem>
 
@@ -58,18 +66,21 @@ std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseFile(const std::string &
         actionParser_->setScxmlBasePath(basePath);
         LOG_DEBUG("Set SCXML base path for external script resolution: {}", basePath);
 
-        // Parse file
-        xmlpp::DomParser parser;
-        parser.set_validate(false);
-        parser.set_substitute_entities(true);  // Enable entity substitution
-        parser.parse_file(filename);
+        // Parse file using platform-specific XML parser
+        auto xmlParser = IXMLParser::create();
+        auto doc = xmlParser->parseFile(filename);
+
+        if (!doc || !doc->isValid()) {
+            addError("Failed to parse XML file: " + xmlParser->getLastError());
+            return nullptr;
+        }
 
         // Process XIncludes
         LOG_DEBUG("Processing XIncludes");
-        xincludeProcessor_->process(parser.get_document());
+        doc->processXInclude();
 
         // Parse document
-        return parseDocument(parser.get_document());
+        return parseAbstractDocument(doc);
     } catch (const std::exception &ex) {
         addError("Exception while parsing file: " + std::string(ex.what()));
         return nullptr;
@@ -83,58 +94,55 @@ std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseContent(const std::strin
 
         LOG_INFO("Parsing SCXML content");
 
-        // Parse from string
-        xmlpp::DomParser parser;
-        parser.set_validate(false);
-        parser.set_substitute_entities(true);
+        // Parse from string using platform-specific XML parser
+        auto xmlParser = IXMLParser::create();
+        auto doc = xmlParser->parseContent(content);
 
-        // Enable XML namespace recognition
-        parser.set_throw_messages(true);
-
-        parser.parse_memory(content);
+        if (!doc || !doc->isValid()) {
+            addError("Failed to parse XML content: " + xmlParser->getLastError());
+            return nullptr;
+        }
 
         // Process XIncludes
         LOG_DEBUG("Processing XIncludes");
-        xincludeProcessor_->process(parser.get_document());
+        doc->processXInclude();
 
         // Parse document
-        return parseDocument(parser.get_document());
+        return parseAbstractDocument(doc);
     } catch (const std::exception &ex) {
         addError("Exception while parsing content: " + std::string(ex.what()));
         return nullptr;
     }
 }
 
-std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseDocument(xmlpp::Document *doc) {
+std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseAbstractDocument(std::shared_ptr<IXMLDocument> doc) {
     if (!doc) {
         addError("Null document");
         return nullptr;
     }
 
     // Get root element
-    xmlpp::Element *rootElement = doc->get_root_node();
+    auto rootElement = doc->getRootElement();
     if (!rootElement) {
         addError("No root element found");
         return nullptr;
     }
 
     // Check if root element is 'scxml'
-    if (!ParsingCommon::matchNodeName(rootElement->get_name(), "scxml")) {
-        addError("Root element is not 'scxml', found: " + rootElement->get_name());
+    if (!ParsingCommon::matchNodeName(rootElement->getName(), "scxml")) {
+        addError("Root element is not 'scxml', found: " + rootElement->getName());
         return nullptr;
     }
 
-    LOG_INFO("Valid SCXML document "
-             "found, parsing structure");
+    LOG_INFO("Valid SCXML document found, parsing structure");
 
     // Create SCXML model
     auto model = std::make_shared<SCXMLModel>();
 
-    // Parse SCXML node
+    // Parse SCXML node using IXMLElement interface
     bool result = parseScxmlNode(rootElement, model);
     if (result) {
-        LOG_INFO("SCXML document parsed "
-                 "successfully");
+        LOG_INFO("SCXML document parsed successfully");
 
         // Validate model
         if (validateModel(model)) {
@@ -149,7 +157,8 @@ std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseDocument(xmlpp::Document
     }
 }
 
-bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shared_ptr<SCXMLModel> model) {
+bool RSM::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlNode,
+                                      std::shared_ptr<SCXMLModel> model) {
     if (!scxmlNode || !model) {
         addError("Null scxml node or model");
         return false;
@@ -161,31 +170,29 @@ bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shar
     SCXMLContext context;
 
     // Parse basic attributes
-    auto nameAttr = scxmlNode->get_attribute("name");
-    if (nameAttr) {
-        model->setName(nameAttr->get_value());
-        LOG_DEBUG("Name: {}", nameAttr->get_value());
+    if (scxmlNode->hasAttribute("name")) {
+        std::string name = scxmlNode->getAttribute("name");
+        model->setName(name);
+        LOG_DEBUG("Name: {}", name);
     }
 
-    auto initialAttr = scxmlNode->get_attribute("initial");
-    if (initialAttr) {
-        model->setInitialState(initialAttr->get_value());
-        LOG_DEBUG("Initial state: {}", initialAttr->get_value());
+    if (scxmlNode->hasAttribute("initial")) {
+        std::string initial = scxmlNode->getAttribute("initial");
+        model->setInitialState(initial);
+        LOG_DEBUG("Initial state: {}", initial);
     }
 
-    auto datamodelAttr = scxmlNode->get_attribute("datamodel");
-    if (datamodelAttr) {
-        std::string datamodelType = datamodelAttr->get_value();
+    if (scxmlNode->hasAttribute("datamodel")) {
+        std::string datamodelType = scxmlNode->getAttribute("datamodel");
         model->setDatamodel(datamodelType);
-        context.setDatamodelType(datamodelType);  // Set to SCXMLContext
+        context.setDatamodelType(datamodelType);
         LOG_DEBUG("Datamodel: {}", datamodelType);
     }
 
-    auto bindingAttr = scxmlNode->get_attribute("binding");
-    if (bindingAttr) {
-        std::string binding = bindingAttr->get_value();
+    if (scxmlNode->hasAttribute("binding")) {
+        std::string binding = scxmlNode->getAttribute("binding");
         model->setBinding(binding);
-        context.setBinding(binding);  // Set to SCXMLContext
+        context.setBinding(binding);
         LOG_DEBUG("Binding mode: {}", binding);
     }
 
@@ -201,7 +208,6 @@ bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shar
     for (const auto &guard : guards) {
         model->addGuard(guard);
 
-        // Build log message with conditional parts
         if (!guard->getCondition().empty() && !guard->getTargetState().empty()) {
             LOG_DEBUG("Added guard: {} with condition: {} targeting state: {}", guard->getId(), guard->getCondition(),
                       guard->getTargetState());
@@ -214,9 +220,9 @@ bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shar
         }
     }
 
-    // Parse top-level datamodel - pass context here
+    // Parse top-level datamodel
     LOG_DEBUG("Parsing root datamodel");
-    auto datamodelNode = ParsingCommon::findFirstChildElement(scxmlNode, "datamodel");
+    auto datamodelNode = RSM::ParsingCommon::findFirstChildElement(scxmlNode, "datamodel");
     if (datamodelNode) {
         auto dataItems = dataModelParser_->parseDataModelNode(datamodelNode, context);
         for (const auto &item : dataItems) {
@@ -227,8 +233,8 @@ bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shar
 
     addSystemVariables(model);
 
-    // W3C SCXML 5.8: Parse top-level <script> elements (children of <scxml>)
-    auto scriptElements = ParsingCommon::findChildElements(scxmlNode, "script");
+    // W3C SCXML 5.8: Parse top-level <script> elements
+    auto scriptElements = RSM::ParsingCommon::findChildElements(scxmlNode, "script");
     if (!scriptElements.empty()) {
         LOG_DEBUG("Parsing {} root script element(s) (W3C SCXML 5.8)", scriptElements.size());
         size_t parsedCount = 0;
@@ -240,21 +246,10 @@ bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shar
                 parsedCount++;
                 LOG_DEBUG("Added top-level script #{} for document load time execution (W3C SCXML 5.8)", i + 1);
             } else {
-                // ⚠️ LIMITATION: External script loading NOT implemented (W3C SCXML 5.8)
-                //
-                // W3C SCXML 5.8: Document MUST be rejected if script cannot be loaded.
-                // This typically occurs when <script src="..."/> references external files.
-                //
-                // Current implementation: ALL external scripts are rejected for security reasons.
-                // W3C Test 301 (external script validation) is marked "manual: True" and skipped.
-                //
-                // Workaround: Use inline scripts: <script>your code here</script>
                 std::string errorDetail = "Top-level script element #" + std::to_string(i + 1) + " cannot be loaded";
 
-                // Add src attribute info if present (sanitized to prevent log injection)
-                auto srcAttr = scriptElements[i]->get_attribute("src");
-                if (srcAttr) {
-                    std::string srcValue = srcAttr->get_value();
+                if (scriptElements[i]->hasAttribute("src")) {
+                    std::string srcValue = scriptElements[i]->getAttribute("src");
                     errorDetail += " (src: \"" + Log::sanitize(srcValue) + "\")";
                 }
                 errorDetail += " - document rejected per W3C SCXML 5.8";
@@ -268,21 +263,19 @@ bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shar
         LOG_DEBUG("Successfully parsed {}/{} top-level script(s) (W3C SCXML 5.8)", parsedCount, scriptElements.size());
     }
 
-    // Parse states (find all top-level state, parallel, final nodes)
+    // Parse states
     LOG_DEBUG("Looking for root state nodes");
 
-    // Collect state nodes of all types
-    std::vector<const xmlpp::Element *> rootStateElements;
-    auto stateElements = ParsingCommon::findChildElements(scxmlNode, "state");
+    std::vector<std::shared_ptr<IXMLElement>> rootStateElements;
+    auto stateElements = RSM::ParsingCommon::findChildElements(scxmlNode, "state");
     rootStateElements.insert(rootStateElements.end(), stateElements.begin(), stateElements.end());
 
-    auto parallelElements = ParsingCommon::findChildElements(scxmlNode, "parallel");
+    auto parallelElements = RSM::ParsingCommon::findChildElements(scxmlNode, "parallel");
     rootStateElements.insert(rootStateElements.end(), parallelElements.begin(), parallelElements.end());
 
-    auto finalElements = ParsingCommon::findChildElements(scxmlNode, "final");
+    auto finalElements = RSM::ParsingCommon::findChildElements(scxmlNode, "final");
     rootStateElements.insert(rootStateElements.end(), finalElements.begin(), finalElements.end());
 
-    // At least one state node must exist
     if (rootStateElements.empty()) {
         addError("No state nodes found in SCXML document");
         return false;
@@ -290,14 +283,12 @@ bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shar
 
     LOG_INFO("Found {} root state nodes", rootStateElements.size());
 
-    // Parse all root state nodes
-    for (auto *stateElement : rootStateElements) {
+    for (const auto &stateElement : rootStateElements) {
         LOG_INFO("Parsing root state");
-        auto state = stateNodeParser_->parseStateNode(stateElement, nullptr);
+        auto state = stateNodeParser_->parseStateNode(stateElement, nullptr, context);
         if (state) {
             model->addState(state);
 
-            // Set first state as root state (if not already set)
             if (!model->getRootState()) {
                 model->setRootState(state);
             }
@@ -312,24 +303,20 @@ bool RSM::SCXMLParser::parseScxmlNode(const xmlpp::Element *scxmlNode, std::shar
     return true;
 }
 
-void RSM::SCXMLParser::parseContextProperties(const xmlpp::Element *scxmlNode, std::shared_ptr<SCXMLModel> model) {
+void RSM::SCXMLParser::parseContextProperties(const std::shared_ptr<IXMLElement> &scxmlNode,
+                                              std::shared_ptr<SCXMLModel> model) {
     if (!scxmlNode || !model) {
         return;
     }
 
-    LOG_DEBUG("Parsing context "
-              "properties");
+    LOG_DEBUG("Parsing context properties");
 
-    // 1. Find ctx:property elements directly
-    auto ctxProps = ParsingCommon::findChildElements(scxmlNode, "property");
+    auto ctxProps = RSM::ParsingCommon::findChildElements(scxmlNode, "property");
 
-    for (auto *propElement : ctxProps) {
-        auto nameAttr = propElement->get_attribute("name");
-        auto typeAttr = propElement->get_attribute("type");
-
-        if (nameAttr && typeAttr) {
-            std::string name = nameAttr->get_value();
-            std::string type = typeAttr->get_value();
+    for (const auto &propElement : ctxProps) {
+        if (propElement->hasAttribute("name") && propElement->hasAttribute("type")) {
+            std::string name = propElement->getAttribute("name");
+            std::string type = propElement->getAttribute("type");
             model->addContextProperty(name, type);
             LOG_DEBUG("Added property: {} ({})", name, type);
         } else {
@@ -340,34 +327,36 @@ void RSM::SCXMLParser::parseContextProperties(const xmlpp::Element *scxmlNode, s
     LOG_DEBUG("Found {} context properties", model->getContextProperties().size());
 }
 
-void RSM::SCXMLParser::parseInjectPoints(const xmlpp::Element *scxmlNode, std::shared_ptr<SCXMLModel> model) {
+void RSM::SCXMLParser::parseInjectPoints(const std::shared_ptr<IXMLElement> &scxmlNode,
+                                         std::shared_ptr<SCXMLModel> model) {
     if (!scxmlNode || !model) {
         return;
     }
 
     LOG_DEBUG("Parsing injection points");
 
-    // Parse dependency injection points (try multiple possible element names)
     std::vector<std::string> injectNodeNames = {"inject-point", "inject_point", "injectpoint", "inject", "dependency"};
 
     bool foundInjectPoints = false;
     for (const auto &nodeName : injectNodeNames) {
-        auto injectElements = ParsingCommon::findChildElements(scxmlNode, nodeName);
+        auto injectElements = RSM::ParsingCommon::findChildElements(scxmlNode, nodeName);
 
-        for (auto *injectElement : injectElements) {
-            auto nameAttr = injectElement->get_attribute("name");
-            if (!nameAttr) {
-                nameAttr = injectElement->get_attribute("id");
+        for (const auto &injectElement : injectElements) {
+            std::string name, type;
+
+            if (injectElement->hasAttribute("name")) {
+                name = injectElement->getAttribute("name");
+            } else if (injectElement->hasAttribute("id")) {
+                name = injectElement->getAttribute("id");
             }
 
-            auto typeAttr = injectElement->get_attribute("type");
-            if (!typeAttr) {
-                typeAttr = injectElement->get_attribute("class");
+            if (injectElement->hasAttribute("type")) {
+                type = injectElement->getAttribute("type");
+            } else if (injectElement->hasAttribute("class")) {
+                type = injectElement->getAttribute("class");
             }
 
-            if (nameAttr && typeAttr) {
-                std::string name = nameAttr->get_value();
-                std::string type = typeAttr->get_value();
+            if (!name.empty() && !type.empty()) {
                 model->addInjectPoint(name, type);
                 LOG_DEBUG("Added inject point: {} ({})", name, type);
                 foundInjectPoints = true;
@@ -380,8 +369,6 @@ void RSM::SCXMLParser::parseInjectPoints(const xmlpp::Element *scxmlNode, std::s
             break;
         }
     }
-
-    // Optionally check for injection points inside state nodes
 
     LOG_DEBUG("Found {} injection points", model->getInjectPoints().size());
 }
@@ -421,7 +408,7 @@ bool RSM::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
 
     LOG_INFO("Validating SCXML model");
 
-    bool isValid = true;  // Overall validation result
+    bool isValid = true;
 
     // 1. Verify root state
     if (!model->getRootState()) {
@@ -429,13 +416,13 @@ bool RSM::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
         return false;
     }
 
-    // 2. Validate initial states (W3C SCXML 3.3: supports multiple initial states)
+    // 2. Validate initial states
     const auto &initialStates = model->getInitialStates();
     if (!initialStates.empty()) {
         for (const auto &initialStateId : initialStates) {
             if (!model->findStateById(initialStateId)) {
                 addError("Initial state '" + initialStateId + "' not found");
-                isValid = false;  // Log error and continue
+                isValid = false;
             }
         }
     }
@@ -456,7 +443,7 @@ bool RSM::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
             if (!isChild) {
                 addError("State '" + state->getId() + "' has parent '" + parent->getId() +
                          "' but is not in parent's children list");
-                isValid = false;  // Log error and continue
+                isValid = false;
             }
         }
 
@@ -467,20 +454,18 @@ bool RSM::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
                 if (!target.empty() && !model->findStateById(target)) {
                     addError("Transition in state '" + state->getId() + "' references non-existent target state '" +
                              target + "'");
-                    isValid = false;  // Log error and continue
+                    isValid = false;
                 }
             }
         }
 
-        // W3C SCXML 3.3: Validate initial state(s) - supports space-separated list for parallel states
+        // W3C SCXML 3.3: Validate initial state(s)
         if (!state->getInitialState().empty() && state->getChildren().size() > 0) {
-            // Parse space-separated initial state list
             std::istringstream iss(state->getInitialState());
             std::string initialStateId;
             bool allInitialStatesFound = true;
 
             while (iss >> initialStateId) {
-                // Search in entire model (not just direct children) to support deep initial states
                 if (!model->findStateById(initialStateId)) {
                     addError("State '" + state->getId() + "' references non-existent initial state '" + initialStateId +
                              "'");
@@ -489,19 +474,17 @@ bool RSM::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
             }
 
             if (!allInitialStatesFound) {
-                isValid = false;  // Continue validation but mark as invalid
+                isValid = false;
             }
         }
     }
 
     // 4. Validate guards
     for (const auto &guard : model->getGuards()) {
-        // Changed getTarget() -> getTargetState()
         if (!GuardUtils::isConditionExpression(guard->getTargetState()) &&
             !model->findStateById(guard->getTargetState())) {
             addWarning("Guard '" + guard->getId() + "' references non-existent target state '" +
                        guard->getTargetState() + "'");
-            // Generate warning but continue validation
         }
     }
 
@@ -523,7 +506,6 @@ void RSM::SCXMLParser::addSystemVariables(std::shared_ptr<SCXMLModel> model) {
     LOG_DEBUG("Adding system variables to data model");
 
     std::string datamodelType = model->getDatamodel();
-    // Only apply to datamodels that support system variables
     if (datamodelType.empty() || datamodelType == "null") {
         LOG_DEBUG("Skipping system variables for null datamodel");
         return;
@@ -562,6 +544,6 @@ void RSM::SCXMLParser::addSystemVariables(std::shared_ptr<SCXMLModel> model) {
     model->addSystemVariable(ioProcessorsItem);
     LOG_DEBUG("Added system variable: _ioprocessors");
 
-    // W3C SCXML 5.10: _event is bound lazily on first event, not at initialization
+    // W3C SCXML 5.10: _event is bound lazily on first event
     LOG_DEBUG("Skipping _event initialization per W3C SCXML 5.10 (bound only after first event)");
 }

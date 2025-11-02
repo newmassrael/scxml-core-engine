@@ -1,17 +1,31 @@
 #include "parsing/XIncludeProcessor.h"
 #include "common/Logger.h"
+
+#ifndef __EMSCRIPTEN__
+// ============================================================================
+// Native builds: libxml++-based XInclude implementation
+// ============================================================================
+
 #include <algorithm>
 #include <filesystem>
 
 RSM::XIncludeProcessor::XIncludeProcessor() : isProcessing_(false), maxRecursionDepth_(10), currentRecursionDepth_(0) {
-    LOG_DEBUG("Creating XInclude processor");
+    LOG_DEBUG("Creating XInclude processor (Native)");
 }
 
 RSM::XIncludeProcessor::~XIncludeProcessor() {
     LOG_DEBUG("Destroying XInclude processor");
 }
 
-bool RSM::XIncludeProcessor::process(xmlpp::Document *doc) {
+bool RSM::XIncludeProcessor::process(std::shared_ptr<IXMLDocument> doc) {
+    LOG_WARN("XIncludeProcessor::process() is deprecated. Use IXMLDocument::processXInclude() instead");
+    if (doc) {
+        return doc->processXInclude();
+    }
+    return false;
+}
+
+bool RSM::XIncludeProcessor::processLegacy(xmlpp::Document *doc) {
     if (!doc) {
         addError("Null document");
         return false;
@@ -47,7 +61,6 @@ bool RSM::XIncludeProcessor::process(xmlpp::Document *doc) {
         }
 
         // Call built-in XInclude processor (libxml's XInclude processor)
-        // Use libxml++'s XInclude function if available, otherwise call libxml2 directly
         try {
             doc->process_xinclude();
             LOG_DEBUG("Native XInclude processing successful");
@@ -283,3 +296,35 @@ void RSM::XIncludeProcessor::addWarning(const std::string &message) {
     LOG_WARN("XIncludeProcessor - {}", message);
     warningMessages_.push_back(message);
 }
+
+#else
+// ============================================================================
+// WASM builds: Stub implementation
+// ============================================================================
+
+RSM::XIncludeProcessor::XIncludeProcessor() {
+    LOG_DEBUG("Creating XInclude processor (WASM stub)");
+}
+
+RSM::XIncludeProcessor::~XIncludeProcessor() {
+    LOG_DEBUG("Destroying XInclude processor");
+}
+
+bool RSM::XIncludeProcessor::process(std::shared_ptr<IXMLDocument> doc) {
+    LOG_DEBUG("XIncludeProcessor::process() - WASM stub, delegating to IXMLDocument::processXInclude()");
+    if (doc) {
+        return doc->processXInclude();
+    }
+    return false;
+}
+
+void RSM::XIncludeProcessor::setBasePath(const std::string &basePath) {
+    basePath_ = basePath;
+    LOG_DEBUG("Base path set to: {} (WASM stub)", basePath);
+}
+
+const std::vector<std::string> &RSM::XIncludeProcessor::getErrorMessages() const {
+    return errorMessages_;
+}
+
+#endif

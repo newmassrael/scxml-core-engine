@@ -1,7 +1,7 @@
 #pragma once
 
 #include "common/Logger.h"
-#include <libxml++/libxml++.h>
+#include "parsing/IXMLElement.h"
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -42,8 +42,8 @@ public:
      * @param childName Child name to find
      * @return Found child elements
      */
-    static std::vector<const xmlpp::Element *> findChildElements(const xmlpp::Element *element,
-                                                                 const std::string &childName);
+    static std::vector<std::shared_ptr<IXMLElement>> findChildElements(const std::shared_ptr<IXMLElement> &element,
+                                                                       const std::string &childName);
 
     /**
      * @brief Find first child element with specified name (considering namespace)
@@ -51,14 +51,15 @@ public:
      * @param childName Child name to find
      * @return Found child element, nullptr if not found
      */
-    static const xmlpp::Element *findFirstChildElement(const xmlpp::Element *element, const std::string &childName);
+    static std::shared_ptr<IXMLElement> findFirstChildElement(const std::shared_ptr<IXMLElement> &element,
+                                                              const std::string &childName);
 
     /**
      * @brief Find ID attribute in element or parent element
      * @param element Element to check
      * @return Found ID, empty string if not found
      */
-    static std::string findElementId(const xmlpp::Element *element);
+    static std::string findElementId(const std::shared_ptr<IXMLElement> &element);
 
     /**
      * @brief Get attribute value (try multiple names)
@@ -66,7 +67,8 @@ public:
      * @param attrNames List of attribute names to try
      * @return Attribute value, empty string if not found
      */
-    static std::string getAttributeValue(const xmlpp::Element *element, const std::vector<std::string> &attrNames);
+    static std::string getAttributeValue(const std::shared_ptr<IXMLElement> &element,
+                                         const std::vector<std::string> &attrNames);
 
     /**
      * @brief Collect all attributes into map
@@ -75,7 +77,33 @@ public:
      * @return Attribute map (name -> value)
      */
     static std::unordered_map<std::string, std::string>
-    collectAttributes(const xmlpp::Element *element, const std::vector<std::string> &excludeAttrs = {});
+    collectAttributes(const std::shared_ptr<IXMLElement> &element, const std::vector<std::string> &excludeAttrs = {});
+
+    /**
+     * @brief Extract text content from element
+     * @param element Element containing text
+     * @param trimWhitespace Whether to trim whitespace
+     * @return Extracted text
+     */
+    static std::string extractTextContent(const std::shared_ptr<IXMLElement> &element, bool trimWhitespace = true);
+
+    /**
+     * @brief Extract XML element name (remove namespace)
+     * @param element XML element
+     * @return Element name without namespace
+     */
+    static std::string getLocalName(const std::shared_ptr<IXMLElement> &element);
+
+    /**
+     * @brief Find child elements with specified name and namespace
+     * @param parent Parent element
+     * @param elementName Element name to find
+     * @param namespaceURI Namespace URI
+     * @return Found child elements
+     */
+    static std::vector<std::shared_ptr<IXMLElement>>
+    findChildElementsWithNamespace(const std::shared_ptr<IXMLElement> &parent, const std::string &elementName,
+                                   const std::string &namespaceURI);
 
     /**
      * @brief Convert relative path to absolute path
@@ -84,25 +112,6 @@ public:
      * @return Absolute path
      */
     static std::string resolveRelativePath(const std::string &basePath, const std::string &relativePath);
-
-    /**
-     * @brief Extract text content from text node
-     * @param element Element containing text
-     * @param trimWhitespace Whether to trim whitespace
-     * @return Extracted text
-     */
-    static std::string extractTextContent(const xmlpp::Element *element, bool trimWhitespace = true);
-
-    /**
-     * @brief Extract XML element name (remove namespace)
-     * @param element XML element
-     * @return Element name without namespace
-     */
-    static std::string getLocalName(const xmlpp::Element *element);
-
-    static std::vector<const xmlpp::Element *> findChildElementsWithNamespace(const xmlpp::Element *parent,
-                                                                              const std::string &elementName,
-                                                                              const std::string &namespaceURI);
 
     static std::string trimString(const std::string &str);
 

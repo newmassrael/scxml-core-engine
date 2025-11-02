@@ -1,6 +1,8 @@
 #include "DataModelItem.h"
 #include "common/Logger.h"
+#ifndef __EMSCRIPTEN__
 #include <libxml++/parsers/domparser.h>
+#endif
 #include <sstream>
 
 RSM::DataModelItem::DataModelItem(const std::string &id, const std::string &expr)
@@ -54,8 +56,10 @@ void RSM::DataModelItem::setContent(const std::string &content) {
         // Handle other types as plain string
         content_ = content;
 
-        // Remove XML content if it existed
+#ifndef __EMSCRIPTEN__
+        // Remove XML content if it existed (Native builds only)
         xmlContent_.reset();
+#endif
     }
 
     // Add to contentItems_ in all cases
@@ -68,7 +72,8 @@ void RSM::DataModelItem::addContent(const std::string &content) {
     // Always add to contentItems_
     contentItems_.push_back(content);
 
-    // Try adding to DOM if XML type
+#ifndef __EMSCRIPTEN__
+    // Try adding to DOM if XML type (Native builds only)
     if (type_ == "xpath" || type_ == "xml") {
         if (xmlContent_) {
             try {
@@ -96,17 +101,21 @@ void RSM::DataModelItem::addContent(const std::string &content) {
             setXmlContent(content);
         }
     } else {
-        // Add to string if not XML type
+#endif
+        // Add to string if not XML type (or WASM build)
         if (!content_.empty()) {
             content_ += content;
         } else {
             content_ = content;
         }
+#ifndef __EMSCRIPTEN__
     }
+#endif
 }
 
 const std::string &RSM::DataModelItem::getContent() const {
-    // Serialize XML to string if XML content exists and content_ is empty
+#ifndef __EMSCRIPTEN__
+    // Serialize XML to string if XML content exists and content_ is empty (Native builds only)
     if (xmlContent_ && content_.empty()) {
         static std::string serialized;
         serialized.clear();
@@ -120,6 +129,7 @@ const std::string &RSM::DataModelItem::getContent() const {
 
         return serialized;
     }
+#endif
 
     return content_;
 }
@@ -153,6 +163,7 @@ const std::unordered_map<std::string, std::string> &RSM::DataModelItem::getAttri
 void RSM::DataModelItem::setXmlContent(const std::string &content) {
     LOG_DEBUG("Setting XML content for {}", id_);
 
+#ifndef __EMSCRIPTEN__
     // Delete existing XML document if present
     xmlContent_.reset();
 
@@ -176,24 +187,36 @@ void RSM::DataModelItem::setXmlContent(const std::string &content) {
         // Store as plain string if parsing fails
         content_ = content;
     }
+#else
+    // WASM builds: Store as plain string (no XML parsing support)
+    content_ = content;
+#endif
 }
 
+#ifndef __EMSCRIPTEN__
 xmlpp::Node *RSM::DataModelItem::getXmlContent() const {
     if (xmlContent_) {
         return xmlContent_->get_root_node();
     }
     return nullptr;
 }
+#endif
 
 const std::vector<std::string> &RSM::DataModelItem::getContentItems() const {
     return contentItems_;
 }
 
 bool RSM::DataModelItem::isXmlContent() const {
+#ifndef __EMSCRIPTEN__
     return xmlContent_ != nullptr;
+#else
+    // WASM builds: No XML content support
+    return false;
+#endif
 }
 
 std::optional<std::string> RSM::DataModelItem::queryXPath(const std::string &xpath) const {
+#ifndef __EMSCRIPTEN__
     if (!xmlContent_ || !xmlContent_->get_root_node()) {
         return std::nullopt;
     }
@@ -236,12 +259,23 @@ std::optional<std::string> RSM::DataModelItem::queryXPath(const std::string &xpa
     }
 
     return std::nullopt;
+#else
+    // WASM builds: XPath not supported
+    (void)xpath;  // Suppress unused parameter warning
+    LOG_WARN("XPath queries not supported in WASM builds");
+    return std::nullopt;
+#endif
 }
 
 bool RSM::DataModelItem::supportsDataModel(const std::string &dataModelType) const {
     // xpath and xml data models support XML processing
     if (dataModelType == "xpath" || dataModelType == "xml") {
+#ifndef __EMSCRIPTEN__
         return true;
+#else
+        // WASM builds: Limited XML support (no DOM parsing)
+        return false;
+#endif
     }
 
     // ecmascript data model supports basic string processing

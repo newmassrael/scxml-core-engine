@@ -2,7 +2,12 @@
 
 #include "actions/IActionNode.h"
 #include "factory/NodeFactory.h"
+#include "parsing/IXMLElement.h"
+
+#ifndef __EMSCRIPTEN__
 #include <libxml++/libxml++.h>
+#endif
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -35,35 +40,36 @@ public:
      * @param actionNode XML action node
      * @return Created action node
      */
-    std::shared_ptr<RSM::IActionNode> parseActionNode(const xmlpp::Element *actionNode);
+    std::shared_ptr<RSM::IActionNode> parseActionNode(const std::shared_ptr<IXMLElement> &actionNode);
 
     /**
      * @brief Parse external execution action node
      * @param externalActionNode XML external execution action node
      * @return Created action node
      */
-    std::shared_ptr<RSM::IActionNode> parseExternalActionNode(const xmlpp::Element *externalActionNode);
+    std::shared_ptr<RSM::IActionNode> parseExternalActionNode(const std::shared_ptr<IXMLElement> &externalActionNode);
 
     /**
      * @brief Parse actions within onentry/onexit elements
      * @param parentElement Parent element (onentry or onexit)
      * @return List of parsed actions
      */
-    std::vector<std::shared_ptr<RSM::IActionNode>> parseActionsInElement(const xmlpp::Element *parentElement);
+    std::vector<std::shared_ptr<RSM::IActionNode>>
+    parseActionsInElement(const std::shared_ptr<IXMLElement> &parentElement);
 
     /**
      * @brief Check if element is an action node
      * @param element XML element
      * @return Whether it is an action node
      */
-    bool isActionNode(const xmlpp::Element *element) const;
+    bool isActionNode(const std::shared_ptr<IXMLElement> &element) const;
 
     /**
      * @brief Check if element is an external execution action node
      * @param element XML element
      * @return Whether it is an external execution action node
      */
-    bool isExternalActionNode(const xmlpp::Element *element) const;
+    bool isExternalActionNode(const std::shared_ptr<IXMLElement> &element) const;
 
     /**
      * @brief Set SCXML file base path for external script loading
@@ -79,22 +85,40 @@ public:
      * @param element XML element
      * @return Whether it is special executable content
      */
-    bool isSpecialExecutableContent(const xmlpp::Element *element) const;
+    bool isSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element) const;
 
 private:
+#ifndef __EMSCRIPTEN__
     /**
-     * @brief Parse external implementation element
+     * @brief Parse external implementation element (libxml++ version)
      * @param element XML element
      * @param actionNode Action node
      */
     void parseExternalImplementation(const xmlpp::Element *element, std::shared_ptr<RSM::IActionNode> actionNode);
 
     /**
-     * @brief Parse special executable content
+     * @brief Parse special executable content (libxml++ version)
      * @param element XML element
      * @param actions List of parsed actions (modified)
      */
     void parseSpecialExecutableContent(const xmlpp::Element *element,
+                                       std::vector<std::shared_ptr<RSM::IActionNode>> &actions);
+#endif
+
+    /**
+     * @brief Parse external implementation element (IXMLElement version)
+     * @param element XML element
+     * @param actionNode Action node
+     */
+    void parseExternalImplementation(const std::shared_ptr<IXMLElement> &element,
+                                     std::shared_ptr<RSM::IActionNode> actionNode);
+
+    /**
+     * @brief Parse special executable content (IXMLElement version)
+     * @param element XML element
+     * @param actions List of parsed actions (modified)
+     */
+    void parseSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element,
                                        std::vector<std::shared_ptr<RSM::IActionNode>> &actions);
 
     /**

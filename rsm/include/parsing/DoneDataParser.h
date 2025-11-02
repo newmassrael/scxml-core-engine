@@ -2,7 +2,12 @@
 
 #include "factory/NodeFactory.h"
 #include "model/IStateNode.h"
+#include "parsing/IXMLElement.h"
+
+#ifndef __EMSCRIPTEN__
 #include <libxml++/libxml++.h>
+#endif
+
 #include <memory>
 #include <string>
 
@@ -34,24 +39,24 @@ public:
      * @param stateNode Target state node
      * @return Parsing success status
      */
-    bool parseDoneData(const xmlpp::Element *doneDataElement, IStateNode *stateNode);
+    bool parseDoneData(const std::shared_ptr<IXMLElement> &doneDataElement, IStateNode *stateNode);
 
 private:
     /**
-     * @brief Parse <content> element
+     * @brief Parse <content> element (IXMLElement version)
      * @param contentElement <content> XML element
      * @param stateNode Target state node
      * @return Parsing success status
      */
-    bool parseContent(const xmlpp::Element *contentElement, IStateNode *stateNode);
+    bool parseContent(const std::shared_ptr<IXMLElement> &contentElement, IStateNode *stateNode);
 
     /**
-     * @brief Parse <param> element
+     * @brief Parse <param> element (IXMLElement version)
      * @param paramElement <param> XML element
      * @param stateNode Target state node
      * @return Parsing success status
      */
-    bool parseParam(const xmlpp::Element *paramElement, IStateNode *stateNode);
+    bool parseParam(const std::shared_ptr<IXMLElement> &paramElement, IStateNode *stateNode);
 
     std::shared_ptr<NodeFactory> factory_;  // Node creation factory
 };

@@ -33,8 +33,8 @@ endif()
 
 # Validate build directory name
 get_filename_component(BUILD_DIR_NAME "${CMAKE_BINARY_DIR}" NAME)
-if(NOT BUILD_DIR_NAME MATCHES "^(build|Build|BUILD|Debug|Release|_build)$")
-    message(FATAL_ERROR 
+if(NOT BUILD_DIR_NAME MATCHES "^(build.*|Build|BUILD|Debug|Release|_build)$")
+    message(FATAL_ERROR
         "
 ❌ ERROR: Please use standard build directory name!
 "
@@ -42,13 +42,15 @@ if(NOT BUILD_DIR_NAME MATCHES "^(build|Build|BUILD|Debug|Release|_build)$")
 "
         "Current directory: '${BUILD_DIR_NAME}'
 "
-        "Allowed names: build, Build, BUILD, Debug, Release, _build
+        "Allowed names: build, build_*, Build, BUILD, Debug, Release, _build
 "
         "
 "
         "Correct usage:
 "
-        "  mkdir build
+        "  mkdir build         (standard build)
+"
+        "  mkdir build_wasm    (WASM build)
 "
         "  cd build
 "
@@ -164,7 +166,11 @@ add_subdirectory(rsm)                 # Unified RSM library with integrated pars
 
 # Tools - code generation and TXML conversion
 add_subdirectory(tools/codegen)       # Code generation tool
-add_subdirectory(tools/txml_converter)  # TXML to SCXML converter tool
+
+# TXML converter (Native builds only - requires filesystem operations)
+if(NOT EMSCRIPTEN)
+    add_subdirectory(tools/txml_converter)  # TXML to SCXML converter tool
+endif()
 
 # Test build option (enabled by default)
 option(BUILD_TESTS "Build the tests" ON)
@@ -181,12 +187,19 @@ if(BUILD_EXAMPLES)
 endif()
 
 # Installation configuration (using GNUInstallDirs variables)
-install(TARGETS rsm_unified txml-converter
+install(TARGETS rsm_unified
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
+
+# Install txml-converter (Native builds only)
+if(NOT EMSCRIPTEN)
+    install(TARGETS txml-converter
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
 
 install(DIRECTORY
         rsm/include/

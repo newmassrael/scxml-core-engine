@@ -17,18 +17,16 @@ void RSM::TransitionParser::setActionParser(std::shared_ptr<RSM::ActionParser> a
     LOG_DEBUG("Action parser set");
 }
 
-std::shared_ptr<RSM::ITransitionNode> RSM::TransitionParser::parseTransitionNode(const xmlpp::Element *transElement,
-                                                                                 RSM::IStateNode *stateNode) {
+std::shared_ptr<RSM::ITransitionNode>
+RSM::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &transElement,
+                                           RSM::IStateNode *stateNode) {
     if (!transElement || !stateNode) {
         LOG_WARN("Null transition element or state node");
         return nullptr;
     }
 
-    auto eventAttr = transElement->get_attribute("event");
-    auto targetAttr = transElement->get_attribute("target");
-
-    std::string event = eventAttr ? eventAttr->get_value() : "";
-    std::string target = targetAttr ? targetAttr->get_value() : "";
+    std::string event = transElement->hasAttribute("event") ? transElement->getAttribute("event") : "";
+    std::string target = transElement->hasAttribute("target") ? transElement->getAttribute("target") : "";
 
     LOG_DEBUG("Parsing transition: {} -> {}", (event.empty() ? "<no event>" : event),
               (target.empty() ? "<internal>" : target));
@@ -73,9 +71,8 @@ std::shared_ptr<RSM::ITransitionNode> RSM::TransitionParser::parseTransitionNode
     transition->setInternal(isInternal);
 
     // Process type attribute
-    auto typeAttr = transElement->get_attribute("type");
-    if (typeAttr) {
-        std::string type = typeAttr->get_value();
+    if (transElement->hasAttribute("type")) {
+        std::string type = transElement->getAttribute("type");
         transition->setAttribute("type", type);
         LOG_DEBUG("Type: {}", type);
 
@@ -87,17 +84,16 @@ std::shared_ptr<RSM::ITransitionNode> RSM::TransitionParser::parseTransitionNode
     }
 
     // Process condition attribute
-    auto condAttr = transElement->get_attribute("cond");
-    if (condAttr) {
-        std::string cond = condAttr->get_value();
+    if (transElement->hasAttribute("cond")) {
+        std::string cond = transElement->getAttribute("cond");
         transition->setAttribute("cond", cond);
         transition->setGuard(cond);
         LOG_DEBUG("Condition: {}", cond);
     }
 
     // Process guard attribute
-    std::string guard = ParsingCommon::getAttributeValue(transElement, {"guard"});
-    if (!guard.empty()) {
+    if (transElement->hasAttribute("guard")) {
+        std::string guard = transElement->getAttribute("guard");
         transition->setGuard(guard);
         LOG_DEBUG("Guard: {}", guard);
     }
@@ -119,7 +115,7 @@ std::shared_ptr<RSM::ITransitionNode> RSM::TransitionParser::parseTransitionNode
 }
 
 std::shared_ptr<RSM::ITransitionNode>
-RSM::TransitionParser::parseInitialTransition(const xmlpp::Element *initialElement) {
+RSM::TransitionParser::parseInitialTransition(const std::shared_ptr<IXMLElement> &initialElement) {
     if (!initialElement) {
         LOG_WARN("Null initial element");
         return nullptr;
@@ -134,13 +130,12 @@ RSM::TransitionParser::parseInitialTransition(const xmlpp::Element *initialEleme
         return nullptr;
     }
 
-    auto targetAttr = transElement->get_attribute("target");
-    if (!targetAttr) {
+    if (!transElement->hasAttribute("target")) {
         LOG_WARN("Initial transition missing target attribute");
         return nullptr;
     }
 
-    std::string target = targetAttr->get_value();
+    std::string target = transElement->getAttribute("target");
     LOG_DEBUG("Initial transition target: {}", target);
 
     // Create initial transition - no event
@@ -157,7 +152,8 @@ RSM::TransitionParser::parseInitialTransition(const xmlpp::Element *initialEleme
 }
 
 std::vector<std::shared_ptr<RSM::ITransitionNode>>
-RSM::TransitionParser::parseTransitionsInState(const xmlpp::Element *stateElement, RSM::IStateNode *stateNode) {
+RSM::TransitionParser::parseTransitionsInState(const std::shared_ptr<IXMLElement> &stateElement,
+                                               RSM::IStateNode *stateNode) {
     std::vector<std::shared_ptr<RSM::ITransitionNode>> transitions;
 
     if (!stateElement || !stateNode) {
@@ -169,7 +165,7 @@ RSM::TransitionParser::parseTransitionsInState(const xmlpp::Element *stateElemen
 
     // Find all transition elements
     auto transElements = ParsingCommon::findChildElements(stateElement, "transition");
-    for (auto *transElement : transElements) {
+    for (const auto &transElement : transElements) {
         auto transition = parseTransitionNode(transElement, stateNode);
         if (transition) {
             transitions.push_back(transition);
@@ -180,16 +176,16 @@ RSM::TransitionParser::parseTransitionsInState(const xmlpp::Element *stateElemen
     return transitions;
 }
 
-bool RSM::TransitionParser::isTransitionNode(const xmlpp::Element *element) const {
+bool RSM::TransitionParser::isTransitionNode(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
 
-    std::string nodeName = element->get_name();
+    std::string nodeName = element->getName();
     return matchNodeName(nodeName, "transition");
 }
 
-void RSM::TransitionParser::parseActions(const xmlpp::Element *transElement,
+void RSM::TransitionParser::parseActions(const std::shared_ptr<IXMLElement> &transElement,
                                          std::shared_ptr<RSM::ITransitionNode> transition) {
     if (!transElement || !transition) {
         return;
@@ -231,20 +227,4 @@ std::vector<std::string> RSM::TransitionParser::parseEventList(const std::string
 
 bool RSM::TransitionParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
     return ParsingCommon::matchNodeName(nodeName, searchName);
-}
-
-std::vector<std::string> RSM::TransitionParser::parseTargetList(const std::string &targetStr) const {
-    std::vector<std::string> targets;
-    std::stringstream ss(targetStr);
-    std::string target;
-
-    // Parse space-separated target list
-    while (std::getline(ss, target, ' ')) {
-        // Remove empty strings
-        if (!target.empty()) {
-            targets.push_back(target);
-        }
-    }
-
-    return targets;
 }
