@@ -69,8 +69,6 @@ set(RSM_TEST_TARGETS
     w3c_test_cli
     w3c_full_runner
     w3c_simple_tests
-    # static_codegen_tests  # Disabled: C++ codegen replaced by Python
-    # simple_scxml_engine_tests  # Temporarily disabled
 )
 
 # ============================================================================
@@ -285,49 +283,6 @@ target_link_libraries(core_parser_tests
 )
 
 # ============================================================================
-# 5. Concurrent States Foundation Tests
-# ============================================================================
-# Disabled - test files removed
-# add_executable(concurrent_foundation_tests
-#     states/concurrent/foundation/ConcurrentStateFoundationTest.cpp
-#     mocks/MockActionExecutor.cpp
-# )
-
-# ============================================================================
-# 6. Concurrent States Orchestration Tests
-# ============================================================================
-# add_executable(concurrent_orchestration_tests
-#     states/concurrent/orchestration/ParallelRegionOrchestratorTest.cpp
-#     mocks/MockActionExecutor.cpp
-# )
-
-# ============================================================================
-# 7. Concurrent Event Broadcasting Tests
-# ============================================================================
-# add_executable(concurrent_event_tests
-#     states/concurrent/events/ConcurrentEventBroadcasterTest.cpp
-#     mocks/MockActionExecutor.cpp
-# )
-
-# ============================================================================
-# 8. Concurrent Completion Monitoring Tests
-# ============================================================================
-# add_executable(concurrent_monitoring_tests
-#     states/concurrent/monitoring/ConcurrentCompletionMonitorTest.cpp
-#     mocks/MockActionExecutor.cpp
-# )
-
-# ============================================================================
-# 9. External Transition Handling Tests
-# ============================================================================
-# add_executable(external_transition_tests
-#     states/concurrent/transitions/ExternalTransitionHandlerTest.cpp
-#     mocks/MockActionExecutor.cpp
-# )
-
-# Disabled - test configurations removed
-
-# ============================================================================
 # 6. Integration Tests (RSM architecture)
 # ============================================================================
 add_executable(integration_tests
@@ -372,7 +327,7 @@ target_link_libraries(integration_tests
 )
 
 # ============================================================================
-# 6. Concurrency and Deadlock Tests
+# 7. Concurrency and Deadlock Tests
 # ============================================================================
 add_executable(concurrency_tests
     concurrency/DeadlockReproductionTest.cpp
@@ -395,7 +350,7 @@ target_link_libraries(concurrency_tests
 )
 
 # ============================================================================
-# 7. TXML Converter Tests (W3C SCXML Compliance Testing)
+# 8. TXML Converter Tests (W3C SCXML Compliance Testing)
 # ============================================================================
 add_executable(txml_converter_tests
     w3c/TXMLConverterTest.cpp
@@ -423,7 +378,7 @@ target_link_libraries(txml_converter_tests
 add_dependencies(txml_converter_tests libxmlxx_external rsm_unified)
 
 # ============================================================================
-# 8. W3C SCXML Compliance Tests (SOLID Architecture)
+# 9. W3C SCXML Compliance Tests (SOLID Architecture)
 # ============================================================================
 # This section defines W3C SCXML conformance tests that run on both:
 # - Interpreter Engine: Runtime SCXML parsing and execution
@@ -765,36 +720,11 @@ target_include_directories(w3c_test_cli
 add_dependencies(w3c_test_cli libxmlxx_external rsm_unified)
 
 # ============================================================================
-# 9. Static Code Generation Tests (TDD for Static Compiler)
+# Note: C++ StaticCodeGenerator replaced by Python + Jinja2 (codegen.py)
+# - C++ unit tests (test_static_codegen.cpp) removed with StaticCodeGenerator.cpp
+# - Integration tests run via StaticCodegenIntegrationTest (in integration_tests)
+# - TODO: Add Python codegen unit tests (pytest)
 # ============================================================================
-# NOTE: C++ code generator replaced by Python + Jinja2 implementation
-# These tests are disabled as they depend on C++ StaticCodeGenerator
-# TODO: Create Python codegen tests
-# add_executable(static_codegen_tests
-#     codegen/test_static_codegen.cpp
-#     ../tools/codegen/StaticCodeGenerator.cpp
-# )
-#
-# target_include_directories(static_codegen_tests
-#     PRIVATE
-#         ${CMAKE_SOURCE_DIR}
-#         ${CMAKE_SOURCE_DIR}/rsm/include
-#         ${CMAKE_SOURCE_DIR}/tools/codegen
-#         ${CMAKE_SOURCE_DIR}/tests
-#         ${LIBXMLXX_INCLUDE_DIRS}
-#         /usr/include/libxml2
-# )
-#
-# target_link_libraries(static_codegen_tests
-#     PRIVATE
-#         rsm_unified
-#         GTest::gtest_main
-#         ${LIBXMLXX_LIBRARIES}
-#         xml2
-#         pthread
-# )
-#
-# add_dependencies(static_codegen_tests libxmlxx_external rsm_unified)
 
 # ============================================================================
 # CTest execution order optimization (fast feedback → comprehensive validation → performance measurement)
@@ -810,7 +740,6 @@ add_test(NAME StateMachineTests COMMAND state_machine_tests)
 add_test(NAME JSEngineTests COMMAND js_engine_tests)
 add_test(NAME ActionTests COMMAND action_tests)
 add_test(NAME RSMSCXMLTests COMMAND rsm_scxml_tests)
-# add_test(NAME StaticCodegenTests COMMAND static_codegen_tests)  # Disabled: C++ codegen replaced by Python
 add_test(NAME ReadySCXMLEngineTests COMMAND ready_scxml_engine_tests)
 
 # Priority Level 3: Integration and concurrency tests (system-level validation, ~5-15s)
@@ -837,7 +766,6 @@ set_tests_properties(StateMachineTests PROPERTIES COST 4000)
 set_tests_properties(JSEngineTests PROPERTIES COST 4000)
 set_tests_properties(ActionTests PROPERTIES COST 4000)
 set_tests_properties(RSMSCXMLTests PROPERTIES COST 4000)
-# set_tests_properties(StaticCodegenTests PROPERTIES COST 4000)  # Disabled
 
 # Priority Level 3: COST 3000
 set_tests_properties(TXMLConverterTests PROPERTIES COST 3000)
@@ -874,7 +802,6 @@ set_tests_properties(W3CFullComplianceTests PROPERTIES DEPENDS "IntegrationTests
 
 # Test timeout configuration (in seconds)
 set_tests_properties(RSMSCXMLTests PROPERTIES TIMEOUT 30)
-# set_tests_properties(StaticCodegenTests PROPERTIES TIMEOUT 30)  # Disabled
 set_tests_properties(ReadySCXMLEngineTests PROPERTIES TIMEOUT 30)
 set_tests_properties(JSEngineTests CoreParserTests StateMachineTests PROPERTIES TIMEOUT 60)
 set_tests_properties(ActionTests HistoryTests StatesTests PROPERTIES TIMEOUT 90)

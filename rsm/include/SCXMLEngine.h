@@ -222,6 +222,21 @@ public:
      */
     virtual std::string getLastStateMachineError(const std::string &sessionId = "") const = 0;
 
+    /**
+     * @brief Get state machine statistics (synchronous)
+     * @param sessionId Target session (uses default if empty)
+     * @return Statistics structure with counters and state information
+     */
+    struct Statistics {
+        int totalEvents = 0;
+        int totalTransitions = 0;
+        int failedTransitions = 0;
+        std::string currentState;
+        bool isRunning = false;
+    };
+
+    virtual Statistics getStatisticsSync(const std::string &sessionId = "") const = 0;
+
     // === Engine Information ===
 
     /**

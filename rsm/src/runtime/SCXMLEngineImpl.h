@@ -61,6 +61,7 @@ public:
     bool setVariableSync(const std::string &name, const std::string &value, const std::string &sessionId = "") override;
     std::string getVariableSync(const std::string &name, const std::string &sessionId = "") const override;
     std::string getLastStateMachineError(const std::string &sessionId = "") const override;
+    Statistics getStatisticsSync(const std::string &sessionId = "") const override;
 
     // === Engine Information ===
     size_t getMemoryUsage() const override;
