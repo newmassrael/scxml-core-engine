@@ -235,8 +235,6 @@ target_link_libraries(rsm_unified
         ${LIBXMLXX_LIBRARIES}
         ${LIBXML2_LIBRARIES}         # libxml2 dependency for libxml++
         pthread
-        dl
-        m
 )
 
 # Set C++20 standard
