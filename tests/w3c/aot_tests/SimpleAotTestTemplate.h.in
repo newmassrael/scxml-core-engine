@@ -5,11 +5,16 @@
 
 namespace RSM::W3C::AotTests {
 
+// clang-format off
 /**
  * @brief W3C SCXML @SPECNUM@: @TEST_DESCRIPTION@
  */
+// clang-format on
+
 struct Test@TEST_NUMBER@ : public SimpleAotTest<Test@TEST_NUMBER@, @TEST_NUMBER@> {
+    // clang-format off
     static constexpr const char *DESCRIPTION = "W3C SCXML @SPECNUM@: @TEST_DESCRIPTION@";
+    // clang-format on
     using SM = RSM::Generated::test@TEST_NUMBER@::test@TEST_NUMBER@;
 };
 

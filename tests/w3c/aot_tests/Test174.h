@@ -5,14 +5,16 @@
 
 namespace RSM::W3C::AotTests {
 
+// clang-format off
 /**
- * @brief W3C SCXML 6.2: If 'typexpr' is present, the SCXML Processor MUST evaluate it when the parent send element is
- * evaluated and treat the result as if it had been entered as the value of 'type'.
+ * @brief W3C SCXML 6.2: If 'typexpr' is present, the SCXML Processor MUST evaluate it when the parent send element is evaluated and treat the result as if it had been entered as the value of 'type'.
  */
+// clang-format on
+
 struct Test174 : public SimpleAotTest<Test174, 174> {
-    static constexpr const char *DESCRIPTION =
-        "W3C SCXML 6.2: If 'typexpr' is present, the SCXML Processor MUST evaluate it when the parent send element is "
-        "evaluated and treat the result as if it had been entered as the value of 'type'.";
+    // clang-format off
+    static constexpr const char *DESCRIPTION = "W3C SCXML 6.2: If 'typexpr' is present, the SCXML Processor MUST evaluate it when the parent send element is evaluated and treat the result as if it had been entered as the value of 'type'.";
+    // clang-format on
     using SM = RSM::Generated::test174::test174;
 };
 
