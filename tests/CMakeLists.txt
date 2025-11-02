@@ -297,6 +297,9 @@ add_executable(integration_tests
     integration/ParallelStateEndToEndTest.cpp
     integration/SCXMLParallelComplianceTest.cpp
     integration/ConcurrentCompletionMonitoringTest.cpp
+    integration/ExternalTransitionHandlerTest.cpp
+    integration/ParallelStateEventBroadcastingTest.cpp
+    integration/ParallelStateComponentTest.cpp
     integration/SCXMLForeachIntegrationTest.cpp
     integration/HistoryStateIntegrationTest.cpp
     integration/StaticCodegenIntegrationTest.cpp
