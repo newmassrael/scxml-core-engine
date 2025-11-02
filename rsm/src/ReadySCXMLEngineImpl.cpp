@@ -197,13 +197,12 @@ public:
         Statistics stats;
 
         if (initialized_ && scxmlEngine_) {
-            // Note: SCXMLEngine doesn't expose statistics directly
-            // We can only get basic state information
-            stats.currentState = scxmlEngine_->getCurrentStateSync(sessionId_);
-            stats.isRunning = scxmlEngine_->isStateMachineRunning(sessionId_);
-            // totalEvents and totalTransitions are not available from high-level API
-            stats.totalEvents = 0;
-            stats.totalTransitions = 0;
+            // Get real statistics from SCXMLEngine
+            auto engineStats = scxmlEngine_->getStatisticsSync(sessionId_);
+            stats.totalEvents = engineStats.totalEvents;
+            stats.totalTransitions = engineStats.totalTransitions;
+            stats.currentState = engineStats.currentState;
+            stats.isRunning = engineStats.isRunning;
         }
 
         return stats;

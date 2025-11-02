@@ -373,23 +373,21 @@ TEST_F(ReadySCXMLEngineTest, GetStatistics_BeforeStart_ReturnsNotRunning) {
     EXPECT_FALSE(stats.isRunning);
 }
 
-// TODO: Re-enable when statistics counters are implemented in SCXMLEngine
-// Currently totalEvents and totalTransitions are not tracked by the high-level API
-// TEST_F(ReadySCXMLEngineTest, GetStatistics_AfterEvents_UpdatesCounters) {
-//     std::string filePath = createSimpleTestFile();
-//     auto engine = ReadySCXMLEngine::fromFile(filePath);
-//     ASSERT_NE(engine, nullptr);
-//     ASSERT_TRUE(engine->start());
-//
-//     // Send some events
-//     engine->sendEvent("start");
-//     engine->sendEvent("pause");
-//
-//     auto stats = engine->getStatistics();
-//
-//     EXPECT_GT(stats.totalEvents, 0);
-//     EXPECT_GT(stats.totalTransitions, 0);
-// }
+TEST_F(ReadySCXMLEngineTest, GetStatistics_AfterEvents_UpdatesCounters) {
+    std::string filePath = createSimpleTestFile();
+    auto engine = ReadySCXMLEngine::fromFile(filePath);
+    ASSERT_NE(engine, nullptr);
+    ASSERT_TRUE(engine->start());
+
+    // Send some events
+    engine->sendEvent("start");
+    engine->sendEvent("pause");
+
+    auto stats = engine->getStatistics();
+
+    EXPECT_GT(stats.totalEvents, 0);
+    EXPECT_GT(stats.totalTransitions, 0);
+}
 
 // ============================================================================
 // Integration Tests

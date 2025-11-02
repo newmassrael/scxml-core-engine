@@ -424,4 +424,23 @@ std::string SCXMLEngineImpl::getLastStateMachineError(const std::string &session
     return it != sessionErrors_.end() ? it->second : "";
 }
 
+SCXMLEngine::Statistics SCXMLEngineImpl::getStatisticsSync(const std::string &sessionId) const {
+    (void)sessionId;  // Single session currently, parameter reserved for future multi-session support
+    Statistics stats;
+
+    if (!stateMachine_) {
+        return stats;
+    }
+
+    // Get statistics from StateMachine
+    auto smStats = stateMachine_->getStatistics();
+    stats.totalEvents = smStats.totalEvents;
+    stats.totalTransitions = smStats.totalTransitions;
+    stats.failedTransitions = smStats.failedTransitions;
+    stats.currentState = smStats.currentState;
+    stats.isRunning = smStats.isRunning;
+
+    return stats;
+}
+
 }  // namespace RSM
