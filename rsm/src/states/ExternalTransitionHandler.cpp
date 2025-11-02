@@ -142,6 +142,11 @@ void ExternalTransitionHandler::registerParallelState(const std::string &paralle
         throw std::invalid_argument("parallelStateId cannot be empty");
     }
 
+    // W3C SCXML 3.4: Parallel states must have at least one child region
+    if (regionIds.empty()) {
+        throw std::invalid_argument("Parallel state must have at least one region (W3C SCXML 3.4)");
+    }
+
     std::lock_guard<std::mutex> lock(parallelStatesMutex_);
 
     ParallelStateInfo stateInfo;

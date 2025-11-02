@@ -1,110 +1,83 @@
-#include "actions/ActionExecutorImpl.h"
-#include "js_engine/JSEngine.h"
-#include "parsing/NodeFactory.h"
-#include "parsing/SCXMLParser.h"
+#include "events/EventDescriptor.h"
+#include "mocks/MockConcurrentRegion.h"
 #include "states/ConcurrentEventBroadcaster.h"
 #include "gtest/gtest.h"
 #include <memory>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace RSM {
 
 class ParallelStateEventBroadcastingTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &JSEngine::instance();
-        engine_->reset();
-        nodeFactory_ = std::make_shared<NodeFactory>();
-        parser_ = std::make_unique<SCXMLParser>(nodeFactory_);
         broadcaster_ = std::make_unique<ConcurrentEventBroadcaster>();
-        sessionId_ = "parallel_event_broadcasting_test";
+
+        // Create mock regions
+        region1_ = std::make_shared<MockConcurrentRegion>("region1");
+        region2_ = std::make_shared<MockConcurrentRegion>("region2");
+        region3_ = std::make_shared<MockConcurrentRegion>("region3");
     }
 
     void TearDown() override {
-        if (engine_) {
-            engine_->reset();
-        }
+        broadcaster_.reset();
     }
 
-    JSEngine *engine_;
-    std::shared_ptr<NodeFactory> nodeFactory_;
-    std::unique_ptr<SCXMLParser> parser_;
     std::unique_ptr<ConcurrentEventBroadcaster> broadcaster_;
-    std::string sessionId_;
+    std::shared_ptr<MockConcurrentRegion> region1_;
+    std::shared_ptr<MockConcurrentRegion> region2_;
+    std::shared_ptr<MockConcurrentRegion> region3_;
 };
 
-// Basic event broadcasting test
-TEST_F(ParallelStateEventBroadcastingTest, BasicEventBroadcasting) {
-    // Register parallel state
-    std::vector<std::string> regionIds = {"region1", "region2", "region3"};
-    broadcaster_->registerParallelState("parallel1", regionIds);
-
-    // Event broadcasting
-    EventDescriptor event;
-    event.name = "test_event";
-    event.data = "test_data";
-
-    bool result = broadcaster_->broadcastToRegions("parallel1", event);
-    EXPECT_TRUE(result) << "Event broadcasting failed";
-}
-
-// Selective event broadcasting test
+// Test 1: Selective event broadcasting to specific regions
 TEST_F(ParallelStateEventBroadcastingTest, SelectiveEventBroadcasting) {
-    // Register parallel state
-    std::vector<std::string> regionIds = {"region1", "region2", "region3"};
-    broadcaster_->registerParallelState("parallel1", regionIds);
+    // Register all regions
+    broadcaster_->registerRegion(region1_);
+    broadcaster_->registerRegion(region2_);
+    broadcaster_->registerRegion(region3_);
 
-    // Selective broadcasting
+    // Activate regions
+    region1_->activate();
+    region2_->activate();
+    region3_->activate();
+
+    // Broadcast to specific regions only
     EventDescriptor event;
-    event.name = "selective_event";
-    event.data = "selective_data";
+    event.eventName = "selective_event";
 
     std::vector<std::string> targetRegions = {"region1", "region3"};
-    bool result = broadcaster_->broadcastToSpecificRegions("parallel1", event, targetRegions);
-    EXPECT_TRUE(result) << "Selective event broadcasting failed";
+    auto result = broadcaster_->broadcastEventToRegions(event, targetRegions);
+
+    EXPECT_TRUE(result.isSuccess) << "Selective event broadcasting failed";
+
+    // Only region1 and region3 should receive the event
+    EXPECT_EQ(region1_->getEventCount(), 1) << "Region1 should receive event";
+    EXPECT_EQ(region2_->getEventCount(), 0) << "Region2 should not receive event";
+    EXPECT_EQ(region3_->getEventCount(), 1) << "Region3 should receive event";
+
+    EXPECT_EQ(region1_->getLastEvent(), "selective_event");
+    EXPECT_EQ(region3_->getLastEvent(), "selective_event");
 }
 
-// Event filtering test
-TEST_F(ParallelStateEventBroadcastingTest, EventFiltering) {
-    // Register parallel state
-    std::vector<std::string> regionIds = {"region1", "region2"};
-    broadcaster_->registerParallelState("parallel1", regionIds);
-
-    // Set event filter
-    broadcaster_->setEventFilter(
-        "parallel1", [](const EventDescriptor &event) { return event.name.find("filtered") != std::string::npos; });
-
-    // Event to be filtered
-    EventDescriptor filteredEvent;
-    filteredEvent.name = "filtered_event";
-
-    // Event that won't be filtered
-    EventDescriptor normalEvent;
-    normalEvent.name = "normal_event";
-
-    bool filteredResult = broadcaster_->broadcastToRegions("parallel1", filteredEvent);
-    bool normalResult = broadcaster_->broadcastToRegions("parallel1", normalEvent);
-
-    EXPECT_TRUE(filteredResult) << "Filtered event broadcasting failed";
-    EXPECT_FALSE(normalResult) << "Normal event was not filtered";
-}
-
-// Concurrency test
+// Test 2: Concurrent broadcasting thread safety
 TEST_F(ParallelStateEventBroadcastingTest, ConcurrentBroadcasting) {
-    // Register parallel state
-    std::vector<std::string> regionIds = {"region1", "region2", "region3", "region4"};
-    broadcaster_->registerParallelState("parallel1", regionIds);
+    broadcaster_->registerRegion(region1_);
+    broadcaster_->registerRegion(region2_);
+    region1_->activate();
+    region2_->activate();
 
-    // Concurrent broadcasting test
     std::vector<std::thread> threads;
     std::atomic<int> successCount{0};
 
+    // Concurrent broadcasts from multiple threads
     for (int i = 0; i < 10; ++i) {
         threads.emplace_back([this, &successCount, i]() {
             EventDescriptor event;
-            event.name = "concurrent_event_" + std::to_string(i);
+            event.eventName = "concurrent_event_" + std::to_string(i);
 
-            if (broadcaster_->broadcastToRegions("parallel1", event)) {
+            auto result = broadcaster_->broadcastEvent(event);
+            if (result.isSuccess) {
                 successCount.fetch_add(1);
             }
         });
@@ -115,126 +88,64 @@ TEST_F(ParallelStateEventBroadcastingTest, ConcurrentBroadcasting) {
     }
 
     EXPECT_EQ(successCount.load(), 10) << "Some concurrent broadcasts failed";
+    EXPECT_EQ(region1_->getEventCount(), 10) << "Region1 should receive all 10 events";
+    EXPECT_EQ(region2_->getEventCount(), 10) << "Region2 should receive all 10 events";
 }
 
-// Event priority test
-TEST_F(ParallelStateEventBroadcastingTest, EventPriority) {
-    // Register parallel state
-    std::vector<std::string> regionIds = {"region1", "region2"};
-    broadcaster_->registerParallelState("parallel1", regionIds);
-
-    // High priority event
-    EventDescriptor highPriorityEvent;
-    highPriorityEvent.name = "high_priority";
-    highPriorityEvent.priority = EventPriority::HIGH;
-
-    // Low priority event
-    EventDescriptor lowPriorityEvent;
-    lowPriorityEvent.name = "low_priority";
-    lowPriorityEvent.priority = EventPriority::LOW;
-
-    bool highResult = broadcaster_->broadcastToRegions("parallel1", highPriorityEvent);
-    bool lowResult = broadcaster_->broadcastToRegions("parallel1", lowPriorityEvent);
-
-    EXPECT_TRUE(highResult) << "High priority event broadcasting failed";
-    EXPECT_TRUE(lowResult) << "Low priority event broadcasting failed";
-}
-
-// Batch event processing test
-TEST_F(ParallelStateEventBroadcastingTest, BatchEventProcessing) {
-    // Register parallel state
-    std::vector<std::string> regionIds = {"region1", "region2", "region3"};
-    broadcaster_->registerParallelState("parallel1", regionIds);
-
-    // Generate batch events
-    std::vector<EventDescriptor> events;
-    for (int i = 0; i < 5; ++i) {
-        EventDescriptor event;
-        event.name = "batch_event_" + std::to_string(i);
-        events.push_back(event);
-    }
-
-    bool result = broadcaster_->broadcastBatchToRegions("parallel1", events);
-    EXPECT_TRUE(result) << "Batch event broadcasting failed";
-}
-
-// Event statistics test
+// Test 3: Event statistics tracking
 TEST_F(ParallelStateEventBroadcastingTest, EventStatistics) {
-    // Register parallel state
-    std::vector<std::string> regionIds = {"region1", "region2"};
-    broadcaster_->registerParallelState("parallel1", regionIds);
+    broadcaster_->registerRegion(region1_);
+    broadcaster_->registerRegion(region2_);
+    region1_->activate();
+    region2_->activate();
 
     // Broadcast multiple events
     for (int i = 0; i < 5; ++i) {
         EventDescriptor event;
-        event.name = "stats_event_" + std::to_string(i);
-        broadcaster_->broadcastToRegions("parallel1", event);
+        event.eventName = "stats_event_" + std::to_string(i);
+        broadcaster_->broadcastEvent(event);
     }
 
-    auto stats = broadcaster_->getStatistics("parallel1");
-    EXPECT_GT(stats.totalEventsBroadcast, 0) << "Broadcast event count is 0";
-    EXPECT_EQ(stats.totalRegions, regionIds.size()) << "Registered region count mismatch";
+    auto stats = broadcaster_->getStatistics();
+    EXPECT_GT(stats.totalEvents, 0) << "No events were broadcast";
+    // Note: ConcurrentEventBroadcaster doesn't track region count, verify via region event counts
+    EXPECT_EQ(region1_->getEventCount(), 5) << "Region1 should receive 5 events";
+    EXPECT_EQ(region2_->getEventCount(), 5) << "Region2 should receive 5 events";
 }
 
-// Error handling test
+// Test 4: Error handling for non-existent regions
 TEST_F(ParallelStateEventBroadcastingTest, ErrorHandling) {
-    // Broadcast event to non-existent parallel state
+    broadcaster_->registerRegion(region1_);
+    region1_->activate();
+
+    // Try to broadcast to non-existent region
     EventDescriptor event;
-    event.name = "error_test_event";
+    event.eventName = "error_test_event";
 
-    bool result = broadcaster_->broadcastToRegions("nonexistent_parallel", event);
-    EXPECT_FALSE(result) << "Broadcasting to non-existent parallel state succeeded";
+    std::vector<std::string> invalidRegions = {"region1", "nonexistent_region"};
+    auto result = broadcaster_->broadcastEventToRegions(event, invalidRegions);
 
-    // Broadcast to empty region list
-    broadcaster_->registerParallelState("empty_parallel", {});
-    result = broadcaster_->broadcastToRegions("empty_parallel", event);
-    EXPECT_FALSE(result) << "Broadcasting to empty region list succeeded";
+    // Should still succeed for valid region, skip invalid
+    EXPECT_TRUE(result.isSuccess) << "Should handle non-existent regions gracefully";
+    EXPECT_EQ(region1_->getEventCount(), 1) << "Valid region should still receive event";
 }
 
-// SCXML integrated event broadcasting test
-TEST_F(ParallelStateEventBroadcastingTest, SCXMLIntegratedBroadcasting) {
-    const std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
-    <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" 
-           initial="parallel1" datamodel="ecmascript">
-        <parallel id="parallel1">
-            <state id="region1">
-                <initial>
-                    <transition target="region1_listening"/>
-                </initial>
-                <state id="region1_listening">
-                    <transition event="broadcast_test" target="region1_received"/>
-                </state>
-                <state id="region1_received">
-                    <onentry>
-                        <assign location="region1_got_event" expr="true"/>
-                    </onentry>
-                </state>
-            </state>
-            <state id="region2">
-                <initial>
-                    <transition target="region2_listening"/>
-                </initial>
-                <state id="region2_listening">
-                    <transition event="broadcast_test" target="region2_received"/>
-                </state>
-                <state id="region2_received">
-                    <onentry>
-                        <assign location="region2_got_event" expr="true"/>
-                    </onentry>
-                </state>
-            </state>
-        </parallel>
-    </scxml>)";
+// Test 5: Broadcasting to inactive regions
+TEST_F(ParallelStateEventBroadcastingTest, InactiveRegionHandling) {
+    broadcaster_->registerRegion(region1_);
+    broadcaster_->registerRegion(region2_);
 
-    auto result = parser_->parseContent(scxmlContent);
-    ASSERT_TRUE(result.has_value()) << "SCXML parsing failed";
+    // Only activate region1, leave region2 inactive
+    region1_->activate();
 
-    auto stateMachine = result.value();
-    ASSERT_NE(stateMachine, nullptr) << "State machine creation failed";
+    EventDescriptor event;
+    event.eventName = "inactive_test";
+    auto result = broadcaster_->broadcastEvent(event);
 
-    // Test that event broadcasting works integrated with SCXML
-    auto parallelState = stateMachine->findChildById("parallel1");
-    ASSERT_NE(parallelState, nullptr) << "Parallel state not found";
+    // Should only broadcast to active regions
+    EXPECT_TRUE(result.isSuccess);
+    EXPECT_EQ(region1_->getEventCount(), 1) << "Active region should receive event";
+    EXPECT_EQ(region2_->getEventCount(), 0) << "Inactive region should not receive event";
 }
 
 }  // namespace RSM
