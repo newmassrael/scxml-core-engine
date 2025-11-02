@@ -135,28 +135,57 @@ function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     # Check if SCXML file already exists in resources (for tests with direct SCXML, e.g., test513)
     set(RESOURCE_SCXML "${RESOURCE_DIR}/test${TEST_NUM}.scxml")
     if(EXISTS "${RESOURCE_SCXML}")
-        # Use existing SCXML file directly (skip TXML conversion)
-        add_custom_command(
-            OUTPUT "${SCXML_FILE}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-            COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/test${TEST_NUM}.txt" || ${CMAKE_COMMAND} -E true
-            DEPENDS "${RESOURCE_SCXML}" ${SUB_SCXML_DEPENDENCIES}
-            COMMENT "Using existing SCXML: test${TEST_NUM}.scxml"
-            VERBATIM
-        )
+        # Check if .txt file exists (only some tests have external data files)
+        set(RESOURCE_TXT "${RESOURCE_DIR}/test${TEST_NUM}.txt")
+        if(EXISTS "${RESOURCE_TXT}")
+            # Use existing SCXML file + copy .txt file
+            add_custom_command(
+                OUTPUT "${SCXML_FILE}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_TXT}" "${OUTPUT_DIR}/test${TEST_NUM}.txt"
+                DEPENDS "${RESOURCE_SCXML}" ${SUB_SCXML_DEPENDENCIES}
+                COMMENT "Using existing SCXML: test${TEST_NUM}.scxml"
+                VERBATIM
+            )
+        else()
+            # Use existing SCXML file only (no .txt file)
+            add_custom_command(
+                OUTPUT "${SCXML_FILE}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+                COMMAND ${CMAKE_COMMAND} -E copy "${RESOURCE_SCXML}" "${SCXML_FILE}"
+                DEPENDS "${RESOURCE_SCXML}" ${SUB_SCXML_DEPENDENCIES}
+                COMMENT "Using existing SCXML: test${TEST_NUM}.scxml"
+                VERBATIM
+            )
+        endif()
     else()
-        # Convert TXML to SCXML (standard path)
-        add_custom_command(
-            OUTPUT "${SCXML_FILE}"
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-            COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
-            COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_DIR}/test${TEST_NUM}.txt" "${OUTPUT_DIR}/test${TEST_NUM}.txt" || ${CMAKE_COMMAND} -E true
-            DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
-            COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
-            VERBATIM
-        )
+        # Check if .txt file exists (only some tests have external data files)
+        set(RESOURCE_TXT "${RESOURCE_DIR}/test${TEST_NUM}.txt")
+        if(EXISTS "${RESOURCE_TXT}")
+            # Convert TXML to SCXML + copy .txt file
+            add_custom_command(
+                OUTPUT "${SCXML_FILE}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+                COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
+                COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_TXT}" "${OUTPUT_DIR}/test${TEST_NUM}.txt"
+                DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
+                COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
+                VERBATIM
+            )
+        else()
+            # Convert TXML to SCXML only (no .txt file)
+            add_custom_command(
+                OUTPUT "${SCXML_FILE}"
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+                COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
+                COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}"
+                DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
+                COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
+                VERBATIM
+            )
+        endif()
     endif()
 
     # Step 2: SCXML -> C++ code generation (parent + inline children)

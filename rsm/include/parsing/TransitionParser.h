@@ -4,7 +4,12 @@
 #include "model/IStateNode.h"
 #include "model/ITransitionNode.h"
 #include "parsing/ActionParser.h"
+#include "parsing/IXMLElement.h"
+
+#ifndef __EMSCRIPTEN__
 #include <libxml++/libxml++.h>
+#endif
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -44,14 +49,15 @@ public:
      * @param stateNode Owner state node
      * @return Created transition node
      */
-    std::shared_ptr<ITransitionNode> parseTransitionNode(const xmlpp::Element *transElement, IStateNode *stateNode);
+    std::shared_ptr<ITransitionNode> parseTransitionNode(const std::shared_ptr<IXMLElement> &transElement,
+                                                         IStateNode *stateNode);
 
     /**
      * @brief Parse initial transition
      * @param initialElement XML initial element
      * @return Created transition node
      */
-    std::shared_ptr<ITransitionNode> parseInitialTransition(const xmlpp::Element *initialElement);
+    std::shared_ptr<ITransitionNode> parseInitialTransition(const std::shared_ptr<IXMLElement> &initialElement);
 
     /**
      * @brief Parse all transitions within a state
@@ -59,23 +65,32 @@ public:
      * @param stateNode State node
      * @return List of parsed transition nodes
      */
-    std::vector<std::shared_ptr<ITransitionNode>> parseTransitionsInState(const xmlpp::Element *stateElement,
-                                                                          IStateNode *stateNode);
+    std::vector<std::shared_ptr<ITransitionNode>>
+    parseTransitionsInState(const std::shared_ptr<IXMLElement> &stateElement, IStateNode *stateNode);
 
     /**
      * @brief Check if element is a transition node
      * @param element XML element
      * @return Whether it is a transition node
      */
-    bool isTransitionNode(const xmlpp::Element *element) const;
+    bool isTransitionNode(const std::shared_ptr<IXMLElement> &element) const;
 
 private:
+#ifndef __EMSCRIPTEN__
     /**
-     * @brief Parse transition actions
+     * @brief Parse transition actions (libxml++ version)
      * @param transElement Transition element
      * @param transition Transition node
      */
     void parseActions(const xmlpp::Element *transElement, std::shared_ptr<ITransitionNode> transition);
+#endif
+
+    /**
+     * @brief Parse transition actions (IXMLElement version)
+     * @param transElement Transition element
+     * @param transition Transition node
+     */
+    void parseActions(const std::shared_ptr<IXMLElement> &transElement, std::shared_ptr<ITransitionNode> transition);
 
     /**
      * @brief Parse event list

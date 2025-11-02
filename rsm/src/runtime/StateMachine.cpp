@@ -20,6 +20,7 @@ using RSM::Common::ConflictResolutionHelperString;
 #include "factory/NodeFactory.h"
 #include "model/SCXMLModel.h"
 #include "parsing/ActionParser.h"
+#include "parsing/IXMLParser.h"
 #include "parsing/SCXMLParser.h"
 #include "parsing/XIncludeProcessor.h"
 #include "runtime/ActionExecutorImpl.h"
@@ -35,7 +36,6 @@ using RSM::Common::ConflictResolutionHelperString;
 #include "states/ConcurrentStateNode.h"
 #include <algorithm>
 #include <fstream>
-#include <libxml++/parsers/domparser.h>
 #include <random>
 #include <regex>
 #include <set>
@@ -603,24 +603,23 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             // Finalize contains elements like <assign>, <script>, <log>, <raise>, <if>, <foreach> etc.
             if (actionExecutor_) {
                 try {
-                    // Parse finalize XML content using libxml++
+                    // Parse finalize XML content using IXMLParser
                     std::string xmlWrapper =
                         "<finalize xmlns=\"http://www.w3.org/2005/07/scxml\">" + finalizeScript + "</finalize>";
 
-                    xmlpp::DomParser parser;
-                    parser.parse_memory(xmlWrapper);
+                    auto parser = IXMLParser::create();
+                    auto document = parser->parseContent(xmlWrapper);
 
-                    auto document = parser.get_document();
-                    if (!document) {
-                        LOG_ERROR("StateMachine: Failed to parse finalize XML");
+                    if (!document || !document->isValid()) {
+                        LOG_ERROR("StateMachine: Failed to parse finalize XML: {}", parser->getLastError());
                     } else {
-                        auto root = document->get_root_node();
+                        auto root = document->getRootElement();
                         if (!root) {
                             LOG_ERROR("StateMachine: No root element in finalize XML");
                         } else {
                             // Use ActionParser to parse and execute each action in finalize
                             ActionParser actionParser(nullptr);
-                            auto children = root->get_children();
+                            auto children = root->getChildren();
 
                             // Create execution context
                             auto sharedExecutor = std::static_pointer_cast<IActionExecutor>(actionExecutor_);
@@ -628,14 +627,11 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
                             // Execute each action in finalize
                             for (const auto &child : children) {
-                                auto element = dynamic_cast<const xmlpp::Element *>(child);
-                                if (element) {
-                                    auto action = actionParser.parseActionNode(element);
-                                    if (action) {
-                                        bool success = action->execute(context);
-                                        LOG_DEBUG("StateMachine: Finalize action '{}' executed: {}",
-                                                  element->get_name(), success);
-                                    }
+                                auto action = actionParser.parseActionNode(child);
+                                if (action) {
+                                    bool success = action->execute(context);
+                                    LOG_DEBUG("StateMachine: Finalize action '{}' executed: {}", child->getName(),
+                                              success);
                                 }
                             }
                         }
@@ -1793,7 +1789,7 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
             // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
             // Test 277: expr evaluation failure must raise error.execution (no fallback)
             bool success = DataModelInitHelper::initializeVariableFromExpr(
-                RSM::JSEngine::instance(), sessionId_, id, expr, [this, &id](const std::string &msg) {
+                RSM::JSEngine::instance(), sessionId_, id, expr, [this](const std::string &msg) {
                     // W3C SCXML 5.3: Raise error.execution on initialization failure
                     if (eventRaiser_) {
                         eventRaiser_->raiseEvent("error.execution", msg);
@@ -1907,7 +1903,7 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
         // W3C SCXML B.2: Initialize with inline content
         // ARCHITECTURE.md: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
         bool success = DataModelInitHelper::initializeVariable(RSM::JSEngine::instance(), sessionId_, id, content,
-                                                               [this, &id](const std::string &msg) {
+                                                               [this](const std::string &msg) {
                                                                    LOG_ERROR("StateMachine: {}", msg);
                                                                    if (eventRaiser_) {
                                                                        eventRaiser_->raiseEvent("error.execution", msg);

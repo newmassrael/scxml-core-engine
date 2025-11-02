@@ -3,8 +3,13 @@
 #include "factory/NodeFactory.h"
 #include "model/IDataModelItem.h"
 #include "model/SCXMLContext.h"
+#include "parsing/IXMLElement.h"
 #include <fstream>
+
+#ifndef __EMSCRIPTEN__
 #include <libxml++/libxml++.h>
+#endif
+
 #include <memory>
 #include <sstream>
 #include <string>
@@ -38,7 +43,7 @@ public:
      * @param datamodelNode XML datamodel node
      * @return List of parsed data model items
      */
-    std::vector<std::shared_ptr<IDataModelItem>> parseDataModelNode(const xmlpp::Element *datamodelNode,
+    std::vector<std::shared_ptr<IDataModelItem>> parseDataModelNode(const std::shared_ptr<IXMLElement> &datamodelNode,
                                                                     const SCXMLContext &context);
 
     /**
@@ -46,14 +51,15 @@ public:
      * @param dataNode XML data node
      * @return Created data model item
      */
-    std::shared_ptr<IDataModelItem> parseDataModelItem(const xmlpp::Element *dataNode, const SCXMLContext &context);
+    std::shared_ptr<IDataModelItem> parseDataModelItem(const std::shared_ptr<IXMLElement> &dataNode,
+                                                       const SCXMLContext &context);
 
     /**
      * @brief Parse all data model elements within a state node
      * @param stateNode State node
      * @return List of parsed data model items
      */
-    std::vector<std::shared_ptr<IDataModelItem>> parseDataModelInState(const xmlpp::Element *stateNode,
+    std::vector<std::shared_ptr<IDataModelItem>> parseDataModelInState(const std::shared_ptr<IXMLElement> &stateNode,
                                                                        const SCXMLContext &context);
 
     /**
@@ -61,22 +67,31 @@ public:
      * @param element XML element
      * @return Whether it is a data model item
      */
-    bool isDataModelItem(const xmlpp::Element *element) const;
+    bool isDataModelItem(const std::shared_ptr<IXMLElement> &element) const;
 
     /**
      * @brief Extract data model type
      * @param datamodelNode XML datamodel node
      * @return Data model type (default: "")
      */
-    std::string extractDataModelType(const xmlpp::Element *datamodelNode) const;
+    std::string extractDataModelType(const std::shared_ptr<IXMLElement> &datamodelNode) const;
 
 private:
+#ifndef __EMSCRIPTEN__
     /**
-     * @brief Parse content of data model item
+     * @brief Parse content of data model item (libxml++ version)
      * @param dataNode XML data node
      * @param dataItem Data model item
      */
     void parseDataContent(const xmlpp::Element *dataNode, std::shared_ptr<IDataModelItem> dataItem);
+#endif
+
+    /**
+     * @brief Parse content of data model item (IXMLElement version)
+     * @param dataNode XML data node
+     * @param dataItem Data model item
+     */
+    void parseDataContent(const std::shared_ptr<IXMLElement> &dataNode, std::shared_ptr<IDataModelItem> dataItem);
 
     /**
      * @brief Handle namespace matching

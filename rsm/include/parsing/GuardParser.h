@@ -2,7 +2,12 @@
 
 #include "factory/NodeFactory.h"
 #include "model/IGuardNode.h"
+#include "parsing/IXMLElement.h"
+
+#ifndef __EMSCRIPTEN__
 #include <libxml++/libxml++.h>
+#endif
+
 #include <memory>
 #include <string>
 #include <vector>
@@ -35,7 +40,7 @@ public:
      * @param guardNode XML guard node
      * @return Created guard node
      */
-    std::shared_ptr<IGuardNode> parseGuardNode(const xmlpp::Element *guardNode);
+    std::shared_ptr<IGuardNode> parseGuardNode(const std::shared_ptr<IXMLElement> &guardNode);
 
     /**
      * @brief Parse guard attribute from transition
@@ -43,7 +48,7 @@ public:
      * @param targetState Transition target state
      * @return Created guard node, nullptr if no guard attribute
      */
-    std::shared_ptr<IGuardNode> parseGuardFromTransition(const xmlpp::Element *transitionNode,
+    std::shared_ptr<IGuardNode> parseGuardFromTransition(const std::shared_ptr<IXMLElement> &transitionNode,
                                                          const std::string &targetState);
 
     /**
@@ -51,50 +56,67 @@ public:
      * @param reactiveGuardNode XML reactive guard node
      * @return Created guard node
      */
-    std::shared_ptr<IGuardNode> parseReactiveGuard(const xmlpp::Element *reactiveGuardNode);
+    std::shared_ptr<IGuardNode> parseReactiveGuard(const std::shared_ptr<IXMLElement> &reactiveGuardNode);
 
     /**
      * @brief Parse all guards within guards element
      * @param guardsNode code:guards element
      * @return List of parsed guard nodes
      */
-    std::vector<std::shared_ptr<IGuardNode>> parseGuardsElement(const xmlpp::Element *guardsNode);
+    std::vector<std::shared_ptr<IGuardNode>> parseGuardsElement(const std::shared_ptr<IXMLElement> &guardsNode);
 
     /**
      * @brief Parse all guards in SCXML document
      * @param scxmlNode SCXML root node
      * @return List of parsed guard nodes
      */
-    std::vector<std::shared_ptr<IGuardNode>> parseAllGuards(const xmlpp::Element *scxmlNode);
+    std::vector<std::shared_ptr<IGuardNode>> parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode);
 
     /**
      * @brief Check if element is a guard node
      * @param element XML element
      * @return Whether it is a guard node
      */
-    bool isGuardNode(const xmlpp::Element *element) const;
+    bool isGuardNode(const std::shared_ptr<IXMLElement> &element) const;
 
     /**
      * @brief Check if element is a reactive guard node
      * @param element XML element
      * @return Whether it is a reactive guard node
      */
-    bool isReactiveGuardNode(const xmlpp::Element *element) const;
+    bool isReactiveGuardNode(const std::shared_ptr<IXMLElement> &element) const;
 
 private:
+#ifndef __EMSCRIPTEN__
     /**
-     * @brief Parse dependency list
+     * @brief Parse dependency list (libxml++ version)
      * @param guardNode Guard node
      * @param guardObject Guard object
      */
     void parseDependencies(const xmlpp::Element *guardNode, std::shared_ptr<IGuardNode> guardObject);
 
     /**
-     * @brief Parse external implementation element
+     * @brief Parse external implementation element (libxml++ version)
      * @param guardNode Guard node
      * @param guardObject Guard object
      */
     void parseExternalImplementation(const xmlpp::Element *guardNode, std::shared_ptr<IGuardNode> guardObject);
+#endif
+
+    /**
+     * @brief Parse dependency list (IXMLElement version)
+     * @param guardNode Guard node
+     * @param guardObject Guard object
+     */
+    void parseDependencies(const std::shared_ptr<IXMLElement> &guardNode, std::shared_ptr<IGuardNode> guardObject);
+
+    /**
+     * @brief Parse external implementation element (IXMLElement version)
+     * @param guardNode Guard node
+     * @param guardObject Guard object
+     */
+    void parseExternalImplementation(const std::shared_ptr<IXMLElement> &guardNode,
+                                     std::shared_ptr<IGuardNode> guardObject);
 
     /**
      * @brief Handle namespace matching
@@ -103,15 +125,6 @@ private:
      * @return Whether node name matches search name (considering namespace)
      */
     bool matchNodeName(const std::string &nodeName, const std::string &searchName) const;
-
-    /**
-     * @brief Separate condition expression and state
-     * @param guardNode Guard node
-     * @param guardObject Guard object
-     * @param target XML target attribute value
-     */
-    void parseTargetAndCondition(const xmlpp::Element *guardNode, std::shared_ptr<IGuardNode> guardObject,
-                                 const std::string &target);
 
     std::shared_ptr<NodeFactory> nodeFactory_;
 };

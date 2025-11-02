@@ -42,8 +42,8 @@ protected:
 
         // SCXML Compliance: Set up proper event infrastructure
         // Create event execution callback (SCXML compliant - delegates to target)
-        eventExecutionCallback_ = [this](const EventDescriptor &event, std::shared_ptr<IEventTarget> target,
-                                         const std::string &sendId) -> bool {
+        eventExecutionCallback_ = [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target,
+                                     const std::string &sendId) -> bool {
             (void)sendId;  // Suppress unused parameter warning
             // SCXML Compliance: Always delegate to target for proper event handling
             try {

@@ -7,9 +7,11 @@
 #include <unordered_map>
 #include <vector>
 
-// Include xmlpp headers
+// XML content support (Native builds only)
+#ifndef __EMSCRIPTEN__
 #include <libxml++/document.h>
 #include <libxml++/nodes/node.h>
+#endif
 
 /**
  * @brief Implementation class for data model item
@@ -160,11 +162,13 @@ public:
      */
     void setXmlContent(const std::string &content);
 
+#ifndef __EMSCRIPTEN__
     /**
-     * @brief Return XML content node
+     * @brief Return XML content node (Native builds only)
      * @return XML node pointer, nullptr if not found
      */
     xmlpp::Node *getXmlContent() const;
+#endif
 
 private:
     std::string id_;
@@ -172,7 +176,9 @@ private:
     std::string type_;
     std::string scope_;
     std::string content_;
-    std::unique_ptr<xmlpp::Document> xmlContent_;
+#ifndef __EMSCRIPTEN__
+    std::unique_ptr<xmlpp::Document> xmlContent_;  // XML content support (Native only)
+#endif
     std::string src_;
     std::unordered_map<std::string, std::string> attributes_;
     std::vector<std::string> contentItems_;  // Store added content items

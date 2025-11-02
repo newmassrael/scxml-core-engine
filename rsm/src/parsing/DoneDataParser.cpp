@@ -6,7 +6,7 @@ RSM::DoneDataParser::DoneDataParser(std::shared_ptr<NodeFactory> factory) : fact
     LOG_DEBUG("Creating DoneData parser");
 }
 
-bool RSM::DoneDataParser::parseDoneData(const xmlpp::Element *doneDataElement, IStateNode *stateNode) {
+bool RSM::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &doneDataElement, IStateNode *stateNode) {
     if (!doneDataElement || !stateNode) {
         LOG_ERROR("Null doneData element or state node");
         return false;
@@ -18,7 +18,7 @@ bool RSM::DoneDataParser::parseDoneData(const xmlpp::Element *doneDataElement, I
     bool hasParam = false;
 
     // Parse <content> element
-    const xmlpp::Element *contentElement = ParsingCommon::findFirstChildElement(doneDataElement, "content");
+    auto contentElement = ParsingCommon::findFirstChildElement(doneDataElement, "content");
     if (contentElement) {
         hasContent = parseContent(contentElement, stateNode);
         LOG_DEBUG("Found <content> element: {}", (hasContent ? "valid" : "invalid"));
@@ -26,7 +26,7 @@ bool RSM::DoneDataParser::parseDoneData(const xmlpp::Element *doneDataElement, I
 
     // Parse <param> elements
     auto paramElements = ParsingCommon::findChildElements(doneDataElement, "param");
-    for (auto *paramElement : paramElements) {
+    for (const auto &paramElement : paramElements) {
         if (parseParam(paramElement, stateNode)) {
             hasParam = true;
         }
@@ -39,7 +39,6 @@ bool RSM::DoneDataParser::parseDoneData(const xmlpp::Element *doneDataElement, I
         LOG_ERROR("<content> and <param> cannot be used together in <donedata>");
 
         // Clear conflict to satisfy XOR condition
-        // Both content and param are set, remove one
         if (hasContent) {
             // Keep content, remove param
             stateNode->clearDoneDataParams();
@@ -50,39 +49,31 @@ bool RSM::DoneDataParser::parseDoneData(const xmlpp::Element *doneDataElement, I
             hasContent = false;
         }
 
-        // Return false to propagate error to SCXMLParser
         return false;
     }
 
     return hasContent || hasParam;
 }
 
-bool RSM::DoneDataParser::parseContent(const xmlpp::Element *contentElement, IStateNode *stateNode) {
+bool RSM::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &contentElement, IStateNode *stateNode) {
     if (!contentElement || !stateNode) {
         LOG_ERROR("Null content element or state node");
         return false;
     }
 
     // Check expr attribute
-    auto exprAttr = contentElement->get_attribute("expr");
     std::string exprValue;
-    if (exprAttr) {
-        exprValue = exprAttr->get_value();
+    if (contentElement->hasAttribute("expr")) {
+        exprValue = contentElement->getAttribute("expr");
         LOG_DEBUG("Found 'expr' attribute: {}", exprValue);
     }
 
     // Check content
-    std::string textContent;
-    const xmlpp::Node *childNode = contentElement->get_first_child();
-    if (childNode) {
-        // Try type conversion to TextNode
-        const xmlpp::TextNode *textNode = dynamic_cast<const xmlpp::TextNode *>(childNode);
-        if (textNode) {
-            textContent = textNode->get_content();
-            textContent = ParsingCommon::trimString(textContent);
-            LOG_DEBUG("Found text content: {}",
-                      (textContent.length() > 30 ? textContent.substr(0, 27) + "..." : textContent));
-        }
+    std::string textContent = contentElement->getTextContent();
+    textContent = ParsingCommon::trimString(textContent);
+    if (!textContent.empty()) {
+        LOG_DEBUG("Found text content: {}",
+                  (textContent.length() > 30 ? textContent.substr(0, 27) + "..." : textContent));
     }
 
     // expr and content cannot be used together
@@ -105,43 +96,40 @@ bool RSM::DoneDataParser::parseContent(const xmlpp::Element *contentElement, ISt
     return true;
 }
 
-bool RSM::DoneDataParser::parseParam(const xmlpp::Element *paramElement, IStateNode *stateNode) {
+bool RSM::DoneDataParser::parseParam(const std::shared_ptr<IXMLElement> &paramElement, IStateNode *stateNode) {
     if (!paramElement || !stateNode) {
         LOG_ERROR("Null param element or state node");
         return false;
     }
 
     // name attribute (required)
-    auto nameAttr = paramElement->get_attribute("name");
-    if (!nameAttr) {
+    if (!paramElement->hasAttribute("name")) {
         LOG_ERROR("<param> element must have 'name' attribute");
         return false;
     }
 
-    std::string nameValue = nameAttr->get_value();
+    std::string nameValue = paramElement->getAttribute("name");
 
     // Check expr and location attributes (only one can be used)
-    auto exprAttr = paramElement->get_attribute("expr");
-    auto locationAttr = paramElement->get_attribute("location");
+    bool hasExpr = paramElement->hasAttribute("expr");
+    bool hasLocation = paramElement->hasAttribute("location");
 
-    if (exprAttr && locationAttr) {
+    if (hasExpr && hasLocation) {
         LOG_ERROR("<param> cannot have both 'expr' and 'location' attributes");
         return false;
     }
 
-    // Process location attribute (add param to donedata)
-    if (locationAttr) {
-        std::string locationValue = locationAttr->get_value();
+    // Process location attribute
+    if (hasLocation) {
+        std::string locationValue = paramElement->getAttribute("location");
         stateNode->addDoneDataParam(nameValue, locationValue);
         LOG_DEBUG("Added param: {} with location: {}", nameValue, locationValue);
         return true;
     }
 
     // Process expr attribute
-    if (exprAttr) {
-        std::string exprValue = exprAttr->get_value();
-        // Simply convert expr value to location for use
-        // More complex processing can be added as needed
+    if (hasExpr) {
+        std::string exprValue = paramElement->getAttribute("expr");
         stateNode->addDoneDataParam(nameValue, exprValue);
         LOG_DEBUG("Added param: {} with expr: {}", nameValue, exprValue);
         return true;

@@ -12,87 +12,69 @@ RSM::GuardParser::~GuardParser() {
     LOG_DEBUG("Destroying guard parser");
 }
 
-std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseGuardNode(const xmlpp::Element *guardNode) {
+std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseGuardNode(const std::shared_ptr<IXMLElement> &guardNode) {
     if (!guardNode) {
         LOG_WARN("Null guard node");
         return nullptr;
     }
 
-    auto idAttr = guardNode->get_attribute("id");
-    auto targetAttr = guardNode->get_attribute("target");
-    auto conditionAttr = guardNode->get_attribute("condition");
+    std::string id, target, condition;
 
-    // Try alternative attribute names if id and target/condition are missing
-    if (!idAttr) {
-        idAttr = guardNode->get_attribute("name");
+    // Get id attribute
+    if (guardNode->hasAttribute("id")) {
+        id = guardNode->getAttribute("id");
+    } else if (guardNode->hasAttribute("name")) {
+        id = guardNode->getAttribute("name");
     }
 
-    if (!targetAttr && !conditionAttr) {
-        targetAttr = guardNode->get_attribute("to");
+    // Get target/condition attributes
+    if (guardNode->hasAttribute("target")) {
+        target = guardNode->getAttribute("target");
+    } else if (guardNode->hasAttribute("condition")) {
+        condition = guardNode->getAttribute("condition");
+    } else if (guardNode->hasAttribute("to")) {
+        target = guardNode->getAttribute("to");
     }
 
-    if (!idAttr || (!targetAttr && !conditionAttr)) {
+    if (id.empty() || (target.empty() && condition.empty())) {
         LOG_WARN("Guard node missing required attributes");
-        LOG_DEBUG("Node name: {}", guardNode->get_name());
-        // Print all available attributes for debugging
-        auto attrs = guardNode->get_attributes();
-        for (auto *attr : attrs) {
-            auto *xmlAttr = dynamic_cast<const xmlpp::Attribute *>(attr);
-            if (xmlAttr) {
-                LOG_DEBUG("Attribute: {} = {}", xmlAttr->get_name(), xmlAttr->get_value());
-            }
-        }
+        LOG_DEBUG("Node name: {}", guardNode->getName());
         return nullptr;
     }
 
-    std::string id = idAttr->get_value();
-
-    // Create basic guard node - initialized with empty string
+    // Create basic guard node
     auto guard = nodeFactory_->createGuardNode(id, "");
 
     // Process target attribute
-    if (targetAttr) {
-        std::string target = targetAttr->get_value();
+    if (!target.empty()) {
         LOG_DEBUG("Guard: {} with target attribute: {}", id, target);
 
         if (GuardUtils::isConditionExpression(target)) {
-            // When target is a condition expression
             guard->setCondition(target);
             LOG_DEBUG("Set condition from target: {}", target);
         } else {
-            // When target is a state ID
             guard->setTargetState(target);
             LOG_DEBUG("Set target state: {}", target);
         }
     }
 
     // Process condition attribute
-    if (conditionAttr) {
-        std::string condition = conditionAttr->get_value();
+    if (!condition.empty()) {
         guard->setCondition(condition);
         LOG_DEBUG("Set condition from attribute: {}", condition);
     }
 
     // Process <code:condition> or <condition> element
-    auto conditionNode = guardNode->get_first_child("code:condition");
-    if (!conditionNode) {
-        conditionNode = guardNode->get_first_child("condition");
-    }
+    auto conditionElement = RSM::ParsingCommon::findFirstChildElement(guardNode, "condition");
+    if (conditionElement) {
+        LOG_DEBUG("Found condition element");
 
-    if (conditionNode) {
-        // Process <code:condition> or <condition> element
-        auto conditionElement = RSM::ParsingCommon::findFirstChildElement(guardNode, "condition");
-        if (conditionElement) {
-            LOG_DEBUG("Found condition element");
+        std::string conditionText = RSM::ParsingCommon::extractTextContent(conditionElement, true);
+        LOG_DEBUG("Raw condition content: '{}'", conditionText);
 
-            // Process both CDATA sections and plain text
-            std::string conditionText = RSM::ParsingCommon::extractTextContent(conditionElement, true);
-            LOG_DEBUG("Raw condition content: '{}'", conditionText);
-
-            if (!conditionText.empty()) {
-                guard->setCondition(conditionText);
-                LOG_DEBUG("Set condition from element: {}", conditionText);
-            }
+        if (!conditionText.empty()) {
+            guard->setCondition(conditionText);
+            LOG_DEBUG("Set condition from element: {}", conditionText);
         }
     }
 
@@ -106,39 +88,37 @@ std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseGuardNode(const xmlpp::E
     return guard;
 }
 
-std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseGuardFromTransition(const xmlpp::Element *transitionNode,
-                                                                            const std::string &targetState) {
+std::shared_ptr<RSM::IGuardNode>
+RSM::GuardParser::parseGuardFromTransition(const std::shared_ptr<IXMLElement> &transitionNode,
+                                           const std::string &targetState) {
     if (!transitionNode) {
         LOG_WARN("Null transition node");
         return nullptr;
     }
 
     // Find guard attribute considering namespace prefix
-    auto guardAttr = transitionNode->get_attribute("guard", "code");
-    if (!guardAttr) {
-        // Try without namespace
-        guardAttr = transitionNode->get_attribute("guard");
+    std::string guardId;
+    if (transitionNode->hasAttribute("code:guard")) {
+        guardId = transitionNode->getAttribute("code:guard");
+    } else if (transitionNode->hasAttribute("guard")) {
+        guardId = transitionNode->getAttribute("guard");
     }
 
-    if (!guardAttr) {
-        // No guard attribute found
+    if (guardId.empty()) {
         return nullptr;
     }
 
-    std::string guardId = guardAttr->get_value();
-
     LOG_DEBUG("Parsing guard from transition: {} for state: {}", guardId, targetState);
 
-    // Create basic guard node - initialized with empty string
+    // Create basic guard node
     auto guard = nodeFactory_->createGuardNode(guardId, "");
 
     // Set target state explicitly
     guard->setTargetState(targetState);
 
     // Check if cond attribute exists
-    auto condAttr = transitionNode->get_attribute("cond");
-    if (condAttr) {
-        std::string condition = condAttr->get_value();
+    if (transitionNode->hasAttribute("cond")) {
+        std::string condition = transitionNode->getAttribute("cond");
         guard->setCondition(condition);
         LOG_DEBUG("Set condition from cond attribute: {}", condition);
     }
@@ -147,24 +127,31 @@ std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseGuardFromTransition(cons
     return guard;
 }
 
-std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseReactiveGuard(const xmlpp::Element *reactiveGuardNode) {
+std::shared_ptr<RSM::IGuardNode>
+RSM::GuardParser::parseReactiveGuard(const std::shared_ptr<IXMLElement> &reactiveGuardNode) {
     if (!reactiveGuardNode) {
         LOG_WARN("Null reactive guard node");
         return nullptr;
     }
 
-    auto idAttr = reactiveGuardNode->get_attribute("id");
-    auto targetAttr = reactiveGuardNode->get_attribute("target");
-    auto conditionAttr = reactiveGuardNode->get_attribute("condition");
+    std::string id, target, condition;
 
-    if (!idAttr || (!targetAttr && !conditionAttr)) {
+    if (reactiveGuardNode->hasAttribute("id")) {
+        id = reactiveGuardNode->getAttribute("id");
+    }
+    if (reactiveGuardNode->hasAttribute("target")) {
+        target = reactiveGuardNode->getAttribute("target");
+    }
+    if (reactiveGuardNode->hasAttribute("condition")) {
+        condition = reactiveGuardNode->getAttribute("condition");
+    }
+
+    if (id.empty() || (target.empty() && condition.empty())) {
         LOG_WARN("Reactive guard node missing required attributes");
         return nullptr;
     }
 
-    std::string id = idAttr->get_value();
-
-    // Create basic guard node - initialized with empty string
+    // Create basic guard node
     auto guard = nodeFactory_->createGuardNode(id, "");
 
     // Set reactive attributes
@@ -172,24 +159,20 @@ std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseReactiveGuard(const xmlp
     guard->setAttribute("reactive", "true");
 
     // Process target attribute
-    if (targetAttr) {
-        std::string target = targetAttr->get_value();
+    if (!target.empty()) {
         LOG_DEBUG("Reactive guard: {} with target: {}", id, target);
 
         if (GuardUtils::isConditionExpression(target)) {
-            // When target is a condition expression
             guard->setCondition(target);
             LOG_DEBUG("Set condition from target: {}", target);
         } else {
-            // When target is a state ID
             guard->setTargetState(target);
             LOG_DEBUG("Set target state: {}", target);
         }
     }
 
     // Process condition attribute
-    if (conditionAttr) {
-        std::string condition = conditionAttr->get_value();
+    if (!condition.empty()) {
         guard->setCondition(condition);
         LOG_DEBUG("Set condition from attribute: {}", condition);
     }
@@ -204,7 +187,8 @@ std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseReactiveGuard(const xmlp
     return guard;
 }
 
-std::vector<std::shared_ptr<RSM::IGuardNode>> RSM::GuardParser::parseGuardsElement(const xmlpp::Element *guardsNode) {
+std::vector<std::shared_ptr<RSM::IGuardNode>>
+RSM::GuardParser::parseGuardsElement(const std::shared_ptr<IXMLElement> &guardsNode) {
     std::vector<std::shared_ptr<RSM::IGuardNode>> guards;
 
     if (!guardsNode) {
@@ -215,20 +199,13 @@ std::vector<std::shared_ptr<RSM::IGuardNode>> RSM::GuardParser::parseGuardsEleme
     LOG_DEBUG("Parsing guards element");
 
     // Parse guard nodes
-    auto guardNodes = guardsNode->get_children("code:guard");
-    if (guardNodes.empty()) {
-        // Try without namespace
-        guardNodes = guardsNode->get_children("guard");
-    }
+    auto guardNodes = RSM::ParsingCommon::findChildElements(guardsNode, "guard");
 
-    for (auto *node : guardNodes) {
-        auto *guardElement = dynamic_cast<const xmlpp::Element *>(node);
-        if (guardElement) {
-            auto guard = parseGuardNode(guardElement);
-            if (guard) {
-                guards.push_back(guard);
-                LOG_DEBUG("Added guard: {}", guard->getId());
-            }
+    for (const auto &guardElement : guardNodes) {
+        auto guard = parseGuardNode(guardElement);
+        if (guard) {
+            guards.push_back(guard);
+            LOG_DEBUG("Added guard: {}", guard->getId());
         }
     }
 
@@ -236,7 +213,8 @@ std::vector<std::shared_ptr<RSM::IGuardNode>> RSM::GuardParser::parseGuardsEleme
     return guards;
 }
 
-std::vector<std::shared_ptr<RSM::IGuardNode>> RSM::GuardParser::parseAllGuards(const xmlpp::Element *scxmlNode) {
+std::vector<std::shared_ptr<RSM::IGuardNode>>
+RSM::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) {
     std::vector<std::shared_ptr<RSM::IGuardNode>> allGuards;
 
     if (!scxmlNode) {
@@ -247,78 +225,52 @@ std::vector<std::shared_ptr<RSM::IGuardNode>> RSM::GuardParser::parseAllGuards(c
     LOG_DEBUG("Parsing all guards in SCXML document");
 
     // 1. Parse guards within code:guards element
-    auto guardsNode = scxmlNode->get_first_child("code:guards");
-    if (!guardsNode) {
-        // Try without namespace
-        guardsNode = scxmlNode->get_first_child("guards");
-    }
-
+    auto guardsNode = RSM::ParsingCommon::findFirstChildElement(scxmlNode, "guards");
     if (guardsNode) {
-        auto *element = dynamic_cast<const xmlpp::Element *>(guardsNode);
-        if (element) {
-            auto guards = parseGuardsElement(element);
-            allGuards.insert(allGuards.end(), guards.begin(), guards.end());
-        }
+        auto guards = parseGuardsElement(guardsNode);
+        allGuards.insert(allGuards.end(), guards.begin(), guards.end());
     }
 
     // 2. Find guard attributes in transitions of all states
-    std::vector<const xmlpp::Node *> stateNodes;
+    auto stateNodes = RSM::ParsingCommon::findChildElements(scxmlNode, "state");
+    auto parallelNodes = RSM::ParsingCommon::findChildElements(scxmlNode, "parallel");
+    auto finalNodes = RSM::ParsingCommon::findChildElements(scxmlNode, "final");
 
-    // Collect all state nodes (state, parallel, final)
-    auto states = scxmlNode->get_children("state");
-    stateNodes.insert(stateNodes.end(), states.begin(), states.end());
-
-    auto parallels = scxmlNode->get_children("parallel");
-    stateNodes.insert(stateNodes.end(), parallels.begin(), parallels.end());
-
-    auto finals = scxmlNode->get_children("final");
-    stateNodes.insert(stateNodes.end(), finals.begin(), finals.end());
+    // Combine all state nodes
+    std::vector<std::shared_ptr<IXMLElement>> allStateNodes;
+    allStateNodes.insert(allStateNodes.end(), stateNodes.begin(), stateNodes.end());
+    allStateNodes.insert(allStateNodes.end(), parallelNodes.begin(), parallelNodes.end());
+    allStateNodes.insert(allStateNodes.end(), finalNodes.begin(), finalNodes.end());
 
     // Check guard attributes in transition elements of each state
-    for (auto *stateNode : stateNodes) {
-        auto *stateElement = dynamic_cast<const xmlpp::Element *>(stateNode);
-        if (stateElement) {
-            // Get state ID
-            auto idAttr = stateElement->get_attribute("id");
-            if (!idAttr) {
-                continue;
-            }
+    for (const auto &stateElement : allStateNodes) {
+        // Get state ID
+        if (!stateElement->hasAttribute("id")) {
+            continue;
+        }
 
-            std::string stateId = idAttr->get_value();
+        std::string stateId = stateElement->getAttribute("id");
 
-            // Process transition elements
-            auto transNodes = stateElement->get_children("transition");
-            for (auto *transNode : transNodes) {
-                auto *transElement = dynamic_cast<const xmlpp::Element *>(transNode);
-                if (transElement) {
-                    auto targetAttr = transElement->get_attribute("target");
-                    if (targetAttr) {
-                        std::string target = targetAttr->get_value();
-                        auto guard = parseGuardFromTransition(transElement, target);
-                        if (guard) {
-                            allGuards.push_back(guard);
-                            LOG_DEBUG("Added guard from transition in state {}", stateId);
-                        }
-                    }
+        // Process transition elements
+        auto transNodes = RSM::ParsingCommon::findChildElements(stateElement, "transition");
+        for (const auto &transElement : transNodes) {
+            if (transElement->hasAttribute("target")) {
+                std::string target = transElement->getAttribute("target");
+                auto guard = parseGuardFromTransition(transElement, target);
+                if (guard) {
+                    allGuards.push_back(guard);
+                    LOG_DEBUG("Added guard from transition in state {}", stateId);
                 }
             }
+        }
 
-            // Process reactive guards
-            auto reactiveGuardNodes = stateElement->get_children("code:reactive-guard");
-            if (reactiveGuardNodes.empty()) {
-                // Try without namespace
-                reactiveGuardNodes = stateElement->get_children("reactive-guard");
-            }
-
-            for (auto *node : reactiveGuardNodes) {
-                auto *guardElement = dynamic_cast<const xmlpp::Element *>(node);
-                if (guardElement) {
-                    auto guard = parseReactiveGuard(guardElement);
-                    if (guard) {
-                        allGuards.push_back(guard);
-                        LOG_DEBUG("Added reactive guard from state {}", stateId);
-                    }
-                }
+        // Process reactive guards
+        auto reactiveGuardNodes = RSM::ParsingCommon::findChildElements(stateElement, "reactive-guard");
+        for (const auto &guardElement : reactiveGuardNodes) {
+            auto guard = parseReactiveGuard(guardElement);
+            if (guard) {
+                allGuards.push_back(guard);
+                LOG_DEBUG("Added reactive guard from state {}", stateId);
             }
         }
     }
@@ -338,99 +290,67 @@ std::vector<std::shared_ptr<RSM::IGuardNode>> RSM::GuardParser::parseAllGuards(c
     return allGuards;
 }
 
-bool RSM::GuardParser::isGuardNode(const xmlpp::Element *element) const {
+bool RSM::GuardParser::isGuardNode(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
 
-    std::string nodeName = element->get_name();
+    std::string nodeName = element->getName();
     return RSM::ParsingCommon::matchNodeName(nodeName, "guard");
 }
 
-bool RSM::GuardParser::isReactiveGuardNode(const xmlpp::Element *element) const {
+bool RSM::GuardParser::isReactiveGuardNode(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
 
-    std::string nodeName = element->get_name();
+    std::string nodeName = element->getName();
     return RSM::ParsingCommon::matchNodeName(nodeName, "reactive-guard");
 }
 
-void RSM::GuardParser::parseDependencies(const xmlpp::Element *guardNode,
+void RSM::GuardParser::parseDependencies(const std::shared_ptr<IXMLElement> &guardNode,
                                          std::shared_ptr<RSM::IGuardNode> guardObject) {
     if (!guardNode || !guardObject) {
         return;
     }
 
     // Parse dependencies
-    auto depNodes = guardNode->get_children("code:dependency");
-    if (depNodes.empty()) {
-        // Try without namespace
-        depNodes = guardNode->get_children("dependency");
-    }
+    auto depNodes = RSM::ParsingCommon::findChildElements(guardNode, "dependency");
 
-    for (auto *node : depNodes) {
-        auto *element = dynamic_cast<const xmlpp::Element *>(node);
-        if (element) {
-            auto propAttr = element->get_attribute("property");
-            if (!propAttr) {
-                propAttr = element->get_attribute("prop");  // Try alternative attribute name
-            }
+    for (const auto &element : depNodes) {
+        std::string property;
+        if (element->hasAttribute("property")) {
+            property = element->getAttribute("property");
+        } else if (element->hasAttribute("prop")) {
+            property = element->getAttribute("prop");
+        }
 
-            if (propAttr) {
-                std::string property = propAttr->get_value();
-                guardObject->addDependency(property);
-                LOG_DEBUG("Added dependency: {}", property);
-            }
+        if (!property.empty()) {
+            guardObject->addDependency(property);
+            LOG_DEBUG("Added dependency: {}", property);
         }
     }
 }
 
-void RSM::GuardParser::parseExternalImplementation(const xmlpp::Element *guardNode,
+void RSM::GuardParser::parseExternalImplementation(const std::shared_ptr<IXMLElement> &guardNode,
                                                    std::shared_ptr<RSM::IGuardNode> guardObject) {
     if (!guardNode || !guardObject) {
         return;
     }
 
-    auto implNode = guardNode->get_first_child("code:external-implementation");
-    if (!implNode) {
-        // Try without namespace
-        implNode = guardNode->get_first_child("external-implementation");
-    }
+    auto implNode = RSM::ParsingCommon::findFirstChildElement(guardNode, "external-implementation");
 
     if (implNode) {
-        auto *element = dynamic_cast<const xmlpp::Element *>(implNode);
-        if (element) {
-            auto classAttr = element->get_attribute("class");
-            auto factoryAttr = element->get_attribute("factory");
+        if (implNode->hasAttribute("class")) {
+            std::string className = implNode->getAttribute("class");
+            guardObject->setExternalClass(className);
+            LOG_DEBUG("External class: {}", className);
+        }
 
-            if (classAttr) {
-                std::string className = classAttr->get_value();
-                guardObject->setExternalClass(className);
-                LOG_DEBUG("External class: {}", className);
-            }
-
-            if (factoryAttr) {
-                std::string factory = factoryAttr->get_value();
-                guardObject->setExternalFactory(factory);
-                LOG_DEBUG("External factory: {}", factory);
-            }
+        if (implNode->hasAttribute("factory")) {
+            std::string factory = implNode->getAttribute("factory");
+            guardObject->setExternalFactory(factory);
+            LOG_DEBUG("External factory: {}", factory);
         }
     }
-}
-
-bool RSM::GuardParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
-    // Exact match
-    if (nodeName == searchName) {
-        return true;
-    }
-
-    // With namespace (e.g., "code:guard")
-    size_t colonPos = nodeName.find(':');
-    if (colonPos != std::string::npos && colonPos + 1 < nodeName.length()) {
-        std::string localName = nodeName.substr(colonPos + 1);
-        return localName == searchName;
-    }
-
-    return false;
 }

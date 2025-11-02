@@ -2,13 +2,17 @@
 #include "common/Logger.h"
 #include "common/SendHelper.h"
 #include "events/EventRaiserService.h"
-#include "events/HttpEventTarget.h"
 #include "events/InternalEventTarget.h"
 #include "events/InvokeEventTarget.h"
 #include "events/ParentEventTarget.h"
 #include "runtime/IEventRaiser.h"
 #include <algorithm>
 #include <stdexcept>
+
+// HTTP infrastructure (native builds only, not WASM)
+#ifndef __EMSCRIPTEN__
+#include "events/HttpEventTarget.h"
+#endif
 
 namespace RSM {
 
@@ -23,7 +27,9 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
     registerTargetType("internal",
                        [this](const std::string &targetUri) { return createInternalTarget(targetUri, ""); });
 
-    // Register HTTP target creator
+#ifndef __EMSCRIPTEN__
+    // Register HTTP target creator (native builds only, not WASM)
+    // W3C SCXML C.2: BasicHTTP Event I/O Processor requires native sockets
     registerTargetType("http", [](const std::string &targetUri) {
         LOG_DEBUG("EventTargetFactoryImpl: Creating HTTP target for URI: {}", targetUri);
         auto target = std::make_shared<HttpEventTarget>(targetUri);
@@ -31,7 +37,7 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
         return target;
     });
 
-    // Register HTTPS target creator
+    // Register HTTPS target creator (native builds only, not WASM)
     registerTargetType("https", [](const std::string &targetUri) {
         LOG_DEBUG("EventTargetFactoryImpl: Creating HTTPS target for URI: {}", targetUri);
         auto target = std::make_shared<HttpEventTarget>(targetUri);
@@ -40,6 +46,9 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
     });
 
     LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal, HTTP, and HTTPS target support");
+#else
+    LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal target support (WASM build, HTTP disabled)");
+#endif
 }
 
 std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::string &targetUri,

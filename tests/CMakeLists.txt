@@ -10,7 +10,7 @@ if(NOT GTest_FOUND)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG release-1.12.1
+        GIT_TAG v1.14.0
         GIT_SHALLOW TRUE
         GIT_PROGRESS TRUE
     )
@@ -22,6 +22,14 @@ if(NOT GTest_FOUND)
     set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 
     FetchContent_MakeAvailable(googletest)
+
+    # WASM builds: Suppress GoogleTest character conversion warnings
+    if(EMSCRIPTEN)
+        target_compile_options(gtest PRIVATE -Wno-character-conversion)
+        target_compile_options(gtest_main PRIVATE -Wno-character-conversion)
+        target_compile_options(gmock PRIVATE -Wno-character-conversion)
+        target_compile_options(gmock_main PRIVATE -Wno-character-conversion)
+    endif()
 
     # Create alias (provides same interface as find_package)
     add_library(GTest::GTest ALIAS gtest)
@@ -262,25 +270,40 @@ add_executable(core_parser_tests
     core/SCXMLParserBasicTest.cpp
 )
 
-add_dependencies(core_parser_tests libxmlxx_external rsm_unified)
+add_dependencies(core_parser_tests rsm_unified)
+if(NOT EMSCRIPTEN)
+    add_dependencies(core_parser_tests libxmlxx_external)
+endif()
 
 target_include_directories(core_parser_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/rsm/include
         ${CMAKE_SOURCE_DIR}/tests
-        ${LIBXMLXX_INCLUDE_DIRS}
-        /usr/include/libxml2
 )
+
+if(NOT EMSCRIPTEN)
+    target_include_directories(core_parser_tests
+        PRIVATE
+            ${LIBXMLXX_INCLUDE_DIRS}
+            /usr/include/libxml2
+    )
+endif()
 
 target_link_libraries(core_parser_tests
     PRIVATE
         rsm_unified
         GTest::gtest_main
-        ${LIBXMLXX_LIBRARIES}
-        xml2
         pthread
 )
+
+if(NOT EMSCRIPTEN)
+    target_link_libraries(core_parser_tests
+        PRIVATE
+            ${LIBXMLXX_LIBRARIES}
+            xml2
+    )
+endif()
 
 # ============================================================================
 # 6. Integration Tests (RSM architecture)
@@ -289,9 +312,6 @@ add_executable(integration_tests
     integration/StateMachineIntegrationTest.cpp
     integration/ActionIntegrationTest.cpp
     integration/SCXMLEventTest.cpp
-    integration/EventSchedulingTest.cpp
-    integration/HttpEventTargetTest.cpp
-    integration/SimpleMockHttpServer.cpp
     integration/ParallelStateIntegrationTest.cpp
     integration/SCXMLParallelParsingTest.cpp
     integration/ParallelStateEndToEndTest.cpp
@@ -303,31 +323,55 @@ add_executable(integration_tests
     integration/SCXMLForeachIntegrationTest.cpp
     integration/HistoryStateIntegrationTest.cpp
     integration/StaticCodegenIntegrationTest.cpp
-    w3c/W3CHttpTestServer.cpp
     mocks/MockActionExecutor.cpp
     mocks/MockEventRaiser.cpp
 )
 
-add_dependencies(integration_tests libxmlxx_external rsm_unified)
+# HTTP-related tests (Native builds only)
+if(NOT EMSCRIPTEN)
+    target_sources(integration_tests PRIVATE
+        integration/EventSchedulingTest.cpp
+        integration/HttpEventTargetTest.cpp
+        integration/SimpleMockHttpServer.cpp
+        w3c/W3CHttpTestServer.cpp
+    )
+endif()
+
+add_dependencies(integration_tests rsm_unified)
+if(NOT EMSCRIPTEN)
+    add_dependencies(integration_tests libxmlxx_external)
+endif()
 
 target_include_directories(integration_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/rsm/include
         ${CMAKE_SOURCE_DIR}/tests
-        ${LIBXMLXX_INCLUDE_DIRS}
-        /usr/include/libxml2
 )
+
+if(NOT EMSCRIPTEN)
+    target_include_directories(integration_tests
+        PRIVATE
+            ${LIBXMLXX_INCLUDE_DIRS}
+            /usr/include/libxml2
+    )
+endif()
 
 target_link_libraries(integration_tests
     PRIVATE
         rsm_unified
         GTest::gtest_main
         GTest::gmock
-        ${LIBXMLXX_LIBRARIES}
-        xml2
         pthread
 )
+
+if(NOT EMSCRIPTEN)
+    target_link_libraries(integration_tests
+        PRIVATE
+            ${LIBXMLXX_LIBRARIES}
+            xml2
+    )
+endif()
 
 # ============================================================================
 # 7. Concurrency and Deadlock Tests
@@ -365,24 +409,43 @@ target_include_directories(txml_converter_tests
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/rsm/include
         ${CMAKE_SOURCE_DIR}/tests
-        ${LIBXMLXX_INCLUDE_DIRS}
-        /usr/include/libxml2
 )
+
+if(NOT EMSCRIPTEN)
+    target_include_directories(txml_converter_tests
+        PRIVATE
+            ${LIBXMLXX_INCLUDE_DIRS}
+            /usr/include/libxml2
+    )
+endif()
 
 target_link_libraries(txml_converter_tests
     PRIVATE
         rsm_unified
         GTest::gtest_main
-        ${LIBXMLXX_LIBRARIES}
-        xml2
         pthread
 )
 
-add_dependencies(txml_converter_tests libxmlxx_external rsm_unified)
+if(NOT EMSCRIPTEN)
+    target_link_libraries(txml_converter_tests
+        PRIVATE
+            ${LIBXMLXX_LIBRARIES}
+            xml2
+    )
+endif()
+
+add_dependencies(txml_converter_tests rsm_unified)
+if(NOT EMSCRIPTEN)
+    add_dependencies(txml_converter_tests libxmlxx_external)
+endif()
 
 # ============================================================================
-# 9. W3C SCXML Compliance Tests (SOLID Architecture)
+# 9. W3C SCXML Compliance Tests (SOLID Architecture) - Native builds only
 # ============================================================================
+# WASM builds: W3C tests require txml-converter (Native-only tool) for
+# TXML → SCXML conversion and Python code generation.
+
+if(NOT EMSCRIPTEN)
 # This section defines W3C SCXML conformance tests that run on both:
 # - Interpreter Engine: Runtime SCXML parsing and execution
 # - AOT Engine: Ahead-of-Time compiled static state machines
@@ -574,18 +637,33 @@ rsm_generate_static_w3c_test(503 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: ta
 rsm_generate_static_w3c_test(504 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: external transition exit sets (LCCA) (Static Hybrid)
 rsm_generate_static_w3c_test(505 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: internal transition does not exit source state (Static Hybrid)
 rsm_generate_static_w3c_test(506 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: internal transition with non-descendant target behaves as external (Static Hybrid)
-rsm_generate_static_w3c_test(509 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP Event I/O Processor POST method validation (Static Hybrid)
-rsm_generate_static_w3c_test(510 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP messages go to external queue (Static Hybrid)
-rsm_generate_static_w3c_test(513 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: manual test - BasicHTTP success response (Integration test only)
-rsm_generate_static_w3c_test(518 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP namelist encoding as POST parameters (Static Hybrid)
-rsm_generate_static_w3c_test(519 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP param encoding as POST parameters (Static)
-rsm_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP content element as message body (Static)
+
+# W3C SCXML C.2: BasicHTTP Event I/O Processor tests (native builds only, not WASM)
+if(NOT EMSCRIPTEN)
+    rsm_generate_static_w3c_test(509 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP Event I/O Processor POST method validation (Static Hybrid)
+    rsm_generate_static_w3c_test(510 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP messages go to external queue (Static Hybrid)
+    rsm_generate_static_w3c_test(513 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: manual test - BasicHTTP success response (Integration test only)
+    rsm_generate_static_w3c_test(518 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP namelist encoding as POST parameters (Static Hybrid)
+    rsm_generate_static_w3c_test(519 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP param encoding as POST parameters (Static)
+    rsm_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP content element as message body (Static)
+endif()
+
 rsm_generate_static_w3c_test(521 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4/6.2.5: error.communication on invalid targetexpr (Static Hybrid)
-rsm_generate_static_w3c_test(522 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP location field usage (Pure Static)
-rsm_generate_static_w3c_test(531 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: _scxmleventname param overrides event name (Pure Static)
-rsm_generate_static_w3c_test(532 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: HTTP method name fallback for event naming (Pure Static)
+
+if(NOT EMSCRIPTEN)
+    rsm_generate_static_w3c_test(522 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP location field usage (Pure Static)
+endif()
+
+if(NOT EMSCRIPTEN)
+    rsm_generate_static_w3c_test(531 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: _scxmleventname param overrides event name (Pure Static)
+    rsm_generate_static_w3c_test(532 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: HTTP method name fallback for event naming (Pure Static)
+endif()
+
 rsm_generate_static_w3c_test(533 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: internal transition exit set for non-compound states (Static Hybrid)
-rsm_generate_static_w3c_test(534 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP _scxmleventname parameter transmission (Static Hybrid)
+
+if(NOT EMSCRIPTEN)
+    rsm_generate_static_w3c_test(534 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP _scxmleventname parameter transmission (Static Hybrid)
+endif()
 rsm_generate_static_w3c_test(550 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding with expr attribute for data variable (Static Hybrid)
 rsm_generate_static_w3c_test(551 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding with inline content (Static Hybrid)
 rsm_generate_static_w3c_test(552 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: external data loading via src attribute (Static Hybrid)
@@ -596,11 +674,18 @@ rsm_generate_static_w3c_test(558 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2: ECM
 rsm_generate_static_w3c_test(560 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10: _event.data param structure in ECMAScript datamodel (Static Hybrid)
 rsm_generate_static_w3c_test(561 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: ECMAScript DOM object for XML event data (Static Hybrid)
 rsm_generate_static_w3c_test(562 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: ECMAScript content space normalization (Static Hybrid)
-rsm_generate_static_w3c_test(567 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP param encoding in _event.data (Static Hybrid)
+
+if(NOT EMSCRIPTEN)
+    rsm_generate_static_w3c_test(567 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP param encoding in _event.data (Static Hybrid)
+endif()
+
 rsm_generate_static_w3c_test(569 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: SCXML Event I/O processor location field (Static Hybrid)
 rsm_generate_static_w3c_test(570 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.12.1: Parallel state completion with done.state.id (Static Hybrid)
 rsm_generate_static_w3c_test(576 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: Parallel initial with space-separated states
-rsm_generate_static_w3c_test(577 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: error.communication on BasicHTTP send with no target
+
+if(NOT EMSCRIPTEN)
+    rsm_generate_static_w3c_test(577 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: error.communication on BasicHTTP send with no target
+endif()
 rsm_generate_static_w3c_test(578 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9/5.10: ECMAScript _event.data JSON object (Static Hybrid)
 rsm_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.8: history default content execution (Static Hybrid)
 rsm_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history state not in configuration (parallel)
@@ -649,10 +734,15 @@ set(W3C_AOT_TESTS
     387 388 396 399
     401 402 403a 403b 403c 404 405 406 407 409 411 412 413 415 416 417 419 421 422 423
     436 444 445 446 448 449 451 452 453 456 457 459 460
-    487 488 495 496 500 501 503 504 505 506 509 510 513 518 519 520 521 522 525 527 528 529 530 531 532 533 534
-    550 551 552 553 554 557 558 560 561 562 567 569 570 576 577 578 579 580
+    487 488 495 496 500 501 503 504 505 506 521 525 527 528 529 530 533
+    550 551 552 553 554 557 558 560 561 562 569 570 576 578 579 580
     252 253
 )
+
+# HTTP tests (native builds only, not WASM) - W3C SCXML C.2: BasicHTTP Event I/O Processor
+if(NOT EMSCRIPTEN)
+    list(APPEND W3C_AOT_TESTS 509 510 513 518 519 520 522 531 532 534 567 577)
+endif()
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
@@ -703,10 +793,16 @@ add_executable(w3c_test_cli
 target_link_libraries(w3c_test_cli
     PRIVATE
         rsm_unified
-        ${LIBXMLXX_LIBRARIES}
-        xml2
         pthread
 )
+
+if(NOT EMSCRIPTEN)
+    target_link_libraries(w3c_test_cli
+        PRIVATE
+            ${LIBXMLXX_LIBRARIES}
+            xml2
+    )
+endif()
 
 target_include_directories(w3c_test_cli
     PRIVATE
@@ -716,11 +812,22 @@ target_include_directories(w3c_test_cli
         ${CMAKE_SOURCE_DIR}/tests/w3c  # AOT test registry headers
         ${CMAKE_CURRENT_BINARY_DIR}/w3c  # Generated W3CTestRegistry.cpp
         ${STATIC_W3C_OUTPUT_DIR}  # Include generated static test headers
-        ${LIBXMLXX_INCLUDE_DIRS}
-        /usr/include/libxml2
 )
 
-add_dependencies(w3c_test_cli libxmlxx_external rsm_unified)
+if(NOT EMSCRIPTEN)
+    target_include_directories(w3c_test_cli
+        PRIVATE
+            ${LIBXMLXX_INCLUDE_DIRS}
+            /usr/include/libxml2
+    )
+endif()
+
+add_dependencies(w3c_test_cli rsm_unified)
+if(NOT EMSCRIPTEN)
+    add_dependencies(w3c_test_cli libxmlxx_external)
+endif()
+
+endif()  # NOT EMSCRIPTEN - W3C SCXML Compliance Tests
 
 # ============================================================================
 # Note: C++ StaticCodeGenerator replaced by Python + Jinja2 (codegen.py)
@@ -780,8 +887,9 @@ set_tests_properties(W3CFullComplianceTests PROPERTIES COST 2500)
 
 # Priority Level 5: Performance benchmarks (measure performance after functional validation, execute last)
 # Benchmark subdirectory must be included AFTER all main tests to ensure proper execution order
+# WASM builds: Benchmarks excluded (Native-only performance measurement)
 option(BUILD_BENCHMARKS "Build performance benchmarks" ON)
-if(BUILD_BENCHMARKS)
+if(BUILD_BENCHMARKS AND NOT EMSCRIPTEN)
     message(STATUS "Building performance benchmarks")
     add_subdirectory(benchmarks)
 endif()
@@ -829,3 +937,4 @@ message(STATUS "✅ JavaScript Engine tests enabled")
 message(STATUS "✅ Core Parser tests enabled")
 message(STATUS "✅ Integration tests enabled")
 message(STATUS "🚫 std::cout usage prohibited in all test targets")
+

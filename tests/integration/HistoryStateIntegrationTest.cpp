@@ -851,7 +851,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                           .get();
     EXPECT_TRUE(initResult.isSuccess());
     if (initResult.isSuccess()) {
-        LOG_DEBUG("DEBUG: Initial step_count = {}", initResult.getValue<long>());
+        LOG_DEBUG("DEBUG: Initial step_count = {}", initResult.getValue<int64_t>());
     } else {
         LOG_DEBUG("DEBUG: Initial script FAILED");
     }
@@ -864,7 +864,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
             .get();
     EXPECT_TRUE(startWorkflow.isSuccess());
     if (startWorkflow.isSuccess()) {
-        LOG_DEBUG("DEBUG: After step 1, step_count = {}", startWorkflow.getValue<long>());
+        LOG_DEBUG("DEBUG: After step 1, step_count = {}", startWorkflow.getValue<int64_t>());
     } else {
         LOG_DEBUG("DEBUG: Step 1 script FAILED");
     }
@@ -876,7 +876,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                        .get();
     EXPECT_TRUE(proceed.isSuccess());
     if (proceed.isSuccess()) {
-        LOG_DEBUG("DEBUG: After step 2, step_count = {}", proceed.getValue<long>());
+        LOG_DEBUG("DEBUG: After step 2, step_count = {}", proceed.getValue<int64_t>());
     } else {
         LOG_DEBUG("DEBUG: Step 2 script FAILED");
     }
@@ -888,7 +888,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                         .get();
     EXPECT_TRUE(validate.isSuccess());
     if (validate.isSuccess()) {
-        LOG_DEBUG("DEBUG: After step 3, step_count = {}", validate.getValue<long>());
+        LOG_DEBUG("DEBUG: After step 3, step_count = {}", validate.getValue<int64_t>());
     } else {
         LOG_DEBUG("DEBUG: Step 3 script FAILED");
     }
@@ -900,7 +900,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                         .get();
     EXPECT_TRUE(complete.isSuccess());
     if (complete.isSuccess()) {
-        LOG_DEBUG("DEBUG: After step 4, step_count = {}", complete.getValue<long>());
+        LOG_DEBUG("DEBUG: After step 4, step_count = {}", complete.getValue<int64_t>());
     } else {
         LOG_DEBUG("DEBUG: Step 4 script FAILED");
     }
@@ -937,7 +937,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     EXPECT_TRUE(step_result.isSuccess());
 
     std::string stateValue = state_result.getValue<std::string>();
-    long stepValue = step_result.getValue<long>();
+    int64_t stepValue = step_result.getValue<int64_t>();
 
     // For debugging: Actually verify we have 4 steps performed
     EXPECT_EQ(stepValue, 4);  // Original 4 steps without duplication
