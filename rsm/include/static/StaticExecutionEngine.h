@@ -12,7 +12,9 @@
 #include "core/EventQueueAdapters.h"
 #include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
+#ifndef __EMSCRIPTEN__
 #include "events/HttpEventTarget.h"
+#endif
 #include <chrono>
 #include <cstdint>
 #include <memory>
@@ -397,12 +399,17 @@ public:
                 }
             }
 
+#ifndef __EMSCRIPTEN__
             // Create and use HttpEventTarget
             auto httpTarget = std::make_shared<RSM::HttpEventTarget>(eventWithMetadata.target);
             auto result = httpTarget->send(descriptor);
 
             // Fire and forget - HTTP response will come back asynchronously
             // Test infrastructure will handle the response via W3CHttpTestServer
+#else
+            // WASM: HTTP not supported
+            LOG_ERROR("AOT raiseExternal: HTTP event target not supported in WASM builds");
+#endif
         } else {
             // Normal internal/external queue processing
             LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",

@@ -8,9 +8,13 @@
 #include <memory>
 #include <mutex>
 #include <queue>
-#include <thread>
 
 namespace RSM {
+
+// Forward declarations
+class PlatformEventRaiserHelper;
+class SynchronousEventRaiserHelper;
+class QueuedEventRaiserHelper;
 
 /**
  * @brief SCXML-compliant asynchronous implementation of IEventRaiser
@@ -20,6 +24,12 @@ namespace RSM {
  * event processing order as specified by W3C SCXML standard.
  */
 class EventRaiserImpl : public IEventRaiser {
+    // Allow PlatformEventRaiserHelper and its implementations to access private members
+    friend class PlatformEventRaiserHelper;
+    friend class SynchronousEventRaiserHelper;
+    friend class QueuedEventRaiserHelper;
+    friend std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *);
+
 public:
     using EventCallback = std::function<bool(const std::string &, const std::string &)>;
     using EventCallbackWithOrigin = std::function<bool(const std::string &, const std::string &, const std::string &)>;
@@ -229,11 +239,13 @@ public:
 
     mutable std::mutex callbackMutex_;
 
+    // Platform-specific event processing helper (Zero Duplication Principle)
+    std::unique_ptr<PlatformEventRaiserHelper> platformHelper_;
+
     // Asynchronous processing infrastructure
     std::queue<QueuedEvent> eventQueue_;
     std::mutex queueMutex_;
     std::condition_variable queueCondition_;
-    std::thread processingThread_;
     std::atomic<bool> shutdownRequested_;
     std::atomic<bool> isRunning_;
 

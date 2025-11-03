@@ -2,6 +2,7 @@
 #include "common/EventTypeHelper.h"
 #include "common/Logger.h"
 #include "common/StringUtils.h"
+#include "events/PlatformEventRaiserHelper.h"
 #include <mutex>
 
 namespace RSM {
@@ -26,11 +27,11 @@ EventRaiserImpl::EventRaiserImpl(EventCallback callback)
     LOG_DEBUG("EventRaiserImpl: Created with callback: {} (instance: {})", (eventCallback_ ? "set" : "none"),
               (void *)this);
 
-    // Start the async processing thread
-    isRunning_.store(true);
-    processingThread_ = std::thread(&EventRaiserImpl::eventProcessingWorker, this);
+    // Zero Duplication Principle: Platform-specific initialization through Helper
+    platformHelper_ = createPlatformEventRaiserHelper(this);
+    platformHelper_->start();
 
-    LOG_DEBUG("EventRaiserImpl: Async processing thread started");
+    LOG_DEBUG("EventRaiserImpl: Platform-specific initialization complete");
 }
 
 EventRaiserImpl::~EventRaiserImpl() {
@@ -46,11 +47,10 @@ void EventRaiserImpl::shutdown() {
 
     // Signal shutdown
     shutdownRequested_.store(true);
-    queueCondition_.notify_all();
 
-    // Wait for worker thread to complete
-    if (processingThread_.joinable()) {
-        processingThread_.join();
+    // Zero Duplication Principle: Platform-specific shutdown through Helper
+    if (platformHelper_) {
+        platformHelper_->shutdown();
     }
 
     // MEMORY LEAK FIX: Explicitly clear all internal data structures
@@ -224,14 +224,14 @@ bool EventRaiserImpl::isReady() const {
 void EventRaiserImpl::eventProcessingWorker() {
     LOG_DEBUG("EventRaiserImpl: Worker thread started");
 
-    while (!shutdownRequested_.load()) {
+    while (platformHelper_->shouldProcessEvents()) {
+        // Zero Duplication Principle: Platform-specific wait logic through Helper
+        platformHelper_->waitForEvents();
+
         std::unique_lock<std::mutex> lock(queueMutex_);
 
-        // Wait for events or shutdown signal
-        queueCondition_.wait(lock, [this] { return !eventQueue_.empty() || shutdownRequested_.load(); });
-
         // Process all queued events
-        while (!eventQueue_.empty() && !shutdownRequested_.load()) {
+        while (!eventQueue_.empty() && platformHelper_->shouldProcessEvents()) {
             QueuedEvent event = eventQueue_.front();
             eventQueue_.pop();
 

@@ -95,7 +95,7 @@ private:
      * Uses Policy::NEEDS_JSENGINE to determine if test uses JSEngine
      * for ECMAScript expression evaluation (In(), typeof, _event, etc.)
      */
-    const char *getTestType() const {
+    const char *getTestType() const override {
         using SM = typename Derived::SM;
         using Policy = typename SM::PolicyType;
         return Policy::NEEDS_JSENGINE ? "static_hybrid" : "pure_static";
