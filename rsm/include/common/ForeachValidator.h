@@ -14,18 +14,25 @@ namespace RSM::Validation {
  *
  * @param array The array expression to iterate over
  * @param item The variable name for each iteration item
- * @throws std::runtime_error if validation fails
+ * @param errorMessage Output parameter for error description if validation fails
+ * @return true if validation passes, false otherwise
+ *
+ * Platform Safety: Returns bool instead of throwing to ensure WASM pthread exception safety
  */
-inline void validateForeachAttributes(const std::string &array, const std::string &item) {
+inline bool validateForeachAttributes(const std::string &array, const std::string &item, std::string &errorMessage) {
     // W3C SCXML 4.6: array attribute is required
     if (array.empty()) {
-        throw std::runtime_error("Foreach array attribute is missing or empty");
+        errorMessage = "Foreach array attribute is missing or empty";
+        return false;
     }
 
     // W3C SCXML 4.6: item attribute is required
     if (item.empty()) {
-        throw std::runtime_error("Foreach item attribute is missing or empty");
+        errorMessage = "Foreach item attribute is missing or empty";
+        return false;
     }
+
+    return true;
 }
 
 }  // namespace RSM::Validation

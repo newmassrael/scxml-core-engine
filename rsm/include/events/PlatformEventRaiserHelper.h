@@ -95,20 +95,38 @@ public:
      * W3C SCXML: Worker thread blocking for event-driven processing
      */
     virtual void waitForEvents() = 0;
+
+    /**
+     * @brief Poll EventScheduler for ready delayed events
+     *
+     * Platform-specific behavior:
+     * - WASM: Calls scheduler->poll() to process delayed events synchronously
+     * - Native: No-op (background timer thread handles scheduling automatically)
+     *
+     * W3C SCXML 6.2: Delayed send element support across platforms
+     *
+     * Zero Duplication: Single Source of Truth for scheduler polling logic
+     */
+    virtual void pollScheduler() = 0;
 };
+
+// Forward declaration
+class IEventScheduler;
 
 /**
  * @brief Factory function to create platform-appropriate event raiser helper
  *
  * Compile-time platform selection:
- * - __EMSCRIPTEN__ defined: Returns SynchronousEventRaiserHelper
- * - __EMSCRIPTEN__ not defined: Returns QueuedEventRaiserHelper
+ * - __EMSCRIPTEN__ defined: Returns SynchronousEventRaiserHelper (with scheduler polling)
+ * - __EMSCRIPTEN__ not defined: Returns QueuedEventRaiserHelper (scheduler handled by background thread)
  *
  * @param raiser Pointer to EventRaiserImpl instance (for callbacks)
+ * @param scheduler Shared pointer to EventScheduler (for delayed event polling on WASM)
  * @return std::unique_ptr<PlatformEventRaiserHelper> Platform-specific helper
  *
  * Zero Duplication: Single factory function replaces #ifdef guards throughout EventRaiserImpl
  */
-std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *raiser);
+std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *raiser,
+                                                                           std::shared_ptr<IEventScheduler> scheduler);
 
 }  // namespace RSM

@@ -1,12 +1,17 @@
 #include "events/PlatformEventRaiserHelper.h"
 #include "common/Logger.h"
+#include "events/EventSchedulerImpl.h"
 #include "runtime/EventRaiserImpl.h"
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 
 namespace RSM {
+
+// Forward declaration
+class IEventScheduler;
 
 /**
  * @brief WASM Synchronous Helper: Immediate mode event processing without threading
@@ -18,9 +23,11 @@ namespace RSM {
 class SynchronousEventRaiserHelper : public PlatformEventRaiserHelper {
 private:
     EventRaiserImpl *raiser_ = nullptr;
+    std::shared_ptr<IEventScheduler> scheduler_ = nullptr;
 
 public:
-    explicit SynchronousEventRaiserHelper(EventRaiserImpl *raiser) : raiser_(raiser) {
+    explicit SynchronousEventRaiserHelper(EventRaiserImpl *raiser, std::shared_ptr<IEventScheduler> scheduler)
+        : raiser_(raiser), scheduler_(scheduler) {
         LOG_DEBUG("PlatformEventRaiserHelper: Synchronous helper initialized (WASM mode)");
     }
 
@@ -51,6 +58,18 @@ public:
 
     void waitForEvents() override {
         // WASM: Not called (no worker thread)
+    }
+
+    void pollScheduler() override {
+        // W3C SCXML 6.2: Poll EventScheduler for ready delayed events (WASM synchronous mode)
+        if (scheduler_) {
+#ifdef __EMSCRIPTEN__
+            size_t processedCount = static_cast<EventSchedulerImpl *>(scheduler_.get())->poll();
+            if (processedCount > 0) {
+                LOG_DEBUG("PlatformEventRaiserHelper: Scheduler polled, processed {} delayed events", processedCount);
+            }
+#endif
+        }
     }
 };
 
@@ -130,16 +149,25 @@ public:
         std::unique_lock<std::mutex> lock(*queueMutex_);
         queueCondition_->wait(lock, [this] { return shutdownRequested_->load() || raiser_->hasQueuedEvents(); });
     }
+
+    void pollScheduler() override {
+        // Native: No-op - background timer thread handles scheduling automatically
+        // W3C SCXML 6.2: EventScheduler timer thread processes delayed events asynchronously
+    }
 };
 
 #endif  // !__EMSCRIPTEN__
 
 // Factory function implementation
-std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *raiser) {
+std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *raiser,
+                                                                           std::shared_ptr<IEventScheduler> scheduler) {
 #ifdef __EMSCRIPTEN__
-    LOG_DEBUG("PlatformEventRaiserHelper: Creating synchronous helper (WASM)");
-    return std::make_unique<SynchronousEventRaiserHelper>(raiser);
+    LOG_DEBUG("PlatformEventRaiserHelper: Creating synchronous helper (WASM) with scheduler polling");
+    return std::make_unique<SynchronousEventRaiserHelper>(raiser, scheduler);
 #else
+    // Native: scheduler not used (background timer thread handles scheduling)
+    (void)scheduler;
+
     LOG_DEBUG("PlatformEventRaiserHelper: Creating queued helper (Native pthread)");
 
     // Native helper needs access to EventRaiserImpl's synchronization primitives

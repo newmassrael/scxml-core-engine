@@ -23,12 +23,14 @@ thread_local std::string EventRaiserImpl::currentOriginType_;
 thread_local std::string EventRaiserImpl::currentEventType_;
 
 EventRaiserImpl::EventRaiserImpl(EventCallback callback)
-    : eventCallback_(std::move(callback)), shutdownRequested_(false), isRunning_(false), immediateMode_(false) {
+    : eventCallback_(std::move(callback)), scheduler_(nullptr), shutdownRequested_(false), isRunning_(false),
+      immediateMode_(false) {
     LOG_DEBUG("EventRaiserImpl: Created with callback: {} (instance: {})", (eventCallback_ ? "set" : "none"),
               (void *)this);
 
     // Zero Duplication Principle: Platform-specific initialization through Helper
-    platformHelper_ = createPlatformEventRaiserHelper(this);
+    // Note: scheduler_ will be set later via setScheduler() for delayed event polling support
+    platformHelper_ = createPlatformEventRaiserHelper(this, scheduler_);
     platformHelper_->start();
 
     LOG_DEBUG("EventRaiserImpl: Platform-specific initialization complete");
@@ -36,6 +38,20 @@ EventRaiserImpl::EventRaiserImpl(EventCallback callback)
 
 EventRaiserImpl::~EventRaiserImpl() {
     shutdown();
+}
+
+void EventRaiserImpl::setScheduler(std::shared_ptr<IEventScheduler> scheduler) {
+    LOG_DEBUG("EventRaiserImpl: Setting EventScheduler for delayed event polling (WASM support)");
+    scheduler_ = scheduler;
+
+    // Recreate platform helper with scheduler support
+    if (platformHelper_) {
+        platformHelper_->shutdown();
+    }
+    platformHelper_ = createPlatformEventRaiserHelper(this, scheduler_);
+    platformHelper_->start();
+
+    LOG_DEBUG("EventRaiserImpl: EventScheduler set and platform helper reinitialized");
 }
 
 void EventRaiserImpl::shutdown() {
@@ -295,12 +311,26 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
 }
 
 void EventRaiserImpl::setImmediateMode(bool immediate) {
+#ifdef __EMSCRIPTEN__
+    // WASM: Keep immediate mode enabled due to pthread worker exception handling limitations
+    // W3C SCXML compliance maintained: synchronous callback execution preserves event ordering
+    if (!immediate) {
+        LOG_DEBUG("EventRaiserImpl: WASM ignores immediate mode disable (pthread exception safety)");
+        return;
+    }
+#endif
     immediateMode_.store(immediate);
     LOG_DEBUG("EventRaiserImpl: Immediate mode {}", immediate ? "enabled" : "disabled");
 }
 
 void EventRaiserImpl::processQueuedEvents() {
     LOG_DEBUG("EventRaiserImpl: Processing all queued events synchronously");
+
+    // W3C SCXML 6.2: Poll EventScheduler for ready delayed events (platform-transparent)
+    // Platform-specific behavior: WASM polls, Native no-op (background thread handles it)
+    if (platformHelper_) {
+        platformHelper_->pollScheduler();
+    }
 
     // Process all currently queued synchronous events with W3C SCXML priority ordering
     std::vector<QueuedEvent> eventsToProcess;

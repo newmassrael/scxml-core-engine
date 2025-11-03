@@ -15,6 +15,7 @@ namespace RSM {
 class PlatformEventRaiserHelper;
 class SynchronousEventRaiserHelper;
 class QueuedEventRaiserHelper;
+class IEventScheduler;
 
 /**
  * @brief SCXML-compliant asynchronous implementation of IEventRaiser
@@ -24,11 +25,15 @@ class QueuedEventRaiserHelper;
  * event processing order as specified by W3C SCXML standard.
  */
 class EventRaiserImpl : public IEventRaiser {
+    // Forward declarations for EventScheduler support
+    friend class IEventScheduler;
+
     // Allow PlatformEventRaiserHelper and its implementations to access private members
     friend class PlatformEventRaiserHelper;
     friend class SynchronousEventRaiserHelper;
     friend class QueuedEventRaiserHelper;
-    friend std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *);
+    friend std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *,
+                                                                                      std::shared_ptr<IEventScheduler>);
 
 public:
     using EventCallback = std::function<bool(const std::string &, const std::string &)>;
@@ -103,6 +108,18 @@ public:
      * @brief Shutdown the async processing (for clean destruction)
      */
     void shutdown();
+
+    /**
+     * @brief Set EventScheduler for delayed event polling (WASM support)
+     *
+     * W3C SCXML 6.2: Enable delayed send element support by providing scheduler access.
+     * Platform-specific behavior handled by PlatformEventRaiserHelper.
+     *
+     * @param scheduler Shared pointer to EventScheduler instance
+     *
+     * Note: Optional - if not set, delayed events won't be polled (WASM will miss delayed events)
+     */
+    void setScheduler(std::shared_ptr<IEventScheduler> scheduler);
 
     // IEventRaiser interface
     bool raiseEvent(const std::string &eventName, const std::string &eventData) override;
@@ -241,6 +258,9 @@ public:
 
     // Platform-specific event processing helper (Zero Duplication Principle)
     std::unique_ptr<PlatformEventRaiserHelper> platformHelper_;
+
+    // W3C SCXML 6.2: EventScheduler for delayed event polling (WASM support)
+    std::shared_ptr<IEventScheduler> scheduler_;
 
     // Asynchronous processing infrastructure
     std::queue<QueuedEvent> eventQueue_;
