@@ -58,6 +58,19 @@ public:
     void shutdown(bool waitForCompletion = true) override;
     bool isRunning() const override;
 
+#ifdef __EMSCRIPTEN__
+    /**
+     * @brief Poll for ready events and execute them (WASM only)
+     *
+     * This method is called periodically from the main loop in WASM builds
+     * to process scheduled events. It checks for events whose execution time
+     * has arrived and executes them synchronously on the main thread.
+     *
+     * @return Number of events that were processed
+     */
+    size_t poll();
+#endif
+
 private:
     /**
      * @brief Internal structure for scheduled events with priority queue support
@@ -96,18 +109,9 @@ private:
     };
 
     /**
-     * @brief Timer thread main loop
-     *
-     * This method runs in a separate thread and processes scheduled events
-     * when their execution time arrives. It uses condition variables for
-     * efficient waiting and responds to scheduler shutdown requests.
-     */
-    void timerThreadMain();
-
-    /**
      * @brief Process all events that are ready for execution
      *
-     * Called by the timer thread to execute events whose time has arrived.
+     * Called by the timer thread (Native) or poll() (WASM) to execute events whose time has arrived.
      * Events are removed from the scheduled map after execution.
      *
      * @return Number of events processed
@@ -139,21 +143,35 @@ private:
      */
     std::chrono::steady_clock::time_point getNextExecutionTimeUnlocked() const;
 
+#ifndef __EMSCRIPTEN__
     /**
-     * @brief Worker thread for asynchronous callback execution (prevents deadlock)
+     * @brief Timer thread main loop (Native only)
+     *
+     * This method runs in a separate thread and processes scheduled events
+     * when their execution time arrives. It uses condition variables for
+     * efficient waiting and responds to scheduler shutdown requests.
+     */
+    void timerThreadMain();
+
+    /**
+     * @brief Worker thread for asynchronous callback execution (Native only, prevents deadlock)
      */
     void callbackWorker();
 
     /**
-     * @brief Ensure threads are started (lazy initialization to prevent constructor deadlock)
+     * @brief Ensure threads are started (Native only, lazy initialization to prevent constructor deadlock)
      */
     void ensureThreadsStarted();
+#endif
 
     // Thread safety - Fine-Grained Locking Strategy
     // PERFORMANCE: Separate mutexes to reduce lock contention and improve concurrent throughput
-    mutable std::shared_mutex queueMutex_;        // Protects executionQueue_ and queueSize_
-    mutable std::shared_mutex indexMutex_;        // Protects sendIdIndex_ and indexSize_
+    mutable std::shared_mutex queueMutex_;  // Protects executionQueue_ and queueSize_
+    mutable std::shared_mutex indexMutex_;  // Protects sendIdIndex_ and indexSize_
+#ifndef __EMSCRIPTEN__
+    // Native: Timer thread coordination
     std::condition_variable_any timerCondition_;  // Timer thread notification
+#endif
 
     // TSAN FIX: Cached next event time to avoid queue access in wait_until predicate
     // This prevents data race when vector reallocation happens during predicate evaluation
@@ -175,7 +193,15 @@ private:
     std::unordered_map<std::string, std::queue<std::shared_ptr<ScheduledEvent>>> sessionQueues_;
     std::unordered_map<std::string, bool> sessionExecuting_;  // Track if session is currently executing
 
-    // Timer thread management
+    // === Platform-Specific Execution ===
+#ifdef __EMSCRIPTEN__
+    // WASM: Polling-based execution (no threads due to QuickJS limitations)
+    // QuickJS requires single-threaded access, so we use synchronous polling
+    std::atomic<bool> shutdownRequested_{false};
+    std::atomic<bool> running_{false};
+#else
+    // Native: Thread-based execution with timer and callback workers
+    // EventScheduler uses separate threads, callback workers serialize JSEngine operations
     std::thread timerThread_;
     std::atomic<bool> shutdownRequested_{false};
 
@@ -192,14 +218,15 @@ private:
     // This prevents deadlock when shutdown is called from callback worker thread
     static thread_local bool isInSchedulerThread_;
 
+    // Thread initialization (per-instance to fix static once_flag issue)
+    std::once_flag threadsStartedFlag_;
+#endif
+
     // Sequence number for FIFO ordering of events with same executeAt time
     std::atomic<uint64_t> eventSequenceCounter_{0};
 
     // Event execution
     EventExecutionCallback executionCallback_;
-
-    // Thread initialization (per-instance to fix static once_flag issue)
-    std::once_flag threadsStartedFlag_;
 };
 
 }  // namespace RSM

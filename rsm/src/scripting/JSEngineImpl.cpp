@@ -59,6 +59,7 @@ JSResult JSEngine::executeScriptInternal(const std::string &sessionId, const std
     if (JS_IsException(result)) {
         LOG_DEBUG("JSEngine: Exception occurred in script execution");
         JSResult error = createErrorFromException(ctx);
+        LOG_ERROR("JSEngine::executeScriptInternal - QuickJS exception: {}", error.getErrorMessage());
         JS_FreeValue(ctx, result);
         return error;
     }
@@ -146,6 +147,7 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
         }
 
         JSResult error = createErrorFromException(ctx);
+        LOG_ERROR("JSEngine::evaluateExpressionInternal - QuickJS exception: {}", error.getErrorMessage());
         JS_FreeValue(ctx, result);
         return error;
     }

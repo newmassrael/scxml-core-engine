@@ -973,65 +973,63 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
 bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     LOG_DEBUG("Executing foreach action: {}", action.getId());
 
-    try {
-        if (!isSessionReady()) {
-            LOG_ERROR("Session {} not ready for foreach action execution", sessionId_);
-            if (eventRaiser_ && eventRaiser_->isReady()) {
-                eventRaiser_->raiseEvent("error.execution", "Session not ready");
-            }
-            return false;
-        }
-
-        // Get array expression and item variable
-        std::string arrayExpr = action.getArray();
-        std::string itemVar = action.getItem();
-        std::string indexVar = action.getIndex();
-
-        // W3C SCXML 4.6: Validate array and item attributes
-        try {
-            RSM::Validation::validateForeachAttributes(arrayExpr, itemVar);
-        } catch (const std::runtime_error &e) {
-            LOG_ERROR("Foreach validation failed: {}", e.what());
-            if (eventRaiser_ && eventRaiser_->isReady()) {
-                eventRaiser_->raiseEvent("error.execution", e.what());
-            }
-            return false;
-        }
-
-        // Transform numeric variable names for array expression
-        std::string jsArrayExpr = transformVariableName(arrayExpr);
-
-        // W3C SCXML 4.6: Use ForeachHelper as Single Source of Truth
-        // ARCHITECTURE.md: Zero Duplication Principle - shared logic between Interpreter and AOT engines
-        bool success = Common::ForeachHelper::executeForeachWithActions(
-            JSEngine::instance(), sessionId_, jsArrayExpr, transformVariableName(itemVar),
-            indexVar.empty() ? "" : transformVariableName(indexVar), [&](size_t i) -> bool {
-                // Execute nested actions for this iteration
-                auto sharedThis = std::shared_ptr<IActionExecutor>(this, [](IActionExecutor *) {});
-                ExecutionContextImpl context(sharedThis, sessionId_);
-
-                for (const auto &nestedAction : action.getIterationActions()) {
-                    if (nestedAction && !nestedAction->execute(context)) {
-                        LOG_ERROR("Failed to execute action in foreach iteration {}", i);
-                        if (eventRaiser_ && eventRaiser_->isReady()) {
-                            eventRaiser_->raiseEvent("error.execution", "Failed to execute nested action in foreach");
-                        }
-                        return false;  // W3C SCXML 4.6: Stop foreach execution on error
-                    }
-                }
-                return true;  // Continue to next iteration
-            });
-
-        return success;
-
-    } catch (const std::exception &e) {
-        LOG_ERROR("Exception in foreach action execution: {}", e.what());
-        // Generate error.execution event for SCXML W3C compliance
+    if (!isSessionReady()) {
+        LOG_ERROR("Session {} not ready for foreach action execution", sessionId_);
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", "Exception in foreach: " + std::string(e.what()));
+            eventRaiser_->raiseEvent("error.execution", "Session not ready");
         }
         return false;
     }
+
+    // Get array expression and item variable
+    std::string arrayExpr = action.getArray();
+    std::string itemVar = action.getItem();
+    std::string indexVar = action.getIndex();
+
+    // W3C SCXML 4.6: Validate array and item attributes
+    try {
+        RSM::Validation::validateForeachAttributes(arrayExpr, itemVar);
+    } catch (const std::runtime_error &e) {
+        LOG_ERROR("Foreach validation failed: {}", e.what());
+        if (eventRaiser_ && eventRaiser_->isReady()) {
+            eventRaiser_->raiseEvent("error.execution", e.what());
+        }
+        return false;
+    }
+
+    // Transform numeric variable names for array expression
+    std::string jsArrayExpr = transformVariableName(arrayExpr);
+
+    // W3C SCXML 4.6: Use ForeachHelper as Single Source of Truth
+    // ARCHITECTURE.md: Zero Duplication Principle - shared logic between Interpreter and AOT engines
+    bool success = Common::ForeachHelper::executeForeachWithActions(
+        JSEngine::instance(), sessionId_, jsArrayExpr, transformVariableName(itemVar),
+        indexVar.empty() ? "" : transformVariableName(indexVar), [&](size_t i) -> bool {
+            // Execute nested actions for this iteration
+            auto sharedThis = std::shared_ptr<IActionExecutor>(this, [](IActionExecutor *) {});
+            ExecutionContextImpl context(sharedThis, sessionId_);
+
+            for (const auto &nestedAction : action.getIterationActions()) {
+                if (nestedAction && !nestedAction->execute(context)) {
+                    LOG_ERROR("Failed to execute action in foreach iteration {}", i);
+                    if (eventRaiser_ && eventRaiser_->isReady()) {
+                        eventRaiser_->raiseEvent("error.execution", "Failed to execute nested action in foreach");
+                    }
+                    return false;  // W3C SCXML 4.6: Stop foreach execution on error
+                }
+            }
+            return true;  // Continue to next iteration
+        });
+
+    // W3C SCXML compliance: Generate error.execution event on failure
+    if (!success) {
+        LOG_ERROR("Foreach action execution failed for array expression: {}", arrayExpr);
+        if (eventRaiser_ && eventRaiser_->isReady()) {
+            eventRaiser_->raiseEvent("error.execution", "Foreach execution failed");
+        }
+    }
+
+    return success;
 }
 
 bool ActionExecutorImpl::setLoopVariable(const std::string &varName, const std::string &value, size_t iteration) {

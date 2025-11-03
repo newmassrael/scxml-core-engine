@@ -1,5 +1,6 @@
 #include "scripting/JSEngine.h"
 #include "common/Logger.h"
+#include "common/PlatformExecutionHelper.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventRaiserRegistry.h"
 #include "events/EventRaiserService.h"
@@ -35,189 +36,175 @@ JSEngine::~JSEngine() {
 }
 
 void JSEngine::shutdown() {
-    LOG_DEBUG("JSEngine: shutdown() called - shouldStop: {}", shouldStop_.load());
+    LOG_DEBUG("JSEngine: shutdown() called");
 
     if (shouldStop_) {
-        LOG_DEBUG("JSEngine: Already shutting down, returning");
-        return;  // Already shutting down
+        LOG_DEBUG("JSEngine: Already shut down");
+        return;
     }
 
-    // RAII: No need to reset worker state
-
-    // Send shutdown request to worker thread
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SHUTDOWN_ENGINE, "");
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
-    // Wait for worker thread to process shutdown
-    future.get();
-
-    // Now stop the worker thread
-    LOG_DEBUG("JSEngine: Setting shouldStop = true");
     shouldStop_ = true;
-    queueCondition_.notify_all();
 
-    if (executionThread_.joinable()) {
-        LOG_DEBUG("JSEngine: Attempting to join worker thread...");
-        auto start = std::chrono::steady_clock::now();
-
-        // Try join with timeout using future
-        std::future<void> joinFuture = std::async(std::launch::async, [this]() { executionThread_.join(); });
-
-        if (joinFuture.wait_for(std::chrono::seconds(5)) == std::future_status::timeout) {
-            LOG_ERROR("JSEngine: Worker thread join TIMEOUT - thread is stuck!");
-            // Cannot force terminate, but at least we know what happened
-        } else {
-            auto elapsed = std::chrono::steady_clock::now() - start;
-            LOG_DEBUG("JSEngine: Worker thread joined successfully in {}ms",
-                      std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+    // W3C SCXML + QuickJS Thread Safety: Destroy sessions on worker thread BEFORE stopping it
+    // QuickJS contexts must be freed on the same thread where they were created
+    std::vector<std::string> sessionIds;
+    {
+        std::lock_guard<std::mutex> lock(sessionsMutex_);
+        for (const auto &[sessionId, _] : sessions_) {
+            sessionIds.push_back(sessionId);
         }
     }
 
+    // Destroy each session via executeAsync (executes on worker thread)
+    std::vector<std::future<JSResult>> futures;
+    for (const auto &sessionId : sessionIds) {
+        auto future = platformExecutor_->executeAsync([this, sessionId]() {
+            destroySessionInternal(sessionId);
+            return JSResult::createSuccess();
+        });
+        futures.push_back(std::move(future));
+    }
+
+    // Wait for all session cleanup to complete on worker thread
+    for (auto &future : futures) {
+        future.get();
+    }
+
+    // Zero Duplication Principle: Platform-specific shutdown logic through Helper
+    // Now safe to shutdown worker thread (all QuickJS contexts freed)
+    if (platformExecutor_) {
+        platformExecutor_->shutdown();
+    }
+
+    // Note: Runtime will be freed by PlatformExecutionHelper (shutdown already called)
+    runtime_ = nullptr;
+
+    initialized_ = false;
     LOG_DEBUG("JSEngine: Shutdown complete");
 }
 
 void JSEngine::reset() {
-    LOG_DEBUG("JSEngine: Starting reset for test isolation...");
+    LOG_DEBUG("JSEngine: reset() called");
 
-    // First ensure complete shutdown
-    shutdown();
-
-    // Clear any remaining state
+    // W3C SCXML + QuickJS Thread Safety: Destroy sessions on worker thread BEFORE stopping it
+    std::vector<std::string> sessionIds;
     {
         std::lock_guard<std::mutex> lock(sessionsMutex_);
-        sessions_.clear();
+        for (const auto &[sessionId, _] : sessions_) {
+            sessionIds.push_back(sessionId);
+        }
     }
 
+    // Destroy each session via executeAsync (executes on worker thread)
+    if (platformExecutor_) {
+        std::vector<std::future<JSResult>> futures;
+        for (const auto &sessionId : sessionIds) {
+            auto future = platformExecutor_->executeAsync([this, sessionId]() {
+                destroySessionInternal(sessionId);
+                return JSResult::createSuccess();
+            });
+            futures.push_back(std::move(future));
+        }
+
+        // Wait for all session cleanup to complete on worker thread
+        for (auto &future : futures) {
+            future.get();
+        }
+
+        // Zero Duplication Principle: Platform-specific cleanup logic through Helper
+        // Now safe to shutdown worker thread (all QuickJS contexts freed)
+        platformExecutor_->shutdown();
+        platformExecutor_.reset();  // Release unique_ptr
+    }
+
+    // Note: Runtime will be freed by PlatformExecutionHelper (shutdown already called)
+    runtime_ = nullptr;
+
+    // Clear global functions
     {
         std::lock_guard<std::mutex> lock(globalFunctionsMutex_);
         globalFunctions_.clear();
     }
 
-    // NOTE: Do NOT clear stateMachines_ during reset - StateMachine registrations
-    // should persist across JSEngine resets for SCXML W3C compliance.
-    // StateMachines register themselves automatically when created.
-
-    // Clear request queue
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        size_t queueSize = requestQueue_.size();
-        LOG_DEBUG("JSEngine: Clearing request queue - size: {}", queueSize);
-        while (!requestQueue_.empty()) {
-            requestQueue_.pop();
-        }
-        LOG_DEBUG("JSEngine: Request queue cleared");
-    }
-
-    // Clear EventRaiser registry for complete test isolation
+    // Clear EventRaiser registry
     clearEventRaiserRegistry();
 
     // Reinitialize
     initializeInternal();
 
-    LOG_DEBUG("JSEngine: Reset completed - ready for fresh start");
+    LOG_DEBUG("JSEngine: reset() completed");
 }
 
 void JSEngine::initializeInternal() {
-    // Initialize member variables
-    runtime_ = nullptr;
+    LOG_DEBUG("JSEngine: initializeInternal() - Creating platform executor");
+
+    // Zero Duplication Principle: Platform-specific execution logic abstracted through Helper
+    // WASM: Synchronous direct execution | Native: Pthread queue execution
+    platformExecutor_ = createPlatformExecutor();
+
+    // QuickJS Thread Safety: Wait for executor to create runtime on appropriate thread
+    // WASM: Runtime created on main thread (synchronous)
+    // Native: Runtime created on worker thread (must wait for initialization)
+    platformExecutor_->waitForRuntimeInitialization();
+    runtime_ = platformExecutor_->getRuntimePointer();
+
+    if (!runtime_) {
+        LOG_ERROR("JSEngine: Failed to get QuickJS runtime from platform executor");
+        return;
+    }
+
+    initialized_ = true;
     shouldStop_ = false;
 
-    // Start execution thread and wait for complete initialization
-    executionThread_ = std::thread(&JSEngine::executionWorker, this);
-
-    // Wait for worker thread to be fully ready
-    std::unique_lock<std::mutex> lock(queueMutex_);
-    queueCondition_.wait(lock, [this] { return runtime_ != nullptr; });
+    LOG_DEBUG("JSEngine: initializeInternal() completed - runtime and executor ready");
 }
 
 // === Session Management ===
 
 bool JSEngine::createSession(const std::string &sessionId, const std::string &parentSessionId) {
-    // Runtime is now created in worker thread, so no need to check here
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::CREATE_SESSION, sessionId);
-    request->parentSessionId = parentSessionId;
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    auto future = platformExecutor_->executeAsync([this, sessionId, parentSessionId]() {
+        bool success = createSessionInternal(sessionId, parentSessionId);
+        return success ? JSResult::createSuccess() : JSResult::createError("Failed to create session");
+    });
     auto result = future.get();
     return result.isSuccess();
 }
 
 bool JSEngine::destroySession(const std::string &sessionId) {
-    // Check if JSEngine is already shutdown to prevent deadlock
+    // Check if JSEngine is already shutdown
     if (shouldStop_.load()) {
         LOG_DEBUG("JSEngine: Already shutdown, skipping destroySession for: {}", sessionId);
         return true;
     }
 
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::DESTROY_SESSION, sessionId);
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    auto future = platformExecutor_->executeAsync([this, sessionId]() {
+        bool success = destroySessionInternal(sessionId);
+        return success ? JSResult::createSuccess() : JSResult::createError("Failed to destroy session");
+    });
     auto result = future.get();
     return result.isSuccess();
 }
 
 bool JSEngine::hasSession(const std::string &sessionId) const {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::HAS_SESSION, sessionId);
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        const_cast<JSEngine *>(this)->requestQueue_.push(std::move(request));
-    }
-    const_cast<JSEngine *>(this)->queueCondition_.notify_one();
-
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    auto future = const_cast<JSEngine *>(this)->platformExecutor_->executeAsync([this, sessionId]() {
+        std::lock_guard<std::mutex> lock(sessionsMutex_);
+        bool exists = sessions_.find(sessionId) != sessions_.end();
+        return exists ? JSResult::createSuccess() : JSResult::createError("Session not found");
+    });
     auto result = future.get();
     return result.isSuccess();
 }
 
 std::vector<std::string> JSEngine::getActiveSessions() const {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::GET_ACTIVE_SESSIONS, "");
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        const_cast<JSEngine *>(this)->requestQueue_.push(std::move(request));
-    }
-    const_cast<JSEngine *>(this)->queueCondition_.notify_one();
-
-    auto result = future.get();
-    // Parse comma-separated session IDs from result
+    // Note: This method doesn't use QuickJS, so no platform executor needed
+    // Just read sessions_ map directly
     std::vector<std::string> sessions;
-    if (result.isSuccess() && std::holds_alternative<std::string>(result.value_internal)) {
-        std::string sessionIds = std::get<std::string>(result.value_internal);
-        if (!sessionIds.empty()) {
-            std::stringstream ss(sessionIds);
-            std::string item;
-            while (std::getline(ss, item, ',')) {
-                if (!item.empty()) {
-                    sessions.push_back(item);
-                }
-            }
-        }
+    std::lock_guard<std::mutex> lock(sessionsMutex_);
+    for (const auto &[sessionId, _] : sessions_) {
+        sessions.push_back(sessionId);
     }
     return sessions;
 }
@@ -271,118 +258,64 @@ void JSEngine::unregisterEventDispatcher(const std::string &sessionId) {
 // === JavaScript Execution ===
 
 std::future<JSResult> JSEngine::executeScript(const std::string &sessionId, const std::string &script) {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::EXECUTE_SCRIPT, sessionId);
-    request->code = script;
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
-    return future;
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync(
+        [this, sessionId, script]() { return executeScriptInternal(sessionId, script); });
 }
 
 std::future<JSResult> JSEngine::evaluateExpression(const std::string &sessionId, const std::string &expression) {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::EVALUATE_EXPRESSION, sessionId);
-    request->code = expression;
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
-    return future;
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync(
+        [this, sessionId, expression]() { return evaluateExpressionInternal(sessionId, expression); });
 }
 
 std::future<JSResult> JSEngine::validateExpression(const std::string &sessionId, const std::string &expression) {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::VALIDATE_EXPRESSION, sessionId);
-    request->code = expression;
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
-    return future;
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync(
+        [this, sessionId, expression]() { return validateExpressionInternal(sessionId, expression); });
 }
 
 std::future<JSResult> JSEngine::setVariable(const std::string &sessionId, const std::string &name,
                                             const ScriptValue &value) {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SET_VARIABLE, sessionId);
-    request->variableName = name;
-    request->variableValue = value;
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
-    return future;
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync(
+        [this, sessionId, name, value]() { return setVariableInternal(sessionId, name, value); });
 }
 
 std::future<JSResult> JSEngine::setVariableAsDOM(const std::string &sessionId, const std::string &name,
                                                  const std::string &xmlContent) {
-    // W3C SCXML B.2: Set variable to XML DOM object
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SET_VARIABLE, sessionId);
-    request->variableName = name;
-    request->code = xmlContent;
-    request->isDOMObject = true;
-    auto future = request->promise.get_future();
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync([this, sessionId, name, xmlContent]() {
+        // W3C SCXML B.2: Set variable to XML DOM object
+        SessionContext *session = getSession(sessionId);
+        if (!session || !session->jsContext) {
+            return JSResult::createError("Session not found");
+        }
 
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue setVariableAsDOM operation - size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-    }
-    queueCondition_.notify_one();
+        JSContext *ctx = session->jsContext;
+        ::JSValue domObject = RSM::DOMBinding::createDOMObject(ctx, xmlContent);
 
-    return future;
+        if (JS_IsException(domObject)) {
+            return createErrorFromException(ctx);
+        }
+
+        ::JSValue global = JS_GetGlobalObject(ctx);
+        int setResult = JS_SetPropertyStr(ctx, global, name.c_str(), domObject);
+        JS_FreeValue(ctx, global);
+
+        return (setResult == 0) ? JSResult::createSuccess() : JSResult::createError("Failed to set DOM variable");
+    });
 }
 
 std::future<JSResult> JSEngine::getVariable(const std::string &sessionId, const std::string &name) {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::GET_VARIABLE, sessionId);
-    request->variableName = name;
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
-    return future;
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync([this, sessionId, name]() { return getVariableInternal(sessionId, name); });
 }
 
 std::future<JSResult> JSEngine::setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event) {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SET_CURRENT_EVENT, sessionId);
-    request->event = event;
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        requestQueue_.push(std::move(request));
-    }
-    queueCondition_.notify_one();
-
-    return future;
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync(
+        [this, sessionId, event]() { return setCurrentEventInternal(sessionId, event); });
 }
 
 std::future<JSResult> JSEngine::setCurrentEvent(const std::string &sessionId, const std::string &eventName,
@@ -417,20 +350,10 @@ std::future<JSResult> JSEngine::setCurrentEvent(const std::string &sessionId, co
 
 std::future<JSResult> JSEngine::setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                      const std::vector<std::string> &ioProcessors) {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SETUP_SYSTEM_VARIABLES, sessionId);
-    request->sessionName = sessionName;
-    request->ioProcessors = ioProcessors;
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
-
-    return future;
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    return platformExecutor_->executeAsync([this, sessionId, sessionName, ioProcessors]() {
+        return setupSystemVariablesInternal(sessionId, sessionName, ioProcessors);
+    });
 }
 
 // === Engine Information ===
@@ -440,14 +363,15 @@ std::string JSEngine::getEngineInfo() const {
 }
 
 size_t JSEngine::getMemoryUsage() const {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::GET_MEMORY_USAGE, "");
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        const_cast<JSEngine *>(this)->requestQueue_.push(std::move(request));
-    }
-    const_cast<JSEngine *>(this)->queueCondition_.notify_one();
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    auto future = const_cast<JSEngine *>(this)->platformExecutor_->executeAsync([this]() {
+        if (runtime_) {
+            JSMemoryUsage usage;
+            JS_ComputeMemoryUsage(runtime_, &usage);
+            return JSResult::createSuccess(static_cast<int64_t>(usage.memory_used_size));
+        }
+        return JSResult::createSuccess(static_cast<int64_t>(0));
+    });
 
     auto result = future.get();
     if (result.isSuccess() && std::holds_alternative<int64_t>(result.value_internal)) {
@@ -457,211 +381,19 @@ size_t JSEngine::getMemoryUsage() const {
 }
 
 void JSEngine::collectGarbage() {
-    auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::COLLECT_GARBAGE, "");
-    auto future = request->promise.get_future();
-
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSEngine: Queue operation - before enqueue: size={}", requestQueue_.size());
-        requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSEngine: Queue operation - after enqueue: size={}", requestQueue_.size());
-    }
-    queueCondition_.notify_one();
+    // Zero Duplication Principle: Platform-agnostic execution through Helper
+    auto future = platformExecutor_->executeAsync([this]() {
+        if (runtime_) {
+            JS_RunGC(runtime_);
+        }
+        return JSResult::createSuccess();
+    });
 
     // Wait for completion but ignore result
     future.get();
 }
 
 // === Thread-safe Execution Worker ===
-
-void JSEngine::executionWorker() {
-    LOG_DEBUG("JSEngine: Worker LOOP START - Thread ID: {}",
-              static_cast<size_t>(std::hash<std::thread::id>{}(std::this_thread::get_id())));
-
-    // Create QuickJS runtime in worker thread to ensure thread safety
-    JSRuntime *tempRuntime = JS_NewRuntime();
-    if (!tempRuntime) {
-        LOG_ERROR("JSEngine: Failed to create QuickJS runtime in worker thread");
-        return;
-    }
-    LOG_DEBUG("JSEngine: QuickJS runtime created in worker thread");
-
-    // RAII: Signal constructor that initialization is complete with proper synchronization
-    {
-        std::unique_lock<std::mutex> lock(queueMutex_);
-        runtime_ = tempRuntime;
-        queueCondition_.notify_all();
-    }
-    LOG_DEBUG("JSEngine: Worker thread initialization complete");
-
-    while (!shouldStop_) {
-        std::unique_lock<std::mutex> lock(queueMutex_);
-        queueCondition_.wait(lock, [this] { return !requestQueue_.empty() || shouldStop_; });
-
-        LOG_DEBUG("JSEngine: Worker woke up - shouldStop: {}, queue size: {}", shouldStop_.load(),
-                  requestQueue_.size());
-
-        while (!requestQueue_.empty() && !shouldStop_) {
-            auto request = std::move(requestQueue_.front());
-            requestQueue_.pop();
-            lock.unlock();
-
-            LOG_DEBUG("JSEngine: Processing request type: {}", static_cast<int>(request->type));
-            try {
-                processExecutionRequest(std::move(request));
-                LOG_DEBUG("JSEngine: Request processed successfully");
-            } catch (const std::exception &e) {
-                LOG_ERROR("JSEngine: EXCEPTION in worker thread: {}", e.what());
-            }
-
-            lock.lock();
-        }
-    }
-
-    // Cleanup all sessions with forced garbage collection
-    for (auto &pair : sessions_) {
-        if (pair.second.jsContext) {
-            // Force garbage collection before freeing context
-            JS_RunGC(runtime_);
-            JS_FreeContext(pair.second.jsContext);
-        }
-    }
-    sessions_.clear();
-    // Final garbage collection and cleanup
-    if (runtime_) {
-        // Multiple GC passes to ensure all objects are collected
-        for (int i = 0; i < 3; ++i) {
-            JS_RunGC(runtime_);
-        }
-        // Free runtime
-        JS_FreeRuntime(runtime_);
-        runtime_ = nullptr;
-        LOG_DEBUG("JSEngine: Worker thread cleaned up QuickJS resources");
-    }
-
-    LOG_DEBUG("JSEngine: Worker LOOP END - shouldStop: {}", shouldStop_.load());
-}
-
-void JSEngine::processExecutionRequest(std::unique_ptr<ExecutionRequest> request) {
-    try {
-        JSResult result;
-
-        switch (request->type) {
-        case ExecutionRequest::EXECUTE_SCRIPT:
-            result = executeScriptInternal(request->sessionId, request->code);
-            break;
-        case ExecutionRequest::EVALUATE_EXPRESSION:
-            result = evaluateExpressionInternal(request->sessionId, request->code);
-            break;
-        case ExecutionRequest::VALIDATE_EXPRESSION:
-            result = validateExpressionInternal(request->sessionId, request->code);
-            break;
-        case ExecutionRequest::SET_VARIABLE: {
-            // W3C SCXML B.2: Check if this is a DOM object request
-            if (request->isDOMObject) {
-                // Create DOM object from XML content
-                SessionContext *session = getSession(request->sessionId);
-                if (session && session->jsContext) {
-                    JSContext *ctx = session->jsContext;
-                    ::JSValue domObject = RSM::DOMBinding::createDOMObject(ctx, request->code);
-
-                    if (JS_IsException(domObject)) {
-                        result = createErrorFromException(ctx);
-                    } else {
-                        // Set the variable
-                        ::JSValue global = JS_GetGlobalObject(ctx);
-                        int setResult = JS_SetPropertyStr(ctx, global, request->variableName.c_str(), domObject);
-                        JS_FreeValue(ctx, global);
-
-                        if (setResult < 0) {
-                            result = JSResult::createError("Failed to set DOM variable: " + request->variableName);
-                        } else {
-                            session->preInitializedVars.insert(request->variableName);
-                            result = JSResult::createSuccess();
-                        }
-                    }
-                } else {
-                    result = JSResult::createError("Session not found: " + request->sessionId);
-                }
-            } else {
-                // Normal variable setting
-                result = setVariableInternal(request->sessionId, request->variableName, request->variableValue);
-            }
-        } break;
-        case ExecutionRequest::GET_VARIABLE:
-            result = getVariableInternal(request->sessionId, request->variableName);
-            break;
-        case ExecutionRequest::SET_CURRENT_EVENT:
-            result = setCurrentEventInternal(request->sessionId, request->event);
-            break;
-        case ExecutionRequest::SETUP_SYSTEM_VARIABLES:
-            result = setupSystemVariablesInternal(request->sessionId, request->sessionName, request->ioProcessors);
-            break;
-        case ExecutionRequest::CREATE_SESSION: {
-            bool success = createSessionInternal(request->sessionId, request->parentSessionId);
-            result = success ? JSResult::createSuccess() : JSResult::createError("Failed to create session");
-        } break;
-        case ExecutionRequest::DESTROY_SESSION: {
-            bool success = destroySessionInternal(request->sessionId);
-            result = success ? JSResult::createSuccess() : JSResult::createError("Failed to destroy session");
-        } break;
-        case ExecutionRequest::HAS_SESSION: {
-            LOG_DEBUG("JSEngine: HAS_SESSION check for '{}' - sessions_ map size: {}", request->sessionId,
-                      sessions_.size());
-            bool exists = sessions_.find(request->sessionId) != sessions_.end();
-            LOG_DEBUG("JSEngine: Session '{}' exists: {}", request->sessionId, exists);
-            result = exists ? JSResult::createSuccess() : JSResult::createError("Session not found");
-        } break;
-        case ExecutionRequest::GET_ACTIVE_SESSIONS: {
-            std::string sessionIds;
-            for (const auto &[sessionId, _] : sessions_) {
-                if (!sessionIds.empty()) {
-                    sessionIds += ",";
-                }
-                sessionIds += sessionId;
-            }
-            result = JSResult::createSuccess(sessionIds);
-        } break;
-        case ExecutionRequest::GET_MEMORY_USAGE: {
-            if (runtime_) {
-                JSMemoryUsage usage;
-                JS_ComputeMemoryUsage(runtime_, &usage);
-                result = JSResult::createSuccess(static_cast<int64_t>(usage.memory_used_size));
-            } else {
-                result = JSResult::createSuccess(static_cast<int64_t>(0));
-            }
-        } break;
-        case ExecutionRequest::COLLECT_GARBAGE: {
-            if (runtime_) {
-                JS_RunGC(runtime_);
-            }
-            result = JSResult::createSuccess();
-        } break;
-        case ExecutionRequest::SHUTDOWN_ENGINE: {
-            // Cleanup all sessions
-            for (auto &[sessionId, session] : sessions_) {
-                if (session.jsContext) {
-                    JS_FreeContext(session.jsContext);
-                }
-            }
-            sessions_.clear();
-
-            // Cleanup runtime
-            if (runtime_) {
-                JS_FreeRuntime(runtime_);
-                runtime_ = nullptr;
-            }
-            result = JSResult::createSuccess();
-            LOG_DEBUG("JSEngine: Worker thread cleaned up QuickJS resources");
-        } break;
-        }
-
-        request->promise.set_value(result);
-
-    } catch (const std::exception &e) {
-        request->promise.set_value(JSResult::createError("Exception: " + std::string(e.what())));
-    }
-}
 
 // === Internal Implementation (Part 1) ===
 

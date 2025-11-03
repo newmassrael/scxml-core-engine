@@ -114,7 +114,7 @@ TEST_F(ConcurrentCompletionMonitoringTest, ConcurrentUpdates) {
 
     // Update region completion status concurrently from multiple threads
     for (int t = 0; t < numThreads; ++t) {
-        threads.emplace_back([this, t, numRegionsPerThread]() {
+        threads.emplace_back([this, t]() {
             for (int r = 0; r < numRegionsPerThread; ++r) {
                 std::string regionId = "thread" + std::to_string(t) + "_region" + std::to_string(r);
                 monitor_->updateRegionCompletion(regionId, (r % 2 == 0));  // Even: complete, odd: incomplete
