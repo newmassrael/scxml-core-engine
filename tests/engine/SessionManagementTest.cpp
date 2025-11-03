@@ -139,9 +139,34 @@ TEST_F(SessionManagementTest, SessionVariableIsolation) {
     engine_->destroySession("session2");
 }
 
+// Test basic pthread functionality (no JSEngine)
+TEST_F(SessionManagementTest, SimplePthreadTest) {
+    std::atomic<int> counter{0};
+    const int numThreads = 5;
+    std::vector<std::thread> threads;
+
+    // Create simple threads that just increment a counter
+    for (int i = 0; i < numThreads; ++i) {
+        threads.emplace_back([&counter]() { counter.fetch_add(1, std::memory_order_relaxed); });
+    }
+
+    // Wait for all threads
+    for (auto &thread : threads) {
+        thread.join();
+    }
+
+    EXPECT_EQ(counter.load(), numThreads) << "Simple pthread test failed";
+}
+
 // Test concurrent session operations
 TEST_F(SessionManagementTest, ConcurrentSessionOperations) {
-    const int numSessions = 5;
+    [[maybe_unused]] const int numSessions = 5;
+
+#ifdef __EMSCRIPTEN__
+    // WASM: Skip concurrent test - JSEngine runs in synchronous mode
+    GTEST_SKIP() << "Concurrent operations not supported in WASM synchronous mode";
+#else
+    // Native: Create sessions concurrently using std::async
     std::vector<std::future<void>> futures;
 
     // Create sessions concurrently
@@ -174,6 +199,7 @@ TEST_F(SessionManagementTest, ConcurrentSessionOperations) {
         std::string sessionId = "concurrent_session_" + std::to_string(i);
         engine_->destroySession(sessionId);
     }
+#endif
 }
 
 // Test concurrent script execution within sessions

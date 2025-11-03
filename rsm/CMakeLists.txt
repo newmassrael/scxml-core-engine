@@ -88,10 +88,28 @@ else()
 endif()
 
 # Add QuickJS subdirectory
+# WASM: Disable QuickJS stack checking (__wasi__ disables runtime stack checks)
+# QuickJS's __builtin_frame_address(0) doesn't work correctly in WASM/Emscripten
+if(EMSCRIPTEN)
+    add_compile_definitions(__wasi__)
+    message(STATUS "WASM build: QuickJS stack checking disabled (__wasi__)")
+endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURRENT_BINARY_DIR}/quickjs)
 
 # Add spdlog subdirectory
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
+
+# WASM: Apply pthread flags to spdlog for thread-safe builds
+if(EMSCRIPTEN)
+    target_compile_options(spdlog PRIVATE
+        -pthread
+        -sUSE_PTHREADS=1
+    )
+    target_link_options(spdlog PRIVATE
+        -pthread
+        -sUSE_PTHREADS=1
+    )
+endif()
 
 # Add cpp-httplib subdirectory (native builds only, not WASM)
 if(NOT EMSCRIPTEN)
@@ -119,6 +137,7 @@ add_library(rsm_unified
     src/common/GuardUtils.cpp
     src/common/Logger.cpp
     src/common/NodeFactory.cpp
+    src/common/PlatformExecutionHelper.cpp
     src/common/TypeRegistry.cpp
     src/common/UniqueIdGenerator.cpp
     src/common/JsonUtils.cpp
@@ -318,11 +337,12 @@ if(EMSCRIPTEN)
         -sASSERTIONS=2                   # Runtime validation for development
         -sALLOW_MEMORY_GROWTH=1          # Dynamic memory allocation
         -sINITIAL_MEMORY=67108864        # 64MB initial heap
-        -sSAFE_HEAP=1                    # Memory access validation
+        -sSTACK_SIZE=33554432            # 32MB stack for QuickJS (QuickJS needs large stack)
+        -sDISABLE_EXCEPTION_CATCHING=0   # Enable C++ exception catching (required for tests)
         -g                               # Debug symbols
         --profiling-funcs                # Function profiling support
     )
-    message(STATUS "WASM build: pthread enabled with development flags (SAFE_HEAP, ASSERTIONS=2)")
+    message(STATUS "WASM build: pthread enabled with development flags (ASSERTIONS=2)")
 endif()
 
 # HTTP library (native builds only, not WASM)

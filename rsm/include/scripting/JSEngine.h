@@ -580,11 +580,11 @@ private:
     std::unordered_map<std::string, std::string> sessionFilePaths_;
     mutable std::mutex sessionFilePathsMutex_;
 
-    // === Thread-safe Execution ===
-    mutable std::queue<std::unique_ptr<ExecutionRequest>> requestQueue_;
-    mutable std::mutex queueMutex_;
-    mutable std::condition_variable queueCondition_;
-    std::thread executionThread_;
+    // === Platform-Specific Execution ===
+    // Zero Duplication Principle: Platform logic abstracted through PlatformExecutionHelper
+    // WASM: Synchronous execution | Native: Pthread queue execution
+    // See ARCHITECTURE.md Platform Execution Abstraction
+    std::unique_ptr<class PlatformExecutionHelper> platformExecutor_;
     std::atomic<bool> shouldStop_{false};
     std::atomic<bool> initialized_{false};
 

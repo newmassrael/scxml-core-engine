@@ -1,60 +1,101 @@
-// Foreach loop (AOT: delegated to JSEngine)
+// Foreach loop (AOT: delegated to JSEngine with error.execution on failure)
+{#
+    Foreach Action Template (Jinja2)
+
+    Last Modified: 2025-11-03
+    ARCHITECTURE.md Version: 2025-10-23
+
+    ARCHITECTURE.md Compliance (Lines 311-491):
+    - Zero Duplication: Uses shared ForeachHelper for iteration logic
+    - Single Source of Truth: All foreach execution in ForeachHelper.h (lines 251-292)
+    - W3C SCXML 4.6: Foreach loop semantics with error.execution on failure
+    - W3C SCXML 5.4: Array expression validation (instanceof Array)
+
+    Helper Classes Used:
+    - ForeachHelper::executeForeachWithActions(): W3C SCXML 4.6 loop execution
+    - ForeachHelper::executeForeachWithoutBody(): W3C SCXML 4.6 empty body handling
+    - Validation::validateForeachAttributes(): Attribute syntax validation
+
+    Error Handling Strategy:
+    - Validation: Exception-based (try-catch) for syntax errors
+    - Execution: Return value checking (bool) for W3C SCXML logic errors
+    - Both phases raise error.execution events per W3C SCXML 4.6
+
+    Critical Fixes:
+    - 2025-11-03: Refactored from exception-based to return-value error handling
+    - Exception-free execution phase with bool foreachSuccess checking
+    - Proper error.execution event generation matching Interpreter engine
+    - Fixes test 457 (W3C SCXML B.2 foreach array validation)
+#}
+// W3C SCXML 4.6: Foreach validation and execution
 try {
     ::RSM::Validation::validateForeachAttributes("{{ action.array }}", "{{ action.item }}");
-{% if action.actions and action.actions | length > 0 %}
-    {
-        // Execute foreach: array={{ action.array }}, item={{ action.item }}, index={{ action.index }}
-        this->ensureJSEngine();
-        auto& jsEngine = ::RSM::JSEngine::instance();
-        // W3C SCXML 4.6: Use ForeachHelper for centralized error handling
-        ::RSM::Common::ForeachHelper::executeForeachWithActions(
-            jsEngine, sessionId_.value(),
-            "{{ action.array }}", "{{ action.item }}", "{{ action.index }}",
-            [&](size_t i) -> bool {
-                (void)i;  // Iteration index available if needed
-                // W3C SCXML 4.6: Track overall success of all actions in this iteration
-                bool iterationSuccess = true;
-{% set has_assign = namespace(value=False) %}
-{% for body_action in action.actions %}
-{% if body_action.type == 'assign' %}{% set has_assign.value = True %}{% endif %}
-{% endfor %}
-{% if has_assign.value %}                bool success = false;  // Shared by all assign actions in this iteration
-{% endif %}
-{% for body_action in action.actions %}
-                // W3C SCXML 4.6: Execute child action {{ loop.index }}/{{ action.actions | length }}
-                {% if body_action.type == 'assign' %}
-                // Assign action: no block scope, success accessible in foreach lambda
-                {% with action=body_action, in_foreach=True %}
-                {% include 'actions/' + body_action.type + '.jinja2' %}
-                {% endwith %}
-                iterationSuccess = iterationSuccess && success;
-                if (!iterationSuccess) {
-                    LOG_DEBUG("Foreach: Action {{ loop.index }} (assign) failed, stopping loop (W3C SCXML 4.6)");
-                    return false;  // Stop foreach on error
-                }
-                {% else %}
-                // Non-assign action: no success tracking needed
-                {
-                    {% with action=body_action %}
-                    {% include 'actions/' + body_action.type + '.jinja2' %}
-                    {% endwith %}
-                }
-                {% endif %}
-{% endfor %}
-                return iterationSuccess;  // Return true only if all actions succeeded
-            }
-        );
-    }
-{% else %}
-    {
-        this->ensureJSEngine();
-        auto& jsEngine = ::RSM::JSEngine::instance();
-        ::RSM::Common::ForeachHelper::executeForeachWithoutBody(
-            jsEngine, sessionId_.value(),
-            "{{ action.array }}", "{{ action.item }}", "{{ action.index }}"
-        );
-    }
-{% endif %}
-} catch (const std::runtime_error&) {
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+} catch (const std::runtime_error& e) {
+    // Validation failed (invalid item/array attribute)
+    LOG_ERROR("Foreach validation failed: {}", e.what());
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, e.what()));
 }
+{% if action.actions and action.actions | length > 0 %}
+{
+    // Execute foreach: array={{ action.array }}, item={{ action.item }}, index={{ action.index }}
+    this->ensureJSEngine();
+    auto& jsEngine = ::RSM::JSEngine::instance();
+    // W3C SCXML 4.6: Use ForeachHelper for centralized error handling
+    bool foreachSuccess = ::RSM::Common::ForeachHelper::executeForeachWithActions(
+        jsEngine, sessionId_.value(),
+        "{{ action.array }}", "{{ action.item }}", "{{ action.index }}",
+        [&](size_t i) -> bool {
+            (void)i;  // Iteration index available if needed
+            // W3C SCXML 4.6: Track overall success of all actions in this iteration
+            bool iterationSuccess = true;
+{% set has_assign = namespace(value=False) %}\
+{% for body_action in action.actions %}\
+{% if body_action.type == 'assign' %}{% set has_assign.value = True %}{% endif %}\
+{% endfor %}\
+{% if has_assign.value %}            bool success = false;  // Shared by all assign actions in this iteration
+{% endif %}\
+{% for body_action in action.actions %}\
+            // W3C SCXML 4.6: Execute child action {{ loop.index }}/{{ action.actions | length }}
+            {% if body_action.type == 'assign' %}\
+            // Assign action: no block scope, success accessible in foreach lambda
+            {% with action=body_action, in_foreach=True %}\
+            {% include 'actions/' + body_action.type + '.jinja2' %}\
+            {% endwith %}\
+            iterationSuccess = iterationSuccess && success;
+            if (!iterationSuccess) {
+                LOG_DEBUG("Foreach: Action {{ loop.index }} (assign) failed, stopping loop (W3C SCXML 4.6)");
+                return false;  // Stop foreach on error
+            }
+            {% else %}\
+            // Non-assign action: no success tracking needed
+            {
+                {% with action=body_action %}\
+                {% include 'actions/' + body_action.type + '.jinja2' %}\
+                {% endwith %}\
+            }
+            {% endif %}\
+{% endfor %}\
+            return iterationSuccess;  // Return true only if all actions succeeded
+        }
+    );
+    // W3C SCXML 4.6: Check foreach execution result and raise error.execution on failure
+    if (!foreachSuccess) {
+        LOG_ERROR("Foreach execution failed for array: {{ action.array }}");
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Foreach execution failed"));
+    }
+}
+{% else %}
+{
+    this->ensureJSEngine();
+    auto& jsEngine = ::RSM::JSEngine::instance();
+    bool foreachSuccess = ::RSM::Common::ForeachHelper::executeForeachWithoutBody(
+        jsEngine, sessionId_.value(),
+        "{{ action.array }}", "{{ action.item }}", "{{ action.index }}"
+    );
+    // W3C SCXML 4.6: Check foreach execution result and raise error.execution on failure
+    if (!foreachSuccess) {
+        LOG_ERROR("Foreach execution failed for array: {{ action.array }}");
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Foreach execution failed"));
+    }
+}
+{% endif %}

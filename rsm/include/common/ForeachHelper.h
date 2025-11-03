@@ -1,6 +1,7 @@
 #pragma once
 #include "common/Logger.h"
 #include "scripting/JSEngine.h"
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -91,16 +92,15 @@ public:
      * @param jsEngine Reference to JSEngine instance
      * @param sessionId JSEngine session ID
      * @param arrayExpr Array expression to evaluate (e.g., "Var3", "[1,2,3]")
-     * @return std::vector<std::string> Array values as strings
-     * @throws std::runtime_error if evaluation fails or value is not an array
+     * @return std::optional<std::vector<std::string>> Array values as strings, or std::nullopt on failure
      */
-    static inline std::vector<std::string> evaluateForeachArray(JSEngine &jsEngine, const std::string &sessionId,
-                                                                const std::string &arrayExpr) {
+    static inline std::optional<std::vector<std::string>>
+    evaluateForeachArray(JSEngine &jsEngine, const std::string &sessionId, const std::string &arrayExpr) {
         auto arrayResult = jsEngine.evaluateExpression(sessionId, arrayExpr).get();
 
         if (!JSEngine::isSuccess(arrayResult)) {
             LOG_ERROR("Failed to evaluate array expression: {}", arrayExpr);
-            throw std::runtime_error("Foreach array evaluation failed");
+            return std::nullopt;  // Return failure instead of throwing
         }
 
         // W3C SCXML 5.4: Validate that the value is an array (instanceof Array)
@@ -111,7 +111,7 @@ public:
             !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
             !std::get<bool>(arrayCheckResult.getInternalValue())) {
             LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr);
-            throw std::runtime_error("Foreach array must be instanceof Array");
+            return std::nullopt;  // Return failure instead of throwing
         }
 
         return JSEngine::resultToStringArray(arrayResult, sessionId, arrayExpr);
@@ -129,24 +129,25 @@ public:
      * @param itemValue Current iteration value (JavaScript literal)
      * @param indexVar Index variable name (empty string if not used)
      * @param indexValue Current iteration index
-     * @throws std::runtime_error if variable setting fails
+     * @return true if successful, false on failure
      */
-    static inline void setForeachIterationVariables(JSEngine &jsEngine, const std::string &sessionId,
+    static inline bool setForeachIterationVariables(JSEngine &jsEngine, const std::string &sessionId,
                                                     const std::string &itemVar, const std::string &itemValue,
                                                     const std::string &indexVar, size_t indexValue) {
         // Set item variable using shared logic
         if (!setLoopVariable(jsEngine, sessionId, itemVar, itemValue)) {
             LOG_ERROR("Failed to set foreach item variable: {}", itemVar);
-            throw std::runtime_error("Foreach setVariable failed for item");
+            return false;  // Return failure instead of throwing
         }
 
         // Set index variable (if provided)
         if (!indexVar.empty()) {
             if (!setLoopVariable(jsEngine, sessionId, indexVar, std::to_string(indexValue))) {
                 LOG_ERROR("Failed to set foreach index variable: {}", indexVar);
-                throw std::runtime_error("Foreach setVariable failed for index");
+                return false;  // Return failure instead of throwing
             }
         }
+        return true;
     }
 
     /**
@@ -160,29 +161,36 @@ public:
      * @param arrayExpr Array expression to evaluate
      * @param itemVar Item variable name
      * @param indexVar Index variable name (empty if not used)
-     * @throws std::runtime_error if evaluation or variable setting fails
+     * @return true if successful, false on failure
      */
-    static inline void executeForeachWithoutBody(JSEngine &jsEngine, const std::string &sessionId,
+    static inline bool executeForeachWithoutBody(JSEngine &jsEngine, const std::string &sessionId,
                                                  const std::string &arrayExpr, const std::string &itemVar,
                                                  const std::string &indexVar) {
-        auto arrayValues = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
+        auto arrayValuesOpt = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
+        if (!arrayValuesOpt.has_value()) {
+            return false;  // Array evaluation failed
+        }
+        auto &arrayValues = arrayValuesOpt.value();
 
         // W3C SCXML 4.6: Declare item and index variables even for empty arrays
         if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
             LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
-            throw std::runtime_error("Foreach variable declaration failed for item");
+            return false;  // Return failure instead of throwing
         }
 
         if (!indexVar.empty()) {
             if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
                 LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
-                throw std::runtime_error("Foreach variable declaration failed for index");
+                return false;  // Return failure instead of throwing
             }
         }
 
         for (size_t i = 0; i < arrayValues.size(); ++i) {
-            setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i);
+            if (!setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i)) {
+                return false;  // Variable setting failed
+            }
         }
+        return true;
     }
 
     /**
@@ -244,43 +252,43 @@ public:
     static inline bool executeForeachWithActions(JSEngine &jsEngine, const std::string &sessionId,
                                                  const std::string &arrayExpr, const std::string &itemVar,
                                                  const std::string &indexVar, BodyFunc &&executeBody) {
-        try {
-            // Evaluate array expression
-            auto arrayValues = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
-
-            // W3C SCXML 4.6: Declare item and index variables BEFORE iteration
-            // Variables MUST be declared even for empty arrays
-            if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
-                LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
-                throw std::runtime_error("Foreach variable declaration failed for item");
-            }
-
-            if (!indexVar.empty()) {
-                if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
-                    LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
-                    throw std::runtime_error("Foreach variable declaration failed for index");
-                }
-            }
-
-            // W3C SCXML 4.6: Execute foreach loop with error handling
-            for (size_t i = 0; i < arrayValues.size(); ++i) {
-                // Set iteration variables (item and optional index)
-                setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i);
-
-                // Execute body actions for this iteration
-                // W3C SCXML 4.6: If body returns false (error), stop loop execution
-                if (!executeBody(i)) {
-                    LOG_DEBUG("Foreach loop stopped at iteration {} due to error (W3C SCXML 4.6)", i);
-                    return false;  // Single Source of Truth for W3C 4.6 compliance
-                }
-            }
-
-            return true;  // All iterations succeeded
-
-        } catch (const std::exception &e) {
-            LOG_ERROR("Exception in foreach execution: {}", e.what());
-            throw;
+        // Evaluate array expression
+        auto arrayValuesOpt = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
+        if (!arrayValuesOpt.has_value()) {
+            return false;  // Array evaluation failed
         }
+        auto &arrayValues = arrayValuesOpt.value();
+
+        // W3C SCXML 4.6: Declare item and index variables BEFORE iteration
+        // Variables MUST be declared even for empty arrays
+        if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
+            LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
+            return false;  // Return failure instead of throwing
+        }
+
+        if (!indexVar.empty()) {
+            if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
+                LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
+                return false;  // Return failure instead of throwing
+            }
+        }
+
+        // W3C SCXML 4.6: Execute foreach loop with error handling
+        for (size_t i = 0; i < arrayValues.size(); ++i) {
+            // Set iteration variables (item and optional index)
+            if (!setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i)) {
+                return false;  // Variable setting failed
+            }
+
+            // Execute body actions for this iteration
+            // W3C SCXML 4.6: If body returns false (error), stop loop execution
+            if (!executeBody(i)) {
+                LOG_DEBUG("Foreach loop stopped at iteration {} due to error (W3C SCXML 4.6)", i);
+                return false;  // Single Source of Truth for W3C 4.6 compliance
+            }
+        }
+
+        return true;  // All iterations succeeded
     }
 };
 

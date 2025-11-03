@@ -23,12 +23,35 @@ if(NOT GTest_FOUND)
 
     FetchContent_MakeAvailable(googletest)
 
-    # WASM builds: Suppress GoogleTest character conversion warnings
+    # WASM builds: Apply pthread flags and suppress character conversion warnings
     if(EMSCRIPTEN)
-        target_compile_options(gtest PRIVATE -Wno-character-conversion)
-        target_compile_options(gtest_main PRIVATE -Wno-character-conversion)
-        target_compile_options(gmock PRIVATE -Wno-character-conversion)
-        target_compile_options(gmock_main PRIVATE -Wno-character-conversion)
+        # Apply pthread compile options to all gtest targets
+        target_compile_options(gtest PRIVATE
+            -pthread
+            -sUSE_PTHREADS=1
+            -Wno-character-conversion
+        )
+        target_compile_options(gtest_main PRIVATE
+            -pthread
+            -sUSE_PTHREADS=1
+            -Wno-character-conversion
+        )
+        target_compile_options(gmock PRIVATE
+            -pthread
+            -sUSE_PTHREADS=1
+            -Wno-character-conversion
+        )
+        target_compile_options(gmock_main PRIVATE
+            -pthread
+            -sUSE_PTHREADS=1
+            -Wno-character-conversion
+        )
+        
+        # Apply pthread link options to all gtest targets
+        target_link_options(gtest PRIVATE -pthread -sUSE_PTHREADS=1)
+        target_link_options(gtest_main PRIVATE -pthread -sUSE_PTHREADS=1)
+        target_link_options(gmock PRIVATE -pthread -sUSE_PTHREADS=1)
+        target_link_options(gmock_main PRIVATE -pthread -sUSE_PTHREADS=1)
     endif()
 
     # Create alias (provides same interface as find_package)
@@ -57,6 +80,30 @@ function(apply_rsm_test_policies target_name)
         PRIVATE
             RSM_TEST_TARGET=1  # For test target identification
     )
+
+    # WASM: Apply pthread configuration to test executables
+    if(EMSCRIPTEN)
+        target_compile_options(${target_name} PRIVATE
+            -pthread
+            -sUSE_PTHREADS=1
+        )
+        target_link_options(${target_name} PRIVATE
+            -pthread
+            -sUSE_PTHREADS=1
+            -sPTHREAD_POOL_SIZE=4
+            -sPROXY_TO_PTHREAD=1
+            -sEXIT_RUNTIME=1  # Exit immediately after main() (pthread workers already cleaned up)
+            -sENVIRONMENT=node
+            -sASYNCIFY
+            -sASSERTIONS=2
+            -sALLOW_MEMORY_GROWTH=1
+            -sINITIAL_MEMORY=67108864
+            -sSTACK_SIZE=33554432
+            -sDISABLE_EXCEPTION_CATCHING=0  # Enable C++ exception catching for tests
+            -g
+            --profiling-funcs
+        )
+    endif()
 endfunction()
 
 # ============================================================================

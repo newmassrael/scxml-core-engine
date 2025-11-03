@@ -17,19 +17,25 @@ EventSchedulerImpl::EventSchedulerImpl(EventExecutionCallback executionCallback)
     // Initialize running state but DON'T start threads yet to prevent constructor deadlock
     running_ = true;
 
-    // CRITICAL: Defer thread creation to prevent deadlock during object construction
+#ifdef __EMSCRIPTEN__
+    // WASM: Polling-based execution (no threads)
+    LOG_DEBUG("EventSchedulerImpl: Scheduler started in WASM polling mode");
+#else
+    // Native: Defer thread creation to prevent deadlock during object construction
     // Threads will be started lazily on first scheduleEvent() call
-
     LOG_DEBUG("EventSchedulerImpl: Scheduler started with timer thread and {} callback threads",
               CALLBACK_THREAD_POOL_SIZE);
+#endif
 }
 
 EventSchedulerImpl::~EventSchedulerImpl() {
-    // CRITICAL: Destructor must ALWAYS wait for threads, even if shutdown() was called previously
-    // We can't detach in destructor context because object is being destroyed
-
     // Signal shutdown
     shutdownRequested_ = true;
+
+#ifdef __EMSCRIPTEN__
+    // WASM: No threads to clean up
+#else
+    // Native: Wait for threads (can't detach in destructor context)
     callbackShutdownRequested_ = true;
     callbackCondition_.notify_all();
     timerCondition_.notify_all();
@@ -45,6 +51,7 @@ EventSchedulerImpl::~EventSchedulerImpl() {
     if (timerThread_.joinable()) {
         timerThread_.join();
     }
+#endif
 
     // MEMORY LEAK FIX: Explicitly clear all internal data structures
     // This ensures no pending events or hash map entries leak
@@ -63,9 +70,11 @@ EventSchedulerImpl::~EventSchedulerImpl() {
         sessionQueues_.clear();
         sessionExecuting_.clear();
 
-        // Clear callback queue
+#ifndef __EMSCRIPTEN__
+        // Clear callback queue (Native only)
         std::queue<std::function<void()>> emptyCallbackQueue;
         std::swap(callbackQueue_, emptyCallbackQueue);
+#endif
 
         // Reset atomic counters
         queueSize_.store(0);
@@ -92,11 +101,13 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
         return errorPromise.get_future();
     }
 
-    // Lazy thread initialization to prevent constructor deadlock (before acquiring locks)
+#ifndef __EMSCRIPTEN__
+    // Native: Lazy thread initialization to prevent constructor deadlock (before acquiring locks)
     {
         std::unique_lock<std::shared_mutex> queueLock(queueMutex_);
         ensureThreadsStarted();
     }
+#endif
 
     // Generate or use provided send ID
     std::string actualSendId = sendId.empty() ? generateSendId() : sendId;
@@ -147,8 +158,10 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
     LOG_DEBUG("EventSchedulerImpl: Scheduled event '{}' with sendId '{}' for {}ms delay in session '{}'",
               event.eventName, actualSendId, delay.count(), sessionId);
 
-    // Notify timer thread about new event
+#ifndef __EMSCRIPTEN__
+    // Native: Notify timer thread about new event
     timerCondition_.notify_one();
+#endif
 
     return future;
 }
@@ -178,8 +191,10 @@ bool EventSchedulerImpl::cancelEvent(const std::string &sendId, const std::strin
         sendIdIndex_.erase(it);
         indexSize_.fetch_sub(1, std::memory_order_release);
 
-        // Notify timer thread about cancellation
+#ifndef __EMSCRIPTEN__
+        // Native: Notify timer thread about cancellation
         timerCondition_.notify_one();
+#endif
         return true;
     }
 
@@ -217,8 +232,10 @@ size_t EventSchedulerImpl::cancelEventsForSession(const std::string &sessionId) 
 
     if (cancelledCount > 0) {
         LOG_DEBUG("EventSchedulerImpl: Cancelled {} events for session '{}'", cancelledCount, sessionId);
-        // Notify timer thread about cancellations
+#ifndef __EMSCRIPTEN__
+        // Native: Notify timer thread about cancellations
         timerCondition_.notify_one();
+#endif
     }
 
     return cancelledCount;
@@ -252,6 +269,11 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
 
     // Always set shutdown flags to signal threads
     shutdownRequested_ = true;
+
+#ifdef __EMSCRIPTEN__
+    // WASM: No threads to signal
+#else
+    // Native: Signal and wait for threads
     callbackShutdownRequested_ = true;
 
     // Wake up callback threads
@@ -282,6 +304,7 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
     if (!calledFromSchedulerThread && waitForCompletion && timerThread_.joinable()) {
         timerThread_.join();
     }
+#endif
 
     // Clear all scheduled events AFTER timer thread has terminated
     // PERFORMANCE: Use fine-grained locking to clear both data structures
@@ -310,13 +333,15 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
         sessionExecuting_.clear();
     }
 
-    // Clear callback queue to prevent memory leak
+#ifndef __EMSCRIPTEN__
+    // Native: Clear callback queue to prevent memory leak
     {
         std::unique_lock<std::mutex> callbackLock(callbackQueueMutex_);
         while (!callbackQueue_.empty()) {
             callbackQueue_.pop();
         }
     }
+#endif
 
     LOG_DEBUG("EventSchedulerImpl: Scheduler shutdown complete");
 }
@@ -324,6 +349,9 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
 bool EventSchedulerImpl::isRunning() const {
     return running_;
 }
+
+#ifndef __EMSCRIPTEN__
+// === Native: Thread-based execution methods ===
 
 void EventSchedulerImpl::timerThreadMain() {
     // Mark this thread as a scheduler thread to prevent deadlock on shutdown
@@ -536,6 +564,23 @@ void EventSchedulerImpl::callbackWorker() {
     LOG_DEBUG("EventSchedulerImpl: Callback worker thread stopped");
 }
 
+// Thread-local variable definition
+thread_local bool EventSchedulerImpl::isInSchedulerThread_ = false;
+
+#else
+// === WASM: Polling-based execution methods ===
+
+size_t EventSchedulerImpl::poll() {
+    if (!isRunning()) {
+        return 0;
+    }
+
+    // Process all ready events synchronously
+    return processReadyEvents();
+}
+
+#endif  // __EMSCRIPTEN__
+
 std::string EventSchedulerImpl::generateSendId() {
     // REFACTOR: Use centralized UniqueIdGenerator instead of duplicate logic
     return UniqueIdGenerator::generateSendId();
@@ -549,21 +594,16 @@ std::chrono::steady_clock::time_point EventSchedulerImpl::getNextExecutionTime()
 
 std::chrono::steady_clock::time_point EventSchedulerImpl::getNextExecutionTimeUnlocked() const {
     // Internal method assumes queueMutex_ is already locked by caller
-
-    // Use atomic size instead of empty() to avoid vector pointer races
-    if (queueSize_.load(std::memory_order_acquire) == 0) {
+    if (executionQueue_.empty()) {
         return std::chrono::steady_clock::time_point::max();
     }
 
-    // Access executeAt directly (safe because mutex is held)
-    const std::shared_ptr<ScheduledEvent> &topEvent = executionQueue_.top();
+    // Peek at the top event without removing it
+    const auto &topEvent = executionQueue_.top();
 
     // If the top event is cancelled, we still return its time
     // This is safe because processReadyEvents() will skip cancelled events
     return topEvent->executeAt;
 }
-
-// Thread-local variable definition
-thread_local bool EventSchedulerImpl::isInSchedulerThread_ = false;
 
 }  // namespace RSM

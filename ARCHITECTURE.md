@@ -899,6 +899,27 @@ class EventQueueManager {
   - Automatic filtering of cancelled events
 - Benefits: Zero code duplication, guaranteed W3C compliance, efficient scheduling
 
+**RSM::PlatformExecutionHelper (Synchronous/Queued Executors)**:
+- W3C SCXML 5.3: Platform-specific execution strategy abstraction (WASM synchronous vs Native pthread)
+- Single Source of Truth for platform-dependent JSEngine execution logic
+- Location: `rsm/include/common/PlatformExecutionHelper.h`, `rsm/src/common/PlatformExecutionHelper.cpp`
+- Used by: JSEngine (unified execution interface for both Native and WASM platforms)
+- Features:
+  - **Abstract Interface**: executeAsync(), shutdown(), reset(), getRuntimePointer(), waitForRuntimeInitialization()
+  - **SynchronousExecutionHelper (WASM)**: Direct synchronous execution on main thread (no pthread support)
+    - QuickJS runtime created in constructor on main thread
+    - Operations execute immediately in executeAsync() without queuing
+    - Zero threading overhead for single-threaded WASM environment
+  - **QueuedExecutionHelper (Native)**: Worker thread with operation queue for thread safety
+    - QuickJS runtime created on worker thread in workerLoop() (single-threaded requirement)
+    - Main thread queues operations via executeAsync(), worker executes sequentially
+    - Condition variable synchronization for runtime initialization and queue processing
+    - Thread-safe std::queue with mutex protection for concurrent access
+  - **Factory Pattern**: createPlatformExecutor() selects implementation at compile-time (#ifdef __EMSCRIPTEN__)
+  - **QuickJS Thread Safety**: Runtime creation and usage confined to same thread (WASM: main, Native: worker)
+  - **Lifecycle Management**: Proper shutdown (signal + join worker thread) and reset (destroy + recreate)
+- Benefits: Zero Duplication (eliminates 19 methods × 2 platform branches = ~500 lines of duplicated code), follows ARCHITECTURE.md Helper pattern (SendHelper, ForeachHelper, GuardHelper), guaranteed QuickJS thread safety across platforms
+
 **Deferred Error Handling Pattern (W3C SCXML 5.3)**:
 - Purpose: Handle datamodel initialization failures in static AOT context
 - Single Source of Truth: Mirrors Interpreter engine error.execution semantics

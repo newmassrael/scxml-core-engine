@@ -3,6 +3,7 @@
 #include "parsing/PugiXMLParser.h"
 #include "common/Logger.h"
 #include <filesystem>
+#include <sstream>
 #include <unordered_set>
 
 namespace RSM {
@@ -164,20 +165,16 @@ std::string PugiXMLElement::serializeChildContent() const {
         return "";
     }
 
-    // WASM limitation: pugixml cannot serialize to string easily
-    // Return text content only (structure information lost)
-    // This is acceptable for WASM builds where full serialization isn't critical
-    std::string content = node_.child_value();
+    // W3C SCXML B.2: Full XML serialization preserving structure
+    // Use pugixml's print() to serialize all child nodes
+    std::ostringstream oss;
 
-    // Trim whitespace
-    auto start = content.find_first_not_of(" \t\n\r");
-    auto end = content.find_last_not_of(" \t\n\r");
-
-    if (start == std::string::npos || end == std::string::npos) {
-        return "";
+    for (auto child : node_.children()) {
+        // pugi::format_raw: No indentation, no line breaks (compact serialization)
+        child.print(oss, "", pugi::format_raw);
     }
 
-    return content.substr(start, end - start + 1);
+    return oss.str();
 }
 
 // ============================================================================
