@@ -29,9 +29,10 @@ public:
     }
 
     void start() override {
-        // WASM: Enable immediate mode (events processed synchronously in raiseEvent calls)
+        // WASM: Enable immediate mode and set isRunning_ flag
+        raiser_->isRunning_.store(true);
         raiser_->setImmediateMode(true);
-        LOG_DEBUG("PlatformEventRaiserHelper: WASM immediate mode enabled");
+        LOG_DEBUG("PlatformEventRaiserHelper: WASM immediate mode enabled, isRunning set to true");
     }
 
     void shutdown() override {
