@@ -350,6 +350,141 @@ bool EventSchedulerImpl::isRunning() const {
     return running_;
 }
 
+// === Common: Event processing logic (used by both Native and WASM) ===
+
+size_t EventSchedulerImpl::processReadyEvents() {
+    std::vector<std::shared_ptr<ScheduledEvent>> readyEvents;
+    auto now = std::chrono::steady_clock::now();
+
+    // PERFORMANCE: Fine-grained locking - acquire both locks with consistent ordering
+    // Lock ordering: index first, then queue (same as scheduleEvent to prevent deadlock)
+    std::unique_lock<std::shared_mutex> indexLock(indexMutex_);
+    std::unique_lock<std::shared_mutex> queueLock(queueMutex_);
+
+    // Process events from priority queue in execution time order
+    while (queueSize_.load(std::memory_order_acquire) > 0) {
+        // Copy shared_ptr BEFORE pop() to avoid dangling reference
+        std::shared_ptr<ScheduledEvent> topEvent = executionQueue_.top();
+
+        // If event is cancelled, remove from queue only (already removed from index)
+        if (topEvent->cancelled) {
+            executionQueue_.pop();
+            queueSize_.fetch_sub(1, std::memory_order_release);
+            LOG_DEBUG("EventSchedulerImpl: Skipping cancelled event from queue: {}", topEvent->sendId);
+            continue;
+        }
+
+        // If event is not ready yet, break (all remaining events are later)
+        if (topEvent->executeAt > now) {
+            break;
+        }
+
+        // Event is ready - remove from both structures atomically
+        executionQueue_.pop();
+        queueSize_.fetch_sub(1, std::memory_order_release);
+
+        auto it = sendIdIndex_.find(topEvent->sendId);
+        if (it != sendIdIndex_.end()) {
+            readyEvents.push_back(it->second);
+            sendIdIndex_.erase(it);
+            indexSize_.fetch_sub(1, std::memory_order_release);
+        } else {
+            LOG_WARN("EventSchedulerImpl: Event in queue but not in index - sendId: {}", topEvent->sendId);
+        }
+    }
+
+    // Release locks before processing events
+    queueLock.unlock();
+    indexLock.unlock();
+
+    // Process events with per-session sequential execution + inter-session parallelism
+    std::unordered_map<std::string, std::vector<std::shared_ptr<ScheduledEvent>>> sessionEventGroups;
+
+    // Group events by session (shared_ptr allows safe copying)
+    for (auto &event : readyEvents) {
+        sessionEventGroups[event->sessionId].emplace_back(event);
+    }
+
+#ifdef __EMSCRIPTEN__
+    // WASM: Execute events synchronously on main thread (no callback queue)
+    for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
+        LOG_DEBUG("EventSchedulerImpl: WASM processing {} events for session '{}'", sessionEvents.size(), sessionId);
+
+        // Execute events within this session SEQUENTIALLY
+        for (auto &eventPtr : sessionEvents) {
+            if (!eventPtr) {
+                LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
+                continue;
+            }
+            try {
+                LOG_DEBUG("EventSchedulerImpl: WASM executing event '{}' in session '{}'", eventPtr->event.eventName,
+                          sessionId);
+
+                // Execute the callback synchronously
+                bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
+
+                if (success) {
+                    LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
+                } else {
+                    LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
+                }
+
+            } catch (const std::exception &e) {
+                LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName, e.what());
+            }
+        }
+    }
+#else
+    // Native: Execute each session's events asynchronously via callback queue
+    for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
+        if (sessionEvents.empty()) {
+            continue;
+        }
+
+        // Create async task for this session's sequential execution
+        auto sessionTask = [this, sessionId, sessionEvents]() {
+            LOG_DEBUG("EventSchedulerImpl: Processing {} events for session '{}'", sessionEvents.size(), sessionId);
+
+            // Execute events within this session SEQUENTIALLY
+            for (auto &eventPtr : sessionEvents) {
+                if (!eventPtr) {
+                    LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
+                    continue;
+                }
+                try {
+                    LOG_DEBUG("EventSchedulerImpl: Executing event '{}' sequentially in session '{}'",
+                              eventPtr->event.eventName, sessionId);
+
+                    // Execute the callback
+                    bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
+
+                    if (success) {
+                        LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
+                    } else {
+                        LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
+                    }
+
+                } catch (const std::exception &e) {
+                    LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName,
+                              e.what());
+                }
+            }
+        };
+
+        // Add to callback queue for asynchronous execution
+        {
+            std::lock_guard<std::mutex> callbackLock(callbackQueueMutex_);
+            callbackQueue_.push(std::move(sessionTask));
+        }
+
+        // Notify callback workers
+        callbackCondition_.notify_one();
+    }
+#endif
+
+    return readyEvents.size();
+}
+
 #ifndef __EMSCRIPTEN__
 // === Native: Thread-based execution methods ===
 
@@ -406,108 +541,6 @@ void EventSchedulerImpl::timerThreadMain() {
     }
 
     LOG_DEBUG("EventSchedulerImpl: Timer thread stopped");
-}
-
-size_t EventSchedulerImpl::processReadyEvents() {
-    std::vector<std::shared_ptr<ScheduledEvent>> readyEvents;
-    auto now = std::chrono::steady_clock::now();
-
-    // PERFORMANCE: Fine-grained locking - acquire both locks with consistent ordering
-    // Lock ordering: index first, then queue (same as scheduleEvent to prevent deadlock)
-    std::unique_lock<std::shared_mutex> indexLock(indexMutex_);
-    std::unique_lock<std::shared_mutex> queueLock(queueMutex_);
-
-    // Process events from priority queue in execution time order
-    while (queueSize_.load(std::memory_order_acquire) > 0) {
-        // Copy shared_ptr BEFORE pop() to avoid dangling reference
-        std::shared_ptr<ScheduledEvent> topEvent = executionQueue_.top();
-
-        // If event is cancelled, remove from queue only (already removed from index)
-        if (topEvent->cancelled) {
-            executionQueue_.pop();
-            queueSize_.fetch_sub(1, std::memory_order_release);
-            LOG_DEBUG("EventSchedulerImpl: Skipping cancelled event from queue: {}", topEvent->sendId);
-            continue;
-        }
-
-        // If event is not ready yet, break (all remaining events are later)
-        if (topEvent->executeAt > now) {
-            break;
-        }
-
-        // Event is ready - remove from both structures atomically
-        executionQueue_.pop();
-        queueSize_.fetch_sub(1, std::memory_order_release);
-
-        auto it = sendIdIndex_.find(topEvent->sendId);
-        if (it != sendIdIndex_.end()) {
-            readyEvents.push_back(it->second);
-            sendIdIndex_.erase(it);
-            indexSize_.fetch_sub(1, std::memory_order_release);
-        } else {
-            LOG_WARN("EventSchedulerImpl: Event in queue but not in index - sendId: {}", topEvent->sendId);
-        }
-    }
-
-    // Release locks before processing events
-    queueLock.unlock();
-    indexLock.unlock();
-
-    // Process events with per-session sequential execution + inter-session parallelism
-    std::unordered_map<std::string, std::vector<std::shared_ptr<ScheduledEvent>>> sessionEventGroups;
-
-    // Group events by session (shared_ptr allows safe copying)
-    for (auto &event : readyEvents) {
-        sessionEventGroups[event->sessionId].emplace_back(event);
-    }
-
-    // Execute each session's events asynchronously (sessions run in parallel, events within session are sequential)
-    for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
-        if (sessionEvents.empty()) {
-            continue;
-        }
-
-        // Create async task for this session's sequential execution
-        auto sessionTask = [this, sessionId, sessionEvents]() {
-            LOG_DEBUG("EventSchedulerImpl: Processing {} events for session '{}'", sessionEvents.size(), sessionId);
-
-            // Execute events within this session SEQUENTIALLY
-            for (auto &eventPtr : sessionEvents) {
-                if (!eventPtr) {
-                    LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
-                    continue;
-                }
-                try {
-                    LOG_DEBUG("EventSchedulerImpl: Executing event '{}' sequentially in session '{}'",
-                              eventPtr->event.eventName, sessionId);
-
-                    // Execute the callback
-                    bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
-
-                    if (success) {
-                        LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
-                    } else {
-                        LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
-                    }
-
-                } catch (const std::exception &e) {
-                    LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName,
-                              e.what());
-                }
-            }
-        };
-
-        // Add to callback queue for asynchronous execution
-        {
-            std::lock_guard<std::mutex> callbackLock(callbackQueueMutex_);
-            callbackQueue_.push(std::move(sessionTask));
-        }
-
-        // Notify callback workers
-        callbackCondition_.notify_one();
-    }
-
-    return readyEvents.size();
 }
 
 void EventSchedulerImpl::ensureThreadsStarted() {

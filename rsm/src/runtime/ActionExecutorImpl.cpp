@@ -987,12 +987,11 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     std::string indexVar = action.getIndex();
 
     // W3C SCXML 4.6: Validate array and item attributes
-    try {
-        RSM::Validation::validateForeachAttributes(arrayExpr, itemVar);
-    } catch (const std::runtime_error &e) {
-        LOG_ERROR("Foreach validation failed: {}", e.what());
+    std::string validationError;
+    if (!RSM::Validation::validateForeachAttributes(arrayExpr, itemVar, validationError)) {
+        LOG_ERROR("Foreach validation failed: {}", validationError);
         if (eventRaiser_ && eventRaiser_->isReady()) {
-            eventRaiser_->raiseEvent("error.execution", e.what());
+            eventRaiser_->raiseEvent("error.execution", validationError);
         }
         return false;
     }

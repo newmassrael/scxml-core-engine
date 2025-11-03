@@ -889,6 +889,9 @@ std::unique_ptr<TestResources> TestComponentFactory::createResources() {
         }
     });
 
+    // W3C SCXML 6.2: Connect EventRaiser to EventScheduler for delayed event polling (WASM support)
+    eventRaiser->setScheduler(scheduler);
+
     // Create EventTargetFactory and EventDispatcher
     auto targetFactory = std::make_shared<RSM::EventTargetFactoryImpl>(eventRaiser, scheduler);
     auto eventDispatcher = std::make_shared<RSM::EventDispatcherImpl>(scheduler, targetFactory);

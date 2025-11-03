@@ -28,12 +28,13 @@
     - Fixes test 457 (W3C SCXML B.2 foreach array validation)
 #}
 // W3C SCXML 4.6: Foreach validation and execution
-try {
-    ::RSM::Validation::validateForeachAttributes("{{ action.array }}", "{{ action.item }}");
-} catch (const std::runtime_error& e) {
-    // Validation failed (invalid item/array attribute)
-    LOG_ERROR("Foreach validation failed: {}", e.what());
-    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, e.what()));
+{
+    std::string validationError;
+    if (!::RSM::Validation::validateForeachAttributes("{{ action.array }}", "{{ action.item }}", validationError)) {
+        // Validation failed (invalid item/array attribute)
+        LOG_ERROR("Foreach validation failed: {}", validationError);
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, validationError));
+    }
 }
 {% if action.actions and action.actions | length > 0 %}
 {
