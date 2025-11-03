@@ -1,5 +1,7 @@
 #include "W3CTestRunner.h"
+#ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
+#endif
 #include "common/Logger.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -1035,6 +1037,7 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
 
             TestReport report;
 
+#ifndef __EMSCRIPTEN__
             // Check if test requires HTTP server using cached helper method
             if (requiresHttpServer(testDir)) {
                 LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
@@ -1065,6 +1068,10 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
             } else {
                 report = runSingleTest(testDir);
             }
+#else
+            // WASM: HTTP server not supported, run without HTTP
+            report = runSingleTest(testDir);
+#endif
 
             reports.push_back(report);
             reporter_->reportTestResult(report);
@@ -1377,6 +1384,7 @@ TestReport W3CTestRunner::runSpecificTest(int testId) {
                 return *skipReport;
             }
 
+#ifndef __EMSCRIPTEN__
             // Check if test requires HTTP server using cached helper method
             if (requiresHttpServer(testDir)) {
                 LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
@@ -1407,8 +1415,10 @@ TestReport W3CTestRunner::runSpecificTest(int testId) {
                     throw;
                 }
             }
-
+#else
+            // WASM: HTTP server not supported, run without HTTP
             return runSingleTest(testDir);
+#endif
         }
     }
 
@@ -1464,6 +1474,7 @@ TestReport W3CTestRunner::runTest(const std::string &testId) {
                 return *skipReport;
             }
 
+#ifndef __EMSCRIPTEN__
             // Check if test requires HTTP server using cached helper method
             if (requiresHttpServer(testDir)) {
                 LOG_INFO("W3C Test {}: Starting HTTP server for BasicHTTPEventProcessor test", testId);
@@ -1489,6 +1500,7 @@ TestReport W3CTestRunner::runTest(const std::string &testId) {
                     throw;
                 }
             }
+#endif
 
             // Normal test execution
             TestReport report = runSingleTest(testDir);
@@ -1530,6 +1542,7 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
 
         if (currentTestId == testId) {
             try {
+#ifndef __EMSCRIPTEN__
                 // Check if HTTP test should be skipped in Docker TSAN environment (Interpreter only)
                 // AOT tests will handle TSAN skip logic in HttpAotTest::run()
                 if (auto skipReport = shouldSkipHttpTestInDockerTsan(testDir, testId)) {
@@ -1568,6 +1581,12 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
                         reporter_->reportTestResult(report);
                     }
                 }
+#else
+                // WASM: HTTP server not supported, run without HTTP
+                TestReport report = runSingleTest(testDir);
+                matchingReports.push_back(report);
+                reporter_->reportTestResult(report);
+#endif
 
                 // Run AOT engine test (runAotTest will use Interpreter fallback if needed)
                 try {
@@ -1634,6 +1653,7 @@ TestRunSummary W3CTestRunner::runFilteredTests(const std::string &conformanceLev
     return summary;
 }
 
+#ifndef __EMSCRIPTEN__
 TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDirectory, W3CHttpTestServer *httpServer) {
     TestReport report;
     report.timestamp = std::chrono::system_clock::now();
@@ -1817,6 +1837,7 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
         throw;  // Re-throw to be caught by runSpecificTest
     }
 }
+#endif  // !__EMSCRIPTEN__
 
 TestReport W3CTestRunner::runAotTest(int testId) {
     // Check W3CTestRegistry to determine if test should use Interpreter fallback

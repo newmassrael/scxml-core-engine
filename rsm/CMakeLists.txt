@@ -183,6 +183,7 @@ add_library(rsm_unified
     src/events/EventTargetFactoryImpl.cpp
     src/events/EventRaiserRegistry.cpp
     src/events/EventRaiserService.cpp
+    src/events/PlatformEventRaiserHelper.cpp
 
 
     # Concurrent states implementation

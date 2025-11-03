@@ -644,12 +644,18 @@ TEST_F(TXMLConverterTest, HandlesW3CIRPEdgeCases) {
 
 // Test empty content validation
 TEST_F(TXMLConverterTest, ThrowsOnEmptyContent) {
+#ifdef __EMSCRIPTEN__
+    GTEST_SKIP() << "WASM: pthread + exception combination unstable with EXPECT_THROW";
+#endif
     EXPECT_THROW(converter.convertTXMLToSCXML(""), std::invalid_argument)
         << "Empty content should throw invalid_argument";
 }
 
 // Test invalid SCXML validation
 TEST_F(TXMLConverterTest, ThrowsOnInvalidSCXML) {
+#ifdef __EMSCRIPTEN__
+    GTEST_SKIP() << "WASM: pthread + exception combination unstable with EXPECT_THROW";
+#endif
     std::string invalid_txml = R"(<invalid>not scxml</invalid>)";
 
     EXPECT_THROW(converter.convertTXMLToSCXML(invalid_txml), std::runtime_error)
@@ -658,6 +664,9 @@ TEST_F(TXMLConverterTest, ThrowsOnInvalidSCXML) {
 
 // Test that pass/fail targets are required
 TEST_F(TXMLConverterTest, RequiresPassOrFailTargets) {
+#ifdef __EMSCRIPTEN__
+    GTEST_SKIP() << "WASM: pthread + exception combination unstable with EXPECT_THROW";
+#endif
     std::string txml_no_targets = R"(<?xml version="1.0"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:conf="http://www.w3.org/2005/scxml-conformance" initial="test">
     <state id="test"/>

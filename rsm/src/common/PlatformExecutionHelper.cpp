@@ -47,8 +47,14 @@ public:
     }
 
     void shutdown() override {
-        // WASM: No worker thread to stop
-        LOG_DEBUG("PlatformExecutionHelper: Synchronous executor shutdown (no-op)");
+        // WASM: Free runtime during shutdown (not in destructor)
+        // QuickJS: All contexts must be freed before freeing runtime
+        if (runtime_) {
+            LOG_DEBUG("PlatformExecutionHelper: Synchronous executor - freeing runtime");
+            JS_FreeRuntime(runtime_);
+            runtime_ = nullptr;
+        }
+        LOG_DEBUG("PlatformExecutionHelper: Synchronous executor shutdown complete");
     }
 
     void reset() override {

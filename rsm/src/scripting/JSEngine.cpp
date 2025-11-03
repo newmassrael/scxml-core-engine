@@ -45,7 +45,7 @@ void JSEngine::shutdown() {
 
     shouldStop_ = true;
 
-    // W3C SCXML + QuickJS Thread Safety: Destroy sessions on worker thread BEFORE stopping it
+    // W3C SCXML + QuickJS Thread Safety: Destroy sessions BEFORE freeing runtime
     // QuickJS contexts must be freed on the same thread where they were created
     std::vector<std::string> sessionIds;
     {
@@ -55,9 +55,14 @@ void JSEngine::shutdown() {
         }
     }
 
-    // Destroy each session via executeAsync (executes on worker thread)
+    LOG_DEBUG("JSEngine: shutdown() - Found {} sessions to clean up", sessionIds.size());
+
+    // Destroy each session via executeAsync
+    // WASM: Executes immediately on main thread (synchronous)
+    // Native: Executes on worker thread (queued)
     std::vector<std::future<JSResult>> futures;
     for (const auto &sessionId : sessionIds) {
+        LOG_DEBUG("JSEngine: shutdown() - Destroying session: {}", sessionId);
         auto future = platformExecutor_->executeAsync([this, sessionId]() {
             destroySessionInternal(sessionId);
             return JSResult::createSuccess();
@@ -65,10 +70,12 @@ void JSEngine::shutdown() {
         futures.push_back(std::move(future));
     }
 
-    // Wait for all session cleanup to complete on worker thread
+    // Wait for all session cleanup to complete
     for (auto &future : futures) {
         future.get();
     }
+
+    LOG_DEBUG("JSEngine: shutdown() - All sessions destroyed");
 
     // Zero Duplication Principle: Platform-specific shutdown logic through Helper
     // Now safe to shutdown worker thread (all QuickJS contexts freed)
@@ -436,8 +443,11 @@ bool JSEngine::createSessionInternal(const std::string &sessionId, const std::st
 }
 
 bool JSEngine::destroySessionInternal(const std::string &sessionId) {
+    LOG_DEBUG("JSEngine: destroySessionInternal() - Destroying session: {}", sessionId);
+
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
+        LOG_DEBUG("JSEngine: destroySessionInternal() - Session not found: {}", sessionId);
         return false;
     }
 
@@ -460,14 +470,18 @@ bool JSEngine::destroySessionInternal(const std::string &sessionId) {
     unregisterSessionFilePath(sessionId);
 
     if (it->second.jsContext) {
+        LOG_DEBUG("JSEngine: destroySessionInternal() - Freeing JSContext for session: {}", sessionId);
         // Force garbage collection before freeing context
         if (runtime_) {
             JS_RunGC(runtime_);
+            LOG_DEBUG("JSEngine: destroySessionInternal() - GC completed for session: {}", sessionId);
         }
         JS_FreeContext(it->second.jsContext);
+        LOG_DEBUG("JSEngine: destroySessionInternal() - JSContext freed for session: {}", sessionId);
     }
 
     sessions_.erase(it);
+    LOG_DEBUG("JSEngine: Destroyed session '{}' - sessions_ map size now: {}", sessionId, sessions_.size());
 
     // Clean up EventRaiser from global registry to prevent memory leaks
     auto registry = getEventRaiserRegistry();

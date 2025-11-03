@@ -102,7 +102,7 @@ public:
      * @param sessionId Session whose events should be cancelled
      * @return Number of events cancelled
      */
-    size_t cancelEventsForSession(const std::string &sessionId);
+    size_t cancelEventsForSession(const std::string &sessionId) override;
 
     /**
      * @brief Get the parameters from the last dispatched event

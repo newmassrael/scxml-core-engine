@@ -76,16 +76,31 @@ int main(int argc, char *argv[]) {
     try {
         // Auto-detect resources path from executable location
         std::string executablePath;
+#ifndef __EMSCRIPTEN__
         try {
             executablePath = std::filesystem::canonical("/proc/self/exe").string();
         } catch (...) {
             // Fallback for non-Linux systems or if /proc/self/exe is not available
             executablePath = argv[0];
         }
+#else
+        // WASM: Use argv[0]
+        executablePath = argv[0];
+#endif
 
-        std::string resourcePath = findResourcesPath(executablePath);
+        std::string resourcePath;
+#ifdef __EMSCRIPTEN__
+        // WASM: Convert relative path to absolute path using current_path()
+        // NODERAWFS requires absolute paths for directory iteration
+        namespace fs = std::filesystem;
+        fs::path cwd = fs::current_path();
+        fs::path absResourcePath = (cwd / "../../resources").lexically_normal();
+        resourcePath = absResourcePath.string();
+        LOG_INFO("WASM: Using absolute resources path: {}", resourcePath);
+#else
+        resourcePath = findResourcesPath(executablePath);
 
-        // Validate resources path was found
+        // Validate resources path was found (Native only - WASM allows --resources override)
         if (resourcePath.empty()) {
             LOG_ERROR("W3C CLI: Failed to locate resources directory");
             fprintf(stderr, "ERROR: Could not find W3C test resources directory.\n");
@@ -94,6 +109,7 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "       Or use --resources PATH to specify location manually.\n");
             return 1;
         }
+#endif
 
         // Set output path to project root (parent of resources/)
         // This ensures w3c_test_results.xml/html are always created in project root
@@ -789,7 +805,7 @@ int main(int argc, char *argv[]) {
         // Final results
         printf("\n");
         printf("🎉 W3C SCXML Compliance Test Complete!\n");
-        printf("⏱️  Total execution time: %ld seconds\n", totalTime.count());
+        printf("⏱️  Total execution time: %lld seconds\n", static_cast<long long>(totalTime.count()));
         printf("📊 Test Results Summary:\n");
 
         // If we have engine stats, show table format (for single test runs or when engine breakdown available)
