@@ -1135,21 +1135,34 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
             return report;
         }
 
-        // Read and convert TXML
-        std::string txmlPath = testSuite_->getTXMLPath(testDirectory);
-        LOG_DEBUG("W3C Single Test: Reading TXML from {}", txmlPath);
-        std::ifstream txmlFile(txmlPath);
-        std::string txml((std::istreambuf_iterator<char>(txmlFile)), std::istreambuf_iterator<char>());
+        // Check if SCXML file exists directly (for tests like 513 with direct SCXML)
+        std::string scxmlPath = testDirectory + "/test" + report.testId + ".scxml";
+        std::string scxml;
+        std::string txmlPath;
 
-        LOG_DEBUG("W3C Single Test: Converting TXML to SCXML for test {}", report.testId);
+        std::ifstream scxmlFile(scxmlPath);
+        if (scxmlFile.good()) {
+            // Use existing SCXML file directly (skip TXML conversion)
+            LOG_DEBUG("W3C Single Test: Using existing SCXML from {}", scxmlPath);
+            scxml = std::string((std::istreambuf_iterator<char>(scxmlFile)), std::istreambuf_iterator<char>());
+            txmlPath = scxmlPath;  // Use SCXML path as reference
+        } else {
+            // Read and convert TXML
+            txmlPath = testSuite_->getTXMLPath(testDirectory);
+            LOG_DEBUG("W3C Single Test: Reading TXML from {}", txmlPath);
+            std::ifstream txmlFile(txmlPath);
+            std::string txml((std::istreambuf_iterator<char>(txmlFile)), std::istreambuf_iterator<char>());
 
-        // Log original TXML before conversion
-        LOG_DEBUG("W3C Test {}: Original TXML content:\n{}", report.testId, txml);
+            LOG_DEBUG("W3C Single Test: Converting TXML to SCXML for test {}", report.testId);
 
-        std::string scxml = converter_->convertTXMLToSCXML(txml);
+            // Log original TXML before conversion
+            LOG_DEBUG("W3C Test {}: Original TXML content:\n{}", report.testId, txml);
 
-        // Log converted SCXML after conversion
-        LOG_DEBUG("W3C Test {}: Converted SCXML content:\n{}", report.testId, scxml);
+            scxml = converter_->convertTXMLToSCXML(txml);
+
+            // Log converted SCXML after conversion
+            LOG_DEBUG("W3C Test {}: Converted SCXML content:\n{}", report.testId, scxml);
+        }
 
         // Convert all sub-TXML files in the test directory for invoke elements
         // Extract actual directory path (remove variant suffix if present)
