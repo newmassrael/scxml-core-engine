@@ -4,9 +4,10 @@
 if ({{ action.cond_cpp }}) {
 {% elif model.needs_jsengine %}
 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
+// Use safeEvaluateGuard for std::optional<bool> handling and error.execution support
 this->ensureJSEngine();
 auto& jsEngine = ::RSM::JSEngine::instance();
-if (::RSM::GuardHelper::evaluateGuard(jsEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}")) {
+if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}", engine)) {
 {% else %}
 if ({{ action.cond }}) {
 {% endif %}
@@ -16,7 +17,7 @@ if ({{ action.cond }}) {
     {% endwith %}
     {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if ({% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_jsengine %}::RSM::GuardHelper::evaluateGuard(jsEngine, sessionId_.value(), "{{ elseif.cond | escape_cpp }}"){% else %}{{ elseif.cond }}{% endif %}) {
+} else if ({% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_jsengine %}this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ elseif.cond | escape_cpp }}", engine){% else %}{{ elseif.cond }}{% endif %}) {
     {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' + elseif_action.type + '.jinja2' %}
