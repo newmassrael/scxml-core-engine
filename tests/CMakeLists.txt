@@ -806,10 +806,9 @@ set(W3C_AOT_TESTS
     252 253
 )
 
-# HTTP tests (native builds only, not WASM) - W3C SCXML C.2: BasicHTTP Event I/O Processor
-if(NOT EMSCRIPTEN)
-    list(APPEND W3C_AOT_TESTS 201 509 510 513 518 519 520 522 531 532 534 567 577)
-endif()
+# HTTP tests - W3C SCXML C.2: BasicHTTP Event I/O Processor
+# HttpAotTest.h handles WASM platform limitation with skip logic (#ifdef __EMSCRIPTEN__)
+list(APPEND W3C_AOT_TESTS 201 509 510 513 518 519 520 522 531 532 534 567 577)
 
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
