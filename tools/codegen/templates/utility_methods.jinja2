@@ -4,16 +4,18 @@
     template<typename Engine>
     bool safeEvaluateGuard(::RSM::JSEngine& jsEngine, const std::string& sessionId,
                            const std::string& guardExpr, Engine& engine) const {
-        try {
-            LOG_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);
-            bool result = ::RSM::GuardHelper::evaluateGuard(jsEngine, sessionId, guardExpr);
-            LOG_DEBUG("AOT safeEvaluateGuard: Guard '{}' evaluated to: {}", guardExpr, result);
-            return result;
-        } catch (const std::exception& e) {
-            LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}' - {}", guardExpr, e.what());
+        LOG_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);
+        auto result = ::RSM::GuardHelper::evaluateGuard(jsEngine, sessionId, guardExpr);
+
+        if (!result.has_value()) {
+            // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
+            LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", guardExpr);
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Guard evaluation failed"));
             return false;
         }
+
+        LOG_DEBUG("AOT safeEvaluateGuard: Guard '{}' evaluated to: {}", guardExpr, *result);
+        return *result;
     }
 
     // Helper: Set param in JSEngine for static invoke (W3C SCXML 6.4)

@@ -641,18 +641,20 @@ bool ActionExecutorImpl::evaluateCondition(const std::string &condition) {
         return true;  // Empty condition is always true
     }
 
-    try {
-        auto &jsEngine = JSEngine::instance();
-        return GuardHelper::evaluateGuard(jsEngine, sessionId_, condition);
-    } catch (const std::exception &e) {
-        // W3C SCXML 5.9: Exception during condition evaluation must raise error.execution
-        LOG_ERROR("W3C SCXML 5.9: Exception evaluating condition '{}': {}", condition, e.what());
+    auto &jsEngine = JSEngine::instance();
+    auto result = GuardHelper::evaluateGuard(jsEngine, sessionId_, condition);
+
+    if (!result.has_value()) {
+        // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
+        LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", condition);
 
         if (eventRaiser_) {
-            eventRaiser_->raiseEvent("error.execution", "Exception evaluating condition: " + condition);
+            eventRaiser_->raiseEvent("error.execution", "Guard evaluation failed: " + condition);
         }
         return false;
     }
+
+    return *result;
 }
 
 bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
