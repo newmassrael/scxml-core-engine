@@ -7,11 +7,11 @@
 #include <unordered_map>
 #include <vector>
 
-// XML content support (Native builds only)
-#ifndef __EMSCRIPTEN__
-#include <libxml++/document.h>
-#include <libxml++/nodes/node.h>
-#endif
+// Forward declarations for XML content support (all platforms)
+namespace RSM {
+class IXMLDocument;
+class IXMLElement;
+}  // namespace RSM
 
 /**
  * @brief Implementation class for data model item
@@ -162,13 +162,11 @@ public:
      */
     void setXmlContent(const std::string &content);
 
-#ifndef __EMSCRIPTEN__
     /**
-     * @brief Return XML content node (Native builds only)
-     * @return XML node pointer, nullptr if not found
+     * @brief Return XML content root element (all platforms)
+     * @return Root element pointer, nullptr if not XML or parsing failed
      */
-    xmlpp::Node *getXmlContent() const;
-#endif
+    std::shared_ptr<IXMLElement> getXmlContent() const;
 
 private:
     std::string id_;
@@ -176,9 +174,7 @@ private:
     std::string type_;
     std::string scope_;
     std::string content_;
-#ifndef __EMSCRIPTEN__
-    std::unique_ptr<xmlpp::Document> xmlContent_;  // XML content support (Native only)
-#endif
+    std::shared_ptr<IXMLDocument> xmlContent_;  // XML content support (all platforms)
     std::string src_;
     std::unordered_map<std::string, std::string> attributes_;
     std::vector<std::string> contentItems_;  // Store added content items

@@ -1,8 +1,8 @@
 #include "DataModelItem.h"
 #include "common/Logger.h"
-#ifndef __EMSCRIPTEN__
-#include <libxml++/parsers/domparser.h>
-#endif
+#include "parsing/IXMLDocument.h"
+#include "parsing/IXMLElement.h"
+#include "parsing/IXMLParser.h"
 #include <sstream>
 
 RSM::DataModelItem::DataModelItem(const std::string &id, const std::string &expr)
@@ -55,11 +55,8 @@ void RSM::DataModelItem::setContent(const std::string &content) {
     } else {
         // Handle other types as plain string
         content_ = content;
-
-#ifndef __EMSCRIPTEN__
-        // Remove XML content if it existed (Native builds only)
+        // Remove XML content if it existed
         xmlContent_.reset();
-#endif
     }
 
     // Add to contentItems_ in all cases
@@ -72,24 +69,22 @@ void RSM::DataModelItem::addContent(const std::string &content) {
     // Always add to contentItems_
     contentItems_.push_back(content);
 
-#ifndef __EMSCRIPTEN__
-    // Try adding to DOM if XML type (Native builds only)
+    // Try adding to DOM if XML type
     if (type_ == "xpath" || type_ == "xml") {
         if (xmlContent_) {
             try {
                 // Parse as temporary XML document
-                xmlpp::DomParser parser;
-                parser.parse_memory(content);
-                xmlpp::Document *tempDoc = parser.get_document();
+                auto parser = IXMLParser::create();
+                auto tempDoc = parser->parseContent(content);
 
-                if (tempDoc && tempDoc->get_root_node()) {
-                    // Get root node
-                    xmlpp::Node *root = xmlContent_->get_root_node();
+                if (tempDoc && tempDoc->isValid() && tempDoc->getRootElement()) {
+                    // Get root element
+                    auto root = xmlContent_->getRootElement();
                     if (root) {
                         // Add new content to existing tree
-                        xmlpp::Node *importedNode = tempDoc->get_root_node();
+                        auto importedNode = tempDoc->getRootElement();
                         if (importedNode) {
-                            root->import_node(importedNode);
+                            root->importNode(importedNode);
                         }
                     }
                 }
@@ -101,35 +96,33 @@ void RSM::DataModelItem::addContent(const std::string &content) {
             setXmlContent(content);
         }
     } else {
-#endif
-        // Add to string if not XML type (or WASM build)
+        // Add to string if not XML type
         if (!content_.empty()) {
             content_ += content;
         } else {
             content_ = content;
         }
-#ifndef __EMSCRIPTEN__
     }
-#endif
 }
 
 const std::string &RSM::DataModelItem::getContent() const {
-#ifndef __EMSCRIPTEN__
-    // Serialize XML to string if XML content exists and content_ is empty (Native builds only)
-    if (xmlContent_ && content_.empty()) {
+    // Serialize XML to string if XML content exists and content_ is empty
+    if (xmlContent_ && xmlContent_->isValid() && content_.empty()) {
         static std::string serialized;
         serialized.clear();
 
         try {
-            // Serialize XML document to string
-            xmlContent_->write_to_string(serialized);
+            // Get root element and serialize child content
+            auto root = xmlContent_->getRootElement();
+            if (root) {
+                serialized = root->serializeChildContent();
+            }
         } catch (const std::exception &ex) {
             LOG_ERROR("Failed to serialize XML: {}", ex.what());
         }
 
         return serialized;
     }
-#endif
 
     return content_;
 }
@@ -163,119 +156,69 @@ const std::unordered_map<std::string, std::string> &RSM::DataModelItem::getAttri
 void RSM::DataModelItem::setXmlContent(const std::string &content) {
     LOG_DEBUG("Setting XML content for {}", id_);
 
-#ifndef __EMSCRIPTEN__
-    // Delete existing XML document if present
+    // Reset existing XML document
     xmlContent_.reset();
 
     try {
-        // Parse XML
-        xmlpp::DomParser parser;
-        parser.parse_memory(content);
+        // Parse XML using platform-appropriate parser
+        auto parser = IXMLParser::create();
+        xmlContent_ = parser->parseContent(content);
 
-        // Create new document and get content (Document is not copyable)
-        xmlContent_ = std::make_unique<xmlpp::Document>();
-        if (parser.get_document() && parser.get_document()->get_root_node()) {
-            xmlContent_->create_root_node_by_import(parser.get_document()->get_root_node());
+        if (xmlContent_ && xmlContent_->isValid()) {
+            // Clear content_ if parsing succeeds (regenerate in getContent() if needed)
+            content_ = "";
+        } else {
+            LOG_ERROR("Failed to parse XML content: {}",
+                      xmlContent_ ? xmlContent_->getErrorMessage() : "Parser returned null");
+            xmlContent_.reset();
+            // Store as plain string if parsing fails
+            content_ = content;
         }
-
-        // Clear content_ if parsing succeeds (regenerate in getContent() if needed)
-        content_ = "";
     } catch (const std::exception &ex) {
         LOG_ERROR("Failed to parse XML content: {}", ex.what());
         xmlContent_.reset();
-
         // Store as plain string if parsing fails
         content_ = content;
     }
-#else
-    // WASM builds: Store as plain string (no XML parsing support)
-    content_ = content;
-#endif
 }
 
-#ifndef __EMSCRIPTEN__
-xmlpp::Node *RSM::DataModelItem::getXmlContent() const {
-    if (xmlContent_) {
-        return xmlContent_->get_root_node();
+std::shared_ptr<RSM::IXMLElement> RSM::DataModelItem::getXmlContent() const {
+    if (xmlContent_ && xmlContent_->isValid()) {
+        return xmlContent_->getRootElement();
     }
     return nullptr;
 }
-#endif
 
 const std::vector<std::string> &RSM::DataModelItem::getContentItems() const {
     return contentItems_;
 }
 
 bool RSM::DataModelItem::isXmlContent() const {
-#ifndef __EMSCRIPTEN__
-    return xmlContent_ != nullptr;
-#else
-    // WASM builds: No XML content support
-    return false;
-#endif
+    return xmlContent_ != nullptr && xmlContent_->isValid();
 }
 
 std::optional<std::string> RSM::DataModelItem::queryXPath(const std::string &xpath) const {
-#ifndef __EMSCRIPTEN__
-    if (!xmlContent_ || !xmlContent_->get_root_node()) {
+    if (!xmlContent_ || !xmlContent_->isValid()) {
         return std::nullopt;
     }
 
-    try {
-        xmlpp::Node *root = xmlContent_->get_root_node();
-        auto nodes = root->find(xpath);
+    // W3C SCXML XPath Support: Currently limited to basic queries
+    // Native: Full libxml2 XPath 1.0 support
+    // WASM: Basic pugixml XPath support (subset of XPath 1.0)
+    // TODO: Add IXMLElement::queryXPath() interface method for unified XPath support
 
-        if (nodes.empty()) {
-            return std::nullopt;
-        }
+    LOG_WARN("XPath queries are currently limited. Full XPath support requires interface extension.");
+    LOG_DEBUG("XPath query requested: {}", xpath);
 
-        if (nodes.size() == 1) {
-            // Single node case
-            auto node = nodes[0];
-            // Find text node
-            auto child = node->get_first_child();
-            if (child && dynamic_cast<xmlpp::TextNode *>(child)) {
-                return dynamic_cast<xmlpp::TextNode *>(child)->get_content();
-            } else {
-                // Return node path if no text node
-                return node->get_path();
-            }
-        } else {
-            // Multiple nodes case, combine results
-            std::stringstream result;
-            for (auto node : nodes) {
-                auto child = node->get_first_child();
-                if (child && dynamic_cast<xmlpp::TextNode *>(child)) {
-                    if (result.tellp() > 0) {
-                        result << " ";
-                    }
-                    result << dynamic_cast<xmlpp::TextNode *>(child)->get_content();
-                }
-            }
-            return result.str();
-        }
-    } catch (const std::exception &ex) {
-        LOG_ERROR("XPath query failed: {}", ex.what());
-    }
-
+    // For now, return nullopt as XPath is not exposed through IXMLElement interface
+    // Full implementation requires adding queryXPath() to IXMLElement interface
     return std::nullopt;
-#else
-    // WASM builds: XPath not supported
-    (void)xpath;  // Suppress unused parameter warning
-    LOG_WARN("XPath queries not supported in WASM builds");
-    return std::nullopt;
-#endif
 }
 
 bool RSM::DataModelItem::supportsDataModel(const std::string &dataModelType) const {
-    // xpath and xml data models support XML processing
+    // xpath and xml data models support XML processing (all platforms)
     if (dataModelType == "xpath" || dataModelType == "xml") {
-#ifndef __EMSCRIPTEN__
         return true;
-#else
-        // WASM builds: Limited XML support (no DOM parsing)
-        return false;
-#endif
     }
 
     // ecmascript data model supports basic string processing

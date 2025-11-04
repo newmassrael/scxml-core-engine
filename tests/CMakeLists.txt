@@ -46,7 +46,7 @@ if(NOT GTest_FOUND)
             -sUSE_PTHREADS=1
             -Wno-character-conversion
         )
-        
+
         # Apply pthread link options to all gtest targets
         target_link_options(gtest PRIVATE -pthread -sUSE_PTHREADS=1)
         target_link_options(gtest_main PRIVATE -pthread -sUSE_PTHREADS=1)
@@ -91,16 +91,14 @@ function(apply_rsm_test_policies target_name)
             -pthread
             -sUSE_PTHREADS=1
             -sPTHREAD_POOL_SIZE=4
-            -sPROXY_TO_PTHREAD=1
-            -sEXIT_RUNTIME=1  # Exit immediately after main() (pthread workers already cleaned up)
+            -sEXIT_RUNTIME=1  # Exit immediately after main()
             -sENVIRONMENT=node
             -sASYNCIFY
             -sASSERTIONS=2
-            -sALLOW_MEMORY_GROWTH=1
-            -sINITIAL_MEMORY=67108864
+            -sINITIAL_MEMORY=402653184  # 384MB fixed heap
             -sSTACK_SIZE=33554432
             -sDISABLE_EXCEPTION_CATCHING=0  # Enable C++ exception catching for tests
-            -g
+            -g1                             # Line number info only (allows full optimization)
             --profiling-funcs
         )
     endif()
@@ -118,6 +116,7 @@ set(RSM_TEST_TARGETS
     action_tests
     history_tests
     core_parser_tests
+    model_tests
     integration_tests
     concurrency_tests
     txml_converter_tests
@@ -421,7 +420,48 @@ if(NOT EMSCRIPTEN)
 endif()
 
 # ============================================================================
-# 7. Concurrency and Deadlock Tests
+# 7. Model Layer Tests
+# ============================================================================
+add_executable(model_tests
+    model/DataModelItemTest.cpp
+)
+
+add_dependencies(model_tests rsm_unified)
+if(NOT EMSCRIPTEN)
+    add_dependencies(model_tests libxmlxx_external)
+endif()
+
+target_include_directories(model_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/rsm/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+if(NOT EMSCRIPTEN)
+    target_include_directories(model_tests
+        PRIVATE
+            ${LIBXMLXX_INCLUDE_DIRS}
+            /usr/include/libxml2
+    )
+endif()
+
+target_link_libraries(model_tests
+    PRIVATE
+        rsm_unified
+        GTest::gtest_main
+)
+
+if(NOT EMSCRIPTEN)
+    target_link_libraries(model_tests
+        PRIVATE
+            ${LIBXMLXX_LIBRARIES}
+            xml2
+    )
+endif()
+
+# ============================================================================
+# 8. Concurrency and Deadlock Tests
 # ============================================================================
 add_executable(concurrency_tests
     concurrency/DeadlockReproductionTest.cpp
@@ -879,21 +919,20 @@ if(EMSCRIPTEN)
     )
     
     # WASM: Add Emscripten-specific link options (pthread + ASYNCIFY for blocking I/O)
+    # Note: PROXY_TO_PTHREAD removed to reduce overhead, ALLOW_MEMORY_GROWTH removed to eliminate warning
     target_link_options(w3c_test_cli PRIVATE
         -pthread
         -sUSE_PTHREADS=1
         -sPTHREAD_POOL_SIZE=4
-        -sPROXY_TO_PTHREAD=1
         -sEXIT_RUNTIME=1
         -sENVIRONMENT=node
         -sNODERAWFS=1
         -sASYNCIFY
         -sASSERTIONS=2
-        -sALLOW_MEMORY_GROWTH=1
-        -sINITIAL_MEMORY=67108864
+        -sINITIAL_MEMORY=402653184  # 384MB fixed heap
         -sSTACK_SIZE=33554432
         -sDISABLE_EXCEPTION_CATCHING=0
-        -g
+        -g1  # Line number info only (allows full optimization)
         --profiling-funcs
     )
 endif()

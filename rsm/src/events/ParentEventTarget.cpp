@@ -40,23 +40,18 @@ std::future<SendResult> ParentEventTarget::send(const EventDescriptor &event) {
         // Schedule the event for delayed execution
         auto sendIdFuture = scheduler_->scheduleEvent(event, event.delay, sharedThis, event.sendId, event.sessionId);
 
-        // Convert sendId future to SendResult future
+        // W3C SCXML 6.2: Convert sendId future to SendResult future synchronously (WASM memory leak prevention)
+        // Process result synchronously to ensure thread cleanup
         std::promise<SendResult> resultPromise;
-        auto resultFuture = resultPromise.get_future();
-
-        // Handle the sendId asynchronously
-        std::thread([sendIdFuture = std::move(sendIdFuture), resultPromise = std::move(resultPromise)]() mutable {
-            try {
-                std::string assignedSendId = sendIdFuture.get();
-                resultPromise.set_value(SendResult::success(assignedSendId));
-            } catch (const std::exception &e) {
-                resultPromise.set_value(
-                    SendResult::error("Failed to schedule delayed parent event: " + std::string(e.what()),
-                                      SendResult::ErrorType::INTERNAL_ERROR));
-            }
-        }).detach();
-
-        return resultFuture;
+        try {
+            std::string assignedSendId = sendIdFuture.get();
+            resultPromise.set_value(SendResult::success(assignedSendId));
+        } catch (const std::exception &e) {
+            resultPromise.set_value(
+                SendResult::error("Failed to schedule delayed parent event: " + std::string(e.what()),
+                                  SendResult::ErrorType::INTERNAL_ERROR));
+        }
+        return resultPromise.get_future();
     } else {
         // Execute immediately (no delay or no scheduler available)
         return sendImmediately(event);
