@@ -13,7 +13,17 @@ std::string RSM::DataModelInitHelper::resolveExecutableBasePath(const std::strin
     namespace fs = std::filesystem;
 
     try {
-        // Get executable path (Linux-specific: /proc/self/exe)
+#ifdef __EMSCRIPTEN__
+        // WASM: /proc/self/exe points to Node.js binary, not WASM executable
+        // W3CTestCLI sets working directory to project root, so resolve from cwd
+        fs::path cwd = fs::current_path();
+        fs::path absolutePath = (cwd / "build/tests" / relativePath).lexically_normal();
+
+        std::string result = absolutePath.string();
+        LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath (WASM): '{}' -> '{}'", relativePath, result);
+        return result;
+#else
+        // Native: Get executable path (Linux-specific: /proc/self/exe)
         // For portability, could add platform detection (Mac: _NSGetExecutablePath, Windows: GetModuleFileName)
         fs::path exePath = fs::canonical("/proc/self/exe");
 
@@ -24,8 +34,9 @@ std::string RSM::DataModelInitHelper::resolveExecutableBasePath(const std::strin
         fs::path absolutePath = exeDir / relativePath;
 
         std::string result = absolutePath.string();
-        LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath: '{}' -> '{}'", relativePath, result);
+        LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath (Native): '{}' -> '{}'", relativePath, result);
         return result;
+#endif
 
     } catch (const std::exception &e) {
         LOG_ERROR("DataModelInitHelper::resolveExecutableBasePath failed for '{}': {}", relativePath, e.what());
