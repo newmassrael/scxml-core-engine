@@ -11,7 +11,8 @@ namespace RSM::W3C {
 struct ValidationResult {
     bool isValid{false};
     TestResult finalResult{TestResult::ERROR};
-    std::string reason;  // Explanation of validation logic
+    std::string reason;   // Explanation of validation logic
+    bool skipped{false};  // True if test was skipped (e.g., HTTP test in WASM)
 
     // Default constructor
     ValidationResult() = default;

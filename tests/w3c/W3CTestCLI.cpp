@@ -1,6 +1,7 @@
 #include "W3CTestRegistry.h"
 #include "W3CTestRunner.h"
 #include "common/Logger.h"
+#include "common/TestSummaryHelper.h"
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -374,29 +375,9 @@ int main(int argc, char *argv[]) {
                 }
             }  // End iteration loop
 
-            // Calculate summary for "up to" tests
-            summary.totalTests = reports.size();
-            for (const auto &report : reports) {
-                switch (report.validationResult.finalResult) {
-                case RSM::W3C::TestResult::PASS:
-                    summary.passedTests++;
-                    break;
-                case RSM::W3C::TestResult::FAIL:
-                    summary.failedTests++;
-                    summary.failedTestIds.push_back(report.testId);
-                    break;
-                case RSM::W3C::TestResult::ERROR:
-                case RSM::W3C::TestResult::TIMEOUT:
-                    summary.errorTests++;
-                    summary.errorTestIds.push_back(report.testId);
-                    break;
-                }
-                summary.totalExecutionTime += report.executionContext.executionTime;
-            }
-
-            if (summary.totalTests > 0) {
-                summary.passRate = (static_cast<double>(summary.passedTests) / summary.totalTests) * 100.0;
-            }
+            // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
+            // Zero Duplication: Centralized summary calculation
+            summary = RSM::Common::TestSummaryHelper::calculateSummary(reports);
 
             // Complete test run reporting
             runner.getReporter()->generateSummary(summary);
@@ -583,29 +564,9 @@ int main(int argc, char *argv[]) {
                 }
             }  // End iteration loop
 
-            // Calculate summary for specific tests
-            summary.totalTests = reports.size();
-            for (const auto &report : reports) {
-                switch (report.validationResult.finalResult) {
-                case RSM::W3C::TestResult::PASS:
-                    summary.passedTests++;
-                    break;
-                case RSM::W3C::TestResult::FAIL:
-                    summary.failedTests++;
-                    summary.failedTestIds.push_back(report.testId);
-                    break;
-                case RSM::W3C::TestResult::ERROR:
-                case RSM::W3C::TestResult::TIMEOUT:
-                    summary.errorTests++;
-                    summary.errorTestIds.push_back(report.testId);
-                    break;
-                }
-                summary.totalExecutionTime += report.executionContext.executionTime;
-            }
-
-            if (summary.totalTests > 0) {
-                summary.passRate = (static_cast<double>(summary.passedTests) / summary.totalTests) * 100.0;
-            }
+            // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
+            // Zero Duplication: Centralized summary calculation
+            summary = RSM::Common::TestSummaryHelper::calculateSummary(reports);
 
             // Get all reports from reporter (includes interpreter and AOT) if not already populated
             if (allReports.empty()) {
@@ -689,33 +650,26 @@ int main(int argc, char *argv[]) {
                             allReports.push_back(aotReport);
                             runner.getReporter()->reportTestResult(aotReport);
 
-                            // Update summary with AOT results
+                            // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
+                            // Zero Duplication: Centralized summary update
                             summary.totalTests++;
-                            switch (aotReport.validationResult.finalResult) {
-                            case RSM::W3C::TestResult::PASS:
-                                summary.passedTests++;
-                                break;
-                            case RSM::W3C::TestResult::FAIL:
-                                summary.failedTests++;
-                                summary.failedTestIds.push_back(aotReport.testId);
+                            RSM::Common::TestSummaryHelper::updateSummary(summary, aotReport);
+
+                            // Check for stop-on-failure (after summary update)
+                            if (aotReport.validationResult.finalResult == RSM::W3C::TestResult::FAIL) {
                                 if (stopOnFailure) {
                                     LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
                                     printf("❌ Stopping on failure: AOT Test %s failed\n", aotReport.testId.c_str());
                                     shouldStop = true;
                                 }
-                                break;
-                            case RSM::W3C::TestResult::ERROR:
-                            case RSM::W3C::TestResult::TIMEOUT:
-                                summary.errorTests++;
-                                summary.errorTestIds.push_back(aotReport.testId);
+                            } else if (aotReport.validationResult.finalResult == RSM::W3C::TestResult::ERROR ||
+                                       aotReport.validationResult.finalResult == RSM::W3C::TestResult::TIMEOUT) {
                                 if (stopOnFailure) {
                                     LOG_INFO("W3C CLI: Stopping execution due to test error (--stop-on-fail)");
                                     printf("❌ Stopping on error: AOT Test %s errored\n", aotReport.testId.c_str());
                                     shouldStop = true;
                                 }
-                                break;
                             }
-                            summary.totalExecutionTime += aotReport.executionContext.executionTime;
 
                             if (shouldStop) {
                                 break;
@@ -767,6 +721,7 @@ int main(int argc, char *argv[]) {
             size_t passed = 0;
             size_t failed = 0;
             size_t errors = 0;
+            size_t skipped = 0;
             std::vector<std::string> failedTestIds;
             std::vector<std::string> errorTestIds;
         };
@@ -782,20 +737,28 @@ int main(int argc, char *argv[]) {
             }
 
             if (engineStats) {
+                // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
+                // Zero Duplication: Centralized statistics update
+                // Note: EngineStats has same structure as TestRunSummary, can reuse logic
                 engineStats->total++;
-                switch (report.validationResult.finalResult) {
-                case RSM::W3C::TestResult::PASS:
-                    engineStats->passed++;
-                    break;
-                case RSM::W3C::TestResult::FAIL:
-                    engineStats->failed++;
-                    engineStats->failedTestIds.push_back(report.testId);
-                    break;
-                case RSM::W3C::TestResult::ERROR:
-                case RSM::W3C::TestResult::TIMEOUT:
-                    engineStats->errors++;
-                    engineStats->errorTestIds.push_back(report.testId);
-                    break;
+
+                if (report.validationResult.skipped) {
+                    engineStats->skipped++;
+                } else {
+                    switch (report.validationResult.finalResult) {
+                    case RSM::W3C::TestResult::PASS:
+                        engineStats->passed++;
+                        break;
+                    case RSM::W3C::TestResult::FAIL:
+                        engineStats->failed++;
+                        engineStats->failedTestIds.push_back(report.testId);
+                        break;
+                    case RSM::W3C::TestResult::ERROR:
+                    case RSM::W3C::TestResult::TIMEOUT:
+                        engineStats->errors++;
+                        engineStats->errorTestIds.push_back(report.testId);
+                        break;
+                    }
                 }
             }
         }
@@ -811,21 +774,22 @@ int main(int argc, char *argv[]) {
         // If we have engine stats, show table format (for single test runs or when engine breakdown available)
         if (hasEngineStats && summary.totalTests > 0) {
             printf("\n");
-            printf("┌──────────────┬─────────┬────────┬────────┬────────┐\n");
-            printf("│ Engine       │ Total   │ Passed │ Failed │ Errors │\n");
-            printf("├──────────────┼─────────┼────────┼────────┼────────┤\n");
+            printf("┌──────────────┬─────────┬────────┬────────┬────────┬─────────┐\n");
+            printf("│ Engine       │ Total   │ Passed │ Failed │ Errors │ Skipped │\n");
+            printf("├──────────────┼─────────┼────────┼────────┼────────┼─────────┤\n");
             if (interpreterStats.total > 0) {
-                printf("│ Interpreter  │ %-7zu │ %-6zu │ %-6zu │ %-6zu │\n", interpreterStats.total,
-                       interpreterStats.passed, interpreterStats.failed, interpreterStats.errors);
+                printf("│ Interpreter  │ %-7zu │ %-6zu │ %-6zu │ %-6zu │ %-7zu │\n", interpreterStats.total,
+                       interpreterStats.passed, interpreterStats.failed, interpreterStats.errors,
+                       interpreterStats.skipped);
             }
             if (aotStats.total > 0) {
-                printf("│ AOT          │ %-7zu │ %-6zu │ %-6zu │ %-6zu │\n", aotStats.total, aotStats.passed,
-                       aotStats.failed, aotStats.errors);
+                printf("│ AOT          │ %-7zu │ %-6zu │ %-6zu │ %-6zu │ %-7zu │\n", aotStats.total, aotStats.passed,
+                       aotStats.failed, aotStats.errors, aotStats.skipped);
             }
-            printf("├──────────────┼─────────┼────────┼────────┼────────┤\n");
-            printf("│ Total        │ %-7zu │ %-6zu │ %-6zu │ %-6zu │\n", summary.totalTests, summary.passedTests,
-                   summary.failedTests, summary.errorTests);
-            printf("└──────────────┴─────────┴────────┴────────┴────────┘\n");
+            printf("├──────────────┼─────────┼────────┼────────┼────────┼─────────┤\n");
+            printf("│ Total        │ %-7zu │ %-6zu │ %-6zu │ %-6zu │ %-7zu │\n", summary.totalTests,
+                   summary.passedTests, summary.failedTests, summary.errorTests, summary.skippedTests);
+            printf("└──────────────┴─────────┴────────┴────────┴────────┴─────────┘\n");
             printf("   📈 Pass Rate: %.1f%%\n", summary.passRate);
         } else {
             // Simple format for full test runs without engine breakdown
