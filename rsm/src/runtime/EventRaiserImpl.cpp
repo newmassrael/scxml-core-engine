@@ -311,14 +311,6 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
 }
 
 void EventRaiserImpl::setImmediateMode(bool immediate) {
-#ifdef __EMSCRIPTEN__
-    // WASM: Keep immediate mode enabled due to pthread worker exception handling limitations
-    // W3C SCXML compliance maintained: synchronous callback execution preserves event ordering
-    if (!immediate) {
-        LOG_DEBUG("EventRaiserImpl: WASM ignores immediate mode disable (pthread exception safety)");
-        return;
-    }
-#endif
     immediateMode_.store(immediate);
     LOG_DEBUG("EventRaiserImpl: Immediate mode {}", immediate ? "enabled" : "disabled");
 }
