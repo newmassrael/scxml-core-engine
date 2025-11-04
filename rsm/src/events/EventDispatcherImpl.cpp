@@ -50,22 +50,16 @@ std::future<SendResult> EventDispatcherImpl::sendEvent(const EventDescriptor &ev
             // Schedule the event for delayed execution
             auto sendIdFuture = scheduler_->scheduleEvent(event, effectiveDelay, target, event.sendId, event.sessionId);
 
-            // Convert sendId future to SendResult future
+            // Convert sendId future to SendResult future synchronously (no thread creation)
             std::promise<SendResult> resultPromise;
-            auto resultFuture = resultPromise.get_future();
-
-            // Handle the sendId asynchronously
-            std::thread([sendIdFuture = std::move(sendIdFuture), resultPromise = std::move(resultPromise)]() mutable {
-                try {
-                    std::string assignedSendId = sendIdFuture.get();
-                    resultPromise.set_value(SendResult::success(assignedSendId));
-                } catch (const std::exception &e) {
-                    resultPromise.set_value(SendResult::error("Failed to schedule event: " + std::string(e.what()),
-                                                              SendResult::ErrorType::INTERNAL_ERROR));
-                }
-            }).detach();
-
-            return resultFuture;
+            try {
+                std::string assignedSendId = sendIdFuture.get();
+                resultPromise.set_value(SendResult::success(assignedSendId));
+            } catch (const std::exception &e) {
+                resultPromise.set_value(SendResult::error("Failed to schedule event: " + std::string(e.what()),
+                                                          SendResult::ErrorType::INTERNAL_ERROR));
+            }
+            return resultPromise.get_future();
         } else {
             // Execute immediately
             LOG_DEBUG("Executing immediate event '{}'", event.eventName);
@@ -175,31 +169,27 @@ std::future<SendResult> EventDispatcherImpl::onScheduledEventExecution(const Eve
         // Execute the scheduled event on the target
         auto resultFuture = target->send(event);
 
-        // Wrap the result to include the sendId in logging
+        // W3C SCXML 6.2: Synchronous scheduled event execution (WASM memory leak prevention)
+        // Process result synchronously to ensure thread cleanup
         std::promise<SendResult> wrappedPromise;
-        auto wrappedFuture = wrappedPromise.get_future();
-
-        std::thread([resultFuture = std::move(resultFuture), wrappedPromise = std::move(wrappedPromise),
-                     eventName = event.eventName, sendId]() mutable {
-            try {
-                auto result = resultFuture.get();
-                if (result.isSuccess) {
-                    LOG_DEBUG("EventDispatcherImpl: Scheduled event '{}' with sendId '{}' executed successfully",
-                              eventName, sendId);
-                } else {
-                    LOG_WARN("EventDispatcherImpl: Scheduled event '{}' with sendId '{}' failed: {}", eventName, sendId,
-                             result.errorMessage);
-                }
-                wrappedPromise.set_value(std::move(result));
-            } catch (const std::exception &e) {
-                LOG_ERROR("EventDispatcherImpl: Exception executing scheduled event '{}' with sendId '{}': {}",
-                          eventName, sendId, e.what());
-                wrappedPromise.set_value(SendResult::error("Scheduled event execution failed: " + std::string(e.what()),
-                                                           SendResult::ErrorType::INTERNAL_ERROR));
+        try {
+            auto result = resultFuture.get();
+            if (result.isSuccess) {
+                LOG_DEBUG("EventDispatcherImpl: Scheduled event '{}' with sendId '{}' executed successfully",
+                          event.eventName, sendId);
+            } else {
+                LOG_WARN("EventDispatcherImpl: Scheduled event '{}' with sendId '{}' failed: {}", event.eventName,
+                         sendId, result.errorMessage);
             }
-        }).detach();
+            wrappedPromise.set_value(std::move(result));
+        } catch (const std::exception &e) {
+            LOG_ERROR("EventDispatcherImpl: Exception executing scheduled event '{}' with sendId '{}': {}",
+                      event.eventName, sendId, e.what());
+            wrappedPromise.set_value(SendResult::error("Scheduled event execution failed: " + std::string(e.what()),
+                                                       SendResult::ErrorType::INTERNAL_ERROR));
+        }
 
-        return wrappedFuture;
+        return wrappedPromise.get_future();
 
     } catch (const std::exception &e) {
         LOG_ERROR("EventDispatcherImpl: Error executing scheduled event '{}' with sendId '{}': {}", event.eventName,

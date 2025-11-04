@@ -100,6 +100,7 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURR
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
 
 # WASM: Apply pthread flags to spdlog for thread-safe builds
+# Note: Required by EventDispatcherImpl which uses std::thread for invoke
 if(EMSCRIPTEN)
     target_compile_options(spdlog PRIVATE
         -pthread
@@ -318,10 +319,10 @@ if(NOT EMSCRIPTEN)
 endif()
 # Note: pugixml is header-only, no linking required for WASM builds
 
-# WASM pthread configuration for JSEngine worker thread
-# W3C SCXML: JavaScript expression evaluation requires QuickJS runtime
-# ARCHITECTURE.md: JSEngine uses worker thread pattern (currently Interpreter-only in WASM)
-# Note: JSEngine pthread issue unresolved - QuickJS runs synchronously in WASM builds
+# WASM pthread configuration for EventDispatcherImpl and JSEngine
+# W3C SCXML: EventDispatcherImpl uses std::thread for invoke operations
+# ARCHITECTURE.md: JSEngine uses SynchronousExecutionHelper, but EventDispatcherImpl needs pthread
+# Note: PROXY_TO_PTHREAD removed to reduce overhead while keeping pthread support
 if(EMSCRIPTEN)
     target_compile_options(rsm_unified PRIVATE
         -pthread
@@ -330,20 +331,18 @@ if(EMSCRIPTEN)
     target_link_options(rsm_unified PRIVATE
         -pthread
         -sUSE_PTHREADS=1
-        -sPTHREAD_POOL_SIZE=4          # Worker thread pool for pthread operations
-        -sPROXY_TO_PTHREAD=1            # Move main() to worker thread
+        -sPTHREAD_POOL_SIZE=4          # Worker thread pool for EventDispatcherImpl
         -sEXIT_RUNTIME=0                # Allow async operations after main() returns
         -sENVIRONMENT=node              # Target Node.js environment
         -sASYNCIFY                       # Enable async/await support
         -sASSERTIONS=2                   # Runtime validation for development
-        -sALLOW_MEMORY_GROWTH=1          # Dynamic memory allocation
-        -sINITIAL_MEMORY=67108864        # 64MB initial heap
+        -sINITIAL_MEMORY=402653184       # 384MB fixed heap
         -sSTACK_SIZE=33554432            # 32MB stack for QuickJS (QuickJS needs large stack)
         -sDISABLE_EXCEPTION_CATCHING=0   # Enable C++ exception catching (required for tests)
-        -g                               # Debug symbols
+        -g1                              # Line number info only (allows full optimization)
         --profiling-funcs                # Function profiling support
     )
-    message(STATUS "WASM build: pthread enabled with development flags (ASSERTIONS=2)")
+    message(STATUS "WASM build: pthread enabled for EventDispatcherImpl (no PROXY_TO_PTHREAD)")
 endif()
 
 # HTTP library (native builds only, not WASM)

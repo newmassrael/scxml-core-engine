@@ -10,6 +10,7 @@
 #include "interfaces/ITestResultValidator.h"
 #include "interfaces/ITestSuite.h"
 #include "runtime/EventRaiserImpl.h"
+#include "scripting/JSEngine.h"
 #include <chrono>
 #include <memory>
 #include <optional>
@@ -54,14 +55,29 @@ struct TestResources {
         : eventRaiser(std::move(er)), scheduler(std::move(sch)), eventDispatcher(std::move(ed)) {}
 
     ~TestResources() {
-        // Cleanup order: scheduler -> eventRaiser
-        // EventScheduler's thread_local detection prevents deadlock
+        // Cleanup order: eventDispatcher -> scheduler -> eventRaiser -> JSEngine registry
+        // W3C SCXML compliance: Clean resource release for test isolation
+
+        // 1. Stop dispatching new events (pthread cleanup)
+        if (eventDispatcher) {
+            eventDispatcher->shutdown();
+        }
+
+        // 2. Cancel pending scheduled events
         if (scheduler) {
             scheduler->shutdown(true);
         }
+
+        // 3. Stop event raiser
         if (eventRaiser) {
             eventRaiser->shutdown();
         }
+
+        // 4. Clear JSEngine event raiser registry (prevents cross-test interference)
+        // Note: JSEngine is a singleton, so we only clear the registry, not shutdown
+        // The engine will be shutdown once at program termination
+        RSM::JSEngine::clearEventRaiserRegistry();
+
         // Small delay for graceful thread termination
         std::this_thread::sleep_for(CLEANUP_DELAY_MS);
     }

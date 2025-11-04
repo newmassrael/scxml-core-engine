@@ -900,11 +900,22 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // Send via dispatcher (handles both immediate and delayed events)
             auto resultFuture = eventDispatcher_->sendEvent(event);
 
-            // SCXML 6.2.4: "Fire and forget" semantics - return immediately after queuing
-            LOG_DEBUG("ActionExecutorImpl: Send action queued successfully for event: {}", eventName);
+            // W3C SCXML 6.2: Fire-and-forget send semantics with proper resource cleanup
+            // CRITICAL: Must call get() to ensure thread cleanup and prevent WASM memory leak
+            // The sendId is already set immediately by EventSchedulerImpl, so this won't block
+            try {
+                auto result = resultFuture.get();
+                if (result.isSuccess) {
+                    LOG_DEBUG("ActionExecutorImpl: Send action queued successfully for event: {} (sendId: {})",
+                              eventName, result.sendId);
+                } else {
+                    LOG_WARN("ActionExecutorImpl: Send action failed: {}", result.errorMessage);
+                }
+            } catch (const std::exception &e) {
+                LOG_ERROR("ActionExecutorImpl: Exception while getting send result: {}", e.what());
+            }
 
-            // SCXML Compliance: Don't wait for delivery result in fire-and-forget model
-            // The event has been successfully queued, which is all we need to know
+            // SCXML 6.2.4: "Fire and forget" semantics - event is queued regardless of delivery status
             return true;
         } else {
             // SCXML 3.12.1: Generate error.execution event instead of throwing
