@@ -383,7 +383,42 @@ cd build
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details
+RSM uses a **Dual License** model:
+
+### Generated Code: MIT (No Restrictions)
+
+All code generated from your SCXML files is **MIT licensed** and owned by you.
+
+```bash
+python3 tools/codegen/codegen.py your_machine.scxml -o output/
+# Generated: your_machine_sm.h (MIT License, unrestricted use)
+```
+
+See [LICENSE-GENERATED.md](LICENSE-GENERATED.md) for details.
+
+### Runtime Engine: LGPL-2.1 or Commercial
+
+**Option 1: LGPL-2.1 (FREE)**
+- Use unmodified engine in any project (open source or proprietary)
+- Modify engine and share modifications under LGPL-2.1
+
+**Option 2: Commercial ($100 Individual / $500 Enterprise)**
+- Modify engine and keep changes proprietary
+- Create derivative products/SDKs
+- Avoid LGPL compliance requirements
+
+See [LICENSE](LICENSE) and [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for details.
+
+### Quick Decision
+
+| Your Situation | License | Cost |
+|---------------|---------|------|
+| Use unmodified engine | LGPL-2.1 | FREE |
+| Modify engine + share changes | LGPL-2.1 | FREE |
+| Modify engine + keep private | Commercial | $100/$500 |
+| Your generated code (always) | MIT | FREE |
+
+**Contact:** newmassrael@gmail.com
 
 ---
 

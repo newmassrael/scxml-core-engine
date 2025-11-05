@@ -1,3 +1,19 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+//
+// This file is part of RSM (Reactive State Machine).
+//
+// Dual Licensed:
+// 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
+// 2. Commercial: For modifications (contact newmassrael@gmail.com)
+//
+// Commercial License:
+//   Individual: $100 cumulative
+//   Enterprise: $500 cumulative
+//   Contact: https://github.com/newmassrael
+//
+// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+
 #pragma once
 
 #include "interfaces/ITestExecutor.h"
