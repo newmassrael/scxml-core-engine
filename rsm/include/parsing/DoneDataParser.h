@@ -4,10 +4,6 @@
 #include "model/IStateNode.h"
 #include "parsing/IXMLElement.h"
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 #include <memory>
 #include <string>
 

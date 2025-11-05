@@ -11,7 +11,7 @@ namespace RSM {
  * @brief Abstract XML element interface
  *
  * Platform-agnostic XML element abstraction for multi-backend support.
- * Implementations: LibXMLElement (native), PugiXMLElement (WASM)
+ * Implementation: PugiXMLElement (all platforms)
  */
 class IXMLElement {
 public:
@@ -91,8 +91,8 @@ public:
      * @brief Serialize child content to XML string
      * @return Serialized XML content (empty if no children)
      *
-     * Native (libxml++): Full XML structure preservation with xmlNodeDump
-     * WASM (pugixml): Text content extraction only (structure limitation)
+     * pugixml: Full XML structure preservation with pugi::xml_node::print()
+
      */
     virtual std::string serializeChildContent() const = 0;
 };

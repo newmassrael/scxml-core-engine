@@ -1,91 +1,10 @@
 # RSM Unified Module
 # Complete RSM implementation with domain models, runtime engine, and scripting
 
-# XML Parser Infrastructure (Platform-specific)
-# Native builds: libxml2 + libxml++ (mature, W3C compliant)
-# WASM builds: pugixml (lightweight, WASM-compatible)
-
-if(NOT EMSCRIPTEN)
-    # Build libxml2 from submodule using ExternalProject + CMake (native builds only)
-    include(ExternalProject)
-
-    set(LIBXML2_INSTALL_DIR ${CMAKE_BINARY_DIR}/libxml2_install)
-    set(LIBXML2_BUILD_DIR ${CMAKE_BINARY_DIR}/libxml2_build)
-
-    ExternalProject_Add(libxml2_external
-        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libxml2
-        BUILD_IN_SOURCE 0
-        CMAKE_ARGS
-            -DCMAKE_INSTALL_PREFIX=${LIBXML2_INSTALL_DIR}
-            -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-            -DBUILD_SHARED_LIBS=ON
-            -DLIBXML2_WITH_PYTHON=OFF
-            -DLIBXML2_WITH_PROGRAMS=OFF
-            -DLIBXML2_WITH_TESTS=OFF
-            -DLIBXML2_WITH_LZMA=OFF
-            -DLIBXML2_WITH_ZLIB=ON
-        BUILD_BYPRODUCTS
-            ${LIBXML2_INSTALL_DIR}/lib/libxml2${CMAKE_SHARED_LIBRARY_SUFFIX}
-            ${LIBXML2_INSTALL_DIR}/include/libxml2/libxml/tree.h
-    )
-
-    # Set libxml2 variables for linking
-    set(LIBXML2_INCLUDE_DIRS ${LIBXML2_INSTALL_DIR}/include/libxml2)
-    set(LIBXML2_LIBRARIES ${LIBXML2_INSTALL_DIR}/lib/libxml2${CMAKE_SHARED_LIBRARY_SUFFIX})
-    set(LIBXML2_PREFIX ${LIBXML2_INSTALL_DIR})
-
-    # Create include directories at configure time
-    file(MAKE_DIRECTORY ${LIBXML2_INCLUDE_DIRS})
-
-    message(STATUS "LIBXML2_INSTALL_DIR: ${LIBXML2_INSTALL_DIR}")
-    message(STATUS "LIBXML2_INCLUDE_DIRS: ${LIBXML2_INCLUDE_DIRS}")
-
-    # Find pkg-config for libxml++ (which may need it)
-    find_package(PkgConfig REQUIRED)
-
-    # Build libxml++ from submodule using ExternalProject + Meson
-    set(LIBXMLXX_INSTALL_DIR ${CMAKE_BINARY_DIR}/libxmlxx_install)
-    set(LIBXMLXX_BUILD_DIR ${CMAKE_BINARY_DIR}/libxmlxx_build)
-
-    ExternalProject_Add(libxmlxx_external
-        SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libxml++
-        BUILD_IN_SOURCE 0
-        DEPENDS libxml2_external
-        CONFIGURE_COMMAND ${CMAKE_COMMAND} -E env
-            PKG_CONFIG_PATH=${LIBXML2_INSTALL_DIR}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}
-            meson setup ${LIBXMLXX_BUILD_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/libxml++
-            --prefix=${LIBXMLXX_INSTALL_DIR}
-            --libdir=lib
-            --default-library=shared
-            -Dbuild-examples=false
-            -Dbuild-tests=false
-            -Dbuild-documentation=false
-            -Dmaintainer-mode=false
-        BUILD_COMMAND meson compile -C ${LIBXMLXX_BUILD_DIR}
-        INSTALL_COMMAND meson install -C ${LIBXMLXX_BUILD_DIR}
-        BUILD_BYPRODUCTS
-            ${LIBXMLXX_INSTALL_DIR}/lib/libxml++-5.0${CMAKE_SHARED_LIBRARY_SUFFIX}
-            ${LIBXMLXX_INSTALL_DIR}/include/libxml++-5.0/libxml++/libxml++.h
-    )
-
-    # Set libxml++ variables for linking
-    set(LIBXMLXX_INCLUDE_DIRS
-        ${LIBXMLXX_INSTALL_DIR}/include/libxml++-5.0
-        ${LIBXMLXX_INSTALL_DIR}/lib/libxml++-5.0/include
-    )
-    set(LIBXMLXX_LIBRARIES ${LIBXMLXX_INSTALL_DIR}/lib/libxml++-5.0${CMAKE_SHARED_LIBRARY_SUFFIX})
-
-    # Create include directories at configure time so CMake doesn't drop them
-    file(MAKE_DIRECTORY ${LIBXMLXX_INSTALL_DIR}/include/libxml++-5.0)
-    file(MAKE_DIRECTORY ${LIBXMLXX_INSTALL_DIR}/lib/libxml++-5.0/include)
-
-    message(STATUS "LIBXMLXX_INCLUDE_DIRS: ${LIBXMLXX_INCLUDE_DIRS}")
-    message(STATUS "LIBXMLXX_INSTALL_DIR: ${LIBXMLXX_INSTALL_DIR}")
-else()
-    # WASM builds: Use pugixml (lightweight, header-only XML parser)
-    set(PUGIXML_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src)
-    message(STATUS "PUGIXML_INCLUDE_DIR: ${PUGIXML_INCLUDE_DIR}")
-endif()
+# XML Parser Infrastructure (Unified)
+# All platforms: pugixml (lightweight, W3C compliant, header-only)
+set(PUGIXML_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src)
+message(STATUS "PUGIXML_INCLUDE_DIR: ${PUGIXML_INCLUDE_DIR}")
 
 # Add QuickJS subdirectory
 # WASM: Disable QuickJS stack checking (__wasi__ disables runtime stack checks)
@@ -213,7 +132,7 @@ add_library(rsm_unified
     src/scripting/JSEngine.cpp
     src/scripting/JSEngineImpl.cpp
     src/scripting/JSExecutionEngineImpl.cpp
-    src/scripting/XMLDOMWrapper.cpp  # W3C SCXML B.2: XML DOM (libxml2 for Native, pugixml for WASM)
+    src/scripting/XMLDOMWrapper.cpp  # W3C SCXML B.2: XML DOM (pugixml for all platforms)
     src/scripting/DOMBinding.cpp      # QuickJS bindings for XML DOM API
 
     # Parsing implementation
@@ -235,7 +154,7 @@ add_library(rsm_unified
 )
 
 # XInclude processing (platform-independent with different implementations)
-# Native: XIncludeProcessor uses libxml++ for XInclude processing  
+# XIncludeProcessor stub delegates to PugiXMLDocument::processXInclude()  
 # WASM: XIncludeProcessor stub delegates to IXMLDocument::processXInclude()
 target_sources(rsm_unified PRIVATE
     src/parsing/XIncludeProcessor.cpp
@@ -254,19 +173,12 @@ if(NOT EMSCRIPTEN)
     )
 endif()
 
-# XML Parser implementation (Platform-specific)
-# Native: LibXMLParser (libxml++ wrapper)
-# WASM: PugiXMLParser (pugixml wrapper)
-if(NOT EMSCRIPTEN)
-    target_sources(rsm_unified PRIVATE
-        src/parsing/LibXMLParser.cpp
-    )
-else()
-    target_sources(rsm_unified PRIVATE
-        src/parsing/PugiXMLParser.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
-    )
-endif()
+# XML Parser implementation (Unified)
+# All platforms: PugiXMLParser (pugixml wrapper)
+target_sources(rsm_unified PRIVATE
+    src/parsing/PugiXMLParser.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
+)
 
 target_include_directories(rsm_unified
     PUBLIC
@@ -284,18 +196,10 @@ target_include_directories(rsm_unified
         ${NLOHMANN_JSON_INCLUDE_DIR}
 )
 
-# Platform-specific XML parser includes
-if(NOT EMSCRIPTEN)
-    target_include_directories(rsm_unified PUBLIC
-        ${LIBXMLXX_INSTALL_DIR}/include/libxml++-5.0
-        ${LIBXMLXX_INSTALL_DIR}/lib/libxml++-5.0/include
-        ${LIBXML2_INCLUDE_DIRS}
-    )
-else()
-    target_include_directories(rsm_unified PUBLIC
-        ${PUGIXML_INCLUDE_DIR}
-    )
-endif()
+# Unified XML parser includes (pugixml)
+target_include_directories(rsm_unified PUBLIC
+    ${PUGIXML_INCLUDE_DIR}
+)
 
 # Optional spdlog includes (header-only)
 if(RSM_USE_SPDLOG)
@@ -304,11 +208,6 @@ if(RSM_USE_SPDLOG)
     )
 endif()
 
-# Platform-specific dependencies (Native builds only)
-if(NOT EMSCRIPTEN)
-    # Make rsm_unified depend on the external libxml2 and libxml++ builds
-    add_dependencies(rsm_unified libxml2_external libxmlxx_external)
-endif()
 
 # RSM codebase: Disable std::cout usage
 # printf family disabled due to system header conflicts
@@ -333,14 +232,7 @@ target_link_libraries(rsm_unified
         pthread
 )
 
-# Platform-specific XML parser linking
-if(NOT EMSCRIPTEN)
-    target_link_libraries(rsm_unified PRIVATE
-        ${LIBXMLXX_LIBRARIES}
-        ${LIBXML2_LIBRARIES}         # libxml2 dependency for libxml++
-    )
-endif()
-# Note: pugixml is header-only, no linking required for WASM builds
+# Note: pugixml is header-only, no linking required
 
 # WASM pthread configuration for EventDispatcherImpl and JSEngine
 # W3C SCXML: EventDispatcherImpl uses std::thread for invoke operations

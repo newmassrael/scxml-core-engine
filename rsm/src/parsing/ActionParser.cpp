@@ -16,8 +16,6 @@
 #include <sstream>
 
 #ifndef __EMSCRIPTEN__
-#include <libxml++/nodes/textnode.h>
-#include <libxml/tree.h>
 #endif
 
 RSM::ActionParser::ActionParser(std::shared_ptr<RSM::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
@@ -160,7 +158,7 @@ RSM::ActionParser::parseActionsInElement(const std::shared_ptr<IXMLElement> &par
 
     LOG_DEBUG("ActionParser: Parsing actions in element: {}", parentElement->getName());
 
-    // Get direct children in document order (matches libxml++ version line 416)
+    // Get direct children in document order
     auto children = parentElement->getChildren();
     LOG_DEBUG("ActionParser: Found {} child elements in {}", children.size(), parentElement->getName());
 
@@ -330,7 +328,7 @@ RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         auto ifAction = std::make_shared<RSM::IfAction>(condition, id);
 
         // Get DIRECT children only (not recursive descendants)
-        // This matches libxml++ version behavior (line 132: actionElement->get_children())
+        // Get direct children in document order
         auto children = actionElement->getChildren();
 
         RSM::IfAction::ConditionalBranch *currentBranch = nullptr;

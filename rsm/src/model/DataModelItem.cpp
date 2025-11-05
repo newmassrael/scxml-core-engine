@@ -203,7 +203,7 @@ std::optional<std::string> RSM::DataModelItem::queryXPath(const std::string &xpa
     }
 
     // W3C SCXML XPath Support: Currently limited to basic queries
-    // Native: Full libxml2 XPath 1.0 support
+    // pugixml: XPath support via custom implementation
     // WASM: Basic pugixml XPath support (subset of XPath 1.0)
     // TODO: Add IXMLElement::queryXPath() interface method for unified XPath support
 

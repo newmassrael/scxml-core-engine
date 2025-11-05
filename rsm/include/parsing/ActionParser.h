@@ -4,10 +4,6 @@
 #include "factory/NodeFactory.h"
 #include "parsing/IXMLElement.h"
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 #include <memory>
 #include <string>
 #include <vector>
@@ -88,23 +84,6 @@ public:
     bool isSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element) const;
 
 private:
-#ifndef __EMSCRIPTEN__
-    /**
-     * @brief Parse external implementation element (libxml++ version)
-     * @param element XML element
-     * @param actionNode Action node
-     */
-    void parseExternalImplementation(const xmlpp::Element *element, std::shared_ptr<RSM::IActionNode> actionNode);
-
-    /**
-     * @brief Parse special executable content (libxml++ version)
-     * @param element XML element
-     * @param actions List of parsed actions (modified)
-     */
-    void parseSpecialExecutableContent(const xmlpp::Element *element,
-                                       std::vector<std::shared_ptr<RSM::IActionNode>> &actions);
-#endif
-
     /**
      * @brief Parse external implementation element (IXMLElement version)
      * @param element XML element

@@ -20,10 +20,6 @@
 #include <memory>
 #include <string>
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 namespace RSM {
 
 /**

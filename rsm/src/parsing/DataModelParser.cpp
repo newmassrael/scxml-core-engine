@@ -6,7 +6,6 @@
 #include <algorithm>
 
 #ifndef __EMSCRIPTEN__
-#include <libxml/tree.h>
 #endif
 
 RSM::DataModelParser::DataModelParser(std::shared_ptr<NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {

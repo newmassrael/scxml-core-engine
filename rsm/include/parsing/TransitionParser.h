@@ -6,10 +6,6 @@
 #include "parsing/ActionParser.h"
 #include "parsing/IXMLElement.h"
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 #include <memory>
 #include <string>
 #include <vector>
@@ -76,15 +72,6 @@ public:
     bool isTransitionNode(const std::shared_ptr<IXMLElement> &element) const;
 
 private:
-#ifndef __EMSCRIPTEN__
-    /**
-     * @brief Parse transition actions (libxml++ version)
-     * @param transElement Transition element
-     * @param transition Transition node
-     */
-    void parseActions(const xmlpp::Element *transElement, std::shared_ptr<ITransitionNode> transition);
-#endif
-
     /**
      * @brief Parse transition actions (IXMLElement version)
      * @param transElement Transition element
