@@ -282,8 +282,6 @@ target_include_directories(rsm_unified
         include/events
         include/states
         ${NLOHMANN_JSON_INCLUDE_DIR}
-    PRIVATE
-        ${Boost_INCLUDE_DIRS}
 )
 
 # Platform-specific XML parser includes
