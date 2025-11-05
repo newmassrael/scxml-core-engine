@@ -1,7 +1,6 @@
-#ifdef __EMSCRIPTEN__
-
 #include "parsing/PugiXMLParser.h"
 #include "common/Logger.h"
+#include "parsing/IXMLElement.h"
 #include <filesystem>
 #include <sstream>
 #include <unordered_set>
@@ -395,5 +394,3 @@ std::string PugiXMLParser::getLastError() const {
 }
 
 }  // namespace RSM
-
-#endif  // __EMSCRIPTEN__

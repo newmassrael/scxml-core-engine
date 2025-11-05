@@ -10,11 +10,11 @@ namespace RSM {
  * @brief Abstract XML parser interface
  *
  * Platform-agnostic XML parser abstraction for multi-backend support.
- * Implementations: LibXMLParser (native), PugiXMLParser (WASM)
+ * Implementation: PugiXMLParser (unified for all platforms)
  *
  * ARCHITECTURE.md: Zero Duplication - Single interface for multiple backends
- * Native builds: Use libxml++ (mature, W3C compliant)
- * WASM builds: Use pugixml (lightweight, WASM-compatible)
+ * Implementation: PugiXMLParser (unified for all platforms)
+ * Backend: pugixml (lightweight, W3C compliant, WASM-compatible)
  */
 class IXMLParser {
 public:
@@ -42,7 +42,7 @@ public:
 
     /**
      * @brief Factory method to create platform-specific parser
-     * @return Parser instance (LibXMLParser on native, PugiXMLParser on WASM)
+     * @return Parser instance (PugiXMLParser on all platforms)
      */
     static std::shared_ptr<IXMLParser> create();
 };

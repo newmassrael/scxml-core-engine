@@ -5,11 +5,7 @@
 #include "parsing/IXMLParser.h"
 #include "parsing/ParsingCommon.h"
 
-#ifndef __EMSCRIPTEN__
-#include "parsing/LibXMLParser.h"
-#else
-#include "parsing/PugiXMLParser.h"
-#endif
+#include "parsing/IXMLElement.h"
 
 #include <algorithm>
 #include <filesystem>

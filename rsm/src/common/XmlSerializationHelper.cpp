@@ -3,11 +3,6 @@
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/nodes/textnode.h>
-#include <libxml/tree.h>
-#endif
-
 namespace RSM {
 
 std::string XmlSerializationHelper::serializeContent(const std::shared_ptr<IXMLElement> &element) {
@@ -16,7 +11,7 @@ std::string XmlSerializationHelper::serializeContent(const std::shared_ptr<IXMLE
     }
 
     // ARCHITECTURE.md: Polymorphic dispatch - each implementation handles serialization
-    // Native (LibXMLElement): Full XML structure preservation with xmlNodeDump
+    // pugixml: Full XML structure preservation with pugi::xml_node::print()
     // WASM (PugiXMLElement): Text content only (pugixml serialization limitation)
     return element->serializeChildContent();
 }

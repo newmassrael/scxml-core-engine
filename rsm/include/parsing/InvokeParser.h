@@ -5,10 +5,6 @@
 #include "model/IInvokeNode.h"
 #include "parsing/IXMLElement.h"
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 #include <memory>
 #include <vector>
 
@@ -32,12 +28,6 @@ public:
 
 private:
     std::shared_ptr<NodeFactory> nodeFactory_;
-
-#ifndef __EMSCRIPTEN__
-    void parseFinalizeElement(const xmlpp::Element *finalizeElement, std::shared_ptr<IInvokeNode> invokeNode);
-    void parseParamElements(const xmlpp::Element *invokeElement, std::shared_ptr<IInvokeNode> invokeNode);
-    void parseContentElement(const xmlpp::Element *invokeElement, std::shared_ptr<IInvokeNode> invokeNode);
-#endif
 
     void parseFinalizeElement(const std::shared_ptr<IXMLElement> &finalizeElement,
                               std::shared_ptr<IInvokeNode> invokeNode);

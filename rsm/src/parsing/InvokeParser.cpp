@@ -5,8 +5,6 @@
 #include "parsing/ParsingCommon.h"
 
 #ifndef __EMSCRIPTEN__
-#include <libxml++/nodes/textnode.h>
-#include <libxml/tree.h>
 #endif
 
 RSM::InvokeParser::InvokeParser(std::shared_ptr<RSM::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {

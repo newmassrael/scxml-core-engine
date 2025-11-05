@@ -10,7 +10,7 @@ namespace RSM {
  * @brief Abstract XML document interface
  *
  * Platform-agnostic XML document abstraction for multi-backend support.
- * Implementations: LibXMLDocument (native), PugiXMLDocument (WASM)
+ * Implementation: PugiXMLDocument (all platforms)
  */
 class IXMLDocument {
 public:
@@ -27,7 +27,7 @@ public:
      * @return true on success
      *
      * W3C XInclude: Replaces <xi:include> elements with external content
-     * Native: Uses libxml2's native XInclude processor
+     * Uses pugixml's manual XInclude implementation
      * WASM: Manual implementation using pugixml
      */
     virtual bool processXInclude() = 0;

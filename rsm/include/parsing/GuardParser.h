@@ -4,10 +4,6 @@
 #include "model/IGuardNode.h"
 #include "parsing/IXMLElement.h"
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 #include <memory>
 #include <string>
 #include <vector>
@@ -87,22 +83,6 @@ public:
     bool isReactiveGuardNode(const std::shared_ptr<IXMLElement> &element) const;
 
 private:
-#ifndef __EMSCRIPTEN__
-    /**
-     * @brief Parse dependency list (libxml++ version)
-     * @param guardNode Guard node
-     * @param guardObject Guard object
-     */
-    void parseDependencies(const xmlpp::Element *guardNode, std::shared_ptr<IGuardNode> guardObject);
-
-    /**
-     * @brief Parse external implementation element (libxml++ version)
-     * @param guardNode Guard node
-     * @param guardObject Guard object
-     */
-    void parseExternalImplementation(const xmlpp::Element *guardNode, std::shared_ptr<IGuardNode> guardObject);
-#endif
-
     /**
      * @brief Parse dependency list (IXMLElement version)
      * @param guardNode Guard node

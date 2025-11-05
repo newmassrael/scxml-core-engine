@@ -17,7 +17,7 @@ class IXMLDocument;
  * API compatibility but is no longer used internally.
  *
  * Platform support:
- * - Native builds: XIncludeProcessor (libxml++)
+ * - All builds: XIncludeProcessor stub (delegates to PugiXMLDocument)
  * - WASM builds: PugiXIncludeProcessor (pugixml) - stub implementation
  */
 class IXIncludeProcessor {

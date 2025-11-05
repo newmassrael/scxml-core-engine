@@ -6,10 +6,6 @@
 #include "parsing/IXMLElement.h"
 #include <fstream>
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 #include <memory>
 #include <sstream>
 #include <string>
@@ -77,15 +73,6 @@ public:
     std::string extractDataModelType(const std::shared_ptr<IXMLElement> &datamodelNode) const;
 
 private:
-#ifndef __EMSCRIPTEN__
-    /**
-     * @brief Parse content of data model item (libxml++ version)
-     * @param dataNode XML data node
-     * @param dataItem Data model item
-     */
-    void parseDataContent(const xmlpp::Element *dataNode, std::shared_ptr<IDataModelItem> dataItem);
-#endif
-
     /**
      * @brief Parse content of data model item (IXMLElement version)
      * @param dataNode XML data node

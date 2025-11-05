@@ -6,10 +6,6 @@
 #include "model/IStateNode.h"
 #include "parsing/IXMLElement.h"
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 #include <memory>
 #include <string>
 
@@ -37,65 +33,34 @@ public:
                            std::shared_ptr<InvokeParser> invokeParser, std::shared_ptr<DoneDataParser> doneDataParser);
 
 private:
-#ifndef __EMSCRIPTEN__
-    // Determine state type (libxml++ version)
-    Type determineStateType(const xmlpp::Element *stateElement);
-
-    // Parse child states (libxml++ version)
-    void parseChildStates(const xmlpp::Element *stateElement, std::shared_ptr<IStateNode> parentState,
-                          const SCXMLContext &context = SCXMLContext());
-
-    // Parse transition elements (libxml++ version)
-    void parseTransitions(const xmlpp::Element *parentElement, std::shared_ptr<IStateNode> state);
-
-    // W3C SCXML 3.8/3.9: Parse onentry/onexit elements as IActionNode block-based (libxml++ version)
-    void parseEntryExitActionNodes(const xmlpp::Element *parentElement, std::shared_ptr<IStateNode> state);
-
-    // W3C SCXML 3.8/3.9: Block-based executable content parsing (libxml++ version)
-    void parseExecutableContentBlock(const xmlpp::Element *parentElement,
-                                     std::vector<std::shared_ptr<RSM::IActionNode>> &actionBlock);
-
-    // Parse invoke elements (libxml++ version)
-    void parseInvokeElements(const xmlpp::Element *parentElement, std::shared_ptr<IStateNode> state);
-
-    // Parse history state type (shallow/deep) (libxml++ version)
-    void parseHistoryType(const xmlpp::Element *historyElement, std::shared_ptr<IStateNode> state);
-
-    // Parse reactive guards (libxml++ version)
-    void parseReactiveGuards(const xmlpp::Element *parentElement, std::shared_ptr<IStateNode> state);
-
-    // Parse initial element (libxml++ version)
-    void parseInitialElement(const xmlpp::Element *initialElement, std::shared_ptr<IStateNode> state);
-#endif
-
-    // Determine state type (IXMLElement version)
+    // Determine state type
     Type determineStateType(const std::shared_ptr<IXMLElement> &stateElement);
 
-    // Parse child states (IXMLElement version)
+    // Parse child states
     void parseChildStates(const std::shared_ptr<IXMLElement> &stateElement, std::shared_ptr<IStateNode> parentState,
                           const SCXMLContext &context = SCXMLContext());
 
-    // Parse transition elements (IXMLElement version)
+    // Parse transition elements
     void parseTransitions(const std::shared_ptr<IXMLElement> &parentElement, std::shared_ptr<IStateNode> state);
 
-    // W3C SCXML 3.8/3.9: Parse onentry/onexit elements as IActionNode block-based (IXMLElement version)
+    // W3C SCXML 3.8/3.9: Parse onentry/onexit elements as IActionNode block-based
     void parseEntryExitActionNodes(const std::shared_ptr<IXMLElement> &parentElement,
                                    std::shared_ptr<IStateNode> state);
 
-    // W3C SCXML 3.8/3.9: Block-based executable content parsing (IXMLElement version)
+    // W3C SCXML 3.8/3.9: Block-based executable content parsing
     void parseExecutableContentBlock(const std::shared_ptr<IXMLElement> &parentElement,
                                      std::vector<std::shared_ptr<RSM::IActionNode>> &actionBlock);
 
-    // Parse invoke elements (IXMLElement version)
+    // Parse invoke elements
     void parseInvokeElements(const std::shared_ptr<IXMLElement> &parentElement, std::shared_ptr<IStateNode> state);
 
-    // Parse history state type (shallow/deep) (IXMLElement version)
+    // Parse history state type (shallow/deep)
     void parseHistoryType(const std::shared_ptr<IXMLElement> &historyElement, std::shared_ptr<IStateNode> state);
 
-    // Parse reactive guards (IXMLElement version)
+    // Parse reactive guards
     void parseReactiveGuards(const std::shared_ptr<IXMLElement> &parentElement, std::shared_ptr<IStateNode> state);
 
-    // Parse initial element (IXMLElement version)
+    // Parse initial element
     void parseInitialElement(const std::shared_ptr<IXMLElement> &initialElement, std::shared_ptr<IStateNode> state);
 
     std::shared_ptr<NodeFactory> nodeFactory_;

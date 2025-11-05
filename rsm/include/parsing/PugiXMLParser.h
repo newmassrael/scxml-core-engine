@@ -1,7 +1,5 @@
 #pragma once
 
-#ifdef __EMSCRIPTEN__
-
 #include "IXMLDocument.h"
 #include "IXMLElement.h"
 #include "IXMLParser.h"
@@ -69,10 +67,10 @@ private:
 };
 
 /**
- * @brief pugixml parser implementation (WASM builds only)
+ * @brief pugixml parser implementation (All platforms)
  *
- * Lightweight XML parser optimized for WebAssembly
- * Manual XInclude implementation (pugixml doesn't have native support)
+ * Lightweight, W3C compliant XML parser with manual XInclude implementation
+ * Unified XML parser for all platforms (Native and WASM)
  */
 class PugiXMLParser : public IXMLParser {
 public:
@@ -88,5 +86,3 @@ private:
 };
 
 }  // namespace RSM
-
-#endif  // __EMSCRIPTEN__

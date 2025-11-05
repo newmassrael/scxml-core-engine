@@ -14,10 +14,6 @@
 #include "parsing/TransitionParser.h"
 #include "parsing/XIncludeProcessor.h"
 
-#ifndef __EMSCRIPTEN__
-#include <libxml++/libxml++.h>
-#endif
-
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -158,7 +154,7 @@ private:
     std::shared_ptr<SCXMLModel> parseAbstractDocument(std::shared_ptr<IXMLDocument> doc);
 
     /**
-     * @brief Parse SCXML root node (IXMLElement version)
+     * @brief Parse SCXML root node
      * @param scxmlNode Root node
      * @param model Target model
      * @return Success status
@@ -166,14 +162,14 @@ private:
     bool parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlNode, std::shared_ptr<SCXMLModel> model);
 
     /**
-     * @brief Parse context properties (IXMLElement version)
+     * @brief Parse context properties
      * @param scxmlNode SCXML node
      * @param model Target model
      */
     void parseContextProperties(const std::shared_ptr<IXMLElement> &scxmlNode, std::shared_ptr<SCXMLModel> model);
 
     /**
-     * @brief Parse dependency injection points (IXMLElement version)
+     * @brief Parse dependency injection points
      * @param scxmlNode SCXML node
      * @param model Target model
      */

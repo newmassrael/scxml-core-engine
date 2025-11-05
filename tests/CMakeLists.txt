@@ -304,22 +304,13 @@ target_link_libraries(ready_scxml_engine_tests
 # 5. Core Parser Tests (RSM namespace updated)
 # ============================================================================
 
-# Use same libxml++ configuration as RSM
-set(LIBXMLXX_INSTALL_DIR ${CMAKE_BINARY_DIR}/libxmlxx_install)
-set(LIBXMLXX_INCLUDE_DIRS
-    ${LIBXMLXX_INSTALL_DIR}/include/libxml++-5.0
-    ${LIBXMLXX_INSTALL_DIR}/lib/libxml++-5.0/include
-)
-set(LIBXMLXX_LIBRARIES ${LIBXMLXX_INSTALL_DIR}/lib/libxml++-5.0.so)
 
 add_executable(core_parser_tests
     core/SCXMLParserBasicTest.cpp
 )
 
 add_dependencies(core_parser_tests rsm_unified)
-if(NOT EMSCRIPTEN)
-    add_dependencies(core_parser_tests libxmlxx_external)
-endif()
+
 
 target_include_directories(core_parser_tests
     PRIVATE
@@ -328,13 +319,7 @@ target_include_directories(core_parser_tests
         ${CMAKE_SOURCE_DIR}/tests
 )
 
-if(NOT EMSCRIPTEN)
-    target_include_directories(core_parser_tests
-        PRIVATE
-            ${LIBXMLXX_INCLUDE_DIRS}
-            /usr/include/libxml2
-    )
-endif()
+
 
 target_link_libraries(core_parser_tests
     PRIVATE
@@ -343,13 +328,7 @@ target_link_libraries(core_parser_tests
         pthread
 )
 
-if(NOT EMSCRIPTEN)
-    target_link_libraries(core_parser_tests
-        PRIVATE
-            ${LIBXMLXX_LIBRARIES}
-            xml2
-    )
-endif()
+
 
 # ============================================================================
 # 6. Integration Tests (RSM architecture)
@@ -384,9 +363,7 @@ if(NOT EMSCRIPTEN)
 endif()
 
 add_dependencies(integration_tests rsm_unified)
-if(NOT EMSCRIPTEN)
-    add_dependencies(integration_tests libxmlxx_external)
-endif()
+
 
 target_include_directories(integration_tests
     PRIVATE
@@ -395,13 +372,7 @@ target_include_directories(integration_tests
         ${CMAKE_SOURCE_DIR}/tests
 )
 
-if(NOT EMSCRIPTEN)
-    target_include_directories(integration_tests
-        PRIVATE
-            ${LIBXMLXX_INCLUDE_DIRS}
-            /usr/include/libxml2
-    )
-endif()
+
 
 target_link_libraries(integration_tests
     PRIVATE
@@ -411,13 +382,7 @@ target_link_libraries(integration_tests
         pthread
 )
 
-if(NOT EMSCRIPTEN)
-    target_link_libraries(integration_tests
-        PRIVATE
-            ${LIBXMLXX_LIBRARIES}
-            xml2
-    )
-endif()
+
 
 # ============================================================================
 # 7. Model Layer Tests
@@ -427,9 +392,7 @@ add_executable(model_tests
 )
 
 add_dependencies(model_tests rsm_unified)
-if(NOT EMSCRIPTEN)
-    add_dependencies(model_tests libxmlxx_external)
-endif()
+
 
 target_include_directories(model_tests
     PRIVATE
@@ -438,13 +401,7 @@ target_include_directories(model_tests
         ${CMAKE_SOURCE_DIR}/tests
 )
 
-if(NOT EMSCRIPTEN)
-    target_include_directories(model_tests
-        PRIVATE
-            ${LIBXMLXX_INCLUDE_DIRS}
-            /usr/include/libxml2
-    )
-endif()
+
 
 target_link_libraries(model_tests
     PRIVATE
@@ -452,13 +409,7 @@ target_link_libraries(model_tests
         GTest::gtest_main
 )
 
-if(NOT EMSCRIPTEN)
-    target_link_libraries(model_tests
-        PRIVATE
-            ${LIBXMLXX_LIBRARIES}
-            xml2
-    )
-endif()
+
 
 # ============================================================================
 # 8. Concurrency and Deadlock Tests
@@ -498,13 +449,7 @@ target_include_directories(txml_converter_tests
         ${CMAKE_SOURCE_DIR}/tests
 )
 
-if(NOT EMSCRIPTEN)
-    target_include_directories(txml_converter_tests
-        PRIVATE
-            ${LIBXMLXX_INCLUDE_DIRS}
-            /usr/include/libxml2
-    )
-endif()
+
 
 target_link_libraries(txml_converter_tests
     PRIVATE
@@ -513,18 +458,10 @@ target_link_libraries(txml_converter_tests
         pthread
 )
 
-if(NOT EMSCRIPTEN)
-    target_link_libraries(txml_converter_tests
-        PRIVATE
-            ${LIBXMLXX_LIBRARIES}
-            xml2
-    )
-endif()
+
 
 add_dependencies(txml_converter_tests rsm_unified)
-if(NOT EMSCRIPTEN)
-    add_dependencies(txml_converter_tests libxmlxx_external)
-endif()
+
 
 # ============================================================================
 # 9. W3C SCXML Compliance Tests (SOLID Architecture) - Native builds only
@@ -942,13 +879,7 @@ if(NOT EMSCRIPTEN)
     target_link_libraries(w3c_test_cli PRIVATE pthread)
 endif()
 
-if(NOT EMSCRIPTEN)
-    target_link_libraries(w3c_test_cli
-        PRIVATE
-            ${LIBXMLXX_LIBRARIES}
-            xml2
-    )
-endif()
+
 
 target_include_directories(w3c_test_cli
     PRIVATE
@@ -960,18 +891,10 @@ target_include_directories(w3c_test_cli
         ${STATIC_W3C_OUTPUT_DIR}  # Include generated static test headers
 )
 
-if(NOT EMSCRIPTEN)
-    target_include_directories(w3c_test_cli
-        PRIVATE
-            ${LIBXMLXX_INCLUDE_DIRS}
-            /usr/include/libxml2
-    )
-endif()
+
 
 add_dependencies(w3c_test_cli rsm_unified)
-if(NOT EMSCRIPTEN)
-    add_dependencies(w3c_test_cli libxmlxx_external)
-endif()
+
 
 # ============================================================================
 # Note: C++ StaticCodeGenerator replaced by Python + Jinja2 (codegen.py)
