@@ -9,6 +9,9 @@ using RSM::Common::ConflictResolutionHelperString;
 #include "common/EntryExitHelper.h"
 #include "common/FileLoadingHelper.h"
 #include "common/Logger.h"
+#ifdef RSM_USE_SPDLOG
+#include <spdlog/spdlog.h>
+#endif
 #include "common/ParallelTransitionHelper.h"
 #include "common/StringUtils.h"
 #include "common/SystemVariableHelper.h"
@@ -1208,7 +1211,12 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
         std::string condition = transitionNode->getGuard();
 
         // Performance optimization: Only build debug string when DEBUG logging is enabled
+#ifdef RSM_USE_SPDLOG
         if constexpr (SPDLOG_ACTIVE_LEVEL <= SPDLOG_LEVEL_DEBUG) {
+#else
+        // DefaultBackend: always build debug string (no compile-time level check)
+        {
+#endif
             std::string eventDescStr;
             for (size_t i = 0; i < eventDescriptors.size(); ++i) {
                 if (i > 0) {

@@ -2,6 +2,7 @@
 #include "common/Logger.h"
 #include "events/EventDescriptor.h"
 #include <algorithm>
+#include <format>
 #include <sstream>
 
 namespace RSM {
@@ -62,7 +63,7 @@ ConcurrentOperationResult ParallelRegionOrchestrator::addRegion(std::shared_ptr<
     // Check for duplicates
     if (regionMap_.find(regionId) != regionMap_.end()) {
         return ConcurrentOperationResult::failure(regionId,
-                                                  fmt::format("Region with ID '{}' already exists", regionId));
+                                                  std::format("Region with ID '{}' already exists", regionId));
     }
 
     // Add region
@@ -80,7 +81,7 @@ ConcurrentOperationResult ParallelRegionOrchestrator::addRegion(std::shared_ptr<
 ConcurrentOperationResult ParallelRegionOrchestrator::removeRegion(const std::string &regionId) {
     auto mapIt = regionMap_.find(regionId);
     if (mapIt == regionMap_.end()) {
-        return ConcurrentOperationResult::failure(regionId, fmt::format("Region with ID '{}' not found", regionId));
+        return ConcurrentOperationResult::failure(regionId, std::format("Region with ID '{}' not found", regionId));
     }
 
     // Deactivate region first if it's active
@@ -397,7 +398,7 @@ std::vector<std::string> ParallelRegionOrchestrator::validateOrchestrator() cons
     std::sort(regionIds.begin(), regionIds.end());
     for (size_t i = 1; i < regionIds.size(); ++i) {
         if (regionIds[i] == regionIds[i - 1]) {
-            errors.push_back(fmt::format("Duplicate region ID found: {}", regionIds[i]));
+            errors.push_back(std::format("Duplicate region ID found: {}", regionIds[i]));
         }
     }
 
@@ -405,7 +406,7 @@ std::vector<std::string> ParallelRegionOrchestrator::validateOrchestrator() cons
     for (const auto &region : regions_) {
         auto regionErrors = region->validate();
         for (const auto &error : regionErrors) {
-            errors.push_back(fmt::format("Region '{}': {}", region->getId(), error));
+            errors.push_back(std::format("Region '{}': {}", region->getId(), error));
         }
     }
 

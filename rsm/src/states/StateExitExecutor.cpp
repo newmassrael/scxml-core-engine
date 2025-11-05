@@ -5,6 +5,7 @@
 #include "runtime/IActionExecutor.h"
 #include "runtime/IExecutionContext.h"
 #include <cassert>
+#include <format>
 
 namespace RSM {
 
@@ -131,7 +132,7 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
                     try {
                         // W3C SCXML 3.9: Execute the exit action through the execution context
                         logExitAction(state->getId(),
-                                      fmt::format("Executing exit action: {}", exitAction->getActionType()));
+                                      std::format("Executing exit action: {}", exitAction->getActionType()));
 
                         // W3C SCXML 3.9: Execute the action
                         bool actionResult = exitAction->execute(*executionContext);

@@ -1,70 +1,128 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+//
+// This file is part of RSM (Reactive State Machine).
+//
+// Dual Licensed:
+// 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
+// 2. Commercial: For modifications (contact newmassrael@gmail.com)
+//
+// Commercial License:
+//   Individual: $100 cumulative
+//   Enterprise: $500 cumulative
+//   Contact: https://github.com/newmassrael
+//
+// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+
 #include "common/Logger.h"
+
+#ifdef RSM_USE_SPDLOG
+#include "backends/SpdlogBackend.h"
+#else
+#include "backends/DefaultBackend.h"
+#endif
+
 #include <algorithm>
-#include <cstdlib>
-#include <filesystem>
-#include <memory>
-#include <spdlog/sinks/basic_file_sink.h>
-#include <spdlog/sinks/stdout_color_sinks.h>
-#include <spdlog/spdlog.h>
+#include <mutex>
 
 namespace RSM {
 
-std::shared_ptr<spdlog::logger> Logger::logger_;
+// Static member initialization
+std::unique_ptr<ILoggerBackend> Logger::backend_;
 
-// Hidden implementation namespace function definitions
-namespace RSM_LOGGER_PRIVATE_NS {
+// Mutex for thread-safe backend initialization
+static std::mutex backend_mutex;
 
-void ensureLoggerInitialized() {
-    if (!Logger::logger_) {
-        Logger::logger_ = spdlog::stdout_color_mt("RSM");
-        Logger::logger_->set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
+void Logger::setBackend(std::unique_ptr<ILoggerBackend> backend) {
+    std::lock_guard<std::mutex> lock(backend_mutex);
+    backend_ = std::move(backend);
+}
 
-        // Check SPDLOG_LEVEL environment variable to set log level
-        const char *env_level = std::getenv("SPDLOG_LEVEL");
-        if (env_level) {
-            std::string level_str(env_level);
-            std::transform(level_str.begin(), level_str.end(), level_str.begin(), ::tolower);
-
-            if (level_str == "trace") {
-                Logger::logger_->set_level(spdlog::level::trace);
-            } else if (level_str == "debug") {
-                Logger::logger_->set_level(spdlog::level::debug);
-            } else if (level_str == "info") {
-                Logger::logger_->set_level(spdlog::level::info);
-            } else if (level_str == "warn" || level_str == "warning") {
-                Logger::logger_->set_level(spdlog::level::warn);
-            } else if (level_str == "err" || level_str == "error") {
-                Logger::logger_->set_level(spdlog::level::err);
-            } else if (level_str == "critical") {
-                Logger::logger_->set_level(spdlog::level::critical);
-            } else if (level_str == "off") {
-                Logger::logger_->set_level(spdlog::level::off);
-            } else {
-                Logger::logger_->set_level(spdlog::level::debug);
-            }
-        } else {
-            Logger::logger_->set_level(spdlog::level::debug);
-        }
+void Logger::initialize() {
+    std::lock_guard<std::mutex> lock(backend_mutex);
+    if (!backend_) {
+#ifdef RSM_USE_SPDLOG
+        backend_ = std::make_unique<SpdlogBackend>();
+#else
+        backend_ = std::make_unique<DefaultBackend>();
+#endif
     }
 }
 
-std::string extractCleanFunctionName(const std::source_location &loc) {
+void Logger::initialize([[maybe_unused]] const std::string &logDir, [[maybe_unused]] bool logToFile) {
+    std::lock_guard<std::mutex> lock(backend_mutex);
+    if (!backend_) {
+#ifdef RSM_USE_SPDLOG
+        backend_ = std::make_unique<SpdlogBackend>(logDir, logToFile);
+#else
+        // DefaultBackend doesn't support file logging
+        backend_ = std::make_unique<DefaultBackend>();
+#endif
+    }
+}
+
+void Logger::setLevel(LogLevel level) {
+    ensureBackend();
+    backend_->setLevel(level);
+}
+
+void Logger::trace(const std::string &message, const std::source_location &loc) {
+    ensureBackend();
+    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
+    backend_->log(LogLevel::Trace, enhanced_message, loc);
+}
+
+void Logger::debug(const std::string &message, const std::source_location &loc) {
+    ensureBackend();
+    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
+    backend_->log(LogLevel::Debug, enhanced_message, loc);
+}
+
+void Logger::info(const std::string &message, const std::source_location &loc) {
+    ensureBackend();
+    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
+    backend_->log(LogLevel::Info, enhanced_message, loc);
+}
+
+void Logger::warn(const std::string &message, const std::source_location &loc) {
+    ensureBackend();
+    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
+    backend_->log(LogLevel::Warn, enhanced_message, loc);
+}
+
+void Logger::error(const std::string &message, const std::source_location &loc) {
+    ensureBackend();
+    std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
+    backend_->log(LogLevel::Error, enhanced_message, loc);
+}
+
+void Logger::flush() {
+    ensureBackend();
+    backend_->flush();
+}
+
+void Logger::ensureBackend() {
+    if (!backend_) {
+        initialize();
+    }
+}
+
+std::string Logger::extractCleanFunctionName(const std::source_location &loc) {
     std::string full_name = loc.function_name();
 
-    // Find the opening parenthesis to locate the end of function signature
+    // Find the opening parenthesis
     size_t paren_pos = full_name.find('(');
     if (paren_pos == std::string::npos) {
         return "UnknownFunction";
     }
 
-    // Work backwards from the opening parenthesis to find the function name with class
+    // Work backwards from the opening parenthesis
     size_t name_end = paren_pos;
     while (name_end > 0 && (std::isspace(full_name[name_end - 1]) || full_name[name_end - 1] == ')')) {
         name_end--;
     }
 
-    // Find the start of the qualified function name (including class/namespace)
-    // Look for return type separator (usually a space before the last identifier)
+    // Find the start of the qualified function name
     size_t name_start = 0;
     size_t space_pos = std::string::npos;
 
@@ -90,16 +148,16 @@ std::string extractCleanFunctionName(const std::source_location &loc) {
         name_start = space_pos + 1;
     }
 
-    // Extract the qualified function name (with class/namespace)
+    // Extract the qualified function name
     std::string qualified_name = full_name.substr(name_start, name_end - name_start);
 
-    // Clean up any remaining artifacts at the beginning
+    // Clean up any remaining artifacts
     while (!qualified_name.empty() &&
            (std::isspace(qualified_name[0]) || qualified_name[0] == '*' || qualified_name[0] == '&')) {
         qualified_name = qualified_name.substr(1);
     }
 
-    // Remove template parameters if they exist (keep class but remove templates)
+    // Remove template parameters if they exist
     std::string result;
     int angle_count = 0;
     for (char c : qualified_name) {
@@ -112,87 +170,12 @@ std::string extractCleanFunctionName(const std::source_location &loc) {
         }
     }
 
-    // Remove any trailing whitespace
+    // Remove trailing whitespace
     while (!result.empty() && std::isspace(result.back())) {
         result.pop_back();
     }
 
     return result.empty() ? "UnknownFunction" : result;
 }
-
-void doFormatAndLog(spdlog::level::level_enum level, const std::string &message, const std::source_location &loc) {
-    ensureLoggerInitialized();
-    if (Logger::logger_) {
-        std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
-        Logger::logger_->log(level, enhanced_message);
-    }
-}
-
-void doInitializeLogger(const std::string &logDir, bool logToFile) {
-    if (!Logger::logger_) {
-        if (logDir.empty() && !logToFile) {
-            // Default initialization
-            Logger::logger_ = spdlog::stdout_color_mt("RSM");
-            Logger::logger_->set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
-        } else {
-            // Initialize with file logging
-            std::vector<spdlog::sink_ptr> sinks;
-
-            // Always add console output
-            auto console_sink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
-            console_sink->set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
-            sinks.push_back(console_sink);
-
-            // Add file sink if file logging requested
-            if (logToFile && !logDir.empty()) {
-                // Create log directory
-                std::filesystem::create_directories(logDir);
-
-                // Create file path (rsm.log)
-                std::filesystem::path logPath = std::filesystem::path(logDir) / "rsm.log";
-
-                auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logPath.string(), true);
-                file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] [%t] %v");
-                sinks.push_back(file_sink);
-            }
-
-            // Create composite logger
-            Logger::logger_ = std::make_shared<spdlog::logger>("RSM", sinks.begin(), sinks.end());
-            Logger::logger_->set_level(spdlog::level::debug);
-
-            // Register with spdlog registry
-            spdlog::register_logger(Logger::logger_);
-        }
-
-        // Check SPDLOG_LEVEL environment variable to set log level
-        const char *env_level = std::getenv("SPDLOG_LEVEL");
-        if (env_level) {
-            std::string level_str(env_level);
-            std::transform(level_str.begin(), level_str.end(), level_str.begin(), ::tolower);
-
-            if (level_str == "trace") {
-                Logger::logger_->set_level(spdlog::level::trace);
-            } else if (level_str == "debug") {
-                Logger::logger_->set_level(spdlog::level::debug);
-            } else if (level_str == "info") {
-                Logger::logger_->set_level(spdlog::level::info);
-            } else if (level_str == "warn" || level_str == "warning") {
-                Logger::logger_->set_level(spdlog::level::warn);
-            } else if (level_str == "err" || level_str == "error") {
-                Logger::logger_->set_level(spdlog::level::err);
-            } else if (level_str == "critical") {
-                Logger::logger_->set_level(spdlog::level::critical);
-            } else if (level_str == "off") {
-                Logger::logger_->set_level(spdlog::level::off);
-            } else {
-                Logger::logger_->set_level(spdlog::level::debug);
-            }
-        } else {
-            Logger::logger_->set_level(spdlog::level::debug);
-        }
-    }
-}
-
-}  // namespace RSM_LOGGER_PRIVATE_NS
 
 }  // namespace RSM

@@ -2,6 +2,7 @@
 #include "common/Logger.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
+#include <cassert>
 #include <sstream>
 
 RSM::TransitionParser::TransitionParser(std::shared_ptr<RSM::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {

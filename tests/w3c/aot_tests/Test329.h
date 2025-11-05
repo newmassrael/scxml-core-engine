@@ -2,7 +2,6 @@
 #include "AotTestBase.h"
 #include "AotTestRegistry.h"
 #include "test329_sm.h"
-#include <spdlog/spdlog.h>
 
 namespace RSM::W3C::AotTests {
 
