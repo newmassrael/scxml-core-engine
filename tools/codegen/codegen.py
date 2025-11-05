@@ -12,6 +12,7 @@ import argparse
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from scxml_parser import SCXMLParser, SCXMLModel
+from license_config import LICENSE_CONFIG
 
 
 class DependencyTrackingLoader(FileSystemLoader):
@@ -317,8 +318,8 @@ class CodeGenerator:
             # Use simple directory name - resolveExecutableBasePath() will make it absolute
             base_path = Path(output_dir).name
 
-            # Render template
-            output = template.render(model=model, base_path=base_path)
+            # Render template with centralized license configuration
+            output = template.render(model=model, base_path=base_path, license_config=LICENSE_CONFIG)
 
             # Use input filename (without extension) for output filename
             # W3C SCXML 6.4: Multiple tests may use same SCXML name attribute (e.g., test338 and test347 both use "machineName")

@@ -1,21 +1,62 @@
-MIT License
-
+RSM (Reactive State Machine) - Dual License
 Copyright (c) 2025 newmassrael
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+This project is dual licensed - choose either license:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+================================================================================
+OPTION 1: GNU Lesser General Public License v2.1 (LGPL-2.1)
+================================================================================
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Use this for:
+- Open source projects (any OSI-approved license)
+- Commercial products using UNMODIFIED engine
+- Dynamic linking without GPL contamination
+- Static linking if engine remains unmodified
+
+If you MODIFY the engine source code:
+- Modified files must be distributed under LGPL-2.1
+- Users must be able to relink with modified engine
+- OR choose Commercial License to keep modifications private
+
+Full LGPL-2.1 text: LICENSE-LGPL-2.1.md
+Official LGPL-2.1: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
+
+================================================================================
+OPTION 2: Commercial License
+================================================================================
+
+Use this for:
+- Proprietary modifications to engine source code
+- Creating derivative products/SDKs based on RSM
+- Avoiding LGPL compliance requirements
+
+Pricing (via GitHub Sponsors):
+- Individual: $100 USD cumulative
+- Enterprise (5+ developers): $500 USD cumulative
+
+Sponsor: https://github.com/newmassrael
+Contact: newmassrael@gmail.com
+
+Full terms: LICENSE-COMMERCIAL.md
+
+================================================================================
+GENERATED CODE: MIT License (No Restrictions)
+================================================================================
+
+All code generated from your SCXML files is MIT licensed.
+You OWN the generated code - use it freely in any project.
+
+See: LICENSE-GENERATED.md
+
+================================================================================
+Quick Decision Guide
+================================================================================
+
+| Your Situation | License Choice | Cost |
+|---------------|---------------|------|
+| Use unmodified engine (any project) | LGPL-2.1 | FREE |
+| Modify engine + share modifications | LGPL-2.1 | FREE |
+| Modify engine + keep private | Commercial | $100/$500 |
+| Your generated code (always) | MIT | FREE |
+
+================================================================================
