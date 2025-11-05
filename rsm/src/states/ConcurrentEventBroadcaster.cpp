@@ -2,6 +2,7 @@
 #include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
 #include <algorithm>
+#include <format>
 #include <iomanip>
 #include <random>
 #include <sstream>
@@ -298,7 +299,7 @@ EventBroadcastResult ConcurrentEventBroadcaster::broadcastToRegionsParallel(
             if (!combinedError.empty()) {
                 combinedError += "; ";
             }
-            combinedError += fmt::format("Exception in region {}: {}", regionId, e.what());
+            combinedError += std::format("Exception in region {}: {}", regionId, e.what());
         }
     }
 
@@ -344,7 +345,7 @@ EventBroadcastResult ConcurrentEventBroadcaster::broadcastToRegionsSequential(
             if (!combinedError.empty()) {
                 combinedError += "; ";
             }
-            combinedError += fmt::format("Exception in region {}: {}", regionId, e.what());
+            combinedError += std::format("Exception in region {}: {}", regionId, e.what());
 
             if (config.stopOnFirstFailure) {
                 break;
@@ -373,7 +374,7 @@ ConcurrentEventBroadcaster::processEventInRegion(std::shared_ptr<IConcurrentRegi
             return region->processEvent(event);
         } catch (const std::exception &e) {
             return ConcurrentOperationResult::failure(region->getId(),
-                                                      fmt::format("Exception during event processing: {}", e.what()));
+                                                      std::format("Exception during event processing: {}", e.what()));
         }
     });
 }

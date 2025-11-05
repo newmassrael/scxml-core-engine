@@ -9,6 +9,7 @@
 #include "runtime/IExecutionContext.h"
 #include "states/StateExitExecutor.h"
 #include <algorithm>
+#include <format>
 
 namespace RSM {
 
@@ -50,7 +51,7 @@ ConcurrentOperationResult ConcurrentRegion::activate() {
 
     // SCXML W3C specification section 3.4: regions must have root states
     if (!rootState_) {
-        std::string error = fmt::format("SCXML violation: cannot activate region '{}' without root state. SCXML "
+        std::string error = std::format("SCXML violation: cannot activate region '{}' without root state. SCXML "
                                         "specification requires regions to have states.",
                                         id_);
         LOG_ERROR("Activate error: {}", error);
@@ -60,7 +61,7 @@ ConcurrentOperationResult ConcurrentRegion::activate() {
 
     // Validate root state before activation
     if (!validateRootState()) {
-        std::string error = fmt::format("Root state validation failed for region: {}", id_);
+        std::string error = std::format("Root state validation failed for region: {}", id_);
         LOG_ERROR("Root state validation failed: {}", error);
         setErrorState(error);
         return ConcurrentOperationResult::failure(id_, error);
@@ -144,13 +145,13 @@ ConcurrentRegionInfo ConcurrentRegion::getInfo() const {
 
 ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &event) {
     if (status_ != ConcurrentRegionStatus::ACTIVE) {
-        std::string error = fmt::format("Cannot process event in inactive region: {}", id_);
+        std::string error = std::format("Cannot process event in inactive region: {}", id_);
         LOG_WARN("processEvent - {}", error);
         return ConcurrentOperationResult::failure(id_, error);
     }
 
     if (!rootState_) {
-        std::string error = fmt::format("SCXML violation: cannot process event without root state in region: {}", id_);
+        std::string error = std::format("SCXML violation: cannot process event without root state in region: {}", id_);
         LOG_ERROR("Error: {}", error);
         setErrorState(error);
         return ConcurrentOperationResult::failure(id_, error);
@@ -379,23 +380,23 @@ std::vector<std::string> ConcurrentRegion::validate() const {
 
     // SCXML W3C specification section 3.4: regions must have root states
     if (!rootState_) {
-        errors.push_back(fmt::format(
+        errors.push_back(std::format(
             "SCXML violation: Region '{}' has no root state. SCXML specification requires regions to contain states.",
             id_));
     } else {
         // Validate root state
         if (!validateRootState()) {
-            errors.push_back(fmt::format("Root state validation failed for region: {}", id_));
+            errors.push_back(std::format("Root state validation failed for region: {}", id_));
         }
     }
 
     // Validate status consistency
     if (status_ == ConcurrentRegionStatus::FINAL && !isInFinalState_) {
-        errors.push_back(fmt::format("Inconsistent final state tracking in region: {}", id_));
+        errors.push_back(std::format("Inconsistent final state tracking in region: {}", id_));
     }
 
     if (status_ == ConcurrentRegionStatus::ACTIVE && currentState_.empty()) {
-        errors.push_back(fmt::format("Active region {} has no current state", id_));
+        errors.push_back(std::format("Active region {} has no current state", id_));
     }
 
     return errors;
@@ -724,7 +725,7 @@ bool ConcurrentRegion::determineIfInFinalState() const {
 
 ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
     if (!rootState_) {
-        std::string error = fmt::format("Cannot enter initial state: no root state in region {}", id_);
+        std::string error = std::format("Cannot enter initial state: no root state in region {}", id_);
         return ConcurrentOperationResult::failure(id_, error);
     }
 
@@ -943,7 +944,7 @@ ConcurrentOperationResult ConcurrentRegion::exitAllStates(std::shared_ptr<IExecu
         // Step 4: Parent state notification would be handled by orchestrator
         // SOLID: Single Responsibility - ConcurrentRegion only manages its own state
 
-        std::string resultMsg = fmt::format("Successfully exited all states in region: {}", id_);
+        std::string resultMsg = std::format("Successfully exited all states in region: {}", id_);
         if (!exitActionsSuccess) {
             resultMsg += " (with exit action warnings)";
         }
@@ -952,7 +953,7 @@ ConcurrentOperationResult ConcurrentRegion::exitAllStates(std::shared_ptr<IExecu
         return ConcurrentOperationResult::success(id_);
 
     } catch (const std::exception &e) {
-        std::string errorMsg = fmt::format("Failed to exit states in region {}: {}", id_, e.what());
+        std::string errorMsg = std::format("Failed to exit states in region {}: {}", id_, e.what());
         LOG_ERROR("Error: {}", errorMsg);
 
         // Ensure cleanup even on failure

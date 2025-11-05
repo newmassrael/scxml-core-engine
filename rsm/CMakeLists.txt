@@ -96,20 +96,28 @@ if(EMSCRIPTEN)
 endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURRENT_BINARY_DIR}/quickjs)
 
-# Add spdlog subdirectory
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog ${CMAKE_CURRENT_BINARY_DIR}/spdlog)
+# ============================================================================
+# spdlog Logger Configuration (Optional Dependency)
+# ============================================================================
+option(RSM_USE_SPDLOG "Use spdlog for logging (default: ON)" ON)
 
-# WASM: Apply pthread flags to spdlog for thread-safe builds
-# Note: Required by EventDispatcherImpl which uses std::thread for invoke
-if(EMSCRIPTEN)
-    target_compile_options(spdlog PRIVATE
-        -pthread
-        -sUSE_PTHREADS=1
+if(RSM_USE_SPDLOG)
+    message(STATUS "RSM: Building with spdlog support (header-only mode)")
+    
+    # spdlog: header-only mode (no compilation, include-only)
+    add_library(spdlog_header_only INTERFACE)
+    target_include_directories(spdlog_header_only INTERFACE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include
     )
-    target_link_options(spdlog PRIVATE
-        -pthread
-        -sUSE_PTHREADS=1
+    target_compile_definitions(spdlog_header_only INTERFACE
+        SPDLOG_HEADER_ONLY=1
+        SPDLOG_FMT_EXTERNAL=0  # Use bundled fmt (header-only)
     )
+    
+    # Create alias for compatibility
+    add_library(spdlog::spdlog ALIAS spdlog_header_only)
+else()
+    message(STATUS "RSM: Building without spdlog (using DefaultBackend)")
 endif()
 
 # Add cpp-httplib subdirectory (native builds only, not WASM)
@@ -137,6 +145,10 @@ add_library(rsm_unified
     src/common/EventDataHelper.cpp
     src/common/GuardUtils.cpp
     src/common/Logger.cpp
+    
+    # Logger backends (conditional based on RSM_USE_SPDLOG)
+    src/backends/DefaultBackend.cpp  # Always compiled
+    $<$<BOOL:${RSM_USE_SPDLOG}>:src/backends/SpdlogBackend.cpp>
     src/common/NodeFactory.cpp
     src/common/PlatformExecutionHelper.cpp
     src/common/TypeRegistry.cpp
@@ -264,6 +276,7 @@ target_include_directories(rsm_unified
         include/scripting
         include/factory
         include/common
+        include/backends
         include/parsing
         include/actions
         include/events
@@ -286,6 +299,13 @@ else()
     )
 endif()
 
+# Optional spdlog includes (header-only)
+if(RSM_USE_SPDLOG)
+    target_include_directories(rsm_unified PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include
+    )
+endif()
+
 # Platform-specific dependencies (Native builds only)
 if(NOT EMSCRIPTEN)
     # Make rsm_unified depend on the external libxml2 and libxml++ builds
@@ -295,6 +315,11 @@ endif()
 # RSM codebase: Disable std::cout usage
 # printf family disabled due to system header conflicts
 
+# Conditional spdlog support (compile definition)
+if(RSM_USE_SPDLOG)
+    target_compile_definitions(rsm_unified PUBLIC RSM_USE_SPDLOG)
+endif()
+
 # Force include DisableStdOut.h globally
 target_compile_options(rsm_unified
     PRIVATE
@@ -303,9 +328,9 @@ target_compile_options(rsm_unified
 
 target_link_libraries(rsm_unified
     PUBLIC
-        qjs                          # QuickJS library
-        spdlog::spdlog               # spdlog library
+        qjs  # QuickJS library
         # nlohmann/json is header-only, no linking required
+        # spdlog is header-only, no linking required
     PRIVATE
         pthread
 )

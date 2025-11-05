@@ -4,6 +4,7 @@
 #include "common/SCXMLConstants.h"
 #include <algorithm>
 #include <cctype>
+#include <mutex>
 #include <sstream>
 
 namespace RSM {

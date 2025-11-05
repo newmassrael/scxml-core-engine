@@ -6,6 +6,7 @@
 #include "states/ConcurrentRegion.h"
 #include <algorithm>
 #include <cassert>
+#include <format>
 
 namespace RSM {
 
@@ -230,7 +231,7 @@ ConcurrentOperationResult ConcurrentStateNode::addRegion(std::shared_ptr<IConcur
     for (const auto &existingRegion : regions_) {
         if (existingRegion->getId() == regionId) {
             return ConcurrentOperationResult::failure(regionId,
-                                                      fmt::format("Region with ID '{}' already exists", regionId));
+                                                      std::format("Region with ID '{}' already exists", regionId));
         }
     }
 
@@ -247,7 +248,7 @@ ConcurrentOperationResult ConcurrentStateNode::removeRegion(const std::string &r
         });
 
     if (it == regions_.end()) {
-        return ConcurrentOperationResult::failure(regionId, fmt::format("Region with ID '{}' not found", regionId));
+        return ConcurrentOperationResult::failure(regionId, std::format("Region with ID '{}' not found", regionId));
     }
 
     regions_.erase(it);
@@ -274,7 +275,7 @@ ConcurrentOperationResult ConcurrentStateNode::enterParallelState() {
 
     // SCXML W3C specification section 3.4: parallel states MUST have regions
     if (regions_.empty()) {
-        std::string error = fmt::format(
+        std::string error = std::format(
             "SCXML violation: parallel state '{}' has no regions. SCXML specification requires at least one region.",
             id_);
         LOG_ERROR("{}", error);
@@ -292,7 +293,7 @@ ConcurrentOperationResult ConcurrentStateNode::enterParallelState() {
     // Check if any region failed to activate
     for (const auto &result : results) {
         if (!result.isSuccess) {
-            std::string error = fmt::format("Failed to activate region '{}': {}", result.regionId, result.errorMessage);
+            std::string error = std::format("Failed to activate region '{}': {}", result.regionId, result.errorMessage);
             LOG_ERROR("{}", error);
             // Cleanup on failure
             return ConcurrentOperationResult::failure(id_, error);
@@ -505,7 +506,7 @@ std::vector<std::string> ConcurrentStateNode::validateConcurrentState() const {
 
     // SCXML W3C specification section 3.4: parallel states MUST have at least one region
     if (regions_.empty()) {
-        errors.push_back(fmt::format(
+        errors.push_back(std::format(
             "SCXML violation: Parallel state '{}' has no regions. SCXML specification requires at least one region.",
             id_));
     }
@@ -514,7 +515,7 @@ std::vector<std::string> ConcurrentStateNode::validateConcurrentState() const {
     for (const auto &region : regions_) {
         auto regionErrors = region->validate();
         for (const auto &error : regionErrors) {
-            errors.push_back(fmt::format("Region '{}': {}", region->getId(), error));
+            errors.push_back(std::format("Region '{}': {}", region->getId(), error));
         }
     }
 
@@ -522,7 +523,7 @@ std::vector<std::string> ConcurrentStateNode::validateConcurrentState() const {
     for (size_t i = 0; i < regions_.size(); ++i) {
         for (size_t j = i + 1; j < regions_.size(); ++j) {
             if (regions_[i]->getId() == regions_[j]->getId()) {
-                errors.push_back(fmt::format("Duplicate region ID found: {}", regions_[i]->getId()));
+                errors.push_back(std::format("Duplicate region ID found: {}", regions_[i]->getId()));
             }
         }
     }
@@ -582,7 +583,7 @@ void ConcurrentStateNode::generateDoneStateEvent() {
         return;
     }
 
-    std::string doneEventName = fmt::format("done.state.{}", id_);
+    std::string doneEventName = std::format("done.state.{}", id_);
     LOG_DEBUG("Generating done.state event: {} for completed parallel state: {}", doneEventName, id_);
 
     // Use completion callback to notify StateMachine
