@@ -17,35 +17,44 @@
 #pragma once
 
 #include "common/ILoggerBackend.h"
-#include <memory>
-#include <spdlog/spdlog.h>
+#include <chrono>
+#include <iostream>
+#include <mutex>
 
 namespace SCE {
 
 /**
- * @brief spdlog-based logger backend
+ * @brief Simple stdout logger with no external dependencies
  *
- * Used when RSM is built with spdlog support (RSM_USE_SPDLOG=ON, default).
- * Provides full spdlog features:
- * - Multiple sinks (console, file, etc.)
- * - File rotation
- * - Custom formatters
- * - High performance
+ * Used when SCE is built without spdlog (SCE_USE_SPDLOG=OFF).
+ * Provides basic logging to stdout with:
+ * - Thread-safe output (std::mutex)
+ * - Timestamp (HH:MM:SS.mmm)
+ * - Log level coloring (ANSI codes)
+ * - Source location (file:line)
  *
- * This is the default backend when spdlog is available.
+ * No advanced features:
+ * - No file logging
+ * - No log rotation
+ * - No custom formatters
+ *
+ * For production use, inject custom ILoggerBackend implementation.
  */
-class SpdlogBackend : public ILoggerBackend {
+class DefaultBackend : public ILoggerBackend {
 public:
-    SpdlogBackend(const std::string &logDir = "", bool logToFile = false);
+    DefaultBackend();
 
     void log(LogLevel level, const std::string &message, const std::source_location &loc) override;
     void setLevel(LogLevel level) override;
     void flush() override;
 
 private:
-    std::shared_ptr<spdlog::logger> logger_;
+    LogLevel currentLevel_;
+    std::mutex mutex_;
 
-    spdlog::level::level_enum convertLevel(LogLevel level);
+    const char *levelToString(LogLevel level);
+    const char *levelToColor(LogLevel level);
+    std::string getTimestamp();
 };
 
 }  // namespace SCE

@@ -14,7 +14,7 @@ namespace SCE::Constants {
 // W3C SCXML Event Processor URIs (W3C SCXML 6.2)
 // ============================================================================
 // W3C SCXML Event Processor Types moved to SCXMLConstants.h for Single Source of Truth
-// See: rsm/include/common/SCXMLConstants.h
+// See: sce/include/common/SCXMLConstants.h
 // ============================================================================
 
 /**

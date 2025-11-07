@@ -16,7 +16,7 @@ namespace SCE::W3C {
  * - Open/Closed: Implements IEventDispatcher interface, extensible for W3C features
  * - Liskov Substitution: Drop-in replacement for any IEventDispatcher
  * - Interface Segregation: Only implements required IEventDispatcher methods
- * - Dependency Inversion: RSMTestExecutor depends on IEventDispatcher abstraction
+ * - Dependency Inversion: SCETestExecutor depends on IEventDispatcher abstraction
  *
  * W3C Test Environment Characteristics:
  * - Immediate execution: All events execute immediately (no real scheduling)

@@ -156,7 +156,7 @@ class GeneratedStateMachine {
 
 ## Current State
 
-### Dynamic Runtime (rsm_unified)
+### Dynamic Runtime (sce_unified)
 - **W3C Compliance**: 202/202 tests PASSED ✅
 - **Role**: Completeness guarantee - supports ALL SCXML features
 - **Performance**: Interpreter-based, suitable for most applications
@@ -615,7 +615,7 @@ struct test387Policy {
 **Critical Principle**: Zero duplication - Static and interpreter engines share W3C SCXML core.
 
 ```cpp
-// Shared Core Components (rsm/include/core/)
+// Shared Core Components (sce/include/core/)
 namespace SCE::Core {
     class EventQueueManager<EventType>;  // W3C 3.12.1: Internal event queue
     class StateExecutor;                 // W3C 3.7/3.8: Entry/Exit actions
@@ -703,7 +703,7 @@ auto transitionsByEvent = groupTransitionsByEventPreservingOrder(eventTransition
 
 **Purpose**: W3C SCXML 3.12.1 Internal Event Queue implementation
 
-**Location**: `rsm/include/core/EventQueueManager.h`
+**Location**: `sce/include/core/EventQueueManager.h`
 
 **Used By**:
 - StaticExecutionEngine (static generated code)
@@ -740,7 +740,7 @@ class EventQueueManager {
 **SCE::Common::ForeachHelper::setLoopVariable()**:
 - W3C SCXML 4.6: Foreach variable declaration and type preservation
 - Single Source of Truth for foreach variable setting logic
-- Location: `rsm/include/common/ForeachHelper.h`
+- Location: `sce/include/common/ForeachHelper.h`
 - Used by: Interpreter engine (ActionExecutorImpl), AOT engine (generated code)
 - Features:
   - Variable existence check (`'var' in this`)
@@ -752,7 +752,7 @@ class EventQueueManager {
 **SCE::SendHelper::validateTarget() / isInvalidTarget() / sendToParent()**:
 - W3C SCXML 6.2: Send element target validation and parent-child event routing
 - Single Source of Truth for send action logic shared between engines
-- Location: `rsm/include/common/SendHelper.h`
+- Location: `sce/include/common/SendHelper.h`
 - Used by: Interpreter engine (ActionExecutorImpl), AOT engine (generated code)
 - Features:
   - **validateTarget()**: Target format validation (rejects targets starting with "!")
@@ -768,7 +768,7 @@ class EventQueueManager {
 **SCE::AssignHelper::isValidLocation() / getInvalidLocationErrorMessage()**:
 - W3C SCXML 5.3, 5.4, B.2: Assignment location validation and system variable immutability
 - Single Source of Truth for assign action validation shared between engines
-- Location: `rsm/include/common/AssignHelper.h`
+- Location: `sce/include/common/AssignHelper.h`
 - Used by: Interpreter engine (ActionExecutorImpl), AOT engine (generated code)
 - Features:
   - **isValidLocation()**: Empty location detection + read-only system variable validation
@@ -783,7 +783,7 @@ class EventQueueManager {
 **SCE::DoneDataHelper::evaluateParams() / evaluateContent()**:
 - W3C SCXML 5.5, 5.7: Donedata param and content evaluation
 - Single Source of Truth for done event data generation shared between engines
-- Location: `rsm/include/common/DoneDataHelper.h`
+- Location: `sce/include/common/DoneDataHelper.h`
 - Used by: Interpreter engine (StateMachine::evaluateDoneData), AOT engine (StaticCodeGenerator::generateDoneDataCode)
 - Features:
   - **evaluateContent()**: Evaluate `<content>` expression to set entire _event.data value
@@ -801,7 +801,7 @@ class EventQueueManager {
 **SCE::NamelistHelper::evaluateNamelist()**:
 - W3C SCXML C.1, 6.2: Namelist variable evaluation for event data population
 - Single Source of Truth for namelist processing shared between engines
-- Location: `rsm/include/common/NamelistHelper.h`
+- Location: `sce/include/common/NamelistHelper.h`
 - Used by: Interpreter engine (ActionExecutorImpl::executeSendAction), AOT engine (send.jinja2 template)
 - Features:
   - **evaluateNamelist()**: Parse space-separated variable names, evaluate via JSEngine, store in params map
@@ -816,7 +816,7 @@ class EventQueueManager {
 **SCE::DatamodelValidationHelper::buildChildDatamodelSet() / isVariableDeclaredInChild()**:
 - W3C SCXML 6.3.2: Child datamodel variable validation for namelist and param binding
 - Single Source of Truth for invoke parameter validation logic shared between engines
-- Location: `rsm/include/common/DatamodelValidationHelper.h`
+- Location: `sce/include/common/DatamodelValidationHelper.h`
 - Used by: Interpreter engine (InvokeExecutor.cpp), AOT engine (entry_exit_actions.jinja2 template)
 - Features:
   - **buildChildDatamodelSet()**: Convert child datamodel variable vector to set for O(log n) lookup
@@ -832,7 +832,7 @@ class EventQueueManager {
 **SCE::InvokeHelper::deferInvoke() / cancelInvokesForState() / executePendingInvokes()**:
 - W3C SCXML 6.4: Invoke lifecycle management (defer/cancel/execute pattern)
 - Single Source of Truth for invoke execution timing shared between engines
-- Location: `rsm/include/common/InvokeHelper.h`
+- Location: `sce/include/common/InvokeHelper.h`
 - Used by: Interpreter engine (InvokeManager), AOT engine (generated code from entry_exit_actions.jinja2)
 - Features:
   - **deferInvoke()**: Add invoke to pending list during state entry (W3C SCXML 6.4)
@@ -860,7 +860,7 @@ class EventQueueManager {
 **SCE::Common::HierarchicalStateHelper / HierarchicalStateHelperString**:
 - W3C SCXML 3.12, 3.7, 3.8: Hierarchical state transition logic (LCA calculation, entry/exit chains)
 - Single Source of Truth for hierarchical state operations shared between engines
-- Location: `rsm/include/common/HierarchicalStateHelper.h`
+- Location: `sce/include/common/HierarchicalStateHelper.h`
 - Used by: Interpreter engine (StateMachine::findLCA), AOT engine (StaticExecutionEngine::handleHierarchicalTransition)
 - Features:
   - **findLCA()**: Least Common Ancestor calculation for external transitions
@@ -891,7 +891,7 @@ class EventQueueManager {
 **SCE::SendSchedulingHelper::parseDelayString() / SimpleScheduler**:
 - W3C SCXML 6.2: Delay string parsing and event scheduling logic
 - Single Source of Truth for delayed send implementation shared between engines
-- Location: `rsm/include/common/SendSchedulingHelper.h`
+- Location: `sce/include/common/SendSchedulingHelper.h`
 - Used by: Interpreter engine (ActionExecutorImpl), AOT engine (generated code)
 - Features:
   - Delay format parsing: "5s", "100ms", "2min", "1h", ".5s", "0.5s"
@@ -904,7 +904,7 @@ class EventQueueManager {
 **SCE::PlatformExecutionHelper (Synchronous/Queued Executors)**:
 - W3C SCXML 5.3: Platform-specific execution strategy abstraction (WASM synchronous vs Native pthread)
 - Single Source of Truth for platform-dependent JSEngine execution logic
-- Location: `rsm/include/common/PlatformExecutionHelper.h`, `rsm/src/common/PlatformExecutionHelper.cpp`
+- Location: `sce/include/common/PlatformExecutionHelper.h`, `sce/src/common/PlatformExecutionHelper.cpp`
 - Used by: JSEngine (unified execution interface for both Native and WASM platforms)
 - Features:
   - **Abstract Interface**: executeAsync(), shutdown(), reset(), getRuntimePointer(), waitForRuntimeInitialization()

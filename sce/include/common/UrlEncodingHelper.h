@@ -27,7 +27,7 @@ namespace SCE {
  * Used by both Interpreter and AOT engines for HTTP event transmission.
  *
  * Usage:
- * - Interpreter: HttpEventTarget for BasicHTTP Event I/O Processor (rsm/src/events/HttpEventTarget.cpp)
+ * - Interpreter: HttpEventTarget for BasicHTTP Event I/O Processor (sce/src/events/HttpEventTarget.cpp)
  * - AOT: Same HttpEventTarget shared infrastructure (no duplication)
  *
  * W3C SCXML C.2: BasicHTTP Event I/O Processor requires application/x-www-form-urlencoded

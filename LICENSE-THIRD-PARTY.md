@@ -76,7 +76,7 @@ Copyright (C) 2006-2023, by Arseny Kapoulkine (arseny.kapoulkine@gmail.com)
 Permission is hereby granted, free of charge, to any person obtaining a copy...
 ```
 
-**Note:** RSM previously used libxml++ (LGPL 2.1) on native platforms, but has migrated to pugixml for all platforms to eliminate LGPL dependencies entirely.
+**Note:** SCE previously used libxml++ (LGPL 2.1) on native platforms, but has migrated to pugixml for all platforms to eliminate LGPL dependencies entirely.
 
 ---
 
@@ -137,7 +137,7 @@ grep "CPPHTTPLIB_VERSION" /usr/include/httplib.h
 
 ## License Compatibility Matrix
 
-### RSM Dual License (LGPL-2.1/Commercial) + MIT Dependencies
+### SCE Dual License (LGPL-2.1/Commercial) + MIT Dependencies
 
 | Your License | QuickJS | spdlog | cpp-httplib | pugixml | nlohmann/json |
 |-------------|---------|--------|-------------|---------|---------------|
@@ -166,7 +166,7 @@ Include this file (LICENSE-THIRD-PARTY.md) or equivalent attribution in:
 ### Minimum Attribution Text
 
 ```
-RSM uses the following third-party libraries:
+SCE uses the following third-party libraries:
 - QuickJS (MIT) - Copyright Fabrice Bellard, Charlie Gordon
 - spdlog (MIT) - Copyright Gabi Melman
 - cpp-httplib (MIT) - Copyright Yuji Hirose
@@ -180,7 +180,7 @@ RSM uses the following third-party libraries:
 
 All dependencies are open source. Sources available at:
 
-- **QuickJS:** https://bellard.org/quickjs/ (or rsm/external/quickjs)
+- **QuickJS:** https://bellard.org/quickjs/ (or sce/external/quickjs)
 - **spdlog:** https://github.com/gabime/spdlog
 - **cpp-httplib:** https://github.com/yhirose/cpp-httplib
 - **pugixml:** https://pugixml.org/ (or third_party/pugixml)
@@ -200,5 +200,5 @@ We provide compliance assistance as part of our Commercial License support.
 ---
 
 **Last Updated:** January 7, 2025
-**RSM Version:** 1.0
-**Verified By:** RSM Development Team
+**SCE Version:** 1.0
+**Verified By:** SCE Development Team

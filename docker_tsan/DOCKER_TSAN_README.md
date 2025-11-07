@@ -77,7 +77,7 @@ root@container:/workspace/build_tsan/tests# exit
 
 ```bash
 docker run --rm -v "$PWD:/workspace" -w /workspace/build_tsan/tests \
-    rsm-tsan-env:latest \
+    sce-tsan-env:latest \
     env SPDLOG_LEVEL=off ./w3c_test_cli 144
 ```
 
@@ -205,7 +205,7 @@ This is normal and expected.
 ### Rebuild image
 
 ```bash
-docker rmi rsm-tsan-env:latest
+docker rmi sce-tsan-env:latest
 ./build_tsan.sh  # Will prompt to rebuild
 ```
 
@@ -213,7 +213,7 @@ docker rmi rsm-tsan-env:latest
 
 ```bash
 # Remove image
-docker rmi rsm-tsan-env:latest
+docker rmi sce-tsan-env:latest
 
 # Remove build logs
 rm docker-tsan-build.log

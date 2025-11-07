@@ -42,7 +42,7 @@ public:
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
      *
      * Usage:
-     * - Interpreter: StateMachine::processEvent() (rsm/src/runtime/StateMachine.cpp)
+     * - Interpreter: StateMachine::processEvent() (sce/src/runtime/StateMachine.cpp)
      * - AOT: executeFinalizeForChildEvent() (tools/codegen/templates/utility_methods.jinja2)
      *
      * W3C SCXML 6.5 (test 233): "If there is a finalize handler in the instance of invoke

@@ -39,7 +39,7 @@ public:
 };
 
 int main() {
-    std::cout << "=== RSM CMake Function Example ===" << std::endl;
+    std::cout << "=== SCE CMake Function Example ===" << std::endl;
     std::cout << std::endl;
 
     LightController light;

@@ -144,7 +144,7 @@ endif()
 # WASM Memory Configuration (Single Source of Truth)
 # =============================================================================
 if(EMSCRIPTEN)
-    # Central WASM memory configuration shared by rsm/ and tests/
+    # Central WASM memory configuration shared by sce/ and tests/
     set(WASM_INITIAL_MEMORY 536870912 CACHE STRING "WASM initial heap size in bytes (512MB)")
     message(STATUS "WASM: INITIAL_MEMORY=${WASM_INITIAL_MEMORY} (${WASM_INITIAL_MEMORY} bytes = 512 MB)")
 endif()
@@ -152,8 +152,8 @@ endif()
 # Include GNUInstallDirs for installation paths
 include(GNUInstallDirs)
 
-# Include RSM code generation utilities
-include(cmake/RSMCodegen.cmake)
+# Include SCE code generation utilities
+include(cmake/SCECodegen.cmake)
 
 # Position independent code generation (for shared libraries)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -173,7 +173,7 @@ endif()
 find_package(PkgConfig REQUIRED)
 
 # Modular Architecture - Add subdirectories
-add_subdirectory(rsm)                 # Unified RSM library with integrated parsing
+add_subdirectory(sce)                 # Unified SCE library with integrated parsing
 
 # Tools - code generation and TXML conversion
 add_subdirectory(tools/codegen)       # Code generation tool
@@ -198,7 +198,7 @@ if(BUILD_EXAMPLES)
 endif()
 
 # Installation configuration (using GNUInstallDirs variables)
-install(TARGETS rsm_unified
+install(TARGETS sce_unified
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -213,7 +213,7 @@ if(NOT EMSCRIPTEN)
 endif()
 
 install(DIRECTORY
-        rsm/include/
+        sce/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h"
 )
@@ -253,6 +253,6 @@ install(
     FILES
         "${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfig.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfigVersion.cmake"
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/RSMCodegen.cmake"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/StateMachine
 )

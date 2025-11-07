@@ -9,7 +9,7 @@ add_executable(txml-converter
 target_include_directories(txml-converter
     PRIVATE
         ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/rsm/include
+        ${CMAKE_SOURCE_DIR}/sce/include
 )
 
 target_link_libraries(txml-converter

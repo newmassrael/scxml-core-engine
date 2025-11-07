@@ -16,7 +16,7 @@
 
 #include "common/Logger.h"
 
-#ifdef RSM_USE_SPDLOG
+#ifdef SCE_USE_SPDLOG
 #include "backends/SpdlogBackend.h"
 #else
 #include "backends/DefaultBackend.h"
@@ -41,7 +41,7 @@ void Logger::setBackend(std::unique_ptr<ILoggerBackend> backend) {
 void Logger::initialize() {
     std::lock_guard<std::mutex> lock(backend_mutex);
     if (!backend_) {
-#ifdef RSM_USE_SPDLOG
+#ifdef SCE_USE_SPDLOG
         backend_ = std::make_unique<SpdlogBackend>();
 #else
         backend_ = std::make_unique<DefaultBackend>();
@@ -52,7 +52,7 @@ void Logger::initialize() {
 void Logger::initialize([[maybe_unused]] const std::string &logDir, [[maybe_unused]] bool logToFile) {
     std::lock_guard<std::mutex> lock(backend_mutex);
     if (!backend_) {
-#ifdef RSM_USE_SPDLOG
+#ifdef SCE_USE_SPDLOG
         backend_ = std::make_unique<SpdlogBackend>(logDir, logToFile);
 #else
         // DefaultBackend doesn't support file logging

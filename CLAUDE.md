@@ -151,11 +151,11 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
 
 **Required Steps**:
 1. **Add to `tests/CMakeLists.txt` - Code Generation** (line ~430-490):
-   - Use `rsm_generate_static_w3c_test(TEST_NUM ${STATIC_W3C_OUTPUT_DIR})`
+   - Use `sce_generate_static_w3c_test(TEST_NUM ${STATIC_W3C_OUTPUT_DIR})`
    - Add W3C SCXML specification reference comment
    - Example:
      ```cmake
-     rsm_generate_static_w3c_test(279 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding variable initialization
+     sce_generate_static_w3c_test(279 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding variable initialization
      ```
 
 2. **Add to `tests/CMakeLists.txt` - AOT Test Registry** (line ~663-676):
@@ -246,11 +246,11 @@ If a test cannot be statically generated, it should **NOT be added to AOT tests*
 
 **Required Steps**:
 1. **Add to `tests/CMakeLists.txt`**:
-   - Use `rsm_generate_static_w3c_test(TEST_NUM ${STATIC_W3C_OUTPUT_DIR})`
+   - Use `sce_generate_static_w3c_test(TEST_NUM ${STATIC_W3C_OUTPUT_DIR})`
    - Add W3C SCXML C.2 specification reference comment
    - Example:
      ```cmake
-     rsm_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP content element
+     sce_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP content element
      ```
 
 2. **Create AOT Test Registry File** `tests/w3c/aot_tests/TestXXX.h`:
@@ -340,7 +340,7 @@ If a test cannot be statically generated, it should **NOT be added to AOT tests*
 - [ ] **Template Modifications**: Jinja2 templates updated (not direct code generation)?
 - [ ] **Test Integration**:
   - [ ] Static tests: Both CMakeLists.txt steps completed?
-    - [ ] rsm_generate_static_w3c_test() call added (line ~430-490)?
+    - [ ] sce_generate_static_w3c_test() call added (line ~430-490)?
     - [ ] Test number added to W3C_AOT_TESTS list (line ~663-676)?
     - [ ] Test number removed from W3C_INTERPRETER_ONLY_TESTS?
   - [ ] TestXXX.h created in tests/w3c/aot_tests/?

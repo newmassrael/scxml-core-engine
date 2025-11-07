@@ -26,7 +26,7 @@ namespace SCE {
 SpdlogBackend::SpdlogBackend(const std::string &logDir, bool logToFile) {
     if (logDir.empty() && !logToFile) {
         // Default: console only
-        logger_ = spdlog::stdout_color_mt("RSM");
+        logger_ = spdlog::stdout_color_mt("SCE");
         logger_->set_pattern("[%H:%M:%S.%e] [%^%l%$] %v");
     } else {
         // Console + file logging
@@ -40,14 +40,14 @@ SpdlogBackend::SpdlogBackend(const std::string &logDir, bool logToFile) {
         // File sink (if requested)
         if (logToFile && !logDir.empty()) {
             std::filesystem::create_directories(logDir);
-            std::filesystem::path logPath = std::filesystem::path(logDir) / "rsm.log";
+            std::filesystem::path logPath = std::filesystem::path(logDir) / "sce.log";
 
             auto file_sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logPath.string(), true);
             file_sink->set_pattern("[%Y-%m-%d %H:%M:%S.%e] [%l] [%t] %v");
             sinks.push_back(file_sink);
         }
 
-        logger_ = std::make_shared<spdlog::logger>("RSM", sinks.begin(), sinks.end());
+        logger_ = std::make_shared<spdlog::logger>("SCE", sinks.begin(), sinks.end());
         spdlog::register_logger(logger_);
     }
 

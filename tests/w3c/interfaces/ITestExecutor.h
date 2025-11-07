@@ -33,7 +33,7 @@ struct TestExecutionContext {
  * @brief Interface for executing SCXML tests
  *
  * Single Responsibility: Only executes individual tests
- * - Runs SCXML through RSM engine
+ * - Runs SCXML through SCE engine
  * - Captures execution results
  * - Handles timeouts and errors
  */

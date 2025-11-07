@@ -297,7 +297,7 @@ class SCXMLParser:
 
         ARCHITECTURE.md Zero Duplication: Follows FileLoadingHelper pattern.
         Algorithm matches C++ FileLoadingHelper::loadExternalScript().
-        See rsm/include/common/FileLoadingHelper.h for C++ implementation.
+        See sce/include/common/FileLoadingHelper.h for C++ implementation.
 
         W3C SCXML 5.8: "If the script can not be downloaded within a platform-specific
         timeout interval, the document is considered non-conformant, and the platform

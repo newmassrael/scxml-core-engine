@@ -32,7 +32,7 @@ enum class LogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4, Criti
  * @brief Logger backend interface for dependency injection
  *
  * Users can implement this interface to integrate custom logging systems.
- * This allows RSM to use any logging framework (spdlog, glog, custom, etc.)
+ * This allows SCE to use any logging framework (spdlog, glog, custom, etc.)
  * without compile-time dependencies.
  *
  * Example: Custom logger integration

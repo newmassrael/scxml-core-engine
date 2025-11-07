@@ -30,7 +30,7 @@ namespace SCE {
  * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
  *
  * Usage:
- * - Interpreter: StateMachine initialization (rsm/src/runtime/StateMachine.cpp)
+ * - Interpreter: StateMachine initialization (sce/src/runtime/StateMachine.cpp)
  * - AOT: StaticCodeGenerator jsengine_helpers.jinja2 template (tools/codegen/templates/jsengine_helpers.jinja2)
  *
  * W3C SCXML 5.10 (test 500): System variables (_sessionid, _name, _ioprocessors)
