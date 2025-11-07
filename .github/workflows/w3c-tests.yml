@@ -270,14 +270,22 @@ jobs:
     - name: Generate HTML Report
       if: always()
       run: |
-        python3 tests/w3c/scripts/xml_to_html.py \
-          build/tests/w3c_test_results.xml \
-          build/tests/w3c_test_results.html
+        # XML file is in build/tests (copied from project root if needed)
+        if [ -f build/tests/w3c_test_results.xml ]; then
+          echo "Generating HTML report from build/tests/w3c_test_results.xml"
+          python3 tests/w3c/scripts/xml_to_html.py \
+            build/tests/w3c_test_results.xml \
+            build/tests/w3c_test_results.html
 
-        # Create a clean directory with only HTML files for GitHub Pages
-        mkdir -p gh-pages
-        cp build/tests/w3c_test_results.html gh-pages/test-results.html
-        cp build/tests/w3c_test_results.xml gh-pages/
+          # Create a clean directory with only HTML files for GitHub Pages
+          mkdir -p gh-pages
+          cp build/tests/w3c_test_results.html gh-pages/test-results.html
+          cp build/tests/w3c_test_results.xml gh-pages/
+          echo "✅ HTML report and XML copied to gh-pages/"
+        else
+          echo "❌ ERROR: w3c_test_results.xml not found - cannot generate HTML report"
+          echo "GitHub Pages will not be updated"
+        fi
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
