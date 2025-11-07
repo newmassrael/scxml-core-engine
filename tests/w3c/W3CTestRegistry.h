@@ -2,7 +2,7 @@
 
 #include <unordered_map>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief W3C SCXML Test Engine Type
@@ -92,4 +92,4 @@ private:
     static const std::unordered_map<std::string, TestEngine> &getRegistry();
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

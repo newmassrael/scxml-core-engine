@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class IExecutionContext;
 
@@ -84,4 +84,4 @@ struct ActionResult {
     }
 };
 
-}  // namespace RSM
+}  // namespace SCE

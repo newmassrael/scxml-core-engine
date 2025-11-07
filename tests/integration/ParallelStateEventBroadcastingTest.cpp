@@ -7,7 +7,7 @@
 #include <thread>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class ParallelStateEventBroadcastingTest : public ::testing::Test {
 protected:
@@ -148,4 +148,4 @@ TEST_F(ParallelStateEventBroadcastingTest, InactiveRegionHandling) {
     EXPECT_EQ(region2_->getEventCount(), 0) << "Inactive region should not receive event";
 }
 
-}  // namespace RSM
+}  // namespace SCE

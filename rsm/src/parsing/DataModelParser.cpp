@@ -8,17 +8,17 @@
 #ifndef __EMSCRIPTEN__
 #endif
 
-RSM::DataModelParser::DataModelParser(std::shared_ptr<NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
+SCE::DataModelParser::DataModelParser(std::shared_ptr<NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
     LOG_DEBUG("Creating data model parser");
 }
 
-RSM::DataModelParser::~DataModelParser() {
+SCE::DataModelParser::~DataModelParser() {
     LOG_DEBUG("Destroying data model parser");
 }
 
-std::vector<std::shared_ptr<RSM::IDataModelItem>>
-RSM::DataModelParser::parseDataModelNode(const std::shared_ptr<IXMLElement> &datamodelNode,
-                                         const RSM::SCXMLContext &context) {
+std::vector<std::shared_ptr<SCE::IDataModelItem>>
+SCE::DataModelParser::parseDataModelNode(const std::shared_ptr<IXMLElement> &datamodelNode,
+                                         const SCE::SCXMLContext &context) {
     std::vector<std::shared_ptr<IDataModelItem>> items;
 
     if (!datamodelNode) {
@@ -29,7 +29,7 @@ RSM::DataModelParser::parseDataModelNode(const std::shared_ptr<IXMLElement> &dat
     LOG_DEBUG("Parsing datamodel node");
 
     // Parse data nodes
-    auto dataNodes = RSM::ParsingCommon::findChildElements(datamodelNode, "data");
+    auto dataNodes = SCE::ParsingCommon::findChildElements(datamodelNode, "data");
     for (const auto &dataElement : dataNodes) {
         auto dataItem = parseDataModelItem(dataElement, context);
         if (dataItem) {
@@ -42,9 +42,9 @@ RSM::DataModelParser::parseDataModelNode(const std::shared_ptr<IXMLElement> &dat
     return items;
 }
 
-std::shared_ptr<RSM::IDataModelItem>
-RSM::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dataNode,
-                                         const RSM::SCXMLContext &context) {
+std::shared_ptr<SCE::IDataModelItem>
+SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dataNode,
+                                         const SCE::SCXMLContext &context) {
     if (!dataNode) {
         LOG_WARN("Null data node");
         return nullptr;
@@ -113,7 +113,7 @@ RSM::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dat
     return dataItem;
 }
 
-void RSM::DataModelParser::parseDataContent(const std::shared_ptr<IXMLElement> &dataNode,
+void SCE::DataModelParser::parseDataContent(const std::shared_ptr<IXMLElement> &dataNode,
                                             std::shared_ptr<IDataModelItem> dataItem) {
     if (!dataNode || !dataItem) {
         return;
@@ -129,9 +129,9 @@ void RSM::DataModelParser::parseDataContent(const std::shared_ptr<IXMLElement> &
     }
 }
 
-std::vector<std::shared_ptr<RSM::IDataModelItem>>
-RSM::DataModelParser::parseDataModelInState(const std::shared_ptr<IXMLElement> &stateNode,
-                                            const RSM::SCXMLContext &context) {
+std::vector<std::shared_ptr<SCE::IDataModelItem>>
+SCE::DataModelParser::parseDataModelInState(const std::shared_ptr<IXMLElement> &stateNode,
+                                            const SCE::SCXMLContext &context) {
     std::vector<std::shared_ptr<IDataModelItem>> items;
 
     if (!stateNode) {
@@ -142,7 +142,7 @@ RSM::DataModelParser::parseDataModelInState(const std::shared_ptr<IXMLElement> &
     LOG_DEBUG("Parsing datamodel in state");
 
     // Find datamodel element
-    auto datamodelNode = RSM::ParsingCommon::findFirstChildElement(stateNode, "datamodel");
+    auto datamodelNode = SCE::ParsingCommon::findFirstChildElement(stateNode, "datamodel");
     if (datamodelNode) {
         auto stateItems = parseDataModelNode(datamodelNode, context);
         items.insert(items.end(), stateItems.begin(), stateItems.end());
@@ -152,7 +152,7 @@ RSM::DataModelParser::parseDataModelInState(const std::shared_ptr<IXMLElement> &
     return items;
 }
 
-std::string RSM::DataModelParser::extractDataModelType(const std::shared_ptr<IXMLElement> &datamodelNode) const {
+std::string SCE::DataModelParser::extractDataModelType(const std::shared_ptr<IXMLElement> &datamodelNode) const {
     if (!datamodelNode) {
         return "";
     }
@@ -164,7 +164,7 @@ std::string RSM::DataModelParser::extractDataModelType(const std::shared_ptr<IXM
     return "";
 }
 
-bool RSM::DataModelParser::isDataModelItem(const std::shared_ptr<IXMLElement> &element) const {
+bool SCE::DataModelParser::isDataModelItem(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
@@ -173,7 +173,7 @@ bool RSM::DataModelParser::isDataModelItem(const std::shared_ptr<IXMLElement> &e
     return matchNodeName(nodeName, "data");
 }
 
-bool RSM::DataModelParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
+bool SCE::DataModelParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
     // Exact match
     if (nodeName == searchName) {
         return true;
@@ -189,7 +189,7 @@ bool RSM::DataModelParser::matchNodeName(const std::string &nodeName, const std:
     return false;
 }
 
-void RSM::DataModelParser::loadExternalContent(const std::string &src, std::shared_ptr<IDataModelItem> dataItem) {
+void SCE::DataModelParser::loadExternalContent(const std::string &src, std::shared_ptr<IDataModelItem> dataItem) {
     // W3C SCXML 5.2.2: Load data from external sources
     // ARCHITECTURE.MD: Zero Duplication - Use FileLoadingHelper (Single Source of Truth)
 

@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Helper for binding C++ classes to JavaScript using QuickJS
@@ -338,4 +338,4 @@ private:
     }
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -14,7 +14,7 @@
  * @brief Object model representation of SCXML document
  */
 
-namespace RSM {
+namespace SCE {
 
 class SCXMLModel {
 public:
@@ -265,4 +265,4 @@ private:
     std::vector<std::shared_ptr<IActionNode>> topLevelScripts_;  // W3C SCXML 5.8
 };
 
-}  // namespace RSM
+}  // namespace SCE

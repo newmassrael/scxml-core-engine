@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <filesystem>
 
-std::string RSM::DataModelInitHelper::resolveExecutableBasePath(const std::string &relativePath) {
+std::string SCE::DataModelInitHelper::resolveExecutableBasePath(const std::string &relativePath) {
     // ARCHITECTURE.md: Execution location independence for AOT tests
     // Convert relative basePath to absolute based on executable location
 
@@ -45,7 +45,7 @@ std::string RSM::DataModelInitHelper::resolveExecutableBasePath(const std::strin
     }
 }
 
-bool RSM::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
+bool SCE::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
     // W3C SCXML B.2: Detect JavaScript function literals
     // Test 453: function() {...} or () => {...} patterns
 
@@ -75,7 +75,7 @@ bool RSM::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
     return false;
 }
 
-bool RSM::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std::string &sessionId,
                                                   const std::string &varId, const std::string &content,
                                                   std::function<void(const std::string &)> errorCallback) {
     // W3C SCXML 5.2.2 & B.2: Initialize datamodel variable with inline content or expression
@@ -154,7 +154,7 @@ bool RSM::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std:
     return true;
 }
 
-bool RSM::DataModelInitHelper::initializeVariableFromSrc(JSEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariableFromSrc(JSEngine &jsEngine, const std::string &sessionId,
                                                          const std::string &varId, const std::string &src,
                                                          const std::string &basePath,
                                                          std::function<void(const std::string &)> errorCallback) {
@@ -178,7 +178,7 @@ bool RSM::DataModelInitHelper::initializeVariableFromSrc(JSEngine &jsEngine, con
     return initSuccess;
 }
 
-bool RSM::DataModelInitHelper::initializeVariableFromExpr(JSEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariableFromExpr(JSEngine &jsEngine, const std::string &sessionId,
                                                           const std::string &varId, const std::string &expr,
                                                           std::function<void(const std::string &)> errorCallback) {
     // W3C SCXML 5.2/5.3: Evaluate expr attribute and assign to variable

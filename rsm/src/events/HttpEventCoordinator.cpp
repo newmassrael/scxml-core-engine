@@ -2,7 +2,7 @@
 #include "common/Logger.h"
 #include <algorithm>
 
-namespace RSM {
+namespace SCE {
 
 HttpEventCoordinator::HttpEventCoordinator(const HttpCoordinatorConfig &config)
     : config_(config), typeRegistry_(TypeRegistry::getInstance()) {
@@ -372,4 +372,4 @@ std::shared_ptr<HttpEventTarget> HttpEventCoordinator::createHttpTarget(const st
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

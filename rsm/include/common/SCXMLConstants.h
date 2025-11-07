@@ -1,6 +1,6 @@
 #pragma once
 
-namespace RSM::Constants {
+namespace SCE::Constants {
 
 /**
  * @brief W3C SCXML C.1: SCXML Event I/O Processor type URL
@@ -24,4 +24,4 @@ namespace RSM::Constants {
  */
 constexpr const char *SCXML_EVENT_PROCESSOR_TYPE = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
 
-}  // namespace RSM::Constants
+}  // namespace SCE::Constants

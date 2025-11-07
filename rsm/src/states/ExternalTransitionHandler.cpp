@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <stdexcept>
 
-namespace RSM {
+namespace SCE {
 
 ExternalTransitionHandler::ExternalTransitionHandler(size_t maxConcurrentTransitions)
     : maxConcurrentTransitions_(maxConcurrentTransitions) {
@@ -182,4 +182,4 @@ bool ExternalTransitionHandler::validateTransitionParameters(const std::string &
     return !parallelStateId.empty() && !targetStateId.empty() && !transitionEvent.empty();
 }
 
-}  // namespace RSM
+}  // namespace SCE

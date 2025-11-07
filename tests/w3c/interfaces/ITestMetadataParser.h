@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief Test metadata structure from W3C test definition
@@ -41,4 +41,4 @@ public:
     virtual TestMetadata parseMetadata(const std::string &metadataPath) = 0;
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

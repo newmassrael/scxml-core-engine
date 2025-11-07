@@ -5,7 +5,7 @@
 #include <filesystem>
 #include <fstream>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Internal implementation of ReadySCXMLEngine
@@ -246,4 +246,4 @@ std::unique_ptr<ReadySCXMLEngine> ReadySCXMLEngine::fromString(const std::string
     return engine;
 }
 
-}  // namespace RSM
+}  // namespace SCE

@@ -18,7 +18,7 @@
  * Corresponds to <state>, <parallel>, <final> elements in SCXML documents.
  */
 
-namespace RSM {
+namespace SCE {
 
 class StateNode : public IStateNode {
 public:
@@ -134,25 +134,25 @@ public:
      * @brief W3C SCXML 3.8: Add entry action block (each onentry handler is a separate block)
      * @param block Action node block
      */
-    void addEntryActionBlock(std::vector<std::shared_ptr<RSM::IActionNode>> block) override;
+    void addEntryActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) override;
 
     /**
      * @brief W3C SCXML 3.8: Get entry action blocks
      * @return Entry action blocks
      */
-    const std::vector<std::vector<std::shared_ptr<RSM::IActionNode>>> &getEntryActionBlocks() const override;
+    const std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> &getEntryActionBlocks() const override;
 
     /**
      * @brief W3C SCXML 3.9: Add exit action block (each onexit handler is a separate block)
      * @param block Action node block
      */
-    void addExitActionBlock(std::vector<std::shared_ptr<RSM::IActionNode>> block) override;
+    void addExitActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) override;
 
     /**
      * @brief W3C SCXML 3.9: Get exit action blocks
      * @return Exit action blocks
      */
-    const std::vector<std::vector<std::shared_ptr<RSM::IActionNode>>> &getExitActionBlocks() const override;
+    const std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> &getExitActionBlocks() const override;
 
     /**
      * @brief Add invoke node
@@ -187,12 +187,6 @@ public:
     bool isDeepHistory() const override {
         return historyType_ == HistoryType::DEEP;
     }
-
-    // Method to add reactive guard ID
-    void addReactiveGuard(const std::string &guardId) override;
-
-    // IStateNode interface implementation
-    const std::vector<std::string> &getReactiveGuards() const override;
 
     bool isFinalState() const override;
 
@@ -250,13 +244,12 @@ private:
     // New action system (IActionNode-based)
 
     // W3C SCXML 3.8/3.9: Block-based action storage for proper handler isolation
-    std::vector<std::vector<std::shared_ptr<RSM::IActionNode>>> entryActionBlocks_;
-    std::vector<std::vector<std::shared_ptr<RSM::IActionNode>>> exitActionBlocks_;
+    std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> entryActionBlocks_;
+    std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> exitActionBlocks_;
 
     std::vector<std::shared_ptr<IInvokeNode>> invokes_;
     DoneData doneData_;
-    std::vector<std::string> reactiveGuards_;
     std::shared_ptr<ITransitionNode> initialTransition_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief Interface for converting TXML test files to SCXML format
@@ -24,4 +24,4 @@ public:
     virtual std::string convertTXMLToSCXML(const std::string &txml) = 0;
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

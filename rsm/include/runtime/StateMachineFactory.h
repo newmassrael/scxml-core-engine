@@ -6,7 +6,7 @@
 #include <string>
 #include <variant>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Factory for creating StateMachine instances with proper dependency injection
@@ -99,4 +99,4 @@ private:
     static CreationResult createInternal(const std::string &scxmlContent = "", bool autoInitialize = true);
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -4,7 +4,7 @@
 
 using json = nlohmann::json;
 
-namespace RSM {
+namespace SCE {
 namespace Test {
 
 // W3C SCXML 5.10: Event data construction tests
@@ -122,4 +122,4 @@ TEST_F(EventDataHelperTest, NumericValuesAsStrings) {
 }
 
 }  // namespace Test
-}  // namespace RSM
+}  // namespace SCE

@@ -3,7 +3,7 @@
 #include "ITestExecutor.h"
 #include <string>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief W3C test validation result
@@ -48,4 +48,4 @@ public:
     virtual bool shouldSkipTest(const TestMetadata &metadata) = 0;
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

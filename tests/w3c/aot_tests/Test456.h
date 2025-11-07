@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test456_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2/5.9: ECMAScript script element execution
@@ -40,10 +40,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test456 : public SimpleAotTest<Test456, 456> {
     static constexpr const char *DESCRIPTION = "ECMAScript script execution (W3C B.2/5.9 AOT)";
-    using SM = RSM::Generated::test456::test456;
+    using SM = SCE::Generated::test456::test456;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test456> registrar_Test456;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

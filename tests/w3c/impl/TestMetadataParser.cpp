@@ -6,7 +6,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 TestMetadata TestMetadataParser::parseMetadata(const std::string &metadataPath) {
     // Create default metadata first
@@ -149,4 +149,4 @@ int TestMetadataParser::extractTestIdFromPath(const std::string &metadataPath) {
     }
 }
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

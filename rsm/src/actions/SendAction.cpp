@@ -5,7 +5,7 @@
 #include "runtime/IExecutionContext.h"
 #include <regex>
 
-namespace RSM {
+namespace SCE {
 
 SendAction::SendAction(const std::string &event, const std::string &id) : BaseAction(id), event_(event) {}
 
@@ -265,4 +265,4 @@ std::string SendAction::getSpecificDescription() const {
     return desc;
 }
 
-}  // namespace RSM
+}  // namespace SCE

@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test294_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.7.2: Donedata with param and content
@@ -31,10 +31,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test294 : public SimpleAotTest<Test294, 294> {
     static constexpr const char *DESCRIPTION = "donedata with param and content (W3C 5.7.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test294::test294;
+    using SM = SCE::Generated::test294::test294;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test294> registrar_Test294;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

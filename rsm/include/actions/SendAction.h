@@ -5,7 +5,7 @@
 #include <map>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief SCXML <send> action implementation
@@ -269,4 +269,4 @@ private:
     std::string contentExpr_;                // Content expression for dynamic evaluation (W3C SCXML expr attribute)
 };
 
-}  // namespace RSM
+}  // namespace SCE

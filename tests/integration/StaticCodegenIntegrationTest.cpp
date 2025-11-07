@@ -7,7 +7,7 @@
 
 #include "Thermostat_sm.h"
 
-using namespace RSM::Generated;
+using namespace SCE::Generated;
 
 // User implementation using CRTP pattern
 class ThermostatLogic : public ThermostatBase<ThermostatLogic> {

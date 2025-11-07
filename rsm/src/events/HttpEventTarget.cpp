@@ -17,7 +17,7 @@
 #include <emscripten.h>
 #endif
 
-namespace RSM {
+namespace SCE {
 
 HttpEventTarget::HttpEventTarget(const std::string &targetUri, std::chrono::milliseconds timeoutMs, int maxRetries)
     : targetUri_(targetUri), port_(80), timeoutMs_(timeoutMs), maxRetries_(maxRetries), sslVerification_(true) {
@@ -122,7 +122,7 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
 
             // W3C SCXML 5.10: Deliver HTTP response as external event
             // Use EventRaiserService to get session-specific EventRaiser
-            auto eventRaiser = RSM::EventRaiserService::getInstance().getEventRaiser(event.sessionId);
+            auto eventRaiser = SCE::EventRaiserService::getInstance().getEventRaiser(event.sessionId);
             if (!eventRaiser) {
                 LOG_ERROR("HttpEventTarget: No EventRaiser for session '{}' - cannot deliver HTTP response event",
                           event.sessionId);
@@ -497,4 +497,4 @@ SendResult HttpEventTarget::convertHttpResponse(const httplib::Result &result, c
 }
 #endif  // __EMSCRIPTEN__
 
-}  // namespace RSM
+}  // namespace SCE

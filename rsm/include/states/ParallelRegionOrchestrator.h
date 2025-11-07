@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class IStateNode;
@@ -224,4 +224,4 @@ private:
     void updateRegionMap();
 };
 
-}  // namespace RSM
+}  // namespace SCE

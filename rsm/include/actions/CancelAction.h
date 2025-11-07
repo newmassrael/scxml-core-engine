@@ -3,7 +3,7 @@
 #include "BaseAction.h"
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief SCXML <cancel> action implementation
@@ -74,4 +74,4 @@ private:
     std::string sendIdExpr_;  // Expression that evaluates to sendid
 };
 
-}  // namespace RSM
+}  // namespace SCE

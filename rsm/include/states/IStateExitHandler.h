@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class IStateNode;
 class IExecutionContext;
@@ -41,4 +41,4 @@ public:
                                            std::shared_ptr<IExecutionContext> executionContext) = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

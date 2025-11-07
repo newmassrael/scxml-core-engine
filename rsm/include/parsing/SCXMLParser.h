@@ -20,7 +20,7 @@
 #include <vector>
 
 // Forward declarations for platform-agnostic XML abstraction
-namespace RSM {
+namespace SCE {
 class IXMLDocument;
 }
 
@@ -32,7 +32,7 @@ class IXMLDocument;
  * into complete object models.
  */
 
-namespace RSM {
+namespace SCE {
 
 class SCXMLParser {
 public:
@@ -214,4 +214,4 @@ private:
     std::vector<std::string> warningMessages_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

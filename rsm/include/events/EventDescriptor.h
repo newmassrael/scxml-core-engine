@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Comprehensive event descriptor for SCXML event system
@@ -118,4 +118,4 @@ struct SendResult {
     }
 };
 
-}  // namespace RSM
+}  // namespace SCE

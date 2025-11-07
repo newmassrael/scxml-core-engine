@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,14 +12,14 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 #include <algorithm>
 #include <string>
 #include <vector>
 
-namespace RSM::EventMatchingHelper {
+namespace SCE::EventMatchingHelper {
 
 /**
  * @brief W3C SCXML 5.9.3: Event descriptor matching algorithm
@@ -101,4 +101,4 @@ inline bool matchesEventDescriptor(const std::string &eventName, const std::stri
     return false;
 }
 
-}  // namespace RSM::EventMatchingHelper
+}  // namespace SCE::EventMatchingHelper

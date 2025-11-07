@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test301_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.8: Script element download timeout rejection (Manual Test)
@@ -19,7 +19,7 @@ namespace RSM::W3C::AotTests {
  */
 struct Test301 : public SimpleAotTest<Test301, 301> {
     static constexpr const char *DESCRIPTION = "Script download timeout rejection (W3C 5.8 AOT - Manual)";
-    using SM = RSM::Generated::test301::test301;
+    using SM = SCE::Generated::test301::test301;
 
     // Override run() to handle manual test - always return true (skip actual execution)
     bool run() override {
@@ -32,4 +32,4 @@ struct Test301 : public SimpleAotTest<Test301, 301> {
 // Auto-register
 inline static AotTestRegistrar<Test301> registrar_Test301;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test504_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: External transition exit sets (LCCA)
@@ -28,10 +28,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test504 : public SimpleAotTest<Test504, 504> {
     static constexpr const char *DESCRIPTION = "External transition exit sets LCCA (W3C 3.13 AOT Static Hybrid)";
-    using SM = RSM::Generated::test504::test504;
+    using SM = SCE::Generated::test504::test504;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test504> registrar_Test504;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

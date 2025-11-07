@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test388_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.11: History states work correctly (deep/shallow)
@@ -15,10 +15,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test388 : public SimpleAotTest<Test388, 388> {
     static constexpr const char *DESCRIPTION = "History states work correctly (W3C 3.11 AOT)";
-    using SM = RSM::Generated::test388::test388;
+    using SM = SCE::Generated::test388::test388;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test388> registrar_Test388;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

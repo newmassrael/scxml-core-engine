@@ -16,7 +16,7 @@
  * Corresponds to <transition> element in SCXML documents.
  */
 
-namespace RSM {
+namespace SCE {
 
 class TransitionNode : public ITransitionNode {
 public:
@@ -77,25 +77,13 @@ public:
      * @brief Add action
      * @param actionNode ActionNode object
      */
-    virtual void addActionNode(std::shared_ptr<RSM::IActionNode> actionNode) override;
+    virtual void addActionNode(std::shared_ptr<SCE::IActionNode> actionNode) override;
 
     /**
      * @brief Return list of ActionNodes (SCXML specification compliant)
      * @return List of ActionNode objects
      */
-    virtual const std::vector<std::shared_ptr<RSM::IActionNode>> &getActionNodes() const override;
-
-    /**
-     * @brief Set reactive status
-     * @param reactive Reactive status
-     */
-    virtual void setReactive(bool reactive) override;
-
-    /**
-     * @brief Return reactive status
-     * @return Reactive status
-     */
-    virtual bool isReactive() const override;
+    virtual const std::vector<std::shared_ptr<SCE::IActionNode>> &getActionNodes() const override;
 
     virtual void setInternal(bool internal) override;
     virtual bool isInternal() const override;
@@ -113,8 +101,7 @@ private:
     std::string event_;
     std::string target_;
     std::string guard_;
-    std::vector<std::shared_ptr<RSM::IActionNode>> actionNodes_;  // Store ActionNodes (SCXML specification compliant)
-    bool reactive_;
+    std::vector<std::shared_ptr<SCE::IActionNode>> actionNodes_;  // Store ActionNodes (SCXML specification compliant)
     bool internal_;
     std::unordered_map<std::string, std::string> attributes_;
     std::vector<std::string> events_;
@@ -122,4 +109,4 @@ private:
     mutable bool targetsDirty_;  // Indicates whether target cache is up-to-date
 };
 
-}  // namespace RSM
+}  // namespace SCE

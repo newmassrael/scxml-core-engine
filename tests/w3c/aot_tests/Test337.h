@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test337_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: Internal events have blank origintype field
@@ -15,10 +15,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test337 : public SimpleAotTest<Test337, 337> {
     static constexpr const char *DESCRIPTION = "Internal event origintype blank (W3C 5.10.1 AOT)";
-    using SM = RSM::Generated::test337::test337;
+    using SM = SCE::Generated::test337::test337;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test337> registrar_Test337;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

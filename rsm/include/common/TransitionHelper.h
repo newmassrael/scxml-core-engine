@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 #include "common/EventMatchingHelper.h"
@@ -38,7 +38,7 @@
  * - Both Interpreter and AOT engines use same underlying logic (Zero Duplication)
  */
 
-namespace RSM::TransitionHelper {
+namespace SCE::TransitionHelper {
 
 /**
  * @brief Check if an event descriptor matches an event name
@@ -133,4 +133,4 @@ inline bool isWildcardDescriptor(const std::string &descriptor) {
     return descriptor == "*";
 }
 
-}  // namespace RSM::TransitionHelper
+}  // namespace SCE::TransitionHelper

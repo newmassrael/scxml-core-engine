@@ -4,7 +4,7 @@
 #include <gtest/gtest.h>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 namespace Tests {
 
 class SimpleSCXMLTest : public ::testing::Test {
@@ -150,4 +150,4 @@ TEST_F(SimpleSCXMLTest, ErrorHandling) {
 }
 
 }  // namespace Tests
-}  // namespace RSM
+}  // namespace SCE

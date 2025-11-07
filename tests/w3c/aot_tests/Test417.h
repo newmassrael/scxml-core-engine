@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test417_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.7.1: done.state Event for Parallel States
@@ -28,10 +28,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test417 : public SimpleAotTest<Test417, 417> {
     static constexpr const char *DESCRIPTION = "Parallel done.state event (W3C 3.7.1 AOT)";
-    using SM = RSM::Generated::test417::test417;
+    using SM = SCE::Generated::test417::test417;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test417> registrar_Test417;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

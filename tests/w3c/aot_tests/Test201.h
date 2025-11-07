@@ -3,7 +3,7 @@
 #include "HttpAotTest.h"
 #include "test201_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor support
@@ -18,9 +18,9 @@ struct Test201 : public HttpAotTest<Test201, 201> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 6.2: Processors that support HTTP POST must use the value "
         "http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor for the \"type\" attribute";
-    using SM = RSM::Generated::test201::test201;
+    using SM = SCE::Generated::test201::test201;
 };
 
 inline static AotTestRegistrar<Test201> registrar_Test201;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

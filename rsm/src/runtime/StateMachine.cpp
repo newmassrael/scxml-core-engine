@@ -3,7 +3,7 @@
 #include "common/ConflictResolutionHelper.h"
 #include "states/ConcurrentStateTypes.h"
 
-using RSM::Common::ConflictResolutionHelperString;
+using SCE::Common::ConflictResolutionHelperString;
 #include "common/DataModelInitHelper.h"
 #include "common/DoneDataHelper.h"
 #include "common/EntryExitHelper.h"
@@ -45,7 +45,7 @@ using RSM::Common::ConflictResolutionHelperString;
 #include <sstream>
 #include <unordered_set>
 
-namespace RSM {
+namespace SCE {
 
 // Thread-local depth tracking for nested processEvent calls (W3C SCXML compliance)
 // Prevents deadlock by allowing same-thread recursion without re-acquiring mutex
@@ -156,7 +156,7 @@ bool StateMachine::loadSCXML(const std::string &filename) {
         }
 
         // Register file path for this session to enable relative path resolution
-        RSM::JSEngine::instance().registerSessionFilePath(sessionId_, filename);
+        SCE::JSEngine::instance().registerSessionFilePath(sessionId_, filename);
         LOG_DEBUG("StateMachine: Registered file path '{}' for session '{}'", filename, sessionId_);
 
         return initializeFromModel();
@@ -363,7 +363,7 @@ bool StateMachine::start() {
             const int MAX_START_ITERATIONS = 1000;
 
             // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
-            RSM::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+            SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
             while (adapter.hasEvents()) {
                 if (++iterations > MAX_START_ITERATIONS) {
                     LOG_ERROR("StateMachine: start() exceeded max iterations ({}) - possible infinite event loop",
@@ -417,7 +417,7 @@ void StateMachine::stop() {
     // CRITICAL: Always unregister from JSEngine, even if isRunning_ is already false
     // Race condition prevention: JSEngine worker threads may have queued tasks accessing StateMachine
     // W3C Test 415: isRunning_=false may be set in top-level final state before destructor calls stop()
-    RSM::JSEngine::instance().setStateMachine(nullptr, sessionId_);
+    SCE::JSEngine::instance().setStateMachine(nullptr, sessionId_);
     LOG_DEBUG("StateMachine: Unregistered from JSEngine");
 
     // FUNDAMENTAL FIX: Two-Phase Destruction Pattern
@@ -426,7 +426,7 @@ void StateMachine::stop() {
     // Ensures JSEngine singleton is alive during cleanup (prevents deadlock)
     // Required for StaticExecutionEngine wrapper lifecycle management
     if (jsEnvironmentReady_) {
-        RSM::JSEngine::instance().destroySession(sessionId_);
+        SCE::JSEngine::instance().destroySession(sessionId_);
         jsEnvironmentReady_ = false;
         LOG_DEBUG("StateMachine: Destroyed JSEngine session in stop(): {}", sessionId_);
     }
@@ -717,8 +717,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
-                        RSM::Core::InterpreterEventQueue adapter(eventRaiserImpl);
-                        RSM::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
+                        SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+                        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             LOG_DEBUG(
                                 "W3C SCXML 3.3: Processing queued internal event after parallel external transition");
                             return true;
@@ -1026,8 +1026,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
-                        RSM::Core::InterpreterEventQueue adapter(eventRaiserImpl);
-                        RSM::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
+                        SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+                        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             LOG_DEBUG("W3C SCXML 3.4: Processing done.state event after parallel completion");
                             return true;
                         });
@@ -1101,8 +1101,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
-                        RSM::Core::InterpreterEventQueue adapter(eventRaiserImpl);
-                        RSM::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
+                        SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+                        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                             LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event after successful transition");
                             return true;
                         });
@@ -1140,8 +1140,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         if (eventRaiserImpl) {
             // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
-            RSM::Core::InterpreterEventQueue adapter(eventRaiserImpl);
-            RSM::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
+            SCE::Core::InterpreterEventQueue adapter(eventRaiserImpl);
+            SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(adapter, [](bool) {
                 LOG_DEBUG("W3C SCXML 3.3: Processing queued internal event");
                 return true;
             });
@@ -1191,7 +1191,7 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
         } else {
             // W3C SCXML 3.12: Check if ANY descriptor matches the event
             // Use TransitionHelper for Single Source of Truth (Zero Duplication with AOT engine)
-            eventMatches = RSM::TransitionHelper::matchesAnyEventDescriptor(eventDescriptors, eventName);
+            eventMatches = SCE::TransitionHelper::matchesAnyEventDescriptor(eventDescriptors, eventName);
         }
 
         if (!eventMatches) {
@@ -1745,7 +1745,7 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
     // because late binding creates variables as undefined first, then assigns values on state entry
     bool isLateBindingAssignment = assignValue && model_ && (model_->getBinding() == "late");
 
-    if (!isLateBindingAssignment && RSM::JSEngine::instance().isVariablePreInitialized(sessionId_, id)) {
+    if (!isLateBindingAssignment && SCE::JSEngine::instance().isVariablePreInitialized(sessionId_, id)) {
         LOG_INFO("StateMachine: Skipping initialization for '{}' - pre-initialized by invoke data", id);
         return;
     }
@@ -1753,10 +1753,10 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
     // W3C SCXML B.2.2: Late binding creates variables with undefined at init, assigns values on state entry
     if (!assignValue) {
         // Create variable with undefined value (both early and late binding)
-        auto setVarFuture = RSM::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
+        auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
         auto setResult = setVarFuture.get();
 
-        if (!RSM::JSEngine::isSuccess(setResult)) {
+        if (!SCE::JSEngine::isSuccess(setResult)) {
             LOG_ERROR("StateMachine: Failed to create unbound variable '{}': {}", id, setResult.getErrorMessage());
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution",
@@ -1779,10 +1779,10 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
         if (isFunctionExpression) {
             // Use direct JavaScript assignment to avoid function → C++ → function conversion loss
             std::string assignmentScript = id + " = " + expr;
-            auto scriptFuture = RSM::JSEngine::instance().executeScript(sessionId_, assignmentScript);
+            auto scriptFuture = SCE::JSEngine::instance().executeScript(sessionId_, assignmentScript);
             auto scriptResult = scriptFuture.get();
 
-            if (!RSM::JSEngine::isSuccess(scriptResult)) {
+            if (!SCE::JSEngine::isSuccess(scriptResult)) {
                 LOG_ERROR("StateMachine: Failed to assign function expression '{}' to variable '{}': {}", expr, id,
                           scriptResult.getErrorMessage());
                 if (eventRaiser_) {
@@ -1797,7 +1797,7 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
             // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
             // Test 277: expr evaluation failure must raise error.execution (no fallback)
             bool success = DataModelInitHelper::initializeVariableFromExpr(
-                RSM::JSEngine::instance(), sessionId_, id, expr, [this](const std::string &msg) {
+                SCE::JSEngine::instance(), sessionId_, id, expr, [this](const std::string &msg) {
                     // W3C SCXML 5.3: Raise error.execution on initialization failure
                     if (eventRaiser_) {
                         eventRaiser_->raiseEvent("error.execution", msg);
@@ -1820,7 +1820,7 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
 
         // Resolve relative path based on SCXML file location
         if (filePath[0] != '/') {  // Relative path
-            std::string scxmlFilePath = RSM::JSEngine::instance().getSessionFilePath(sessionId_);
+            std::string scxmlFilePath = SCE::JSEngine::instance().getSessionFilePath(sessionId_);
             if (!scxmlFilePath.empty()) {
                 // Extract directory from SCXML file path
                 size_t lastSlash = scxmlFilePath.find_last_of("/");
@@ -1849,10 +1849,10 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
             // W3C SCXML B.2 test 557: Parse XML content as DOM object
             LOG_DEBUG("StateMachine: Parsing XML content from file '{}' as DOM for variable '{}'", filePath, id);
 
-            auto setVarFuture = RSM::JSEngine::instance().setVariableAsDOM(sessionId_, id, fileContent);
+            auto setVarFuture = SCE::JSEngine::instance().setVariableAsDOM(sessionId_, id, fileContent);
             auto setResult = setVarFuture.get();
 
-            if (!RSM::JSEngine::isSuccess(setResult)) {
+            if (!SCE::JSEngine::isSuccess(setResult)) {
                 LOG_ERROR("StateMachine: Failed to set XML content from file '{}' for variable '{}': {}", filePath, id,
                           setResult.getErrorMessage());
                 if (eventRaiser_) {
@@ -1866,15 +1866,15 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
             LOG_DEBUG("StateMachine: Set variable '{}' as XML DOM object from file '{}'", id, filePath);
         } else {
             // W3C SCXML B.2: Try evaluating as JSON/JS first (test 446), fall back to text (test 558)
-            auto future = RSM::JSEngine::instance().evaluateExpression(sessionId_, fileContent);
+            auto future = SCE::JSEngine::instance().evaluateExpression(sessionId_, fileContent);
             auto result = future.get();
 
-            if (RSM::JSEngine::isSuccess(result)) {
+            if (SCE::JSEngine::isSuccess(result)) {
                 // Successfully evaluated as JSON/JS expression
-                auto setVarFuture = RSM::JSEngine::instance().setVariable(sessionId_, id, result.getInternalValue());
+                auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, result.getInternalValue());
                 auto setResult = setVarFuture.get();
 
-                if (!RSM::JSEngine::isSuccess(setResult)) {
+                if (!SCE::JSEngine::isSuccess(setResult)) {
                     LOG_ERROR("StateMachine: Failed to set variable '{}' from file '{}': {}", id, filePath,
                               setResult.getErrorMessage());
                     if (eventRaiser_) {
@@ -1889,10 +1889,10 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
                 // W3C SCXML B.2 test 558: Non-JSON content - normalize whitespace and store as string
                 std::string normalized = normalizeWhitespace(fileContent);
 
-                auto setVarFuture = RSM::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{normalized});
+                auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{normalized});
                 auto setResult = setVarFuture.get();
 
-                if (!RSM::JSEngine::isSuccess(setResult)) {
+                if (!SCE::JSEngine::isSuccess(setResult)) {
                     LOG_ERROR("StateMachine: Failed to set normalized text from file '{}' for variable '{}': {}",
                               filePath, id, setResult.getErrorMessage());
                     if (eventRaiser_) {
@@ -1910,7 +1910,7 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
     } else if (!content.empty()) {
         // W3C SCXML B.2: Initialize with inline content
         // ARCHITECTURE.md: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-        bool success = DataModelInitHelper::initializeVariable(RSM::JSEngine::instance(), sessionId_, id, content,
+        bool success = DataModelInitHelper::initializeVariable(SCE::JSEngine::instance(), sessionId_, id, content,
                                                                [this](const std::string &msg) {
                                                                    LOG_ERROR("StateMachine: {}", msg);
                                                                    if (eventRaiser_) {
@@ -1925,10 +1925,10 @@ void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &ite
         LOG_DEBUG("StateMachine: Initialized variable '{}' from content", id);
     } else {
         // W3C SCXML 5.3: No expression or content - create variable with undefined value (test 445)
-        auto setVarFuture = RSM::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
+        auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
         auto setResult = setVarFuture.get();
 
-        if (!RSM::JSEngine::isSuccess(setResult)) {
+        if (!SCE::JSEngine::isSuccess(setResult)) {
             LOG_ERROR("StateMachine: Failed to create undefined variable '{}': {}", id, setResult.getErrorMessage());
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution",
@@ -2026,10 +2026,10 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
     try {
         LOG_DEBUG("Evaluating condition: '{}'", condition);
 
-        auto future = RSM::JSEngine::instance().evaluateExpression(sessionId_, condition);
+        auto future = SCE::JSEngine::instance().evaluateExpression(sessionId_, condition);
         auto result = future.get();
 
-        if (!RSM::JSEngine::isSuccess(result)) {
+        if (!SCE::JSEngine::isSuccess(result)) {
             // W3C SCXML 5.9: Condition evaluation error must raise error.execution
             LOG_ERROR("W3C SCXML 5.9: Failed to evaluate condition '{}': {}", condition, result.getErrorMessage());
 
@@ -2040,7 +2040,7 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
         }
 
         // Convert result to boolean using integrated JSEngine method
-        bool conditionResult = RSM::JSEngine::resultToBool(result);
+        bool conditionResult = SCE::JSEngine::resultToBool(result);
         LOG_DEBUG("Condition '{}' evaluated to: {}", condition, conditionResult ? "true" : "false");
 
         return conditionResult;
@@ -2257,7 +2257,7 @@ bool StateMachine::enterState(const std::string &stateId) {
     // IMPORTANT: Parallel states are NOT final states, even when all regions complete
     if (model_) {
         auto stateNode = model_->findStateById(actualCurrentState);
-        if (stateNode && stateNode->isFinalState() && stateNode->getType() != RSM::Type::PARALLEL) {
+        if (stateNode && stateNode->isFinalState() && stateNode->getType() != SCE::Type::PARALLEL) {
             // Check if this is a top-level final state by checking parent chain
             // Top-level states have no parent or parent is the <scxml> root element
             // We need to traverse up to ensure we're not in a parallel region
@@ -2578,7 +2578,7 @@ bool StateMachine::checkEventlessTransitions() {
     // W3C SCXML Appendix D.2: Apply conflict resolution using shared Helper
     // ARCHITECTURE.MD: Zero Duplication - use ConflictResolutionHelper (Single Source of Truth)
     {
-        using Helper = RSM::Common::ConflictResolutionHelperString;
+        using Helper = SCE::Common::ConflictResolutionHelperString;
         std::vector<Helper::TransitionDescriptor> descriptors;
         descriptors.reserve(enabledTransitions.size());
 
@@ -2931,17 +2931,17 @@ bool StateMachine::ensureJSEnvironment() {
 
 bool StateMachine::setupJSEnvironment() {
     // JSEngine automatically initialized in constructor (RAII)
-    auto &jsEngine = RSM::JSEngine::instance();  // RAII guaranteed
+    auto &jsEngine = SCE::JSEngine::instance();  // RAII guaranteed
     LOG_DEBUG("StateMachine: JSEngine automatically initialized via RAII at address: {}",
               static_cast<void *>(&jsEngine));
 
     // Create JavaScript session only if it doesn't exist (for invoke scenarios)
     // Check if session already exists (created by InvokeExecutor for child sessions)
-    bool sessionExists = RSM::JSEngine::instance().hasSession(sessionId_);
+    bool sessionExists = SCE::JSEngine::instance().hasSession(sessionId_);
 
     if (!sessionExists) {
         // Create new session for standalone StateMachine
-        if (!RSM::JSEngine::instance().createSession(sessionId_)) {
+        if (!SCE::JSEngine::instance().createSession(sessionId_)) {
             LOG_ERROR("StateMachine: Failed to create JavaScript session");
             return false;
         }
@@ -2954,7 +2954,7 @@ bool StateMachine::setupJSEnvironment() {
     // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
     std::string sessionName = model_ && !model_->getName().empty() ? model_->getName() : "StateMachine";
     std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-    auto setupResult = RSM::SystemVariableHelper::setupSystemVariables(sessionId_, sessionName, ioProcessors).get();
+    auto setupResult = SCE::SystemVariableHelper::setupSystemVariables(sessionId_, sessionName, ioProcessors).get();
     if (!setupResult.isSuccess()) {
         LOG_ERROR("StateMachine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         return false;
@@ -2963,7 +2963,7 @@ bool StateMachine::setupJSEnvironment() {
     // Register this StateMachine instance with JSEngine for In() function support
     // RACE CONDITION FIX: Use shared_from_this() to enable weak_ptr safety
     // W3C Test 530: Prevents heap-use-after-free during invoke child destruction
-    RSM::JSEngine::instance().setStateMachine(shared_from_this(), sessionId_);
+    SCE::JSEngine::instance().setStateMachine(shared_from_this(), sessionId_);
     LOG_DEBUG("StateMachine: Registered with JSEngine for In() function support");
 
     // W3C SCXML 5.3: Initialize data model with binding mode support (early/late binding)
@@ -3128,7 +3128,7 @@ bool StateMachine::initializeActionExecutor() {
     }
 }
 
-bool StateMachine::executeActionNodes(const std::vector<std::shared_ptr<RSM::IActionNode>> &actions,
+bool StateMachine::executeActionNodes(const std::vector<std::shared_ptr<SCE::IActionNode>> &actions,
                                       bool processEventsAfter) {
     if (!executionContext_) {
         LOG_WARN("StateMachine: ExecutionContext not initialized, skipping action node execution");
@@ -3977,7 +3977,7 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
     if (!doneData.getContent().empty()) {
         LOG_DEBUG("W3C SCXML 5.5: Evaluating donedata content: '{}'", doneData.getContent());
         return DoneDataHelper::evaluateContent(
-            RSM::JSEngine::instance(), sessionId_, doneData.getContent(), outEventData, [this](const std::string &msg) {
+            SCE::JSEngine::instance(), sessionId_, doneData.getContent(), outEventData, [this](const std::string &msg) {
                 LOG_ERROR("W3C SCXML 5.5: Failed to evaluate donedata content: {}", msg);
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution", msg);
@@ -3989,7 +3989,7 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
     const auto &params = doneData.getParams();
     if (!params.empty()) {
         LOG_DEBUG("W3C SCXML 5.5: Evaluating {} donedata params", params.size());
-        return DoneDataHelper::evaluateParams(RSM::JSEngine::instance(), sessionId_, params, outEventData,
+        return DoneDataHelper::evaluateParams(SCE::JSEngine::instance(), sessionId_, params, outEventData,
                                               [this](const std::string &msg) {
                                                   LOG_ERROR("W3C SCXML 5.7: {}", msg);
                                                   if (eventRaiser_) {
@@ -4109,7 +4109,7 @@ std::string StateMachine::findLCA(const std::string &sourceStateId, const std::s
     };
 
     // Use shared Helper implementation (Single Source of Truth)
-    return RSM::Common::HierarchicalStateHelperString::findLCA(sourceStateId, targetStateId, getParent);
+    return SCE::Common::HierarchicalStateHelperString::findLCA(sourceStateId, targetStateId, getParent);
 }
 
 // Helper: Build exit set for descendants of an ancestor state
@@ -4253,4 +4253,4 @@ StateMachine::ExitSetResult StateMachine::computeExitSet(const std::string &sour
     return result;
 }
 
-}  // namespace RSM
+}  // namespace SCE

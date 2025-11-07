@@ -12,7 +12,7 @@
 #include "actions/ScriptAction.h"
 #include "types.h"
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class IStateNode;
@@ -28,9 +28,9 @@ public:
     virtual std::shared_ptr<IStateNode> createStateNode(const std::string &id, const Type type);
     virtual std::shared_ptr<ITransitionNode> createTransitionNode(const std::string &event, const std::string &target);
     virtual std::shared_ptr<IGuardNode> createGuardNode(const std::string &id, const std::string &target);
-    virtual std::shared_ptr<RSM::IActionNode> createActionNode(const std::string &name);
+    virtual std::shared_ptr<SCE::IActionNode> createActionNode(const std::string &name);
     virtual std::shared_ptr<IDataModelItem> createDataModelItem(const std::string &id, const std::string &expr = "");
     virtual std::shared_ptr<IInvokeNode> createInvokeNode(const std::string &id);
 };
 
-}  // namespace RSM
+}  // namespace SCE

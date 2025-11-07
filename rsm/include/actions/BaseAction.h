@@ -3,7 +3,7 @@
 #include "IActionNode.h"
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Base implementation for common action functionality
@@ -61,4 +61,4 @@ private:
     std::string id_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

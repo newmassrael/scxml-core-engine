@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 #include "common/Logger.h"
@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM::Common {
+namespace SCE::Common {
 
 /**
  * @brief Helper for W3C SCXML 4.6 foreach loop variable handling
@@ -249,12 +249,12 @@ public:
      *
      * @example AOT Engine usage (generated code):
      * @code
-     * bool success = ::RSM::ForeachHelper::executeForeachWithActions(
+     * bool success = ::SCE::ForeachHelper::executeForeachWithActions(
      *     jsEngine, sessionId_.value(), "Var3", "Var2", "",
      *     [&](size_t i) {
      *         // Custom C++ generated code
      *         auto result = jsEngine.evaluateExpression(sessionId_.value(), "Var1 + 1").get();
-     *         if (!::RSM::JSEngine::isSuccess(result)) {
+     *         if (!::SCE::JSEngine::isSuccess(result)) {
      *             LOG_ERROR("Expression evaluation failed");
      *             return false;  // Stop loop on error (W3C 4.6)
      *         }
@@ -308,4 +308,4 @@ public:
     }
 };
 
-}  // namespace RSM::Common
+}  // namespace SCE::Common

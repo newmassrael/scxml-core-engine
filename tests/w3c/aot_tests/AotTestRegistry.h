@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief Singleton registry for AOT tests
@@ -131,7 +131,7 @@ template <typename TestClass> struct AotTestRegistrar {
     }
 };
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests
 
 /**
  * @brief Macro to auto-register a AOT test
@@ -141,5 +141,5 @@ template <typename TestClass> struct AotTestRegistrar {
  */
 #define REGISTER_AOT_TEST(TestClass)                                                                                   \
     namespace {                                                                                                        \
-    static ::RSM::W3C::AotTests::AotTestRegistrar<TestClass> registrar_##TestClass{};                                  \
+    static ::SCE::W3C::AotTests::AotTestRegistrar<TestClass> registrar_##TestClass{};                                  \
     }

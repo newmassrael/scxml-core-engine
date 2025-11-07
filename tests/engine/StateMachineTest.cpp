@@ -4,7 +4,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 
-using namespace RSM;
+using namespace SCE;
 
 class StateMachineTest : public ::testing::Test {
 protected:

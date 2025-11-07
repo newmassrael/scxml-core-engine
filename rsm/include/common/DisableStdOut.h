@@ -68,7 +68,7 @@
 #define CERR_TO_LOG_ERROR(...) LOG_ERROR(__VA_ARGS__)
 
 // Safe output functions for use within RSM namespace
-namespace RSM {
+namespace SCE {
 namespace SafeOutput {
 
 // Safe output that only works in debug builds (ignored in release)
@@ -102,7 +102,7 @@ template <typename... Args> inline void infoPrint(const std::string &format, Arg
 }
 
 }  // namespace SafeOutput
-}  // namespace RSM
+}  // namespace SCE
 
 // Provide usage examples in comments
 /*
@@ -117,8 +117,8 @@ New code:
     LOG_ERROR("Error: {}", error);
 
 Or use namespace functions:
-    RSM::SafeOutput::infoPrint("Hello {}", name);
-    RSM::SafeOutput::errorPrint("Error: {}", error);
-    RSM::SafeOutput::debugPrint("Debug: {}", debugData);  // Only outputs in debug builds
-    RSM::SafeOutput::conditionalPrint(verbose, "Verbose: {}", data);  // Conditional output
+    SCE::SafeOutput::infoPrint("Hello {}", name);
+    SCE::SafeOutput::errorPrint("Error: {}", error);
+    SCE::SafeOutput::debugPrint("Debug: {}", debugData);  // Only outputs in debug builds
+    SCE::SafeOutput::conditionalPrint(verbose, "Verbose: {}", data);  // Conditional output
 */

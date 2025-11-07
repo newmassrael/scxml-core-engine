@@ -3,7 +3,7 @@
 #include "common/Logger.h"
 #include "events/IEventBridge.h"  // For HttpResponse struct
 
-namespace RSM {
+namespace SCE {
 
 const std::string HttpResponseUtils::JSON_CONTENT_TYPE = "application/json";
 const std::string HttpResponseUtils::NO_CACHE_CONTROL = "no-cache";
@@ -74,4 +74,4 @@ void HttpResponseUtils::setNoCacheHeaders(httplib::Response &response) {
     response.set_header("Cache-Control", NO_CACHE_CONTROL);
 }
 
-}  // namespace RSM
+}  // namespace SCE

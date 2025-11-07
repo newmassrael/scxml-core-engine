@@ -15,7 +15,7 @@
 #include "runtime/ExecutionContextImpl.h"
 #include "scripting/JSEngine.h"
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Test class to reproduce the specific deadlock scenario
@@ -66,7 +66,7 @@ protected:
 
         // Create MockEventRaiser for target factory
         auto mockEventRaiser =
-            std::make_shared<RSM::Test::MockEventRaiser>([](const std::string &, const std::string &) -> bool {
+            std::make_shared<SCE::Test::MockEventRaiser>([](const std::string &, const std::string &) -> bool {
                 return true;  // Always succeed for deadlock testing
             });
 
@@ -228,4 +228,4 @@ TEST_F(DeadlockReproductionTest, JSEngineMutexBehavior) {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

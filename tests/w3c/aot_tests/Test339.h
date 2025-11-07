@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test339_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10: Non-invoked events have blank invokeid field
@@ -15,10 +15,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test339 : public SimpleAotTest<Test339, 339> {
     static constexpr const char *DESCRIPTION = "Internal event invokeid blank (W3C 5.10 AOT)";
-    using SM = RSM::Generated::test339::test339;
+    using SM = SCE::Generated::test339::test339;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test339> registrar_Test339;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

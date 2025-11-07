@@ -4,7 +4,7 @@
 #include <fstream>
 #include <unordered_map>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief Concrete implementation of W3C test metadata parser
@@ -70,4 +70,4 @@ public:
     TestMetadata parseMetadata(const std::string &metadataPath) override;
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

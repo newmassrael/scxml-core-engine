@@ -7,7 +7,7 @@
 #include "scripting/JSEngine.h"
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 InvokeEventTarget::InvokeEventTarget(const std::string &invokeId, const std::string &parentSessionId)
     : invokeId_(invokeId), parentSessionId_(parentSessionId) {
@@ -149,4 +149,4 @@ std::string InvokeEventTarget::getDebugInfo() const {
     return "invoke target (invoke: " + invokeId_ + ", parent: " + parentSessionId_ + ", child: " + childSessionId + ")";
 }
 
-}  // namespace RSM
+}  // namespace SCE

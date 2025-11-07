@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test405_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.9/D.2: Executable content execution order in transitions
@@ -14,10 +14,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test405 : public SimpleAotTest<Test405, 405> {
     static constexpr const char *DESCRIPTION = "Transition executable content ordering (W3C 3.9 AOT)";
-    using SM = RSM::Generated::test405::test405;
+    using SM = SCE::Generated::test405::test405;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test405> registrar_Test405;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

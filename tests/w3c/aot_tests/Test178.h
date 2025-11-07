@@ -4,7 +4,7 @@
 #include "AotTestRegistry.h"
 #include "test178_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2: param preserves duplicate keys with multiple values
@@ -14,9 +14,9 @@ struct Test178 : public AotTestBase {
     static constexpr const char *DESCRIPTION = "W3C SCXML 6.2: param preserves duplicate keys with multiple values";
 
     bool run() override {
-        RSM::Generated::test178::test178 sm;
+        SCE::Generated::test178::test178 sm;
         sm.initialize();
-        return sm.isInFinalState() && sm.getCurrentState() == RSM::Generated::test178::State::Final;
+        return sm.isInFinalState() && sm.getCurrentState() == SCE::Generated::test178::State::Final;
     }
 
     int getTestId() const override {
@@ -31,4 +31,4 @@ struct Test178 : public AotTestBase {
 // Auto-register
 inline static AotTestRegistrar<Test178> registrar_Test178;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

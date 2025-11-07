@@ -7,7 +7,7 @@
 #include <sstream>
 #include <thread>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 W3CTestEventDispatcher::W3CTestEventDispatcher(const std::string &sessionId, std::shared_ptr<IEventScheduler> scheduler)
     : sessionId_(sessionId), scheduler_(scheduler) {
@@ -193,4 +193,4 @@ std::future<SendResult> W3CTestEventDispatcher::executeEventImmediately(const Ev
 // REFACTOR: processReadyEvents() removed - EventScheduler handles this automatically
 
 // REFACTOR: generateSendId() removed - EventScheduler handles sendId generation
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

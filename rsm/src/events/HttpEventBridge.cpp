@@ -7,7 +7,7 @@
 
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 // Simplified implementation for W3C test 201
 
@@ -448,4 +448,4 @@ bool HttpEventBridge::parseUrl(const std::string &url, std::string &path,
     return true;
 }
 
-}  // namespace RSM
+}  // namespace SCE

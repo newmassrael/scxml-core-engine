@@ -11,7 +11,7 @@
  * For example, it includes global data model type, namespace information, etc.
  */
 
-namespace RSM {
+namespace SCE {
 
 class SCXMLContext {
 public:
@@ -80,4 +80,4 @@ private:
     std::string emptyString_;                                  ///< For returning empty string
 };
 
-}  // namespace RSM
+}  // namespace SCE

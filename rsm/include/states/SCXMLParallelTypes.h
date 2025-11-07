@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class IStateNode;
@@ -120,4 +120,4 @@ struct MonitoringStatistics {
     std::chrono::steady_clock::time_point monitoringStartTime;
 };
 
-}  // namespace RSM
+}  // namespace SCE

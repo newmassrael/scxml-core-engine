@@ -4,7 +4,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 std::string UrlEncodingHelper::urlEncode(const std::string &str) {
     std::ostringstream escaped;
@@ -27,4 +27,4 @@ std::string UrlEncodingHelper::urlEncode(const std::string &str) {
     return escaped.str();
 }
 
-}  // namespace RSM
+}  // namespace SCE

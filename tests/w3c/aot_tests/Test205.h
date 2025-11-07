@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test205_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2: The sending SCXML Interpreter MUST not alter the content of the send
@@ -15,9 +15,9 @@ namespace RSM::W3C::AotTests {
 struct Test205 : public SimpleAotTest<Test205, 205> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 6.2: The sending SCXML Interpreter MUST not alter the content of the send";
-    using SM = RSM::Generated::test205::test205;
+    using SM = SCE::Generated::test205::test205;
 };
 
 inline static AotTestRegistrar<Test205> registrar_Test205;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

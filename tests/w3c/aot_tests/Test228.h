@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test228_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.3.1: _event.invokeid contains invoke ID in done.invoke event
@@ -21,10 +21,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test228 : public ScheduledAotTest<Test228, 228> {
     static constexpr const char *DESCRIPTION = "Invoke ID in done.invoke event (W3C 6.3.1 AOT Static Hybrid)";
-    using SM = RSM::Generated::test228::test228;
+    using SM = SCE::Generated::test228::test228;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test228> registrar_Test228;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

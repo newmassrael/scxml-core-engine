@@ -10,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 struct EventDescriptor;
@@ -92,9 +92,6 @@ public:
     HistoryType getHistoryType() const override;
     bool isShallowHistory() const override;
     bool isDeepHistory() const override;
-
-    void addReactiveGuard(const std::string &guardId) override;
-    const std::vector<std::string> &getReactiveGuards() const override;
 
     // W3C SCXML 3.8/3.9: Block-based action methods
     void addEntryActionBlock(std::vector<std::shared_ptr<IActionNode>> block) override;
@@ -255,8 +252,6 @@ private:
     std::vector<std::vector<std::shared_ptr<IActionNode>>> entryActionBlocks_;
     std::vector<std::vector<std::shared_ptr<IActionNode>>> exitActionBlocks_;
 
-    std::vector<std::string> reactiveGuards_;
-
     HistoryType historyType_;
     std::unique_ptr<DoneData> doneData_;
 
@@ -278,4 +273,4 @@ private:
     void generateDoneStateEvent();
 };
 
-}  // namespace RSM
+}  // namespace SCE

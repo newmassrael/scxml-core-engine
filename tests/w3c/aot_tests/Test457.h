@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test457_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.4/D.3.1: foreach error handling with ECMAScript validation
@@ -39,10 +39,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test457 : public SimpleAotTest<Test457, 457> {
     static constexpr const char *DESCRIPTION = "foreach error handling (W3C 5.4/D.3.1 AOT)";
-    using SM = RSM::Generated::test457::test457;
+    using SM = SCE::Generated::test457::test457;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test457> registrar_Test457;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -3,7 +3,7 @@
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
 
-namespace RSM {
+namespace SCE {
 
 std::string XmlSerializationHelper::serializeContent(const std::shared_ptr<IXMLElement> &element) {
     if (!element) {
@@ -43,4 +43,4 @@ std::string XmlSerializationHelper::escapeForJavaScript(const std::string &conte
     return "\"" + escaped + "\"";
 }
 
-}  // namespace RSM
+}  // namespace SCE

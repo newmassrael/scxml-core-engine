@@ -2,7 +2,7 @@
 #include "common/Logger.h"
 #include "model/IStateNode.h"
 
-namespace RSM {
+namespace SCE {
 
 HistoryValidator::HistoryValidator(std::function<std::shared_ptr<IStateNode>(const std::string &)> stateProvider)
     : stateProvider_(std::move(stateProvider)) {
@@ -217,4 +217,4 @@ std::string HistoryValidator::generateParentTypeKey(const std::string &parentSta
     return parentStateId + "_" + typeStr;
 }
 
-}  // namespace RSM
+}  // namespace SCE

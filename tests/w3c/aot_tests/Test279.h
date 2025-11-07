@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test279_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.2.2: Early binding variable initialization
@@ -14,10 +14,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test279 : public SimpleAotTest<Test279, 279> {
     static constexpr const char *DESCRIPTION = "Early binding variable initialization (W3C 5.2.2 AOT)";
-    using SM = RSM::Generated::test279::test279;
+    using SM = SCE::Generated::test279::test279;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test279> registrar_Test279;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

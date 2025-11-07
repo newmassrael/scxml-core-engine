@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test344_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9: Invalid cond expression raises error.execution
@@ -25,10 +25,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test344 : public SimpleAotTest<Test344, 344> {
     static constexpr const char *DESCRIPTION = "Invalid cond expression error.execution (W3C 5.9 AOT)";
-    using SM = RSM::Generated::test344::test344;
+    using SM = SCE::Generated::test344::test344;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test344> registrar_Test344;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

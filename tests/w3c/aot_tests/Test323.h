@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test323_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2.1: System variable _name binding on startup
@@ -17,10 +17,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test323 : public SimpleAotTest<Test323, 323> {
     static constexpr const char *DESCRIPTION = "_name system variable (W3C B.2.1 AOT)";
-    using SM = RSM::Generated::test323::test323;
+    using SM = SCE::Generated::test323::test323;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test323> registrar_Test323;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

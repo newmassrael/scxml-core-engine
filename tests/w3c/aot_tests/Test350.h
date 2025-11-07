@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test350_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.6: Default initial state (first child in document order)
@@ -14,10 +14,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test350 : public SimpleAotTest<Test350, 350> {
     static constexpr const char *DESCRIPTION = "Default initial state (W3C 3.6 AOT)";
-    using SM = RSM::Generated::test350::test350;
+    using SM = SCE::Generated::test350::test350;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test350> registrar_Test350;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

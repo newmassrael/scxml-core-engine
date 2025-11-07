@@ -3,7 +3,7 @@
 #include "runtime/IActionExecutor.h"
 #include "runtime/IExecutionContext.h"
 
-namespace RSM {
+namespace SCE {
 
 CancelAction::CancelAction(const std::string &sendId, const std::string &id) : BaseAction(id), sendId_(sendId) {}
 
@@ -74,4 +74,4 @@ std::string CancelAction::getSpecificDescription() const {
     return desc;
 }
 
-}  // namespace RSM
+}  // namespace SCE

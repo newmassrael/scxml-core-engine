@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-This document lists all third-party libraries used by RSM (Reactive State Machine) and their respective licenses.
+This document lists all third-party libraries used by SCE (SCXML Core Engine) and their respective licenses.
 
 ## Summary
 

@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test446_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.2.2: External file loading via src attribute
@@ -16,10 +16,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test446 : public SimpleAotTest<Test446, 446> {
     static constexpr const char *DESCRIPTION = "External file loading with src attribute (W3C 5.2.2 AOT)";
-    using SM = RSM::Generated::test446::test446;
+    using SM = SCE::Generated::test446::test446;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test446> registrar_Test446;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -5,10 +5,10 @@
 {% elif model.needs_jsengine %}
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::RSM::JSEngine::instance();
+    auto& jsEngine = ::SCE::JSEngine::instance();
     auto logResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.expr | escape_cpp }}").get();
-    if (::RSM::JSEngine::isSuccess(logResult)) {
-        LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::RSM::JSEngine::resultToString(logResult));
+    if (::SCE::JSEngine::isSuccess(logResult)) {
+        LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::SCE::JSEngine::resultToString(logResult));
     } else {
         LOG_ERROR("Failed to evaluate log expression: {{ action.expr | escape_cpp }}");
     }

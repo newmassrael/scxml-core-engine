@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test530_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: Hybrid invoke contentexpr evaluation
@@ -54,10 +54,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test530 : public SimpleAotTest<Test530, 530> {
     static constexpr const char *DESCRIPTION = "Hybrid invoke contentexpr evaluation (W3C 6.4 AOT Hybrid Strategy)";
-    using SM = RSM::Generated::test530::test530;
+    using SM = SCE::Generated::test530::test530;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test530> registrar_Test530;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace RSM::Validation {
+namespace SCE::Validation {
 
 /**
  * @brief Validates foreach loop attributes according to W3C SCXML 4.6 specification
@@ -35,4 +35,4 @@ inline bool validateForeachAttributes(const std::string &array, const std::strin
     return true;
 }
 
-}  // namespace RSM::Validation
+}  // namespace SCE::Validation

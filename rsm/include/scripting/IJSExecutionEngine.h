@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Pure JavaScript execution engine interface
@@ -160,4 +160,4 @@ public:
     virtual bool isInitialized() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

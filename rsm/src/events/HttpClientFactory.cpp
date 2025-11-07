@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #include "events/IHttpClient.h"
@@ -9,7 +9,7 @@
 #include "events/CppHttplibClient.h"
 #endif
 
-namespace RSM {
+namespace SCE {
 
 std::unique_ptr<IHttpClient> createHttpClient() {
 #ifdef __EMSCRIPTEN__
@@ -19,4 +19,4 @@ std::unique_ptr<IHttpClient> createHttpClient() {
 #endif
 }
 
-}  // namespace RSM
+}  // namespace SCE

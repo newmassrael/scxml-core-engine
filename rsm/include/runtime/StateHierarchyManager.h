@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class SCXMLModel;
@@ -322,4 +322,4 @@ private:
     void synchronizeParallelRegionState(const std::string &stateId);
 };
 
-}  // namespace RSM
+}  // namespace SCE

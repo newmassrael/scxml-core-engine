@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 class IActionExecutor;
 
@@ -56,4 +56,4 @@ public:
     virtual bool isValid() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

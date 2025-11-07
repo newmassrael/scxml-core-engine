@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 class IEventRaiser;
 
@@ -117,4 +117,4 @@ private:
     static std::mutex initMutex_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

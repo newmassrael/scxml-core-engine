@@ -6,7 +6,7 @@
 #include <memory>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Interface for concurrent event broadcasting in parallel states
@@ -132,4 +132,4 @@ public:
     virtual std::vector<std::string> validateConfiguration() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

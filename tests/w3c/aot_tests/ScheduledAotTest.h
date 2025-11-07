@@ -4,7 +4,7 @@
 #include "AotTestRegistry.h"
 #include <thread>
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief CRTP template for AOT tests requiring event scheduler polling
@@ -20,7 +20,7 @@ namespace RSM::W3C::AotTests {
  * #include "test175_sm.h"
  * struct Test175 : public ScheduledAotTest<Test175, 175> {
  *     static constexpr const char* DESCRIPTION = "Send delayexpr";
- *     using SM = RSM::Generated::test175::test175;
+ *     using SM = SCE::Generated::test175::test175;
  * };
  * REGISTER_AOT_TEST(Test175);
  * @endcode
@@ -102,4 +102,4 @@ private:
     }
 };
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

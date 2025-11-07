@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 namespace Tests {
 
 /**
@@ -42,7 +42,7 @@ public:
      * Initialize helper with JSEngine and session ID
      * Must be called in SetUp() after session is created
      */
-    void initialize(RSM::JSEngine *engine, const std::string &sessionId) {
+    void initialize(SCE::JSEngine *engine, const std::string &sessionId) {
         engine_ = engine;
         sessionId_ = sessionId;
     }
@@ -56,7 +56,7 @@ public:
     void triggerEvent(const std::string &name = TEST_EVENT_NAME, const std::string &type = EVENT_TYPE_INTERNAL) {
         ASSERT_NE(engine_, nullptr) << "Helper not initialized - call initialize() first";
 
-        auto event = std::make_shared<RSM::Event>(name, type);
+        auto event = std::make_shared<SCE::Event>(name, type);
         auto result = engine_->setCurrentEvent(sessionId_, event).get();
         ASSERT_TRUE(result.isSuccess()) << "Failed to trigger event '" << name << "' (type: " << type << ")";
     }
@@ -123,7 +123,7 @@ public:
     /**
      * Get the JSEngine instance
      */
-    RSM::JSEngine *getEngine() const {
+    SCE::JSEngine *getEngine() const {
         return engine_;
     }
 
@@ -135,9 +135,9 @@ public:
     }
 
 private:
-    RSM::JSEngine *engine_ = nullptr;
+    SCE::JSEngine *engine_ = nullptr;
     std::string sessionId_;
 };
 
 }  // namespace Tests
-}  // namespace RSM
+}  // namespace SCE

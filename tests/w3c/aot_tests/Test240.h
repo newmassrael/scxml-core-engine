@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test240_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: invoke with namelist and param
@@ -41,10 +41,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test240 : public ScheduledAotTest<Test240, 240> {
     static constexpr const char *DESCRIPTION = "invoke namelist + param (W3C 6.4 AOT Static Hybrid)";
-    using SM = RSM::Generated::test240::test240;
+    using SM = SCE::Generated::test240::test240;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test240> registrar_Test240;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

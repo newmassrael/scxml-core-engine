@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 class IEventRaiser;
 class IEventScheduler;
@@ -56,4 +56,4 @@ private:
     std::future<SendResult> sendImmediately(const EventDescriptor &event);
 };
 
-}  // namespace RSM
+}  // namespace SCE

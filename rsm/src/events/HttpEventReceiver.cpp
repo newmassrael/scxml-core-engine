@@ -8,7 +8,7 @@
 #include <regex>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 // ============================================================================
 // HttpReceiverConfig Implementation
@@ -445,4 +445,4 @@ void HttpEventReceiver::stopServerThread() {
     actualPort_ = 0;
 }
 
-}  // namespace RSM
+}  // namespace SCE

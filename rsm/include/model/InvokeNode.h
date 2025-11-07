@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class InvokeNode : public IInvokeNode {
 public:
@@ -71,4 +71,4 @@ private:
     std::vector<std::tuple<std::string, std::string, std::string>> params_;  // name, expr, location
 };
 
-}  // namespace RSM
+}  // namespace SCE

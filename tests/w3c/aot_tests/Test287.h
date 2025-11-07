@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test287_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.4: Valid assignment to valid location
@@ -16,10 +16,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test287 : public SimpleAotTest<Test287, 287> {
     static constexpr const char *DESCRIPTION = "Valid assignment to valid location (W3C 5.4 AOT)";
-    using SM = RSM::Generated::test287::test287;
+    using SM = SCE::Generated::test287::test287;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test287> registrar_Test287;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

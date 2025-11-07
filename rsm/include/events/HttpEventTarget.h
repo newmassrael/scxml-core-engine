@@ -9,7 +9,7 @@
 #endif
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief HTTP/HTTPS event target implementation
@@ -162,4 +162,4 @@ private:
     mutable std::mutex clientMutex_;  // For thread-safe HTTP client access
 };
 
-}  // namespace RSM
+}  // namespace SCE

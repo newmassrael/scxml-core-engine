@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Interface for event delivery targets
@@ -91,4 +91,4 @@ public:
     virtual std::vector<std::string> getSupportedSchemes() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

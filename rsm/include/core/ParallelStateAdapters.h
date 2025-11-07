@@ -19,7 +19,7 @@
  * - void exitRegion(const RegionId& regionId)
  */
 
-namespace RSM::Core {
+namespace SCE::Core {
 
 // Forward declarations
 class StateNode;
@@ -38,8 +38,8 @@ class StateMachine;
  *
  * @example Usage in Interpreter StateMachine.cpp:
  * @code
- * RSM::Core::InterpreterParallelStateManager adapter(parallelStateNode);
- * RSM::Core::ParallelProcessingAlgorithms::enterAllRegions(
+ * SCE::Core::InterpreterParallelStateManager adapter(parallelStateNode);
+ * SCE::Core::ParallelProcessingAlgorithms::enterAllRegions(
  *     adapter,
  *     parallelStateNode->getChildRegions()
  * );
@@ -125,9 +125,9 @@ private:
  *
  * @example Usage in generated AOT code:
  * @code
- * RSM::Core::AOTParallelStateManager<MyStateMachinePolicy> adapter(policy_, State::ParallelState);
+ * SCE::Core::AOTParallelStateManager<MyStateMachinePolicy> adapter(policy_, State::ParallelState);
  * std::vector<State> regions = { State::Region1, State::Region2 };
- * RSM::Core::ParallelProcessingAlgorithms::enterAllRegions(
+ * SCE::Core::ParallelProcessingAlgorithms::enterAllRegions(
  *     adapter,
  *     regions
  * );
@@ -188,4 +188,4 @@ private:
     State parallelState_;
 };
 
-}  // namespace RSM::Core
+}  // namespace SCE::Core

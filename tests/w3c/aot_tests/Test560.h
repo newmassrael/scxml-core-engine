@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test560_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10: _event.data structure with params in ECMAScript datamodel
@@ -34,10 +34,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test560 : public SimpleAotTest<Test560, 560> {
     static constexpr const char *DESCRIPTION = "_event.data param structure (W3C 5.10 AOT Static Hybrid)";
-    using SM = RSM::Generated::test560::test560;
+    using SM = SCE::Generated::test560::test560;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test560> registrar_Test560;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

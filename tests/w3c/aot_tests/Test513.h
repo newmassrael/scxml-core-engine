@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test513_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor Success Response
@@ -49,10 +49,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test513 : public HttpAotTest<Test513, 513> {
     static constexpr const char *DESCRIPTION = "BasicHTTP success response (W3C C.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test513::test513;
+    using SM = SCE::Generated::test513::test513;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test513> registrar_Test513;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

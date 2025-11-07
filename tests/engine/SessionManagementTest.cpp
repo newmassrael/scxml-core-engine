@@ -15,7 +15,7 @@
 class SessionManagementTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &RSM::JSEngine::instance();
+        engine_ = &SCE::JSEngine::instance();
         // Ensure test isolation with JSEngine reset
         engine_->reset();
     }
@@ -26,7 +26,7 @@ protected:
         }
     }
 
-    RSM::JSEngine *engine_;
+    SCE::JSEngine *engine_;
 };
 
 // Test session creation and validation
@@ -368,14 +368,14 @@ TEST_F(SessionManagementTest, EventSchedulingComponentCreationStepByStepTest) {
 
     // Step 2: Create ActionExecutor (potential hang point?)
     try {
-        auto actionExecutor = std::make_shared<RSM::ActionExecutorImpl>("test_session");
+        auto actionExecutor = std::make_shared<SCE::ActionExecutorImpl>("test_session");
         EXPECT_TRUE(actionExecutor != nullptr) << "ActionExecutor creation failed";
 
         // Step 3: Create EventTargetFactory with MockEventRaiser (potential hang point?)
-        auto mockEventRaiser = std::make_shared<RSM::Test::MockEventRaiser>(
+        auto mockEventRaiser = std::make_shared<SCE::Test::MockEventRaiser>(
             [](const std::string &, const std::string &) -> bool { return true; });
         actionExecutor->setEventRaiser(mockEventRaiser);
-        auto targetFactory = std::make_shared<RSM::EventTargetFactoryImpl>(mockEventRaiser);
+        auto targetFactory = std::make_shared<SCE::EventTargetFactoryImpl>(mockEventRaiser);
         EXPECT_TRUE(targetFactory != nullptr) << "EventTargetFactory creation failed";
 
         // If we get here, the problem is NOT in basic component creation
@@ -395,16 +395,16 @@ TEST_F(SessionManagementTest, EventSchedulerCreationTest) {
     bool sessionResult = engine_->createSession("test_session", "");
     EXPECT_TRUE(sessionResult);
 
-    auto actionExecutor = std::make_shared<RSM::ActionExecutorImpl>("test_session");
-    auto mockEventRaiser = std::make_shared<RSM::Test::MockEventRaiser>(
+    auto actionExecutor = std::make_shared<SCE::ActionExecutorImpl>("test_session");
+    auto mockEventRaiser = std::make_shared<SCE::Test::MockEventRaiser>(
         [](const std::string &, const std::string &) -> bool { return true; });
     actionExecutor->setEventRaiser(mockEventRaiser);
-    auto targetFactory = std::make_shared<RSM::EventTargetFactoryImpl>(mockEventRaiser);
+    auto targetFactory = std::make_shared<SCE::EventTargetFactoryImpl>(mockEventRaiser);
 
     try {
         // Step 2: Create EventExecutionCallback (potential hang point?)
-        RSM::EventExecutionCallback callback = [](const RSM::EventDescriptor &event,
-                                                  std::shared_ptr<RSM::IEventTarget> target,
+        SCE::EventExecutionCallback callback = [](const SCE::EventDescriptor &event,
+                                                  std::shared_ptr<SCE::IEventTarget> target,
                                                   const std::string &sendId) -> bool {
             (void)event;
             (void)target;
@@ -413,15 +413,15 @@ TEST_F(SessionManagementTest, EventSchedulerCreationTest) {
         };
 
         // Step 3: Create EventSchedulerImpl (major potential hang point!)
-        auto scheduler = std::make_shared<RSM::EventSchedulerImpl>(callback);
+        auto scheduler = std::make_shared<SCE::EventSchedulerImpl>(callback);
         EXPECT_TRUE(scheduler != nullptr) << "EventSchedulerImpl creation failed";
 
         // Step 4: Create EventDispatcherImpl (potential hang point?)
-        auto dispatcher = std::make_shared<RSM::EventDispatcherImpl>(scheduler, targetFactory);
+        auto dispatcher = std::make_shared<SCE::EventDispatcherImpl>(scheduler, targetFactory);
         EXPECT_TRUE(dispatcher != nullptr) << "EventDispatcherImpl creation failed";
 
         // Step 5: Test if we can create ActionExecutor with dispatcher
-        auto actionExecutorWithDispatcher = std::make_shared<RSM::ActionExecutorImpl>("test_session", dispatcher);
+        auto actionExecutorWithDispatcher = std::make_shared<SCE::ActionExecutorImpl>("test_session", dispatcher);
         EXPECT_TRUE(actionExecutorWithDispatcher != nullptr) << "ActionExecutor with dispatcher failed";
 
         SUCCEED() << "All event scheduling components created successfully!";

@@ -7,16 +7,16 @@
 #include <stack>
 #include <unordered_set>
 
-RSM::StateHierarchy::StateHierarchy() : rootState_(nullptr) {
+SCE::StateHierarchy::StateHierarchy() : rootState_(nullptr) {
     LOG_DEBUG("Creating state hierarchy");
 }
 
-RSM::StateHierarchy::~StateHierarchy() {
+SCE::StateHierarchy::~StateHierarchy() {
     LOG_DEBUG("Destroying state hierarchy");
     // Smart pointers handle resource cleanup
 }
 
-void RSM::StateHierarchy::setRootState(std::shared_ptr<RSM::IStateNode> rootState) {
+void SCE::StateHierarchy::setRootState(std::shared_ptr<SCE::IStateNode> rootState) {
     LOG_DEBUG("Setting root state: {}", (rootState ? rootState->getId() : "null"));
     rootState_ = rootState;
 
@@ -26,11 +26,11 @@ void RSM::StateHierarchy::setRootState(std::shared_ptr<RSM::IStateNode> rootStat
     }
 }
 
-RSM::IStateNode *RSM::StateHierarchy::getRootState() const {
+SCE::IStateNode *SCE::StateHierarchy::getRootState() const {
     return rootState_.get();
 }
 
-bool RSM::StateHierarchy::addState(std::shared_ptr<RSM::IStateNode> state, const std::string &parentId) {
+bool SCE::StateHierarchy::addState(std::shared_ptr<SCE::IStateNode> state, const std::string &parentId) {
     if (!state) {
         LOG_WARN("Attempt to add null state");
         return false;
@@ -40,7 +40,7 @@ bool RSM::StateHierarchy::addState(std::shared_ptr<RSM::IStateNode> state, const
 
     // If parent ID is specified, find the parent and add as child
     if (!parentId.empty()) {
-        RSM::IStateNode *parent = findStateById(parentId);
+        SCE::IStateNode *parent = findStateById(parentId);
         if (!parent) {
             LOG_ERROR("Parent state not found: {}", parentId);
             return false;
@@ -62,7 +62,7 @@ bool RSM::StateHierarchy::addState(std::shared_ptr<RSM::IStateNode> state, const
     return true;
 }
 
-RSM::IStateNode *RSM::StateHierarchy::findStateById(const std::string &id) const {
+SCE::IStateNode *SCE::StateHierarchy::findStateById(const std::string &id) const {
     auto it = stateIdMap_.find(id);
     if (it != stateIdMap_.end()) {
         return it->second;
@@ -70,9 +70,9 @@ RSM::IStateNode *RSM::StateHierarchy::findStateById(const std::string &id) const
     return nullptr;
 }
 
-bool RSM::StateHierarchy::isDescendantOf(const std::string &ancestorId, const std::string &descendantId) const {
-    RSM::IStateNode *ancestor = findStateById(ancestorId);
-    RSM::IStateNode *descendant = findStateById(descendantId);
+bool SCE::StateHierarchy::isDescendantOf(const std::string &ancestorId, const std::string &descendantId) const {
+    SCE::IStateNode *ancestor = findStateById(ancestorId);
+    SCE::IStateNode *descendant = findStateById(descendantId);
 
     if (!ancestor || !descendant) {
         return false;
@@ -81,7 +81,7 @@ bool RSM::StateHierarchy::isDescendantOf(const std::string &ancestorId, const st
     return isDescendantOf(ancestor, descendant);
 }
 
-bool RSM::StateHierarchy::isDescendantOf(RSM::IStateNode *ancestor, RSM::IStateNode *descendant) const {
+bool SCE::StateHierarchy::isDescendantOf(SCE::IStateNode *ancestor, SCE::IStateNode *descendant) const {
     if (!ancestor || !descendant) {
         return false;
     }
@@ -92,7 +92,7 @@ bool RSM::StateHierarchy::isDescendantOf(RSM::IStateNode *ancestor, RSM::IStateN
     }
 
     // Check parent-child relationship
-    RSM::IStateNode *parent = descendant->getParent();
+    SCE::IStateNode *parent = descendant->getParent();
 
     // Return false if no parent
     if (!parent) {
@@ -108,17 +108,17 @@ bool RSM::StateHierarchy::isDescendantOf(RSM::IStateNode *ancestor, RSM::IStateN
     return isDescendantOf(ancestor, parent);
 }
 
-const std::vector<std::shared_ptr<RSM::IStateNode>> &RSM::StateHierarchy::getAllStates() const {
+const std::vector<std::shared_ptr<SCE::IStateNode>> &SCE::StateHierarchy::getAllStates() const {
     return allStates_;
 }
 
-bool RSM::StateHierarchy::validateRelationships() const {
+bool SCE::StateHierarchy::validateRelationships() const {
     LOG_INFO("Validating state relationships");
 
     // Validate all states
     for (const auto &state : allStates_) {
         // Validate parent state
-        RSM::IStateNode *parent = state->getParent();
+        SCE::IStateNode *parent = state->getParent();
         if (parent) {
             // Check if parent actually has this state as a child
             bool foundAsChild = false;
@@ -155,7 +155,7 @@ bool RSM::StateHierarchy::validateRelationships() const {
     return true;
 }
 
-std::vector<std::string> RSM::StateHierarchy::findMissingStateIds() const {
+std::vector<std::string> SCE::StateHierarchy::findMissingStateIds() const {
     LOG_INFO("Looking for missing state IDs");
 
     std::vector<std::string> missingIds;
@@ -194,7 +194,7 @@ std::vector<std::string> RSM::StateHierarchy::findMissingStateIds() const {
     return missingIds;
 }
 
-void RSM::StateHierarchy::printHierarchy() const {
+void SCE::StateHierarchy::printHierarchy() const {
     LOG_INFO("Printing state hierarchy");
 
     LOG_INFO("State Hierarchy:");
@@ -209,7 +209,7 @@ void RSM::StateHierarchy::printHierarchy() const {
     LOG_INFO("State hierarchy printed");
 }
 
-void RSM::StateHierarchy::printStateHierarchy(RSM::IStateNode *state, int depth) const {
+void SCE::StateHierarchy::printStateHierarchy(SCE::IStateNode *state, int depth) const {
     if (!state) {
         return;
     }

@@ -4,7 +4,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 // Static member initialization
 std::atomic<uint64_t> UniqueIdGenerator::globalCounter_{0};
@@ -157,4 +157,4 @@ uint64_t UniqueIdGenerator::getRandomComponent() {
     return rng_() & 0xFFFF;
 }
 
-}  // namespace RSM
+}  // namespace SCE

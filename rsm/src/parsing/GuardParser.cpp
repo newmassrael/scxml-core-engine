@@ -4,15 +4,15 @@
 #include "common/Logger.h"
 #include <algorithm>
 
-RSM::GuardParser::GuardParser(std::shared_ptr<RSM::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
+SCE::GuardParser::GuardParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
     LOG_DEBUG("Creating guard parser");
 }
 
-RSM::GuardParser::~GuardParser() {
+SCE::GuardParser::~GuardParser() {
     LOG_DEBUG("Destroying guard parser");
 }
 
-std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseGuardNode(const std::shared_ptr<IXMLElement> &guardNode) {
+std::shared_ptr<SCE::IGuardNode> SCE::GuardParser::parseGuardNode(const std::shared_ptr<IXMLElement> &guardNode) {
     if (!guardNode) {
         LOG_WARN("Null guard node");
         return nullptr;
@@ -65,11 +65,11 @@ std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseGuardNode(const std::sha
     }
 
     // Process <code:condition> or <condition> element
-    auto conditionElement = RSM::ParsingCommon::findFirstChildElement(guardNode, "condition");
+    auto conditionElement = SCE::ParsingCommon::findFirstChildElement(guardNode, "condition");
     if (conditionElement) {
         LOG_DEBUG("Found condition element");
 
-        std::string conditionText = RSM::ParsingCommon::extractTextContent(conditionElement, true);
+        std::string conditionText = SCE::ParsingCommon::extractTextContent(conditionElement, true);
         LOG_DEBUG("Raw condition content: '{}'", conditionText);
 
         if (!conditionText.empty()) {
@@ -88,8 +88,8 @@ std::shared_ptr<RSM::IGuardNode> RSM::GuardParser::parseGuardNode(const std::sha
     return guard;
 }
 
-std::shared_ptr<RSM::IGuardNode>
-RSM::GuardParser::parseGuardFromTransition(const std::shared_ptr<IXMLElement> &transitionNode,
+std::shared_ptr<SCE::IGuardNode>
+SCE::GuardParser::parseGuardFromTransition(const std::shared_ptr<IXMLElement> &transitionNode,
                                            const std::string &targetState) {
     if (!transitionNode) {
         LOG_WARN("Null transition node");
@@ -127,69 +127,9 @@ RSM::GuardParser::parseGuardFromTransition(const std::shared_ptr<IXMLElement> &t
     return guard;
 }
 
-std::shared_ptr<RSM::IGuardNode>
-RSM::GuardParser::parseReactiveGuard(const std::shared_ptr<IXMLElement> &reactiveGuardNode) {
-    if (!reactiveGuardNode) {
-        LOG_WARN("Null reactive guard node");
-        return nullptr;
-    }
-
-    std::string id, target, condition;
-
-    if (reactiveGuardNode->hasAttribute("id")) {
-        id = reactiveGuardNode->getAttribute("id");
-    }
-    if (reactiveGuardNode->hasAttribute("target")) {
-        target = reactiveGuardNode->getAttribute("target");
-    }
-    if (reactiveGuardNode->hasAttribute("condition")) {
-        condition = reactiveGuardNode->getAttribute("condition");
-    }
-
-    if (id.empty() || (target.empty() && condition.empty())) {
-        LOG_WARN("Reactive guard node missing required attributes");
-        return nullptr;
-    }
-
-    // Create basic guard node
-    auto guard = nodeFactory_->createGuardNode(id, "");
-
-    // Set reactive attributes
-    guard->setReactive(true);
-    guard->setAttribute("reactive", "true");
-
-    // Process target attribute
-    if (!target.empty()) {
-        LOG_DEBUG("Reactive guard: {} with target: {}", id, target);
-
-        if (GuardUtils::isConditionExpression(target)) {
-            guard->setCondition(target);
-            LOG_DEBUG("Set condition from target: {}", target);
-        } else {
-            guard->setTargetState(target);
-            LOG_DEBUG("Set target state: {}", target);
-        }
-    }
-
-    // Process condition attribute
-    if (!condition.empty()) {
-        guard->setCondition(condition);
-        LOG_DEBUG("Set condition from attribute: {}", condition);
-    }
-
-    // Parse dependencies
-    parseDependencies(reactiveGuardNode, guard);
-
-    // Parse external implementation
-    parseExternalImplementation(reactiveGuardNode, guard);
-
-    LOG_DEBUG("Reactive guard parsed successfully");
-    return guard;
-}
-
-std::vector<std::shared_ptr<RSM::IGuardNode>>
-RSM::GuardParser::parseGuardsElement(const std::shared_ptr<IXMLElement> &guardsNode) {
-    std::vector<std::shared_ptr<RSM::IGuardNode>> guards;
+std::vector<std::shared_ptr<SCE::IGuardNode>>
+SCE::GuardParser::parseGuardsElement(const std::shared_ptr<IXMLElement> &guardsNode) {
+    std::vector<std::shared_ptr<SCE::IGuardNode>> guards;
 
     if (!guardsNode) {
         LOG_WARN("Null guards node");
@@ -199,7 +139,7 @@ RSM::GuardParser::parseGuardsElement(const std::shared_ptr<IXMLElement> &guardsN
     LOG_DEBUG("Parsing guards element");
 
     // Parse guard nodes
-    auto guardNodes = RSM::ParsingCommon::findChildElements(guardsNode, "guard");
+    auto guardNodes = SCE::ParsingCommon::findChildElements(guardsNode, "guard");
 
     for (const auto &guardElement : guardNodes) {
         auto guard = parseGuardNode(guardElement);
@@ -213,9 +153,9 @@ RSM::GuardParser::parseGuardsElement(const std::shared_ptr<IXMLElement> &guardsN
     return guards;
 }
 
-std::vector<std::shared_ptr<RSM::IGuardNode>>
-RSM::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) {
-    std::vector<std::shared_ptr<RSM::IGuardNode>> allGuards;
+std::vector<std::shared_ptr<SCE::IGuardNode>>
+SCE::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) {
+    std::vector<std::shared_ptr<SCE::IGuardNode>> allGuards;
 
     if (!scxmlNode) {
         LOG_WARN("Null SCXML node");
@@ -225,16 +165,16 @@ RSM::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) 
     LOG_DEBUG("Parsing all guards in SCXML document");
 
     // 1. Parse guards within code:guards element
-    auto guardsNode = RSM::ParsingCommon::findFirstChildElement(scxmlNode, "guards");
+    auto guardsNode = SCE::ParsingCommon::findFirstChildElement(scxmlNode, "guards");
     if (guardsNode) {
         auto guards = parseGuardsElement(guardsNode);
         allGuards.insert(allGuards.end(), guards.begin(), guards.end());
     }
 
     // 2. Find guard attributes in transitions of all states
-    auto stateNodes = RSM::ParsingCommon::findChildElements(scxmlNode, "state");
-    auto parallelNodes = RSM::ParsingCommon::findChildElements(scxmlNode, "parallel");
-    auto finalNodes = RSM::ParsingCommon::findChildElements(scxmlNode, "final");
+    auto stateNodes = SCE::ParsingCommon::findChildElements(scxmlNode, "state");
+    auto parallelNodes = SCE::ParsingCommon::findChildElements(scxmlNode, "parallel");
+    auto finalNodes = SCE::ParsingCommon::findChildElements(scxmlNode, "final");
 
     // Combine all state nodes
     std::vector<std::shared_ptr<IXMLElement>> allStateNodes;
@@ -252,7 +192,7 @@ RSM::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) 
         std::string stateId = stateElement->getAttribute("id");
 
         // Process transition elements
-        auto transNodes = RSM::ParsingCommon::findChildElements(stateElement, "transition");
+        auto transNodes = SCE::ParsingCommon::findChildElements(stateElement, "transition");
         for (const auto &transElement : transNodes) {
             if (transElement->hasAttribute("target")) {
                 std::string target = transElement->getAttribute("target");
@@ -263,59 +203,40 @@ RSM::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) 
                 }
             }
         }
-
-        // Process reactive guards
-        auto reactiveGuardNodes = RSM::ParsingCommon::findChildElements(stateElement, "reactive-guard");
-        for (const auto &guardElement : reactiveGuardNodes) {
-            auto guard = parseReactiveGuard(guardElement);
-            if (guard) {
-                allGuards.push_back(guard);
-                LOG_DEBUG("Added reactive guard from state {}", stateId);
-            }
-        }
     }
 
     // 3. Remove duplicates (based on ID)
     std::sort(allGuards.begin(), allGuards.end(),
-              [](const std::shared_ptr<RSM::IGuardNode> &a, const std::shared_ptr<RSM::IGuardNode> &b) {
+              [](const std::shared_ptr<SCE::IGuardNode> &a, const std::shared_ptr<SCE::IGuardNode> &b) {
                   return a->getId() < b->getId();
               });
 
     allGuards.erase(std::unique(allGuards.begin(), allGuards.end(),
-                                [](const std::shared_ptr<RSM::IGuardNode> &a,
-                                   const std::shared_ptr<RSM::IGuardNode> &b) { return a->getId() == b->getId(); }),
+                                [](const std::shared_ptr<SCE::IGuardNode> &a,
+                                   const std::shared_ptr<SCE::IGuardNode> &b) { return a->getId() == b->getId(); }),
                     allGuards.end());
 
     LOG_DEBUG("Found {} unique guards", allGuards.size());
     return allGuards;
 }
 
-bool RSM::GuardParser::isGuardNode(const std::shared_ptr<IXMLElement> &element) const {
+bool SCE::GuardParser::isGuardNode(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
 
     std::string nodeName = element->getName();
-    return RSM::ParsingCommon::matchNodeName(nodeName, "guard");
+    return SCE::ParsingCommon::matchNodeName(nodeName, "guard");
 }
 
-bool RSM::GuardParser::isReactiveGuardNode(const std::shared_ptr<IXMLElement> &element) const {
-    if (!element) {
-        return false;
-    }
-
-    std::string nodeName = element->getName();
-    return RSM::ParsingCommon::matchNodeName(nodeName, "reactive-guard");
-}
-
-void RSM::GuardParser::parseDependencies(const std::shared_ptr<IXMLElement> &guardNode,
-                                         std::shared_ptr<RSM::IGuardNode> guardObject) {
+void SCE::GuardParser::parseDependencies(const std::shared_ptr<IXMLElement> &guardNode,
+                                         std::shared_ptr<SCE::IGuardNode> guardObject) {
     if (!guardNode || !guardObject) {
         return;
     }
 
     // Parse dependencies
-    auto depNodes = RSM::ParsingCommon::findChildElements(guardNode, "dependency");
+    auto depNodes = SCE::ParsingCommon::findChildElements(guardNode, "dependency");
 
     for (const auto &element : depNodes) {
         std::string property;
@@ -332,13 +253,13 @@ void RSM::GuardParser::parseDependencies(const std::shared_ptr<IXMLElement> &gua
     }
 }
 
-void RSM::GuardParser::parseExternalImplementation(const std::shared_ptr<IXMLElement> &guardNode,
-                                                   std::shared_ptr<RSM::IGuardNode> guardObject) {
+void SCE::GuardParser::parseExternalImplementation(const std::shared_ptr<IXMLElement> &guardNode,
+                                                   std::shared_ptr<SCE::IGuardNode> guardObject) {
     if (!guardNode || !guardObject) {
         return;
     }
 
-    auto implNode = RSM::ParsingCommon::findFirstChildElement(guardNode, "external-implementation");
+    auto implNode = SCE::ParsingCommon::findFirstChildElement(guardNode, "external-implementation");
 
     if (implNode) {
         if (implNode->hasAttribute("class")) {

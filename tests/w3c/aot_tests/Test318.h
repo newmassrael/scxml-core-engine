@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test318_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10: _event variable binding and persistence
@@ -16,10 +16,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test318 : public SimpleAotTest<Test318, 318> {
     static constexpr const char *DESCRIPTION = "_event variable binding (W3C 5.10 AOT)";
-    using SM = RSM::Generated::test318::test318;
+    using SM = SCE::Generated::test318::test318;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test318> registrar_Test318;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

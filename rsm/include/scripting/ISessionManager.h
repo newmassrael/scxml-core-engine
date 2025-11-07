@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declaration
 class ISessionObserver;
@@ -73,4 +73,4 @@ public:
     virtual std::string getParentSessionId(const std::string &sessionId) const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

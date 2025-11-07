@@ -8,7 +8,7 @@
 #include <future>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 InternalEventTarget::InternalEventTarget(std::shared_ptr<IEventRaiser> eventRaiser, bool isExternal,
                                          const std::string &sessionId)
@@ -186,4 +186,4 @@ std::string InternalEventTarget::buildEventData(const EventDescriptor &event) co
     return JsonUtils::toCompactString(eventDataJson);
 }
 
-}  // namespace RSM
+}  // namespace SCE

@@ -1,4 +1,4 @@
-# RSM CMake Function Example
+# SCE CMake Function Example
 
 This example demonstrates how to use the `rsm_add_state_machine()` CMake function to automatically generate C++ state machine code from SCXML files.
 
@@ -23,7 +23,7 @@ rsm_add_state_machine(
     # OUTPUT_DIR is optional, defaults to ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
-# Link with RSM library
+# Link with SCE library
 target_link_libraries(my_app PRIVATE rsm_unified)
 ```
 
@@ -38,7 +38,7 @@ target_link_libraries(my_app PRIVATE rsm_unified)
 For an SCXML file named `simple_light.scxml` with `name="SimpleLight"`:
 - Generated file: `SimpleLight_sm.h`
 - Location: `${OUTPUT_DIR}/SimpleLight_sm.h`
-- Namespace: `RSM::Generated`
+- Namespace: `SCE::Generated`
 
 ## Implementation Pattern
 
@@ -47,7 +47,7 @@ The generated code uses template-based inheritance for zero-overhead state machi
 ```cpp
 #include "SimpleLight_sm.h"
 
-using namespace RSM::Generated;
+using namespace SCE::Generated;
 
 // Implement your state machine logic
 class LightController : public SimpleLightBase<LightController> {
@@ -112,4 +112,4 @@ The code generator is being enhanced to support all W3C SCXML 1.0 features while
 - **Tier 1 (Minimal Overhead)**: Parallel/History - small data structures only when needed
 - **Tier 2 (Conditional Overhead)**: JavaScript/HTTP/Timers - linked only if SCXML uses them
 
-See [ARCHITECTURE.md](/home/coin/reactive-state-machine/ARCHITECTURE.md) for detailed design
+See [ARCHITECTURE.md](../../ARCHITECTURE.md) for detailed design

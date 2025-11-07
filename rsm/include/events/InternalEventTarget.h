@@ -4,7 +4,7 @@
 #include "runtime/IEventRaiser.h"
 #include <memory>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Event target for internal SCXML events
@@ -56,4 +56,4 @@ private:
     std::string buildEventData(const EventDescriptor &event) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

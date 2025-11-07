@@ -10,19 +10,19 @@
 #include <algorithm>
 #include <filesystem>
 
-RSM::SCXMLParser::SCXMLParser(std::shared_ptr<RSM::NodeFactory> nodeFactory,
-                              std::shared_ptr<RSM::IXIncludeProcessor> xincludeProcessor)
+SCE::SCXMLParser::SCXMLParser(std::shared_ptr<SCE::NodeFactory> nodeFactory,
+                              std::shared_ptr<SCE::IXIncludeProcessor> xincludeProcessor)
     : nodeFactory_(nodeFactory) {
     LOG_DEBUG("Creating SCXML parser");
 
     // Initialize specialized parsers
-    stateNodeParser_ = std::make_shared<RSM::StateNodeParser>(nodeFactory_);
-    transitionParser_ = std::make_shared<RSM::TransitionParser>(nodeFactory_);
-    actionParser_ = std::make_shared<RSM::ActionParser>(nodeFactory_);
-    guardParser_ = std::make_shared<RSM::GuardParser>(nodeFactory_);
-    dataModelParser_ = std::make_shared<RSM::DataModelParser>(nodeFactory_);
-    invokeParser_ = std::make_shared<RSM::InvokeParser>(nodeFactory_);
-    doneDataParser_ = std::make_shared<RSM::DoneDataParser>(nodeFactory_);
+    stateNodeParser_ = std::make_shared<SCE::StateNodeParser>(nodeFactory_);
+    transitionParser_ = std::make_shared<SCE::TransitionParser>(nodeFactory_);
+    actionParser_ = std::make_shared<SCE::ActionParser>(nodeFactory_);
+    guardParser_ = std::make_shared<SCE::GuardParser>(nodeFactory_);
+    dataModelParser_ = std::make_shared<SCE::DataModelParser>(nodeFactory_);
+    invokeParser_ = std::make_shared<SCE::InvokeParser>(nodeFactory_);
+    doneDataParser_ = std::make_shared<SCE::DoneDataParser>(nodeFactory_);
 
     // Connect related parsers
     stateNodeParser_->setRelatedParsers(transitionParser_, actionParser_, dataModelParser_, invokeParser_,
@@ -35,15 +35,15 @@ RSM::SCXMLParser::SCXMLParser(std::shared_ptr<RSM::NodeFactory> nodeFactory,
     if (xincludeProcessor) {
         xincludeProcessor_ = xincludeProcessor;
     } else {
-        xincludeProcessor_ = std::make_shared<RSM::XIncludeProcessor>();
+        xincludeProcessor_ = std::make_shared<SCE::XIncludeProcessor>();
     }
 }
 
-RSM::SCXMLParser::~SCXMLParser() {
+SCE::SCXMLParser::~SCXMLParser() {
     LOG_DEBUG("Destroying SCXML parser");
 }
 
-std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseFile(const std::string &filename) {
+std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseFile(const std::string &filename) {
     try {
         // Initialize parsing state
         initParsing();
@@ -83,7 +83,7 @@ std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseFile(const std::string &
     }
 }
 
-std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseContent(const std::string &content) {
+std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseContent(const std::string &content) {
     try {
         // Initialize parsing state
         initParsing();
@@ -111,7 +111,7 @@ std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseContent(const std::strin
     }
 }
 
-std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseAbstractDocument(std::shared_ptr<IXMLDocument> doc) {
+std::shared_ptr<SCE::SCXMLModel> SCE::SCXMLParser::parseAbstractDocument(std::shared_ptr<IXMLDocument> doc) {
     if (!doc) {
         addError("Null document");
         return nullptr;
@@ -153,7 +153,7 @@ std::shared_ptr<RSM::SCXMLModel> RSM::SCXMLParser::parseAbstractDocument(std::sh
     }
 }
 
-bool RSM::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlNode,
+bool SCE::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlNode,
                                       std::shared_ptr<SCXMLModel> model) {
     if (!scxmlNode || !model) {
         addError("Null scxml node or model");
@@ -218,7 +218,7 @@ bool RSM::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
 
     // Parse top-level datamodel
     LOG_DEBUG("Parsing root datamodel");
-    auto datamodelNode = RSM::ParsingCommon::findFirstChildElement(scxmlNode, "datamodel");
+    auto datamodelNode = SCE::ParsingCommon::findFirstChildElement(scxmlNode, "datamodel");
     if (datamodelNode) {
         auto dataItems = dataModelParser_->parseDataModelNode(datamodelNode, context);
         for (const auto &item : dataItems) {
@@ -230,7 +230,7 @@ bool RSM::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
     addSystemVariables(model);
 
     // W3C SCXML 5.8: Parse top-level <script> elements
-    auto scriptElements = RSM::ParsingCommon::findChildElements(scxmlNode, "script");
+    auto scriptElements = SCE::ParsingCommon::findChildElements(scxmlNode, "script");
     if (!scriptElements.empty()) {
         LOG_DEBUG("Parsing {} root script element(s) (W3C SCXML 5.8)", scriptElements.size());
         size_t parsedCount = 0;
@@ -263,13 +263,13 @@ bool RSM::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
     LOG_DEBUG("Looking for root state nodes");
 
     std::vector<std::shared_ptr<IXMLElement>> rootStateElements;
-    auto stateElements = RSM::ParsingCommon::findChildElements(scxmlNode, "state");
+    auto stateElements = SCE::ParsingCommon::findChildElements(scxmlNode, "state");
     rootStateElements.insert(rootStateElements.end(), stateElements.begin(), stateElements.end());
 
-    auto parallelElements = RSM::ParsingCommon::findChildElements(scxmlNode, "parallel");
+    auto parallelElements = SCE::ParsingCommon::findChildElements(scxmlNode, "parallel");
     rootStateElements.insert(rootStateElements.end(), parallelElements.begin(), parallelElements.end());
 
-    auto finalElements = RSM::ParsingCommon::findChildElements(scxmlNode, "final");
+    auto finalElements = SCE::ParsingCommon::findChildElements(scxmlNode, "final");
     rootStateElements.insert(rootStateElements.end(), finalElements.begin(), finalElements.end());
 
     if (rootStateElements.empty()) {
@@ -299,7 +299,7 @@ bool RSM::SCXMLParser::parseScxmlNode(const std::shared_ptr<IXMLElement> &scxmlN
     return true;
 }
 
-void RSM::SCXMLParser::parseContextProperties(const std::shared_ptr<IXMLElement> &scxmlNode,
+void SCE::SCXMLParser::parseContextProperties(const std::shared_ptr<IXMLElement> &scxmlNode,
                                               std::shared_ptr<SCXMLModel> model) {
     if (!scxmlNode || !model) {
         return;
@@ -307,7 +307,7 @@ void RSM::SCXMLParser::parseContextProperties(const std::shared_ptr<IXMLElement>
 
     LOG_DEBUG("Parsing context properties");
 
-    auto ctxProps = RSM::ParsingCommon::findChildElements(scxmlNode, "property");
+    auto ctxProps = SCE::ParsingCommon::findChildElements(scxmlNode, "property");
 
     for (const auto &propElement : ctxProps) {
         if (propElement->hasAttribute("name") && propElement->hasAttribute("type")) {
@@ -323,7 +323,7 @@ void RSM::SCXMLParser::parseContextProperties(const std::shared_ptr<IXMLElement>
     LOG_DEBUG("Found {} context properties", model->getContextProperties().size());
 }
 
-void RSM::SCXMLParser::parseInjectPoints(const std::shared_ptr<IXMLElement> &scxmlNode,
+void SCE::SCXMLParser::parseInjectPoints(const std::shared_ptr<IXMLElement> &scxmlNode,
                                          std::shared_ptr<SCXMLModel> model) {
     if (!scxmlNode || !model) {
         return;
@@ -335,7 +335,7 @@ void RSM::SCXMLParser::parseInjectPoints(const std::shared_ptr<IXMLElement> &scx
 
     bool foundInjectPoints = false;
     for (const auto &nodeName : injectNodeNames) {
-        auto injectElements = RSM::ParsingCommon::findChildElements(scxmlNode, nodeName);
+        auto injectElements = SCE::ParsingCommon::findChildElements(scxmlNode, nodeName);
 
         for (const auto &injectElement : injectElements) {
             std::string name, type;
@@ -369,34 +369,34 @@ void RSM::SCXMLParser::parseInjectPoints(const std::shared_ptr<IXMLElement> &scx
     LOG_DEBUG("Found {} injection points", model->getInjectPoints().size());
 }
 
-bool RSM::SCXMLParser::hasErrors() const {
+bool SCE::SCXMLParser::hasErrors() const {
     return !errorMessages_.empty();
 }
 
-const std::vector<std::string> &RSM::SCXMLParser::getErrorMessages() const {
+const std::vector<std::string> &SCE::SCXMLParser::getErrorMessages() const {
     return errorMessages_;
 }
 
-const std::vector<std::string> &RSM::SCXMLParser::getWarningMessages() const {
+const std::vector<std::string> &SCE::SCXMLParser::getWarningMessages() const {
     return warningMessages_;
 }
 
-void RSM::SCXMLParser::initParsing() {
+void SCE::SCXMLParser::initParsing() {
     errorMessages_.clear();
     warningMessages_.clear();
 }
 
-void RSM::SCXMLParser::addError(const std::string &message) {
+void SCE::SCXMLParser::addError(const std::string &message) {
     LOG_ERROR("SCXMLParser - {}", message);
     errorMessages_.push_back(message);
 }
 
-void RSM::SCXMLParser::addWarning(const std::string &message) {
+void SCE::SCXMLParser::addWarning(const std::string &message) {
     LOG_WARN("SCXMLParser - {}", message);
     warningMessages_.push_back(message);
 }
 
-bool RSM::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
+bool SCE::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
     if (!model) {
         addError("Null model in validation");
         return false;
@@ -493,7 +493,7 @@ bool RSM::SCXMLParser::validateModel(std::shared_ptr<SCXMLModel> model) {
     return isValid;
 }
 
-void RSM::SCXMLParser::addSystemVariables(std::shared_ptr<SCXMLModel> model) {
+void SCE::SCXMLParser::addSystemVariables(std::shared_ptr<SCXMLModel> model) {
     if (!model) {
         LOG_WARN("Null model");
         return;

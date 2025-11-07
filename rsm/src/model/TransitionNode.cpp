@@ -4,8 +4,8 @@
 #include <algorithm>
 #include <sstream>
 
-RSM::TransitionNode::TransitionNode(const std::string &event, const std::string &target)
-    : event_(event), target_(target), guard_(""), reactive_(false), internal_(false), targetsDirty_(true) {
+SCE::TransitionNode::TransitionNode(const std::string &event, const std::string &target)
+    : event_(event), target_(target), guard_(""), internal_(false), targetsDirty_(true) {
     LOG_DEBUG("Creating transition node: {} -> {}", (event.empty() ? "<no event>" : event), target);
 
     if (!event.empty()) {
@@ -13,15 +13,15 @@ RSM::TransitionNode::TransitionNode(const std::string &event, const std::string 
     }
 }
 
-RSM::TransitionNode::~TransitionNode() {
+SCE::TransitionNode::~TransitionNode() {
     LOG_DEBUG("Destroying transition node: {} -> {}", (event_.empty() ? "<no event>" : event_), target_);
 }
 
-const std::string &RSM::TransitionNode::getEvent() const {
+const std::string &SCE::TransitionNode::getEvent() const {
     return event_;
 }
 
-std::vector<std::string> RSM::TransitionNode::getTargets() const {
+std::vector<std::string> SCE::TransitionNode::getTargets() const {
     // Caching mechanism - parse if targets changed or not yet parsed
     if (targetsDirty_) {
         parseTargets();
@@ -30,7 +30,7 @@ std::vector<std::string> RSM::TransitionNode::getTargets() const {
     return cachedTargets_;
 }
 
-void RSM::TransitionNode::addTarget(const std::string &target) {
+void SCE::TransitionNode::addTarget(const std::string &target) {
     LOG_DEBUG("Adding target to transition {}: {}", (event_.empty() ? "<no event>" : event_), target);
 
     if (target.empty()) {
@@ -45,7 +45,7 @@ void RSM::TransitionNode::addTarget(const std::string &target) {
     targetsDirty_ = true;  // Mark cache needs update
 }
 
-void RSM::TransitionNode::clearTargets() {
+void SCE::TransitionNode::clearTargets() {
     LOG_DEBUG("Clearing targets for transition {}", (event_.empty() ? "<no event>" : event_));
 
     target_.clear();
@@ -53,14 +53,14 @@ void RSM::TransitionNode::clearTargets() {
     targetsDirty_ = false;  // Cache already empty, no update needed
 }
 
-bool RSM::TransitionNode::hasTargets() const {
+bool SCE::TransitionNode::hasTargets() const {
     if (!targetsDirty_ && !cachedTargets_.empty()) {
         return true;
     }
     return !target_.empty();
 }
 
-void RSM::TransitionNode::parseTargets() const {
+void SCE::TransitionNode::parseTargets() const {
     cachedTargets_.clear();
 
     if (target_.empty()) {
@@ -74,16 +74,16 @@ void RSM::TransitionNode::parseTargets() const {
     }
 }
 
-void RSM::TransitionNode::setGuard(const std::string &guard) {
+void SCE::TransitionNode::setGuard(const std::string &guard) {
     LOG_DEBUG("Setting guard for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_, guard);
     guard_ = guard;
 }
 
-const std::string &RSM::TransitionNode::getGuard() const {
+const std::string &SCE::TransitionNode::getGuard() const {
     return guard_;
 }
 
-void RSM::TransitionNode::addActionNode(std::shared_ptr<RSM::IActionNode> actionNode) {
+void SCE::TransitionNode::addActionNode(std::shared_ptr<SCE::IActionNode> actionNode) {
     LOG_DEBUG("Adding ActionNode to transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
               (actionNode ? actionNode->getActionType() : "null"));
     if (actionNode) {
@@ -91,37 +91,27 @@ void RSM::TransitionNode::addActionNode(std::shared_ptr<RSM::IActionNode> action
     }
 }
 
-const std::vector<std::shared_ptr<RSM::IActionNode>> &RSM::TransitionNode::getActionNodes() const {
+const std::vector<std::shared_ptr<SCE::IActionNode>> &SCE::TransitionNode::getActionNodes() const {
     return actionNodes_;
 }
 
-void RSM::TransitionNode::setReactive(bool reactive) {
-    LOG_DEBUG("Setting reactive flag for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
-              (reactive ? "true" : "false"));
-    reactive_ = reactive;
-}
-
-bool RSM::TransitionNode::isReactive() const {
-    return reactive_;
-}
-
-void RSM::TransitionNode::setInternal(bool internal) {
+void SCE::TransitionNode::setInternal(bool internal) {
     LOG_DEBUG("Setting internal flag for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
               (internal ? "true" : "false"));
     internal_ = internal;
 }
 
-bool RSM::TransitionNode::isInternal() const {
+bool SCE::TransitionNode::isInternal() const {
     return internal_;
 }
 
-void RSM::TransitionNode::setAttribute(const std::string &name, const std::string &value) {
+void SCE::TransitionNode::setAttribute(const std::string &name, const std::string &value) {
     LOG_DEBUG("Setting attribute for transition {} -> {}: {}={}", (event_.empty() ? "<no event>" : event_), target_,
               name, value);
     attributes_[name] = value;
 }
 
-std::string RSM::TransitionNode::getAttribute(const std::string &name) const {
+std::string SCE::TransitionNode::getAttribute(const std::string &name) const {
     auto it = attributes_.find(name);
     if (it != attributes_.end()) {
         return it->second;
@@ -129,13 +119,13 @@ std::string RSM::TransitionNode::getAttribute(const std::string &name) const {
     return "";
 }
 
-void RSM::TransitionNode::addEvent(const std::string &event) {
+void SCE::TransitionNode::addEvent(const std::string &event) {
     if (std::find(events_.begin(), events_.end(), event) == events_.end()) {
         LOG_DEBUG("Adding event to transition: {}", event);
         events_.push_back(event);
     }
 }
 
-const std::vector<std::string> &RSM::TransitionNode::getEvents() const {
+const std::vector<std::string> &SCE::TransitionNode::getEvents() const {
     return events_;
 }

@@ -1,10 +1,10 @@
 // W3C SCXML 3.8.6: <script>
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::RSM::JSEngine::instance();
+    auto& jsEngine = ::SCE::JSEngine::instance();
     {% if action.content %}
     auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ action.content | escape_cpp }}").get();
-    if (!::RSM::JSEngine::isSuccess(scriptResult)) {
+    if (!::SCE::JSEngine::isSuccess(scriptResult)) {
         std::string errorMsg = "Script execution failed";
         LOG_ERROR("{}", errorMsg);
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));

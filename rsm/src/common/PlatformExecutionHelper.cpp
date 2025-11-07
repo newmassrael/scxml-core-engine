@@ -6,7 +6,7 @@
 #include <queue>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief WASM Synchronous Executor: Direct function calls without threading
@@ -262,4 +262,4 @@ std::unique_ptr<PlatformExecutionHelper> createPlatformExecutor() {
 #endif
 }
 
-}  // namespace RSM
+}  // namespace SCE

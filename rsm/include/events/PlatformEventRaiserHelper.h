@@ -6,7 +6,7 @@
 #include <mutex>
 #include <queue>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declaration
 class EventRaiserImpl;
@@ -129,4 +129,4 @@ class IEventScheduler;
 std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *raiser,
                                                                            std::shared_ptr<IEventScheduler> scheduler);
 
-}  // namespace RSM
+}  // namespace SCE

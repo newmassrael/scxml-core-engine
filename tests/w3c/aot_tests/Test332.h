@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test332_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: _event.sendid field binding in error events
@@ -19,10 +19,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test332 : public SimpleAotTest<Test332, 332> {
     static constexpr const char *DESCRIPTION = "_event.sendid in error events (W3C 5.10.1, 6.2.4 AOT)";
-    using SM = RSM::Generated::test332::test332;
+    using SM = SCE::Generated::test332::test332;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test332> registrar_Test332;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

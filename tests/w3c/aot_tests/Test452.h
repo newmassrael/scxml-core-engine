@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test452_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.3/5.4: Datamodel substructure assignment (object properties)
@@ -39,10 +39,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test452 : public SimpleAotTest<Test452, 452> {
     static constexpr const char *DESCRIPTION = "Datamodel substructure assignment (W3C 5.3/5.4 AOT)";
-    using SM = RSM::Generated::test452::test452;
+    using SM = SCE::Generated::test452::test452;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test452> registrar_Test452;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

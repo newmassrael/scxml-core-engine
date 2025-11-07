@@ -457,7 +457,7 @@ class CodeGenerator:
 #include "runtime/StateMachine.h"
 #include "model/SCXMLModel.h"
 
-namespace RSM::Generated::{{ model.name }} {
+namespace SCE::Generated::{{ model.name }} {
 
 // Interpreter wrapper for {{ model.name }}
 // Reason: Static codegen does not support this SCXML file's features
@@ -473,7 +473,7 @@ public:
     }
 };
 
-} // namespace RSM::Generated::{{ model.name }}
+} // namespace SCE::Generated::{{ model.name }}
 """
         template = self.env.from_string(wrapper_template)
         output = template.render(model=model)

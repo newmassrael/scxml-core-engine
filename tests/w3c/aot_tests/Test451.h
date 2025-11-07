@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test451_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9.2: In() predicate in parallel states
@@ -33,10 +33,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test451 : public SimpleAotTest<Test451, 451> {
     static constexpr const char *DESCRIPTION = "In() predicate in parallel states (W3C 5.9.2 AOT)";
-    using SM = RSM::Generated::test451::test451;
+    using SM = SCE::Generated::test451::test451;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test451> registrar_Test451;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

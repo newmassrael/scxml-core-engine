@@ -8,7 +8,7 @@
 #include "scripting/JSEngine.h"
 #include <map>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Implementation of the public SCXML Engine interface
@@ -80,7 +80,7 @@ private:
     std::string generateSessionId() const;
 
     bool initialized_ = false;
-    std::shared_ptr<RSM::SCXMLModel> scxmlModel_;
+    std::shared_ptr<SCE::SCXMLModel> scxmlModel_;
     std::shared_ptr<IActionExecutor> actionExecutor_;
     std::string sessionId_;
 
@@ -90,4 +90,4 @@ private:
     std::map<std::string, std::string> sessionErrors_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

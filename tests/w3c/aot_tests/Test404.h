@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test404_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: Exit order and transition execution
@@ -24,10 +24,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test404 : public SimpleAotTest<Test404, 404> {
     static constexpr const char *DESCRIPTION = "Parallel state exit order (W3C 3.13 AOT)";
-    using SM = RSM::Generated::test404::test404;
+    using SM = SCE::Generated::test404::test404;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test404> registrar_Test404;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

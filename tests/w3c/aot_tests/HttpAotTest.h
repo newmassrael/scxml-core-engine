@@ -8,7 +8,7 @@
 #include <chrono>
 #include <thread>
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief AOT test base class for W3C SCXML C.2 BasicHTTP Event I/O Processor tests
@@ -24,7 +24,7 @@ namespace RSM::W3C::AotTests {
  * Example usage:
  * struct Test520 : public HttpAotTest<Test520, 520> {
  *     static constexpr const char *DESCRIPTION = "BasicHTTP content element";
- *     using SM = RSM::Generated::test520::test520;
+ *     using SM = SCE::Generated::test520::test520;
  * };
  */
 template <typename Derived, int TestNum> class HttpAotTest : public AotTestBase {
@@ -37,7 +37,7 @@ public:
         // TSAN crashes in getaddrinfo("localhost") due to glibc nscd thread safety issues
         // See DOCKER_TSAN_README.md for nscd workaround details
         // Skip HTTP tests to avoid TSAN false positives in DNS resolution
-        if (RSM::Test::Utils::isInDockerTsan()) {
+        if (SCE::Test::Utils::isInDockerTsan()) {
             LOG_WARN("HttpAotTest {}: Skipping W3C SCXML C.2 test in Docker TSAN environment (getaddrinfo DNS "
                      "resolution incompatible with TSAN)",
                      TestNum);
@@ -186,4 +186,4 @@ private:
     mutable std::string cachedDescription_;
 };
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

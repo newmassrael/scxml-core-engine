@@ -14,7 +14,7 @@
  * <donedata> defines the data to be returned when a <final> state is entered.
  */
 
-namespace RSM {
+namespace SCE {
 
 class DoneDataParser {
 public:
@@ -57,4 +57,4 @@ private:
     std::shared_ptr<NodeFactory> factory_;  // Node creation factory
 };
 
-}  // namespace RSM
+}  // namespace SCE

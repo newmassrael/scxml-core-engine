@@ -3,14 +3,14 @@
 #include <iostream>
 
 int main() {
-    using namespace RSM::Generated::traffic_light;
+    using namespace SCE::Generated::traffic_light;
 
     std::cout << "=== Traffic Light Example ===" << "\n\n";
 
     // Option 1: Easy API - Auto-processing wrapper (recommended for beginners)
     std::cout << "Using easy API (AutoProcessStateMachine):" << "\n";
     {
-        RSM::Wrappers::AutoProcessStateMachine<traffic_light> light;
+        SCE::Wrappers::AutoProcessStateMachine<traffic_light> light;
 
         light.initialize();
         std::cout << "  Initial: " << (light.getCurrentState() == State::Red ? "Red" : "Other") << "\n";

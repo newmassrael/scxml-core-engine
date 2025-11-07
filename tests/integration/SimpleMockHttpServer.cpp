@@ -16,7 +16,7 @@
 
 #include "common/Logger.h"
 
-namespace RSM {
+namespace SCE {
 
 SimpleMockHttpServer::SimpleMockHttpServer() = default;
 
@@ -141,7 +141,7 @@ void SimpleMockHttpServer::serverLoop() {
         if (clientSocket < 0) {
             if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 // No connection available, wait a bit and try again
-                std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+                std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
                 continue;
             } else if (running_) {
                 LOG_WARN("SimpleMockHttpServer: Accept failed: {}", strerror(errno));
@@ -203,4 +203,4 @@ std::string SimpleMockHttpServer::generateHttpResponse(const std::string &conten
     return response.str();
 }
 
-}  // namespace RSM
+}  // namespace SCE

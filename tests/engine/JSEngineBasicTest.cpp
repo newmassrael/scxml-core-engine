@@ -10,7 +10,7 @@
 class JSEngineBasicTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &RSM::JSEngine::instance();
+        engine_ = &SCE::JSEngine::instance();
         // Ensure test isolation with JSEngine reset
         engine_->reset();
 
@@ -28,9 +28,9 @@ protected:
         }
     }
 
-    RSM::JSEngine *engine_;
+    SCE::JSEngine *engine_;
     std::string sessionId_;
-    RSM::Tests::W3CEventTestHelper w3cHelper_;
+    SCE::Tests::W3CEventTestHelper w3cHelper_;
 
     // Helper methods to reduce test code duplication
     template <typename T> T evaluateAndExpect(const std::string &expression, const std::string &errorMsg = "") {
@@ -405,7 +405,7 @@ TEST_F(JSEngineBasicTest, W3C_InFunction_StateMachineIntegration_ShouldReturnCor
     // Create StateMachine with controlled scope for proper lifecycle management
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
     {
-        auto sm = std::make_shared<RSM::StateMachine>();
+        auto sm = std::make_shared<SCE::StateMachine>();
         ASSERT_TRUE(sm->loadSCXMLFromString(scxml)) << "Failed to load SCXML";
         ASSERT_TRUE(sm->start()) << "Failed to start StateMachine";
 
@@ -516,31 +516,31 @@ TEST_F(JSEngineBasicTest, IntegratedAPI_ResultConversion) {
     // Test boolean conversion
     auto boolResult = engine_->evaluateExpression(sessionId_, "true").get();
     ASSERT_TRUE(boolResult.isSuccess()) << "Boolean evaluation failed";
-    bool converted = RSM::JSEngine::resultToBool(boolResult);
+    bool converted = SCE::JSEngine::resultToBool(boolResult);
     EXPECT_TRUE(converted) << "Boolean conversion failed";
 
     // Test string conversion with different types
     auto numberResult = engine_->evaluateExpression(sessionId_, "42").get();
     ASSERT_TRUE(numberResult.isSuccess()) << "Number evaluation failed";
-    std::string numberStr = RSM::JSEngine::resultToString(numberResult);
+    std::string numberStr = SCE::JSEngine::resultToString(numberResult);
     EXPECT_EQ(numberStr, "42") << "Number to string conversion failed";
 
     auto doubleResult = engine_->evaluateExpression(sessionId_, "3.14").get();
     ASSERT_TRUE(doubleResult.isSuccess()) << "Double evaluation failed";
-    std::string doubleStr = RSM::JSEngine::resultToString(doubleResult);
+    std::string doubleStr = SCE::JSEngine::resultToString(doubleResult);
     EXPECT_EQ(doubleStr, "3.14") << "Double to string conversion failed";
 
     auto boolStrResult = engine_->evaluateExpression(sessionId_, "false").get();
     ASSERT_TRUE(boolStrResult.isSuccess()) << "Boolean string evaluation failed";
-    std::string boolStr = RSM::JSEngine::resultToString(boolStrResult);
+    std::string boolStr = SCE::JSEngine::resultToString(boolStrResult);
     EXPECT_EQ(boolStr, "false") << "Boolean to string conversion failed";
 
     // Test template-based typed conversion
-    auto typedNumber = RSM::JSEngine::resultToValue<double>(doubleResult);
+    auto typedNumber = SCE::JSEngine::resultToValue<double>(doubleResult);
     ASSERT_TRUE(typedNumber.has_value()) << "Typed double conversion failed";
     EXPECT_DOUBLE_EQ(typedNumber.value(), 3.14) << "Typed double value mismatch";
 
-    auto typedBool = RSM::JSEngine::resultToValue<bool>(boolResult);
+    auto typedBool = SCE::JSEngine::resultToValue<bool>(boolResult);
     ASSERT_TRUE(typedBool.has_value()) << "Typed boolean conversion failed";
     EXPECT_TRUE(typedBool.value()) << "Typed boolean value mismatch";
 }
@@ -552,7 +552,7 @@ TEST_F(JSEngineBasicTest, IntegratedAPI_JSONStringifyFallback) {
     ASSERT_TRUE(objResult.isSuccess()) << "Object evaluation failed";
 
     // Test string conversion with JSON.stringify fallback
-    std::string objStr = RSM::JSEngine::resultToString(objResult, sessionId_, "{name: 'test', value: 123}");
+    std::string objStr = SCE::JSEngine::resultToString(objResult, sessionId_, "{name: 'test', value: 123}");
     EXPECT_FALSE(objStr.empty()) << "Object to string conversion returned empty";
 
     // Should contain JSON representation or fallback
@@ -571,22 +571,22 @@ TEST_F(JSEngineBasicTest, IntegratedAPI_ErrorHandling) {
 
     // Test with failed result
     auto failedResult = engine_->evaluateExpression(sessionId_, "nonexistent_variable").get();
-    EXPECT_FALSE(RSM::JSEngine::isSuccess(failedResult)) << "Should fail for nonexistent variable";
+    EXPECT_FALSE(SCE::JSEngine::isSuccess(failedResult)) << "Should fail for nonexistent variable";
 
     // Boolean conversion of failed result should return false
-    bool failedBool = RSM::JSEngine::resultToBool(failedResult);
+    bool failedBool = SCE::JSEngine::resultToBool(failedResult);
     EXPECT_FALSE(failedBool) << "Failed result should convert to false";
 
     // String conversion of failed result should return empty
-    std::string failedStr = RSM::JSEngine::resultToString(failedResult);
+    std::string failedStr = SCE::JSEngine::resultToString(failedResult);
     EXPECT_TRUE(failedStr.empty()) << "Failed result should convert to empty string";
 
     // Template conversion should return nullopt
-    auto failedTyped = RSM::JSEngine::resultToValue<double>(failedResult);
+    auto failedTyped = SCE::JSEngine::resultToValue<double>(failedResult);
     EXPECT_FALSE(failedTyped.has_value()) << "Failed result should return nullopt for typed conversion";
 
     // Test requireSuccess with failed result
-    EXPECT_THROW(RSM::JSEngine::requireSuccess(failedResult, "test operation"), std::runtime_error)
+    EXPECT_THROW(SCE::JSEngine::requireSuccess(failedResult, "test operation"), std::runtime_error)
         << "requireSuccess should throw for failed result";
 }
 #endif  // !__EMSCRIPTEN__
@@ -1175,7 +1175,7 @@ TEST_F(JSEngineBasicTest, W3C_InPredicate_FunctionalStateMachineIntegration) {
     tempFile.close();
 
     // Create StateMachine from SCXML
-    auto stateMachine = std::make_shared<RSM::StateMachine>();
+    auto stateMachine = std::make_shared<SCE::StateMachine>();
     bool loadResult = stateMachine->loadSCXML(tempPath);
     ASSERT_TRUE(loadResult) << "Failed to load SCXML file";
 
@@ -1236,7 +1236,7 @@ TEST_F(JSEngineBasicTest, W3C_InPredicate_UsedInConditions) {
     tempFile << scxmlContent;
     tempFile.close();
 
-    auto stateMachine = std::make_shared<RSM::StateMachine>();
+    auto stateMachine = std::make_shared<SCE::StateMachine>();
     ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
     ASSERT_TRUE(stateMachine->start());
 
@@ -1287,7 +1287,7 @@ TEST_F(JSEngineBasicTest, W3C_SystemVariables_IOProcessorsDetailedStructure) {
     tempFile << scxmlContent;
     tempFile.close();
 
-    auto stateMachine = std::make_shared<RSM::StateMachine>();
+    auto stateMachine = std::make_shared<SCE::StateMachine>();
     ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
     ASSERT_TRUE(stateMachine->start());
 
@@ -1368,7 +1368,7 @@ TEST_F(JSEngineBasicTest, W3C_SystemVariables_IOProcessorsInExpressions) {
     tempFile << scxmlContent;
     tempFile.close();
 
-    auto stateMachine = std::make_shared<RSM::StateMachine>();
+    auto stateMachine = std::make_shared<SCE::StateMachine>();
     ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
     ASSERT_TRUE(stateMachine->start());
 

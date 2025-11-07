@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test558_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2: ECMAScript whitespace normalization for non-XML content
@@ -32,10 +32,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test558 : public SimpleAotTest<Test558, 558> {
     static constexpr const char *DESCRIPTION = "ECMAScript whitespace normalization (W3C B.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test558::test558;
+    using SM = SCE::Generated::test558::test558;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test558> registrar_Test558;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -8,17 +8,17 @@
 #include <gtest/gtest.h>
 #include <memory>
 
-using namespace RSM;
+using namespace SCE;
 
 class SCXMLForeachIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        RSM::JSEngine::instance().reset();
+        SCE::JSEngine::instance().reset();
         executor = std::make_unique<ActionExecutorImpl>("foreach_integration_test");
 
         // Create JSEngine session following SCXML specification pattern
         // Session must be created before variable assignments can be performed
-        bool sessionCreated = RSM::JSEngine::instance().createSession("foreach_integration_test");
+        bool sessionCreated = SCE::JSEngine::instance().createSession("foreach_integration_test");
         if (!sessionCreated) {
             throw std::runtime_error("Failed to create JSEngine session for test");
         }
@@ -26,7 +26,7 @@ protected:
 
     void TearDown() override {
         executor.reset();
-        RSM::JSEngine::instance().shutdown();
+        SCE::JSEngine::instance().shutdown();
     }
 
     std::unique_ptr<ActionExecutorImpl> executor;

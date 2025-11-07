@@ -3,7 +3,7 @@
 #include "BaseAction.h"
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief SCXML <script> action implementation
@@ -57,4 +57,4 @@ private:
     std::string content_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

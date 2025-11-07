@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test229_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4.6: Autoforward - automatic event forwarding to invoked child
@@ -37,10 +37,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test229 : public ScheduledAotTest<Test229, 229> {
     static constexpr const char *DESCRIPTION = "autoforward with inline content (W3C 6.4.6 AOT Pure Static)";
-    using SM = RSM::Generated::test229::test229;
+    using SM = SCE::Generated::test229::test229;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test229> registrar_Test229;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

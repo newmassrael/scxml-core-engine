@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test562_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9.2: ECMAScript datamodel content space normalization
@@ -34,10 +34,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test562 : public SimpleAotTest<Test562, 562> {
     static constexpr const char *DESCRIPTION = "ECMAScript content space normalization (W3C 5.9.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test562::test562;
+    using SM = SCE::Generated::test562::test562;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test562> registrar_Test562;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

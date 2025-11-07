@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 class IActionNode;
 }
 
@@ -16,7 +16,7 @@ class IActionNode;
  * Corresponds to <transition> element in SCXML documents.
  */
 
-namespace RSM {
+namespace SCE {
 
 class ITransitionNode {
 public:
@@ -70,25 +70,13 @@ public:
      * @brief Add ActionNode (SCXML specification compliant)
      * @param actionNode ActionNode object
      */
-    virtual void addActionNode(std::shared_ptr<RSM::IActionNode> actionNode) = 0;
+    virtual void addActionNode(std::shared_ptr<SCE::IActionNode> actionNode) = 0;
 
     /**
      * @brief Return list of ActionNodes (SCXML specification compliant)
      * @return List of ActionNode objects
      */
-    virtual const std::vector<std::shared_ptr<RSM::IActionNode>> &getActionNodes() const = 0;
-
-    /**
-     * @brief Set reactive status
-     * @param reactive Reactive status
-     */
-    virtual void setReactive(bool reactive) = 0;
-
-    /**
-     * @brief Return reactive status
-     * @return Reactive status
-     */
-    virtual bool isReactive() const = 0;
+    virtual const std::vector<std::shared_ptr<SCE::IActionNode>> &getActionNodes() const = 0;
 
     /**
      * @brief Set internal transition status
@@ -129,4 +117,4 @@ public:
     virtual const std::vector<std::string> &getEvents() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

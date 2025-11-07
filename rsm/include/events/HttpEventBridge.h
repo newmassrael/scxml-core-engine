@@ -4,7 +4,7 @@
 #include <atomic>
 #include <regex>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Configuration for HTTP Event Bridge
@@ -179,4 +179,4 @@ private:
     mutable std::atomic<uint64_t> nextEventId_{1};
 };
 
-}  // namespace RSM
+}  // namespace SCE

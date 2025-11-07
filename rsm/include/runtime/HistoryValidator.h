@@ -6,7 +6,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class IStateNode;
@@ -110,4 +110,4 @@ private:
     std::string generateParentTypeKey(const std::string &parentStateId, HistoryType type) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

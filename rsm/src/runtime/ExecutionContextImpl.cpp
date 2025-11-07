@@ -1,7 +1,7 @@
 #include "runtime/ExecutionContextImpl.h"
 #include "common/Logger.h"
 
-namespace RSM {
+namespace SCE {
 
 ExecutionContextImpl::ExecutionContextImpl(std::shared_ptr<IActionExecutor> executor, const std::string &sessionId)
     : executor_(executor), sessionId_(sessionId) {
@@ -53,4 +53,4 @@ void ExecutionContextImpl::clearCurrentEvent() {
     LOG_DEBUG("{}", "$1");
 }
 
-}  // namespace RSM
+}  // namespace SCE

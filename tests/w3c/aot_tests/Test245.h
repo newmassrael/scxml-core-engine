@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test245_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.3.2: Invoke namelist with non-existent variable handling
@@ -53,10 +53,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test245 : public SimpleAotTest<Test245, 245> {
     static constexpr const char *DESCRIPTION = "Invoke namelist non-existent var (W3C 6.3.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test245::test245;
+    using SM = SCE::Generated::test245::test245;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test245> registrar_Test245;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

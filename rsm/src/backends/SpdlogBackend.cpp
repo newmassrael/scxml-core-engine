@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #include "backends/SpdlogBackend.h"
 #include <algorithm>
@@ -21,7 +21,7 @@
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 
-namespace RSM {
+namespace SCE {
 
 SpdlogBackend::SpdlogBackend(const std::string &logDir, bool logToFile) {
     if (logDir.empty() && !logToFile) {
@@ -116,4 +116,4 @@ spdlog::level::level_enum SpdlogBackend::convertLevel(LogLevel level) {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

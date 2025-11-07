@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test444_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.2/5.9: ECMAScript datamodel variable creation and condition evaluation
@@ -16,10 +16,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test444 : public SimpleAotTest<Test444, 444> {
     static constexpr const char *DESCRIPTION = "ECMAScript datamodel variable in condition (W3C 5.2/5.9 AOT)";
-    using SM = RSM::Generated::test444::test444;
+    using SM = SCE::Generated::test444::test444;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test444> registrar_Test444;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

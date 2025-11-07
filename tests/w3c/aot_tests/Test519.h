@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test519_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor Param Encoding
@@ -57,10 +57,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test519 : public HttpAotTest<Test519, 519> {
     static constexpr const char *DESCRIPTION = "BasicHTTP param encoding (W3C C.2 AOT Static)";
-    using SM = RSM::Generated::test519::test519;
+    using SM = SCE::Generated::test519::test519;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test519> registrar_Test519;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

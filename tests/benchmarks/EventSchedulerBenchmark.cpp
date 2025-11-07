@@ -6,7 +6,7 @@
 #include <random>
 #include <vector>
 
-using namespace RSM;
+using namespace SCE;
 
 // ============================================================================
 // Helper Functions

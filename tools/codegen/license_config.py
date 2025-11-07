@@ -36,23 +36,23 @@ LICENSE_CONFIG = {
 
     # Project Information
     'project': {
-        'name': 'RSM (Reactive State Machine)',
-        'repository': 'https://github.com/newmassrael/reactive-state-machine',
-        'website': 'https://github.com/newmassrael/reactive-state-machine',
+        'name': 'SCE (SCXML Core Engine)',
+        'repository': 'https://github.com/newmassrael/scxml-core-engine',
+        'website': 'https://github.com/newmassrael/scxml-core-engine',
         'copyright_holder': 'newmassrael',
         'copyright_year': '2025'
     },
 
     # License URLs
     'urls': {
-        'license_main': 'https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE',
+        'license_main': 'https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE',
         'license_generated': 'LICENSE-GENERATED.md',
-        'license_commercial': 'https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE-COMMERCIAL.md',
+        'license_commercial': 'https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE-COMMERCIAL.md',
         'license_third_party': 'LICENSE-THIRD-PARTY.md',
         'license_lgpl': 'https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html',
-        'pricing_page': 'https://github.com/newmassrael/reactive-state-machine#pricing',
-        'docs_licensing': 'https://github.com/newmassrael/reactive-state-machine#license',
-        'faq': 'https://github.com/newmassrael/reactive-state-machine#faq'
+        'pricing_page': 'https://github.com/newmassrael/scxml-core-engine#pricing',
+        'docs_licensing': 'https://github.com/newmassrael/scxml-core-engine#license',
+        'faq': 'https://github.com/newmassrael/scxml-core-engine#faq'
     },
 
     # Generated Code License Text (MIT, Unrestricted)
@@ -144,7 +144,7 @@ def get_generated_code_mit_header():
 // From: {{{{ model.scxml_source_path | default('unknown.scxml') }}}}
 //
 // This generated code is MIT licensed and may be freely used in any project.
-// Runtime engine dependency: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// Runtime engine dependency: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // Full license: {config['urls']['license_main']}
 """
 
@@ -156,10 +156,10 @@ def get_engine_dual_license_header():
     pricing = config['pricing']
     contact = config['contact']
     
-    return f"""// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+    return f"""// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: {get_copyright_line()}
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)

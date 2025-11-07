@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test553_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2.4 & 5.11: Send namelist error handling
@@ -47,10 +47,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test553 : public ScheduledAotTest<Test553, 553> {
     static constexpr const char *DESCRIPTION = "Send namelist error handling (W3C 6.2.4 AOT Static Hybrid)";
-    using SM = RSM::Generated::test553::test553;
+    using SM = SCE::Generated::test553::test553;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test553> registrar_Test553;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

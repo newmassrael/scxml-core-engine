@@ -616,7 +616,7 @@ struct test387Policy {
 
 ```cpp
 // Shared Core Components (rsm/include/core/)
-namespace RSM::Core {
+namespace SCE::Core {
     class EventQueueManager<EventType>;  // W3C 3.12.1: Internal event queue
     class StateExecutor;                 // W3C 3.7/3.8: Entry/Exit actions
     class TransitionProcessor;           // W3C 3.13: Transition logic
@@ -634,7 +634,7 @@ public:
         generatePolicy(model, code);
         
         // Generated code USES shared core components
-        code << "    RSM::Core::EventQueueManager<Event> eventQueue_;
+        code << "    SCE::Core::EventQueueManager<Event> eventQueue_;
 ";
         
         // Detect and include dynamic components if needed
@@ -699,7 +699,7 @@ auto transitionsByEvent = groupTransitionsByEventPreservingOrder(eventTransition
 // Static engine: Helper function preserves document order using std::vector<std::pair>
 ```
 
-### RSM::Core::EventQueueManager
+### SCE::Core::EventQueueManager
 
 **Purpose**: W3C SCXML 3.12.1 Internal Event Queue implementation
 
@@ -737,7 +737,7 @@ class EventQueueManager {
 - Used in: Main state transitions, parallel region transitions
 - Benefits: Compliance guarantee, zero code duplication
 
-**RSM::Common::ForeachHelper::setLoopVariable()**:
+**SCE::Common::ForeachHelper::setLoopVariable()**:
 - W3C SCXML 4.6: Foreach variable declaration and type preservation
 - Single Source of Truth for foreach variable setting logic
 - Location: `rsm/include/common/ForeachHelper.h`
@@ -749,7 +749,7 @@ class EventQueueManager {
   - Fallback to string literal handling
 - Benefits: Zero code duplication, guaranteed consistency between engines
 
-**RSM::SendHelper::validateTarget() / isInvalidTarget() / sendToParent()**:
+**SCE::SendHelper::validateTarget() / isInvalidTarget() / sendToParent()**:
 - W3C SCXML 6.2: Send element target validation and parent-child event routing
 - Single Source of Truth for send action logic shared between engines
 - Location: `rsm/include/common/SendHelper.h`
@@ -765,7 +765,7 @@ class EventQueueManager {
   - W3C SCXML 5.10: Invalid targets stop subsequent executable content
 - Benefits: Zero code duplication, consistent event routing across engines
 
-**RSM::AssignHelper::isValidLocation() / getInvalidLocationErrorMessage()**:
+**SCE::AssignHelper::isValidLocation() / getInvalidLocationErrorMessage()**:
 - W3C SCXML 5.3, 5.4, B.2: Assignment location validation and system variable immutability
 - Single Source of Truth for assign action validation shared between engines
 - Location: `rsm/include/common/AssignHelper.h`
@@ -780,7 +780,7 @@ class EventQueueManager {
   - Test coverage: test311-314 (empty/invalid), test322 (system variable immutability)
 - Benefits: Zero code duplication, guaranteed W3C B.2 compliance across all assign contexts
 
-**RSM::DoneDataHelper::evaluateParams() / evaluateContent()**:
+**SCE::DoneDataHelper::evaluateParams() / evaluateContent()**:
 - W3C SCXML 5.5, 5.7: Donedata param and content evaluation
 - Single Source of Truth for done event data generation shared between engines
 - Location: `rsm/include/common/DoneDataHelper.h`
@@ -798,7 +798,7 @@ class EventQueueManager {
   - Test coverage: test343 (W3C 5.10.1 - empty param location validation)
 - Benefits: Zero code duplication, consistent donedata evaluation across engines, proper W3C SCXML 5.5/5.7 compliance
 
-**RSM::NamelistHelper::evaluateNamelist()**:
+**SCE::NamelistHelper::evaluateNamelist()**:
 - W3C SCXML C.1, 6.2: Namelist variable evaluation for event data population
 - Single Source of Truth for namelist processing shared between engines
 - Location: `rsm/include/common/NamelistHelper.h`
@@ -813,7 +813,7 @@ class EventQueueManager {
   - Test coverage: test354 (W3C 5.10 - namelist, param, and content event data)
 - Benefits: Zero code duplication, consistent namelist evaluation across engines, proper W3C SCXML C.1/6.2 compliance
 
-**RSM::DatamodelValidationHelper::buildChildDatamodelSet() / isVariableDeclaredInChild()**:
+**SCE::DatamodelValidationHelper::buildChildDatamodelSet() / isVariableDeclaredInChild()**:
 - W3C SCXML 6.3.2: Child datamodel variable validation for namelist and param binding
 - Single Source of Truth for invoke parameter validation logic shared between engines
 - Location: `rsm/include/common/DatamodelValidationHelper.h`
@@ -829,7 +829,7 @@ class EventQueueManager {
   - Test coverage: test244 (W3C 6.3.2 - namelist with existing variable), test245 (W3C 6.3.2 - namelist with non-existent variable)
 - Benefits: Zero code duplication, prevents undeclared variable injection in child sessions, proper W3C SCXML 6.3.2 compliance
 
-**RSM::InvokeHelper::deferInvoke() / cancelInvokesForState() / executePendingInvokes()**:
+**SCE::InvokeHelper::deferInvoke() / cancelInvokesForState() / executePendingInvokes()**:
 - W3C SCXML 6.4: Invoke lifecycle management (defer/cancel/execute pattern)
 - Single Source of Truth for invoke execution timing shared between engines
 - Location: `rsm/include/common/InvokeHelper.h`
@@ -857,7 +857,7 @@ class EventQueueManager {
 - Test coverage: test239 (static invoke with child SCXML), test240 (invoke with namelist/param), test422 (macrostep timing)
 - Benefits: Zero code duplication, guaranteed W3C SCXML 6.4 compliance across engines, eliminates invoke timing bugs
 
-**RSM::Common::HierarchicalStateHelper / HierarchicalStateHelperString**:
+**SCE::Common::HierarchicalStateHelper / HierarchicalStateHelperString**:
 - W3C SCXML 3.12, 3.7, 3.8: Hierarchical state transition logic (LCA calculation, entry/exit chains)
 - Single Source of Truth for hierarchical state operations shared between engines
 - Location: `rsm/include/common/HierarchicalStateHelper.h`
@@ -888,7 +888,7 @@ class EventQueueManager {
 - Test coverage: All hierarchical transition tests (W3C test144, test278-279, test387-388)
 - Benefits: Zero code duplication, guaranteed W3C SCXML 3.12 compliance across all hierarchical transitions, eliminates 150+ lines of duplicate exit/entry logic
 
-**RSM::SendSchedulingHelper::parseDelayString() / SimpleScheduler**:
+**SCE::SendSchedulingHelper::parseDelayString() / SimpleScheduler**:
 - W3C SCXML 6.2: Delay string parsing and event scheduling logic
 - Single Source of Truth for delayed send implementation shared between engines
 - Location: `rsm/include/common/SendSchedulingHelper.h`
@@ -901,7 +901,7 @@ class EventQueueManager {
   - Automatic filtering of cancelled events
 - Benefits: Zero code duplication, guaranteed W3C compliance, efficient scheduling
 
-**RSM::PlatformExecutionHelper (Synchronous/Queued Executors)**:
+**SCE::PlatformExecutionHelper (Synchronous/Queued Executors)**:
 - W3C SCXML 5.3: Platform-specific execution strategy abstraction (WASM synchronous vs Native pthread)
 - Single Source of Truth for platform-dependent JSEngine execution logic
 - Location: `rsm/include/common/PlatformExecutionHelper.h`, `rsm/src/common/PlatformExecutionHelper.cpp`
@@ -947,15 +947,15 @@ class EventQueueManager {
 
 **Planned Core Components**:
 
-**RSM::Core::StateExecutor**:
+**SCE::Core::StateExecutor**:
 - W3C SCXML 3.7/3.8: Entry/Exit action execution
 - Shared between static and dynamic engines
 
-**RSM::Core::TransitionProcessor**:
+**SCE::Core::TransitionProcessor**:
 - W3C SCXML 3.13: Transition selection and execution
 - Microstep processing logic optimization
 
-**RSM::Core::DatamodelManager**:
+**SCE::Core::DatamodelManager**:
 - W3C SCXML 5.3: Data model variable management
 - Shared datamodel semantics across engines
 

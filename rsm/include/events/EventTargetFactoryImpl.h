@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class IActionExecutor;
@@ -105,4 +105,4 @@ private:
     std::map<std::string, std::function<std::shared_ptr<IEventTarget>(const std::string &)>> targetCreators_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

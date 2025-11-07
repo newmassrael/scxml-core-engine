@@ -4,7 +4,7 @@
 #include "AotTestRegistry.h"
 #include <thread>
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief CRTP template for simple AOT tests
@@ -19,7 +19,7 @@ namespace RSM::W3C::AotTests {
  * #include "test144_sm.h"
  * struct Test144 : public SimpleAotTest<Test144, 144> {
  *     static constexpr const char* DESCRIPTION = "Event queue ordering";
- *     using SM = RSM::Generated::test144::test144;
+ *     using SM = SCE::Generated::test144::test144;
  * };
  * REGISTER_AOT_TEST(Test144);
  * @endcode
@@ -80,4 +80,4 @@ private:
     }
 };
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

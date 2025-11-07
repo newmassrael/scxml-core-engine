@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test314_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9.2: Delayed evaluation of illegal expression in assign
@@ -14,10 +14,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test314 : public SimpleAotTest<Test314, 314> {
     static constexpr const char *DESCRIPTION = "Delayed assign illegal expression (W3C 5.9.2 AOT)";
-    using SM = RSM::Generated::test314::test314;
+    using SM = SCE::Generated::test314::test314;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test314> registrar_Test314;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

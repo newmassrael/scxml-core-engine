@@ -69,7 +69,7 @@
 #include "common/GuardHelper.h"
 {% endif %}
 
-namespace RSM::Generated::{{ model.name }} {
+namespace SCE::Generated::{{ model.name }} {
 
 {% if model.has_parent_communication %}
 template<typename ParentStateMachine>
@@ -125,8 +125,8 @@ template<typename SelfType>
    - Parent stays AOT (~300 bytes), child is Interpreter (~100KB) #}
 {% endif %}
 struct {{ model.name }}Policy {
-    using State = ::RSM::Generated::{{ model.name }}::State;
-    using Event = ::RSM::Generated::{{ model.name }}::Event;
+    using State = ::SCE::Generated::{{ model.name }}::State;
+    using Event = ::SCE::Generated::{{ model.name }}::Event;
 
     // W3C SCXML Appendix D: Flag indicating parallel state support
     static constexpr bool HAS_PARALLEL_STATES = {{ 'true' if model.has_parallel_states else 'false' }};
@@ -161,7 +161,7 @@ struct {{ model.name }}Policy {
 
     // W3C SCXML 6.4.5: Delayed sends to parent scheduler (using SendSchedulingHelper)
     // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
-    mutable ::RSM::SendSchedulingHelper::SimpleScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
+    mutable ::SCE::SendSchedulingHelper::SimpleScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
     {% endif %}
 
     {% if model.needs_jsengine or model.static_invokes %}
@@ -214,10 +214,10 @@ struct {{ model.name }}Policy {
     mutable SelfType* self_ = nullptr;
     
     // W3C SCXML 5.10: Current event metadata (originSessionId for finalize)
-    mutable ::RSM::Core::EventMetadata currentEventMetadata_;
+    mutable ::SCE::Core::EventMetadata currentEventMetadata_;
     // W3C SCXML 6.4: Static invoke child state machines
     {% for invoke_info in model.static_invokes %}
-    mutable std::shared_ptr<::RSM::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.invoke_id }}_;
+    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.invoke_id }}_;
     {% endfor %}
 
     // W3C SCXML 6.4: Pending done.invoke flags for child completion
@@ -230,7 +230,7 @@ struct {{ model.name }}Policy {
     // W3C SCXML 6.4: Hybrid invoke child state machines (Interpreter instances)
     // ARCHITECTURE.md: Hybrid Strategy - AOT parent + Interpreter child
     {% for invoke_info in model.hybrid_invokes %}
-    mutable std::shared_ptr<::RSM::StateMachine> hybridChild_{{ invoke_info.invoke_id }}_;
+    mutable std::shared_ptr<::SCE::StateMachine> hybridChild_{{ invoke_info.invoke_id }}_;
     {% endfor %}
     {% endif %}
     {% if model.static_invokes %}
@@ -264,7 +264,7 @@ struct {{ model.name }}Policy {
     {% endif %}
     {% if model.needs_event_scheduler %}
     // W3C SCXML 6.2: Event scheduler for delayed send (lazy-init)
-    mutable ::RSM::SendSchedulingHelper::SimpleScheduler<Event> eventScheduler_;
+    mutable ::SCE::SendSchedulingHelper::SimpleScheduler<Event> eventScheduler_;
     {% if model.needs_event_data_helper or model.needs_jsengine %}
     // W3C SCXML 5.10: Event data map for scheduled events with params (test186)
     mutable ::std::map<Event, ::std::string> scheduledEventData_;
@@ -315,7 +315,7 @@ struct {{ model.name }}Policy {
         {% endif %}
         {% if model.needs_jsengine or model.static_invokes %}
         if (sessionId_.has_value()) {
-            auto& jsEngine = ::RSM::JSEngine::instance();
+            auto& jsEngine = ::SCE::JSEngine::instance();
             jsEngine.destroySession(sessionId_.value());
         }
         {% endif %}
@@ -429,7 +429,7 @@ struct {{ model.name }}Policy {
         auto targets = getInitialChildren(State::{{ state_id | capitalize }});
         
         // W3C SCXML 3.6: Use StateEntryHelper as Single Source of Truth
-        ::RSM::StateEntryHelper::enterDeepTargets<State>(
+        ::SCE::StateEntryHelper::enterDeepTargets<State>(
             State::{{ state_id | capitalize }},
             targets,
             [](State s) -> std::optional<State> { return {{ model.name }}Policy::getParent(s); },
@@ -469,7 +469,7 @@ struct {{ model.name }}Policy {
     // W3C SCXML 3.4: Check if descendant is a descendant of ancestor
     // ARCHITECTURE.MD: Zero Duplication - delegates to HierarchicalStateHelper
     static bool isDescendantOf(State descendant, State ancestor) {
-        return ::RSM::Common::HierarchicalStateHelper<{{ model.name }}Policy>::isDescendantOf(descendant, ancestor);
+        return ::SCE::Common::HierarchicalStateHelper<{{ model.name }}Policy>::isDescendantOf(descendant, ancestor);
     }
 
     // W3C SCXML 3.13: Get document order for exit order tie-breaking
@@ -503,7 +503,7 @@ private:
 {% if model.has_parent_communication %}
 template<typename ParentStateMachine>
 {% endif %}
-class {{ model.name }} : public ::RSM::Static::StaticExecutionEngine<{% if model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %}> {
+class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{% if model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %}> {
 public:
     // W3C SCXML: Policy type alias for test infrastructure
     using PolicyType = {% if model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %};
@@ -535,4 +535,4 @@ public:
 {% endif %}
 };
 
-} // namespace RSM::Generated::{{ model.name }}
+} // namespace SCE::Generated::{{ model.name }}

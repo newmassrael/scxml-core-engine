@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 // Pre-compiled regex patterns for performance
 const std::regex TXMLConverter::CONF_NAMESPACE_DECL{
@@ -732,4 +732,4 @@ void TXMLConverter::validateSCXML(const std::string &scxml, bool isManualTest) {
     }
 }
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

@@ -5,7 +5,7 @@
 #include <quickjs.h>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * W3C SCXML B.2: QuickJS bindings for XML DOM API
@@ -43,4 +43,4 @@ private:
     static JSValue createElementObject(JSContext *ctx, std::shared_ptr<XMLElement> element);
 };
 
-}  // namespace RSM
+}  // namespace SCE

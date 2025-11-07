@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test322_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2.1: _sessionid system variable immutability
@@ -16,10 +16,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test322 : public SimpleAotTest<Test322, 322> {
     static constexpr const char *DESCRIPTION = "_sessionid immutability (W3C B.2.1 AOT)";
-    using SM = RSM::Generated::test322::test322;
+    using SM = SCE::Generated::test322::test322;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test322> registrar_Test322;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -20,7 +20,7 @@
  *   getAutoforwardSessions(const std::string& parentSessionId)
  */
 
-namespace RSM::Core {
+namespace SCE::Core {
 
 // Forward declaration
 class StateMachine;
@@ -38,8 +38,8 @@ class StateMachine;
  *
  * @example Usage in Interpreter StateMachine.cpp:
  * @code
- * RSM::Core::InterpreterInvokeManager adapter(invokeExecutor_);
- * RSM::Core::InvokeProcessingAlgorithms::processFinalize(
+ * SCE::Core::InterpreterInvokeManager adapter(invokeExecutor_);
+ * SCE::Core::InvokeProcessingAlgorithms::processFinalize(
  *     event.originSessionId,
  *     adapter,
  *     *actionExecutor_
@@ -100,8 +100,8 @@ private:
  *
  * @example Usage in generated AOT code:
  * @code
- * RSM::Core::AOTInvokeManager<MyStateMachinePolicy> adapter(policy_);
- * RSM::Core::InvokeProcessingAlgorithms::processFinalize(
+ * SCE::Core::AOTInvokeManager<MyStateMachinePolicy> adapter(policy_);
+ * SCE::Core::InvokeProcessingAlgorithms::processFinalize(
  *     getOriginSessionId(event),
  *     adapter,
  *     *this
@@ -152,4 +152,4 @@ private:
     Policy &policy_;
 };
 
-}  // namespace RSM::Core
+}  // namespace SCE::Core

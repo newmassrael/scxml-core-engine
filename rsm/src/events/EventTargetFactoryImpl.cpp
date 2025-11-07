@@ -13,7 +13,7 @@
 // Native: Uses cpp-httplib, WASM: Uses EmscriptenFetchClient
 #include "events/HttpEventTarget.h"
 
-namespace RSM {
+namespace SCE {
 
 EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eventRaiser,
                                                std::shared_ptr<IEventScheduler> scheduler)
@@ -267,7 +267,7 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createExternalTarget(const
     }
 }
 
-std::shared_ptr<RSM::IEventTarget> RSM::EventTargetFactoryImpl::createParentTarget(const std::string &targetUri) {
+std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createParentTarget(const std::string &targetUri) {
     try {
         // For parent target, we need to determine the child session ID
         // This will be passed through the event dispatcher context
@@ -275,7 +275,7 @@ std::shared_ptr<RSM::IEventTarget> RSM::EventTargetFactoryImpl::createParentTarg
 
         // Note: The actual child session ID will be determined when the event is sent
         // ParentEventTarget will use the current session context to find the parent
-        auto target = std::make_shared<RSM::ParentEventTarget>("dynamic", eventRaiser_, scheduler_);
+        auto target = std::make_shared<SCE::ParentEventTarget>("dynamic", eventRaiser_, scheduler_);
 
         LOG_DEBUG("EventTargetFactoryImpl: Created parent target for URI: {}", targetUri);
         return target;
@@ -286,11 +286,11 @@ std::shared_ptr<RSM::IEventTarget> RSM::EventTargetFactoryImpl::createParentTarg
     }
 }
 
-std::shared_ptr<RSM::IEventTarget> RSM::EventTargetFactoryImpl::createInvokeTarget(const std::string &invokeId,
+std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createInvokeTarget(const std::string &invokeId,
                                                                                    const std::string &sessionId) {
     try {
         // Create invoke event target for routing to child session
-        auto target = std::make_shared<RSM::InvokeEventTarget>(invokeId, sessionId);
+        auto target = std::make_shared<SCE::InvokeEventTarget>(invokeId, sessionId);
 
         LOG_DEBUG("EventTargetFactoryImpl: Created invoke target for ID '{}' from session '{}'", invokeId, sessionId);
         return target;
@@ -301,4 +301,4 @@ std::shared_ptr<RSM::IEventTarget> RSM::EventTargetFactoryImpl::createInvokeTarg
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

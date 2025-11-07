@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test364_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.6/3.4: Default initial states and parallel configurations
@@ -33,10 +33,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test364 : public SimpleAotTest<Test364, 364> {
     static constexpr const char *DESCRIPTION = "Default initial states and parallel configurations (W3C 3.6/3.4 AOT)";
-    using SM = RSM::Generated::test364::test364;
+    using SM = SCE::Generated::test364::test364;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test364> registrar_Test364;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

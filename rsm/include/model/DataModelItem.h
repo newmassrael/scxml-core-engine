@@ -8,10 +8,10 @@
 #include <vector>
 
 // Forward declarations for XML content support (all platforms)
-namespace RSM {
+namespace SCE {
 class IXMLDocument;
 class IXMLElement;
-}  // namespace RSM
+}  // namespace SCE
 
 /**
  * @brief Implementation class for data model item
@@ -20,7 +20,7 @@ class IXMLElement;
  * Corresponds to the <data> element in an SCXML document.
  */
 
-namespace RSM {
+namespace SCE {
 
 class DataModelItem : public IDataModelItem {
 public:
@@ -181,4 +181,4 @@ private:
     std::string emptyString_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test561_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9.2: ECMAScript DOM object creation for XML event data
@@ -42,10 +42,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test561 : public SimpleAotTest<Test561, 561> {
     static constexpr const char *DESCRIPTION = "ECMAScript XML DOM event data (W3C 5.9.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test561::test561;
+    using SM = SCE::Generated::test561::test561;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test561> registrar_Test561;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

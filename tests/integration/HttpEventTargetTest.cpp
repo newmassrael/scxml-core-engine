@@ -14,7 +14,7 @@
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/ExecutionContextImpl.h"
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Test fixture for HTTP event target functionality
@@ -23,7 +23,7 @@ class HttpEventTargetTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Skip HTTP tests in Docker TSAN environment (SimpleMockHttpServer thread creation incompatible with TSAN)
-        if (RSM::Test::Utils::isInDockerTsan()) {
+        if (SCE::Test::Utils::isInDockerTsan()) {
             GTEST_SKIP() << "Skipping HTTP test in Docker TSAN environment";
         }
 
@@ -36,7 +36,7 @@ protected:
 
         // Create basic infrastructure with MockEventRaiser
         auto mockEventRaiser =
-            std::make_shared<RSM::Test::MockEventRaiser>([](const std::string &, const std::string &) -> bool {
+            std::make_shared<SCE::Test::MockEventRaiser>([](const std::string &, const std::string &) -> bool {
                 return true;  // Always succeed for HTTP tests
             });
 
@@ -288,4 +288,4 @@ TEST_F(HttpEventTargetTest, CustomConfiguration) {
     EXPECT_NE(debugInfo.find("ssl_verify=false"), std::string::npos);
 }
 
-}  // namespace RSM
+}  // namespace SCE

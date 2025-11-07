@@ -4,7 +4,7 @@
 #include <mutex>
 #include <unordered_map>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Thread-safe implementation of EventRaiser registry (SOLID: Single Responsibility)
@@ -49,4 +49,4 @@ private:
     std::unordered_map<std::string, std::shared_ptr<IEventRaiser>> eventRaisers_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

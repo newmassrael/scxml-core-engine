@@ -16,7 +16,7 @@
 #include <mutex>
 #include <thread>
 
-using namespace RSM;
+using namespace SCE;
 
 class ActionExecutorImplTest : public ::testing::Test {
 protected:
@@ -179,7 +179,7 @@ TEST_F(ActionExecutorImplTest, EventRaising) {
 
     // Set up MockEventRaiser with dependency injection
     auto mockEventRaiser =
-        std::make_shared<RSM::Test::MockEventRaiser>([&](const std::string &name, const std::string &data) -> bool {
+        std::make_shared<SCE::Test::MockEventRaiser>([&](const std::string &name, const std::string &data) -> bool {
             raisedEvents.emplace_back(name, data);
             return true;
         });
@@ -215,7 +215,7 @@ TEST_F(ActionExecutorImplTest, EventRaisingWithoutCallback) {
     EXPECT_FALSE(result);  // Should return false when EventRaiser is not available
 
     // Set up EventRaiser and test empty event name should fail
-    auto mockEventRaiser = std::make_shared<RSM::Test::MockEventRaiser>(
+    auto mockEventRaiser = std::make_shared<SCE::Test::MockEventRaiser>(
         [](const std::string &, const std::string &) -> bool { return true; });
     executor->setEventRaiser(mockEventRaiser);
 
@@ -777,7 +777,7 @@ TEST_F(ActionExecutorImplTest, SCXML_ConditionalExecutor_ShortCircuitEvaluation)
 TEST_F(ActionExecutorImplTest, SendAction_TypeProcessing_W3C193_BugReproduction) {
     // Create mock event raiser to track raised events
     std::vector<std::string> raisedEvents;
-    auto mockEventRaiser = std::make_shared<RSM::Test::MockEventRaiser>(
+    auto mockEventRaiser = std::make_shared<SCE::Test::MockEventRaiser>(
         [&raisedEvents](const std::string &name, const std::string & /*data*/) -> bool {
             raisedEvents.push_back(name);
             return true;

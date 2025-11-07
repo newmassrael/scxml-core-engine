@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <cassert>
 
-namespace RSM {
+namespace SCE {
 
 HistoryStateAutoRegistrar::HistoryStateAutoRegistrar(
     std::function<std::shared_ptr<IStateNode>(const std::string &)> stateProvider)
@@ -201,4 +201,4 @@ std::string HistoryStateAutoRegistrar::extractDefaultStateId(const std::shared_p
     return "";
 }
 
-}  // namespace RSM
+}  // namespace SCE

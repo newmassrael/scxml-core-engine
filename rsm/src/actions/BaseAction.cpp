@@ -5,7 +5,7 @@
 #include <cctype>
 #include <chrono>
 
-namespace RSM {
+namespace SCE {
 
 BaseAction::BaseAction(const std::string &id) : id_(id) {}
 
@@ -66,4 +66,4 @@ std::string BaseAction::trimString(const std::string &str) const {
     return std::string(start, end);
 }
 
-}  // namespace RSM
+}  // namespace SCE

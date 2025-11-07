@@ -81,7 +81,7 @@ struct ScriptObject {
     ScriptObject(const std::unordered_map<std::string, ScriptValue> &props) : properties(props) {}
 };
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief JavaScript execution result
@@ -203,4 +203,4 @@ struct SCXML_API SessionInfo {
     bool isActive = false;
 };
 
-}  // namespace RSM
+}  // namespace SCE

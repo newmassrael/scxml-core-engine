@@ -2,10 +2,10 @@
 {% if action.sendidexpr %}
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::RSM::JSEngine::instance();
+    auto& jsEngine = ::SCE::JSEngine::instance();
     auto sendidResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.sendidexpr | escape_cpp }}").get();
-    if (::RSM::JSEngine::isSuccess(sendidResult)) {
-        std::string sendidToCancel = ::RSM::JSEngine::resultToString(sendidResult);
+    if (::SCE::JSEngine::isSuccess(sendidResult)) {
+        std::string sendidToCancel = ::SCE::JSEngine::resultToString(sendidResult);
         engine.cancelEvent(sendidToCancel);
     }
 }

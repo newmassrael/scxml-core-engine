@@ -2,7 +2,7 @@
 #include "common/Logger.h"
 #include <cstring>
 
-namespace RSM {
+namespace SCE {
 
 // ============================================================================
 // Unified implementation: pugixml-based for all platforms
@@ -111,4 +111,4 @@ std::vector<std::shared_ptr<XMLElement>> XMLDocument::getElementsByTagName(const
     return result;
 }
 
-}  // namespace RSM
+}  // namespace SCE

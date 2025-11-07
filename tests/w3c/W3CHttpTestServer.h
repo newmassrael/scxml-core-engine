@@ -16,7 +16,7 @@ class Request;
 class Response;
 }  // namespace httplib
 
-namespace RSM {
+namespace SCE {
 namespace W3C {
 
 class W3CHttpTestServer {
@@ -71,4 +71,4 @@ private:
 };
 
 }  // namespace W3C
-}  // namespace RSM
+}  // namespace SCE

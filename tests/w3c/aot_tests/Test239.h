@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test239_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: invoke with src attribute and inline content
@@ -30,7 +30,7 @@ namespace RSM::W3C::AotTests {
  */
 struct Test239 : public ScheduledAotTest<Test239, 239> {
     static constexpr const char *DESCRIPTION = "invoke src + content (W3C 6.4 AOT Pure Static)";
-    using SM = RSM::Generated::test239::test239;
+    using SM = SCE::Generated::test239::test239;
 };
 
 ;
@@ -38,4 +38,4 @@ struct Test239 : public ScheduledAotTest<Test239, 239> {
 // Auto-register
 inline static AotTestRegistrar<Test239> registrar_Test239;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

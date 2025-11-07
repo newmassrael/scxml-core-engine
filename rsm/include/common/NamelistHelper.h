@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 
@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Helper functions for W3C SCXML namelist evaluation
@@ -52,7 +52,7 @@ public:
      * W3C SCXML 6.2: If evaluation of namelist variables produces an error,
      * the Processor MUST discard the message (raise error.execution).
      *
-     * @tparam JSEngineType JSEngine type (RSM::JSEngine)
+     * @tparam JSEngineType JSEngine type (SCE::JSEngine)
      * @tparam ErrorHandler Callable(const std::string& errorMsg) for error.execution
      *
      * @param jsEngine JSEngine instance for variable evaluation
@@ -73,7 +73,7 @@ public:
      * );
      *
      * @example AOT usage (in send.jinja2):
-     * bool success = ::RSM::NamelistHelper::evaluateNamelist(
+     * bool success = ::SCE::NamelistHelper::evaluateNamelist(
      *     jsEngine, sessionId_.value(), "{{ action.namelist }}",
      *     params,
      *     [&engine](const std::string& msg) {
@@ -113,4 +113,4 @@ public:
     }
 };
 
-}  // namespace RSM
+}  // namespace SCE

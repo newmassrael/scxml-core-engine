@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 
@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Helper functions for W3C SCXML <send> element processing
@@ -388,7 +388,7 @@ public:
             eventWithMetadata.invokeId = invokeId;
             eventWithMetadata.origin = childSessionId;  // W3C SCXML 6.5: For finalize matching
             eventWithMetadata.originType =
-                RSM::Constants::SCXML_EVENT_PROCESSOR_TYPE;  // W3C SCXML C.1: SCXML Event I/O Processor (test 253)
+                SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;  // W3C SCXML C.1: SCXML Event I/O Processor (test 253)
 
             // W3C SCXML 6.2: Send to parent's external event queue
             LOG_DEBUG("SendHelper::sendToParentWithOrigin - calling parent->raiseExternal()");
@@ -478,4 +478,4 @@ public:
     }
 };
 
-}  // namespace RSM
+}  // namespace SCE

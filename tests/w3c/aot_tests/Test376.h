@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test376_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.8: Independent onentry handler execution
@@ -53,10 +53,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test376 : public SimpleAotTest<Test376, 376> {
     static constexpr const char *DESCRIPTION = "Independent onentry handler execution (W3C 3.8 AOT Static Hybrid)";
-    using SM = RSM::Generated::test376::test376;
+    using SM = SCE::Generated::test376::test376;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test376> registrar_Test376;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

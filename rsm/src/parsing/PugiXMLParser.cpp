@@ -5,7 +5,7 @@
 #include <sstream>
 #include <unordered_set>
 
-namespace RSM {
+namespace SCE {
 
 // ============================================================================
 // PugiXMLElement implementation
@@ -393,4 +393,4 @@ std::string PugiXMLParser::getLastError() const {
     return lastError_;
 }
 
-}  // namespace RSM
+}  // namespace SCE

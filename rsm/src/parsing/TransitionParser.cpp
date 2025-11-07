@@ -5,22 +5,22 @@
 #include <cassert>
 #include <sstream>
 
-RSM::TransitionParser::TransitionParser(std::shared_ptr<RSM::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
+SCE::TransitionParser::TransitionParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
     LOG_DEBUG("Creating transition parser");
 }
 
-RSM::TransitionParser::~TransitionParser() {
+SCE::TransitionParser::~TransitionParser() {
     LOG_DEBUG("Destroying transition parser");
 }
 
-void RSM::TransitionParser::setActionParser(std::shared_ptr<RSM::ActionParser> actionParser) {
+void SCE::TransitionParser::setActionParser(std::shared_ptr<SCE::ActionParser> actionParser) {
     actionParser_ = actionParser;
     LOG_DEBUG("Action parser set");
 }
 
-std::shared_ptr<RSM::ITransitionNode>
-RSM::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &transElement,
-                                           RSM::IStateNode *stateNode) {
+std::shared_ptr<SCE::ITransitionNode>
+SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &transElement,
+                                           SCE::IStateNode *stateNode) {
     if (!transElement || !stateNode) {
         LOG_WARN("Null transition element or state node");
         return nullptr;
@@ -36,7 +36,7 @@ RSM::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
     bool isInternal = target.empty();
 
     // Create transition node
-    std::shared_ptr<RSM::ITransitionNode> transition;
+    std::shared_ptr<SCE::ITransitionNode> transition;
 
     if (isInternal) {
         LOG_DEBUG("Internal transition detected (no target)");
@@ -115,8 +115,8 @@ RSM::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
     return transition;
 }
 
-std::shared_ptr<RSM::ITransitionNode>
-RSM::TransitionParser::parseInitialTransition(const std::shared_ptr<IXMLElement> &initialElement) {
+std::shared_ptr<SCE::ITransitionNode>
+SCE::TransitionParser::parseInitialTransition(const std::shared_ptr<IXMLElement> &initialElement) {
     if (!initialElement) {
         LOG_WARN("Null initial element");
         return nullptr;
@@ -152,10 +152,10 @@ RSM::TransitionParser::parseInitialTransition(const std::shared_ptr<IXMLElement>
     return transition;
 }
 
-std::vector<std::shared_ptr<RSM::ITransitionNode>>
-RSM::TransitionParser::parseTransitionsInState(const std::shared_ptr<IXMLElement> &stateElement,
-                                               RSM::IStateNode *stateNode) {
-    std::vector<std::shared_ptr<RSM::ITransitionNode>> transitions;
+std::vector<std::shared_ptr<SCE::ITransitionNode>>
+SCE::TransitionParser::parseTransitionsInState(const std::shared_ptr<IXMLElement> &stateElement,
+                                               SCE::IStateNode *stateNode) {
+    std::vector<std::shared_ptr<SCE::ITransitionNode>> transitions;
 
     if (!stateElement || !stateNode) {
         LOG_WARN("Null state element or node");
@@ -177,7 +177,7 @@ RSM::TransitionParser::parseTransitionsInState(const std::shared_ptr<IXMLElement
     return transitions;
 }
 
-bool RSM::TransitionParser::isTransitionNode(const std::shared_ptr<IXMLElement> &element) const {
+bool SCE::TransitionParser::isTransitionNode(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
@@ -186,8 +186,8 @@ bool RSM::TransitionParser::isTransitionNode(const std::shared_ptr<IXMLElement> 
     return matchNodeName(nodeName, "transition");
 }
 
-void RSM::TransitionParser::parseActions(const std::shared_ptr<IXMLElement> &transElement,
-                                         std::shared_ptr<RSM::ITransitionNode> transition) {
+void SCE::TransitionParser::parseActions(const std::shared_ptr<IXMLElement> &transElement,
+                                         std::shared_ptr<SCE::ITransitionNode> transition) {
     if (!transElement || !transition) {
         return;
     }
@@ -210,7 +210,7 @@ void RSM::TransitionParser::parseActions(const std::shared_ptr<IXMLElement> &tra
     }
 }
 
-std::vector<std::string> RSM::TransitionParser::parseEventList(const std::string &eventStr) const {
+std::vector<std::string> SCE::TransitionParser::parseEventList(const std::string &eventStr) const {
     std::vector<std::string> events;
     std::stringstream ss(eventStr);
     std::string event;
@@ -226,6 +226,6 @@ std::vector<std::string> RSM::TransitionParser::parseEventList(const std::string
     return events;
 }
 
-bool RSM::TransitionParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
+bool SCE::TransitionParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
     return ParsingCommon::matchNodeName(nodeName, searchName);
 }

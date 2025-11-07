@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test453_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2/3.12.1: ECMAScript function expression evaluation
@@ -37,10 +37,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test453 : public SimpleAotTest<Test453, 453> {
     static constexpr const char *DESCRIPTION = "ECMAScript function expression evaluation (W3C B.2/3.12.1 AOT)";
-    using SM = RSM::Generated::test453::test453;
+    using SM = SCE::Generated::test453::test453;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test453> registrar_Test453;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -8,7 +8,7 @@
 #include <mutex>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declaration
 class IEventScheduler;
@@ -177,4 +177,4 @@ std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(Event
 #endif
 }
 
-}  // namespace RSM
+}  // namespace SCE

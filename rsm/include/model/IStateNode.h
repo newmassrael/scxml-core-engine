@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class ITransitionNode;
 class IInvokeNode;
@@ -64,14 +64,11 @@ public:
      */
     virtual bool isDeepHistory() const = 0;
 
-    virtual void addReactiveGuard(const std::string &guardId) = 0;
-    virtual const std::vector<std::string> &getReactiveGuards() const = 0;
-
     // W3C SCXML 3.8/3.9: Block-based action methods for proper onentry/onexit handler isolation
-    virtual void addEntryActionBlock(std::vector<std::shared_ptr<RSM::IActionNode>> block) = 0;
-    virtual const std::vector<std::vector<std::shared_ptr<RSM::IActionNode>>> &getEntryActionBlocks() const = 0;
-    virtual void addExitActionBlock(std::vector<std::shared_ptr<RSM::IActionNode>> block) = 0;
-    virtual const std::vector<std::vector<std::shared_ptr<RSM::IActionNode>>> &getExitActionBlocks() const = 0;
+    virtual void addEntryActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) = 0;
+    virtual const std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> &getEntryActionBlocks() const = 0;
+    virtual void addExitActionBlock(std::vector<std::shared_ptr<SCE::IActionNode>> block) = 0;
+    virtual const std::vector<std::vector<std::shared_ptr<SCE::IActionNode>>> &getExitActionBlocks() const = 0;
 
     virtual bool isFinalState() const = 0;
 
@@ -118,4 +115,4 @@ public:
     virtual void setInitialTransition(std::shared_ptr<ITransitionNode> transition) = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

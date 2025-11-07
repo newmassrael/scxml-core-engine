@@ -3,7 +3,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 // EventBroadcastResult static methods
 
@@ -108,4 +108,4 @@ double EventBroadcastStatistics::getAverageRegionsPerEvent() const {
     return 0.0;
 }
 
-}  // namespace RSM
+}  // namespace SCE

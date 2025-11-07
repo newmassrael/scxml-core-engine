@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test521_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2.4/6.2.5: error.communication on invalid send target
@@ -37,10 +37,10 @@ namespace RSM::W3C::AotTests {
 struct Test521 : public SimpleAotTest<Test521, 521> {
     static constexpr const char *DESCRIPTION =
         "error.communication on invalid targetexpr (W3C 6.2.4/6.2.5 AOT Static Hybrid)";
-    using SM = RSM::Generated::test521::test521;
+    using SM = SCE::Generated::test521::test521;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test521> registrar_Test521;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

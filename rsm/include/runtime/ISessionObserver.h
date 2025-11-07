@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Observer interface for session lifecycle events
@@ -38,4 +38,4 @@ public:
                                                  const std::vector<std::string> &ioProcessors) = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

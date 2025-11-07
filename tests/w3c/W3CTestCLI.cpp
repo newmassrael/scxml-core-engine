@@ -316,7 +316,7 @@ int main(int argc, char *argv[]) {
         // Verify resources exist
         if (!std::filesystem::exists(resourcePath)) {
             LOG_ERROR("W3C CLI: Test resources not found at: {}", resourcePath);
-            RSM::Logger::error("W3C CLI: Make sure W3C tests are copied to the resources directory");
+            SCE::Logger::error("W3C CLI: Make sure W3C tests are copied to the resources directory");
             return 1;
         }
 
@@ -325,12 +325,12 @@ int main(int argc, char *argv[]) {
         std::filesystem::current_path(projectRoot);
         LOG_DEBUG("W3C CLI: Changed working directory to: {}", projectRoot.string());
 
-        RSM::Logger::info("W3C CLI: Starting W3C SCXML 1.0 Compliance Test Suite");
+        SCE::Logger::info("W3C CLI: Starting W3C SCXML 1.0 Compliance Test Suite");
         LOG_INFO("W3C CLI: Resources: {}", resourcePath);
         LOG_INFO("W3C CLI: Output: {}", outputPath);
 
         // SOLID Design: Create all components using factory pattern (Dependency Inversion)
-        auto factory = std::make_unique<RSM::W3C::TestComponentFactory>();
+        auto factory = std::make_unique<SCE::W3C::TestComponentFactory>();
 
         auto converter = factory->createConverter();
         auto metadataParser = factory->createMetadataParser();
@@ -372,7 +372,7 @@ int main(int argc, char *argv[]) {
 #endif
 
         // Dependency Injection: All dependencies are injected (Inversion of Control)
-        RSM::W3C::W3CTestRunner runner(std::move(converter), std::move(metadataParser), std::move(executor),
+        SCE::W3C::W3CTestRunner runner(std::move(converter), std::move(metadataParser), std::move(executor),
                                        std::move(validator), std::move(testSuite), std::move(reporter));
 
         // Show test suite information
@@ -384,8 +384,8 @@ int main(int argc, char *argv[]) {
         // Execute W3C tests
         auto startTime = std::chrono::steady_clock::now();
 
-        RSM::W3C::TestRunSummary summary;
-        std::vector<RSM::W3C::TestReport> allReports;  // Store all reports for engine-specific stats
+        SCE::W3C::TestRunSummary summary;
+        std::vector<SCE::W3C::TestReport> allReports;  // Store all reports for engine-specific stats
         if (runUpToMode) {
             // Generate test IDs from 150 up to the specified number
             std::vector<int> upToTestIds;
@@ -404,7 +404,7 @@ int main(int argc, char *argv[]) {
             }
             runner.getReporter()->beginTestRun(testRunName);
 
-            std::vector<RSM::W3C::TestReport> reports;
+            std::vector<SCE::W3C::TestReport> reports;
             bool shouldStop = false;
 
             for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
@@ -419,7 +419,7 @@ int main(int argc, char *argv[]) {
                     }
                     try {
                         LOG_INFO("W3C CLI: Running test {} (including variants if any)", testId);
-                        std::vector<RSM::W3C::TestReport> testReports = runner.runAllMatchingTests(testId);
+                        std::vector<SCE::W3C::TestReport> testReports = runner.runAllMatchingTests(testId);
                         reports.insert(reports.end(), testReports.begin(), testReports.end());
                         allReports.insert(allReports.end(), testReports.begin(), testReports.end());
 
@@ -427,23 +427,23 @@ int main(int argc, char *argv[]) {
                         for (const auto &report : testReports) {
                             std::string status;
                             switch (report.validationResult.finalResult) {
-                            case RSM::W3C::TestResult::PASS:
+                            case SCE::W3C::TestResult::PASS:
                                 status = "PASS";
                                 break;
-                            case RSM::W3C::TestResult::FAIL:
+                            case SCE::W3C::TestResult::FAIL:
                                 status = "FAIL";
                                 break;
-                            case RSM::W3C::TestResult::ERROR:
+                            case SCE::W3C::TestResult::ERROR:
                                 status = "ERROR";
                                 break;
-                            case RSM::W3C::TestResult::TIMEOUT:
+                            case SCE::W3C::TestResult::TIMEOUT:
                                 status = "TIMEOUT";
                                 break;
                             }
 
                             LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
                                      report.executionContext.executionTime.count());
-                            if (report.validationResult.finalResult != RSM::W3C::TestResult::PASS) {
+                            if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
                                 LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
 
                                 // Check if we should stop on failure
@@ -467,10 +467,10 @@ int main(int argc, char *argv[]) {
                         if (!testReports.empty()) {
                             // W3C SCXML: Cleanup order to prevent memory leaks
                             // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
-                            RSM::JSEngine::clearEventRaiserRegistry();
+                            SCE::JSEngine::clearEventRaiserRegistry();
 
                             // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
-                            RSM::JSEngine::instance().reset();
+                            SCE::JSEngine::instance().reset();
 
                             LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
                         }
@@ -491,7 +491,7 @@ int main(int argc, char *argv[]) {
 
             // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
             // Zero Duplication: Centralized summary calculation
-            summary = RSM::Common::TestSummaryHelper::calculateSummary(reports);
+            summary = SCE::Common::TestSummaryHelper::calculateSummary(reports);
 
             // Complete test run reporting
             runner.getReporter()->generateSummary(summary);
@@ -508,7 +508,7 @@ int main(int argc, char *argv[]) {
             }
             runner.getReporter()->beginTestRun(testRunName);
 
-            std::vector<RSM::W3C::TestReport> reports;
+            std::vector<SCE::W3C::TestReport> reports;
             bool shouldStop = false;
 
             for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
@@ -531,7 +531,7 @@ int main(int argc, char *argv[]) {
                             }
                         }
 
-                        std::vector<RSM::W3C::TestReport> testReports;
+                        std::vector<SCE::W3C::TestReport> testReports;
 
                         if (isNumeric) {
                             // Numeric test ID - run all variants (e.g., "403" runs 403a, 403b, 403c)
@@ -579,15 +579,15 @@ int main(int argc, char *argv[]) {
                                 // Run AOT for each discovered variant
                                 for (const auto &variantId : variantIds) {
                                     try {
-                                        RSM::W3C::TestReport aotReport = runner.runAotTest(variantId);
+                                        SCE::W3C::TestReport aotReport = runner.runAotTest(variantId);
                                         aotReport.testId = variantId;
                                         testReports.push_back(aotReport);
                                     } catch (const std::exception &e) {
                                         LOG_ERROR("W3C CLI: AOT test {} failed: {}", variantId, e.what());
-                                        RSM::W3C::TestReport errorReport;
+                                        SCE::W3C::TestReport errorReport;
                                         errorReport.testId = variantId;
                                         errorReport.engineType = "aot";
-                                        errorReport.validationResult.finalResult = RSM::W3C::TestResult::ERROR;
+                                        errorReport.validationResult.finalResult = SCE::W3C::TestResult::ERROR;
                                         errorReport.validationResult.reason =
                                             std::string("AOT engine error: ") + e.what();
                                         errorReport.executionContext.executionTime = std::chrono::milliseconds(0);
@@ -600,23 +600,23 @@ int main(int argc, char *argv[]) {
                             // test403a.scxml)
                             LOG_INFO("W3C CLI: Running exact test {}", testId);
                             if (runInterpreter) {
-                                RSM::W3C::TestReport report = runner.runTest(testId);
+                                SCE::W3C::TestReport report = runner.runTest(testId);
                                 testReports.push_back(report);
                             }
 
                             // Run AOT for specific variant
                             if (runAot) {
                                 try {
-                                    RSM::W3C::TestReport aotReport = runner.runAotTest(testId);
+                                    SCE::W3C::TestReport aotReport = runner.runAotTest(testId);
                                     aotReport.testId = testId;
                                     testReports.push_back(aotReport);
                                 } catch (const std::exception &e) {
                                     LOG_ERROR("W3C CLI: AOT test {} failed: {}", testId, e.what());
                                     // Create error report for failed AOT test
-                                    RSM::W3C::TestReport errorReport;
+                                    SCE::W3C::TestReport errorReport;
                                     errorReport.testId = testId;
                                     errorReport.engineType = "aot";
-                                    errorReport.validationResult.finalResult = RSM::W3C::TestResult::ERROR;
+                                    errorReport.validationResult.finalResult = SCE::W3C::TestResult::ERROR;
                                     errorReport.validationResult.reason = std::string("AOT engine error: ") + e.what();
                                     errorReport.executionContext.executionTime = std::chrono::milliseconds(0);
                                     testReports.push_back(errorReport);
@@ -631,23 +631,23 @@ int main(int argc, char *argv[]) {
                         for (const auto &report : testReports) {
                             std::string status;
                             switch (report.validationResult.finalResult) {
-                            case RSM::W3C::TestResult::PASS:
+                            case SCE::W3C::TestResult::PASS:
                                 status = "PASS";
                                 break;
-                            case RSM::W3C::TestResult::FAIL:
+                            case SCE::W3C::TestResult::FAIL:
                                 status = "FAIL";
                                 break;
-                            case RSM::W3C::TestResult::ERROR:
+                            case SCE::W3C::TestResult::ERROR:
                                 status = "ERROR";
                                 break;
-                            case RSM::W3C::TestResult::TIMEOUT:
+                            case SCE::W3C::TestResult::TIMEOUT:
                                 status = "TIMEOUT";
                                 break;
                             }
 
                             LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
                                      report.executionContext.executionTime.count());
-                            if (report.validationResult.finalResult != RSM::W3C::TestResult::PASS) {
+                            if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
                                 LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
 
                                 // Check if we should stop on failure
@@ -671,10 +671,10 @@ int main(int argc, char *argv[]) {
                         if (!testReports.empty()) {
                             // W3C SCXML: Cleanup order to prevent memory leaks
                             // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
-                            RSM::JSEngine::clearEventRaiserRegistry();
+                            SCE::JSEngine::clearEventRaiserRegistry();
 
                             // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
-                            RSM::JSEngine::instance().reset();
+                            SCE::JSEngine::instance().reset();
 
                             LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
                         }
@@ -695,7 +695,7 @@ int main(int argc, char *argv[]) {
 
             // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
             // Zero Duplication: Centralized summary calculation
-            summary = RSM::Common::TestSummaryHelper::calculateSummary(reports);
+            summary = SCE::Common::TestSummaryHelper::calculateSummary(reports);
 
             // Get all reports from reporter (includes interpreter and AOT) if not already populated
             if (allReports.empty()) {
@@ -773,7 +773,7 @@ int main(int argc, char *argv[]) {
                         }
                         try {
                             // Use string version of runAotTest to preserve variant suffix (e.g., "403a", "403b")
-                            RSM::W3C::TestReport aotReport = runner.runAotTest(testIdStr);
+                            SCE::W3C::TestReport aotReport = runner.runAotTest(testIdStr);
                             // Preserve the original testId (with variant suffix if present)
                             aotReport.testId = testIdStr;
                             allReports.push_back(aotReport);
@@ -782,17 +782,17 @@ int main(int argc, char *argv[]) {
                             // W3C SCXML test infrastructure: Use TestSummaryHelper (Single Source of Truth)
                             // Zero Duplication: Centralized summary update
                             summary.totalTests++;
-                            RSM::Common::TestSummaryHelper::updateSummary(summary, aotReport);
+                            SCE::Common::TestSummaryHelper::updateSummary(summary, aotReport);
 
                             // Check for stop-on-failure (after summary update)
-                            if (aotReport.validationResult.finalResult == RSM::W3C::TestResult::FAIL) {
+                            if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::FAIL) {
                                 if (stopOnFailure) {
                                     LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
                                     printf("❌ Stopping on failure: AOT Test %s failed\n", aotReport.testId.c_str());
                                     shouldStop = true;
                                 }
-                            } else if (aotReport.validationResult.finalResult == RSM::W3C::TestResult::ERROR ||
-                                       aotReport.validationResult.finalResult == RSM::W3C::TestResult::TIMEOUT) {
+                            } else if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::ERROR ||
+                                       aotReport.validationResult.finalResult == SCE::W3C::TestResult::TIMEOUT) {
                                 if (stopOnFailure) {
                                     LOG_INFO("W3C CLI: Stopping execution due to test error (--stop-on-fail)");
                                     printf("❌ Stopping on error: AOT Test %s errored\n", aotReport.testId.c_str());
@@ -807,8 +807,8 @@ int main(int argc, char *argv[]) {
 #ifdef __EMSCRIPTEN__
                             // WASM memory leak investigation: Per-AOT-test cleanup
                             // W3C SCXML: Cleanup order to prevent memory leaks
-                            RSM::JSEngine::clearEventRaiserRegistry();
-                            RSM::JSEngine::instance().reset();
+                            SCE::JSEngine::clearEventRaiserRegistry();
+                            SCE::JSEngine::instance().reset();
                             LOG_INFO("W3C CLI: Cleaned up JSEngine after AOT test {} (Registry cleared → Engine reset)",
                                      testIdStr);
 #endif
@@ -817,10 +817,10 @@ int main(int argc, char *argv[]) {
                             LOG_ERROR("W3C CLI: AOT engine test {} failed: {}", testIdStr, e.what());
 
                             // Create error report for failed AOT test
-                            RSM::W3C::TestReport errorReport;
+                            SCE::W3C::TestReport errorReport;
                             errorReport.testId = testIdStr;
                             errorReport.engineType = "aot";
-                            errorReport.validationResult.finalResult = RSM::W3C::TestResult::ERROR;
+                            errorReport.validationResult.finalResult = SCE::W3C::TestResult::ERROR;
                             errorReport.validationResult.reason = std::string("AOT engine error: ") + e.what();
                             errorReport.executionContext.executionTime = std::chrono::milliseconds(0);
 
@@ -885,15 +885,15 @@ int main(int argc, char *argv[]) {
                     engineStats->skipped++;
                 } else {
                     switch (report.validationResult.finalResult) {
-                    case RSM::W3C::TestResult::PASS:
+                    case SCE::W3C::TestResult::PASS:
                         engineStats->passed++;
                         break;
-                    case RSM::W3C::TestResult::FAIL:
+                    case SCE::W3C::TestResult::FAIL:
                         engineStats->failed++;
                         engineStats->failedTestIds.push_back(report.testId);
                         break;
-                    case RSM::W3C::TestResult::ERROR:
-                    case RSM::W3C::TestResult::TIMEOUT:
+                    case SCE::W3C::TestResult::ERROR:
+                    case SCE::W3C::TestResult::TIMEOUT:
                         engineStats->errors++;
                         engineStats->errorTestIds.push_back(report.testId);
                         break;

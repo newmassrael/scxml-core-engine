@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test570_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.12.1: Parallel state completion with done.state.id events
@@ -39,10 +39,10 @@ namespace RSM::W3C::AotTests {
 struct Test570 : public SimpleAotTest<Test570, 570> {
     static constexpr const char *DESCRIPTION =
         "Parallel state completion with done.state.id (W3C 3.12.1 AOT Static Hybrid)";
-    using SM = RSM::Generated::test570::test570;
+    using SM = SCE::Generated::test570::test570;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test570> registrar_Test570;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

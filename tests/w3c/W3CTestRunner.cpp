@@ -34,7 +34,7 @@
 // Test Summary Helper (Single Source of Truth for summary calculation)
 #include "common/TestSummaryHelper.h"
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 // Forward declaration for implementations
 class TestResultValidator;
@@ -144,13 +144,13 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
                 LOG_DEBUG("StateMachineTestExecutor: Starting test execution for test {}", metadata.id);
 
                 // Build StateMachine with resource injection, then wrap in RAII context
-                auto stateMachineUnique = RSM::StateMachineBuilder()
+                auto stateMachineUnique = SCE::StateMachineBuilder()
                                               .withEventDispatcher(resources->eventDispatcher)
                                               .withEventRaiser(resources->eventRaiser)
                                               .build();
 
                 // Wrap in StateMachineContext for RAII cleanup
-                auto smContext = std::make_unique<RSM::StateMachineContext>(std::move(stateMachineUnique));
+                auto smContext = std::make_unique<SCE::StateMachineContext>(std::move(stateMachineUnique));
                 auto *stateMachine = smContext->get();
 
                 // W3C SCXML compliance: EventRaiser callback should pass eventData to StateMachine
@@ -246,17 +246,17 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
                           metadata.id, sourceFilePath);
 
                 // Build StateMachine with resource injection, then wrap in RAII context
-                auto stateMachineUnique = RSM::StateMachineBuilder()
+                auto stateMachineUnique = SCE::StateMachineBuilder()
                                               .withEventDispatcher(resources->eventDispatcher)
                                               .withEventRaiser(resources->eventRaiser)
                                               .build();
 
                 // Wrap in StateMachineContext for RAII cleanup
-                auto smContext = std::make_unique<RSM::StateMachineContext>(std::move(stateMachineUnique));
+                auto smContext = std::make_unique<SCE::StateMachineContext>(std::move(stateMachineUnique));
                 auto *stateMachine = smContext->get();
 
                 // Register source file path for relative path resolution before loading SCXML
-                RSM::JSEngine::instance().registerSessionFilePath(stateMachine->getSessionId(), sourceFilePath);
+                SCE::JSEngine::instance().registerSessionFilePath(stateMachine->getSessionId(), sourceFilePath);
                 LOG_DEBUG("StateMachineTestExecutor: Registered source file path '{}' for session '{}'", sourceFilePath,
                           stateMachine->getSessionId());
 
@@ -877,11 +877,11 @@ TestComponentFactory::createCompositeReporter(std::unique_ptr<ITestReporter> con
 
 std::unique_ptr<TestResources> TestComponentFactory::createResources() {
     // Create EventRaiser
-    auto eventRaiser = std::make_shared<RSM::EventRaiserImpl>();
+    auto eventRaiser = std::make_shared<SCE::EventRaiserImpl>();
 
     // Create EventScheduler with event execution callback
-    auto scheduler = std::make_shared<RSM::EventSchedulerImpl>([](const RSM::EventDescriptor &event,
-                                                                  std::shared_ptr<RSM::IEventTarget> target,
+    auto scheduler = std::make_shared<SCE::EventSchedulerImpl>([](const SCE::EventDescriptor &event,
+                                                                  std::shared_ptr<SCE::IEventTarget> target,
                                                                   const std::string &sendId) -> bool {
         // Event execution callback: send event to target and return success status
         LOG_DEBUG("EventScheduler: Executing event '{}' with sendId '{}' on target '{}'", event.eventName, sendId,
@@ -907,8 +907,8 @@ std::unique_ptr<TestResources> TestComponentFactory::createResources() {
     eventRaiser->setScheduler(scheduler);
 
     // Create EventTargetFactory and EventDispatcher
-    auto targetFactory = std::make_shared<RSM::EventTargetFactoryImpl>(eventRaiser, scheduler);
-    auto eventDispatcher = std::make_shared<RSM::EventDispatcherImpl>(scheduler, targetFactory);
+    auto targetFactory = std::make_shared<SCE::EventTargetFactoryImpl>(eventRaiser, scheduler);
+    auto eventDispatcher = std::make_shared<SCE::EventDispatcherImpl>(scheduler, targetFactory);
 
     // Create TestResources with const fields initialized via constructor
     return std::make_unique<TestResources>(std::move(eventRaiser), std::move(scheduler), std::move(eventDispatcher));
@@ -1119,11 +1119,11 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
             // W3C SCXML: Cleanup order to prevent memory leaks
             // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
             // This ensures HttpEventTarget instances are released before next test
-            RSM::JSEngine::clearEventRaiserRegistry();
+            SCE::JSEngine::clearEventRaiserRegistry();
 
             // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
             // WASM CRITICAL: 384MB memory limit requires aggressive cleanup between tests
-            RSM::JSEngine::instance().reset();
+            SCE::JSEngine::instance().reset();
 
 #ifdef __EMSCRIPTEN__
             // WASM memory leak investigation: Log heap size AFTER cleanup with cumulative tracking
@@ -1252,7 +1252,7 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
                 // Convert sub-TXML file to SCXML (without W3C validation for sub-files)
                 std::ifstream subTxmlFile(entry.path());
                 std::string subTxml((std::istreambuf_iterator<char>(subTxmlFile)), std::istreambuf_iterator<char>());
-                std::string subScxml = static_cast<RSM::W3C::TXMLConverter *>(converter_.get())
+                std::string subScxml = static_cast<SCE::W3C::TXMLConverter *>(converter_.get())
                                            ->convertTXMLToSCXMLWithoutValidation(subTxml);
 
                 // Write converted SCXML file
@@ -1372,7 +1372,7 @@ bool W3CTestRunner::requiresHttpServer(const std::string &testDirectory) const {
 }
 
 std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestInDockerTsan(const std::string &testDir, int testId) const {
-    if (!requiresHttpServer(testDir) || !RSM::Test::Utils::isInDockerTsan()) {
+    if (!requiresHttpServer(testDir) || !SCE::Test::Utils::isInDockerTsan()) {
         return std::nullopt;
     }
 
@@ -1391,7 +1391,7 @@ std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestInDockerTsan(const st
 
 std::optional<TestReport> W3CTestRunner::shouldSkipHttpTestInDockerTsan(const std::string &testDir,
                                                                         const std::string &testId) const {
-    if (!requiresHttpServer(testDir) || !RSM::Test::Utils::isInDockerTsan()) {
+    if (!requiresHttpServer(testDir) || !SCE::Test::Utils::isInDockerTsan()) {
         return std::nullopt;
     }
 
@@ -1797,13 +1797,13 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
                 });
 
             // Build StateMachine with resource injection, then wrap in RAII context
-            auto stateMachineUnique = RSM::StateMachineBuilder()
+            auto stateMachineUnique = SCE::StateMachineBuilder()
                                           .withEventDispatcher(resources->eventDispatcher)
                                           .withEventRaiser(resources->eventRaiser)
                                           .build();
 
             // Wrap in StateMachineContext for RAII cleanup
-            auto smContext = std::make_unique<RSM::StateMachineContext>(std::move(stateMachineUnique));
+            auto smContext = std::make_unique<SCE::StateMachineContext>(std::move(stateMachineUnique));
             auto *stateMachine = smContext->get();
 
             // Load SCXML content
@@ -1962,7 +1962,7 @@ TestReport W3CTestRunner::runAotTest(int testId) {
     }
 
     // Try registry-based test first (new modular system)
-    auto registryTest = RSM::W3C::AotTests::AotTestRegistry::instance().createTest(testId);
+    auto registryTest = SCE::W3C::AotTests::AotTestRegistry::instance().createTest(testId);
     if (registryTest) {
         TestReport report;
         report.timestamp = std::chrono::system_clock::now();
@@ -2088,7 +2088,7 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
     }
 
     // Try registry-based test first (new modular system)
-    auto registryTest = RSM::W3C::AotTests::AotTestRegistry::instance().createTest(testId);
+    auto registryTest = SCE::W3C::AotTests::AotTestRegistry::instance().createTest(testId);
     if (registryTest) {
         TestReport report;
         report.timestamp = std::chrono::system_clock::now();
@@ -2176,12 +2176,12 @@ TestReport W3CTestRunner::runManualTest178(const std::string &testDirectory, Tes
         auto resources = TestComponentFactory::createResources();
 
         // Build StateMachine with resource injection
-        auto stateMachineUnique = RSM::StateMachineBuilder()
+        auto stateMachineUnique = SCE::StateMachineBuilder()
                                       .withEventDispatcher(resources->eventDispatcher)
                                       .withEventRaiser(resources->eventRaiser)
                                       .build();
 
-        auto smContext = std::make_unique<RSM::StateMachineContext>(std::move(stateMachineUnique));
+        auto smContext = std::make_unique<SCE::StateMachineContext>(std::move(stateMachineUnique));
         auto *stateMachine = smContext->get();
 
         // Load SCXML content
@@ -2271,4 +2271,4 @@ TestReport W3CTestRunner::runManualTest178(const std::string &testDirectory, Tes
     }
 }
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test387_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.11: History States with Default Transitions
@@ -25,10 +25,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test387 : public SimpleAotTest<Test387, 387> {
     static constexpr const char *DESCRIPTION = "History states with default transitions (W3C 3.11 AOT)";
-    using SM = RSM::Generated::test387::test387;
+    using SM = SCE::Generated::test387::test387;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test387> registrar_Test387;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

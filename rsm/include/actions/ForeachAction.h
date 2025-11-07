@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief SCXML <foreach> action implementation
@@ -128,4 +128,4 @@ private:
     cloneIterationActions(const std::vector<std::shared_ptr<IActionNode>> &source) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

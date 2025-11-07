@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test488_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.7: Error handling in <param> expressions
@@ -26,10 +26,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test488 : public SimpleAotTest<Test488, 488> {
     static constexpr const char *DESCRIPTION = "donedata param error handling (W3C 5.7 AOT)";
-    using SM = RSM::Generated::test488::test488;
+    using SM = SCE::Generated::test488::test488;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test488> registrar_Test488;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

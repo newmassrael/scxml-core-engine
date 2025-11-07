@@ -2,131 +2,131 @@
 #include "InvokeNode.h"
 #include "common/Logger.h"
 
-RSM::InvokeNode::InvokeNode(const std::string &id) : id_(id), autoForward_(false) {
+SCE::InvokeNode::InvokeNode(const std::string &id) : id_(id), autoForward_(false) {
     LOG_DEBUG("Creating invoke node: {}", id);
 }
 
-RSM::InvokeNode::~InvokeNode() {
+SCE::InvokeNode::~InvokeNode() {
     LOG_DEBUG("Destroying invoke node: {}", id_);
 }
 
-const std::string &RSM::InvokeNode::getId() const {
+const std::string &SCE::InvokeNode::getId() const {
     return id_;
 }
 
-void RSM::InvokeNode::setId(const std::string &id) {
+void SCE::InvokeNode::setId(const std::string &id) {
     LOG_DEBUG("Setting ID for invoke: {} -> {}", id_, id);
     id_ = id;
 }
 
-const std::string &RSM::InvokeNode::getType() const {
+const std::string &SCE::InvokeNode::getType() const {
     return type_;
 }
 
-const std::string &RSM::InvokeNode::getSrc() const {
+const std::string &SCE::InvokeNode::getSrc() const {
     return src_;
 }
 
-bool RSM::InvokeNode::isAutoForward() const {
+bool SCE::InvokeNode::isAutoForward() const {
     return autoForward_;
 }
 
-void RSM::InvokeNode::setType(const std::string &type) {
+void SCE::InvokeNode::setType(const std::string &type) {
     LOG_DEBUG("Setting type for {}: {}", id_, type);
     type_ = type;
 }
 
-void RSM::InvokeNode::setSrc(const std::string &src) {
+void SCE::InvokeNode::setSrc(const std::string &src) {
     LOG_DEBUG("Setting src for {}: {}", id_, src);
     src_ = src;
 }
 
-void RSM::InvokeNode::setAutoForward(bool autoForward) {
+void SCE::InvokeNode::setAutoForward(bool autoForward) {
     LOG_DEBUG("Setting autoForward for {}: {}", id_, (autoForward ? "true" : "false"));
     autoForward_ = autoForward;
 }
 
-void RSM::InvokeNode::setIdLocation(const std::string &idLocation) {
+void SCE::InvokeNode::setIdLocation(const std::string &idLocation) {
     LOG_DEBUG("Setting idLocation for {}: {}", id_, idLocation);
     idLocation_ = idLocation;
 }
 
-void RSM::InvokeNode::setNamelist(const std::string &namelist) {
+void SCE::InvokeNode::setNamelist(const std::string &namelist) {
     LOG_DEBUG("Setting namelist for {}: {}", id_, namelist);
     namelist_ = namelist;
 }
 
-void RSM::InvokeNode::addParam(const std::string &name, const std::string &expr, const std::string &location) {
+void SCE::InvokeNode::addParam(const std::string &name, const std::string &expr, const std::string &location) {
     LOG_DEBUG("Adding param to {}: name={}", id_, name);
     params_.push_back(std::make_tuple(name, expr, location));
 }
 
-void RSM::InvokeNode::setContent(const std::string &content) {
+void SCE::InvokeNode::setContent(const std::string &content) {
     LOG_DEBUG("Setting content for {}", id_);
     content_ = content;
 }
 
-void RSM::InvokeNode::setFinalize(const std::string &finalizeContent) {
+void SCE::InvokeNode::setFinalize(const std::string &finalizeContent) {
     LOG_DEBUG("Setting finalize for {}", id_);
     finalize_ = finalizeContent;
 }
 
-const std::string &RSM::InvokeNode::getIdLocation() const {
+const std::string &SCE::InvokeNode::getIdLocation() const {
     return idLocation_;
 }
 
-const std::string &RSM::InvokeNode::getNamelist() const {
+const std::string &SCE::InvokeNode::getNamelist() const {
     return namelist_;
 }
 
-const std::string &RSM::InvokeNode::getContent() const {
+const std::string &SCE::InvokeNode::getContent() const {
     return content_;
 }
 
-const std::string &RSM::InvokeNode::getFinalize() const {
+const std::string &SCE::InvokeNode::getFinalize() const {
     return finalize_;
 }
 
-const std::vector<std::tuple<std::string, std::string, std::string>> &RSM::InvokeNode::getParams() const {
+const std::vector<std::tuple<std::string, std::string, std::string>> &SCE::InvokeNode::getParams() const {
     return params_;
 }
 
 // W3C SCXML 1.0: typeexpr attribute support for dynamic type evaluation
-void RSM::InvokeNode::setTypeExpr(const std::string &typeExpr) {
+void SCE::InvokeNode::setTypeExpr(const std::string &typeExpr) {
     typeExpr_ = typeExpr;
     LOG_DEBUG("InvokeNode: Set typeexpr to '{}'", typeExpr);
 }
 
-const std::string &RSM::InvokeNode::getTypeExpr() const {
+const std::string &SCE::InvokeNode::getTypeExpr() const {
     return typeExpr_;
 }
 
 // W3C SCXML 1.0: srcexpr attribute support for dynamic source evaluation
-void RSM::InvokeNode::setSrcExpr(const std::string &srcExpr) {
+void SCE::InvokeNode::setSrcExpr(const std::string &srcExpr) {
     srcExpr_ = srcExpr;
     LOG_DEBUG("InvokeNode: Set srcexpr to '{}'", srcExpr);
 }
 
-const std::string &RSM::InvokeNode::getSrcExpr() const {
+const std::string &SCE::InvokeNode::getSrcExpr() const {
     return srcExpr_;
 }
 
 // W3C SCXML test 530: content expr attribute support for dynamic content evaluation
-void RSM::InvokeNode::setContentExpr(const std::string &contentExpr) {
+void SCE::InvokeNode::setContentExpr(const std::string &contentExpr) {
     contentExpr_ = contentExpr;
     LOG_DEBUG("InvokeNode: Set content expr to '{}'", contentExpr);
 }
 
-const std::string &RSM::InvokeNode::getContentExpr() const {
+const std::string &SCE::InvokeNode::getContentExpr() const {
     return contentExpr_;
 }
 
 // W3C SCXML 6.4: State ID for invoke ID generation in "stateid.platformid" format (test 224)
-void RSM::InvokeNode::setStateId(const std::string &stateId) {
+void SCE::InvokeNode::setStateId(const std::string &stateId) {
     stateId_ = stateId;
     LOG_DEBUG("InvokeNode: Set state ID to '{}'", stateId);
 }
 
-const std::string &RSM::InvokeNode::getStateId() const {
+const std::string &SCE::InvokeNode::getStateId() const {
     return stateId_;
 }

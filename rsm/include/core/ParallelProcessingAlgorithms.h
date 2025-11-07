@@ -18,7 +18,7 @@
  * - D.1: Event broadcasting to parallel regions
  */
 
-namespace RSM::Core {
+namespace SCE::Core {
 
 class ParallelProcessingAlgorithms {
 public:
@@ -39,8 +39,8 @@ public:
      *
      * @example Interpreter usage:
      * @code
-     * RSM::Core::InterpreterParallelStateManager adapter(stateNode);
-     * RSM::Core::ParallelProcessingAlgorithms::enterAllRegions(
+     * SCE::Core::InterpreterParallelStateManager adapter(stateNode);
+     * SCE::Core::ParallelProcessingAlgorithms::enterAllRegions(
      *     adapter,
      *     stateNode->getChildRegions()
      * );
@@ -48,9 +48,9 @@ public:
      *
      * @example AOT usage:
      * @code
-     * RSM::Core::AOTParallelStateManager<Policy> adapter(policy_);
+     * SCE::Core::AOTParallelStateManager<Policy> adapter(policy_);
      * std::vector<State> regions = { State::Region1, State::Region2 };
-     * RSM::Core::ParallelProcessingAlgorithms::enterAllRegions(
+     * SCE::Core::ParallelProcessingAlgorithms::enterAllRegions(
      *     adapter,
      *     regions
      * );
@@ -87,8 +87,8 @@ public:
      *
      * @example Interpreter usage:
      * @code
-     * RSM::Core::InterpreterParallelStateManager adapter(stateNode);
-     * bool anyTransition = RSM::Core::ParallelProcessingAlgorithms::broadcastEventToRegions(
+     * SCE::Core::InterpreterParallelStateManager adapter(stateNode);
+     * bool anyTransition = SCE::Core::ParallelProcessingAlgorithms::broadcastEventToRegions(
      *     adapter,
      *     event,
      *     stateNode->getActiveRegions()
@@ -97,9 +97,9 @@ public:
      *
      * @example AOT usage:
      * @code
-     * RSM::Core::AOTParallelStateManager<Policy> adapter(policy_);
+     * SCE::Core::AOTParallelStateManager<Policy> adapter(policy_);
      * std::vector<State> activeRegions = policy_.getActiveRegions(currentState);
-     * bool anyTransition = RSM::Core::ParallelProcessingAlgorithms::broadcastEventToRegions(
+     * bool anyTransition = SCE::Core::ParallelProcessingAlgorithms::broadcastEventToRegions(
      *     adapter,
      *     event,
      *     activeRegions
@@ -142,8 +142,8 @@ public:
      *
      * @example Interpreter usage:
      * @code
-     * RSM::Core::InterpreterParallelStateManager adapter(stateNode);
-     * bool allFinal = RSM::Core::ParallelProcessingAlgorithms::areAllRegionsInFinalState(
+     * SCE::Core::InterpreterParallelStateManager adapter(stateNode);
+     * bool allFinal = SCE::Core::ParallelProcessingAlgorithms::areAllRegionsInFinalState(
      *     adapter,
      *     stateNode->getChildRegions()
      * );
@@ -154,9 +154,9 @@ public:
      *
      * @example AOT usage:
      * @code
-     * RSM::Core::AOTParallelStateManager<Policy> adapter(policy_);
+     * SCE::Core::AOTParallelStateManager<Policy> adapter(policy_);
      * std::vector<State> regions = policy_.getParallelRegions(State::ParallelState);
-     * bool allFinal = RSM::Core::ParallelProcessingAlgorithms::areAllRegionsInFinalState(
+     * bool allFinal = SCE::Core::ParallelProcessingAlgorithms::areAllRegionsInFinalState(
      *     adapter,
      *     regions
      * );
@@ -195,8 +195,8 @@ public:
      *
      * @example Interpreter usage:
      * @code
-     * RSM::Core::InterpreterParallelStateManager adapter(stateNode);
-     * RSM::Core::ParallelProcessingAlgorithms::exitAllRegions(
+     * SCE::Core::InterpreterParallelStateManager adapter(stateNode);
+     * SCE::Core::ParallelProcessingAlgorithms::exitAllRegions(
      *     adapter,
      *     stateNode->getChildRegions()
      * );
@@ -204,9 +204,9 @@ public:
      *
      * @example AOT usage:
      * @code
-     * RSM::Core::AOTParallelStateManager<Policy> adapter(policy_);
+     * SCE::Core::AOTParallelStateManager<Policy> adapter(policy_);
      * std::vector<State> regions = { State::Region1, State::Region2 };
-     * RSM::Core::ParallelProcessingAlgorithms::exitAllRegions(
+     * SCE::Core::ParallelProcessingAlgorithms::exitAllRegions(
      *     adapter,
      *     regions
      * );
@@ -223,4 +223,4 @@ public:
     }
 };
 
-}  // namespace RSM::Core
+}  // namespace SCE::Core

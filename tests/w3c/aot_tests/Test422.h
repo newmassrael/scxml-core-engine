@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test422_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: Invoke Execution at Macrostep End
@@ -30,10 +30,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test422 : public ScheduledAotTest<Test422, 422> {
     static constexpr const char *DESCRIPTION = "Invoke at macrostep end (W3C 6.4 AOT)";
-    using SM = RSM::Generated::test422::test422;
+    using SM = SCE::Generated::test422::test422;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test422> registrar_Test422;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

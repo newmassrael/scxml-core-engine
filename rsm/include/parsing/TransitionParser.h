@@ -18,7 +18,7 @@
  * and handles actions and guard conditions to be executed during transitions.
  */
 
-namespace RSM {
+namespace SCE {
 
 class TransitionParser {
 public:
@@ -100,4 +100,4 @@ private:
     std::shared_ptr<ActionParser> actionParser_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

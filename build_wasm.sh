@@ -1,5 +1,5 @@
 #!/bin/bash
-# WASM Build Script for Reactive State Machine
+# WASM Build Script for SCXML Core Engine
 # Uses Emscripten to compile C++ code to WebAssembly
 
 set -e  # Exit on error
@@ -11,7 +11,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 echo -e "${GREEN}==========================================${NC}"
-echo -e "${GREEN}  Reactive State Machine - WASM Build  ${NC}"
+echo -e "${GREEN}  SCXML Core Engine - WASM Build  ${NC}"
 echo -e "${GREEN}==========================================${NC}"
 echo ""
 

@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test531_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: _scxmleventname Parameter Event Name Override
@@ -75,10 +75,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test531 : public HttpAotTest<Test531, 531> {
     static constexpr const char *DESCRIPTION = "BasicHTTP _scxmleventname param event name (W3C C.2 AOT Static)";
-    using SM = RSM::Generated::test531::test531;
+    using SM = SCE::Generated::test531::test531;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test531> registrar_Test531;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

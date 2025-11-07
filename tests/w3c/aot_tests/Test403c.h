@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test403c_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: Optimal enabled transition set with preemption
@@ -13,10 +13,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test403c : public SimpleAotTest<Test403c, 403> {
     static constexpr const char *DESCRIPTION = "Optimal transition set - preemption (W3C 3.13 AOT Static Hybrid)";
-    using SM = RSM::Generated::test403c::test403c;
+    using SM = SCE::Generated::test403c::test403c;
 };
 
 // Auto-register with variant suffix
 inline static AotTestRegistrar<Test403c> registrar_Test403c("403c");
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

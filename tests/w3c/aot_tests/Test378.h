@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test378_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.8/3.9: Independent onexit handler execution with error.execution
@@ -88,10 +88,10 @@ namespace RSM::W3C::AotTests {
 struct Test378 : public SimpleAotTest<Test378, 378> {
     static constexpr const char *DESCRIPTION =
         "Independent onexit handler execution with error.execution (W3C 3.8/3.9 AOT Static Hybrid)";
-    using SM = RSM::Generated::test378::test378;
+    using SM = SCE::Generated::test378::test378;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test378> registrar_Test378;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

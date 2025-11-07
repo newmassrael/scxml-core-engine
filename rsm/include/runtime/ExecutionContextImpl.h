@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Concrete implementation of IExecutionContext
@@ -62,4 +62,4 @@ private:
     std::string currentStateId_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

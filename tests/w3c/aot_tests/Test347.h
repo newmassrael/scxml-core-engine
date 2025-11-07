@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test347_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: SCXML Event I/O processor parent-child communication
@@ -21,10 +21,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test347 : public SimpleAotTest<Test347, 347> {
     static constexpr const char *DESCRIPTION = "SCXML Event I/O processor communication (W3C 6.4 AOT)";
-    using SM = RSM::Generated::test347::test347;
+    using SM = SCE::Generated::test347::test347;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test347> registrar_Test347;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

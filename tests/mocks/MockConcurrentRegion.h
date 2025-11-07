@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Mock concurrent region for testing event broadcasting and parallel state components
@@ -110,4 +110,4 @@ private:
     std::string currentState_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

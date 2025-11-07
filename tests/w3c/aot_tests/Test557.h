@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test557_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2: ECMAScript XML DOM assignment with inline and file content
@@ -48,10 +48,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test557 : public SimpleAotTest<Test557, 557> {
     static constexpr const char *DESCRIPTION = "ECMAScript XML DOM assignment (W3C B.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test557::test557;
+    using SM = SCE::Generated::test557::test557;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test557> registrar_Test557;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

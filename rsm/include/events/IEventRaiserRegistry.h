@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 class IEventRaiser;
 
@@ -55,4 +55,4 @@ public:
     virtual bool hasEventRaiser(const std::string &sessionId) const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

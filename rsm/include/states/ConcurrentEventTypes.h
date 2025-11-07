@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class IConcurrentRegion;
@@ -124,4 +124,4 @@ struct EventBroadcastStatistics {
     double getAverageRegionsPerEvent() const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

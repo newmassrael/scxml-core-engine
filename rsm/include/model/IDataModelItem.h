@@ -13,7 +13,7 @@
  * Corresponds to <data> element in SCXML documents.
  */
 
-namespace RSM {
+namespace SCE {
 
 class IDataModelItem {
 public:
@@ -143,4 +143,4 @@ public:
     virtual bool supportsDataModel(const std::string &dataModelType) const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #pragma once
@@ -9,7 +9,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declare to avoid conflict with IEventBridge's HttpRequest/HttpResponse
 // IEventBridge: Server-side (incoming requests, outgoing responses)
@@ -107,4 +107,4 @@ public:
  */
 std::unique_ptr<IHttpClient> createHttpClient();
 
-}  // namespace RSM
+}  // namespace SCE

@@ -5,7 +5,7 @@
 class DataModelTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &RSM::JSEngine::instance();
+        engine_ = &SCE::JSEngine::instance();
         // Ensure test isolation with JSEngine reset
         engine_->reset();
 
@@ -21,7 +21,7 @@ protected:
         }
     }
 
-    RSM::JSEngine *engine_;
+    SCE::JSEngine *engine_;
     std::string sessionId_;
 };
 

@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test351_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: Event sendid field validation
@@ -17,10 +17,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test351 : public SimpleAotTest<Test351, 351> {
     static constexpr const char *DESCRIPTION = "_event.sendid field validation (W3C 5.10.1 AOT)";
-    using SM = RSM::Generated::test351::test351;
+    using SM = SCE::Generated::test351::test351;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test351> registrar_Test351;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

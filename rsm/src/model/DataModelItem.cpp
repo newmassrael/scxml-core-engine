@@ -5,48 +5,48 @@
 #include "parsing/IXMLParser.h"
 #include <sstream>
 
-RSM::DataModelItem::DataModelItem(const std::string &id, const std::string &expr)
+SCE::DataModelItem::DataModelItem(const std::string &id, const std::string &expr)
     : id_(id), expr_(expr), scope_("global") {
     LOG_DEBUG("Creating data model item: {}", id);
 }
 
-RSM::DataModelItem::~DataModelItem() {
+SCE::DataModelItem::~DataModelItem() {
     LOG_DEBUG("Destroying data model item: {}", id_);
     // unique_ptr automatically manages memory - no manual delete needed
 }
 
-const std::string &RSM::DataModelItem::getId() const {
+const std::string &SCE::DataModelItem::getId() const {
     return id_;
 }
 
-void RSM::DataModelItem::setExpr(const std::string &expr) {
+void SCE::DataModelItem::setExpr(const std::string &expr) {
     LOG_DEBUG("Setting expression for {}: {}", id_, expr);
     expr_ = expr;
 }
 
-const std::string &RSM::DataModelItem::getExpr() const {
+const std::string &SCE::DataModelItem::getExpr() const {
     return expr_;
 }
 
-void RSM::DataModelItem::setType(const std::string &type) {
+void SCE::DataModelItem::setType(const std::string &type) {
     LOG_DEBUG("Setting type for {}: {}", id_, type);
     type_ = type;
 }
 
-const std::string &RSM::DataModelItem::getType() const {
+const std::string &SCE::DataModelItem::getType() const {
     return type_;
 }
 
-void RSM::DataModelItem::setScope(const std::string &scope) {
+void SCE::DataModelItem::setScope(const std::string &scope) {
     LOG_DEBUG("Setting scope for {}: {}", id_, scope);
     scope_ = scope;
 }
 
-const std::string &RSM::DataModelItem::getScope() const {
+const std::string &SCE::DataModelItem::getScope() const {
     return scope_;
 }
 
-void RSM::DataModelItem::setContent(const std::string &content) {
+void SCE::DataModelItem::setContent(const std::string &content) {
     LOG_DEBUG("Setting content for {}", id_);
 
     // Try XML parsing if data model is xpath or xml type
@@ -63,7 +63,7 @@ void RSM::DataModelItem::setContent(const std::string &content) {
     contentItems_.push_back(content);
 }
 
-void RSM::DataModelItem::addContent(const std::string &content) {
+void SCE::DataModelItem::addContent(const std::string &content) {
     LOG_DEBUG("Adding content for {}", id_);
 
     // Always add to contentItems_
@@ -105,7 +105,7 @@ void RSM::DataModelItem::addContent(const std::string &content) {
     }
 }
 
-const std::string &RSM::DataModelItem::getContent() const {
+const std::string &SCE::DataModelItem::getContent() const {
     // Serialize XML to string if XML content exists and content_ is empty
     if (xmlContent_ && xmlContent_->isValid() && content_.empty()) {
         static std::string serialized;
@@ -127,21 +127,21 @@ const std::string &RSM::DataModelItem::getContent() const {
     return content_;
 }
 
-void RSM::DataModelItem::setSrc(const std::string &src) {
+void SCE::DataModelItem::setSrc(const std::string &src) {
     LOG_DEBUG("Setting source URL for {}: {}", id_, src);
     src_ = src;
 }
 
-const std::string &RSM::DataModelItem::getSrc() const {
+const std::string &SCE::DataModelItem::getSrc() const {
     return src_;
 }
 
-void RSM::DataModelItem::setAttribute(const std::string &name, const std::string &value) {
+void SCE::DataModelItem::setAttribute(const std::string &name, const std::string &value) {
     LOG_DEBUG("Setting attribute for {}: {} = {}", id_, name, value);
     attributes_[name] = value;
 }
 
-const std::string &RSM::DataModelItem::getAttribute(const std::string &name) const {
+const std::string &SCE::DataModelItem::getAttribute(const std::string &name) const {
     auto it = attributes_.find(name);
     if (it != attributes_.end()) {
         return it->second;
@@ -149,11 +149,11 @@ const std::string &RSM::DataModelItem::getAttribute(const std::string &name) con
     return emptyString_;
 }
 
-const std::unordered_map<std::string, std::string> &RSM::DataModelItem::getAttributes() const {
+const std::unordered_map<std::string, std::string> &SCE::DataModelItem::getAttributes() const {
     return attributes_;
 }
 
-void RSM::DataModelItem::setXmlContent(const std::string &content) {
+void SCE::DataModelItem::setXmlContent(const std::string &content) {
     LOG_DEBUG("Setting XML content for {}", id_);
 
     // Reset existing XML document
@@ -182,22 +182,22 @@ void RSM::DataModelItem::setXmlContent(const std::string &content) {
     }
 }
 
-std::shared_ptr<RSM::IXMLElement> RSM::DataModelItem::getXmlContent() const {
+std::shared_ptr<SCE::IXMLElement> SCE::DataModelItem::getXmlContent() const {
     if (xmlContent_ && xmlContent_->isValid()) {
         return xmlContent_->getRootElement();
     }
     return nullptr;
 }
 
-const std::vector<std::string> &RSM::DataModelItem::getContentItems() const {
+const std::vector<std::string> &SCE::DataModelItem::getContentItems() const {
     return contentItems_;
 }
 
-bool RSM::DataModelItem::isXmlContent() const {
+bool SCE::DataModelItem::isXmlContent() const {
     return xmlContent_ != nullptr && xmlContent_->isValid();
 }
 
-std::optional<std::string> RSM::DataModelItem::queryXPath(const std::string &xpath) const {
+std::optional<std::string> SCE::DataModelItem::queryXPath(const std::string &xpath) const {
     if (!xmlContent_ || !xmlContent_->isValid()) {
         return std::nullopt;
     }
@@ -215,7 +215,7 @@ std::optional<std::string> RSM::DataModelItem::queryXPath(const std::string &xpa
     return std::nullopt;
 }
 
-bool RSM::DataModelItem::supportsDataModel(const std::string &dataModelType) const {
+bool SCE::DataModelItem::supportsDataModel(const std::string &dataModelType) const {
     // xpath and xml data models support XML processing (all platforms)
     if (dataModelType == "xpath" || dataModelType == "xml") {
         return true;

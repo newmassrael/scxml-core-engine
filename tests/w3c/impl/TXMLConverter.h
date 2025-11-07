@@ -4,7 +4,7 @@
 #include <regex>
 #include <unordered_map>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief Comprehensive TXML to SCXML converter for W3C SCXML Test Suite
@@ -360,4 +360,4 @@ private:
     static std::string getDefaultScriptContent();
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

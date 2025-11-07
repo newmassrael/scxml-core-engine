@@ -17,7 +17,7 @@
 #include <thread>
 #include <vector>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 // W3C Test Runner Configuration Constants
 constexpr auto EXECUTOR_DEFAULT_TIMEOUT_MS = std::chrono::milliseconds(5000);  // Executor timeout for test execution
@@ -46,12 +46,12 @@ class W3CHttpTestServer;
  * - StateMachineContext: Owns only StateMachine (always exclusive)
  */
 struct TestResources {
-    const std::shared_ptr<RSM::EventRaiserImpl> eventRaiser;
-    const std::shared_ptr<RSM::EventSchedulerImpl> scheduler;
-    const std::shared_ptr<RSM::EventDispatcherImpl> eventDispatcher;
+    const std::shared_ptr<SCE::EventRaiserImpl> eventRaiser;
+    const std::shared_ptr<SCE::EventSchedulerImpl> scheduler;
+    const std::shared_ptr<SCE::EventDispatcherImpl> eventDispatcher;
 
-    TestResources(std::shared_ptr<RSM::EventRaiserImpl> er, std::shared_ptr<RSM::EventSchedulerImpl> sch,
-                  std::shared_ptr<RSM::EventDispatcherImpl> ed)
+    TestResources(std::shared_ptr<SCE::EventRaiserImpl> er, std::shared_ptr<SCE::EventSchedulerImpl> sch,
+                  std::shared_ptr<SCE::EventDispatcherImpl> ed)
         : eventRaiser(std::move(er)), scheduler(std::move(sch)), eventDispatcher(std::move(ed)) {}
 
     ~TestResources() {
@@ -76,7 +76,7 @@ struct TestResources {
         // 4. Clear JSEngine event raiser registry (prevents cross-test interference)
         // Note: JSEngine is a singleton, so we only clear the registry, not shutdown
         // The engine will be shutdown once at program termination
-        RSM::JSEngine::clearEventRaiserRegistry();
+        SCE::JSEngine::clearEventRaiserRegistry();
 
         // Small delay for graceful thread termination
         std::this_thread::sleep_for(CLEANUP_DELAY_MS);
@@ -284,4 +284,4 @@ public:
     }
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

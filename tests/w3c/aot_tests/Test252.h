@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test252_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: Invoke cancellation - events from cancelled child are ignored
@@ -58,10 +58,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test252 : public ScheduledAotTest<Test252, 252> {
     static constexpr const char *DESCRIPTION = "Invoke cancellation ignores child events (W3C 6.4 AOT Pure Static)";
-    using SM = RSM::Generated::test252::test252;
+    using SM = SCE::Generated::test252::test252;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test252> registrar_Test252;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

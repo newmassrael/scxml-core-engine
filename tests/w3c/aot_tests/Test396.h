@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test396_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.12.1: Event name matching and document order transition selection
@@ -16,10 +16,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test396 : public SimpleAotTest<Test396, 396> {
     static constexpr const char *DESCRIPTION = "Event name matching (W3C 3.12.1 AOT)";
-    using SM = RSM::Generated::test396::test396;
+    using SM = SCE::Generated::test396::test396;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test396> registrar_Test396;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

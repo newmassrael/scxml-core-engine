@@ -4,7 +4,7 @@
 #include "W3CTestRegistry.h"
 #include <string>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 const std::unordered_map<std::string, TestEngine>& W3CTestRegistry::getRegistry() {
     static const std::unordered_map<std::string, TestEngine> registry = {
@@ -46,4 +46,4 @@ bool W3CTestRegistry::isInterpreterTest(int testNum) {
     return isInterpreterTest(std::to_string(testNum));
 }
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

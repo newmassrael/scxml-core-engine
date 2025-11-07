@@ -1,7 +1,7 @@
 #include "StateMachineEventRaiser.h"
 #include "common/Logger.h"
 
-namespace RSM {
+namespace SCE {
 
 StateMachineEventRaiser::StateMachineEventRaiser(
     std::function<bool(const std::string &, const std::string &)> eventProcessor)
@@ -50,4 +50,4 @@ void StateMachineEventRaiser::processQueuedEvents() {
     LOG_DEBUG("StateMachineEventRaiser: processQueuedEvents() - no queue to process");
 }
 
-}  // namespace RSM
+}  // namespace SCE

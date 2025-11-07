@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test187_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4.5: Delayed send cancellation on session termination
@@ -40,10 +40,10 @@ struct Test187 : public ScheduledAotTest<Test187, 187> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 6.2: If the SCXML session terminates before the delay interval has elapsed, "
         "the SCXML Processor MUST discard the message without attempting to deliver it.";
-    using SM = RSM::Generated::test187::test187;
+    using SM = SCE::Generated::test187::test187;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test187> registrar_Test187;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Builder pattern for StateMachine construction with dependency injection
@@ -87,4 +87,4 @@ public:
     }
 };
 
-}  // namespace RSM
+}  // namespace SCE

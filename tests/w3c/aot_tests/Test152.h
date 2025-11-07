@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test152_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief Foreach error handling (AOT JSEngine)
@@ -11,10 +11,10 @@ namespace RSM::W3C::AotTests {
 struct Test152 : public SimpleAotTest<Test152, 152> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 4.6: foreach error handling - illegal array/item raises error.execution";
-    using SM = RSM::Generated::test152::test152;
+    using SM = SCE::Generated::test152::test152;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test152> registrar_Test152;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

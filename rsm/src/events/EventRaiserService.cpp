@@ -4,7 +4,7 @@
 #include "runtime/IEventRaiser.h"
 #include <stdexcept>
 
-namespace RSM {
+namespace SCE {
 
 std::unique_ptr<EventRaiserService> EventRaiserService::instance_;
 std::mutex EventRaiserService::initMutex_;
@@ -148,4 +148,4 @@ void EventRaiserService::clearAll() {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

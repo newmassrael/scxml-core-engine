@@ -9,7 +9,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 class TransitionParser;
 class ActionParser;
@@ -49,16 +49,13 @@ private:
 
     // W3C SCXML 3.8/3.9: Block-based executable content parsing
     void parseExecutableContentBlock(const std::shared_ptr<IXMLElement> &parentElement,
-                                     std::vector<std::shared_ptr<RSM::IActionNode>> &actionBlock);
+                                     std::vector<std::shared_ptr<SCE::IActionNode>> &actionBlock);
 
     // Parse invoke elements
     void parseInvokeElements(const std::shared_ptr<IXMLElement> &parentElement, std::shared_ptr<IStateNode> state);
 
     // Parse history state type (shallow/deep)
     void parseHistoryType(const std::shared_ptr<IXMLElement> &historyElement, std::shared_ptr<IStateNode> state);
-
-    // Parse reactive guards
-    void parseReactiveGuards(const std::shared_ptr<IXMLElement> &parentElement, std::shared_ptr<IStateNode> state);
 
     // Parse initial element
     void parseInitialElement(const std::shared_ptr<IXMLElement> &initialElement, std::shared_ptr<IStateNode> state);
@@ -71,4 +68,4 @@ private:
     std::shared_ptr<DoneDataParser> doneDataParser_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

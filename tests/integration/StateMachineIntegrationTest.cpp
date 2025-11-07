@@ -8,7 +8,7 @@
 #include <gtest/gtest.h>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 namespace Tests {
 
 class StateMachineIntegrationTest : public ::testing::Test {
@@ -548,4 +548,4 @@ TEST_F(StateMachineIntegrationTest, ChildSessionEventProcessingCapability) {
 }
 
 }  // namespace Tests
-}  // namespace RSM
+}  // namespace SCE

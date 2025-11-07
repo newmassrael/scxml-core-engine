@@ -25,7 +25,7 @@
         const ::std::vector<TransitionInfo>& enabledTransitions) {
 
         // Convert TransitionInfo to Helper format with exit sets
-        using Helper = ::RSM::Common::ConflictResolutionHelper<{{ model.name }}Policy>;
+        using Helper = ::SCE::Common::ConflictResolutionHelper<{{ model.name }}Policy>;
         ::std::vector<typename Helper::TransitionDescriptor> descriptors;
         descriptors.reserve(enabledTransitions.size());
 

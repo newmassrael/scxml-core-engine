@@ -10,7 +10,7 @@
 class ECMAScriptComplianceTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &RSM::JSEngine::instance();
+        engine_ = &SCE::JSEngine::instance();
         engine_->reset();
 
         sessionId_ = "test_session_ecmascript";
@@ -25,7 +25,7 @@ protected:
         }
     }
 
-    RSM::JSEngine *engine_;
+    SCE::JSEngine *engine_;
     std::string sessionId_;
 };
 

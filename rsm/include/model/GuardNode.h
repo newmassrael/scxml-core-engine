@@ -12,7 +12,7 @@
  * Corresponds to <code:guard> element in SCXML documents.
  */
 
-namespace RSM {
+namespace SCE {
 
 class GuardNode : public IGuardNode {
 public:
@@ -70,18 +70,6 @@ public:
      */
     virtual const std::string &getExternalFactory() const override;
 
-    /**
-     * @brief Set reactive status
-     * @param reactive Reactive status
-     */
-    virtual void setReactive(bool reactive) override;
-
-    /**
-     * @brief Return reactive status
-     * @return Reactive status
-     */
-    virtual bool isReactive() const override;
-
     virtual void setAttribute(const std::string &name, const std::string &value) override;
     virtual const std::string &getAttribute(const std::string &name) const override;
     virtual const std::unordered_map<std::string, std::string> &getAttributes() const override;
@@ -99,9 +87,8 @@ private:
     std::vector<std::string> dependencies_;                    // List of dependencies
     std::string externalClass_;                                // External class
     std::string externalFactory_;                              // External factory
-    bool reactive_;                                            // Reactive status
     std::unordered_map<std::string, std::string> attributes_;  // Other attributes
     const std::string emptyString_;                            // For returning empty string
 };
 
-}  // namespace RSM
+}  // namespace SCE

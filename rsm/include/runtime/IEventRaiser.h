@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Interface for raising events in the SCXML system
@@ -146,4 +146,4 @@ public:
     virtual bool raiseExternalEvent(const std::string &eventName, const std::string &eventData) = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

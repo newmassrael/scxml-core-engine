@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test224_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.3.1: Invoke with idlocation attribute
@@ -42,10 +42,10 @@ struct Test224 : public ScheduledAotTest<Test224, 224> {
         "W3C SCXML 6.4: When the platform generates an identifier for 'idlocation', the identifier MUST have the form "
         "stateid.platformid, where stateid is the id of the state containing this element and platformid is "
         "automatically generated.";
-    using SM = RSM::Generated::test224::test224;
+    using SM = SCE::Generated::test224::test224;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test224> registrar_Test224;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

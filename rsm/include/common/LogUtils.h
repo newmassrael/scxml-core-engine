@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace RSM {
+namespace SCE {
 namespace Log {
 
 /**
@@ -40,4 +40,4 @@ inline std::string sanitize(const std::string &input) {
 }
 
 }  // namespace Log
-}  // namespace RSM
+}  // namespace SCE

@@ -5,7 +5,7 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 NEW)
 endif()
 
-project(ReactiveStateMachine VERSION 1.0.0 LANGUAGES C CXX)
+project(SCXMLCoreEngine VERSION 1.0.0 LANGUAGES C CXX)
 
 # =============================================================================
 # Build Directory Validation

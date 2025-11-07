@@ -30,7 +30,7 @@
 // W3C SCXML 4.6: Foreach validation and execution
 {
     std::string validationError;
-    if (!::RSM::Validation::validateForeachAttributes("{{ action.array }}", "{{ action.item }}", validationError)) {
+    if (!::SCE::Validation::validateForeachAttributes("{{ action.array }}", "{{ action.item }}", validationError)) {
         // Validation failed (invalid item/array attribute)
         LOG_ERROR("Foreach validation failed: {}", validationError);
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, validationError));
@@ -40,9 +40,9 @@
 {
     // Execute foreach: array={{ action.array }}, item={{ action.item }}, index={{ action.index }}
     this->ensureJSEngine();
-    auto& jsEngine = ::RSM::JSEngine::instance();
+    auto& jsEngine = ::SCE::JSEngine::instance();
     // W3C SCXML 4.6: Use ForeachHelper for centralized error handling
-    bool foreachSuccess = ::RSM::Common::ForeachHelper::executeForeachWithActions(
+    bool foreachSuccess = ::SCE::Common::ForeachHelper::executeForeachWithActions(
         jsEngine, sessionId_.value(),
         "{{ action.array }}", "{{ action.item }}", "{{ action.index }}",
         [&](size_t i) -> bool {
@@ -88,8 +88,8 @@
 {% else %}
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::RSM::JSEngine::instance();
-    bool foreachSuccess = ::RSM::Common::ForeachHelper::executeForeachWithoutBody(
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    bool foreachSuccess = ::SCE::Common::ForeachHelper::executeForeachWithoutBody(
         jsEngine, sessionId_.value(),
         "{{ action.array }}", "{{ action.item }}", "{{ action.index }}"
     );

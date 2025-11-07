@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test577_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: error.communication on BasicHTTP send with no target
@@ -31,10 +31,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test577 : public SimpleAotTest<Test577, 577> {
     static constexpr const char *DESCRIPTION = "error.communication on BasicHTTP send with no target (W3C C.2 AOT)";
-    using SM = RSM::Generated::test577::test577;
+    using SM = SCE::Generated::test577::test577;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test577> registrar_Test577;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

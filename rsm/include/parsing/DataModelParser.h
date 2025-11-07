@@ -19,7 +19,7 @@
  * them and converts them into IDataModelItem objects.
  */
 
-namespace RSM {
+namespace SCE {
 
 class DataModelParser {
 public:
@@ -98,4 +98,4 @@ private:
     std::shared_ptr<NodeFactory> nodeFactory_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

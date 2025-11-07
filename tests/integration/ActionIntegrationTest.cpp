@@ -12,13 +12,13 @@
 #include "runtime/StateMachineContext.h"
 #include "scripting/JSEngine.h"
 
-using namespace RSM;
+using namespace SCE;
 
 class ActionIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Ensure test isolation with JSEngine reset
-        RSM::JSEngine::instance().reset();
+        SCE::JSEngine::instance().reset();
 
         // Build StateMachine with dependency injection, then wrap in RAII context
         auto eventRaiser = std::make_shared<EventRaiserImpl>();
@@ -35,8 +35,8 @@ protected:
         // RAII cleanup: StateMachineContext destructor handles StateMachine stop and cleanup
         smContext_.reset();
         // Clean shutdown with minimal delay
-        RSM::JSEngine::instance().shutdown();
-        std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+        SCE::JSEngine::instance().shutdown();
+        std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
     }
 
     void createTestSCXMLFile(const std::string &filename, const std::string &content) {
@@ -569,7 +569,7 @@ TEST_F(ActionIntegrationTest, IfElseIfElseExecution) {
     ASSERT_TRUE(stateMachine_->loadSCXML(filename));
     ASSERT_TRUE(stateMachine_->start());
 
-    std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
     std::string currentState = stateMachine_->getCurrentState();
 
@@ -620,7 +620,7 @@ TEST_F(ActionIntegrationTest, IfElseIfElseElseBranchExecution) {
     ASSERT_TRUE(stateMachine_->loadSCXML(filename));
     ASSERT_TRUE(stateMachine_->start());
 
-    std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
     std::string currentState = stateMachine_->getCurrentState();
 

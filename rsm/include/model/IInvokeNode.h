@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class IInvokeNode {
 public:
@@ -46,4 +46,4 @@ public:
     virtual const std::string &getStateId() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <sstream>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief W3C test suite implementation
@@ -172,4 +172,4 @@ private:
     }
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

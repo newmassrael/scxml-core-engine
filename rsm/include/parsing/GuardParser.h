@@ -16,7 +16,7 @@
  * and guard attributes of transition elements.
  */
 
-namespace RSM {
+namespace SCE {
 
 class GuardParser {
 public:
@@ -48,13 +48,6 @@ public:
                                                          const std::string &targetState);
 
     /**
-     * @brief Parse reactive guard
-     * @param reactiveGuardNode XML reactive guard node
-     * @return Created guard node
-     */
-    std::shared_ptr<IGuardNode> parseReactiveGuard(const std::shared_ptr<IXMLElement> &reactiveGuardNode);
-
-    /**
      * @brief Parse all guards within guards element
      * @param guardsNode code:guards element
      * @return List of parsed guard nodes
@@ -74,13 +67,6 @@ public:
      * @return Whether it is a guard node
      */
     bool isGuardNode(const std::shared_ptr<IXMLElement> &element) const;
-
-    /**
-     * @brief Check if element is a reactive guard node
-     * @param element XML element
-     * @return Whether it is a reactive guard node
-     */
-    bool isReactiveGuardNode(const std::shared_ptr<IXMLElement> &element) const;
 
 private:
     /**
@@ -109,4 +95,4 @@ private:
     std::shared_ptr<NodeFactory> nodeFactory_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

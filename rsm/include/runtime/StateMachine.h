@@ -23,7 +23,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class StateNode;
 class TransitionNode;
@@ -615,7 +615,7 @@ private:
 
     // New IActionNode-based action execution methods
     bool initializeActionExecutor();
-    bool executeActionNodes(const std::vector<std::shared_ptr<RSM::IActionNode>> &actions,
+    bool executeActionNodes(const std::vector<std::shared_ptr<SCE::IActionNode>> &actions,
                             bool processEventsAfter = true);
     bool executeEntryActions(const std::string &stateId);
     bool executeExitActions(const std::string &stateId);
@@ -687,4 +687,4 @@ void StateMachine::bindObject(const std::string &name, T *object, RegisterFunc r
     LOG_DEBUG("StateMachine::bindObject: Bound object '{}' to JavaScript", name);
 }
 
-}  // namespace RSM
+}  // namespace SCE

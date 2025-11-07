@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 // W3C SCXML B.2: Helper functions for data content processing
 
@@ -12,4 +12,4 @@ std::string normalizeWhitespace(const std::string &text);
 // Detect if content is XML (test 557)
 bool isXMLContent(const std::string &content);
 
-}  // namespace RSM
+}  // namespace SCE

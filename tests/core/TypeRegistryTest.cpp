@@ -7,7 +7,7 @@
 #include <thread>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class TypeRegistryTest : public ::testing::Test {
 protected:
@@ -261,4 +261,4 @@ TEST_F(TypeRegistryTest, RealWorldActionExecutorScenario) {
     EXPECT_EQ(0, validationFailureCount.load());
 }
 
-}  // namespace RSM
+}  // namespace SCE

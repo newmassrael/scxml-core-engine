@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class LogAction;
@@ -144,4 +144,4 @@ public:
     virtual void setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

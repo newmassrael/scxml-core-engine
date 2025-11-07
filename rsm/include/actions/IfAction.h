@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief SCXML <if>/<elseif>/<else> conditional execution action implementation
@@ -153,4 +153,4 @@ private:
     ConditionalBranch cloneBranch(const ConditionalBranch &original) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

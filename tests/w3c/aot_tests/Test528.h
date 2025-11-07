@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test528_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.5: Donedata content expr with error.execution
@@ -47,10 +47,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test528 : public SimpleAotTest<Test528, 528> {
     static constexpr const char *DESCRIPTION = "Donedata content expr error.execution (W3C 5.5 AOT Static Hybrid)";
-    using SM = RSM::Generated::test528::test528;
+    using SM = SCE::Generated::test528::test528;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test528> registrar_Test528;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

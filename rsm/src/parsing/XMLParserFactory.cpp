@@ -2,11 +2,11 @@
 #include "parsing/IXMLParser.h"
 #include "parsing/PugiXMLParser.h"
 
-namespace RSM {
+namespace SCE {
 
 std::shared_ptr<IXMLParser> IXMLParser::create() {
     LOG_DEBUG("Creating PugiXMLParser (unified for all platforms)");
     return std::make_shared<PugiXMLParser>();
 }
 
-}  // namespace RSM
+}  // namespace SCE

@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test147_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief If/elseif/else conditionals with datamodel
@@ -11,10 +11,10 @@ namespace RSM::W3C::AotTests {
 struct Test147 : public SimpleAotTest<Test147, 147> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 4.3: if/elseif/else conditional execution (first true clause only)";
-    using SM = RSM::Generated::test147::test147;
+    using SM = SCE::Generated::test147::test147;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test147> registrar_Test147;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

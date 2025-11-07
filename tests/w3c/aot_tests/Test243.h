@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test243_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: invoke with inline content and param passing
@@ -51,10 +51,10 @@ namespace RSM::W3C::AotTests {
 struct Test243 : public ScheduledAotTest<Test243, 243> {
     static constexpr const char *DESCRIPTION =
         "invoke inline content + param with child→parent events (W3C 6.4 AOT Pure Static)";
-    using SM = RSM::Generated::test243::test243;
+    using SM = SCE::Generated::test243::test243;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test243> registrar_Test243;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

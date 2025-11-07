@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #ifndef __EMSCRIPTEN__
@@ -8,7 +8,7 @@
 #include <algorithm>
 #include <httplib.h>
 
-namespace RSM {
+namespace SCE {
 
 CppHttplibClient::CppHttplibClient() {
     LOG_DEBUG("CppHttplibClient: Created Native HTTP client");
@@ -169,6 +169,6 @@ std::tuple<std::string, std::string, int, std::string> CppHttplibClient::parseUr
     return {scheme, host, port, path};
 }
 
-}  // namespace RSM
+}  // namespace SCE
 
 #endif  // !__EMSCRIPTEN__

@@ -4,7 +4,7 @@
 #include "scripting/JSEngine.h"
 #include <gtest/gtest.h>
 
-namespace RSM {
+namespace SCE {
 namespace Tests {
 
 class ParallelStateIntegrationTest : public ::testing::Test {
@@ -360,4 +360,4 @@ TEST_F(ParallelStateIntegrationTest, SCXML_W3C_FinalStateInParallelRegion) {
 }
 
 }  // namespace Tests
-}  // namespace RSM
+}  // namespace SCE

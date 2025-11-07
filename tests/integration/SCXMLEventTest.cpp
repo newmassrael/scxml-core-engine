@@ -19,7 +19,7 @@
 #include <memory>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 
 namespace Test {
 
@@ -156,7 +156,7 @@ TEST_F(SCXMLEventTest, SendActionBasicInternalEvent) {
     EXPECT_TRUE(result);
 
     // Wait for async event processing (SCXML events are processed asynchronously)
-    std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
 
     // Verify event was raised internally
     ASSERT_EQ(raisedEvents_.size(), 1);
@@ -184,7 +184,7 @@ TEST_F(SCXMLEventTest, SendActionWithEventExpression) {
     EXPECT_TRUE(result);
 
     // Wait for async event processing (SCXML events are processed asynchronously)
-    std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
 
     // Verify event was raised with evaluated name
     ASSERT_EQ(raisedEvents_.size(), 1);
@@ -210,7 +210,7 @@ TEST_F(SCXMLEventTest, SendActionWithComplexData) {
     EXPECT_TRUE(result);
 
     // Wait for async event processing (SCXML events are processed asynchronously)
-    std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
 
     // Verify event was raised with JSON data
     ASSERT_EQ(raisedEvents_.size(), 1);
@@ -403,7 +403,7 @@ TEST_F(SCXMLEventTest, IntegrationWithExistingActions) {
     EXPECT_TRUE(sendResult);
 
     // Wait for async event processing (SCXML events are processed asynchronously)
-    std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
 
     // Verify the event was raised with correct data
     ASSERT_EQ(raisedEvents_.size(), 1);
@@ -568,7 +568,7 @@ TEST_F(SCXMLEventTest, InvokeWithDelayedEventAndCancel) {
     EXPECT_TRUE(notifyResult);
 
     // Small delay to ensure parent receives notification
-    std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
 
     // Step 4: Parent tries to cancel child's "foo" event (should not work)
     auto parentCancel = std::make_shared<CancelAction>("foo", "parent_cancel_foo");
@@ -776,4 +776,4 @@ TEST_F(SCXMLEventTest, W3C_Test178_NamelistWithDuplicateParams) {
 }
 
 }  // namespace Test
-}  // namespace RSM
+}  // namespace SCE

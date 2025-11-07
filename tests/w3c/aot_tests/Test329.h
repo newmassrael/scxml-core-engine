@@ -3,7 +3,7 @@
 #include "AotTestRegistry.h"
 #include "test329_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10: System variables immutability
@@ -21,7 +21,7 @@ namespace RSM::W3C::AotTests {
 struct Test329 : public AotTestBase {
     static constexpr int TEST_ID = 329;
     static constexpr const char *DESCRIPTION = "System variables immutability (W3C 5.10 AOT)";
-    using SM = RSM::Generated::test329::test329;
+    using SM = SCE::Generated::test329::test329;
 
     bool run() override {
         SM sm;
@@ -56,4 +56,4 @@ struct Test329 : public AotTestBase {
 // Auto-register
 inline static AotTestRegistrar<Test329> registrar_Test329;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -3,7 +3,7 @@
 #include "common/Logger.h"
 #include <functional>
 
-namespace RSM::Core {
+namespace SCE::Core {
 
 /**
  * @brief W3C SCXML event processing algorithms (Single Source of Truth)
@@ -169,4 +169,4 @@ public:
     }
 };
 
-}  // namespace RSM::Core
+}  // namespace SCE::Core

@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test495_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2: SCXML Event I/O Processor internal vs external queue handling
@@ -24,10 +24,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test495 : public SimpleAotTest<Test495, 495> {
     static constexpr const char *DESCRIPTION = "SCXML Event I/O Processor queue handling (W3C 6.2 AOT)";
-    using SM = RSM::Generated::test495::test495;
+    using SM = SCE::Generated::test495::test495;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test495> registrar_Test495;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

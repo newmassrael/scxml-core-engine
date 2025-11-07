@@ -3,7 +3,7 @@
 #include "ScheduledAotTest.h"
 #include "test210_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.3: sendidexpr for dynamic cancel expression evaluation
@@ -44,10 +44,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test210 : public ScheduledAotTest<Test210, 210> {
     static constexpr const char *DESCRIPTION = "sendidexpr dynamic cancel (W3C 6.3 Static Hybrid)";
-    using SM = RSM::Generated::test210::test210;
+    using SM = SCE::Generated::test210::test210;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test210> registrar_Test210;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

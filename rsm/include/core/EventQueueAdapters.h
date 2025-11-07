@@ -4,7 +4,7 @@
 #include "runtime/EventRaiserImpl.h"
 #include <memory>
 
-namespace RSM::Core {
+namespace SCE::Core {
 
 /**
  * @brief Internal event queue adapter for AOT engine
@@ -106,4 +106,4 @@ private:
     std::shared_ptr<EventRaiserImpl> raiser_;
 };
 
-}  // namespace RSM::Core
+}  // namespace SCE::Core

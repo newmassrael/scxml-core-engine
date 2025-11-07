@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test198_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2: Default send type is SCXMLEventProcessor when type/typeexpr not specified
@@ -15,9 +15,9 @@ namespace RSM::W3C::AotTests {
 struct Test198 : public SimpleAotTest<Test198, 198> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 6.2: Default send type is SCXMLEventProcessor when type/typeexpr not specified";
-    using SM = RSM::Generated::test198::test198;
+    using SM = SCE::Generated::test198::test198;
 };
 
 inline static AotTestRegistrar<Test198> registrar_Test198;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test409_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.12.1: Active State Configuration - State Removal During Exit
@@ -25,10 +25,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test409 : public ScheduledAotTest<Test409, 409> {
     static constexpr const char *DESCRIPTION = "State removal from active states during exit (W3C 3.12.1 AOT)";
-    using SM = RSM::Generated::test409::test409;
+    using SM = SCE::Generated::test409::test409;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test409> registrar_Test409;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

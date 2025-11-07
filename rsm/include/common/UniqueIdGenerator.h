@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_set>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Centralized unique ID generation utility
@@ -137,4 +137,4 @@ private:
     static uint64_t getRandomComponent();
 };
 
-}  // namespace RSM
+}  // namespace SCE
