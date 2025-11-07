@@ -1,7 +1,7 @@
 # Lightweight Dockerfile for ThreadSanitizer-enabled development environment
-# Uses system glibc with nscd workarounds to prevent DNS resolver crashes
+# Uses Ubuntu 24.04 LTS with GCC 13.3 (native <format> support)
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Prevent interactive prompts during installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -14,6 +14,7 @@ ENV IN_DOCKER_TSAN=1
 ENV TSAN_OPTIONS="ignore_noninstrumented_modules=1:halt_on_error=1"
 
 # Install build dependencies
+# Ubuntu 24.04: Use apt packages instead of pip (PEP 668 restriction)
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -28,11 +29,10 @@ RUN apt-get update && apt-get install -y \
     libboost-dev \
     libssl-dev \
     zlib1g-dev \
+    meson \
+    python3-jinja2 \
+    python3-lxml \
     && rm -rf /var/lib/apt/lists/*
-
-# Install latest meson from pip (Ubuntu 22.04 has 0.61.2, libxml++ needs >= 0.62.0)
-# Install jinja2 and lxml for code generation
-RUN pip3 install meson jinja2 lxml
 
 # Workaround 1: Disable nscd to prevent glibc DNS resolver TLS crashes with TSAN
 # nscd (Name Service Cache Daemon) has known thread safety issues that cause

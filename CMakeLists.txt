@@ -170,7 +170,6 @@ else()
     add_compile_options(-Wall -Wextra -pedantic -Werror)  # -Werror: treat warnings as errors
 endif()
 
-# libxml++5.0 is handled in rsm/CMakeLists.txt
 find_package(PkgConfig REQUIRED)
 
 # Modular Architecture - Add subdirectories

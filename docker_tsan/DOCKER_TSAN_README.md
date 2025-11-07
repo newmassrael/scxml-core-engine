@@ -1,6 +1,6 @@
 # Docker ThreadSanitizer Environment
 
-This directory contains a lightweight Docker environment for ThreadSanitizer testing with glibc DNS resolver crash workarounds.
+This directory contains a lightweight Docker environment (Ubuntu 24.04 + GCC 13.3) for ThreadSanitizer testing with glibc DNS resolver crash workarounds.
 
 ## Why This Environment?
 
@@ -36,36 +36,49 @@ ThreadSanitizer (TSAN) is essential for detecting race conditions, but running i
 
 ## Quick Start
 
-**Single command to do everything:**
+**Single command from project root:**
 
 ```bash
-cd docker_tsan
-./docker-tsan-run.sh
+./build_tsan.sh
 ```
 
 **First run:**
 - Automatically detects missing Docker image
 - Prompts for confirmation to build (y/N)
-- Builds Docker image (~5-10 minutes, one-time)
-- Automatically builds project with TSAN
-- Enters interactive shell in `/workspace/build`
+- Builds Docker image (~5-10 minutes, one-time, Ubuntu 24.04 with GCC 13.3)
+- Automatically builds project with TSAN in `build_tsan/` directory
+- **Host permission matching**: Uses your UID/GID so `build_tsan/` can be deleted without sudo
+- **Automatically enters interactive shell** in `/workspace/build_tsan/tests`
 
 **Subsequent runs:**
 - Skips image build (already exists)
-- Automatically builds project with TSAN
-- Enters interactive shell in `/workspace/build`
+- Automatically rebuilds project with TSAN
+- **Automatically enters interactive shell** in `/workspace/build_tsan/tests`
 
 **Inside the container:**
 
-```bash
-# Run full test suite
-root@container:/workspace/build# ctest --output-on-failure
+After successful build, you'll be in an interactive shell at `/workspace/build_tsan/tests`:
 
+```bash
 # Run specific test
-root@container:/workspace/build# ./tests/w3c_test_cli <test_number>
+root@container:/workspace/build_tsan/tests# env SPDLOG_LEVEL=off ./w3c_test_cli 144
+
+# Run another test
+root@container:/workspace/build_tsan/tests# env SPDLOG_LEVEL=off ./w3c_test_cli 411
+
+# Run all tests
+root@container:/workspace/build_tsan/tests# cd .. && ctest --output-on-failure
 
 # Exit container
-root@container:/workspace/build# exit
+root@container:/workspace/build_tsan/tests# exit
+```
+
+**Or run tests directly without building (one-liner):**
+
+```bash
+docker run --rm -v "$PWD:/workspace" -w /workspace/build_tsan/tests \
+    rsm-tsan-env:latest \
+    env SPDLOG_LEVEL=off ./w3c_test_cli 144
 ```
 
 ## Expected Results
@@ -125,7 +138,7 @@ CMakeLists.txt automatically detects and uses lld when available:
 ### Build fails with "Permission denied"
 
 ```bash
-chmod +x docker-tsan-run.sh
+chmod +x build_tsan.sh
 ```
 
 ### Out of disk space
@@ -193,7 +206,7 @@ This is normal and expected.
 
 ```bash
 docker rmi rsm-tsan-env:latest
-./docker-tsan-run.sh  # Will prompt to rebuild
+./build_tsan.sh  # Will prompt to rebuild
 ```
 
 ### Clean up
