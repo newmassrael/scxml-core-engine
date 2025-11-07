@@ -145,8 +145,8 @@ endif()
 # =============================================================================
 if(EMSCRIPTEN)
     # Central WASM memory configuration shared by sce/ and tests/
-    set(WASM_INITIAL_MEMORY 536870912 CACHE STRING "WASM initial heap size in bytes (512MB)")
-    message(STATUS "WASM: INITIAL_MEMORY=${WASM_INITIAL_MEMORY} (${WASM_INITIAL_MEMORY} bytes = 512 MB)")
+    set(WASM_INITIAL_MEMORY 4160749568 CACHE STRING "WASM initial heap size in bytes (4GB - 128MB)")
+    message(STATUS "WASM: INITIAL_MEMORY=${WASM_INITIAL_MEMORY} (${WASM_INITIAL_MEMORY} bytes = 3.875 GB)")
 endif()
 
 # Include GNUInstallDirs for installation paths

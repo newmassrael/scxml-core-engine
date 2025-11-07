@@ -14,15 +14,18 @@
 // EM_JS functions for Node.js HTTP support (W3C SCXML C.2 BasicHTTP via Node.js)
 
 // Runtime environment detection: returns 1 if Node.js, 0 if browser
+// clang-format off
 EM_JS(int, em_is_nodejs, (), {
     return (typeof process !== 'undefined' && typeof process.versions !== 'undefined' && typeof process.versions.node !== 'undefined')
                ? 1
                : 0;
 });
+// clang-format on
 
 // W3C SCXML C.2: Node.js HTTP request via EM_ASYNC_JS (returns Promise)
 // ASYNCIFY automatically pauses/resumes execution to wait for Promise resolution
 // MEMORY LEAK FIX: Use stack-based stringToUTF8 instead of heap-based allocateUTF8
+// clang-format off
 EM_ASYNC_JS(int, em_nodejs_http_request_async,
             (const char *method, const char *url, const char *headers_json, const char *body, int body_length,
              char *out_body_buffer, int buffer_size, int *out_status),
@@ -111,6 +114,7 @@ EM_ASYNC_JS(int, em_nodejs_http_request_async,
 
                 return 1;  // Success
             });
+// clang-format on
 
 namespace SCE {
 

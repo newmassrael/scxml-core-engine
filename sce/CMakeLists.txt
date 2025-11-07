@@ -254,7 +254,7 @@ if(EMSCRIPTEN)
     target_link_options(sce_unified PRIVATE
         -pthread
         -sUSE_PTHREADS=1
-        -sPTHREAD_POOL_SIZE=4          # Worker thread pool for EventDispatcherImpl
+        -sPTHREAD_POOL_SIZE=15         # Worker thread pool (for ConcurrentEventBroadcaster + EventDispatcherImpl)
         -sPTHREAD_POOL_SIZE_STRICT=0   # Allow on-demand thread creation (Emscripten Issue #21959)
         -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
         -sEXIT_RUNTIME=0                # Allow async operations after main() returns

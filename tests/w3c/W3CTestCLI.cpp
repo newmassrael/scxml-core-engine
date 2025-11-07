@@ -77,12 +77,14 @@ static const std::set<std::string> HTTP_TEST_IDS = {"201", "509", "510", "513", 
 
 #ifdef __EMSCRIPTEN__
 // EM_JS: Check if external HTTP server is provided (Node.js process.env set by polyfill_pre.js)
+// clang-format off
 EM_JS(int, useExternalHttpServer, (), {
-    if (typeof process != = 'undefined' &&process.env &&process.env.USE_EXTERNAL_HTTP_SERVER == = '1') {
+    if (typeof process !== 'undefined' && process.env && process.env.USE_EXTERNAL_HTTP_SERVER === '1') {
         return 1;
     }
     return 0;
 });
+// clang-format on
 #endif
 
 /**
