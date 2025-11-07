@@ -18,7 +18,10 @@
 
 #include "common/SCXMLConstants.h"
 #include "common/UniqueIdGenerator.h"
+#include "common/UrlEncodingHelper.h"
+#include <map>
 #include <string>
+#include <vector>
 
 namespace RSM {
 
@@ -418,6 +421,60 @@ public:
         if (!idLocation.empty()) {
             jsEngine.setVariable(sessionId, idLocation, sendId);
         }
+    }
+
+    /**
+     * @brief Build HTTP POST body with W3C SCXML C.2 compliance
+     *
+     * Single Source of Truth for HTTP POST body generation shared between:
+     * - Interpreter engine (HttpEventTarget::send)
+     * - AOT engine (StaticExecutionEngine::raiseExternal)
+     *
+     * W3C SCXML C.2 (test 531): Ensures "single instance" of _scxmleventname parameter.
+     * When eventName is present, it becomes the _scxmleventname parameter, and any
+     * _scxmleventname in params is skipped to avoid duplication.
+     *
+     * ARCHITECTURE.md: Zero Duplication Principle
+     * - Both Interpreter and AOT use this function for identical HTTP POST body generation
+     * - Single Source of Truth eliminates behavior divergence between engines
+     * - Bug fixes in HTTP POST encoding only need to be made once
+     *
+     * @param eventName Event name (becomes _scxmleventname parameter if non-empty)
+     * @param params Additional parameters (may contain _scxmleventname)
+     * @return Form-encoded POST body (e.g., "_scxmleventname=test&param1=value1")
+     */
+    static std::string buildHttpPostBody(const std::string &eventName,
+                                         const std::map<std::string, std::vector<std::string>> &params) {
+        std::string payload;
+        bool firstParam = true;
+
+        // W3C SCXML C.2: Add event name as _scxmleventname parameter
+        if (!eventName.empty()) {
+            payload = "_scxmleventname=" + UrlEncodingHelper::urlEncode(eventName);
+            firstParam = false;
+        }
+
+        // W3C SCXML: Support duplicate param names (Test 178)
+        // Each value in the vector must be added as a separate param
+        for (auto it = params.begin(); it != params.end(); ++it) {
+            // W3C SCXML C.2: Avoid duplicate _scxmleventname in HTTP POST body
+            // Event name already added above via eventName parameter
+            // W3C requires "single instance" of _scxmleventname parameter
+            // Only skip if eventName is present (Zero Duplication with HttpEventTarget logic)
+            if (it->first == "_scxmleventname" && !eventName.empty()) {
+                continue;
+            }
+
+            for (const auto &value : it->second) {
+                if (!firstParam) {
+                    payload += "&";
+                }
+                firstParam = false;
+                payload += UrlEncodingHelper::urlEncode(it->first) + "=" + UrlEncodingHelper::urlEncode(value);
+            }
+        }
+
+        return payload;
     }
 };
 

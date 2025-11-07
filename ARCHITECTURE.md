@@ -164,12 +164,13 @@ class GeneratedStateMachine {
 - **Use Case**: Complex workflows, parallel states, invoke, runtime SCXML loading
 
 ### Static Code Generator (scxml-codegen)
-- **W3C Compliance**: 13/13 Static Tests PASSED ✅ (test144-159, 172) - W3C SCXML 3.5.1 document order + send action + eventexpr compliant
+- **W3C Compliance**: 202/202 AOT Tests PASSED ✅ (100% coverage) - Pure Static + Static Hybrid (JSEngine)
 - **Role**: Automatic optimization - generates hybrid static+dynamic code
 - **Performance**: Pure static parts run 100x faster than dynamic
-- **Memory**: 8 bytes (pure static) to ~100KB (full dynamic features)
+- **Memory**: 8 bytes (pure static) to ~10KB (Static Hybrid with JSEngine)
 - **Always Working**: Never refuses generation, always produces functioning code
 - **Logic Reuse**: Shares core semantics with interpreter engine through helper functions
+- **Feature Completeness**: All W3C SCXML features supported except `_event.origintype` metadata and `<invoke srcexpr>` runtime file I/O
 
 ## Code Generation Strategy
 
@@ -279,9 +280,10 @@ Generated code works for ALL SCXML (W3C 100%)
   - W3CHttpTestServer provides external HTTP infrastructure (not engine mixing)
   - Examples: test509, test510, test513
 
-- ❌ **Dynamic Target Expression** (`targetexpr="baseUrl + path"`): Requires Interpreter
-  - URL evaluated at runtime from variables
-  - Cannot determine HTTP routing at compile-time
+- ✅ **Dynamic Target Expression** (`targetexpr="baseUrl + path"`): Static Hybrid supported
+  - JSEngine evaluates targetexpr at runtime (see send.jinja2:66-93)
+  - Result passed to SendHelper for validation and routing
+  - Examples: test173-174 (W3C SCXML 6.2.4 dynamic target evaluation)
 
 **Rationale**:
 - Static state machine structure enables AOT code generation
@@ -294,11 +296,11 @@ Generated code works for ALL SCXML (W3C 100%)
 | SCXML Feature | Static | Static Hybrid | Interpreter | Reason |
 |---------------|--------|---------------|-------------|---------|
 | `<cancel sendid="foo"/>` | ✅ | ✅ | ✅ | Literal string, compile-time known |
-| `<cancel sendidexpr="var"/>` | ❌ | ❌ | ✅ | Variable evaluation at runtime |
+| `<cancel sendidexpr="var"/>` | ❌ | ✅ | ✅ | JSEngine evaluates expression at runtime (test208) |
 | `<send id="x" delay="1s"/>` | ✅ | ✅ | ✅ | Literal sendid and delay |
-| `<send delayexpr="varDelay"/>` | ❌ | ❌ | ✅ | Variable evaluation at runtime |
+| `<send delayexpr="varDelay"/>` | ❌ | ✅ | ✅ | JSEngine evaluates expression at runtime (test175) |
 | `<send target="http://..."/>` | ✅ | ✅ | ✅ | **Static URL** (W3C C.2 test509/510/513) |
-| `<send targetexpr="urlVar"/>` | ❌ | ❌ | ✅ | Dynamic expression evaluation |
+| `<send targetexpr="urlVar"/>` | ❌ | ✅ | ✅ | JSEngine evaluates expression at runtime (test173-174) |
 | `_event.origintype` | ❌ | ❌ | ✅ | Runtime metadata not available at compile-time |
 | `<send type="scxml"/>` | ✅ | ✅ | ✅ | Standard SCXML processor |
 | `<transition cond="x > 5"/>` | ❌ | ✅ | ✅ | ECMAScript expression (Static Hybrid) |
@@ -370,7 +372,7 @@ struct test319Policy {
 **Performance Characteristics**:
 - **State Transitions**: Native C++ (enum-based, zero overhead)
 - **Expression Evaluation**: JSEngine (runtime, ~microsecond latency)
-- **Memory**: 8 bytes (State) + JSEngine session (~100KB, lazy-allocated)
+- **Memory**: 8 bytes (State) + Policy members (~1-10KB, lazy JSEngine session)
 - **Optimization**: Expression results can be cached when deterministic
 
 #### Static History States: Runtime Tracking with Hybrid Approach
@@ -499,10 +501,10 @@ struct test387Policy {
   - **Test Results**: test338 ✅ (100% pass rate, Interpreter + AOT)
 
 
-- `<cancel sendidexpr="_event.sendid"/>`: **Logically dynamic** ❌, **requires Interpreter** 🔴
-  - Needs runtime _event metadata access for dynamic expression
-  - Cannot be determined at compile-time (Open World)
-  - **Action**: Always use Interpreter wrapper (correct decision)
+- `<cancel sendidexpr="_event.sendid"/>`: **Static Hybrid supported** ✅ (JSEngine evaluation)
+  - JSEngine evaluates sendidexpr at runtime (see cancel.jinja2:2-11)
+  - Result passed to engine.cancelEvent() dynamically
+  - Only `_event.origintype` metadata requires Interpreter (not available at compile-time)
 
 **Verification Process** (see CLAUDE.md):
 1. Convert TXML to SCXML: `txml-converter test.txml /tmp/test.scxml`

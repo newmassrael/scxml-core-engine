@@ -22,6 +22,7 @@
 #include "common/HistoryHelper.h"
 #include "common/Logger.h"
 #include "common/SCXMLConstants.h"
+#include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
@@ -29,7 +30,9 @@
 #include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
 #ifndef __EMSCRIPTEN__
-#include "events/HttpEventTarget.h"
+#include "events/CppHttplibClient.h"
+#else
+#include "events/EmscriptenFetchClient.h"
 #endif
 #include <chrono>
 #include <cstdint>
@@ -396,6 +399,14 @@ public:
                         using json = nlohmann::json;
                         json dataObj = json::parse(eventWithMetadata.data);
                         for (const auto &[key, value] : dataObj.items()) {
+                            // W3C SCXML C.2: Avoid duplicate _scxmleventname in HTTP POST body
+                            // Event name already extracted to descriptor.eventName from eventWithMetadata.event
+                            // W3C requires "single instance" of _scxmleventname parameter
+                            // Only skip if eventName is present (same logic as HttpEventTarget - Zero Duplication)
+                            if (key == "_scxmleventname" && !descriptor.eventName.empty()) {
+                                continue;
+                            }
+
                             std::string valueStr;
                             if (value.is_string()) {
                                 valueStr = value.template get<std::string>();
@@ -415,16 +426,79 @@ public:
                 }
             }
 
-#ifndef __EMSCRIPTEN__
-            // Create and use HttpEventTarget
-            auto httpTarget = std::make_shared<RSM::HttpEventTarget>(eventWithMetadata.target);
-            auto result = httpTarget->send(descriptor);
+            // W3C SCXML C.2: Build HTTP request body and content type
+            std::string requestBody;
+            std::string contentType;
 
-            // Fire and forget - HTTP response will come back asynchronously
-            // Test infrastructure will handle the response via W3CHttpTestServer
+            if (!descriptor.eventName.empty() || !descriptor.params.empty()) {
+                // W3C SCXML C.2: Form-encoded format (test 518, 519)
+                contentType = "application/x-www-form-urlencoded";
+                // ARCHITECTURE.md: Zero Duplication - use SendHelper for HTTP POST body generation
+                requestBody = SendHelper::buildHttpPostBody(descriptor.eventName, descriptor.params);
+            } else if (!descriptor.content.empty()) {
+                // W3C SCXML C.2: Content-only send (test 520)
+                requestBody = descriptor.content;
+                contentType = "text/plain";
+            } else {
+                // JSON format
+                requestBody = descriptor.data;
+                contentType = "application/json";
+            }
+
+            // W3C SCXML C.2: Create platform-specific HTTP client (Native + WASM)
+#ifndef __EMSCRIPTEN__
+            // Native: Use CppHttplibClient
+            auto httpClient = std::make_unique<RSM::CppHttplibClient>();
 #else
-            // WASM: HTTP not supported
-            LOG_ERROR("AOT raiseExternal: HTTP event target not supported in WASM builds");
+            // WASM: Use EmscriptenFetchClient
+            auto httpClient = std::make_unique<RSM::EmscriptenFetchClient>();
+#endif
+
+            auto resultFuture = httpClient->sendRequest({.method = "POST",
+                                                         .url = eventWithMetadata.target,
+                                                         .body = requestBody,
+                                                         .contentType = contentType,
+                                                         .headers = {}});
+
+            // W3C SCXML C.2: Handle platform-specific response processing
+#ifndef __EMSCRIPTEN__
+            // Native: Fire and forget - HTTP response handled by W3CHttpTestServer callback
+            // Server callback will call raiseExternal() when response arrives
+            (void)resultFuture;  // Suppress unused variable warning
+#else
+            // WASM: Parse HTTP response body to extract event (cross-process communication)
+            // WASM client + Native server → must parse response JSON for event data
+            try {
+                auto response = resultFuture.get();
+
+                if (response.success && !response.body.empty() && response.body.front() == '{') {
+                    // Parse JSON response to extract event name
+                    using json = nlohmann::json;
+                    json responseObj = json::parse(response.body);
+
+                    LOG_DEBUG("AOT raiseExternal WASM: HTTP response body: {}", response.body);
+                    LOG_DEBUG("AOT raiseExternal WASM: responseObj contains 'data': {}", responseObj.contains("data"));
+
+                    if (responseObj.contains("event")) {
+                        std::string eventName = responseObj["event"].template get<std::string>();
+                        LOG_DEBUG("AOT raiseExternal WASM: Received HTTP response event '{}' from server", eventName);
+
+                        // W3C SCXML C.2: Extract event data from HTTP response
+                        std::string eventData;
+                        if (responseObj.contains("data")) {
+                            eventData = responseObj["data"].dump();
+                            LOG_DEBUG("AOT raiseExternal WASM: Extracted eventData: {}", eventData);
+                        } else {
+                            LOG_DEBUG("AOT raiseExternal WASM: No 'data' field in response, eventData empty");
+                        }
+                        raiseExternal(eventName, eventData);
+                    }
+                } else if (!response.success) {
+                    LOG_ERROR("AOT raiseExternal WASM: HTTP POST failed (status {})", response.statusCode);
+                }
+            } catch (const std::exception &e) {
+                LOG_ERROR("AOT raiseExternal WASM: Exception while getting HTTP result: {}", e.what());
+            }
 #endif
         } else {
             // Normal internal/external queue processing

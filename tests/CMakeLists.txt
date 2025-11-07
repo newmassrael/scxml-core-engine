@@ -92,10 +92,10 @@ function(apply_rsm_test_policies target_name)
             -sUSE_PTHREADS=1
             -sPTHREAD_POOL_SIZE=4
             -sEXIT_RUNTIME=1  # Exit immediately after main()
-            -sENVIRONMENT=node
+            -sENVIRONMENT=node,web
             -sASYNCIFY
             -sASSERTIONS=2
-            -sINITIAL_MEMORY=402653184  # 384MB fixed heap
+            -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}  # Centrally managed in root CMakeLists.txt
             -sSTACK_SIZE=33554432
             -sDISABLE_EXCEPTION_CATCHING=0  # Enable C++ exception catching for tests
             -g1                             # Line number info only (allows full optimization)
@@ -180,6 +180,22 @@ target_link_libraries(js_engine_tests
         GTest::gtest_main
         pthread
 )
+
+# WASM: Add Emscripten-specific link options for HTTP support
+if(EMSCRIPTEN)
+    target_link_options(js_engine_tests PRIVATE
+        -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
+        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
+        -sENVIRONMENT=node              # Node.js environment for tests
+        -sASYNCIFY                      # Enable async/await support
+        -sASSERTIONS=2
+        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
+        -sSTACK_SIZE=33554432
+        -sDISABLE_EXCEPTION_CATCHING=0
+        -g1
+        --profiling-funcs
+    )
+endif()
 
 # Apply RSM test policy
 apply_rsm_test_policies(js_engine_tests)
@@ -382,6 +398,22 @@ target_link_libraries(integration_tests
         pthread
 )
 
+# WASM: Add Emscripten-specific link options for HTTP support
+if(EMSCRIPTEN)
+    target_link_options(integration_tests PRIVATE
+        -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
+        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
+        -sENVIRONMENT=node              # Node.js environment for tests
+        -sASYNCIFY                      # Enable async/await support
+        -sASSERTIONS=2
+        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
+        -sSTACK_SIZE=33554432
+        -sDISABLE_EXCEPTION_CATCHING=0
+        -g1
+        --profiling-funcs
+    )
+endif()
+
 
 
 # ============================================================================
@@ -433,6 +465,22 @@ target_link_libraries(concurrency_tests
         GTest::gmock
         pthread
 )
+
+# WASM: Add Emscripten-specific link options for HTTP support
+if(EMSCRIPTEN)
+    target_link_options(concurrency_tests PRIVATE
+        -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
+        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
+        -sENVIRONMENT=node              # Node.js environment for tests
+        -sASYNCIFY                      # Enable async/await support
+        -sASSERTIONS=2
+        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
+        -sSTACK_SIZE=33554432
+        -sDISABLE_EXCEPTION_CATCHING=0
+        -g1
+        --profiling-funcs
+    )
+endif()
 
 # ============================================================================
 # 8. TXML Converter Tests (W3C SCXML Compliance Testing)
@@ -855,22 +903,34 @@ if(EMSCRIPTEN)
         -Wno-unused-parameter
     )
     
-    # WASM: Add Emscripten-specific link options (pthread + ASYNCIFY for blocking I/O)
-    # Note: PROXY_TO_PTHREAD removed to reduce overhead, ALLOW_MEMORY_GROWTH removed to eliminate warning
+    # WASM: Use pre-js for XMLHttpRequest polyfill, NODEFS mount, and HTTP server auto-management
+    set(POLYFILL_PRE_JS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/wasm_polyfill.js")
+    
+    # WASM: Add Emscripten-specific link options (NO pthread for browser compatibility)
     target_link_options(w3c_test_cli PRIVATE
-        -pthread
-        -sUSE_PTHREADS=1
-        -sPTHREAD_POOL_SIZE=4
-        -sEXIT_RUNTIME=1
-        -sENVIRONMENT=node
-        -sNODERAWFS=1
-        -sASYNCIFY
+        -sFETCH                         # Enable Fetch API for HTTP requests
+        -sALLOW_TABLE_GROWTH=1          # Allow function table to grow dynamically (required for QuickJS JS_NewCFunction)
+        -sEXIT_RUNTIME=0                # Keep runtime alive for async HTTP callbacks
+        -sENVIRONMENT=node              # Node.js environment for wrapper script
+        -sASYNCIFY                      # Enable async/await - allows future.get() to yield to event loop
+        -O3                             # Optimization required for reasonable ASYNCIFY binary size
         -sASSERTIONS=2
-        -sINITIAL_MEMORY=402653184  # 384MB fixed heap
+        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}      # Centrally managed in root CMakeLists.txt
         -sSTACK_SIZE=33554432
         -sDISABLE_EXCEPTION_CATCHING=0
-        -g1  # Line number info only (allows full optimization)
+        -g1                             # Line number info only
         --profiling-funcs
+        --pre-js ${POLYFILL_PRE_JS}    # Inject XMLHttpRequest polyfill and NODEFS for Node.js
+        -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
+        "-sEXPORTED_FUNCTIONS=['_main','_dom_getElementsByTagName_wrapper','_dom_getAttribute_wrapper']"  # Export main + DOM wrapper functions
+    )
+
+    # W3C SCXML C.2: Copy standalone HTTP server to build directory (spawned by polyfill_pre.js)
+    add_custom_command(TARGET w3c_test_cli POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_CURRENT_SOURCE_DIR}/w3c/standalone_http_server.js
+            ${CMAKE_CURRENT_BINARY_DIR}/standalone_http_server.js
+        COMMENT "Copying standalone HTTP server to build directory"
     )
 endif()
 

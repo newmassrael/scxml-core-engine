@@ -51,6 +51,16 @@ public:
      */
     static void reset();
 
+    /**
+     * @brief Check if the service is initialized
+     *
+     * Thread-safe check to determine if getInstance() can be called safely.
+     * Useful for cleanup code that needs to verify service availability.
+     *
+     * @return true if service is initialized, false otherwise
+     */
+    static bool isInitialized();
+
     // Non-copyable, non-movable
     EventRaiserService(const EventRaiserService &) = delete;
     EventRaiserService &operator=(const EventRaiserService &) = delete;

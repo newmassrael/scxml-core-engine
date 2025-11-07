@@ -2,14 +2,88 @@
 #include "W3CTestRunner.h"
 #include "common/Logger.h"
 #include "common/TestSummaryHelper.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <iostream>
 #include <set>
+#include <thread>
 
 // Maximum W3C SCXML test ID (for START~ range support)
 constexpr int MAX_W3C_TEST_ID = 580;
+
+// W3C SCXML C.2: HTTP test IDs requiring external HTTP server
+static const std::set<std::string> HTTP_TEST_IDS = {"201", "509", "510", "513", "518", "519", "520",
+                                                    "522", "531", "532", "534", "567", "577"};
+
+/**
+ * @brief Check if HTTP server is needed for the requested tests
+ *
+ * @param specificTestIds List of specific test IDs to run (empty = all tests)
+ * @param runUpToMode True if running tests up to a certain ID
+ * @param upToTestId Maximum test ID when using ~number format
+ * @return true if HTTP server is required, false otherwise
+ */
+[[maybe_unused]] static bool needsHttpServer(const std::vector<std::string> &specificTestIds, bool runUpToMode,
+                                             int upToTestId) {
+    // If no specific tests requested, run all tests → HTTP server needed
+    if (specificTestIds.empty()) {
+        return true;
+    }
+
+    // Check if any requested test is an HTTP test
+    for (const auto &testId : specificTestIds) {
+        // Handle range format: "500~600"
+        size_t tildePos = testId.find('~');
+        if (tildePos != std::string::npos) {
+            try {
+                int start = (tildePos > 0) ? std::stoi(testId.substr(0, tildePos)) : 1;
+                int end = (tildePos < testId.length() - 1) ? std::stoi(testId.substr(tildePos + 1)) : MAX_W3C_TEST_ID;
+
+                // Check if any HTTP test falls within range
+                for (const auto &httpTestId : HTTP_TEST_IDS) {
+                    int httpNum = std::stoi(httpTestId);
+                    if (httpNum >= start && httpNum <= end) {
+                        return true;
+                    }
+                }
+            } catch (...) {
+                // Invalid range format, skip
+            }
+            continue;
+        }
+
+        // Direct ID match
+        if (HTTP_TEST_IDS.count(testId) > 0) {
+            return true;
+        }
+    }
+
+    // Check runUpToMode
+    if (runUpToMode) {
+        for (const auto &httpTestId : HTTP_TEST_IDS) {
+            int httpNum = std::stoi(httpTestId);
+            if (httpNum <= upToTestId) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+#ifdef __EMSCRIPTEN__
+// EM_JS: Check if external HTTP server is provided (Node.js process.env set by polyfill_pre.js)
+EM_JS(int, useExternalHttpServer, (), {
+    if (typeof process != = 'undefined' &&process.env &&process.env.USE_EXTERNAL_HTTP_SERVER == = '1') {
+        return 1;
+    }
+    return 0;
+});
+#endif
 
 /**
  * @brief Find project root by searching for resources directory
@@ -91,13 +165,10 @@ int main(int argc, char *argv[]) {
 
         std::string resourcePath;
 #ifdef __EMSCRIPTEN__
-        // WASM: Convert relative path to absolute path using current_path()
-        // NODERAWFS requires absolute paths for directory iteration
-        namespace fs = std::filesystem;
-        fs::path cwd = fs::current_path();
-        fs::path absResourcePath = (cwd / "../../resources").lexically_normal();
-        resourcePath = absResourcePath.string();
-        LOG_INFO("WASM: Using absolute resources path: {}", resourcePath);
+        // WASM: Use NODEFS mounted path
+        // Project root is mounted at /project in pre-js
+        resourcePath = "/project/resources";
+        LOG_INFO("WASM: Using resources path with NODEFS: {}", resourcePath);
 #else
         resourcePath = findResourcesPath(executablePath);
 
@@ -272,6 +343,34 @@ int main(int argc, char *argv[]) {
         auto xmlReporter = factory->createXMLReporter(outputPath);
         auto reporter = factory->createCompositeReporter(std::move(consoleReporter), std::move(xmlReporter));
 
+#ifdef __EMSCRIPTEN__
+        // W3C SCXML C.2: HTTP server management for WASM tests
+        // External HTTP server started by polyfill_pre.js if HTTP tests detected
+        if (needsHttpServer(specificTestIds, runUpToMode, upToTestId)) {
+            LOG_INFO("W3C CLI: HTTP tests detected - waiting for external HTTP server...");
+
+            // Wait for HTTP server to be ready (max 5 seconds)
+            int retries = 50;  // 50 * 100ms = 5 seconds
+            bool serverReady = false;
+
+            while (retries > 0) {
+                if (useExternalHttpServer()) {
+                    serverReady = true;
+                    LOG_INFO("W3C CLI: External HTTP server ready (provided by polyfill_pre.js)");
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                retries--;
+            }
+
+            if (!serverReady) {
+                LOG_ERROR("W3C CLI: HTTP server not ready after 5 seconds - HTTP tests will fail");
+                LOG_WARN("W3C CLI: HTTP server should be auto-started by polyfill_pre.js for tests: 201, 518, 519, "
+                         "520, etc.");
+            }
+        }
+#endif
+
         // Dependency Injection: All dependencies are injected (Inversion of Control)
         RSM::W3C::W3CTestRunner runner(std::move(converter), std::move(metadataParser), std::move(executor),
                                        std::move(validator), std::move(testSuite), std::move(reporter));
@@ -361,6 +460,21 @@ int main(int argc, char *argv[]) {
                         if (shouldStop) {
                             break;
                         }
+
+#ifdef __EMSCRIPTEN__
+                        // WASM memory leak investigation: Per-test cleanup for specific tests
+                        // Only cleanup if test was actually executed (testReports not empty)
+                        if (!testReports.empty()) {
+                            // W3C SCXML: Cleanup order to prevent memory leaks
+                            // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
+                            RSM::JSEngine::clearEventRaiserRegistry();
+
+                            // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
+                            RSM::JSEngine::instance().reset();
+
+                            LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
+                        }
+#endif
 
                     } catch (const std::exception &e) {
                         std::string errorMsg = e.what();
@@ -551,6 +665,21 @@ int main(int argc, char *argv[]) {
                             break;
                         }
 
+#ifdef __EMSCRIPTEN__
+                        // WASM memory leak investigation: Per-test cleanup for specific tests
+                        // Only cleanup if test was actually executed (testReports not empty)
+                        if (!testReports.empty()) {
+                            // W3C SCXML: Cleanup order to prevent memory leaks
+                            // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
+                            RSM::JSEngine::clearEventRaiserRegistry();
+
+                            // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
+                            RSM::JSEngine::instance().reset();
+
+                            LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
+                        }
+#endif
+
                     } catch (const std::exception &e) {
                         std::string errorMsg = e.what();
                         // Test not found is normal for sparse test IDs - log as debug instead of error
@@ -674,6 +803,16 @@ int main(int argc, char *argv[]) {
                             if (shouldStop) {
                                 break;
                             }
+
+#ifdef __EMSCRIPTEN__
+                            // WASM memory leak investigation: Per-AOT-test cleanup
+                            // W3C SCXML: Cleanup order to prevent memory leaks
+                            RSM::JSEngine::clearEventRaiserRegistry();
+                            RSM::JSEngine::instance().reset();
+                            LOG_INFO("W3C CLI: Cleaned up JSEngine after AOT test {} (Registry cleared → Engine reset)",
+                                     testIdStr);
+#endif
+
                         } catch (const std::exception &e) {
                             LOG_ERROR("W3C CLI: AOT engine test {} failed: {}", testIdStr, e.what());
 
@@ -889,7 +1028,17 @@ int main(int argc, char *argv[]) {
         printf("📊 Detailed results written to: %s\n", outputPath.c_str());
 
         // Return appropriate exit code
-        return (summary.errorTests == 0 && summary.passRate > 0) ? 0 : 1;
+        int exitCode = (summary.errorTests == 0 && summary.passRate > 0) ? 0 : 1;
+
+#ifdef __EMSCRIPTEN__
+// W3C SCXML: WASM EXIT_RUNTIME=0 requires explicit exit
+// Without this, event loop continues running after main() returns
+// This triggers Module["onExit"] to kill HTTP server and exit process
+#include <emscripten.h>
+        emscripten_force_exit(exitCode);
+#endif
+
+        return exitCode;
 
     } catch (const std::exception &e) {
         fprintf(stderr, "❌ FATAL ERROR: %s\n", e.what());

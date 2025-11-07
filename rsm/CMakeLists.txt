@@ -170,7 +170,15 @@ if(NOT EMSCRIPTEN)
         src/events/HttpEventReceiver.cpp
         src/events/HttpEventBridge.cpp
         src/events/HttpEventCoordinator.cpp
+        src/events/CppHttplibClient.cpp
     )
+else()
+    target_sources(rsm_unified PRIVATE
+        src/common/UrlEncodingHelper.cpp
+        src/events/HttpEventTarget.cpp
+        src/events/HttpClientFactory.cpp
+        src/events/EmscriptenFetchClient.cpp
+)
 endif()
 
 # XML Parser implementation (Unified)
@@ -247,15 +255,16 @@ if(EMSCRIPTEN)
         -pthread
         -sUSE_PTHREADS=1
         -sPTHREAD_POOL_SIZE=4          # Worker thread pool for EventDispatcherImpl
+        -sPTHREAD_POOL_SIZE_STRICT=0   # Allow on-demand thread creation (Emscripten Issue #21959)
+        -sFETCH                         # Enable Fetch API for HTTP requests (EmscriptenFetchClient)
         -sEXIT_RUNTIME=0                # Allow async operations after main() returns
-        -sENVIRONMENT=node              # Target Node.js environment
+        -sENVIRONMENT=node,web          # Target Node.js and Web environments for Fetch API
         -sASYNCIFY                       # Enable async/await support
         -sASSERTIONS=2                   # Runtime validation for development
-        -sINITIAL_MEMORY=402653184       # 384MB fixed heap
-        -sSTACK_SIZE=33554432            # 32MB stack for QuickJS (QuickJS needs large stack)
+        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}  # Centrally managed in root CMakeLists.txt
+        -sALLOW_MEMORY_GROWTH=0          # Disable runtime heap expansion (use fixed INITIAL_MEMORY)
+        -sSTACK_SIZE=2097152             # 2MB stack (reduced to fit within 384MB heap)
         -sDISABLE_EXCEPTION_CATCHING=0   # Enable C++ exception catching (required for tests)
-        -g1                              # Line number info only (allows full optimization)
-        --profiling-funcs                # Function profiling support
     )
     message(STATUS "WASM build: pthread enabled for EventDispatcherImpl (no PROXY_TO_PTHREAD)")
 endif()
