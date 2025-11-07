@@ -140,6 +140,15 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     endif()
 endif()
 
+# =============================================================================
+# WASM Memory Configuration (Single Source of Truth)
+# =============================================================================
+if(EMSCRIPTEN)
+    # Central WASM memory configuration shared by rsm/ and tests/
+    set(WASM_INITIAL_MEMORY 536870912 CACHE STRING "WASM initial heap size in bytes (512MB)")
+    message(STATUS "WASM: INITIAL_MEMORY=${WASM_INITIAL_MEMORY} (${WASM_INITIAL_MEMORY} bytes = 512 MB)")
+endif()
+
 # Include GNUInstallDirs for installation paths
 include(GNUInstallDirs)
 

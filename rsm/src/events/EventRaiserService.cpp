@@ -41,6 +41,11 @@ void EventRaiserService::reset() {
     LOG_DEBUG("EventRaiserService: Reset for testing");
 }
 
+bool EventRaiserService::isInitialized() {
+    std::lock_guard<std::mutex> lock(initMutex_);
+    return instance_ != nullptr;
+}
+
 EventRaiserService::EventRaiserService(std::shared_ptr<IEventRaiserRegistry> registry,
                                        std::shared_ptr<ISessionManager> sessionManager)
     : registry_(std::move(registry)), sessionManager_(std::move(sessionManager)) {

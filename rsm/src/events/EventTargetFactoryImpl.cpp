@@ -9,10 +9,9 @@
 #include <algorithm>
 #include <stdexcept>
 
-// HTTP infrastructure (native builds only, not WASM)
-#ifndef __EMSCRIPTEN__
+// HTTP infrastructure (both native and WASM)
+// Native: Uses cpp-httplib, WASM: Uses EmscriptenFetchClient
 #include "events/HttpEventTarget.h"
-#endif
 
 namespace RSM {
 
@@ -27,9 +26,9 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
     registerTargetType("internal",
                        [this](const std::string &targetUri) { return createInternalTarget(targetUri, ""); });
 
-#ifndef __EMSCRIPTEN__
-    // Register HTTP target creator (native builds only, not WASM)
-    // W3C SCXML C.2: BasicHTTP Event I/O Processor requires native sockets
+    // Register HTTP target creator (both native and WASM)
+    // W3C SCXML C.2: BasicHTTP Event I/O Processor
+    // Native: Uses cpp-httplib, WASM: Uses EmscriptenFetchClient
     registerTargetType("http", [](const std::string &targetUri) {
         LOG_DEBUG("EventTargetFactoryImpl: Creating HTTP target for URI: {}", targetUri);
         auto target = std::make_shared<HttpEventTarget>(targetUri);
@@ -37,7 +36,7 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
         return target;
     });
 
-    // Register HTTPS target creator (native builds only, not WASM)
+    // Register HTTPS target creator (both native and WASM)
     registerTargetType("https", [](const std::string &targetUri) {
         LOG_DEBUG("EventTargetFactoryImpl: Creating HTTPS target for URI: {}", targetUri);
         auto target = std::make_shared<HttpEventTarget>(targetUri);
@@ -45,9 +44,12 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
         return target;
     });
 
-    LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal, HTTP, and HTTPS target support");
+#ifdef __EMSCRIPTEN__
+    LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal, HTTP, and HTTPS target support (WASM with "
+              "EmscriptenFetchClient)");
 #else
-    LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal target support (WASM build, HTTP disabled)");
+    LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal, HTTP, and HTTPS target support (Native with "
+              "cpp-httplib)");
 #endif
 }
 

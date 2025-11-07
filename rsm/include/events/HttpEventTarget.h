@@ -4,7 +4,9 @@
 #include "IEventTarget.h"
 #include <chrono>
 #include <future>
+#ifndef __EMSCRIPTEN__
 #include <httplib.h>
+#endif
 #include <string>
 
 namespace RSM {
@@ -99,13 +101,6 @@ private:
     bool parseTargetUri();
 
     /**
-     * @brief Create HTTP client for the target
-     *
-     * @return HTTP client instance
-     */
-    std::unique_ptr<httplib::Client> createHttpClient() const;
-
-    /**
      * @brief Convert event to JSON payload
      *
      * @param event Event to serialize
@@ -113,8 +108,16 @@ private:
      */
     std::string createJsonPayload(const EventDescriptor &event) const;
 
+#ifndef __EMSCRIPTEN__
     /**
-     * @brief Perform HTTP POST request with retry logic
+     * @brief Create HTTP client for the target (Native only)
+     *
+     * @return HTTP client instance
+     */
+    std::unique_ptr<httplib::Client> createHttpClient() const;
+
+    /**
+     * @brief Perform HTTP POST request with retry logic (Native only)
      *
      * @param client HTTP client
      * @param path Request path
@@ -126,13 +129,14 @@ private:
                                             const std::string &payload, const std::string &contentType) const;
 
     /**
-     * @brief Convert HTTP response to SendResult
+     * @brief Convert HTTP response to SendResult (Native only)
      *
      * @param result HTTP response
      * @param event Original event for context
      * @return SendResult with success/failure information
      */
     SendResult convertHttpResponse(const httplib::Result &result, const EventDescriptor &event) const;
+#endif
 
     /**
      * @brief Escape JSON string values

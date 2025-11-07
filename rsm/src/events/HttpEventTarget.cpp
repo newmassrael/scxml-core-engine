@@ -1,11 +1,21 @@
 #include "events/HttpEventTarget.h"
 #include "common/Logger.h"
+#include "common/SendHelper.h"
 #include "common/UrlEncodingHelper.h"
 #include <algorithm>
+#include <chrono>
 #include <iomanip>
 #include <regex>
 #include <sstream>
 #include <thread>
+
+#ifdef __EMSCRIPTEN__
+#include "events/EventRaiserService.h"
+#include "events/HttpClientFactory.h"
+#include "events/IHttpClient.h"
+#include "runtime/IEventRaiser.h"
+#include <emscripten.h>
+#endif
 
 namespace RSM {
 
@@ -20,20 +30,11 @@ HttpEventTarget::HttpEventTarget(const std::string &targetUri, std::chrono::mill
 }
 
 std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
-    // Capture shared_ptr to keep HttpEventTarget alive during async execution
     auto self = shared_from_this();
 
-    // Capture EventDescriptor by value to avoid dangling reference
     return std::async(std::launch::async, [self, event]() -> SendResult {
         try {
             LOG_DEBUG("HttpEventTarget: Sending event '{}' to '{}'", event.eventName, self->targetUri_);
-
-            // Create HTTP client
-            auto client = self->createHttpClient();
-            if (!client) {
-                return SendResult::error("Failed to create HTTP client for " + self->targetUri_,
-                                         SendResult::ErrorType::NETWORK_ERROR);
-            }
 
             std::string payload;
             std::string contentType;
@@ -44,23 +45,8 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
                 // Build form-encoded payload using UrlEncodingHelper (ARCHITECTURE.md: Zero Duplication)
                 // W3C SCXML C.2: Include event name as _scxmleventname parameter (test 518)
                 // But don't add if event name is empty (test 531: params define event name)
-                bool firstParam = true;
-                if (!event.eventName.empty()) {
-                    payload = "_scxmleventname=" + UrlEncodingHelper::urlEncode(event.eventName);
-                    firstParam = false;
-                }
-
-                // W3C SCXML: Support duplicate param names (Test 178)
-                // Each value in the vector must be added as a separate param
-                for (auto it = event.params.begin(); it != event.params.end(); ++it) {
-                    for (const auto &value : it->second) {
-                        if (!firstParam) {
-                            payload += "&";
-                        }
-                        firstParam = false;
-                        payload += UrlEncodingHelper::urlEncode(it->first) + "=" + UrlEncodingHelper::urlEncode(value);
-                    }
-                }
+                // ARCHITECTURE.md: Zero Duplication - use SendHelper for HTTP POST body generation
+                payload = SendHelper::buildHttpPostBody(event.eventName, event.params);
                 contentType = "application/x-www-form-urlencoded";
                 LOG_DEBUG("HttpEventTarget: Form-encoded payload: {}", payload);
             } else {
@@ -70,17 +56,114 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
                 LOG_DEBUG("HttpEventTarget: JSON payload: {}", payload);
             }
 
+#ifdef __EMSCRIPTEN__
+            // WASM: Use IHttpClient abstraction (EmscriptenFetchClient via HttpClientFactory)
+            LOG_DEBUG("HttpEventTarget: Using WASM HTTP client (EmscriptenFetchClient)");
+
+            auto httpClient = createHttpClient();
+            httpClient->setTimeout(self->timeoutMs_);
+
+            HttpClient::Request request;
+            request.method = "POST";
+            request.url = self->targetUri_;
+            request.body = payload;
+            request.contentType = contentType;
+
+            // Add custom headers if any
+            for (const auto &[key, value] : self->customHeaders_) {
+                request.headers[key] = value;
+            }
+
+            auto future = httpClient->sendRequest(request);
+
+            // W3C SCXML C.2: External HTTP server mode (polyfill_pre.js manages standalone_http_server.js)
+            // Response JSON contains event data that must be delivered to state machine
+            LOG_DEBUG("HttpEventTarget: Waiting for HTTP response from external server");
+
+            // W3C SCXML C.2: EM_ASYNC_JS automatically pauses execution until Promise resolves
+            // ASYNCIFY handles pause/resume transparently - future is already ready when returned
+            auto response = future.get();
+
+            if (!response.success || response.statusCode < 200 || response.statusCode >= 300) {
+                LOG_ERROR("HttpEventTarget: HTTP request failed: status {}", response.statusCode);
+                return SendResult::error("HTTP request failed: status " + std::to_string(response.statusCode),
+                                         SendResult::ErrorType::NETWORK_ERROR);
+            }
+
+            // W3C SCXML C.2: Parse response JSON to extract event name and data
+            // Expected format: {"status":"success","event":"eventName","sendId":"...","timestamp":...}
+            LOG_DEBUG("HttpEventTarget: HTTP response body: {}", response.body);
+
+            std::string responseEventName;
+            std::string responseEventData;
+
+            // Simple JSON parsing for event name
+            size_t eventPos = response.body.find("\"event\"");
+            if (eventPos != std::string::npos) {
+                size_t colonPos = response.body.find(":", eventPos);
+                if (colonPos != std::string::npos) {
+                    size_t valueStart = response.body.find("\"", colonPos);
+                    if (valueStart != std::string::npos) {
+                        valueStart++;
+                        size_t valueEnd = response.body.find("\"", valueStart);
+                        if (valueEnd != std::string::npos) {
+                            responseEventName = response.body.substr(valueStart, valueEnd - valueStart);
+                        }
+                    }
+                }
+            }
+
+            if (responseEventName.empty()) {
+                LOG_WARN("HttpEventTarget: No event name in HTTP response, using original event name");
+                responseEventName = event.eventName;
+            }
+
+            LOG_INFO("HttpEventTarget: Delivering HTTP response as event '{}' to state machine", responseEventName);
+
+            // W3C SCXML 5.10: Deliver HTTP response as external event
+            // Use EventRaiserService to get session-specific EventRaiser
+            auto eventRaiser = RSM::EventRaiserService::getInstance().getEventRaiser(event.sessionId);
+            if (!eventRaiser) {
+                LOG_ERROR("HttpEventTarget: No EventRaiser for session '{}' - cannot deliver HTTP response event",
+                          event.sessionId);
+                return SendResult::error("No EventRaiser for session: " + event.sessionId,
+                                         SendResult::ErrorType::INTERNAL_ERROR);
+            }
+
+            // Deliver event to state machine external queue
+            eventRaiser->raiseExternalEvent(responseEventName, responseEventData);
+
+            LOG_INFO("HttpEventTarget: HTTP response delivered successfully for event '{}'", event.eventName);
+            return SendResult::success(event.sendId);
+#else
+            // Native: Use httplib directly
+            auto client = self->createHttpClient();
+            if (!client) {
+                return SendResult::error("Failed to create HTTP client for " + self->targetUri_,
+                                         SendResult::ErrorType::NETWORK_ERROR);
+            }
+
             // Perform request with retry
             auto result = self->performRequestWithRetry(*client, self->path_, payload, contentType);
 
             // Convert response to SendResult
             return self->convertHttpResponse(result, event);
+#endif  // __EMSCRIPTEN__
 
         } catch (const std::exception &e) {
             LOG_ERROR("HttpEventTarget: Exception during send: {}", e.what());
+#ifdef __EMSCRIPTEN__
+            // WASM memory investigation: Log thread completion (exception path)
+            LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (exception) for event '{}'",
+                     event.eventName);
+#endif
             return SendResult::error("HTTP send exception: " + std::string(e.what()),
                                      SendResult::ErrorType::INTERNAL_ERROR);
         }
+#ifdef __EMSCRIPTEN__
+        // WASM memory investigation: Log thread completion (success path)
+        LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (success) for event '{}'", event.eventName);
+#endif
     });
 }
 
@@ -197,6 +280,7 @@ bool HttpEventTarget::parseTargetUri() {
     return true;
 }
 
+#ifndef __EMSCRIPTEN__
 std::unique_ptr<httplib::Client> HttpEventTarget::createHttpClient() const {
     try {
         std::string baseUrl = scheme_ + "://" + host_;
@@ -230,6 +314,7 @@ std::unique_ptr<httplib::Client> HttpEventTarget::createHttpClient() const {
         return nullptr;
     }
 }
+#endif  // __EMSCRIPTEN__
 
 std::string HttpEventTarget::createJsonPayload(const EventDescriptor &event) const {
     // W3C SCXML C.2: If content is provided, use it as the HTTP body directly
@@ -268,6 +353,44 @@ std::string HttpEventTarget::createJsonPayload(const EventDescriptor &event) con
     return json.str();
 }
 
+std::string HttpEventTarget::escapeJsonString(const std::string &input) const {
+    std::ostringstream escaped;
+    for (char c : input) {
+        switch (c) {
+        case '"':
+            escaped << "\\\"";
+            break;
+        case '\\':
+            escaped << "\\\\";
+            break;
+        case '\b':
+            escaped << "\\b";
+            break;
+        case '\f':
+            escaped << "\\f";
+            break;
+        case '\n':
+            escaped << "\\n";
+            break;
+        case '\r':
+            escaped << "\\r";
+            break;
+        case '\t':
+            escaped << "\\t";
+            break;
+        default:
+            if (c < 0x20) {
+                escaped << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
+            } else {
+                escaped << c;
+            }
+            break;
+        }
+    }
+    return escaped.str();
+}
+
+#ifndef __EMSCRIPTEN__
 httplib::Result HttpEventTarget::performRequestWithRetry(httplib::Client &client, const std::string &path,
                                                          const std::string &payload,
                                                          const std::string &contentType) const {
@@ -372,42 +495,6 @@ SendResult HttpEventTarget::convertHttpResponse(const httplib::Result &result, c
         return SendResult::error(errorMsg, errorType);
     }
 }
-
-std::string HttpEventTarget::escapeJsonString(const std::string &input) const {
-    std::ostringstream escaped;
-    for (char c : input) {
-        switch (c) {
-        case '"':
-            escaped << "\\\"";
-            break;
-        case '\\':
-            escaped << "\\\\";
-            break;
-        case '\b':
-            escaped << "\\b";
-            break;
-        case '\f':
-            escaped << "\\f";
-            break;
-        case '\n':
-            escaped << "\\n";
-            break;
-        case '\r':
-            escaped << "\\r";
-            break;
-        case '\t':
-            escaped << "\\t";
-            break;
-        default:
-            if (c < 0x20) {
-                escaped << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(c);
-            } else {
-                escaped << c;
-            }
-            break;
-        }
-    }
-    return escaped.str();
-}
+#endif  // __EMSCRIPTEN__
 
 }  // namespace RSM

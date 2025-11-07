@@ -76,6 +76,11 @@ struct SendResult {
     std::string sendId;        // Assigned send ID (if successful)
     std::string errorMessage;  // Error description (if failed)
 
+    // W3C SCXML C.2: HTTP response event data (for WASM compatibility)
+    // WASM requires parsing HTTP response body to extract event information
+    std::optional<std::string> responseEventName;  // Event name from HTTP response JSON
+    std::optional<std::string> responseEventData;  // Event data from HTTP response JSON
+
     enum class ErrorType {
         NONE,
         VALIDATION_ERROR,

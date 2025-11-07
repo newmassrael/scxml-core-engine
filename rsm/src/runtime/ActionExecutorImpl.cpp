@@ -904,7 +904,13 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // CRITICAL: Must call get() to ensure thread cleanup and prevent WASM memory leak
             // The sendId is already set immediately by EventSchedulerImpl, so this won't block
             try {
+                LOG_INFO("ActionExecutorImpl: BEFORE future.get() - event: '{}'", eventName);
+
                 auto result = resultFuture.get();
+
+                LOG_INFO("ActionExecutorImpl: AFTER future.get() - event: '{}', success: {}", eventName,
+                         result.isSuccess);
+
                 if (result.isSuccess) {
                     LOG_DEBUG("ActionExecutorImpl: Send action queued successfully for event: {} (sendId: {})",
                               eventName, result.sendId);

@@ -268,8 +268,16 @@ class CodeGenerator:
             model = parser.parse_file(scxml_path)
 
             # W3C SCXML 6.4: Store source path for child invoke resolution
-            # Resolve to absolute path for consistent child resolution
-            model.scxml_source_path = str(Path(scxml_path).resolve())
+            # Use project-relative path for platform portability (Native + WASM)
+            # WASM uses NODEFS mount at "/project", relative paths work across platforms
+            scxml_abs_path = Path(scxml_path).resolve()
+            project_root = Path(__file__).parent.parent.parent.resolve()
+            try:
+                # Convert to project-relative path (e.g., "build/tests/w3c_static_generated/test216.scxml")
+                model.scxml_source_path = str(scxml_abs_path.relative_to(project_root))
+            except ValueError:
+                # If scxml_path is outside project root, fall back to absolute path
+                model.scxml_source_path = str(scxml_abs_path)
 
             # W3C SCXML 6.4: Force template generation for invoked children
             if as_child:

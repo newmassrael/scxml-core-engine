@@ -20,6 +20,11 @@
 #include <optional>
 #include <thread>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <emscripten/heap.h>
+#endif
+
 // AOT Test Registry (for registry-based test execution)
 #include "aot_tests/AotTestRegistry.h"
 
@@ -190,7 +195,13 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
                     }
 
                     // Small sleep to avoid busy waiting
+#ifdef __EMSCRIPTEN__
+                    // W3C SCXML C.2: CRITICAL - Yield to Node.js event loop
+                    // emscripten_sleep() allows HTTP callbacks to execute during polling
+                    emscripten_sleep(static_cast<int>(POLL_INTERVAL_MS.count()));
+#else
                     std::this_thread::sleep_for(POLL_INTERVAL_MS);
+#endif
                 }
 
                 // Get final state - always read fresh state after loop exit
@@ -1020,9 +1031,25 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
 
     LOG_INFO("W3C Test Execution: Starting {} discovered tests", testDirectories.size());
 
+    // Memory profiling: Track test progress and heap size (WASM only)
+    size_t testIndex = 0;
+
+#ifdef __EMSCRIPTEN__
+    // WASM memory investigation: Track initial heap size for cumulative delta calculation
+    size_t heapInitial = emscripten_get_heap_size();
+    LOG_DEBUG("WASM heap tracking: INITIAL heap = {} MB", heapInitial / (1024 * 1024));
+#endif
+
     for (const auto &testDir : testDirectories) {
         try {
             LOG_DEBUG("W3C Test Execution: Running test {}", testDir);
+
+#ifdef __EMSCRIPTEN__
+            // WASM memory leak investigation: Log heap size BEFORE each test
+            size_t heapBefore = emscripten_get_heap_size();
+            LOG_DEBUG("WASM heap tracking: test {}/{} BEFORE - {} MB", testIndex, testDirectories.size(),
+                      heapBefore / (1024 * 1024));
+#endif
 
             // Extract test ID from directory name
             std::filesystem::path path(testDir);
@@ -1075,36 +1102,59 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
                 report = runSingleTest(testDir);
             }
 #else
-            // W3C SCXML C.2 BasicHTTPEventProcessor: WASM platform limitation
-            // HTTP server infrastructure not available in WASM/browser environments
-            // BasicHTTP Event I/O Processor requires bidirectional HTTP communication (localhost:8080)
-            // Skip tests with HTTP I/O processor in WASM - report as PASS (platform limitation, not test failure)
-            if (requiresHttpServer(testDir)) {
-                LOG_WARN("W3C Test {}: Skipping W3C SCXML C.2 test in WASM environment (HTTP server not supported)",
-                         testId);
-
-                // Create skip report
-                report.testId = std::to_string(testId);
-                report.engineType = "interpreter";
-                report.validationResult.finalResult = TestResult::PASS;
-                report.validationResult.reason = "HTTP test skipped in WASM environment (no HTTP server support)";
-                report.validationResult.skipped = true;
-                report.executionContext.executionTime = std::chrono::milliseconds(0);
-            } else {
-                report = runSingleTest(testDir);
-            }
+            report = runSingleTest(testDir);
 #endif
 
             reports.push_back(report);
             reporter_->reportTestResult(report);
-            LOG_DEBUG("W3C Test Execution: Test {} completed successfully", testDir);
+
+#ifdef __EMSCRIPTEN__
+            // WASM memory leak investigation: Log heap size AFTER test but BEFORE cleanup
+            size_t heapAfterTest = emscripten_get_heap_size();
+            size_t testDelta = heapAfterTest - heapBefore;
+            LOG_DEBUG("WASM heap tracking: test {}/{} AFTER test - {} MB (delta: +{} MB)", testIndex,
+                      testDirectories.size(), heapAfterTest / (1024 * 1024), testDelta / (1024 * 1024));
+#endif
+
+            // W3C SCXML: Cleanup order to prevent memory leaks
+            // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
+            // This ensures HttpEventTarget instances are released before next test
+            RSM::JSEngine::clearEventRaiserRegistry();
+
+            // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
+            // WASM CRITICAL: 384MB memory limit requires aggressive cleanup between tests
+            RSM::JSEngine::instance().reset();
+
+#ifdef __EMSCRIPTEN__
+            // WASM memory leak investigation: Log heap size AFTER cleanup with cumulative tracking
+            size_t heapAfterCleanup = emscripten_get_heap_size();
+            size_t cleanupDelta = heapAfterTest - heapAfterCleanup;
+            size_t cumulativeDelta = heapAfterCleanup - heapInitial;
+            LOG_DEBUG(
+                "WASM heap tracking: test {}/{} AFTER cleanup - {} MB (freed: {} MB, net: +{} MB, cumulative: +{} MB)",
+                testIndex, testDirectories.size(), heapAfterCleanup / (1024 * 1024), cleanupDelta / (1024 * 1024),
+                (heapAfterCleanup - heapBefore) / (1024 * 1024), cumulativeDelta / (1024 * 1024));
+#endif
+
+            LOG_DEBUG("W3C Test Execution: Test {} completed (Registry cleared → Engine reset)", testDir);
         } catch (const std::exception &e) {
             LOG_ERROR("W3C Test Execution: Failed to run test in {}: {}", testDir, e.what());
             LOG_ERROR("Failed to run test in {}: {}", testDir, e.what());
         }
+
+        // Memory profiling: Increment test counter
+        testIndex++;
     }
 
     LOG_INFO("W3C Test Execution: Completed {} tests total", reports.size());
+
+#ifdef __EMSCRIPTEN__
+    // WASM memory investigation: Final heap size after all tests
+    size_t heapFinal = emscripten_get_heap_size();
+    size_t totalAccumulation = heapFinal - heapInitial;
+    LOG_DEBUG("WASM heap tracking: FINAL heap = {} MB (total: +{} MB from {} tests)", heapFinal / (1024 * 1024),
+              totalAccumulation / (1024 * 1024), reports.size());
+#endif
 
     TestRunSummary summary = calculateSummary(reports);
 
@@ -1590,31 +1640,9 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
                     }
                 }
 #else
-                // W3C SCXML C.2 BasicHTTPEventProcessor: WASM platform limitation
-                // HTTP server infrastructure not available in WASM/browser environments
-                // BasicHTTP Event I/O Processor requires bidirectional HTTP communication (localhost:8080)
-                // Skip tests with HTTP I/O processor in WASM - report as PASS (platform limitation, not test failure)
-                if (requiresHttpServer(testDir)) {
-                    LOG_WARN("W3C Test {}: Skipping W3C SCXML C.2 test in WASM environment (HTTP server not supported)",
-                             testId);
-
-                    // Create skip report
-                    TestReport skipReport;
-                    skipReport.testId = std::to_string(testId);
-                    skipReport.engineType = "interpreter";
-                    skipReport.validationResult.finalResult = TestResult::PASS;
-                    skipReport.validationResult.reason =
-                        "HTTP test skipped in WASM environment (no HTTP server support)";
-                    skipReport.validationResult.skipped = true;
-                    skipReport.executionContext.executionTime = std::chrono::milliseconds(0);
-
-                    matchingReports.push_back(skipReport);
-                    reporter_->reportTestResult(skipReport);
-                } else {
-                    TestReport report = runSingleTest(testDir);
-                    matchingReports.push_back(report);
-                    reporter_->reportTestResult(report);
-                }
+                TestReport report = runSingleTest(testDir);
+                matchingReports.push_back(report);
+                reporter_->reportTestResult(report);
 #endif
 
                 // Run AOT engine test (runAotTest will use Interpreter fallback if needed)
@@ -1650,7 +1678,16 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
     }
 
     if (matchingReports.empty()) {
+#ifdef __EMSCRIPTEN__
+        // WASM: ASYNCIFY + exception handling incompatibility
+        // Return empty vector instead of throwing to allow CLI try-catch to work
+        // CLI will log "Test not found (skipped)" and continue with other tests
+        LOG_DEBUG("W3CTestRunner: Test {} not found, returning empty result for WASM compatibility", testId);
+        return matchingReports;  // Return empty vector
+#else
+        // Native: Throw exception (caught by try-catch in W3CTestCLI.cpp)
         throw std::runtime_error("Test " + std::to_string(testId) + " not found");
+#endif
     }
 
     return matchingReports;
@@ -1795,21 +1832,27 @@ TestReport W3CTestRunner::runSingleTestWithHttpServer(const std::string &testDir
             std::string currentState;
             const std::chrono::milliseconds timeout = EXECUTOR_DEFAULT_TIMEOUT_MS;
 
+            // W3C SCXML C.2: Use while loop with ASYNCIFY for both Native and WASM
+            // ASYNCIFY allows emscripten_sleep() to yield to event loop for EM_ASYNC_JS HTTP callbacks
             while (std::chrono::steady_clock::now() - waitStart < timeout) {
                 currentState = stateMachine->getCurrentState();
 
                 // Check if we reached a final state (pass or fail)
                 if (currentState == "pass" || currentState == "fail") {
-                    LOG_DEBUG("StateMachineTestExecutor (HTTP): Reached final state: {}", currentState);
+                    LOG_DEBUG("StateMachineTestExecutor: Reached final state: {}", currentState);
                     break;
                 }
 
-                // Small sleep to avoid busy waiting
+                // Poll at 20 FPS (50ms) - emscripten_sleep() yields to event loop via ASYNCIFY
+#ifdef __EMSCRIPTEN__
+                emscripten_sleep(POLL_INTERVAL_MS.count());
+#else
                 std::this_thread::sleep_for(POLL_INTERVAL_MS);
+#endif
             }
 
-            // Get final state - always read fresh state after loop exit
-            context.finalState = stateMachine->getCurrentState();
+            // Get final state after loop exit
+            context.finalState = currentState;
             LOG_DEBUG("StateMachineTestExecutor (HTTP): Test completed with final state: {}", context.finalState);
 
             auto endTime = std::chrono::steady_clock::now();
@@ -2052,34 +2095,6 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
         report.testId = testId;
         report.engineType = "aot";
         report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_JSENGINE
-
-#ifdef __EMSCRIPTEN__
-        // W3C SCXML C.2 BasicHTTPEventProcessor: WASM platform limitation
-        // HTTP server infrastructure not available in WASM/browser environments
-        // BasicHTTP Event I/O Processor requires bidirectional HTTP communication (localhost:8080)
-        // Skip tests with HTTP I/O processor in WASM - report as PASS (platform limitation, not test failure)
-        static const std::vector<std::string> httpTests = {"201", "509", "510", "513", "518", "519", "520",
-                                                           "522", "531", "532", "534", "567", "577"};
-        if (std::find(httpTests.begin(), httpTests.end(), testId) != httpTests.end()) {
-            LOG_WARN("AOT Test {}: Skipping W3C SCXML C.2 test in WASM environment (HTTP server not supported)",
-                     testId);
-            report.validationResult = ValidationResult(true, TestResult::PASS, registryTest->getDescription());
-            report.validationResult.skipped = true;  // Mark as skipped
-            report.executionContext.finalState = "skipped";
-            report.executionContext.executionTime = std::chrono::milliseconds(0);
-
-            // Check if test is verified
-            {
-                std::lock_guard<std::mutex> lock(verificationMutex_);
-                auto it = verifiedTests_.find(report.testId);
-                if (it != verifiedTests_.end()) {
-                    report.verified = true;
-                }
-            }
-
-            return report;
-        }
-#endif
 
         auto startTime = std::chrono::steady_clock::now();
 

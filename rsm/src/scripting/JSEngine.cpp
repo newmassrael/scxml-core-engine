@@ -83,6 +83,9 @@ void JSEngine::shutdown() {
         platformExecutor_->shutdown();
     }
 
+    // W3C SCXML B.2: Reset DOM class ID before freeing runtime
+    DOMBinding::resetClassId();
+
     // Note: Runtime will be freed by PlatformExecutionHelper (shutdown already called)
     runtime_ = nullptr;
 
@@ -135,6 +138,9 @@ void JSEngine::reset() {
 
     // Clear EventRaiser registry
     clearEventRaiserRegistry();
+
+    // W3C SCXML B.2: Reset DOM class ID for new QuickJS runtime
+    DOMBinding::resetClassId();
 
     // Reinitialize
     initializeInternal();
@@ -1263,6 +1269,13 @@ std::shared_ptr<IEventRaiserRegistry> JSEngine::getEventRaiserRegistry() {
 }
 
 void JSEngine::clearEventRaiserRegistry() {
+    // Check if EventRaiserService is initialized before accessing
+    // Prevents "Not initialized" exception during cleanup when tests are skipped
+    if (!EventRaiserService::isInitialized()) {
+        LOG_DEBUG("JSEngine: EventRaiserService not initialized, skipping registry clear");
+        return;
+    }
+
     try {
         EventRaiserService::getInstance().clearAll();
         LOG_DEBUG("JSEngine: EventRaiser registry cleared via EventRaiserService");

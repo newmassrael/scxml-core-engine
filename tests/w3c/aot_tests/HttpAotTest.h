@@ -32,15 +32,7 @@ public:
     static constexpr int TEST_ID = TestNum;
 
     bool run() override {
-#ifdef __EMSCRIPTEN__
-        // W3C SCXML C.2 BasicHTTPEventProcessor: WASM platform limitation
-        // HTTP server infrastructure (W3CHttpTestServer on localhost:8080/test) not supported in WASM
-        // BasicHTTP Event I/O Processor requires bidirectional HTTP communication
-        // Skip HTTP I/O processor tests - report as PASS (platform limitation, not test failure)
-        LOG_WARN("HttpAotTest {}: Skipping W3C SCXML C.2 test in WASM environment (HTTP server not supported)",
-                 TestNum);
-        return true;  // Report as PASS (skip, not fail)
-#else
+#ifndef __EMSCRIPTEN__
         // W3C SCXML C.2 BasicHTTPEventProcessor: Docker TSAN environment incompatibility
         // TSAN crashes in getaddrinfo("localhost") due to glibc nscd thread safety issues
         // See DOCKER_TSAN_README.md for nscd workaround details
@@ -130,6 +122,48 @@ public:
         // Check if final state is Pass
         bool isPass = sm.getCurrentState() == SM::State::Pass;
         LOG_DEBUG("HttpAotTest {}: Final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()), isPass);
+
+        return isPass;
+#else
+        // W3C SCXML C.2 BasicHTTPEventProcessor: WASM platform
+        // External HTTP server started by polyfill_pre.js (standalone_http_server.js)
+        // No per-test server instantiation needed - global server handles all HTTP tests
+
+        using SM = typename Derived::SM;
+        SM sm;
+
+        // W3C SCXML C.2: Initialize state machine
+        // HTTP POST will be sent during initialize() via EmscriptenFetchClient
+        // External server processes request and returns response
+        sm.initialize();
+        LOG_DEBUG("HttpAotTest {}: WASM state machine initialized", TestNum);
+
+        // W3C SCXML C.2: Async event processing loop
+        // HTTP responses come back asynchronously via EmscriptenFetchClient + external server
+        auto startTime = std::chrono::steady_clock::now();
+        constexpr auto timeout = std::chrono::seconds(5);
+
+        while (!sm.isInFinalState()) {
+            auto elapsed = std::chrono::steady_clock::now() - startTime;
+            if (elapsed > timeout) {
+                LOG_ERROR("HttpAotTest {}: WASM timeout waiting for final state (elapsed: {}ms)", TestNum,
+                          std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+                LOG_ERROR("HttpAotTest {}: Make sure external HTTP server is running (started by polyfill_pre.js)",
+                          TestNum);
+                return false;
+            }
+
+            // Process any pending events
+            sm.tick();
+
+            // Small sleep to avoid busy-waiting
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
+        // Check if final state is Pass
+        bool isPass = sm.getCurrentState() == SM::State::Pass;
+        LOG_DEBUG("HttpAotTest {}: WASM final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()),
+                  isPass);
 
         return isPass;
 #endif
