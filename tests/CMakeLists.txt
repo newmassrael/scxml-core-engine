@@ -181,6 +181,13 @@ target_link_libraries(js_engine_tests
         pthread
 )
 
+# GCC 13+ false positive: -Wmaybe-uninitialized in std::variant move constructor
+# Occurs in JSEngineBasicTest.cpp with RelWithDebInfo (-O2) optimization
+# Reference: tests/engine/JSEngineBasicTest.cpp:1094-1095 - ScriptValue variant moves
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 13)
+    target_compile_options(js_engine_tests PRIVATE -Wno-maybe-uninitialized)
+endif()
+
 # WASM: Add Emscripten-specific link options for HTTP support
 if(EMSCRIPTEN)
     target_link_options(js_engine_tests PRIVATE
