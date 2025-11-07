@@ -1,5 +1,5 @@
-#ifndef RSM_IMMEDIATE_MODE_GUARD_H
-#define RSM_IMMEDIATE_MODE_GUARD_H
+#ifndef SCE_IMMEDIATE_MODE_GUARD_H
+#define SCE_IMMEDIATE_MODE_GUARD_H
 
 #include "EventRaiserImpl.h"
 #include "IEventRaiser.h"
@@ -63,4 +63,4 @@ private:
 
 }  // namespace SCE
 
-#endif  // RSM_IMMEDIATE_MODE_GUARD_H
+#endif  // SCE_IMMEDIATE_MODE_GUARD_H

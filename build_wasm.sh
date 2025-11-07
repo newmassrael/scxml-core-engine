@@ -68,7 +68,7 @@ emcmake cmake .. \
     -DBUILD_BENCHMARKS=OFF
 
 echo ""
-echo -e "${GREEN}Building RSM for WASM...${NC}"
+echo -e "${GREEN}Building SCE for WASM...${NC}"
 emmake make -j$(nproc)
 
 if [ $? -eq 0 ]; then
@@ -78,18 +78,18 @@ if [ $? -eq 0 ]; then
     echo -e "${GREEN}==========================================${NC}"
     echo ""
     echo -e "${YELLOW}Build artifacts:${NC}"
-    ls -lh rsm/librsm_unified.a 2>/dev/null || ls -lh librsm_unified.a
+    ls -lh sce/libsce_unified.a 2>/dev/null || ls -lh libsce_unified.a
     echo ""
     echo -e "${YELLOW}Test executables:${NC}"
     find tests -maxdepth 1 -type f -executable 2>/dev/null | head -5 || echo "No test executables found"
     echo ""
     echo -e "${YELLOW}Next steps:${NC}"
     echo "1. Run tests with: node <test_executable>.js"
-    echo "2. Link librsm_unified.a with your WASM application"
+    echo "2. Link libsce_unified.a with your WASM application"
     echo "3. Use emcc to create final .wasm output"
     echo ""
     echo -e "${GREEN}Example link command:${NC}"
-    echo "emcc -o rsm.js librsm_unified.a -s WASM=1 -s EXPORTED_FUNCTIONS='[...]'"
+    echo "emcc -o sce.js libsce_unified.a -s WASM=1 -s EXPORTED_FUNCTIONS='[...]'"
 else
     echo ""
     echo -e "${RED}==========================================${NC}"

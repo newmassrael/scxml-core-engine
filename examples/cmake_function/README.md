@@ -1,10 +1,10 @@
 # SCE CMake Function Example
 
-This example demonstrates how to use the `rsm_add_state_machine()` CMake function to automatically generate C++ state machine code from SCXML files.
+This example demonstrates how to use the `sce_add_state_machine()` CMake function to automatically generate C++ state machine code from SCXML files.
 
 ## Overview
 
-The `rsm_add_state_machine()` function integrates SCXML code generation into your CMake build process:
+The `sce_add_state_machine()` function integrates SCXML code generation into your CMake build process:
 - Automatically generates C++ code from SCXML files
 - Tracks dependencies (regenerates when SCXML changes)
 - Adds generated files to your target
@@ -17,14 +17,14 @@ The `rsm_add_state_machine()` function integrates SCXML code generation into you
 add_executable(my_app main.cpp)
 
 # Generate state machine code from SCXML
-rsm_add_state_machine(
+sce_add_state_machine(
     TARGET my_app
     SCXML_FILE simple_light.scxml
     # OUTPUT_DIR is optional, defaults to ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 # Link with SCE library
-target_link_libraries(my_app PRIVATE rsm_unified)
+target_link_libraries(my_app PRIVATE sce_unified)
 ```
 
 ## Function Parameters

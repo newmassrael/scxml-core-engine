@@ -596,7 +596,7 @@ void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
                 get: function() { return eventObject; },
                 set: function(value) {
                     // SCXML W3C Spec: Attempts to modify system variables should fail
-                    console.log('RSM Error: Attempt to assign to read-only system variable _event');
+                    console.log('SCE Error: Attempt to assign to read-only system variable _event');
                     // Queue error.execution event per SCXML W3C specification
                     _queueErrorEvent(sessionId, 'error.execution');
                     throw new Error('Cannot assign to read-only system variable _event');
@@ -614,7 +614,7 @@ void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
                         set: function(value) {
                             // SCXML W3C Spec: Attempts to modify system variables should fail
                             // and place 'error.execution' on internal event queue
-                            console.log('RSM Error: Attempt to modify read-only system variable _event.' + propName);
+                            console.log('SCE Error: Attempt to modify read-only system variable _event.' + propName);
                             // Queue error.execution event per SCXML W3C specification
                             _queueErrorEvent(sessionId, 'error.execution');
                             throw new Error('Cannot modify read-only system variable _event.' + propName);
@@ -751,9 +751,9 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
         }
     }
 
-    // Log to our RSM logging system
+    // Log to our SCE logging system
     // For now, just print to stderr for testing
-    LOG_INFO("RSM console.log: {}", ss.str());
+    LOG_INFO("SCE console.log: {}", ss.str());
     return JS_UNDEFINED;
 }
 

@@ -546,7 +546,7 @@ JSResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, co
         }
         // Generate unique location address for each I/O processor
         // Use RFC 3986 compliant URI encoding to prevent injection attacks
-        std::string location = "rsm://" + ioProcessors[i] + "/" + encodeURIComponent(sessionId);
+        std::string location = "sce://" + ioProcessors[i] + "/" + encodeURIComponent(sessionId);
         ioProcessorsJson += "'" + ioProcessors[i] + "': { 'location': '" + location + "' }";
     }
     ioProcessorsJson += "}";
@@ -570,7 +570,7 @@ JSResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, co
             Object.defineProperty(this, '_sessionid', {
                 get: function() { return __systemVars.sessionid; },
                 set: function(value) {
-                    console.log('RSM Error: Attempt to assign to read-only system variable _sessionid');
+                    console.log('SCE Error: Attempt to assign to read-only system variable _sessionid');
                     _queueErrorEvent(sessionId, 'error.execution');
                     throw new Error('Cannot assign to read-only system variable _sessionid');
                 },
@@ -582,7 +582,7 @@ JSResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, co
             Object.defineProperty(this, '_name', {
                 get: function() { return __systemVars.name; },
                 set: function(value) {
-                    console.log('RSM Error: Attempt to assign to read-only system variable _name');
+                    console.log('SCE Error: Attempt to assign to read-only system variable _name');
                     _queueErrorEvent(sessionId, 'error.execution');
                     throw new Error('Cannot assign to read-only system variable _name');
                 },
@@ -594,7 +594,7 @@ JSResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, co
             Object.defineProperty(this, '_ioprocessors', {
                 get: function() { return __systemVars.ioprocessors; },
                 set: function(value) {
-                    console.log('RSM Error: Attempt to assign to read-only system variable _ioprocessors');
+                    console.log('SCE Error: Attempt to assign to read-only system variable _ioprocessors');
                     _queueErrorEvent(sessionId, 'error.execution');
                     throw new Error('Cannot assign to read-only system variable _ioprocessors');
                 },

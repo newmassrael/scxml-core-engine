@@ -17,7 +17,7 @@ target_link_libraries(test_static_codegen
 target_include_directories(test_static_codegen
     PRIVATE
     ${PROJECT_SOURCE_DIR}
-    ${PROJECT_SOURCE_DIR}/rsm/include
+    ${PROJECT_SOURCE_DIR}/sce/include
 )
 
 # Register with CTest

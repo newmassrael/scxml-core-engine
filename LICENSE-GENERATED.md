@@ -132,7 +132,7 @@ make
 python3 codegen.py device_controller.scxml -o src/
 
 # Use SCE engine (Commercial License)
-cmake -DRSM_LICENSE=COMMERCIAL ..
+cmake -DSCE_LICENSE=COMMERCIAL ..
 make
 
 # Distribute

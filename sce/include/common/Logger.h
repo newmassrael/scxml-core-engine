@@ -27,7 +27,7 @@ namespace SCE {
 /**
  * @brief Centralized logging facade with dependency injection support
  *
- * The Logger class provides a unified logging interface for RSM.
+ * The Logger class provides a unified logging interface for SCE.
  * It supports two usage patterns:
  *
  * 1. Default mode: Uses built-in backend (spdlog if available, DefaultBackend otherwise)

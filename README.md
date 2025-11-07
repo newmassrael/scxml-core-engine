@@ -89,20 +89,20 @@ SCE provides flexible integration options for different project needs:
 Automatic code generation with dependency tracking:
 
 ```cmake
-# Add RSM to your project (git submodule or FetchContent)
+# Add SCE to your project (git submodule or FetchContent)
 add_subdirectory(external/scxml-core-engine)
 
 # Create your executable
 add_executable(my_app main.cpp)
 
 # Auto-generate state machine code from SCXML
-rsm_add_state_machine(
+sce_add_state_machine(
     TARGET my_app
     SCXML_FILE traffic_light.scxml
 )
 
-# Link RSM library
-target_link_libraries(my_app PRIVATE rsm_unified)
+# Link SCE library
+target_link_libraries(my_app PRIVATE sce_unified)
 ```
 
 **Benefits**:
@@ -119,15 +119,15 @@ See [examples/cmake_function](examples/cmake_function) for complete example.
 ```cmake
 include(FetchContent)
 FetchContent_Declare(
-    rsm
+    sce
     GIT_REPOSITORY https://github.com/newmassrael/scxml-core-engine.git
     GIT_TAG main
 )
-FetchContent_MakeAvailable(rsm)
+FetchContent_MakeAvailable(sce)
 
 add_executable(my_app main.cpp)
-rsm_add_state_machine(TARGET my_app SCXML_FILE traffic_light.scxml)
-target_link_libraries(my_app PRIVATE rsm_unified)
+sce_add_state_machine(TARGET my_app SCXML_FILE traffic_light.scxml)
+target_link_libraries(my_app PRIVATE sce_unified)
 ```
 
 ### Method 3: Standalone (Learning & Testing)
@@ -245,7 +245,7 @@ After timer: Red
 ### Project Structure
 
 ```
-rsm/
+sce/
 ├── include/
 │   ├── common/          # Shared helpers (SendHelper, EventDataHelper)
 │   ├── runtime/         # Interpreter engine
@@ -383,7 +383,7 @@ cd build
 
 ## License
 
-RSM uses a **Dual License** model:
+SCE uses a **Dual License** model:
 
 ### Generated Code: MIT (No Restrictions)
 

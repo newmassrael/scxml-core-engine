@@ -43,7 +43,7 @@ add_executable(benchmark_event_scheduler
 )
 target_link_libraries(benchmark_event_scheduler
     PRIVATE
-        rsm_unified
+        sce_unified
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads
@@ -55,7 +55,7 @@ add_executable(benchmark_jsengine
 )
 target_link_libraries(benchmark_jsengine
     PRIVATE
-        rsm_unified
+        sce_unified
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads
@@ -67,7 +67,7 @@ add_executable(benchmark_statemachine
 )
 target_link_libraries(benchmark_statemachine
     PRIVATE
-        rsm_unified
+        sce_unified
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads

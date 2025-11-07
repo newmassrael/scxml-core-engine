@@ -22,7 +22,7 @@ def find_existing_license_header(content: str) -> tuple[int, int]:
     """
     # Look for license header pattern
     # Headers start with /** and contain license keywords
-    pattern = r'/\*\*[\s\S]*?(?:RSM Execution Engine|DUAL LICENSED|MIT License|Commercial License)[\s\S]*?\*/'
+    pattern = r'/\*\*[\s\S]*?(?:SCE Execution Engine|DUAL LICENSED|MIT License|Commercial License)[\s\S]*?\*/'
     
     match = re.search(pattern, content)
     if match:
@@ -88,14 +88,14 @@ def main():
     files_to_update = []
     
     # StaticExecutionEngine.h
-    static_engine = project_root / "rsm" / "include" / "static" / "StaticExecutionEngine.h"
+    static_engine = project_root / "sce" / "include" / "static" / "StaticExecutionEngine.h"
     if static_engine.exists():
         files_to_update.append(static_engine)
     else:
         print(f"Warning: StaticExecutionEngine.h not found at {static_engine}")
     
-    # All Helper files in rsm/include/common/
-    common_dir = project_root / "rsm" / "include" / "common"
+    # All Helper files in sce/include/common/
+    common_dir = project_root / "sce" / "include" / "common"
     if common_dir.exists():
         helper_files = list(common_dir.glob("*Helper.h"))
         files_to_update.extend(helper_files)

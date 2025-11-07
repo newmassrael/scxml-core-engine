@@ -1,4 +1,4 @@
-# RSM Commercial License (LGPL 2.1 Alternative)
+# SCE Commercial License (LGPL 2.1 Alternative)
 
 ## Overview
 
@@ -15,7 +15,7 @@ This Commercial License provides an alternative to the LGPL-2.1 license for the 
 ### ✅ You DON'T Need Commercial License If:
 
 **Using engine unmodified:**
-- Link with RSM Engine without modifications
+- Link with SCE Engine without modifications
 - Use in commercial products (closed source OK)
 - **License: LGPL-2.1 (FREE)**
 
@@ -33,8 +33,8 @@ This Commercial License provides an alternative to the LGPL-2.1 license for the 
 - Want to prevent users from relinking with modified versions
 
 **Creating derivative products/SDKs:**
-- Build commercial SDK based on RSM Engine
-- Distribute RSM Engine as part of your product
+- Build commercial SDK based on SCE Engine
+- Distribute SCE Engine as part of your product
 - Create competing state machine libraries
 
 **Avoiding LGPL compliance:**

@@ -62,7 +62,7 @@ public:
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
      *
      * Usage:
-     * - Interpreter: EventTargetFactoryImpl::createTarget() (rsm/src/events/EventTargetFactoryImpl.cpp)
+     * - Interpreter: EventTargetFactoryImpl::createTarget() (sce/src/events/EventTargetFactoryImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
      * W3C SCXML C.1 (test189, test495): Events with target="#_internal" must go to
@@ -83,7 +83,7 @@ public:
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
      *
      * Usage:
-     * - Interpreter: EventTargetFactoryImpl::createTarget() (rsm/src/events/EventTargetFactoryImpl.cpp)
+     * - Interpreter: EventTargetFactoryImpl::createTarget() (sce/src/events/EventTargetFactoryImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
      * W3C SCXML 6.4 (test192): Events with target="#_<invokeid>" must be routed
@@ -146,7 +146,7 @@ public:
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
      *
      * Usage:
-     * - Interpreter: EventTargetFactoryImpl::createTarget() (rsm/src/events/EventTargetFactoryImpl.cpp)
+     * - Interpreter: EventTargetFactoryImpl::createTarget() (sce/src/events/EventTargetFactoryImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
      * W3C SCXML C.2 (test509, test510, test513): BasicHTTP Event I/O Processor
@@ -196,7 +196,7 @@ public:
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
      *
      * Usage:
-     * - Interpreter: ActionExecutorImpl::executeSendAction() (rsm/src/runtime/ActionExecutorImpl.cpp)
+     * - Interpreter: ActionExecutorImpl::executeSendAction() (sce/src/runtime/ActionExecutorImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
      * W3C SCXML C.1 (test 496): Empty or "undefined" target evaluation results
@@ -217,7 +217,7 @@ public:
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
      *
      * Usage:
-     * - Interpreter: ActionExecutorImpl::executeSendAction() (rsm/src/runtime/ActionExecutorImpl.cpp)
+     * - Interpreter: ActionExecutorImpl::executeSendAction() (sce/src/runtime/ActionExecutorImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
      * W3C SCXML C.2 (test 577): BasicHTTP Event I/O Processor requires
@@ -238,7 +238,7 @@ public:
      * ARCHITECTURE.md: Zero Duplication - used by both Interpreter and AOT engines.
      *
      * Usage:
-     * - Interpreter: ActionExecutorImpl::executeSendAction() (rsm/src/runtime/ActionExecutorImpl.cpp)
+     * - Interpreter: ActionExecutorImpl::executeSendAction() (sce/src/runtime/ActionExecutorImpl.cpp)
      * - AOT: StaticCodeGenerator send.jinja2 template (tools/codegen/templates/actions/send.jinja2)
      *
      * W3C SCXML 6.2 (test 199): If the SCXML Processor does not support the type

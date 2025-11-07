@@ -335,7 +335,7 @@ public:
     /**
      * @brief Convert TXML content to valid SCXML
      * @param txml The TXML content with conf: namespace attributes
-     * @return Valid SCXML content ready for RSM parsing
+     * @return Valid SCXML content ready for SCE parsing
      * @throws std::invalid_argument if TXML is malformed
      * @throws std::runtime_error if conversion fails
      */

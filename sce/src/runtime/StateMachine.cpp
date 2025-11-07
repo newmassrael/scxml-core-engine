@@ -9,7 +9,7 @@ using SCE::Common::ConflictResolutionHelperString;
 #include "common/EntryExitHelper.h"
 #include "common/FileLoadingHelper.h"
 #include "common/Logger.h"
-#ifdef RSM_USE_SPDLOG
+#ifdef SCE_USE_SPDLOG
 #include <spdlog/spdlog.h>
 #endif
 #include "common/ParallelTransitionHelper.h"
@@ -1211,7 +1211,7 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
         std::string condition = transitionNode->getGuard();
 
         // Performance optimization: Only build debug string when DEBUG logging is enabled
-#ifdef RSM_USE_SPDLOG
+#ifdef SCE_USE_SPDLOG
         if constexpr (SPDLOG_ACTIVE_LEVEL <= SPDLOG_LEVEL_DEBUG) {
 #else
         // DefaultBackend: always build debug string (no compile-time level check)

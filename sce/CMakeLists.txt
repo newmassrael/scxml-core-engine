@@ -1,5 +1,5 @@
-# RSM Unified Module
-# Complete RSM implementation with domain models, runtime engine, and scripting
+# SCE Unified Module
+# Complete SCE implementation with domain models, runtime engine, and scripting
 
 # XML Parser Infrastructure (Unified)
 # All platforms: pugixml (lightweight, W3C compliant, header-only)
@@ -18,10 +18,10 @@ add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURR
 # ============================================================================
 # spdlog Logger Configuration (Optional Dependency)
 # ============================================================================
-option(RSM_USE_SPDLOG "Use spdlog for logging (default: ON)" ON)
+option(SCE_USE_SPDLOG "Use spdlog for logging (default: ON)" ON)
 
-if(RSM_USE_SPDLOG)
-    message(STATUS "RSM: Building with spdlog support (header-only mode)")
+if(SCE_USE_SPDLOG)
+    message(STATUS "SCE: Building with spdlog support (header-only mode)")
     
     # spdlog: header-only mode (no compilation, include-only)
     add_library(spdlog_header_only INTERFACE)
@@ -36,7 +36,7 @@ if(RSM_USE_SPDLOG)
     # Create alias for compatibility
     add_library(spdlog::spdlog ALIAS spdlog_header_only)
 else()
-    message(STATUS "RSM: Building without spdlog (using DefaultBackend)")
+    message(STATUS "SCE: Building without spdlog (using DefaultBackend)")
 endif()
 
 # Add cpp-httplib subdirectory (native builds only, not WASM)
@@ -48,7 +48,7 @@ endif()
 # Modern C++ JSON library with full C++20 support
 set(NLOHMANN_JSON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/nlohmann_json/include)
 
-add_library(rsm_unified
+add_library(sce_unified
     # Model implementation
     src/model/SCXMLModel.cpp
     src/model/StateNode.cpp
@@ -65,9 +65,9 @@ add_library(rsm_unified
     src/common/GuardUtils.cpp
     src/common/Logger.cpp
     
-    # Logger backends (conditional based on RSM_USE_SPDLOG)
+    # Logger backends (conditional based on SCE_USE_SPDLOG)
     src/backends/DefaultBackend.cpp  # Always compiled
-    $<$<BOOL:${RSM_USE_SPDLOG}>:src/backends/SpdlogBackend.cpp>
+    $<$<BOOL:${SCE_USE_SPDLOG}>:src/backends/SpdlogBackend.cpp>
     src/common/NodeFactory.cpp
     src/common/PlatformExecutionHelper.cpp
     src/common/TypeRegistry.cpp
@@ -156,14 +156,14 @@ add_library(rsm_unified
 # XInclude processing (platform-independent with different implementations)
 # XIncludeProcessor stub delegates to PugiXMLDocument::processXInclude()  
 # WASM: XIncludeProcessor stub delegates to IXMLDocument::processXInclude()
-target_sources(rsm_unified PRIVATE
+target_sources(sce_unified PRIVATE
     src/parsing/XIncludeProcessor.cpp
 )
 
 # HTTP infrastructure (native builds only, not WASM)
 # W3C SCXML C.2: BasicHTTP Event I/O Processor requires native sockets
 if(NOT EMSCRIPTEN)
-    target_sources(rsm_unified PRIVATE
+    target_sources(sce_unified PRIVATE
         src/common/HttpResponseUtils.cpp
         src/common/UrlEncodingHelper.cpp
         src/events/HttpEventTarget.cpp
@@ -173,7 +173,7 @@ if(NOT EMSCRIPTEN)
         src/events/CppHttplibClient.cpp
     )
 else()
-    target_sources(rsm_unified PRIVATE
+    target_sources(sce_unified PRIVATE
         src/common/UrlEncodingHelper.cpp
         src/events/HttpEventTarget.cpp
         src/events/HttpClientFactory.cpp
@@ -183,12 +183,12 @@ endif()
 
 # XML Parser implementation (Unified)
 # All platforms: PugiXMLParser (pugixml wrapper)
-target_sources(rsm_unified PRIVATE
+target_sources(sce_unified PRIVATE
     src/parsing/PugiXMLParser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
 )
 
-target_include_directories(rsm_unified
+target_include_directories(sce_unified
     PUBLIC
         include
         include/model
@@ -205,33 +205,33 @@ target_include_directories(rsm_unified
 )
 
 # Unified XML parser includes (pugixml)
-target_include_directories(rsm_unified PUBLIC
+target_include_directories(sce_unified PUBLIC
     ${PUGIXML_INCLUDE_DIR}
 )
 
 # Optional spdlog includes (header-only)
-if(RSM_USE_SPDLOG)
-    target_include_directories(rsm_unified PUBLIC
+if(SCE_USE_SPDLOG)
+    target_include_directories(sce_unified PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include
     )
 endif()
 
 
-# RSM codebase: Disable std::cout usage
+# SCE codebase: Disable std::cout usage
 # printf family disabled due to system header conflicts
 
 # Conditional spdlog support (compile definition)
-if(RSM_USE_SPDLOG)
-    target_compile_definitions(rsm_unified PUBLIC RSM_USE_SPDLOG)
+if(SCE_USE_SPDLOG)
+    target_compile_definitions(sce_unified PUBLIC SCE_USE_SPDLOG)
 endif()
 
 # Force include DisableStdOut.h globally
-target_compile_options(rsm_unified
+target_compile_options(sce_unified
     PRIVATE
         -include common/DisableStdOut.h
 )
 
-target_link_libraries(rsm_unified
+target_link_libraries(sce_unified
     PUBLIC
         qjs  # QuickJS library
         # nlohmann/json is header-only, no linking required
@@ -247,11 +247,11 @@ target_link_libraries(rsm_unified
 # ARCHITECTURE.md: JSEngine uses SynchronousExecutionHelper, but EventDispatcherImpl needs pthread
 # Note: PROXY_TO_PTHREAD removed to reduce overhead while keeping pthread support
 if(EMSCRIPTEN)
-    target_compile_options(rsm_unified PRIVATE
+    target_compile_options(sce_unified PRIVATE
         -pthread
         -sUSE_PTHREADS=1
     )
-    target_link_options(rsm_unified PRIVATE
+    target_link_options(sce_unified PRIVATE
         -pthread
         -sUSE_PTHREADS=1
         -sPTHREAD_POOL_SIZE=4          # Worker thread pool for EventDispatcherImpl
@@ -271,11 +271,11 @@ endif()
 
 # HTTP library (native builds only, not WASM)
 if(NOT EMSCRIPTEN)
-    target_link_libraries(rsm_unified PUBLIC httplib::httplib)
+    target_link_libraries(sce_unified PUBLIC httplib::httplib)
 endif()
 
 # Set C++20 standard
-target_compile_features(rsm_unified
+target_compile_features(sce_unified
     PUBLIC cxx_std_20
 )
 

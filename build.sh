@@ -8,7 +8,7 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}=== RSM Build Script ===${NC}"
+echo -e "${GREEN}=== SCE Build Script ===${NC}"
 
 # Check if we're in the correct directory
 if [[ ! -f "CMakeLists.txt" ]]; then

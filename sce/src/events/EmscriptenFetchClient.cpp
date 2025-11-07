@@ -15,8 +15,7 @@
 
 // Runtime environment detection: returns 1 if Node.js, 0 if browser
 EM_JS(int, em_is_nodejs, (), {
-    return (typeof process != = 'undefined' && typeof process.versions !=
-            = 'undefined' && typeof process.versions.node != = 'undefined')
+    return (typeof process !== 'undefined' && typeof process.versions !== 'undefined' && typeof process.versions.node !== 'undefined')
                ? 1
                : 0;
 });
@@ -55,16 +54,16 @@ EM_ASYNC_JS(int, em_nodejs_http_request_async,
                 };
 
                 // Return Promise for HTTP request - EM_ASYNC_JS automatically awaits it
-                const result = await new Promise((resolve, reject) = > {
+                const result = await new Promise((resolve, reject) => {
                     const req = http.request(
-                        options, (res) = > {
+                        options, (res) => {
                             let responseBody = "";
 
                             res.setEncoding("utf8");
-                            res.on("data", (chunk) = > { responseBody += chunk; });
+                            res.on("data", (chunk) => { responseBody += chunk; });
 
                             res.on(
-                                "end", () = > {
+                                "end", () => {
                                     console.log("[DEBUG] EM_ASYNC_JS: HTTP response:", res.statusCode,
                                                 "body length:", responseBody.length);
 
@@ -78,7 +77,7 @@ EM_ASYNC_JS(int, em_nodejs_http_request_async,
                         });
 
                     req.on(
-                        "error", (error) = > {
+                        "error", (error) => {
                             console.error("[ERROR] EM_ASYNC_JS: HTTP request failed:", error.message);
 
                             // MEMORY LEAK FIX: Clean up on error

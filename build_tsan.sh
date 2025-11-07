@@ -25,7 +25,7 @@ echo ""
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Check if Docker image exists
-if ! docker image inspect rsm-tsan-env:latest &> /dev/null; then
+if ! docker image inspect sce-tsan-env:latest &> /dev/null; then
     echo -e "${YELLOW}TSAN Docker Image Not Found${NC}"
     echo ""
     echo "Building lightweight Docker image with TSAN..."
@@ -49,7 +49,7 @@ if ! docker image inspect rsm-tsan-env:latest &> /dev/null; then
     echo ""
     echo -e "${GREEN}Starting Docker build...${NC}"
     docker build -f "$PROJECT_ROOT/docker_tsan/Dockerfile.tsan" \
-                 -t rsm-tsan-env:latest \
+                 -t sce-tsan-env:latest \
                  "$PROJECT_ROOT/docker_tsan" 2>&1 | tee "$PROJECT_ROOT/docker_tsan/docker-tsan-build.log"
 
     if [ $? -ne 0 ]; then
@@ -81,7 +81,7 @@ docker run --rm \
     -e HOST_GID=$HOST_GID \
     -v "$PROJECT_ROOT:/workspace" \
     -w /workspace \
-    rsm-tsan-env:latest \
+    sce-tsan-env:latest \
     /bin/bash -c "
         set -e
 
@@ -142,7 +142,7 @@ if [ $? -eq 0 ]; then
         --security-opt seccomp=unconfined \
         -v "$PROJECT_ROOT:/workspace" \
         -w /workspace/$BUILD_DIR/tests \
-        rsm-tsan-env:latest \
+        sce-tsan-env:latest \
         /bin/bash
 else
     echo ""

@@ -1,4 +1,4 @@
-# RSM Static W3C Test Code Generation
+# SCE Static W3C Test Code Generation
 # Generates C++ state machine code from W3C SCXML test suite
 
 # Set CMake policy CMP0116 to NEW (Ninja DEPFILE transformation)
@@ -7,12 +7,12 @@ if(POLICY CMP0116)
     cmake_policy(SET CMP0116 NEW)
 endif()
 
-# rsm_generate_aot_test_header: Generate AOT test header (TestXXX.h) from metadata.txt
+# sce_generate_aot_test_header: Generate AOT test header (TestXXX.h) from metadata.txt
 #
 # Single Source of Truth: metadata.txt description is used for both Interpreter and AOT
 # Eliminates description duplication between metadata.txt and TestXXX.h
 #
-function(rsm_generate_aot_test_header TEST_NUM TEST_TYPE)
+function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
     # Set TEST_NUMBER for template substitution (@TEST_NUMBER@ in .in files)
     set(TEST_NUMBER ${TEST_NUM})
 
@@ -70,12 +70,12 @@ function(rsm_generate_aot_test_header TEST_NUM TEST_TYPE)
     message(STATUS "Generated AOT test header: Test${TEST_NUM}.h (description from metadata.txt)")
 endfunction()
 
-# rsm_generate_static_w3c_test: Generate C++ code for a single W3C test
+# sce_generate_static_w3c_test: Generate C++ code for a single W3C test
 #
 # This does NOT create executable - just generates C++ header from TXML
 # Automatically discovers and processes sub SCXML files (e.g., test226sub1.txml)
 #
-function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
+function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
     set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
     set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
@@ -228,10 +228,10 @@ function(rsm_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} "${GENERATED_HEADER}" PARENT_SCOPE)
 endfunction()
 
-# rsm_generate_static_w3c_test_batch: Generate C++ code for multiple W3C tests
+# sce_generate_static_w3c_test_batch: Generate C++ code for multiple W3C tests
 #
-function(rsm_generate_static_w3c_test_batch OUTPUT_DIR)
+function(sce_generate_static_w3c_test_batch OUTPUT_DIR)
     foreach(TEST_NUM ${ARGN})
-        rsm_generate_static_w3c_test(${TEST_NUM} ${OUTPUT_DIR})
+        sce_generate_static_w3c_test(${TEST_NUM} ${OUTPUT_DIR})
     endforeach()
 endfunction()
