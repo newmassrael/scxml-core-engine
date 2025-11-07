@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test242_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: invoke src + inline content consistency validation
@@ -50,10 +50,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test242 : public ScheduledAotTest<Test242, 242> {
     static constexpr const char *DESCRIPTION = "invoke src + content consistency (W3C 6.4 AOT Pure Static)";
-    using SM = RSM::Generated::test242::test242;
+    using SM = SCE::Generated::test242::test242;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test242> registrar_Test242;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -7,7 +7,7 @@
 #include <future>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 struct EventDescriptor;
@@ -149,4 +149,4 @@ public:
 
 ;
 
-}  // namespace RSM
+}  // namespace SCE

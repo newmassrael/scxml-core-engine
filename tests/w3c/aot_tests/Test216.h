@@ -3,7 +3,7 @@
 #include "ScheduledAotTest.h"
 #include "test216_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: Invoke srcexpr runtime evaluation
@@ -34,10 +34,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test216 : public ScheduledAotTest<Test216, 216> {
     static constexpr const char *DESCRIPTION = "srcexpr runtime evaluation (W3C 6.4 AOT Static Hybrid)";
-    using SM = RSM::Generated::test216::test216;
+    using SM = SCE::Generated::test216::test216;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test216> registrar_Test216;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

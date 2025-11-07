@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test551_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.2.2: Early binding with inline content
@@ -32,10 +32,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test551 : public SimpleAotTest<Test551, 551> {
     static constexpr const char *DESCRIPTION = "Early binding inline content (W3C 5.2.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test551::test551;
+    using SM = SCE::Generated::test551::test551;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test551> registrar_Test551;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

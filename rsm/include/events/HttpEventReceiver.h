@@ -15,7 +15,7 @@ struct Request;
 struct Response;
 }  // namespace httplib
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Configuration for HTTP webhook receiver
@@ -159,4 +159,4 @@ private:
     std::atomic<int> actualPort_{0};  // Actual port if 0 was specified
 };
 
-}  // namespace RSM
+}  // namespace SCE

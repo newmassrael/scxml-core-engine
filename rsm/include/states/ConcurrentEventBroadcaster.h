@@ -8,7 +8,7 @@
 #include <thread>
 #include <unordered_map>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Concrete implementation of concurrent event broadcasting
@@ -158,4 +158,4 @@ private:
                                std::chrono::milliseconds duration) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -22,7 +22,7 @@
 #include "tests/w3c/W3CHttpTestServer.h"
 #include <httplib.h>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Mock event target for testing
@@ -75,7 +75,7 @@ protected:
 
         // Set up event raising with MockEventRaiser
         raisedEvents_.clear();
-        mockEventRaiser_ = std::make_shared<RSM::Test::MockEventRaiser>(
+        mockEventRaiser_ = std::make_shared<SCE::Test::MockEventRaiser>(
             [this](const std::string &name, const std::string &data) -> bool {
                 std::lock_guard<std::mutex> lock(eventsMutex_);
                 raisedEvents_.push_back({name, data});
@@ -129,7 +129,7 @@ protected:
     std::shared_ptr<EventTargetFactoryImpl> targetFactory_;
     std::shared_ptr<EventSchedulerImpl> scheduler_;
     std::shared_ptr<EventDispatcherImpl> dispatcher_;
-    std::shared_ptr<RSM::Test::MockEventRaiser> mockEventRaiser_;
+    std::shared_ptr<SCE::Test::MockEventRaiser> mockEventRaiser_;
     EventExecutionCallback eventExecutionCallback_;
 
     // Thread-safe access to event vectors (TSAN compliance)
@@ -142,33 +142,33 @@ protected:
  * @brief Debug test to isolate exact hanging point
  */
 TEST_F(EventSchedulingTest, DebugHangingPoint) {
-    RSM::Logger::debug("Test started");
+    SCE::Logger::debug("Test started");
 
     // Step 1: Create send action
-    RSM::Logger::debug("Creating SendAction");
+    SCE::Logger::debug("Creating SendAction");
     SendAction sendAction("test.event");
-    RSM::Logger::debug("SendAction created");
+    SCE::Logger::debug("SendAction created");
 
     // Step 2: Set target
-    RSM::Logger::debug("Setting target");
+    SCE::Logger::debug("Setting target");
     sendAction.setTarget("#_internal");
-    RSM::Logger::debug("Target set");
+    SCE::Logger::debug("Target set");
 
     // Step 3: Set data
-    RSM::Logger::debug("Setting data");
+    SCE::Logger::debug("Setting data");
     sendAction.setData("'test data'");
-    RSM::Logger::debug("Data set");
+    SCE::Logger::debug("Data set");
 
     // Step 4: Create execution context
-    RSM::Logger::debug("Creating execution context");
+    SCE::Logger::debug("Creating execution context");
     auto sharedExecutor = std::shared_ptr<IActionExecutor>(actionExecutor_.get(), [](IActionExecutor *) {});
-    RSM::Logger::debug("Shared executor created");
+    SCE::Logger::debug("Shared executor created");
 
     ExecutionContextImpl context(sharedExecutor, "test_session");
-    RSM::Logger::debug("Execution context created");
+    SCE::Logger::debug("Execution context created");
 
     // Step 5: Execute send action (this is likely where it hangs)
-    RSM::Logger::debug("About to execute send action");
+    SCE::Logger::debug("About to execute send action");
 
     bool success = sendAction.execute(context);
 
@@ -271,7 +271,7 @@ TEST_F(EventSchedulingTest, EventCancellation) {
     EXPECT_TRUE(scheduler_->hasEvent("cancel_test_001"));
 
     // Wait a bit but not full delay
-    std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
     // Cancel the event
     CancelAction cancelAction("cancel_test_001");
@@ -313,7 +313,7 @@ TEST_F(EventSchedulingTest, MultipleDelayedEvents) {
     }
 
     // Verify all events are scheduled (with brief delay to ensure scheduling completes)
-    std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
     EXPECT_EQ(scheduler_->getScheduledEventCount(), 3);
 
     // Wait for all events to execute with polling to avoid race conditions
@@ -322,7 +322,7 @@ TEST_F(EventSchedulingTest, MultipleDelayedEvents) {
 
     size_t raisedCount = 0;
     while (raisedCount < 3 && std::chrono::steady_clock::now() - start < timeout) {
-        std::this_thread::sleep_for(RSM::Test::Utils::POLL_INTERVAL_MS);
+        std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
         {
             std::lock_guard<std::mutex> lock(eventsMutex_);
             raisedCount = raisedEvents_.size();
@@ -449,7 +449,7 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
     std::vector<std::string> session1Events, session2Events, session3Events;
     std::mutex sessionEventsMutex;
 
-    auto mockEventRaiser1 = std::make_shared<RSM::Test::MockEventRaiser>(
+    auto mockEventRaiser1 = std::make_shared<SCE::Test::MockEventRaiser>(
         [&session1Events, &sessionEventsMutex](const std::string &name, const std::string &data) -> bool {
             (void)data;  // Suppress unused parameter warning
             std::lock_guard<std::mutex> lock(sessionEventsMutex);
@@ -457,7 +457,7 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
             return true;
         });
 
-    auto mockEventRaiser2 = std::make_shared<RSM::Test::MockEventRaiser>(
+    auto mockEventRaiser2 = std::make_shared<SCE::Test::MockEventRaiser>(
         [&session2Events, &sessionEventsMutex](const std::string &name, const std::string &data) -> bool {
             (void)data;  // Suppress unused parameter warning
             std::lock_guard<std::mutex> lock(sessionEventsMutex);
@@ -465,7 +465,7 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
             return true;
         });
 
-    auto mockEventRaiser3 = std::make_shared<RSM::Test::MockEventRaiser>(
+    auto mockEventRaiser3 = std::make_shared<SCE::Test::MockEventRaiser>(
         [&session3Events, &sessionEventsMutex](const std::string &name, const std::string &data) -> bool {
             (void)data;  // Suppress unused parameter warning
             std::lock_guard<std::mutex> lock(sessionEventsMutex);
@@ -528,7 +528,7 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
     EXPECT_TRUE(scheduler_->hasEvent("session3_event"));
 
     // Wait 100ms, then destroy session_2 (W3C SCXML 6.2: should cancel its delayed events)
-    std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
     LOG_DEBUG("Destroying session_2 - should cancel its delayed events (W3C SCXML 6.2)");
     jsEngine.destroySession("session_2");
@@ -721,7 +721,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
 
     // Track events with EventRaiser callback
     auto parentEventRaiser =
-        std::make_shared<RSM::Test::MockEventRaiser>([&](const std::string &name, const std::string &data) -> bool {
+        std::make_shared<SCE::Test::MockEventRaiser>([&](const std::string &name, const std::string &data) -> bool {
             (void)data;
 
             LOG_DEBUG("EventRaiser callback: event '{}' received", name);
@@ -1016,7 +1016,7 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
 </scxml>)scxml";
 
     // W3C SCXML Test 230: Create EventRaiserImpl with callback that processes events on parent SM
-    auto parentEventRaiser = std::make_shared<RSM::EventRaiserImpl>(
+    auto parentEventRaiser = std::make_shared<SCE::EventRaiserImpl>(
         [&parentStateMachine](const std::string &name, const std::string &data) -> bool {
             if (parentStateMachine && parentStateMachine->isRunning()) {
                 return parentStateMachine->processEvent(name, data).success;
@@ -1033,7 +1033,7 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
     // Wait for test completion (max 5 seconds)
     bool completed = false;
     for (int i = 0; i < 50 && !completed; ++i) {
-        std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+        std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
         std::string state = parentStateMachine->getCurrentState();
         completed = (state == "pass" || state == "fail");
     }
@@ -1169,7 +1169,7 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
 </scxml>)scxml";
 
     // Create EventRaiser with callback that processes events on parent SM
-    auto parentEventRaiser = std::make_shared<RSM::EventRaiserImpl>(
+    auto parentEventRaiser = std::make_shared<SCE::EventRaiserImpl>(
         [&parentStateMachine](const std::string &name, const std::string &data) -> bool {
             if (parentStateMachine && parentStateMachine->isRunning()) {
                 return parentStateMachine->processEvent(name, data).success;
@@ -1188,7 +1188,7 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
     // 2. Parent to send foo event
     // 3. Parent transition to final (triggering invoke cancellation)
     // 4. Child onexit handlers to execute
-    std::this_thread::sleep_for(RSM::Test::Utils::LONG_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::LONG_WAIT_MS);
 
     // Verify parent reached final state (invoke should be cancelled)
     std::string finalState = parentStateMachine->getCurrentState();
@@ -1362,7 +1362,7 @@ Then in s1 we access a non-existent substructure of a variable. -->
     auto sm = std::make_shared<StateMachine>();
 
     auto eventRaiser =
-        std::make_shared<RSM::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
+        std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
             if (sm && sm->isRunning()) {
                 return sm->processEvent(name, data).success;
             }
@@ -1379,7 +1379,7 @@ Then in s1 we access a non-existent substructure of a variable. -->
     bool completed = false;
     std::string finalState;
     for (int i = 0; i < 50 && !completed; ++i) {
-        std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+        std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
         finalState = sm->getCurrentState();
         completed = (finalState == "final" || finalState.empty() || !sm->isRunning());
     }
@@ -1472,7 +1472,7 @@ with its illegal expression, it must raise an error -->
     auto sm = std::make_shared<StateMachine>();
 
     auto eventRaiser =
-        std::make_shared<RSM::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
+        std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
             if (sm && sm->isRunning()) {
                 return sm->processEvent(name, data).success;
             }
@@ -1501,7 +1501,7 @@ with its illegal expression, it must raise an error -->
     bool completed = false;
     std::string finalState;
     for (int i = 0; i < 50 && !completed; ++i) {
-        std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+        std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
         finalState = sm->getCurrentState();
         completed = (finalState == "pass" || finalState == "fail" || finalState.empty() || !sm->isRunning());
     }
@@ -1599,7 +1599,7 @@ it should not raise an error until it gets to s03 and evaluates the illegal expr
     auto sm = std::make_shared<StateMachine>();
 
     auto eventRaiser =
-        std::make_shared<RSM::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
+        std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
             if (sm && sm->isRunning()) {
                 return sm->processEvent(name, data).success;
             }
@@ -1628,7 +1628,7 @@ it should not raise an error until it gets to s03 and evaluates the illegal expr
     bool completed = false;
     std::string finalState;
     for (int i = 0; i < 50 && !completed; ++i) {
-        std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+        std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
         finalState = sm->getCurrentState();
         completed = (finalState == "pass" || finalState == "fail" || finalState.empty() || !sm->isRunning());
     }
@@ -1702,7 +1702,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
     // Track if event1 was processed (should not happen)
     std::atomic<bool> event1Processed{false};
 
-    auto eventRaiser = std::make_shared<RSM::EventRaiserImpl>(
+    auto eventRaiser = std::make_shared<SCE::EventRaiserImpl>(
         [&sm, &event1Processed](const std::string &name, const std::string &data) -> bool {
             if (name == "event1") {
                 event1Processed = true;
@@ -1722,7 +1722,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
     ASSERT_TRUE(sm->start()) << "Failed to start StateMachine";
 
     // Wait briefly for final state entry and potential event processing
-    std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
     // W3C SCXML 3.13: State machine MUST halt when entering top-level final state
     std::string currentState = sm->getCurrentState();
@@ -1776,7 +1776,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
  */
 TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse) {
     // Skip HTTP tests in Docker TSAN environment
-    if (RSM::Test::Utils::isInDockerTsan()) {
+    if (SCE::Test::Utils::isInDockerTsan()) {
         GTEST_SKIP() << "Skipping HTTP test in Docker TSAN environment";
     }
 
@@ -1789,7 +1789,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
 
     // Create W3C HTTP test server on a random port
     int testPort = 18513;  // Port for test 513
-    auto httpServer = std::make_unique<RSM::W3C::W3CHttpTestServer>(testPort, "/test");
+    auto httpServer = std::make_unique<SCE::W3C::W3CHttpTestServer>(testPort, "/test");
 
     // Set callback to track received events
     httpServer->setEventCallback([&eventReceived, &receivedEventName, &receivedEventData](const std::string &eventName,
@@ -1805,7 +1805,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     LOG_DEBUG("W3C Test 513: HTTP server started on localhost:{}{}", testPort, "/test");
 
     // Wait for server to be fully ready
-    std::this_thread::sleep_for(RSM::Test::Utils::LONG_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::LONG_WAIT_MS);
 
     // Send well-formed HTTP POST event to server
     httplib::Client client("localhost", testPort);
@@ -1837,7 +1837,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     LOG_DEBUG("W3C Test 513: Response body: {}", response->body);
 
     // Wait briefly for event callback to be processed
-    std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
     // Verify event was added to event queue (callback was invoked)
     EXPECT_TRUE(eventReceived.load()) << "W3C Test 513: Event should be added to event queue before returning response";
@@ -1849,4 +1849,4 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     LOG_DEBUG("=== W3C Test 513 PASSED: BasicHTTPEventProcessor returned 2XX success response ===");
 }
 
-}  // namespace RSM
+}  // namespace SCE

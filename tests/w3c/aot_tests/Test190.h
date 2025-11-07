@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test190_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: External queue priority via targetexpr with sessionid
@@ -38,10 +38,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test190 : public SimpleAotTest<Test190, 190> {
     static constexpr const char *DESCRIPTION = "W3C SCXML C.1: External queue via #_scxml_sessionid target";
-    using SM = RSM::Generated::test190::test190;
+    using SM = SCE::Generated::test190::test190;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test190> registrar_Test190;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

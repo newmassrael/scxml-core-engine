@@ -19,7 +19,7 @@
  * - 6.4.1: Autoforward attribute for parent-to-child event forwarding
  */
 
-namespace RSM::Core {
+namespace SCE::Core {
 
 class InvokeProcessingAlgorithms {
 public:
@@ -44,8 +44,8 @@ public:
      *
      * @example Interpreter usage:
      * @code
-     * RSM::Core::InterpreterInvokeManager adapter(invokeExecutor_);
-     * RSM::Core::InvokeProcessingAlgorithms::processFinalize(
+     * SCE::Core::InterpreterInvokeManager adapter(invokeExecutor_);
+     * SCE::Core::InvokeProcessingAlgorithms::processFinalize(
      *     event.originSessionId,
      *     adapter,
      *     *actionExecutor_
@@ -54,8 +54,8 @@ public:
      *
      * @example AOT usage:
      * @code
-     * RSM::Core::AOTInvokeManager<Policy> adapter(policy_);
-     * RSM::Core::InvokeProcessingAlgorithms::processFinalize(
+     * SCE::Core::AOTInvokeManager<Policy> adapter(policy_);
+     * SCE::Core::InvokeProcessingAlgorithms::processFinalize(
      *     getOriginSessionId(event),
      *     adapter,
      *     *this  // Policy implements ActionExecutor
@@ -101,8 +101,8 @@ public:
      *
      * @example Interpreter usage:
      * @code
-     * RSM::Core::InterpreterInvokeManager adapter(invokeExecutor_);
-     * RSM::Core::InvokeProcessingAlgorithms::processAutoforward(
+     * SCE::Core::InterpreterInvokeManager adapter(invokeExecutor_);
+     * SCE::Core::InvokeProcessingAlgorithms::processAutoforward(
      *     event,
      *     sessionId_,
      *     adapter
@@ -111,8 +111,8 @@ public:
      *
      * @example AOT usage:
      * @code
-     * RSM::Core::AOTInvokeManager<Policy> adapter(policy_);
-     * RSM::Core::InvokeProcessingAlgorithms::processAutoforward(
+     * SCE::Core::AOTInvokeManager<Policy> adapter(policy_);
+     * SCE::Core::InvokeProcessingAlgorithms::processAutoforward(
      *     event,
      *     sessionId_,
      *     adapter
@@ -184,4 +184,4 @@ private:
     }
 };
 
-}  // namespace RSM::Core
+}  // namespace SCE::Core

@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test579_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.8: History default content execution order
@@ -42,10 +42,10 @@ namespace RSM::W3C::AotTests {
 struct Test579 : public ScheduledAotTest<Test579, 579> {
     static constexpr const char *DESCRIPTION =
         "History default content execution with delayed send (W3C 3.8 + 6.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test579::test579;
+    using SM = SCE::Generated::test579::test579;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test579> registrar_Test579;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

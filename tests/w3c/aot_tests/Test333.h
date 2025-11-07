@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test333_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: _event.sendid field must be blank for non-error events
@@ -19,10 +19,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test333 : public SimpleAotTest<Test333, 333> {
     static constexpr const char *DESCRIPTION = "_event.sendid blank for non-error events (W3C 5.10.1 AOT)";
-    using SM = RSM::Generated::test333::test333;
+    using SM = SCE::Generated::test333::test333;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test333> registrar_Test333;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

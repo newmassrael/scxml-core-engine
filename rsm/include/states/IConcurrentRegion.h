@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 struct EventDescriptor;
@@ -170,4 +170,4 @@ public:
     virtual void setCurrentState(const std::string &stateId) = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

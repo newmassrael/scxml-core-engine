@@ -13,7 +13,7 @@
 #include <string>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 
 class ConcurrentCompletionMonitoringTest : public ::testing::Test {
 protected:
@@ -196,4 +196,4 @@ TEST_F(ConcurrentCompletionMonitoringTest, LargeScaleRegionHandling) {
     // Completion criteria should not be met (odd regions are incomplete)
     EXPECT_FALSE(monitor_->isCompletionCriteriaMet()) << "Completion criteria met when some regions are incomplete";
 }
-}  // namespace RSM
+}  // namespace SCE

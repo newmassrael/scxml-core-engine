@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <format>
 
-namespace RSM {
+namespace SCE {
 
 ConcurrentRegion::ConcurrentRegion(const std::string &id, std::shared_ptr<IStateNode> rootState,
                                    std::shared_ptr<IExecutionContext> executionContext)
@@ -1019,4 +1019,4 @@ void ConcurrentRegion::executeActionNodes(const std::vector<std::shared_ptr<IAct
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

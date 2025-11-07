@@ -16,7 +16,7 @@
  * and external execution actions (<code:external-action>).
  */
 
-namespace RSM {
+namespace SCE {
 
 class ActionParser {
 public:
@@ -36,21 +36,21 @@ public:
      * @param actionNode XML action node
      * @return Created action node
      */
-    std::shared_ptr<RSM::IActionNode> parseActionNode(const std::shared_ptr<IXMLElement> &actionNode);
+    std::shared_ptr<SCE::IActionNode> parseActionNode(const std::shared_ptr<IXMLElement> &actionNode);
 
     /**
      * @brief Parse external execution action node
      * @param externalActionNode XML external execution action node
      * @return Created action node
      */
-    std::shared_ptr<RSM::IActionNode> parseExternalActionNode(const std::shared_ptr<IXMLElement> &externalActionNode);
+    std::shared_ptr<SCE::IActionNode> parseExternalActionNode(const std::shared_ptr<IXMLElement> &externalActionNode);
 
     /**
      * @brief Parse actions within onentry/onexit elements
      * @param parentElement Parent element (onentry or onexit)
      * @return List of parsed actions
      */
-    std::vector<std::shared_ptr<RSM::IActionNode>>
+    std::vector<std::shared_ptr<SCE::IActionNode>>
     parseActionsInElement(const std::shared_ptr<IXMLElement> &parentElement);
 
     /**
@@ -90,7 +90,7 @@ private:
      * @param actionNode Action node
      */
     void parseExternalImplementation(const std::shared_ptr<IXMLElement> &element,
-                                     std::shared_ptr<RSM::IActionNode> actionNode);
+                                     std::shared_ptr<SCE::IActionNode> actionNode);
 
     /**
      * @brief Parse special executable content (IXMLElement version)
@@ -98,7 +98,7 @@ private:
      * @param actions List of parsed actions (modified)
      */
     void parseSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element,
-                                       std::vector<std::shared_ptr<RSM::IActionNode>> &actions);
+                                       std::vector<std::shared_ptr<SCE::IActionNode>> &actions);
 
     /**
      * @brief Handle namespace matching
@@ -124,4 +124,4 @@ private:
     std::string scxmlBasePath_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

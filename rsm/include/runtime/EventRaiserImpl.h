@@ -9,7 +9,7 @@
 #include <mutex>
 #include <queue>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class PlatformEventRaiserHelper;
@@ -275,4 +275,4 @@ public:
     mutable std::mutex synchronousQueueMutex_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -9,7 +9,7 @@
 #include "common/Logger.h"
 #include "states/ConcurrentStateNode.h"
 
-std::shared_ptr<RSM::IStateNode> RSM::NodeFactory::createStateNode(const std::string &id, const Type type) {
+std::shared_ptr<SCE::IStateNode> SCE::NodeFactory::createStateNode(const std::string &id, const Type type) {
     LOG_DEBUG("Creating state node: {}", id);
 
     // SCXML W3C specification section 3.4: parallel states require ConcurrentStateNode
@@ -17,55 +17,55 @@ std::shared_ptr<RSM::IStateNode> RSM::NodeFactory::createStateNode(const std::st
         // Create ConcurrentStateNode with default configuration for SCXML compliance
         ConcurrentStateConfig config;  // Uses SCXML W3C compliant defaults
         LOG_DEBUG("Creating ConcurrentStateNode for parallel state: {}", id);
-        return std::make_shared<RSM::ConcurrentStateNode>(id, config);
+        return std::make_shared<SCE::ConcurrentStateNode>(id, config);
     }
 
-    return std::make_shared<RSM::StateNode>(id, type);
+    return std::make_shared<SCE::StateNode>(id, type);
 }
 
-std::shared_ptr<RSM::ITransitionNode> RSM::NodeFactory::createTransitionNode(const std::string &event,
+std::shared_ptr<SCE::ITransitionNode> SCE::NodeFactory::createTransitionNode(const std::string &event,
                                                                              const std::string &target) {
     LOG_DEBUG("Creating transition node: {} -> {}", (event.empty() ? "<no event>" : event), target);
-    return std::make_shared<RSM::TransitionNode>(event, target);
+    return std::make_shared<SCE::TransitionNode>(event, target);
 }
 
-std::shared_ptr<RSM::IGuardNode> RSM::NodeFactory::createGuardNode(const std::string &id, const std::string &target) {
+std::shared_ptr<SCE::IGuardNode> SCE::NodeFactory::createGuardNode(const std::string &id, const std::string &target) {
     LOG_DEBUG("Creating guard node: {} -> {}", id, target);
-    return std::make_shared<RSM::GuardNode>(id, target);
+    return std::make_shared<SCE::GuardNode>(id, target);
 }
 
-std::shared_ptr<RSM::IActionNode> RSM::NodeFactory::createActionNode(const std::string &name) {
+std::shared_ptr<SCE::IActionNode> SCE::NodeFactory::createActionNode(const std::string &name) {
     LOG_DEBUG("Creating action node: {}", name);
 
     // Create specific action types based on SCXML element names
     if (name == "script") {
-        return std::make_shared<RSM::ScriptAction>("");
+        return std::make_shared<SCE::ScriptAction>("");
     } else if (name == "assign") {
-        return std::make_shared<RSM::AssignAction>("", "");
+        return std::make_shared<SCE::AssignAction>("", "");
     } else if (name == "log") {
-        return std::make_shared<RSM::LogAction>("");
+        return std::make_shared<SCE::LogAction>("");
     } else if (name == "raise") {
-        return std::make_shared<RSM::RaiseAction>("");
+        return std::make_shared<SCE::RaiseAction>("");
     } else if (name == "if") {
-        return std::make_shared<RSM::IfAction>("");
+        return std::make_shared<SCE::IfAction>("");
     } else if (name == "send") {
-        return std::make_shared<RSM::SendAction>("");
+        return std::make_shared<SCE::SendAction>("");
     } else if (name == "cancel") {
-        return std::make_shared<RSM::CancelAction>("");
+        return std::make_shared<SCE::CancelAction>("");
     } else {
         // Default to ScriptAction for unknown types
         LOG_WARN("Unknown action type: {}, defaulting to ScriptAction", name);
-        return std::make_shared<RSM::ScriptAction>("");
+        return std::make_shared<SCE::ScriptAction>("");
     }
 }
 
-std::shared_ptr<RSM::IDataModelItem> RSM::NodeFactory::createDataModelItem(const std::string &id,
+std::shared_ptr<SCE::IDataModelItem> SCE::NodeFactory::createDataModelItem(const std::string &id,
                                                                            const std::string &expr) {
     LOG_DEBUG("Creating data model item: {}", id);
-    return std::make_shared<RSM::DataModelItem>(id, expr);
+    return std::make_shared<SCE::DataModelItem>(id, expr);
 }
 
-std::shared_ptr<RSM::IInvokeNode> RSM::NodeFactory::createInvokeNode(const std::string &id) {
+std::shared_ptr<SCE::IInvokeNode> SCE::NodeFactory::createInvokeNode(const std::string &id) {
     LOG_DEBUG("Creating invoke node: {}", id);
-    return std::make_shared<RSM::InvokeNode>(id);
+    return std::make_shared<SCE::InvokeNode>(id);
 }

@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test309_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML Test 309
@@ -12,9 +12,9 @@ namespace RSM::W3C::AotTests {
  */
 struct Test309 : public SimpleAotTest<Test309, 309> {
     static constexpr const char *DESCRIPTION = "W3C SCXML test 309 (AOT)";
-    using SM = RSM::Generated::test309::test309;
+    using SM = SCE::Generated::test309::test309;
 };
 
 inline static AotTestRegistrar<Test309> registrar_Test309;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

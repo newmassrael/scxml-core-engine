@@ -10,7 +10,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class StateMachine;
@@ -314,4 +314,4 @@ private:
     void cleanupInvoke(const std::string &invokeid);
 };
 
-}  // namespace RSM
+}  // namespace SCE

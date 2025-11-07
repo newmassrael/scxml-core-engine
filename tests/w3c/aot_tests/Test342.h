@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test342_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2: eventexpr dynamic event name evaluation
@@ -15,10 +15,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test342 : public SimpleAotTest<Test342, 342> {
     static constexpr const char *DESCRIPTION = "eventexpr dynamic event name (W3C 6.2 AOT)";
-    using SM = RSM::Generated::test342::test342;
+    using SM = SCE::Generated::test342::test342;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test342> registrar_Test342;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

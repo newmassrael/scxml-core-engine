@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test403a_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: Optimal enabled transition set selection (basic case)
@@ -23,10 +23,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test403a : public SimpleAotTest<Test403a, 403> {
     static constexpr const char *DESCRIPTION = "Optimal enabled transition set (W3C 3.13 basic AOT)";
-    using SM = RSM::Generated::test403a::test403a;
+    using SM = SCE::Generated::test403a::test403a;
 };
 
 // Auto-register with variant suffix
 inline static AotTestRegistrar<Test403a> registrar_Test403a("403a");
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

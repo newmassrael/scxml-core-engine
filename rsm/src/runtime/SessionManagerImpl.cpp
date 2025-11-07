@@ -3,7 +3,7 @@
 #include "runtime/ISessionObserver.h"
 #include <algorithm>
 
-namespace RSM {
+namespace SCE {
 
 bool SessionManagerImpl::hasSession(const std::string &sessionId) const {
     std::lock_guard<std::mutex> lock(sessionsMutex_);
@@ -231,4 +231,4 @@ bool SessionManagerImpl::isValidParentSession(const std::string &parentSessionId
     return sessions_.find(parentSessionId) != sessions_.end();
 }
 
-}  // namespace RSM
+}  // namespace SCE

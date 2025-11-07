@@ -6,7 +6,7 @@
 class EventSystemTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &RSM::JSEngine::instance();
+        engine_ = &SCE::JSEngine::instance();
         // Ensure test isolation with JSEngine reset
         engine_->reset();
 
@@ -25,9 +25,9 @@ protected:
         }
     }
 
-    RSM::JSEngine *engine_;
+    SCE::JSEngine *engine_;
     std::string sessionId_;
-    RSM::Tests::W3CEventTestHelper w3cHelper_;
+    SCE::Tests::W3CEventTestHelper w3cHelper_;
 };
 
 // Test _event object exists and has required properties (W3C SCXML 5.10 compliant)
@@ -93,7 +93,7 @@ TEST_F(EventSystemTest, W3C_EventObjectReadOnlyCompliance) {
 // Test internal event updating (used by StateMachine)
 TEST_F(EventSystemTest, InternalEventDataUpdating) {
     // Test setCurrentEvent API with string data (JSON formatted)
-    auto testEvent = std::make_shared<RSM::Event>("test.event", "internal");
+    auto testEvent = std::make_shared<SCE::Event>("test.event", "internal");
     testEvent->setRawJsonData("\"test_data\"");  // JSON string format
 
     auto setResult = engine_->setCurrentEvent(sessionId_, testEvent).get();
@@ -104,7 +104,7 @@ TEST_F(EventSystemTest, InternalEventDataUpdating) {
     EXPECT_EQ(checkResult.getValue<std::string>(), "test.event|test_data");
 
     // Test updating with object data
-    auto objectEvent = std::make_shared<RSM::Event>("object.event", "internal");
+    auto objectEvent = std::make_shared<SCE::Event>("object.event", "internal");
     objectEvent->setRawJsonData("{\"key\": \"value\", \"number\": 42}");
 
     auto objectSetResult = engine_->setCurrentEvent(sessionId_, objectEvent).get();
@@ -115,7 +115,7 @@ TEST_F(EventSystemTest, InternalEventDataUpdating) {
     EXPECT_EQ(objectCheckResult.getValue<std::string>(), "value_42");
 
     // Test updating with array data
-    auto arrayEvent = std::make_shared<RSM::Event>("array.event", "internal");
+    auto arrayEvent = std::make_shared<SCE::Event>("array.event", "internal");
     arrayEvent->setRawJsonData("[1, 2, 3]");
 
     auto arraySetResult = engine_->setCurrentEvent(sessionId_, arrayEvent).get();
@@ -129,7 +129,7 @@ TEST_F(EventSystemTest, InternalEventDataUpdating) {
 // Test event name and type handling via setCurrentEvent API
 TEST_F(EventSystemTest, InternalEventNameAndTypeUpdating) {
     // Test setting event name via setCurrentEvent API
-    auto loginEvent = std::make_shared<RSM::Event>("user.login", "internal");
+    auto loginEvent = std::make_shared<SCE::Event>("user.login", "internal");
     auto nameSetResult = engine_->setCurrentEvent(sessionId_, loginEvent).get();
     ASSERT_TRUE(nameSetResult.isSuccess());
 
@@ -138,7 +138,7 @@ TEST_F(EventSystemTest, InternalEventNameAndTypeUpdating) {
     EXPECT_EQ(nameResult.getValue<std::string>(), "user.login");
 
     // Test setting event type via setCurrentEvent API
-    auto platformEvent = std::make_shared<RSM::Event>("platform.event", "platform");
+    auto platformEvent = std::make_shared<SCE::Event>("platform.event", "platform");
     auto typeSetResult = engine_->setCurrentEvent(sessionId_, platformEvent).get();
     ASSERT_TRUE(typeSetResult.isSuccess());
 
@@ -147,7 +147,7 @@ TEST_F(EventSystemTest, InternalEventNameAndTypeUpdating) {
     EXPECT_EQ(typeResult.getValue<std::string>(), "platform");
 
     // Test complex event names with dots
-    auto complexEvent = std::make_shared<RSM::Event>("error.execution.timeout", "internal");
+    auto complexEvent = std::make_shared<SCE::Event>("error.execution.timeout", "internal");
     auto complexSetResult = engine_->setCurrentEvent(sessionId_, complexEvent).get();
     ASSERT_TRUE(complexSetResult.isSuccess());
 
@@ -159,7 +159,7 @@ TEST_F(EventSystemTest, InternalEventNameAndTypeUpdating) {
 // Test event origin and invocation properties via setCurrentEvent API
 TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
     // Test setting origin via setCurrentEvent API
-    auto internalEvent = std::make_shared<RSM::Event>("internal.event", "internal");
+    auto internalEvent = std::make_shared<SCE::Event>("internal.event", "internal");
     internalEvent->setOrigin("#_internal");
     auto originSetResult = engine_->setCurrentEvent(sessionId_, internalEvent).get();
     ASSERT_TRUE(originSetResult.isSuccess());
@@ -169,7 +169,7 @@ TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
     EXPECT_EQ(originResult.getValue<std::string>(), "#_internal");
 
     // Test setting origintype via setCurrentEvent API
-    auto scxmlEvent = std::make_shared<RSM::Event>("scxml.event", "internal");
+    auto scxmlEvent = std::make_shared<SCE::Event>("scxml.event", "internal");
     scxmlEvent->setOriginType("http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
     auto origintypeSetResult = engine_->setCurrentEvent(sessionId_, scxmlEvent).get();
     ASSERT_TRUE(origintypeSetResult.isSuccess());
@@ -179,7 +179,7 @@ TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
     EXPECT_EQ(origintypeResult.getValue<std::string>(), "http://www.w3.org/TR/scxml/#SCXMLEventProcessor");
 
     // Test setting invokeid via setCurrentEvent API
-    auto invokeEvent = std::make_shared<RSM::Event>("invoke.event", "internal");
+    auto invokeEvent = std::make_shared<SCE::Event>("invoke.event", "internal");
     invokeEvent->setInvokeId("invoke_123");
     auto invokeidSetResult = engine_->setCurrentEvent(sessionId_, invokeEvent).get();
     ASSERT_TRUE(invokeidSetResult.isSuccess());
@@ -189,7 +189,7 @@ TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
     EXPECT_EQ(invokeidResult.getValue<std::string>(), "invoke_123");
 
     // Test setting sendid via setCurrentEvent API
-    auto sendEvent = std::make_shared<RSM::Event>("send.event", "internal");
+    auto sendEvent = std::make_shared<SCE::Event>("send.event", "internal");
     sendEvent->setSendId("send_456");
     auto sendidSetResult = engine_->setCurrentEvent(sessionId_, sendEvent).get();
     ASSERT_TRUE(sendidSetResult.isSuccess());
@@ -202,7 +202,7 @@ TEST_F(EventSystemTest, InternalEventOriginPropertiesUpdating) {
 // Test event object in expressions
 TEST_F(EventSystemTest, EventInExpressions) {
     // Set up event data using setCurrentEvent API
-    auto userEvent = std::make_shared<RSM::Event>("user.action", "internal");
+    auto userEvent = std::make_shared<SCE::Event>("user.action", "internal");
     userEvent->setRawJsonData("{\"userId\": 123, \"action\": \"click\"}");
     auto setupResult = engine_->setCurrentEvent(sessionId_, userEvent).get();
     ASSERT_TRUE(setupResult.isSuccess());
@@ -227,7 +227,7 @@ TEST_F(EventSystemTest, EventInExpressions) {
 // Test event object serialization
 TEST_F(EventSystemTest, EventSerialization) {
     // Set up event with complex data using setCurrentEvent API
-    auto complexEvent = std::make_shared<RSM::Event>("complex.event", "internal");
+    auto complexEvent = std::make_shared<SCE::Event>("complex.event", "internal");
     complexEvent->setRawJsonData("{\"user\":{\"id\":1,\"name\":\"test\"},\"items\":[1,2,3]}");
     auto setupResult = engine_->setCurrentEvent(sessionId_, complexEvent).get();
     ASSERT_TRUE(setupResult.isSuccess());
@@ -252,7 +252,7 @@ TEST_F(EventSystemTest, EventSerialization) {
 // Test event object across multiple evaluations
 TEST_F(EventSystemTest, EventPersistence) {
     // Set event data using setCurrentEvent API
-    auto persistentEvent = std::make_shared<RSM::Event>("persistent.event", "internal");
+    auto persistentEvent = std::make_shared<SCE::Event>("persistent.event", "internal");
     persistentEvent->setRawJsonData("\"persistent_data\"");  // JSON string format
     auto setResult = engine_->setCurrentEvent(sessionId_, persistentEvent).get();
     ASSERT_TRUE(setResult.isSuccess());
@@ -267,7 +267,7 @@ TEST_F(EventSystemTest, EventPersistence) {
     EXPECT_EQ(checkDataResult.getValue<std::string>(), "persistent_data");
 
     // Modify using another setCurrentEvent call
-    auto modifiedEvent = std::make_shared<RSM::Event>("persistent.event", "internal");
+    auto modifiedEvent = std::make_shared<SCE::Event>("persistent.event", "internal");
     modifiedEvent->setRawJsonData("\"modified_data\"");  // JSON string format
     auto modifyResult = engine_->setCurrentEvent(sessionId_, modifiedEvent).get();
     ASSERT_TRUE(modifyResult.isSuccess());

@@ -3,7 +3,7 @@
 #include "ScheduledAotTest.h"
 #include "test207_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.3: cancel tag - cannot cancel events in different sessions
@@ -46,10 +46,10 @@ namespace RSM::W3C::AotTests {
 struct Test207 : public ScheduledAotTest<Test207, 207> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 6.3: cancel operation scoped to originating session, cannot affect child session's delayed events";
-    using SM = RSM::Generated::test207::test207;
+    using SM = SCE::Generated::test207::test207;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test207> registrar_Test207;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

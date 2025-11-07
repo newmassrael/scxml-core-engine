@@ -2,7 +2,7 @@
 
 ## Overview
 
-This Commercial License provides an alternative to the LGPL-2.1 license for the RSM (Reactive State Machine) Execution Engine, allowing you to use and modify the engine in proprietary software without LGPL requirements.
+This Commercial License provides an alternative to the LGPL-2.1 license for the SCE (SCXML Core Engine) Execution Engine, allowing you to use and modify the engine in proprietary software without LGPL requirements.
 
 **Licensor:** newmassrael  
 **License Model:** GitHub Sponsors (Cumulative Sponsorship)  

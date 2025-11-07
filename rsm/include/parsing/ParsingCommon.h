@@ -14,7 +14,7 @@
  * namespace handling, attribute validation, path processing, etc.
  */
 
-namespace RSM {
+namespace SCE {
 
 class ParsingCommon {
 public:
@@ -120,4 +120,4 @@ private:
     ParsingCommon() = delete;
 };
 
-}  // namespace RSM
+}  // namespace SCE

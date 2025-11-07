@@ -5,7 +5,7 @@
 #include "IEventRaiser.h"
 #include <memory>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief RAII guard for managing EventRaiser immediate mode
@@ -61,6 +61,6 @@ private:
     bool previousState_;
 };
 
-}  // namespace RSM
+}  // namespace SCE
 
 #endif  // RSM_IMMEDIATE_MODE_GUARD_H

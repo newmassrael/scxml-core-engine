@@ -8,7 +8,7 @@
 #include <sstream>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 namespace W3C {
 
 W3CHttpTestServer::W3CHttpTestServer(int port, const std::string &path)
@@ -63,7 +63,7 @@ bool W3CHttpTestServer::start() {
     });
 
     // Wait a bit for server to start
-    std::this_thread::sleep_for(RSM::Test::Utils::STANDARD_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
     if (!running_.load()) {
         if (serverThread_.joinable()) {
@@ -94,7 +94,7 @@ void W3CHttpTestServer::stop() {
     }
 
     // Give OS more time to release the port completely
-    std::this_thread::sleep_for(RSM::Test::Utils::LONG_WAIT_MS);
+    std::this_thread::sleep_for(SCE::Test::Utils::LONG_WAIT_MS);
 
     LOG_INFO("W3CHttpTestServer: [{}] HTTP server stopped", instanceId_);
 }
@@ -249,4 +249,4 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
 }
 
 }  // namespace W3C
-}  // namespace RSM
+}  // namespace SCE

@@ -4,7 +4,7 @@
 #include <sstream>
 #include <stdexcept>
 
-namespace RSM {
+namespace SCE {
 
 EventDispatcherImpl::EventDispatcherImpl(std::shared_ptr<IEventScheduler> scheduler,
                                          std::shared_ptr<IEventTargetFactory> targetFactory)
@@ -202,4 +202,4 @@ std::future<SendResult> EventDispatcherImpl::onScheduledEventExecution(const Eve
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

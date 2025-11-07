@@ -5,7 +5,7 @@
 #include <sstream>
 #include <string>
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief Base interface for AOT engine tests
@@ -121,4 +121,4 @@ public:
     }
 };
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -22,7 +22,7 @@ extern "C" {
 #include "quickjs.h"
 }
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class StateMachine;
@@ -212,4 +212,4 @@ private:
     size_t getMemoryUsageInternal() const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

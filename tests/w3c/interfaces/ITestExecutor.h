@@ -5,7 +5,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief Test execution result
@@ -70,4 +70,4 @@ public:
     virtual void setTimeout(std::chrono::milliseconds timeoutMs) = 0;
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

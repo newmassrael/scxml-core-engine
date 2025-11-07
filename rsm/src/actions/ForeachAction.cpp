@@ -2,7 +2,7 @@
 #include "runtime/IActionExecutor.h"
 #include "runtime/IExecutionContext.h"
 
-namespace RSM {
+namespace SCE {
 
 ForeachAction::ForeachAction(const std::string &array, const std::string &item, const std::string &index,
                              const std::string &id)
@@ -192,4 +192,4 @@ ForeachAction::cloneIterationActions(const std::vector<std::shared_ptr<IActionNo
     return cloned;
 }
 
-}  // namespace RSM
+}  // namespace SCE

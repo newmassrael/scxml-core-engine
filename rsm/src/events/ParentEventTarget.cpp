@@ -9,7 +9,7 @@
 #include <sstream>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 
 ParentEventTarget::ParentEventTarget(const std::string &childSessionId, std::shared_ptr<IEventRaiser> eventRaiser,
                                      std::shared_ptr<IEventScheduler> scheduler)
@@ -140,7 +140,7 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
         // W3C SCXML 5.10: Pass invoke ID for event.invokeid field (test 338)
         // W3C SCXML 5.10: Pass origintype as SCXML processor type (test 253, 331, 352, 372)
         // ARCHITECTURE.md: Use SCXMLConstants for Single Source of Truth
-        std::string originType = RSM::Constants::SCXML_EVENT_PROCESSOR_TYPE;
+        std::string originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
         LOG_DEBUG("ParentEventTarget::sendImmediately() - Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
                   "'{}', invokeId: '{}', originType: '{}')",
                   eventName, eventData, actualChildSessionId, invokeId, originType);
@@ -211,4 +211,4 @@ std::string ParentEventTarget::findParentSessionId(const std::string &childSessi
     return parentSessionId;
 }
 
-}  // namespace RSM
+}  // namespace SCE

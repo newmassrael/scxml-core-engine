@@ -8,7 +8,7 @@
 #include <cstdio>
 #include <iostream>
 
-namespace RSM {
+namespace SCE {
 
 // === URI Encoding Helper ===
 
@@ -363,7 +363,7 @@ static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
 
     if (isXML) {
         // Create DOM object for XML content
-        return RSM::DOMBinding::createDOMObject(ctx, dataStr);
+        return SCE::DOMBinding::createDOMObject(ctx, dataStr);
     }
 
     // Try to parse as JSON
@@ -769,4 +769,4 @@ JSResult JSEngine::createErrorFromException(JSContext *ctx) {
     JS_FreeValue(ctx, exception);
     return JSResult::createError(errorMessage);
 }
-}  // namespace RSM
+}  // namespace SCE

@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Main SCXML Engine interface
@@ -262,4 +262,4 @@ SCXML_API std::unique_ptr<SCXMLEngine> createSCXMLEngine();
  */
 SCXML_API std::string getSCXMLVersion();
 
-}  // namespace RSM
+}  // namespace SCE

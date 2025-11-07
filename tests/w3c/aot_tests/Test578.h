@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test578_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9/5.10: ECMAScript _event.data JSON object creation
@@ -36,10 +36,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test578 : public SimpleAotTest<Test578, 578> {
     static constexpr const char *DESCRIPTION = "ECMAScript _event.data JSON object (W3C 5.9/5.10 AOT Static Hybrid)";
-    using SM = RSM::Generated::test578::test578;
+    using SM = SCE::Generated::test578::test578;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test578> registrar_Test578;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

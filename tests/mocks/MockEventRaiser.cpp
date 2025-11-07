@@ -1,6 +1,6 @@
 #include "MockEventRaiser.h"
 
-namespace RSM {
+namespace SCE {
 namespace Test {
 
 MockEventRaiser::MockEventRaiser(std::function<bool(const std::string &, const std::string &)> callback)
@@ -100,4 +100,4 @@ bool MockEventRaiser::hasQueuedEvents() const {
 }
 
 }  // namespace Test
-}  // namespace RSM
+}  // namespace SCE

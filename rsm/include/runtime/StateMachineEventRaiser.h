@@ -4,7 +4,7 @@
 #include <functional>
 #include <memory>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declaration
 class StateMachine;
@@ -40,4 +40,4 @@ private:
     std::function<bool(const std::string &, const std::string &)> eventProcessor_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

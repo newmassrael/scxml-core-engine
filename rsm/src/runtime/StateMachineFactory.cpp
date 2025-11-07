@@ -4,7 +4,7 @@
 #include "scripting/JSEngine.h"
 #include <random>
 
-namespace RSM {
+namespace SCE {
 
 // === StateMachineFactory Implementation ===
 
@@ -57,4 +57,4 @@ StateMachineFactory::CreationResult StateMachineFactory::Builder::build() {
     return StateMachineFactory::createInternal(scxmlContent_, autoInitialize_);
 }
 
-}  // namespace RSM
+}  // namespace SCE

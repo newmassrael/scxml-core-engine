@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test253_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.1: SCXML Event I/O Processor bidirectional communication
@@ -40,10 +40,10 @@ namespace RSM::W3C::AotTests {
 struct Test253 : public SimpleAotTest<Test253, 253> {
     static constexpr const char *DESCRIPTION =
         "SCXML Event I/O Processor bidirectional communication (W3C C.1 AOT Static Hybrid)";
-    using SM = RSM::Generated::test253::test253;
+    using SM = SCE::Generated::test253::test253;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test253> registrar_Test253;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

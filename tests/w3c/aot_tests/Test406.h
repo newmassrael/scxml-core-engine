@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test406_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.3: State entry order with parallel regions
@@ -15,10 +15,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test406 : public SimpleAotTest<Test406, 406> {
     static constexpr const char *DESCRIPTION = "State entry order with parallel regions (W3C 3.3 AOT)";
-    using SM = RSM::Generated::test406::test406;
+    using SM = SCE::Generated::test406::test406;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test406> registrar_Test406;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

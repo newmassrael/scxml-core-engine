@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test354_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10: Event data population with namelist, param, and content
@@ -17,10 +17,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test354 : public SimpleAotTest<Test354, 354> {
     static constexpr const char *DESCRIPTION = "Event data with namelist/param/content (W3C 5.10 AOT)";
-    using SM = RSM::Generated::test354::test354;
+    using SM = SCE::Generated::test354::test354;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test354> registrar_Test354;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

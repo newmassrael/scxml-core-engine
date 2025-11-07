@@ -8,7 +8,7 @@
 #include <cassert>
 #include <format>
 
-namespace RSM {
+namespace SCE {
 
 ConcurrentStateNode::ConcurrentStateNode(const std::string &id, const ConcurrentStateConfig &config)
     : id_(id), parent_(nullptr), config_(config), hasNotifiedCompletion_(false), historyType_(HistoryType::NONE),
@@ -148,15 +148,6 @@ bool ConcurrentStateNode::isShallowHistory() const {
 
 bool ConcurrentStateNode::isDeepHistory() const {
     return historyType_ == HistoryType::DEEP;
-}
-
-void ConcurrentStateNode::addReactiveGuard(const std::string &guardId) {
-    LOG_DEBUG("Adding reactive guard to {}: {}", id_, guardId);
-    reactiveGuards_.push_back(guardId);
-}
-
-const std::vector<std::string> &ConcurrentStateNode::getReactiveGuards() const {
-    return reactiveGuards_;
 }
 
 // W3C SCXML 3.8/3.9: Block-based action methods
@@ -600,4 +591,4 @@ void ConcurrentStateNode::generateDoneStateEvent() {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

@@ -1,6 +1,6 @@
 #include "GuardUtils.h"
 
-namespace RSM {
+namespace SCE {
 namespace GuardUtils {
 
 bool isConditionExpression(const std::string &expression) {
@@ -12,4 +12,4 @@ bool isConditionExpression(const std::string &expression) {
 }
 
 }  // namespace GuardUtils
-}  // namespace RSM
+}  // namespace SCE

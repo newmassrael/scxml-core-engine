@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test415_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.7.1: Top-level final state halts execution
@@ -20,7 +20,7 @@ namespace RSM::W3C::AotTests {
  */
 struct Test415 : public SimpleAotTest<Test415, 415> {
     static constexpr const char *DESCRIPTION = "Top-level final state halts execution (W3C 3.7.1 AOT)";
-    using SM = RSM::Generated::test415::test415;
+    using SM = SCE::Generated::test415::test415;
 
     // Policy-based design: Override success state for manual test
     // This test has no Pass state, only Final state
@@ -30,4 +30,4 @@ struct Test415 : public SimpleAotTest<Test415, 415> {
 // Auto-register
 inline static AotTestRegistrar<Test415> registrar_Test415;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

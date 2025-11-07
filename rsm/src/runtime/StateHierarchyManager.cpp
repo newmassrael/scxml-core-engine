@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 StateHierarchyManager::StateHierarchyManager(std::shared_ptr<SCXMLModel> model)
     : model_(model), historyManager_(nullptr) {
@@ -1107,4 +1107,4 @@ void StateHierarchyManager::updateParallelRegionCurrentStates() {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

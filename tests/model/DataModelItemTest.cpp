@@ -20,8 +20,8 @@ protected:
         // Cleanup managed by smart pointers
     }
 
-    std::unique_ptr<RSM::DataModelItem> createItem(const std::string &id, const std::string &type = "") {
-        auto item = std::make_unique<RSM::DataModelItem>(id);
+    std::unique_ptr<SCE::DataModelItem> createItem(const std::string &id, const std::string &type = "") {
+        auto item = std::make_unique<SCE::DataModelItem>(id);
         if (!type.empty()) {
             item->setType(type);
         }

@@ -6,35 +6,35 @@
 #include <sstream>
 #include <unordered_set>
 
-RSM::SCXMLModel::SCXMLModel() : rootState_(nullptr) {
+SCE::SCXMLModel::SCXMLModel() : rootState_(nullptr) {
     LOG_DEBUG("Creating SCXML model");
 }
 
-RSM::SCXMLModel::~SCXMLModel() {
+SCE::SCXMLModel::~SCXMLModel() {
     LOG_DEBUG("Destroying SCXML model");
     // Smart pointers handle resource cleanup
 }
 
-void RSM::SCXMLModel::setRootState(std::shared_ptr<RSM::IStateNode> rootState) {
+void SCE::SCXMLModel::setRootState(std::shared_ptr<SCE::IStateNode> rootState) {
     LOG_DEBUG("Setting root state: {}", (rootState ? rootState->getId() : "null"));
     rootState_ = rootState;
     // Rebuild the complete state list to include all nested children
     rebuildAllStatesList();
 }
 
-std::shared_ptr<RSM::IStateNode> RSM::SCXMLModel::getRootState() const {
+std::shared_ptr<SCE::IStateNode> SCE::SCXMLModel::getRootState() const {
     return rootState_;
 }
 
-void RSM::SCXMLModel::setName(const std::string &name) {
+void SCE::SCXMLModel::setName(const std::string &name) {
     name_ = name;
 }
 
-const std::string &RSM::SCXMLModel::getName() const {
+const std::string &SCE::SCXMLModel::getName() const {
     return name_;
 }
 
-void RSM::SCXMLModel::setInitialState(const std::string &initialState) {
+void SCE::SCXMLModel::setInitialState(const std::string &initialState) {
     LOG_DEBUG("Setting initial state: {}", initialState);
 
     // W3C SCXML 3.3: Parse space-separated initial state IDs
@@ -49,54 +49,54 @@ void RSM::SCXMLModel::setInitialState(const std::string &initialState) {
     LOG_DEBUG("Parsed {} initial state(s)", initialStates_.size());
 }
 
-const std::vector<std::string> &RSM::SCXMLModel::getInitialStates() const {
+const std::vector<std::string> &SCE::SCXMLModel::getInitialStates() const {
     return initialStates_;
 }
 
-std::string RSM::SCXMLModel::getInitialState() const {
+std::string SCE::SCXMLModel::getInitialState() const {
     // Return first initial state for backward compatibility
     return initialStates_.empty() ? "" : initialStates_[0];
 }
 
-void RSM::SCXMLModel::setDatamodel(const std::string &datamodel) {
+void SCE::SCXMLModel::setDatamodel(const std::string &datamodel) {
     LOG_DEBUG("Setting datamodel: {}", datamodel);
     datamodel_ = datamodel;
 }
 
-const std::string &RSM::SCXMLModel::getDatamodel() const {
+const std::string &SCE::SCXMLModel::getDatamodel() const {
     return datamodel_;
 }
 
-void RSM::SCXMLModel::addContextProperty(const std::string &name, const std::string &type) {
+void SCE::SCXMLModel::addContextProperty(const std::string &name, const std::string &type) {
     LOG_DEBUG("Adding context property: {} ({})", name, type);
     contextProperties_[name] = type;
 }
 
-const std::unordered_map<std::string, std::string> &RSM::SCXMLModel::getContextProperties() const {
+const std::unordered_map<std::string, std::string> &SCE::SCXMLModel::getContextProperties() const {
     return contextProperties_;
 }
 
-void RSM::SCXMLModel::addInjectPoint(const std::string &name, const std::string &type) {
+void SCE::SCXMLModel::addInjectPoint(const std::string &name, const std::string &type) {
     LOG_DEBUG("Adding inject point: {} ({})", name, type);
     injectPoints_[name] = type;
 }
 
-const std::unordered_map<std::string, std::string> &RSM::SCXMLModel::getInjectPoints() const {
+const std::unordered_map<std::string, std::string> &SCE::SCXMLModel::getInjectPoints() const {
     return injectPoints_;
 }
 
-void RSM::SCXMLModel::addGuard(std::shared_ptr<RSM::IGuardNode> guard) {
+void SCE::SCXMLModel::addGuard(std::shared_ptr<SCE::IGuardNode> guard) {
     if (guard) {
         LOG_DEBUG("Adding guard: {}", guard->getId());
         guards_.push_back(guard);
     }
 }
 
-const std::vector<std::shared_ptr<RSM::IGuardNode>> &RSM::SCXMLModel::getGuards() const {
+const std::vector<std::shared_ptr<SCE::IGuardNode>> &SCE::SCXMLModel::getGuards() const {
     return guards_;
 }
 
-void RSM::SCXMLModel::addState(std::shared_ptr<RSM::IStateNode> state) {
+void SCE::SCXMLModel::addState(std::shared_ptr<SCE::IStateNode> state) {
     if (state) {
         LOG_DEBUG("Adding state: {}", state->getId());
         allStates_.push_back(state);
@@ -106,11 +106,11 @@ void RSM::SCXMLModel::addState(std::shared_ptr<RSM::IStateNode> state) {
     }
 }
 
-const std::vector<std::shared_ptr<RSM::IStateNode>> &RSM::SCXMLModel::getAllStates() const {
+const std::vector<std::shared_ptr<SCE::IStateNode>> &SCE::SCXMLModel::getAllStates() const {
     return allStates_;
 }
 
-RSM::IStateNode *RSM::SCXMLModel::findStateById(const std::string &id) const {
+SCE::IStateNode *SCE::SCXMLModel::findStateById(const std::string &id) const {
     // Search in map first
     auto it = stateIdMap_.find(id);
     if (it != stateIdMap_.end()) {
@@ -124,7 +124,7 @@ RSM::IStateNode *RSM::SCXMLModel::findStateById(const std::string &id) const {
             return state.get();
         }
 
-        RSM::IStateNode *result = findStateByIdRecursive(state.get(), id, visitedStates);
+        SCE::IStateNode *result = findStateByIdRecursive(state.get(), id, visitedStates);
         if (result) {
             return result;
         }
@@ -133,7 +133,7 @@ RSM::IStateNode *RSM::SCXMLModel::findStateById(const std::string &id) const {
     return nullptr;
 }
 
-RSM::IStateNode *RSM::SCXMLModel::findStateByIdRecursive(RSM::IStateNode *state, const std::string &id,
+SCE::IStateNode *SCE::SCXMLModel::findStateByIdRecursive(SCE::IStateNode *state, const std::string &id,
                                                          std::set<std::string> &visitedStates) const {
     if (!state) {
         return nullptr;
@@ -153,7 +153,7 @@ RSM::IStateNode *RSM::SCXMLModel::findStateByIdRecursive(RSM::IStateNode *state,
 
     // Search child states
     for (const auto &child : state->getChildren()) {
-        RSM::IStateNode *result = findStateByIdRecursive(child.get(), id, visitedStates);
+        SCE::IStateNode *result = findStateByIdRecursive(child.get(), id, visitedStates);
         if (result) {
             return result;
         }
@@ -162,24 +162,24 @@ RSM::IStateNode *RSM::SCXMLModel::findStateByIdRecursive(RSM::IStateNode *state,
     return nullptr;
 }
 
-void RSM::SCXMLModel::addDataModelItem(std::shared_ptr<RSM::IDataModelItem> dataItem) {
+void SCE::SCXMLModel::addDataModelItem(std::shared_ptr<SCE::IDataModelItem> dataItem) {
     if (dataItem) {
         LOG_DEBUG("Adding data model item: {}", dataItem->getId());
         dataModelItems_.push_back(dataItem);
     }
 }
 
-const std::vector<std::shared_ptr<RSM::IDataModelItem>> &RSM::SCXMLModel::getDataModelItems() const {
+const std::vector<std::shared_ptr<SCE::IDataModelItem>> &SCE::SCXMLModel::getDataModelItems() const {
     return dataModelItems_;
 }
 
-bool RSM::SCXMLModel::validateStateRelationships() const {
+bool SCE::SCXMLModel::validateStateRelationships() const {
     LOG_INFO("Validating state relationships");
 
     // Validate all states
     for (const auto &state : allStates_) {
         // Validate parent state
-        RSM::IStateNode *parent = state->getParent();
+        SCE::IStateNode *parent = state->getParent();
         if (parent) {
             // Check if parent actually has this state as a child
             bool foundAsChild = false;
@@ -201,7 +201,7 @@ bool RSM::SCXMLModel::validateStateRelationships() const {
         for (const auto &transition : state->getTransitions()) {
             const auto targets = transition->getTargets();
             for (const auto &target : targets) {
-                RSM::IStateNode *targetState = findStateById(target);
+                SCE::IStateNode *targetState = findStateById(target);
                 if (!targetState) {
                     LOG_ERROR("Transition in state '{}' references non-existent target state '{}'", state->getId(),
                               target);
@@ -235,7 +235,7 @@ bool RSM::SCXMLModel::validateStateRelationships() const {
     return true;
 }
 
-std::vector<std::string> RSM::SCXMLModel::findMissingStateIds() const {
+std::vector<std::string> SCE::SCXMLModel::findMissingStateIds() const {
     LOG_INFO("Looking for missing state IDs");
 
     std::vector<std::string> missingIds;
@@ -274,7 +274,7 @@ std::vector<std::string> RSM::SCXMLModel::findMissingStateIds() const {
     return missingIds;
 }
 
-std::set<std::string> RSM::SCXMLModel::getDataModelVariableNames() const {
+std::set<std::string> SCE::SCXMLModel::getDataModelVariableNames() const {
     std::set<std::string> variableNames;
 
     for (const auto &dataItem : dataModelItems_) {
@@ -286,7 +286,7 @@ std::set<std::string> RSM::SCXMLModel::getDataModelVariableNames() const {
     return variableNames;
 }
 
-void RSM::SCXMLModel::printModelStructure() const {
+void SCE::SCXMLModel::printModelStructure() const {
     LOG_INFO("Printing model structure");
     LOG_INFO("SCXML Model Structure:\n");
     LOG_INFO("======================\n");
@@ -330,10 +330,6 @@ void RSM::SCXMLModel::printModelStructure() const {
         if (!guard->getExternalClass().empty()) {
             LOG_INFO("    External Class: {}", guard->getExternalClass());
         }
-
-        if (guard->isReactive()) {
-            LOG_INFO("    Reactive: Yes");
-        }
     }
 
     LOG_INFO("\nState Hierarchy:\n");
@@ -344,7 +340,7 @@ void RSM::SCXMLModel::printModelStructure() const {
     LOG_INFO("Model structure printed");
 }
 
-void RSM::SCXMLModel::printStateHierarchy(RSM::IStateNode *state, int depth) const {
+void SCE::SCXMLModel::printStateHierarchy(SCE::IStateNode *state, int depth) const {
     if (!state) {
         return;
     }
@@ -361,38 +357,38 @@ void RSM::SCXMLModel::printStateHierarchy(RSM::IStateNode *state, int depth) con
     }
 }
 
-void RSM::SCXMLModel::setBinding(const std::string &binding) {
+void SCE::SCXMLModel::setBinding(const std::string &binding) {
     LOG_DEBUG("Setting binding mode: {}", binding);
     binding_ = binding;
 }
 
-const std::string &RSM::SCXMLModel::getBinding() const {
+const std::string &SCE::SCXMLModel::getBinding() const {
     return binding_;
 }
 
-void RSM::SCXMLModel::addSystemVariable(std::shared_ptr<RSM::IDataModelItem> systemVar) {
+void SCE::SCXMLModel::addSystemVariable(std::shared_ptr<SCE::IDataModelItem> systemVar) {
     if (systemVar) {
         LOG_DEBUG("Adding system variable: {}", systemVar->getId());
         systemVariables_.push_back(systemVar);
     }
 }
 
-const std::vector<std::shared_ptr<RSM::IDataModelItem>> &RSM::SCXMLModel::getSystemVariables() const {
+const std::vector<std::shared_ptr<SCE::IDataModelItem>> &SCE::SCXMLModel::getSystemVariables() const {
     return systemVariables_;
 }
 
-void RSM::SCXMLModel::addTopLevelScript(std::shared_ptr<RSM::IActionNode> script) {
+void SCE::SCXMLModel::addTopLevelScript(std::shared_ptr<SCE::IActionNode> script) {
     if (script) {
         LOG_DEBUG("Adding top-level script (W3C SCXML 5.8)");
         topLevelScripts_.push_back(script);
     }
 }
 
-const std::vector<std::shared_ptr<RSM::IActionNode>> &RSM::SCXMLModel::getTopLevelScripts() const {
+const std::vector<std::shared_ptr<SCE::IActionNode>> &SCE::SCXMLModel::getTopLevelScripts() const {
     return topLevelScripts_;
 }
 
-void RSM::SCXMLModel::collectAllStatesRecursively(IStateNode *state,
+void SCE::SCXMLModel::collectAllStatesRecursively(IStateNode *state,
                                                   std::vector<std::shared_ptr<IStateNode>> &allStates) const {
     if (!state) {
         return;
@@ -432,7 +428,7 @@ void RSM::SCXMLModel::collectAllStatesRecursively(IStateNode *state,
     }
 }
 
-void RSM::SCXMLModel::rebuildAllStatesList() {
+void SCE::SCXMLModel::rebuildAllStatesList() {
     std::vector<std::shared_ptr<IStateNode>> newAllStates;
 
     // Start from root state if available

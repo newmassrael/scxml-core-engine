@@ -1,7 +1,7 @@
 #include "runtime/StateMachineContext.h"
 #include "common/Logger.h"
 
-namespace RSM {
+namespace SCE {
 
 StateMachineContext::StateMachineContext(std::shared_ptr<StateMachine> stateMachine)
     : stateMachine_(std::move(stateMachine)) {
@@ -29,4 +29,4 @@ StateMachineContext::~StateMachineContext() {
     LOG_DEBUG("StateMachineContext: Automatic cleanup completed");
 }
 
-}  // namespace RSM
+}  // namespace SCE

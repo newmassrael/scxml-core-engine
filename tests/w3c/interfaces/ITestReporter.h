@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief Test run summary statistics
@@ -92,4 +92,4 @@ public:
 
 ;
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

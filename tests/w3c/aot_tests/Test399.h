@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test399_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9.3: Event name matching algorithm
@@ -16,10 +16,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test399 : public SimpleAotTest<Test399, 399> {
     static constexpr const char *DESCRIPTION = "Event name matching with prefix and wildcard (W3C 5.9.3 AOT)";
-    using SM = RSM::Generated::test399::test399;
+    using SM = SCE::Generated::test399::test399;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test399> registrar_Test399;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

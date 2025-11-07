@@ -8,7 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Class responsible for handling external transitions in parallel states
@@ -88,4 +88,4 @@ private:
     bool isTargetReachable(const std::string &parallelStateId, const std::string &targetStateId) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

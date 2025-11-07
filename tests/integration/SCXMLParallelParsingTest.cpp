@@ -4,7 +4,7 @@
 #include "scripting/JSEngine.h"
 #include <gtest/gtest.h>
 
-namespace RSM {
+namespace SCE {
 namespace Tests {
 
 class SCXMLParallelParsingTest : public ::testing::Test {
@@ -138,4 +138,4 @@ TEST_F(SCXMLParallelParsingTest, InvalidParallelStateParsing) {
 }
 
 }  // namespace Tests
-}  // namespace RSM
+}  // namespace SCE

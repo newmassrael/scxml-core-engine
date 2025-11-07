@@ -37,7 +37,7 @@
 #include <regex>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 ActionExecutorImpl::ActionExecutorImpl(const std::string &sessionId, std::shared_ptr<IEventDispatcher> eventDispatcher)
     : sessionId_(sessionId), eventDispatcher_(std::move(eventDispatcher)) {
@@ -482,7 +482,7 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
 
         // W3C SCXML 5.10: Set event metadata using EventMetadataHelper (Single Source of Truth)
         // ARCHITECTURE.md: Zero Duplication Principle - shared logic with AOT engine
-        RSM::Common::EventMetadataHelper::setEventMetadata(*event,
+        SCE::Common::EventMetadataHelper::setEventMetadata(*event,
                                                            currentOriginSessionId_,  // origin (test336)
                                                            currentOriginType_,  // originType (test253, 331, 352, 372)
                                                            currentSendId_,      // sendId (test332)
@@ -1007,7 +1007,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
 
     // W3C SCXML 4.6: Validate array and item attributes
     std::string validationError;
-    if (!RSM::Validation::validateForeachAttributes(arrayExpr, itemVar, validationError)) {
+    if (!SCE::Validation::validateForeachAttributes(arrayExpr, itemVar, validationError)) {
         LOG_ERROR("Foreach validation failed: {}", validationError);
         if (eventRaiser_ && eventRaiser_->isReady()) {
             eventRaiser_->raiseEvent("error.execution", validationError);
@@ -1058,7 +1058,7 @@ bool ActionExecutorImpl::setLoopVariable(const std::string &varName, const std::
         std::string jsVarName = transformVariableName(varName);
 
         // Use shared ForeachHelper logic (eliminates code duplication with AOT engine)
-        bool success = RSM::Common::ForeachHelper::setLoopVariable(JSEngine::instance(), sessionId_, jsVarName, value);
+        bool success = SCE::Common::ForeachHelper::setLoopVariable(JSEngine::instance(), sessionId_, jsVarName, value);
 
         if (success) {
             LOG_DEBUG("Set foreach variable: {} = {} (JS: {}, iteration {})", varName, value, jsVarName, iteration);
@@ -1079,4 +1079,4 @@ std::string ActionExecutorImpl::generateUniqueSendId() const {
     return UniqueIdGenerator::generateSendId();
 }
 
-}  // namespace RSM
+}  // namespace SCE

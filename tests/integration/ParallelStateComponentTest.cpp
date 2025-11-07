@@ -8,7 +8,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Integration tests for parallel state components working together
@@ -146,4 +146,4 @@ TEST_F(ParallelStateComponentTest, Performance_LargeScaleComponents) {
         << totalEvents;
 }
 
-}  // namespace RSM
+}  // namespace SCE

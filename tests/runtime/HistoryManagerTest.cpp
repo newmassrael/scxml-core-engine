@@ -9,7 +9,7 @@
 #include <memory>
 #include <thread>
 
-using namespace RSM;
+using namespace SCE;
 
 /**
  * @brief Mock StateNode implementation for History States testing
@@ -136,14 +136,6 @@ public:
         return invokes_;
     }
 
-    void addReactiveGuard(const std::string &guardId) override {
-        reactiveGuards_.push_back(guardId);
-    }
-
-    const std::vector<std::string> &getReactiveGuards() const override {
-        return reactiveGuards_;
-    }
-
     bool isFinalState() const override {
         return type_ == Type::FINAL;
     }
@@ -191,7 +183,6 @@ private:
     std::string initialState_;
     std::vector<std::vector<std::shared_ptr<IActionNode>>> entryActionBlocks_;
     std::vector<std::vector<std::shared_ptr<IActionNode>>> exitActionBlocks_;
-    std::vector<std::string> reactiveGuards_;
     HistoryType historyType_ = HistoryType::NONE;
     DoneData doneData_;
     std::shared_ptr<ITransitionNode> initialTransition_;

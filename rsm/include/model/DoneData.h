@@ -5,7 +5,7 @@
 #include <utility>  // for std::pair
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class IDataModelItem;
 
@@ -87,4 +87,4 @@ private:
     bool hasContent_ = false;                                  // Whether <content> element exists
 };
 
-}  // namespace RSM
+}  // namespace SCE

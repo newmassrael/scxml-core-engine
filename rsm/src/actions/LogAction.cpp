@@ -2,7 +2,7 @@
 #include "runtime/IActionExecutor.h"
 #include "runtime/IExecutionContext.h"
 
-namespace RSM {
+namespace SCE {
 
 LogAction::LogAction(const std::string &expr, const std::string &id) : BaseAction(id), expr_(expr) {}
 
@@ -79,4 +79,4 @@ std::string LogAction::getSpecificDescription() const {
     return desc;
 }
 
-}  // namespace RSM
+}  // namespace SCE

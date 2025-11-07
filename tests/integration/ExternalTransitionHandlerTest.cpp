@@ -8,7 +8,7 @@
 #include <string>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 
 class ExternalTransitionHandlerTest : public ::testing::Test {
 protected:
@@ -218,4 +218,4 @@ TEST_F(ExternalTransitionHandlerTest, PerformanceTest) {
     EXPECT_LT(duration.count(), 1000) << "Large volume transition handling performance too slow (exceeds 1 second)";
 }
 
-}  // namespace RSM
+}  // namespace SCE

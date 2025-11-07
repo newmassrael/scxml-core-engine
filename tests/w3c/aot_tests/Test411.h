@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test411_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.12.1: Active State Configuration - State Addition During Entry
@@ -22,10 +22,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test411 : public ScheduledAotTest<Test411, 411> {
     static constexpr const char *DESCRIPTION = "State addition to active states during entry (W3C 3.12.1 AOT)";
-    using SM = RSM::Generated::test411::test411;
+    using SM = SCE::Generated::test411::test411;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test411> registrar_Test411;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

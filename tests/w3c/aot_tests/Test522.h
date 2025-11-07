@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test522_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor location field
@@ -42,10 +42,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test522 : public HttpAotTest<Test522, 522> {
     static constexpr const char *DESCRIPTION = "BasicHTTP location field (W3C C.2 AOT Pure Static)";
-    using SM = RSM::Generated::test522::test522;
+    using SM = SCE::Generated::test522::test522;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test522> registrar_Test522;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

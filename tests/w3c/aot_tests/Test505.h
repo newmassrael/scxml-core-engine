@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test505_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: Internal transition does not exit source state
@@ -30,10 +30,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test505 : public SimpleAotTest<Test505, 505> {
     static constexpr const char *DESCRIPTION = "Internal transition does not exit source (W3C 3.13 AOT Static Hybrid)";
-    using SM = RSM::Generated::test505::test505;
+    using SM = SCE::Generated::test505::test505;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test505> registrar_Test505;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

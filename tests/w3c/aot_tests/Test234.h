@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test234_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4.6: Finalize block only executes in invoking state
@@ -35,10 +35,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test234 : public SimpleAotTest<Test234, 234> {
     static constexpr const char *DESCRIPTION = "Finalize only in invoking state (W3C 6.4.6 AOT Static Hybrid)";
-    using SM = RSM::Generated::test234::test234;
+    using SM = SCE::Generated::test234::test234;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test234> registrar_Test234;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

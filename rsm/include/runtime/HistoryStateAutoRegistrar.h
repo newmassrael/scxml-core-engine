@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class SCXMLModel;
@@ -116,4 +116,4 @@ private:
     std::string extractDefaultStateId(const std::shared_ptr<IStateNode> &historyState);
 };
 
-}  // namespace RSM
+}  // namespace SCE

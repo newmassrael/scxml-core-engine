@@ -2,11 +2,11 @@
 #include "common/Logger.h"
 #include "parsing/ParsingCommon.h"
 
-RSM::DoneDataParser::DoneDataParser(std::shared_ptr<NodeFactory> factory) : factory_(factory) {
+SCE::DoneDataParser::DoneDataParser(std::shared_ptr<NodeFactory> factory) : factory_(factory) {
     LOG_DEBUG("Creating DoneData parser");
 }
 
-bool RSM::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &doneDataElement, IStateNode *stateNode) {
+bool SCE::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &doneDataElement, IStateNode *stateNode) {
     if (!doneDataElement || !stateNode) {
         LOG_ERROR("Null doneData element or state node");
         return false;
@@ -55,7 +55,7 @@ bool RSM::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &done
     return hasContent || hasParam;
 }
 
-bool RSM::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &contentElement, IStateNode *stateNode) {
+bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &contentElement, IStateNode *stateNode) {
     if (!contentElement || !stateNode) {
         LOG_ERROR("Null content element or state node");
         return false;
@@ -96,7 +96,7 @@ bool RSM::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
     return true;
 }
 
-bool RSM::DoneDataParser::parseParam(const std::shared_ptr<IXMLElement> &paramElement, IStateNode *stateNode) {
+bool SCE::DoneDataParser::parseParam(const std::shared_ptr<IXMLElement> &paramElement, IStateNode *stateNode) {
     if (!paramElement || !stateNode) {
         LOG_ERROR("Null param element or state node");
         return false;

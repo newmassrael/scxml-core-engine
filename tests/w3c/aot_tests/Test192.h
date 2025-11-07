@@ -3,7 +3,7 @@
 #include "ScheduledAotTest.h"
 #include "test192_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.1: Parent-child communication via #_<invokeid> target
@@ -29,7 +29,7 @@ namespace RSM::W3C::AotTests {
 struct Test192 : public ScheduledAotTest<Test192, 192> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML C.1: #_<invokeid> target sends events to child session's external queue";
-    using SM = RSM::Generated::test192::test192;
+    using SM = SCE::Generated::test192::test192;
 
     std::chrono::seconds getTimeout() const override {
         return std::chrono::seconds(10);
@@ -39,4 +39,4 @@ struct Test192 : public ScheduledAotTest<Test192, 192> {
 // Auto-register
 inline static AotTestRegistrar<Test192> registrar_Test192;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

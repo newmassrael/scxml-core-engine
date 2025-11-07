@@ -3,7 +3,7 @@
 #include "ScheduledAotTest.h"
 #include "test175_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2: Send delayexpr uses current datamodel value
@@ -14,10 +14,10 @@ namespace RSM::W3C::AotTests {
 struct Test175 : public ScheduledAotTest<Test175, 175> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 6.2: delayexpr evaluates current datamodel value at send execution time";
-    using SM = RSM::Generated::test175::test175;
+    using SM = SCE::Generated::test175::test175;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test175> registrar_Test175;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

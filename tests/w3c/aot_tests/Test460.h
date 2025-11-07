@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test460_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 4.6: Foreach element shallow copy semantics
@@ -16,10 +16,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test460 : public SimpleAotTest<Test460, 460> {
     static constexpr const char *DESCRIPTION = "Foreach shallow copy (W3C 4.6 AOT)";
-    using SM = RSM::Generated::test460::test460;
+    using SM = SCE::Generated::test460::test460;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test460> registrar_Test460;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

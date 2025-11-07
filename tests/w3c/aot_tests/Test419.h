@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test419_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: Eventless Transition Precedence
@@ -28,10 +28,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test419 : public SimpleAotTest<Test419, 419> {
     static constexpr const char *DESCRIPTION = "Eventless transition precedence (W3C 3.13 AOT)";
-    using SM = RSM::Generated::test419::test419;
+    using SM = SCE::Generated::test419::test419;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test419> registrar_Test419;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

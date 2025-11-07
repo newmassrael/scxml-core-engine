@@ -7,7 +7,7 @@
 #include <pugixml.hpp>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief pugixml element wrapper
@@ -85,4 +85,4 @@ private:
     std::string lastError_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Abstract XML parser interface
@@ -47,4 +47,4 @@ public:
     static std::shared_ptr<IXMLParser> create();
 };
 
-}  // namespace RSM
+}  // namespace SCE

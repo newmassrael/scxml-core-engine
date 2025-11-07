@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 
@@ -42,7 +42,7 @@
 #include <string>
 #include <thread>
 
-namespace RSM::Static {
+namespace SCE::Static {
 
 /**
  * @brief Template-based SCXML execution engine for static code generation
@@ -132,7 +132,7 @@ private:
             bool isSelfTransition = (oldState == newState);
             bool isProperDescendant =
                 !isSelfTransition &&
-                RSM::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(newState, oldState);
+                SCE::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(newState, oldState);
 
             // W3C SCXML 3.13: Check if source is compound state (test 533)
             // Parallel states and atomic states are NOT compound - internal transitions from them behave as external
@@ -148,7 +148,7 @@ private:
             } else {
                 // W3C SCXML 3.13/5.9.2: Non-compound source or non-descendant - behaves as external
                 // Use normal LCA calculation, then target==LCA check handles exit/re-entry
-                lca = RSM::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
+                lca = SCE::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
                 LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-compound source or "
                           "non-descendant) - behaves as "
                           "external, LCA={}",
@@ -156,7 +156,7 @@ private:
             }
         } else {
             // W3C SCXML 3.12: External transition - find LCA normally
-            lca = RSM::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
+            lca = SCE::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
         }
 
         if (lca.has_value()) {
@@ -164,7 +164,7 @@ private:
             std::vector<State> descendantsToExit;
             for (State activeState : preTransitionStates) {
                 if (activeState != oldState &&
-                    RSM::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(activeState, oldState)) {
+                    SCE::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(activeState, oldState)) {
                     descendantsToExit.push_back(activeState);
                 }
             }
@@ -179,7 +179,7 @@ private:
             }
 
             // W3C SCXML 3.13: Exit states from oldState up to (but not including) LCA
-            auto exitChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildExitChain(oldState, lca.value());
+            auto exitChain = SCE::Common::HierarchicalStateHelper<StatePolicy>::buildExitChain(oldState, lca.value());
             for (const auto &state : exitChain) {
                 LOG_DEBUG("AOT handleHierarchicalTransition: Hierarchical exit state {}", static_cast<int>(state));
                 executeOnExit(state, preTransitionStates);
@@ -209,18 +209,18 @@ private:
                           "initial children (W3C 3.10)",
                           static_cast<int>(newState));
                 // Build full entry chain from root, then keep only states at/below LCA
-                auto fullChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
+                auto fullChain = SCE::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
                 for (State s : fullChain) {
                     // Include state if it's at or below LCA (check if LCA is ancestor of s or s == LCA)
                     if (s == lca.value() ||
-                        RSM::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(s, lca.value())) {
+                        SCE::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(s, lca.value())) {
                         entryChain.push_back(s);
                     }
                 }
             } else {
                 // Normal case: enter from LCA's child down to newState
                 entryChain =
-                    RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChainFromParent(newState, lca.value());
+                    SCE::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChainFromParent(newState, lca.value());
             }
 
             for (const auto &state : entryChain) {
@@ -255,7 +255,7 @@ private:
             transitionAction();
 
             // Enter full hierarchy from root to newState
-            auto entryChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
+            auto entryChain = SCE::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
             for (const auto &state : entryChain) {
                 LOG_DEBUG("AOT handleHierarchicalTransition: Entry state {} (from root)", static_cast<int>(state));
                 executeOnEntry(state);
@@ -271,13 +271,13 @@ private:
     }
 
     State currentState_;
-    RSM::Core::EventQueueManager<EventWithMetadata>
+    SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // W3C SCXML C.1: Internal event queue (high priority)
-    RSM::Core::EventQueueManager<EventWithMetadata>
+    SCE::Core::EventQueueManager<EventWithMetadata>
         externalQueue_;  // W3C SCXML C.1: External event queue (low priority)
     bool isRunning_ = false;
     std::function<void()> completionCallback_;                     // W3C SCXML 6.4: Callback for done.invoke
-    RSM::SendSchedulingHelper::SimpleScheduler<Event> scheduler_;  // W3C SCXML 6.2: Delayed event scheduler
+    SCE::SendSchedulingHelper::SimpleScheduler<Event> scheduler_;  // W3C SCXML 6.2: Delayed event scheduler
 
 protected:
     StatePolicy policy_;  // Policy instance for stateful policies
@@ -332,7 +332,7 @@ public:
         // W3C SCXML C.1: Enqueue event with metadata (origin, data, sendid, type, originType)
         // W3C SCXML 5.10.1: Set originType to SCXML Event I/O Processor for parent-child communication
         externalQueue_.raise(
-            EventWithMetadata(event, eventData, origin, "", "external", RSM::Constants::SCXML_EVENT_PROCESSOR_TYPE));
+            EventWithMetadata(event, eventData, origin, "", "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE));
 
         // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
         if constexpr (requires { policy_.nextEventIsExternal_; }) {
@@ -378,7 +378,7 @@ public:
                       static_cast<int>(eventWithMetadata.event), eventWithMetadata.target);
 
             // Create EventDescriptor for HTTP POST
-            RSM::EventDescriptor descriptor;
+            SCE::EventDescriptor descriptor;
             descriptor.eventName = policy_.getEventName(eventWithMetadata.event);
             descriptor.target = eventWithMetadata.target;
             descriptor.sendId = eventWithMetadata.sendId;
@@ -448,10 +448,10 @@ public:
             // W3C SCXML C.2: Create platform-specific HTTP client (Native + WASM)
 #ifndef __EMSCRIPTEN__
             // Native: Use CppHttplibClient
-            auto httpClient = std::make_unique<RSM::CppHttplibClient>();
+            auto httpClient = std::make_unique<SCE::CppHttplibClient>();
 #else
             // WASM: Use EmscriptenFetchClient
-            auto httpClient = std::make_unique<RSM::EmscriptenFetchClient>();
+            auto httpClient = std::make_unique<SCE::EmscriptenFetchClient>();
 #endif
 
             auto resultFuture = httpClient->sendRequest({.method = "POST",
@@ -674,13 +674,13 @@ protected:
     void processEventQueues() {
         LOG_DEBUG("AOT processEventQueues: Starting internal queue processing");
         // W3C SCXML C.1: Process internal queue first (high priority)
-        RSM::Core::AOTEventQueue<EventWithMetadata> internalAdapter(internalQueue_);
-        RSM::Core::EventProcessingAlgorithms::processInternalEventQueue(
+        SCE::Core::AOTEventQueue<EventWithMetadata> internalAdapter(internalQueue_);
+        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             internalAdapter, [this](const EventWithMetadata &eventWithMeta) {
                 // W3C SCXML 5.10: Set pending event fields from metadata using EventMetadataHelper
                 // ARCHITECTURE.md: Zero Duplication - shared logic with EventMetadataHelper
                 Event event = eventWithMeta.event;
-                RSM::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
+                SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
 
                 LOG_DEBUG("AOT processEventQueues: Processing internal event, currentState={}",
@@ -764,13 +764,13 @@ protected:
             });
 
         // W3C SCXML C.1: Process external queue second (low priority)
-        RSM::Core::AOTEventQueue<EventWithMetadata> externalAdapter(externalQueue_);
-        RSM::Core::EventProcessingAlgorithms::processInternalEventQueue(
+        SCE::Core::AOTEventQueue<EventWithMetadata> externalAdapter(externalQueue_);
+        SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             externalAdapter, [this](const EventWithMetadata &eventWithMeta) {
                 // W3C SCXML 5.10: Set pending event fields from metadata using EventMetadataHelper
                 // ARCHITECTURE.md: Zero Duplication - shared logic with EventMetadataHelper
                 Event event = eventWithMeta.event;
-                RSM::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
+                SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
 
                 // W3C SCXML 6.5: Execute finalize BEFORE processing child events
@@ -848,7 +848,7 @@ protected:
 
         // W3C SCXML 3.13: Use shared algorithm (Single Source of Truth)
         // Note: Eventless transitions can raise new internal events, use internal queue
-        RSM::Core::AOTEventQueue<EventWithMetadata> adapter(internalQueue_);
+        SCE::Core::AOTEventQueue<EventWithMetadata> adapter(internalQueue_);
 
         while (iterations++ < MAX_ITERATIONS) {
             State oldState = currentState_;
@@ -947,7 +947,7 @@ public:
         }
 
         // W3C SCXML 3.3: Use HierarchicalStateHelper for correct entry order
-        auto entryChain = RSM::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(currentState_);
+        auto entryChain = SCE::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(currentState_);
 
         // Execute entry actions from root to leaf (ancestor first)
         for (const auto &state : entryChain) {
@@ -1062,7 +1062,7 @@ public:
      * @param event External event to process
      * @param metadata Event metadata (originSessionId, etc.)
      */
-    void processEvent(Event event, const RSM::Core::EventMetadata &metadata) {
+    void processEvent(Event event, const SCE::Core::EventMetadata &metadata) {
         if (!isRunning_) {
             return;
         }
@@ -1119,7 +1119,7 @@ public:
 
         // W3C SCXML 3.11: For non-parallel, use shared HistoryHelper for full active hierarchy (Zero Duplication
         // Principle) Returns [currentState, parent, grandparent, ...] for proper history recording
-        return ::RSM::HistoryHelper::getActiveHierarchy(currentState_,
+        return ::SCE::HistoryHelper::getActiveHierarchy(currentState_,
                                                         [](State s) { return StatePolicy::getParent(s); });
     }
 
@@ -1211,4 +1211,4 @@ public:
     }
 };
 
-}  // namespace RSM::Static
+}  // namespace SCE::Static

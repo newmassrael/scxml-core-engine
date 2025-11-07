@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test377_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.8: Multiple onexit handlers execution in document order
@@ -60,10 +60,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test377 : public SimpleAotTest<Test377, 377> {
     static constexpr const char *DESCRIPTION = "Multiple onexit handlers in document order (W3C 3.8 AOT Pure Static)";
-    using SM = RSM::Generated::test377::test377;
+    using SM = SCE::Generated::test377::test377;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test377> registrar_Test377;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

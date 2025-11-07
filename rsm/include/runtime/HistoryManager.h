@@ -7,7 +7,7 @@
 #include <mutex>
 #include <unordered_map>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class IStateNode;
@@ -190,4 +190,4 @@ private:
     std::vector<std::string> getDefaultStates(const HistoryStateInfo &historyStateInfo) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

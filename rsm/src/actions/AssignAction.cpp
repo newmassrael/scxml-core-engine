@@ -3,7 +3,7 @@
 #include "runtime/IExecutionContext.h"
 #include <regex>
 
-namespace RSM {
+namespace SCE {
 
 AssignAction::AssignAction(const std::string &location, const std::string &expr, const std::string &id)
     : BaseAction(id), location_(location), expr_(expr) {}
@@ -102,4 +102,4 @@ bool AssignAction::isValidLocation(const std::string &location) const {
     return std::regex_match(location, locationPattern);
 }
 
-}  // namespace RSM
+}  // namespace SCE

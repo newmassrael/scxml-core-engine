@@ -1,6 +1,6 @@
 #pragma once
 
-namespace RSM {
+namespace SCE {
 
 enum class Type {
     ATOMIC,    // State with no child states
@@ -17,4 +17,4 @@ enum class HistoryType {
     DEEP      // Deep history
 };
 
-}  // namespace RSM
+}  // namespace SCE

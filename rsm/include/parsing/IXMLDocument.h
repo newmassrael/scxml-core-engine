@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Abstract XML document interface
@@ -45,4 +45,4 @@ public:
     virtual bool isValid() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

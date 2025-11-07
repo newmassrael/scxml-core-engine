@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test525_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 4.6: Foreach element shallow copy semantics (minimal test)
@@ -45,10 +45,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test525 : public SimpleAotTest<Test525, 525> {
     static constexpr const char *DESCRIPTION = "Foreach shallow copy minimal (W3C 4.6 AOT Static Hybrid)";
-    using SM = RSM::Generated::test525::test525;
+    using SM = SCE::Generated::test525::test525;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test525> registrar_Test525;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

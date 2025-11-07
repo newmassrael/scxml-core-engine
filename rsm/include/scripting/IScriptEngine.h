@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Abstract interface for script execution engines
@@ -79,4 +79,4 @@ public:
     virtual void collectGarbage() = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

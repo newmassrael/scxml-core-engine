@@ -5,7 +5,7 @@
 // Unified stub implementation: XInclude processing delegated to IXMLDocument
 // ============================================================================
 
-namespace RSM {
+namespace SCE {
 
 XIncludeProcessor::XIncludeProcessor() {
     LOG_DEBUG("Creating XInclude processor (stub)");
@@ -31,4 +31,4 @@ const std::vector<std::string> &XIncludeProcessor::getErrorMessages() const {
     return errorMessages_;
 }
 
-}  // namespace RSM
+}  // namespace SCE

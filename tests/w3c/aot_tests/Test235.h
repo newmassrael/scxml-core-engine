@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test235_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: done.invoke.id event with correct invoke ID
@@ -20,10 +20,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test235 : public SimpleAotTest<Test235, 235> {
     static constexpr const char *DESCRIPTION = "done.invoke.id event (W3C 6.4 AOT Pure Static)";
-    using SM = RSM::Generated::test235::test235;
+    using SM = SCE::Generated::test235::test235;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test235> registrar_Test235;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

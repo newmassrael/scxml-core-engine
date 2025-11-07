@@ -7,7 +7,7 @@
 #include <mutex>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 TypeRegistry &TypeRegistry::getInstance() {
     static TypeRegistry instance;
@@ -341,4 +341,4 @@ std::string TypeRegistry::categoryToString(Category category) {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

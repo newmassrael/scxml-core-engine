@@ -5,7 +5,7 @@
 #include <string>
 #include <thread>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Simple embedded mock HTTP server for testing
@@ -57,4 +57,4 @@ private:
     std::string serverUrl_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

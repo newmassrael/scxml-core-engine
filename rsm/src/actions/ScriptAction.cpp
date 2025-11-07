@@ -2,7 +2,7 @@
 #include "runtime/IActionExecutor.h"
 #include "runtime/IExecutionContext.h"
 
-namespace RSM {
+namespace SCE {
 
 ScriptAction::ScriptAction(const std::string &content, const std::string &id) : BaseAction(id), content_(content) {}
 
@@ -73,4 +73,4 @@ std::string ScriptAction::getSpecificDescription() const {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

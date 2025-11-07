@@ -6,7 +6,7 @@
 
 #include <algorithm>
 
-namespace RSM {
+namespace SCE {
 
 HistoryManager::HistoryManager(std::function<std::shared_ptr<IStateNode>(const std::string &)> stateProvider,
                                std::unique_ptr<IHistoryValidator> validator)
@@ -102,9 +102,9 @@ bool HistoryManager::recordHistory(const std::string &parentStateId, const std::
         // Call shared HistoryHelper filtering logic
         std::vector<std::string> filteredStates;
         if (historyInfo.type == HistoryType::SHALLOW) {
-            filteredStates = ::RSM::HistoryHelper::filterShallowHistory(activeStateIds, parentStateId, getParent);
+            filteredStates = ::SCE::HistoryHelper::filterShallowHistory(activeStateIds, parentStateId, getParent);
         } else {
-            filteredStates = ::RSM::HistoryHelper::filterDeepHistory(activeStateIds, parentStateId, getParent);
+            filteredStates = ::SCE::HistoryHelper::filterDeepHistory(activeStateIds, parentStateId, getParent);
         }
 
         // W3C SCXML Section 3.6: Record history even if empty (valid scenario)
@@ -237,4 +237,4 @@ std::vector<std::string> HistoryManager::getDefaultStates(const HistoryStateInfo
     return defaultStates;
 }
 
-}  // namespace RSM
+}  // namespace SCE

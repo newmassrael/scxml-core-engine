@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 #include <string>
 
-using namespace RSM::W3C;
+using namespace SCE::W3C;
 
 class TXMLConverterTest : public ::testing::Test {
 protected:

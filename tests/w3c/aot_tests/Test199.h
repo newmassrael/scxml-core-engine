@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test199_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.2: Unsupported send type raises error.execution
@@ -39,10 +39,10 @@ struct Test199 : public SimpleAotTest<Test199, 199> {
     static constexpr const char *DESCRIPTION =
         "W3C SCXML 6.2: If the SCXML Processor does not support the type that is specified, it MUST place the event "
         "error.execution on the internal event queue (Pure Static AOT)";
-    using SM = RSM::Generated::test199::test199;
+    using SM = SCE::Generated::test199::test199;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test199> registrar_Test199;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

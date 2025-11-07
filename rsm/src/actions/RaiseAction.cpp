@@ -2,7 +2,7 @@
 #include "runtime/IActionExecutor.h"
 #include "runtime/IExecutionContext.h"
 
-namespace RSM {
+namespace SCE {
 
 RaiseAction::RaiseAction(const std::string &event, const std::string &id) : BaseAction(id), event_(event) {}
 
@@ -65,4 +65,4 @@ std::string RaiseAction::getSpecificDescription() const {
     return desc;
 }
 
-}  // namespace RSM
+}  // namespace SCE

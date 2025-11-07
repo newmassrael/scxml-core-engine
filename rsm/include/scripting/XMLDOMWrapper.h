@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class XMLElement;
@@ -71,4 +71,4 @@ private:
     std::string errorMessage_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

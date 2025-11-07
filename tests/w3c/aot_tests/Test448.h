@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test448_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2: ECMAScript single global scope requirement
@@ -23,10 +23,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test448 : public SimpleAotTest<Test448, 448> {
     static constexpr const char *DESCRIPTION = "ECMAScript single global scope (W3C B.2 AOT)";
-    using SM = RSM::Generated::test448::test448;
+    using SM = SCE::Generated::test448::test448;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test448> registrar_Test448;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

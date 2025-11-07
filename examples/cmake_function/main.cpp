@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-using namespace RSM::Generated;
+using namespace SCE::Generated;
 
 // User implementation inheriting from generated base class
 class LightController : public SimpleLightBase<LightController> {

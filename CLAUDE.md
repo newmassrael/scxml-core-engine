@@ -181,7 +181,7 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
      #include "SimpleAotTest.h"
      #include "testXXX_sm.h"
 
-     namespace RSM::W3C::AotTests {
+     namespace SCE::W3C::AotTests {
 
      /**
       * @brief W3C SCXML X.Y.Z: Feature description
@@ -190,13 +190,13 @@ env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.
       */
      struct TestXXX : public SimpleAotTest<TestXXX, XXX> {
          static constexpr const char *DESCRIPTION = "Feature name (W3C X.Y.Z AOT)";
-         using SM = RSM::Generated::testXXX::testXXX;
+         using SM = SCE::Generated::testXXX::testXXX;
      };
 
      // Auto-register
      inline static AotTestRegistrar<TestXXX> registrar_TestXXX;
 
-     }  // namespace RSM::W3C::AotTests
+     }  // namespace SCE::W3C::AotTests
      ```
 
 4. **Result**:
@@ -262,7 +262,7 @@ If a test cannot be statically generated, it should **NOT be added to AOT tests*
      #include "HttpAotTest.h"
      #include "testXXX_sm.h"
 
-     namespace RSM::W3C::AotTests {
+     namespace SCE::W3C::AotTests {
 
      /**
       * @brief W3C SCXML C.2: BasicHTTP feature description
@@ -271,13 +271,13 @@ If a test cannot be statically generated, it should **NOT be added to AOT tests*
       */
      struct TestXXX : public HttpAotTest<TestXXX, XXX> {
          static constexpr const char *DESCRIPTION = "BasicHTTP feature (W3C C.2 AOT)";
-         using SM = RSM::Generated::testXXX::testXXX;
+         using SM = SCE::Generated::testXXX::testXXX;
      };
 
      // Auto-register
      inline static AotTestRegistrar<TestXXX> registrar_TestXXX;
 
-     }  // namespace RSM::W3C::AotTests
+     }  // namespace SCE::W3C::AotTests
      ```
 
 3. **Result**:

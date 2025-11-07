@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Production-ready, high-level SCXML engine interface
@@ -132,4 +132,4 @@ public:
     virtual Statistics getStatistics() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

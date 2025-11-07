@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Centralized HTTP response and header utilities
@@ -85,4 +85,4 @@ private:
     static const std::string NO_CACHE_CONTROL;
 };
 
-}  // namespace RSM
+}  // namespace SCE

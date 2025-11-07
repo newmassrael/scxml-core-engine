@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test529_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.5: Donedata content with integer literal
@@ -44,10 +44,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test529 : public SimpleAotTest<Test529, 529> {
     static constexpr const char *DESCRIPTION = "Donedata content integer literal (W3C 5.5 AOT Static Hybrid)";
-    using SM = RSM::Generated::test529::test529;
+    using SM = SCE::Generated::test529::test529;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test529> registrar_Test529;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

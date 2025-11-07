@@ -1,7 +1,7 @@
 #include <algorithm>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 // W3C SCXML B.2: Helper function to normalize whitespace in text content
 std::string normalizeWhitespace(const std::string &text) {
@@ -57,4 +57,4 @@ bool isXMLContent(const std::string &content) {
     return trimmed[start] == '<';
 }
 
-}  // namespace RSM
+}  // namespace SCE

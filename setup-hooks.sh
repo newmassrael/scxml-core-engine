@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Setup git hooks for the reactive-state-machine project
+# Setup git hooks for the scxml-core-engine project
 # This script installs pre-commit hooks for automatic code formatting
 
 set -e
@@ -15,7 +15,7 @@ YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}Setting up git hooks for reactive-state-machine...${NC}"
+echo -e "${BLUE}Setting up git hooks for scxml-core-engine...${NC}"
 
 # Check if we're in a git repository
 if [ ! -d "$PROJECT_ROOT/.git" ]; then

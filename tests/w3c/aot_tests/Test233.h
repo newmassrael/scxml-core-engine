@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test233_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.5: finalize element execution before done.invoke event processing
@@ -32,10 +32,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test233 : public SimpleAotTest<Test233, 233> {
     static constexpr const char *DESCRIPTION = "finalize before done.invoke (W3C 6.5 AOT Static Hybrid)";
-    using SM = RSM::Generated::test233::test233;
+    using SM = SCE::Generated::test233::test233;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test233> registrar_Test233;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

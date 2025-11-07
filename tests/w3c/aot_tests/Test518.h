@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test518_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor Namelist Encoding
@@ -58,10 +58,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test518 : public HttpAotTest<Test518, 518> {
     static constexpr const char *DESCRIPTION = "BasicHTTP namelist encoding (W3C C.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test518::test518;
+    using SM = SCE::Generated::test518::test518;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test518> registrar_Test518;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

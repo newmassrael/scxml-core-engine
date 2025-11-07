@@ -5,7 +5,7 @@
 #include "runtime/IEventRaiser.h"
 #include <memory>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief RAII wrapper for StateMachine with automatic cleanup
@@ -86,4 +86,4 @@ private:
     std::shared_ptr<StateMachine> stateMachine_;  // Shared ownership for callback safety
 };
 
-}  // namespace RSM
+}  // namespace SCE

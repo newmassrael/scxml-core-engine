@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test336_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: _event.origin field bidirectional communication
@@ -24,10 +24,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test336 : public SimpleAotTest<Test336, 336> {
     static constexpr const char *DESCRIPTION = "_event.origin bidirectional communication (W3C 5.10.1 AOT)";
-    using SM = RSM::Generated::test336::test336;
+    using SM = SCE::Generated::test336::test336;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test336> registrar_Test336;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -8,7 +8,7 @@
 #include <memory>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 class InvokeParser {
 public:
@@ -36,4 +36,4 @@ private:
                              std::shared_ptr<IInvokeNode> invokeNode);
 };
 
-}  // namespace RSM
+}  // namespace SCE

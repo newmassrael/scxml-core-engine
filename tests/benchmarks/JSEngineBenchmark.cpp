@@ -6,7 +6,7 @@
 #include <sstream>
 #include <vector>
 
-using namespace RSM;
+using namespace SCE;
 
 // ============================================================================
 // Thread-safe counter for unique session IDs

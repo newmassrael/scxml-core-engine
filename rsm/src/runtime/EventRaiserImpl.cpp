@@ -5,7 +5,7 @@
 #include "events/PlatformEventRaiserHelper.h"
 #include <mutex>
 
-namespace RSM {
+namespace SCE {
 
 // W3C SCXML 6.4: Thread-local storage for origin session ID during event callback execution
 thread_local std::string EventRaiserImpl::currentOriginSessionId_;
@@ -468,4 +468,4 @@ bool EventRaiserImpl::hasQueuedEvents() const {
     return !synchronousQueue_.empty();
 }
 
-}  // namespace RSM
+}  // namespace SCE

@@ -3,8 +3,8 @@
 #include <gtest/gtest.h>
 #include <memory>
 
-using namespace RSM;
-using namespace RSM::Test;
+using namespace SCE;
+using namespace SCE::Test;
 
 class AssignActionTest : public ::testing::Test {
 protected:

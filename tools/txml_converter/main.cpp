@@ -82,7 +82,7 @@ int main(int argc, char **argv) {
         bool isSubSCXML = (filename.find("sub") != std::string::npos);
 
         // Convert TXML to SCXML
-        RSM::W3C::TXMLConverter converter;
+        SCE::W3C::TXMLConverter converter;
         std::string scxmlContent;
 
         if (isSubSCXML) {

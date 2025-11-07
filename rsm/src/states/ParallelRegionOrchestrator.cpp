@@ -5,7 +5,7 @@
 #include <format>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 // OrchestrationResult static factory methods
 
@@ -473,4 +473,4 @@ void ParallelRegionOrchestrator::updateRegionMap() {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

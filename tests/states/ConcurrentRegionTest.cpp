@@ -8,12 +8,12 @@
 #include <memory>
 #include <stdexcept>
 
-namespace RSM {
+namespace SCE {
 
 class ConcurrentRegionTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        mockExecutor = std::make_shared<RSM::Test::MockActionExecutor>("test_session");
+        mockExecutor = std::make_shared<SCE::Test::MockActionExecutor>("test_session");
         executionContext = std::make_shared<ExecutionContextImpl>(mockExecutor, "test_session");
         rootState = std::make_shared<StateNode>("rootState", Type::COMPOUND);
         region = std::make_unique<ConcurrentRegion>("testRegion", rootState, executionContext);
@@ -23,7 +23,7 @@ protected:
         mockExecutor->clearHistory();
     }
 
-    std::shared_ptr<RSM::Test::MockActionExecutor> mockExecutor;
+    std::shared_ptr<SCE::Test::MockActionExecutor> mockExecutor;
     std::shared_ptr<ExecutionContextImpl> executionContext;
     std::shared_ptr<StateNode> rootState;
     std::unique_ptr<ConcurrentRegion> region;
@@ -466,4 +466,4 @@ TEST_F(ConcurrentRegionTest, Validate_PassesForValidConfiguration) {
     EXPECT_TRUE(errors.empty()) << "Valid configuration should pass validation with no errors";
 }
 
-}  // namespace RSM
+}  // namespace SCE

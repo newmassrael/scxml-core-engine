@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test330_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10: Event field binding validation
@@ -21,10 +21,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test330 : public SimpleAotTest<Test330, 330> {
     static constexpr const char *DESCRIPTION = "Event field binding (W3C 5.10 AOT)";
-    using SM = RSM::Generated::test330::test330;
+    using SM = SCE::Generated::test330::test330;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test330> registrar_Test330;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

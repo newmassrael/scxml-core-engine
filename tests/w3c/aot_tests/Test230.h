@@ -3,7 +3,7 @@
 #include "ScheduledAotTest.h"
 #include "test230_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: Autoforward event field preservation
@@ -20,7 +20,7 @@ namespace RSM::W3C::AotTests {
  */
 struct Test230 : public ScheduledAotTest<Test230, 230> {
     static constexpr const char *DESCRIPTION = "W3C SCXML 6.4: Autoforward event fields (Static Hybrid AOT)";
-    using SM = RSM::Generated::test230::test230;
+    using SM = SCE::Generated::test230::test230;
 
     // Manual test: success is reaching Final state (no Pass/Fail distinction)
     static constexpr auto PASS_STATE = SM::State::Final;
@@ -33,4 +33,4 @@ struct Test230 : public ScheduledAotTest<Test230, 230> {
 
 inline static AotTestRegistrar<Test230> registrar_Test230;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

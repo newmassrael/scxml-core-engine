@@ -4,7 +4,7 @@
 #include "scripting/JSEngine.h"
 #include <gtest/gtest.h>
 
-namespace RSM {
+namespace SCE {
 namespace Tests {
 
 class ParallelStateEndToEndTest : public ::testing::Test {
@@ -237,4 +237,4 @@ TEST_F(ParallelStateEndToEndTest, ParallelStateTimingAndSynchronization) {
 }
 
 }  // namespace Tests
-}  // namespace RSM
+}  // namespace SCE

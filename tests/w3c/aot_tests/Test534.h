@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test534_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor _scxmleventname parameter transmission
@@ -54,10 +54,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test534 : public HttpAotTest<Test534, 534> {
     static constexpr const char *DESCRIPTION = "BasicHTTP _scxmleventname transmission (W3C C.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test534::test534;
+    using SM = SCE::Generated::test534::test534;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test534> registrar_Test534;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

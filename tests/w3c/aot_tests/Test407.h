@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test407_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.8: onexit handlers with datamodel variable updates
@@ -23,10 +23,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test407 : public SimpleAotTest<Test407, 407> {
     static constexpr const char *DESCRIPTION = "onexit handlers (W3C 3.8 AOT)";
-    using SM = RSM::Generated::test407::test407;
+    using SM = SCE::Generated::test407::test407;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test407> registrar_Test407;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

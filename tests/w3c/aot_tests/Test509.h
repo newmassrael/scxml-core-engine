@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test509_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor POST Method
@@ -20,10 +20,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test509 : public HttpAotTest<Test509, 509> {
     static constexpr const char *DESCRIPTION = "BasicHTTP POST method (W3C C.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test509::test509;
+    using SM = SCE::Generated::test509::test509;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test509> registrar_Test509;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

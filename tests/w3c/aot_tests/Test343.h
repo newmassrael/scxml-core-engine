@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test343_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: error.execution event with empty event.data for invalid param
@@ -22,10 +22,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test343 : public SimpleAotTest<Test343, 343> {
     static constexpr const char *DESCRIPTION = "Invalid param error.execution (W3C 5.10.1 AOT)";
-    using SM = RSM::Generated::test343::test343;
+    using SM = SCE::Generated::test343::test343;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test343> registrar_Test343;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

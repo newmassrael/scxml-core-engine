@@ -3,8 +3,8 @@
 
 #include <string>
 
-namespace RSM {
+namespace SCE {
 namespace GuardUtils {
 bool isConditionExpression(const std::string &expression);
 }  // namespace GuardUtils
-}  // namespace RSM
+}  // namespace SCE

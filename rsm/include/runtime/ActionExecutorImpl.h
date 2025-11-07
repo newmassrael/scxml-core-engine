@@ -12,7 +12,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declarations
 class IEventDispatcher;
@@ -199,4 +199,4 @@ private:
     bool executeIterationActions(const std::vector<std::shared_ptr<IActionNode>> &actions, size_t iteration);
 };
 
-}  // namespace RSM
+}  // namespace SCE

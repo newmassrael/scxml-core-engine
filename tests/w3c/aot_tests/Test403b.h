@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test403b_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: Optimal enabled transition set (parallel regions)
@@ -13,10 +13,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test403b : public SimpleAotTest<Test403b, 403> {
     static constexpr const char *DESCRIPTION = "Optimal transition set - parallel (W3C 3.13 AOT Static Hybrid)";
-    using SM = RSM::Generated::test403b::test403b;
+    using SM = SCE::Generated::test403b::test403b;
 };
 
 // Auto-register with variant suffix
 inline static AotTestRegistrar<Test403b> registrar_Test403b("403b");
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

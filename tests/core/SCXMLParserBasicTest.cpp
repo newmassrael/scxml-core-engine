@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 namespace Tests {
 
 class SCXMLParserBasicTest : public ::testing::Test {
@@ -435,7 +435,7 @@ TEST_F(SCXMLParserBasicTest, ParseNestedActionsDocumentOrder) {
     ASSERT_NE(foreachAction, nullptr);
 
     // Cast to ForeachAction to access iteration actions
-    auto foreachPtr = std::dynamic_pointer_cast<RSM::ForeachAction>(foreachAction);
+    auto foreachPtr = std::dynamic_pointer_cast<SCE::ForeachAction>(foreachAction);
     ASSERT_NE(foreachPtr, nullptr) << "Failed to cast to ForeachAction";
 
     // Verify foreach has 1 iteration action (the if)
@@ -444,7 +444,7 @@ TEST_F(SCXMLParserBasicTest, ParseNestedActionsDocumentOrder) {
     EXPECT_EQ(iterationActions[0]->getActionType(), "if") << "Foreach iteration action should be if";
 
     // Cast to IfAction to verify nested actions
-    auto ifPtr = std::dynamic_pointer_cast<RSM::IfAction>(iterationActions[0]);
+    auto ifPtr = std::dynamic_pointer_cast<SCE::IfAction>(iterationActions[0]);
     ASSERT_NE(ifPtr, nullptr) << "Failed to cast to IfAction";
 
     // Verify if branch has 3 actions in document order: script → assign → log
@@ -498,7 +498,7 @@ TEST_F(SCXMLParserBasicTest, ParseIfElseifElseDocumentOrder) {
     EXPECT_EQ(entryBlocks[0][0]->getActionType(), "if") << "First onentry action should be if";
 
     // Cast to IfAction to verify branch separation
-    auto ifPtr = std::dynamic_pointer_cast<RSM::IfAction>(entryBlocks[0][0]);
+    auto ifPtr = std::dynamic_pointer_cast<SCE::IfAction>(entryBlocks[0][0]);
     ASSERT_NE(ifPtr, nullptr) << "Failed to cast to IfAction";
 
     // Verify 3 branches: if, elseif, else
@@ -675,4 +675,4 @@ TEST_F(SCXMLParserBasicTest, ParseActionBlockWithMultipleActions) {
 }
 
 }  // namespace Tests
-}  // namespace RSM
+}  // namespace SCE

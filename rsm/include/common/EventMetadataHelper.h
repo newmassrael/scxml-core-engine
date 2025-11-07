@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 
@@ -20,11 +20,11 @@
 #include <string>
 
 // Forward declaration to avoid circular dependency
-namespace RSM::Static {
+namespace SCE::Static {
 template <typename StatePolicy> class StaticExecutionEngine;
 }
 
-namespace RSM::Common {
+namespace SCE::Common {
 
 /**
  * @brief Helper for W3C SCXML 5.10 event metadata management
@@ -127,7 +127,7 @@ public:
     template <typename Policy, typename EventType>
     static void
     populatePolicyFromMetadata(Policy &policy,
-                               const typename RSM::Static::StaticExecutionEngine<Policy>::EventWithMetadata &metadata) {
+                               const typename SCE::Static::StaticExecutionEngine<Policy>::EventWithMetadata &metadata) {
         // W3C SCXML 5.10: Set pending event data for _event.data access (test176)
         if constexpr (requires { policy.pendingEventData_; }) {
             policy.pendingEventData_ = metadata.data;
@@ -241,7 +241,7 @@ public:
      * @example AOT Static invoke completion callback
      * @code
      * // In entry_exit_actions.jinja2 - Pure Static invoke
-     * auto doneEvent = ::RSM::Common::EventMetadataHelper::createDoneInvokeEvent<
+     * auto doneEvent = ::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
      *     typename SelfType::Event, typename SelfType::EventWithMetadata>(
      *     Event::Done_invoke_foo, "foo");
      * self_->raiseExternal(doneEvent);
@@ -250,7 +250,7 @@ public:
      * @example AOT Hybrid invoke completion callback
      * @code
      * // In entry_exit_actions.jinja2 - Static Hybrid invoke
-     * auto doneEvent = ::RSM::Common::EventMetadataHelper::createDoneInvokeEvent<
+     * auto doneEvent = ::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
      *     Event, typename Engine::EventWithMetadata>(
      *     Event::Done_invoke, "bar");
      * engine.raise(doneEvent);
@@ -278,4 +278,4 @@ public:
     }
 };
 
-}  // namespace RSM::Common
+}  // namespace SCE::Common

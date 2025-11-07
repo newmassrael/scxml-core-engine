@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Interface for receiving events from external sources
@@ -144,4 +144,4 @@ public:
     virtual std::vector<std::string> getSupportedConfigTypes() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

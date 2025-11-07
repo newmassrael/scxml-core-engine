@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test237_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: invoke cancellation on state exit
@@ -22,10 +22,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test237 : public ScheduledAotTest<Test237, 237> {
     static constexpr const char *DESCRIPTION = "invoke cancellation (W3C 6.4 AOT Pure Static)";
-    using SM = RSM::Generated::test237::test237;
+    using SM = SCE::Generated::test237::test237;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test237> registrar_Test237;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

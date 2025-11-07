@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test423_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9.2: External event queue processing with internal event priority
@@ -21,10 +21,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test423 : public ScheduledAotTest<Test423, 423> {
     static constexpr const char *DESCRIPTION = "External event queue processing (W3C 5.9.2 AOT)";
-    using SM = RSM::Generated::test423::test423;
+    using SM = SCE::Generated::test423::test423;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test423> registrar_Test423;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

@@ -8,7 +8,7 @@
 #define EMSCRIPTEN_KEEPALIVE
 #endif
 
-namespace RSM {
+namespace SCE {
 
 // JavaScript class ID for DOM objects
 static JSClassID js_dom_element_class_id = 0;
@@ -206,4 +206,4 @@ JSValue DOMBinding::createDOMObject(JSContext *ctx, const std::string &xmlConten
     return obj;
 }
 
-}  // namespace RSM
+}  // namespace SCE

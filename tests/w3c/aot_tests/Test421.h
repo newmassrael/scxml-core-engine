@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test421_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: Internal Event Priority Over External Events
@@ -31,10 +31,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test421 : public SimpleAotTest<Test421, 421> {
     static constexpr const char *DESCRIPTION = "Internal event priority (W3C 5.10.1 AOT)";
-    using SM = RSM::Generated::test421::test421;
+    using SM = SCE::Generated::test421::test421;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test421> registrar_Test421;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

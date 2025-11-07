@@ -11,13 +11,13 @@
         if (jsEngineInitialized_) return;
         ensureSessionId();
         if (!sessionId_.has_value()) return;
-        auto& jsEngine = ::RSM::JSEngine::instance();
+        auto& jsEngine = ::SCE::JSEngine::instance();
         jsEngine.createSession(sessionId_.value());
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors) using SystemVariableHelper
         // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
         std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-        auto setupResult = ::RSM::SystemVariableHelper::setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        auto setupResult = ::SCE::SystemVariableHelper::setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             LOG_ERROR("AOT ensureJSEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
@@ -25,21 +25,21 @@
 {% for var in model.variables %}
 {% if var.expr %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), "{{ var.expr | escape_cpp }}").get();
-        if (!::RSM::JSEngine::isSuccess(initExpr_{{ var.id }})) {
+        if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
             LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
         }
 {% elif var.content %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), R"({{ var.content | escape_cpp }})").get();
-        if (!::RSM::JSEngine::isSuccess(initExpr_{{ var.id }})) {
+        if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
             LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
         }
 {% elif var.type == 'runtime' %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), "undefined").get();
-        if (!::RSM::JSEngine::isSuccess(initExpr_{{ var.id }})) {
+        if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
             LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
@@ -70,13 +70,13 @@
         if (jsEngineInitialized_) return;
         ensureSessionId();
         if (!sessionId_.has_value()) return;
-        auto& jsEngine = ::RSM::JSEngine::instance();
+        auto& jsEngine = ::SCE::JSEngine::instance();
         jsEngine.createSession(sessionId_.value());
 
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors) using SystemVariableHelper
         // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
         std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-        auto setupResult = ::RSM::SystemVariableHelper::setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        auto setupResult = ::SCE::SystemVariableHelper::setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
@@ -88,9 +88,9 @@
 {% if var.src %}
         // W3C SCXML 5.2.2: Load datamodel variable from external file
         // ARCHITECTURE.md: basePath resolved from executable location for execution independence
-        ::RSM::DataModelInitHelper::initializeVariableFromSrc(
+        ::SCE::DataModelInitHelper::initializeVariableFromSrc(
             jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
-            ::RSM::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
+            ::SCE::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
             });
@@ -104,7 +104,7 @@
         // ARCHITECTURE.md Zero Duplication: Matches Interpreter behavior (StateMachine.cpp:1615-1635)
         {
             auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ var.id }} = {{ var.expr | escape_cpp }}").get();
-            if (!::RSM::JSEngine::isSuccess(scriptResult)) {
+            if (!::SCE::JSEngine::isSuccess(scriptResult)) {
                 std::string errorMsg = "Failed to assign function expression for '{{ var.id }}'";
                 LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
@@ -114,7 +114,7 @@
 {% else %}
         // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
         // Test 277: expr evaluation failure must raise error.execution (no fallback)
-        ::RSM::DataModelInitHelper::initializeVariableFromExpr(
+        ::SCE::DataModelInitHelper::initializeVariableFromExpr(
             jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
@@ -122,14 +122,14 @@
 {% endif %}
 {% elif var.content %}
         // W3C SCXML B.2: Initialize with inline XML content (DOM creation)
-        ::RSM::DataModelInitHelper::initializeVariable(
+        ::SCE::DataModelInitHelper::initializeVariable(
             jsEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content }})",
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
             });
 {% elif var.type == 'runtime' %}
         // W3C SCXML 5.2: Runtime datamodel variable (late binding)
-        ::RSM::DataModelInitHelper::initializeVariable(
+        ::SCE::DataModelInitHelper::initializeVariable(
             jsEngine, sessionId_.value(), "{{ var.id }}", "",
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
@@ -145,23 +145,23 @@
         // State {{ state_id }} datamodel variables
 {% for var in state.datamodel %}
 {% if var.expr %}
-        ::RSM::DataModelInitHelper::initializeVariableFromExpr(
+        ::SCE::DataModelInitHelper::initializeVariableFromExpr(
             jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
             });
         LOG_DEBUG("AOT initializeDataModel: Initialized state {{ state_id }} variable '{{ var.id }}' from expr");
 {% elif var.content %}
-        ::RSM::DataModelInitHelper::initializeVariable(
+        ::SCE::DataModelInitHelper::initializeVariable(
             jsEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content }})",
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
             });
         LOG_DEBUG("AOT initializeDataModel: Initialized state {{ state_id }} variable '{{ var.id }}' from content");
 {% elif var.src %}
-        ::RSM::DataModelInitHelper::initializeVariableFromSrc(
+        ::SCE::DataModelInitHelper::initializeVariableFromSrc(
             jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
-            ::RSM::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
+            ::SCE::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
             [&engine](const ::std::string& msg) {
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
             });
@@ -179,7 +179,7 @@
 {% for script in model.global_scripts %}
         {
             auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ script.content | escape_cpp }}").get();
-            if (!::RSM::JSEngine::isSuccess(scriptResult)) {
+            if (!::SCE::JSEngine::isSuccess(scriptResult)) {
                 std::string errorMsg = "Global script execution failed";
                 LOG_ERROR("W3C SCXML 5.8: {}", errorMsg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));

@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 namespace Test {
 
 /**
@@ -61,4 +61,4 @@ private:
 };
 
 }  // namespace Test
-}  // namespace RSM
+}  // namespace SCE

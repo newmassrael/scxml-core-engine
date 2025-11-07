@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 
@@ -22,7 +22,7 @@
 #include <sstream>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Helper functions for W3C SCXML external file loading
@@ -138,8 +138,8 @@ public:
      *
      * Usage (AOT generated code with parent path):
      * @code
-     * std::string scxmlContent = ::RSM::FileLoadingHelper::loadScxmlFile(filePath, parentScxmlPath);
-     * auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, invokeId);
+     * std::string scxmlContent = ::SCE::FileLoadingHelper::loadScxmlFile(filePath, parentScxmlPath);
+     * auto child = ::SCE::StateMachine::createFromSCXMLString(scxmlContent, invokeId);
      * @endcode
      *
      * Usage (Interpreter):
@@ -293,4 +293,4 @@ public:
     }
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -1,12 +1,12 @@
-# Reactive State Machine (RSM)
+# SCE (SCXML Core Engine)
 
-A high-performance C++ state machine library implementing W3C SCXML 1.0 specification with intelligent code generation.
+A high-performance W3C SCXML 1.0 implementation in C++ with dual-engine architecture: Interpreter and AOT (Ahead-of-Time) code generator.
 
-[![W3C Tests](https://github.com/newmassrael/reactive-state-machine/actions/workflows/w3c-tests.yml/badge.svg)](https://github.com/newmassrael/reactive-state-machine/actions/workflows/w3c-tests.yml)
+[![W3C Tests](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml/badge.svg)](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml)
 
 **Online Tools**:
-- [Code Generator](https://newmassrael.github.io/reactive-state-machine/codegen/) - Generate C++ code from SCXML online
-- [Test Results](https://newmassrael.github.io/reactive-state-machine/test-results/test-results.html) - W3C SCXML compliance report
+- [Code Generator](https://newmassrael.github.io/scxml-core-engine/codegen/) - Generate C++ code from SCXML online
+- [Test Results](https://newmassrael.github.io/scxml-core-engine/test-results/test-results.html) - W3C SCXML compliance report
 
 ---
 
@@ -62,13 +62,13 @@ Full specification compliance with intelligent code generation strategy:
 ### Try Online (No Installation)
 
 Experiment with SCXML code generation in your browser:
-- [Online Code Generator](https://newmassrael.github.io/reactive-state-machine/codegen/)
+- [Online Code Generator](https://newmassrael.github.io/scxml-core-engine/codegen/)
 
 ### Installation
 
 ```bash
-git clone --recursive https://github.com/newmassrael/reactive-state-machine.git
-cd reactive-state-machine
+git clone --recursive https://github.com/newmassrael/scxml-core-engine.git
+cd scxml-core-engine
 mkdir build && cd build
 cmake .. -DBUILD_TESTS=ON
 cmake --build . -j$(nproc)
@@ -80,7 +80,7 @@ cmake --build . -j$(nproc)
 
 ## Integration Methods
 
-RSM provides flexible integration options for different project needs:
+SCE provides flexible integration options for different project needs:
 
 ### Method 1: CMake Integration (Recommended)
 
@@ -90,7 +90,7 @@ Automatic code generation with dependency tracking:
 
 ```cmake
 # Add RSM to your project (git submodule or FetchContent)
-add_subdirectory(external/reactive-state-machine)
+add_subdirectory(external/scxml-core-engine)
 
 # Create your executable
 add_executable(my_app main.cpp)
@@ -120,7 +120,7 @@ See [examples/cmake_function](examples/cmake_function) for complete example.
 include(FetchContent)
 FetchContent_Declare(
     rsm
-    GIT_REPOSITORY https://github.com/newmassrael/reactive-state-machine.git
+    GIT_REPOSITORY https://github.com/newmassrael/scxml-core-engine.git
     GIT_TAG main
 )
 FetchContent_MakeAvailable(rsm)
@@ -185,10 +185,10 @@ python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/
 #include "wrappers/AutoProcessStateMachine.h"
 
 int main() {
-    using namespace RSM::Generated::traffic_light;
+    using namespace SCE::Generated::traffic_light;
 
     // Auto-processing wrapper
-    RSM::Wrappers::AutoProcessStateMachine<traffic_light> light;
+    SCE::Wrappers::AutoProcessStateMachine<traffic_light> light;
 
     light.initialize();
     light.processEvent(Event::Timer);  // Auto-processes event queue!
@@ -203,7 +203,7 @@ int main() {
 #include "traffic_light_sm.h"
 
 int main() {
-    using namespace RSM::Generated::traffic_light;
+    using namespace SCE::Generated::traffic_light;
 
     traffic_light light;
 
@@ -285,13 +285,13 @@ tests/
 
 ### API Wrapper for Simplified Usage
 
-RSM provides an optional convenience wrapper for automatic event queue processing:
+SCE provides an optional convenience wrapper for automatic event queue processing:
 
 ```cpp
 #include "wrappers/AutoProcessStateMachine.h"
 
 // Easy wrapper
-RSM::Wrappers::AutoProcessStateMachine<MyStateMachine> sm;
+SCE::Wrappers::AutoProcessStateMachine<MyStateMachine> sm;
 sm.processEvent(Event::Start);  // Automatically calls step()
 
 // Low-level API still available for power users

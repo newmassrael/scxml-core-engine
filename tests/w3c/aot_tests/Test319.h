@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test319_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.1: System variable _event initially unbound
@@ -17,10 +17,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test319 : public SimpleAotTest<Test319, 319> {
     static constexpr const char *DESCRIPTION = "_event not bound before first event (W3C B.1 AOT)";
-    using SM = RSM::Generated::test319::test319;
+    using SM = SCE::Generated::test319::test319;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test319> registrar_Test319;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

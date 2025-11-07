@@ -10,7 +10,7 @@
 #include <random>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 // === ExecutionResult Implementation ===
 
@@ -57,7 +57,7 @@ bool SCXMLEngineImpl::initialize() {
 
     // JSEngine automatically initialized in constructor (RAII)
     // instance() call provides fully initialized engine
-    RSM::JSEngine::instance();  // RAII guaranteed
+    SCE::JSEngine::instance();  // RAII guaranteed
     LOG_DEBUG("SCXMLEngineImpl: JSEngine automatically initialized via RAII");
     initialized_ = true;
     return true;
@@ -65,29 +65,29 @@ bool SCXMLEngineImpl::initialize() {
 
 void SCXMLEngineImpl::shutdown() {
     if (initialized_) {
-        RSM::JSEngine::instance().shutdown();
+        SCE::JSEngine::instance().shutdown();
         initialized_ = false;
     }
 }
 
 ::std::string SCXMLEngineImpl::getEngineInfo() const {
-    return RSM::JSEngine::instance().getEngineInfo() + " (SCXML C++ API v1.0)";
+    return SCE::JSEngine::instance().getEngineInfo() + " (SCXML C++ API v1.0)";
 }
 
 bool SCXMLEngineImpl::createSession(const ::std::string &sessionId, const ::std::string &parentSessionId) {
-    return RSM::JSEngine::instance().createSession(sessionId, parentSessionId);
+    return SCE::JSEngine::instance().createSession(sessionId, parentSessionId);
 }
 
 bool SCXMLEngineImpl::destroySession(const ::std::string &sessionId) {
-    return RSM::JSEngine::instance().destroySession(sessionId);
+    return SCE::JSEngine::instance().destroySession(sessionId);
 }
 
 bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
-    return RSM::JSEngine::instance().hasSession(sessionId);
+    return SCE::JSEngine::instance().hasSession(sessionId);
 }
 
 ::std::vector<SessionInfo> SCXMLEngineImpl::getActiveSessions() const {
-    auto sessionIds = RSM::JSEngine::instance().getActiveSessions();
+    auto sessionIds = SCE::JSEngine::instance().getActiveSessions();
     ::std::vector<SessionInfo> result;
     result.reserve(sessionIds.size());
 
@@ -103,7 +103,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 
 ::std::future<ExecutionResult> SCXMLEngineImpl::executeScript(const ::std::string &sessionId,
                                                               const ::std::string &script) {
-    auto jsFuture = RSM::JSEngine::instance().executeScript(sessionId, script);
+    auto jsFuture = SCE::JSEngine::instance().executeScript(sessionId, script);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -112,7 +112,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 
 ::std::future<ExecutionResult> SCXMLEngineImpl::evaluateExpression(const ::std::string &sessionId,
                                                                    const ::std::string &expression) {
-    auto jsFuture = RSM::JSEngine::instance().evaluateExpression(sessionId, expression);
+    auto jsFuture = SCE::JSEngine::instance().evaluateExpression(sessionId, expression);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -122,7 +122,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 ::std::future<ExecutionResult> SCXMLEngineImpl::setVariable(const ::std::string &sessionId, const ::std::string &name,
                                                             const ScriptValue &value) {
     // Convert public ScriptValue to internal ScriptValue (same type)
-    auto jsFuture = RSM::JSEngine::instance().setVariable(sessionId, name, value);
+    auto jsFuture = SCE::JSEngine::instance().setVariable(sessionId, name, value);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -130,7 +130,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 }
 
 ::std::future<ExecutionResult> SCXMLEngineImpl::getVariable(const ::std::string &sessionId, const ::std::string &name) {
-    auto jsFuture = RSM::JSEngine::instance().getVariable(sessionId, name);
+    auto jsFuture = SCE::JSEngine::instance().getVariable(sessionId, name);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -151,7 +151,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 ::std::future<ExecutionResult> SCXMLEngineImpl::setupSystemVariables(const ::std::string &sessionId,
                                                                      const ::std::string &sessionName,
                                                                      const ::std::vector<::std::string> &ioProcessors) {
-    auto jsFuture = RSM::JSEngine::instance().setupSystemVariables(sessionId, sessionName, ioProcessors);
+    auto jsFuture = SCE::JSEngine::instance().setupSystemVariables(sessionId, sessionName, ioProcessors);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -159,11 +159,11 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 }
 
 size_t SCXMLEngineImpl::getMemoryUsage() const {
-    return RSM::JSEngine::instance().getMemoryUsage();
+    return SCE::JSEngine::instance().getMemoryUsage();
 }
 
 void SCXMLEngineImpl::collectGarbage() {
-    RSM::JSEngine::instance().collectGarbage();
+    SCE::JSEngine::instance().collectGarbage();
 }
 
 ExecutionResult SCXMLEngineImpl::convertResult(const JSResult &jsResult) const {
@@ -443,4 +443,4 @@ SCXMLEngine::Statistics SCXMLEngineImpl::getStatisticsSync(const std::string &se
     return stats;
 }
 
-}  // namespace RSM
+}  // namespace SCE

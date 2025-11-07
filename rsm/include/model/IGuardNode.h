@@ -12,7 +12,7 @@
  * Corresponds to <code:guard> element in SCXML documents.
  */
 
-namespace RSM {
+namespace SCE {
 
 class IGuardNode {
 public:
@@ -88,18 +88,6 @@ public:
     virtual const std::string &getExternalFactory() const = 0;
 
     /**
-     * @brief Set reactive status
-     * @param reactive Reactive status
-     */
-    virtual void setReactive(bool reactive) = 0;
-
-    /**
-     * @brief Return reactive status
-     * @return Reactive status
-     */
-    virtual bool isReactive() const = 0;
-
-    /**
      * @brief Set attribute
      * @param name Attribute name
      * @param value Attribute value
@@ -120,4 +108,4 @@ public:
     virtual const std::unordered_map<std::string, std::string> &getAttributes() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

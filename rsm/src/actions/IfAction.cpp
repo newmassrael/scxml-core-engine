@@ -2,7 +2,7 @@
 #include "runtime/IActionExecutor.h"
 #include "runtime/IExecutionContext.h"
 
-namespace RSM {
+namespace SCE {
 
 IfAction::IfAction(const std::string &condition, const std::string &id) : BaseAction(id) {
     if (!condition.empty()) {
@@ -155,4 +155,4 @@ std::string IfAction::getSpecificDescription() const {
     return desc;
 }
 
-}  // namespace RSM
+}  // namespace SCE

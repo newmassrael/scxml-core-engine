@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test241_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4.3: invoke with namelist + param consistency validation
@@ -56,10 +56,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test241 : public ScheduledAotTest<Test241, 241> {
     static constexpr const char *DESCRIPTION = "invoke namelist + param consistency (W3C 6.4.3 AOT Static Hybrid)";
-    using SM = RSM::Generated::test241::test241;
+    using SM = SCE::Generated::test241::test241;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test241> registrar_Test241;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

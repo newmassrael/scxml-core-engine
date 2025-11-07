@@ -4,7 +4,7 @@
 #include "IEventTarget.h"
 #include <memory>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Concrete implementation of IEventDispatcher
@@ -73,4 +73,4 @@ private:
     std::shared_ptr<IEventTargetFactory> targetFactory_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

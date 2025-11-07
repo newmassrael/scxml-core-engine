@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test580_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.11: History state never in configuration (parallel states)
@@ -43,10 +43,10 @@ namespace RSM::W3C::AotTests {
 struct Test580 : public ScheduledAotTest<Test580, 580> {
     static constexpr const char *DESCRIPTION =
         "History state never in configuration with parallel states (W3C 3.11 AOT Static Hybrid)";
-    using SM = RSM::Generated::test580::test580;
+    using SM = SCE::Generated::test580::test580;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test580> registrar_Test580;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

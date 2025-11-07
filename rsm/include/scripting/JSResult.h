@@ -8,7 +8,7 @@
 #include <typeinfo>
 #include <variant>
 
-namespace RSM {
+namespace SCE {
 
 // ScriptValue is now defined in SCXMLTypes.h
 
@@ -231,4 +231,4 @@ public:
     friend class JSEngine;
 };
 
-}  // namespace RSM
+}  // namespace SCE

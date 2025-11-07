@@ -6,7 +6,7 @@
 #include <cstring>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 JSExecutionEngineImpl::JSExecutionEngineImpl() {
     LOG_DEBUG("JSExecutionEngineImpl: Constructor started");
@@ -367,4 +367,4 @@ void JSExecutionEngineImpl::collectGarbageInternal() {
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

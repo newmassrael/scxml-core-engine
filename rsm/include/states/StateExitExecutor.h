@@ -3,7 +3,7 @@
 #include "common/Logger.h"
 #include "states/IStateExitHandler.h"
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Concrete implementation for state exit handling
@@ -58,4 +58,4 @@ private:
     void logExitAction(const std::string &stateId, const std::string &actionDescription) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -3,7 +3,7 @@
 #include "ScheduledAotTest.h"
 #include "test276_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4: Static invoke with param passing
@@ -15,10 +15,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test276 : public ScheduledAotTest<Test276, 276> {
     static constexpr const char *DESCRIPTION = "Static invoke param passing (W3C 6.4 AOT)";
-    using SM = RSM::Generated::test276::test276;
+    using SM = SCE::Generated::test276::test276;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test276> registrar_Test276;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

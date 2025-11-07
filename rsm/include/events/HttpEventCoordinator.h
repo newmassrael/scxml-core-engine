@@ -10,7 +10,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Configuration for HTTP Event Coordinator
@@ -214,4 +214,4 @@ private:
     TypeRegistry &typeRegistry_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

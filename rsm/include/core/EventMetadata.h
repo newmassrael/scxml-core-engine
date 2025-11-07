@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace RSM::Core {
+namespace SCE::Core {
 
 /**
  * @brief Event metadata container for W3C SCXML 5.10 compliance
@@ -48,4 +48,4 @@ struct EventMetadata {
           originSessionId(originSessionId) {}
 };
 
-}  // namespace RSM::Core
+}  // namespace SCE::Core

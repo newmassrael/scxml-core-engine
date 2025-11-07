@@ -7,7 +7,7 @@
 #include <cassert>
 #include <format>
 
-namespace RSM {
+namespace SCE {
 
 bool StateExitExecutor::executeStateExitActions(std::shared_ptr<IStateNode> state,
                                                 std::shared_ptr<IExecutionContext> executionContext) {
@@ -178,4 +178,4 @@ void StateExitExecutor::logExitAction(const std::string &stateId, const std::str
     LOG_DEBUG("{} for state: {}", actionDescription, stateId);
 }
 
-}  // namespace RSM
+}  // namespace SCE

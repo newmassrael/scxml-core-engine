@@ -25,12 +25,12 @@
 {% if not in_foreach %}bool success = false;
 {% else %}success = false;  // Use foreach-scope variable
 {% endif %}
-if (::RSM::AssignHelper::isValidLocation("{{ action.location }}")) {
+if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
     // Location is valid, proceed with assignment
     LOG_DEBUG("AOT assign: Before ensureJSEngine for {{ action.location }}");
     this->ensureJSEngine();
     LOG_DEBUG("AOT assign: After ensureJSEngine, sessionId={}", sessionId_.value_or("NONE"));
-    auto& jsEngine = ::RSM::JSEngine::instance();
+    auto& jsEngine = ::SCE::JSEngine::instance();
 
     // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
     // W3C SCXML 5.3/5.10: Assignment execution with proper system variable handling
@@ -41,7 +41,7 @@ if (::RSM::AssignHelper::isValidLocation("{{ action.location }}")) {
     std::string expr = "{{ action.expr.rstrip(';') }}";
     {% endif %}
 
-    success = ::RSM::AssignmentExecutionHelper::executeAssignment(
+    success = ::SCE::AssignmentExecutionHelper::executeAssignment(
         jsEngine, sessionId_.value(), "{{ action.location }}", expr,
         [&engine](const std::string& error) {
             LOG_ERROR("AOT assign: {}", error);
@@ -65,7 +65,7 @@ if (::RSM::AssignHelper::isValidLocation("{{ action.location }}")) {
     }
 } else {
     // W3C SCXML 5.3/5.4/B.2: Invalid or read-only location
-    std::string errorMsg = ::RSM::AssignHelper::getInvalidLocationErrorMessage("{{ action.location }}");
+    std::string errorMsg = ::SCE::AssignHelper::getInvalidLocationErrorMessage("{{ action.location }}");
     LOG_ERROR("W3C SCXML 5.3: {}", errorMsg);
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
 }

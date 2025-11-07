@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #ifdef __EMSCRIPTEN__
@@ -113,7 +113,7 @@ EM_ASYNC_JS(int, em_nodejs_http_request_async,
                 return 1;  // Success
             });
 
-namespace RSM {
+namespace SCE {
 
 EmscriptenFetchClient::EmscriptenFetchClient() {
     LOG_DEBUG("EmscriptenFetchClient: Created WASM HTTP client");
@@ -354,6 +354,6 @@ void EmscriptenFetchClient::setTimeout(std::chrono::milliseconds timeout) {
     LOG_DEBUG("EmscriptenFetchClient: Set timeout to {}ms", timeout.count());
 }
 
-}  // namespace RSM
+}  // namespace SCE
 
 #endif  // __EMSCRIPTEN__

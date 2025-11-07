@@ -3,7 +3,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Test fixture for ReadySCXMLEngine API tests
@@ -434,4 +434,4 @@ TEST_F(ReadySCXMLEngineTest, MultipleTransitions_CounterIncreases_Success) {
     EXPECT_TRUE(engine->isInState("running"));
 }
 
-}  // namespace RSM
+}  // namespace SCE

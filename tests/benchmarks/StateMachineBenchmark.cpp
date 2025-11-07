@@ -7,7 +7,7 @@
 #include <sstream>
 #include <string>
 
-using namespace RSM;
+using namespace SCE;
 
 // Thread-safe counter for unique session IDs
 static std::atomic<uint64_t> globalSessionCounter{0};

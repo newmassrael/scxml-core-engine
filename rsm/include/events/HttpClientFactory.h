@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 #pragma once
@@ -6,7 +6,7 @@
 #include "events/IHttpClient.h"
 #include <memory>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Factory function for creating HTTP clients
@@ -19,4 +19,4 @@ namespace RSM {
  */
 std::unique_ptr<IHttpClient> createHttpClient();
 
-}  // namespace RSM
+}  // namespace SCE

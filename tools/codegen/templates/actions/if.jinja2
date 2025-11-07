@@ -6,7 +6,7 @@ if ({{ action.cond_cpp }}) {
 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
 // Use safeEvaluateGuard for std::optional<bool> handling and error.execution support
 this->ensureJSEngine();
-auto& jsEngine = ::RSM::JSEngine::instance();
+auto& jsEngine = ::SCE::JSEngine::instance();
 if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}", engine)) {
 {% else %}
 if ({{ action.cond }}) {

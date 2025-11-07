@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test326_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2.3: _ioprocessors system variable immutability
@@ -20,10 +20,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test326 : public SimpleAotTest<Test326, 326> {
     static constexpr const char *DESCRIPTION = "_ioprocessors immutability (W3C B.2.3 AOT)";
-    using SM = RSM::Generated::test326::test326;
+    using SM = SCE::Generated::test326::test326;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test326> registrar_Test326;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

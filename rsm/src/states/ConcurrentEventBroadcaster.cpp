@@ -7,7 +7,7 @@
 #include <random>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 ConcurrentEventBroadcaster::ConcurrentEventBroadcaster(const EventBroadcastConfig &config) : config_(config) {
     LOG_DEBUG("Creating event broadcaster");
@@ -417,4 +417,4 @@ void ConcurrentEventBroadcaster::logBroadcastOperation(const EventBroadcastReque
     }
 }
 
-}  // namespace RSM
+}  // namespace SCE

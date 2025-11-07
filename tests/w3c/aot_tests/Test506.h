@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test506_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9.2: Internal transition with non-descendant target behaves as external
@@ -36,10 +36,10 @@ namespace RSM::W3C::AotTests {
 struct Test506 : public SimpleAotTest<Test506, 506> {
     static constexpr const char *DESCRIPTION =
         "Internal transition non-descendant target behaves as external (W3C 5.9.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test506::test506;
+    using SM = SCE::Generated::test506::test506;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test506> registrar_Test506;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

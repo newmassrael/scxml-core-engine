@@ -9,7 +9,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Concrete implementation of session management with observer support
@@ -168,4 +168,4 @@ private:
     bool isValidParentSession(const std::string &parentSessionId) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

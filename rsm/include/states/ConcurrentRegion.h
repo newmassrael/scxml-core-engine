@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Concrete implementation of IConcurrentRegion for SCXML compliance
@@ -326,4 +326,4 @@ private:
     void executeActionNodes(const std::vector<std::shared_ptr<IActionNode>> &actionNodes, const std::string &context);
 };
 
-}  // namespace RSM
+}  // namespace SCE

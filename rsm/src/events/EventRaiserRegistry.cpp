@@ -2,7 +2,7 @@
 #include "common/Logger.h"
 #include <algorithm>
 
-namespace RSM {
+namespace SCE {
 
 bool EventRaiserRegistry::registerEventRaiser(const std::string &sessionId, std::shared_ptr<IEventRaiser> eventRaiser) {
     if (sessionId.empty()) {
@@ -91,4 +91,4 @@ void EventRaiserRegistry::clear() {
     LOG_DEBUG("EventRaiserRegistry: Cleared {} EventRaiser registrations", clearedCount);
 }
 
-}  // namespace RSM
+}  // namespace SCE

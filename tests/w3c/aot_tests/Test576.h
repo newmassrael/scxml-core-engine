@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test576_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: Parallel initial state with space-separated state IDs
@@ -34,10 +34,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test576 : public SimpleAotTest<Test576, 576> {
     static constexpr const char *DESCRIPTION = "Parallel initial with space-separated states (W3C 3.13 AOT)";
-    using SM = RSM::Generated::test576::test576;
+    using SM = SCE::Generated::test576::test576;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test576> registrar_Test576;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

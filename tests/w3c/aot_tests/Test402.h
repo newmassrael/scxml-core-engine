@@ -3,7 +3,7 @@
 #include "SimpleAotTest.h"
 #include "test402_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.12: Error events processed like any other event
@@ -24,10 +24,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test402 : public SimpleAotTest<Test402, 402> {
     static constexpr const char *DESCRIPTION = "Error event ordering and prefix matching (W3C 3.12 AOT)";
-    using SM = RSM::Generated::test402::test402;
+    using SM = SCE::Generated::test402::test402;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test402> registrar_Test402;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

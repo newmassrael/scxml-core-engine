@@ -18,15 +18,15 @@
 #ifndef __EMSCRIPTEN__
 #endif
 
-RSM::ActionParser::ActionParser(std::shared_ptr<RSM::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
+SCE::ActionParser::ActionParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
     LOG_DEBUG("Creating action parser");
 }
 
-RSM::ActionParser::~ActionParser() {
+SCE::ActionParser::~ActionParser() {
     LOG_DEBUG("Destroying action parser");
 }
 
-bool RSM::ActionParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
+bool SCE::ActionParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
     // Exact match
     if (nodeName == searchName) {
         return true;
@@ -42,7 +42,7 @@ bool RSM::ActionParser::matchNodeName(const std::string &nodeName, const std::st
     return false;
 }
 
-std::string RSM::ActionParser::getLocalName(const std::string &nodeName) const {
+std::string SCE::ActionParser::getLocalName(const std::string &nodeName) const {
     // Remove namespace if present
     size_t colonPos = nodeName.find(':');
     if (colonPos != std::string::npos && colonPos + 1 < nodeName.length()) {
@@ -51,7 +51,7 @@ std::string RSM::ActionParser::getLocalName(const std::string &nodeName) const {
     return nodeName;
 }
 
-void RSM::ActionParser::setScxmlBasePath(const std::string &basePath) {
+void SCE::ActionParser::setScxmlBasePath(const std::string &basePath) {
     scxmlBasePath_ = basePath;
 }
 
@@ -59,7 +59,7 @@ void RSM::ActionParser::setScxmlBasePath(const std::string &basePath) {
 // Platform-agnostic IXMLElement implementations
 // ============================================================================
 
-bool RSM::ActionParser::isActionNode(const std::shared_ptr<IXMLElement> &element) const {
+bool SCE::ActionParser::isActionNode(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
@@ -81,7 +81,7 @@ bool RSM::ActionParser::isActionNode(const std::shared_ptr<IXMLElement> &element
     return isStandardAction;
 }
 
-bool RSM::ActionParser::isExternalActionNode(const std::shared_ptr<IXMLElement> &element) const {
+bool SCE::ActionParser::isExternalActionNode(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
@@ -90,7 +90,7 @@ bool RSM::ActionParser::isExternalActionNode(const std::shared_ptr<IXMLElement> 
     return matchNodeName(nodeName, "external-action") || matchNodeName(nodeName, "code:external-action");
 }
 
-bool RSM::ActionParser::isSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element) const {
+bool SCE::ActionParser::isSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element) const {
     if (!element) {
         return false;
     }
@@ -103,8 +103,8 @@ bool RSM::ActionParser::isSpecialExecutableContent(const std::shared_ptr<IXMLEle
            matchNodeName(nodeName, "finalize");
 }
 
-void RSM::ActionParser::parseExternalImplementation(const std::shared_ptr<IXMLElement> &element,
-                                                    std::shared_ptr<RSM::IActionNode> actionNode) {
+void SCE::ActionParser::parseExternalImplementation(const std::shared_ptr<IXMLElement> &element,
+                                                    std::shared_ptr<SCE::IActionNode> actionNode) {
     if (!element || !actionNode) {
         return;
     }
@@ -122,8 +122,8 @@ void RSM::ActionParser::parseExternalImplementation(const std::shared_ptr<IXMLEl
     }
 }
 
-void RSM::ActionParser::parseSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element,
-                                                      std::vector<std::shared_ptr<RSM::IActionNode>> &actions) {
+void SCE::ActionParser::parseSpecialExecutableContent(const std::shared_ptr<IXMLElement> &element,
+                                                      std::vector<std::shared_ptr<SCE::IActionNode>> &actions) {
     if (!element) {
         return;
     }
@@ -142,14 +142,14 @@ void RSM::ActionParser::parseSpecialExecutableContent(const std::shared_ptr<IXML
         }
     } else {
         // Other special elements treated as script actions
-        auto specialAction = std::make_shared<RSM::ScriptAction>("", localName);
+        auto specialAction = std::make_shared<SCE::ScriptAction>("", localName);
         actions.push_back(specialAction);
     }
 }
 
-std::vector<std::shared_ptr<RSM::IActionNode>>
-RSM::ActionParser::parseActionsInElement(const std::shared_ptr<IXMLElement> &parentElement) {
-    std::vector<std::shared_ptr<RSM::IActionNode>> actions;
+std::vector<std::shared_ptr<SCE::IActionNode>>
+SCE::ActionParser::parseActionsInElement(const std::shared_ptr<IXMLElement> &parentElement) {
+    std::vector<std::shared_ptr<SCE::IActionNode>> actions;
 
     if (!parentElement) {
         LOG_WARN("Null parent element");
@@ -196,8 +196,8 @@ RSM::ActionParser::parseActionsInElement(const std::shared_ptr<IXMLElement> &par
     return actions;
 }
 
-std::shared_ptr<RSM::IActionNode>
-RSM::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &externalActionNode) {
+std::shared_ptr<SCE::IActionNode>
+SCE::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &externalActionNode) {
     if (!externalActionNode) {
         LOG_WARN("Null external action node");
         return nullptr;
@@ -219,7 +219,7 @@ RSM::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &e
     LOG_DEBUG("Parsing external action: {}", id);
 
     // External actions are handled as ScriptAction (extend when external action support is added)
-    auto action = std::make_shared<RSM::ScriptAction>("", id);
+    auto action = std::make_shared<SCE::ScriptAction>("", id);
 
     // Ignore delay time (not supported in current implementation)
     if (externalActionNode->hasAttribute("delay")) {
@@ -241,8 +241,8 @@ RSM::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &e
     return action;
 }
 
-std::shared_ptr<RSM::IActionNode>
-RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionElement) {
+std::shared_ptr<SCE::IActionNode>
+SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionElement) {
     if (!actionElement) {
         LOG_WARN("Null action element");
         return nullptr;
@@ -291,7 +291,7 @@ RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         }
 
         // Return ScriptAction with loaded content (external or inline)
-        return std::make_shared<RSM::ScriptAction>(content, id);
+        return std::make_shared<SCE::ScriptAction>(content, id);
 
     } else if (elementName == "assign") {
         std::string location = actionElement->hasAttribute("location") ? actionElement->getAttribute("location") : "";
@@ -308,7 +308,7 @@ RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             }
         }
 
-        return std::make_shared<RSM::AssignAction>(location, expr, id);
+        return std::make_shared<SCE::AssignAction>(location, expr, id);
 
     } else if (elementName == "log") {
         std::string message;
@@ -317,21 +317,21 @@ RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         } else if (actionElement->hasAttribute("label")) {
             message = actionElement->getAttribute("label");
         }
-        return std::make_shared<RSM::LogAction>(message, id);
+        return std::make_shared<SCE::LogAction>(message, id);
 
     } else if (elementName == "raise") {
         std::string event = actionElement->hasAttribute("event") ? actionElement->getAttribute("event") : "";
-        return std::make_shared<RSM::RaiseAction>(event, id);
+        return std::make_shared<SCE::RaiseAction>(event, id);
 
     } else if (elementName == "if") {
         std::string condition = actionElement->hasAttribute("cond") ? actionElement->getAttribute("cond") : "";
-        auto ifAction = std::make_shared<RSM::IfAction>(condition, id);
+        auto ifAction = std::make_shared<SCE::IfAction>(condition, id);
 
         // Get DIRECT children only (not recursive descendants)
         // Get direct children in document order
         auto children = actionElement->getChildren();
 
-        RSM::IfAction::ConditionalBranch *currentBranch = nullptr;
+        SCE::IfAction::ConditionalBranch *currentBranch = nullptr;
 
         LOG_DEBUG("IF action: found {} children, condition='{}'", children.size(), condition);
 
@@ -383,7 +383,7 @@ RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
     } else if (elementName == "send") {
         std::string event = actionElement->hasAttribute("event") ? actionElement->getAttribute("event") : "";
 
-        auto sendAction = std::make_shared<RSM::SendAction>(event, id);
+        auto sendAction = std::make_shared<SCE::SendAction>(event, id);
 
         // Parse idlocation attribute for W3C compliance
         if (actionElement->hasAttribute("idlocation")) {
@@ -470,7 +470,7 @@ RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
     } else if (elementName == "cancel") {
         std::string sendid = actionElement->hasAttribute("sendid") ? actionElement->getAttribute("sendid") : "";
-        auto cancelAction = std::make_shared<RSM::CancelAction>(sendid, id);
+        auto cancelAction = std::make_shared<SCE::CancelAction>(sendid, id);
 
         // W3C SCXML 1.0: Handle sendidexpr attribute for dynamic send ID evaluation
         if (actionElement->hasAttribute("sendidexpr")) {
@@ -487,7 +487,7 @@ RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
         LOG_DEBUG("Parsing foreach: array='{}', item='{}', index='{}'", array, item, index);
 
-        auto foreachAction = std::make_shared<RSM::ForeachAction>(array, item, index, id);
+        auto foreachAction = std::make_shared<SCE::ForeachAction>(array, item, index, id);
 
         // Parse nested actions (executable content inside foreach)
         auto childActions = parseActionsInElement(actionElement);
@@ -503,6 +503,6 @@ RSM::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
     } else {
         LOG_WARN("Unknown action type: {}, creating ScriptAction", elementName);
-        return std::make_shared<RSM::ScriptAction>("", id);
+        return std::make_shared<SCE::ScriptAction>("", id);
     }
 }

@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Event target for invoke session communication (#_invokeid)
@@ -35,4 +35,4 @@ private:
     std::string parentSessionId_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

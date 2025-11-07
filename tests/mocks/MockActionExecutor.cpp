@@ -11,7 +11,7 @@
 #include <algorithm>
 #include <regex>
 
-namespace RSM {
+namespace SCE {
 namespace Test {
 
 // MockActionExecutor implementation
@@ -359,4 +359,4 @@ void MockExecutionContext::setSessionId(const std::string &sessionId) {
 }
 
 }  // namespace Test
-}  // namespace RSM
+}  // namespace SCE

@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test510_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: BasicHTTP Event I/O Processor External Queue
@@ -23,10 +23,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test510 : public HttpAotTest<Test510, 510> {
     static constexpr const char *DESCRIPTION = "BasicHTTP external queue (W3C C.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test510::test510;
+    using SM = SCE::Generated::test510::test510;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test510> registrar_Test510;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

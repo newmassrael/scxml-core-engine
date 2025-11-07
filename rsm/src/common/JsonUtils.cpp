@@ -2,7 +2,7 @@
 #include "common/Logger.h"
 #include <chrono>
 
-namespace RSM {
+namespace SCE {
 
 std::optional<json> JsonUtils::parseJson(const std::string &jsonString, std::string *errorOut) {
     if (jsonString.empty()) {
@@ -69,4 +69,4 @@ json JsonUtils::createTimestampedObject() {
     return object;
 }
 
-}  // namespace RSM
+}  // namespace SCE

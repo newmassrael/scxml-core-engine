@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief Test suite discovery information
@@ -66,4 +66,4 @@ public:
                                                  const std::string &specSection = "") = 0;
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

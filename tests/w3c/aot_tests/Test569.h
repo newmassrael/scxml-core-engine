@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test569_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.8: SCXML Event I/O Processor location field verification
@@ -34,10 +34,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test569 : public SimpleAotTest<Test569, 569> {
     static constexpr const char *DESCRIPTION = "SCXML I/O processor location (W3C 5.8 AOT Static Hybrid)";
-    using SM = RSM::Generated::test569::test569;
+    using SM = SCE::Generated::test569::test569;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test569> registrar_Test569;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

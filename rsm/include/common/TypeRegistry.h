@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Registry for SCXML type URIs and their normalization
@@ -144,4 +144,4 @@ private:
     std::unordered_map<Category, std::unordered_map<std::string, std::unordered_set<std::string>>> reverseMap_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

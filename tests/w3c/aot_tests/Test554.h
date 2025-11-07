@@ -2,7 +2,7 @@
 #include "ScheduledAotTest.h"
 #include "test554_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 6.4 & B.1: Invoke with invalid namelist error handling
@@ -46,10 +46,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test554 : public ScheduledAotTest<Test554, 554> {
     static constexpr const char *DESCRIPTION = "Invoke namelist error handling (W3C 6.4 & B.1 AOT Pure Static)";
-    using SM = RSM::Generated::test554::test554;
+    using SM = SCE::Generated::test554::test554;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test554> registrar_Test554;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

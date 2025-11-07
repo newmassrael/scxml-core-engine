@@ -4,7 +4,7 @@
 #include <functional>
 #include <string>
 
-namespace RSM::Core {
+namespace SCE::Core {
 
 /**
  * @brief W3C SCXML 3.12.1: Internal Event Queue Management
@@ -99,4 +99,4 @@ private:
     std::deque<EventType> queue_;  // FIFO ordering per W3C SCXML 3.12.1
 };
 
-}  // namespace RSM::Core
+}  // namespace SCE::Core

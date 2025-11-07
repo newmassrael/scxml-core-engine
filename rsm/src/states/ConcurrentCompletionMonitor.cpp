@@ -1,6 +1,6 @@
 #include "states/ConcurrentCompletionMonitor.h"
 
-namespace RSM {
+namespace SCE {
 
 ConcurrentCompletionMonitor::ConcurrentCompletionMonitor(const std::string &parallelStateId)
     : parallelStateId_(parallelStateId), isMonitoringActive_(false) {}
@@ -66,4 +66,4 @@ std::vector<std::string> ConcurrentCompletionMonitor::getRegisteredRegions() con
     return regionIds;
 }
 
-}  // namespace RSM
+}  // namespace SCE

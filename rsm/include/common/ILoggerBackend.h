@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,14 +12,14 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 
 #include <source_location>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Log level enumeration
@@ -37,7 +37,7 @@ enum class LogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4, Criti
  *
  * Example: Custom logger integration
  * @code
- * class MyCompanyLogger : public RSM::ILoggerBackend {
+ * class MyCompanyLogger : public SCE::ILoggerBackend {
  * public:
  *     void log(LogLevel level, const std::string &message,
  *              const std::source_location &loc) override {
@@ -54,7 +54,7 @@ enum class LogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4, Criti
  * };
  *
  * // In main():
- * RSM::Logger::setBackend(std::make_unique<MyCompanyLogger>());
+ * SCE::Logger::setBackend(std::make_unique<MyCompanyLogger>());
  * @endcode
  */
 class ILoggerBackend {
@@ -85,4 +85,4 @@ public:
     virtual void flush() = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

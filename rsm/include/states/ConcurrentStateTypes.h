@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Transition descriptor for Interpreter engine parallel state conflict resolution
@@ -132,4 +132,4 @@ struct ConcurrentRegionInfo {
     std::vector<std::string> activeStates;  // For compound regions
 };
 
-}  // namespace RSM
+}  // namespace SCE

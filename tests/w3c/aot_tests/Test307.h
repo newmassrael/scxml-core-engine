@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test307_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.2.2: Late Binding Variable Access Error Handling
@@ -31,7 +31,7 @@ namespace RSM::W3C::AotTests {
  */
 struct Test307 : public SimpleAotTest<Test307, 307> {
     static constexpr const char *DESCRIPTION = "Late binding variable access (W3C 5.2.2 AOT Static Hybrid)";
-    using SM = RSM::Generated::test307::test307;
+    using SM = SCE::Generated::test307::test307;
 
     // Manual test: final state is "final", not "pass"
     static constexpr auto PASS_STATE = SM::State::Final;
@@ -40,4 +40,4 @@ struct Test307 : public SimpleAotTest<Test307, 307> {
 // Auto-register
 inline static AotTestRegistrar<Test307> registrar_Test307;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

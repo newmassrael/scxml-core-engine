@@ -8,7 +8,7 @@
  * to ensure consistency and compliance with W3C SCXML 1.0 specification.
  */
 
-namespace RSM::Constants {
+namespace SCE::Constants {
 
 // ============================================================================
 // W3C SCXML Event Processor URIs (W3C SCXML 6.2)
@@ -43,4 +43,4 @@ constexpr const char *BASIC_HTTP_EVENT_PROCESSOR_URI = "http://www.w3.org/TR/scx
  */
 constexpr const char *SCXML_INVOKE_PROCESSOR_URI = "http://www.w3.org/TR/scxml/";
 
-}  // namespace RSM::Constants
+}  // namespace SCE::Constants

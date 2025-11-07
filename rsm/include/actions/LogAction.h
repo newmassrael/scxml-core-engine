@@ -3,7 +3,7 @@
 #include "BaseAction.h"
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief SCXML <log> action implementation
@@ -80,4 +80,4 @@ private:
     std::string level_;  // Log level (debug, info, warning, error)
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -13,7 +13,7 @@
 #include <iostream>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 // Static instance
 JSEngine &JSEngine::instance() {
@@ -306,7 +306,7 @@ std::future<JSResult> JSEngine::setVariableAsDOM(const std::string &sessionId, c
         }
 
         JSContext *ctx = session->jsContext;
-        ::JSValue domObject = RSM::DOMBinding::createDOMObject(ctx, xmlContent);
+        ::JSValue domObject = SCE::DOMBinding::createDOMObject(ctx, xmlContent);
 
         if (JS_IsException(domObject)) {
             return createErrorFromException(ctx);
@@ -977,7 +977,7 @@ std::string JSEngine::resultToString(const JSResult &result, const std::string &
     } else if (!sessionId.empty() && !originalExpression.empty()) {
         // REUSE: Proven JSON.stringify fallback logic
         std::string stringifyExpr = "JSON.stringify(" + originalExpression + ")";
-        auto stringifyResult = RSM::JSEngine::instance().evaluateExpression(sessionId, stringifyExpr).get();
+        auto stringifyResult = SCE::JSEngine::instance().evaluateExpression(sessionId, stringifyExpr).get();
         if (stringifyResult.isSuccess()) {
             return stringifyResult.getValue<std::string>();
         }
@@ -1017,7 +1017,7 @@ std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, c
             // Use JSON.stringify for reliable array conversion
             std::string stringifyExpr = "JSON.stringify(" + originalExpression + ")";
             LOG_DEBUG("resultToStringArray: Evaluating stringify expression: '{}'", stringifyExpr);
-            auto stringifyResult = RSM::JSEngine::instance().evaluateExpression(sessionId, stringifyExpr).get();
+            auto stringifyResult = SCE::JSEngine::instance().evaluateExpression(sessionId, stringifyExpr).get();
             if (stringifyResult.isSuccess() && std::holds_alternative<std::string>(stringifyResult.value_internal)) {
                 arrayStr = std::get<std::string>(stringifyResult.value_internal);
                 LOG_DEBUG("resultToStringArray: JSON.stringify succeeded, result: '{}'", arrayStr);
@@ -1043,7 +1043,7 @@ std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, c
             // Must check instanceof Array before attempting to iterate
             std::string arrayCheckExpr = originalExpression + " instanceof Array";
             LOG_DEBUG("resultToStringArray: Validating array type with expression: '{}'", arrayCheckExpr);
-            auto arrayCheckResult = RSM::JSEngine::instance().evaluateExpression(sessionId, arrayCheckExpr).get();
+            auto arrayCheckResult = SCE::JSEngine::instance().evaluateExpression(sessionId, arrayCheckExpr).get();
 
             if (!arrayCheckResult.isSuccess() || !std::holds_alternative<bool>(arrayCheckResult.value_internal) ||
                 !std::get<bool>(arrayCheckResult.value_internal)) {
@@ -1055,7 +1055,7 @@ std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, c
             // SCXML W3C Compliance: Use original expression to preserve null/undefined distinction
             std::string setVarExpr = "var _tempArray = " + originalExpression + "; _tempArray.length";
             LOG_DEBUG("resultToStringArray: Evaluating temp variable length expression: '{}'", setVarExpr);
-            auto lengthResult = RSM::JSEngine::instance().evaluateExpression(sessionId, setVarExpr).get();
+            auto lengthResult = SCE::JSEngine::instance().evaluateExpression(sessionId, setVarExpr).get();
 
             LOG_DEBUG("resultToStringArray: Length result type index: {}", lengthResult.value_internal.index());
 
@@ -1080,7 +1080,7 @@ std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, c
                 for (int64_t i = 0; i < arrayLength; ++i) {
                     // SCXML W3C: Check for undefined first, then use JSON.stringify for other types
                     std::string typeCheckExpr = "typeof _tempArray[" + std::to_string(i) + "]";
-                    auto typeResult = RSM::JSEngine::instance().evaluateExpression(sessionId, typeCheckExpr).get();
+                    auto typeResult = SCE::JSEngine::instance().evaluateExpression(sessionId, typeCheckExpr).get();
 
                     if (typeResult.isSuccess() && std::holds_alternative<std::string>(typeResult.value_internal)) {
                         std::string typeStr = std::get<std::string>(typeResult.value_internal);
@@ -1096,7 +1096,7 @@ std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, c
                     // For non-undefined values, use JSON.stringify
                     std::string elementExpr = "JSON.stringify(_tempArray[" + std::to_string(i) + "])";
                     LOG_DEBUG("resultToStringArray: Element {} expression: '{}'", i, elementExpr);
-                    auto elementResult = RSM::JSEngine::instance().evaluateExpression(sessionId, elementExpr).get();
+                    auto elementResult = SCE::JSEngine::instance().evaluateExpression(sessionId, elementExpr).get();
 
                     if (elementResult.isSuccess() &&
                         std::holds_alternative<std::string>(elementResult.value_internal)) {
@@ -1311,4 +1311,4 @@ void JSEngine::removeObserver(ISessionObserver *observer) {
 
 // JSEngine internal functions are implemented in JSEngineImpl.cpp
 
-}  // namespace RSM
+}  // namespace SCE

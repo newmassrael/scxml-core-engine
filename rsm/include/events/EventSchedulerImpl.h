@@ -16,7 +16,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Concrete implementation of IEventScheduler
@@ -229,4 +229,4 @@ private:
     EventExecutionCallback executionCallback_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

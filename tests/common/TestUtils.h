@@ -4,7 +4,7 @@
 #include <cstdlib>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 namespace Test {
 namespace Utils {
 
@@ -50,4 +50,4 @@ inline int getBaseDelay(int normalDelay = 50) {
 
 }  // namespace Utils
 }  // namespace Test
-}  // namespace RSM
+}  // namespace SCE

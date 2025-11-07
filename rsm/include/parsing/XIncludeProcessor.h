@@ -16,7 +16,7 @@
  * Stub implementation: Actual processing done by IXMLDocument::processXInclude()
  */
 
-namespace RSM {
+namespace SCE {
 
 class XIncludeProcessor : public IXIncludeProcessor {
 public:
@@ -57,4 +57,4 @@ private:
     std::vector<std::string> errorMessages_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

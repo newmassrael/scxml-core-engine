@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 EventSchedulerImpl::EventSchedulerImpl(EventExecutionCallback executionCallback)
     : executionCallback_(std::move(executionCallback)) {
@@ -639,4 +639,4 @@ std::chrono::steady_clock::time_point EventSchedulerImpl::getNextExecutionTimeUn
     return topEvent->executeAt;
 }
 
-}  // namespace RSM
+}  // namespace SCE

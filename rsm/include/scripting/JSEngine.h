@@ -28,7 +28,7 @@ struct JSContext;
 
 // JSValueConst is defined by QuickJS, no need to redefine
 
-namespace RSM {
+namespace SCE {
 class StateMachine;
 
 /**
@@ -686,4 +686,4 @@ private:
      */
 };
 
-}  // namespace RSM
+}  // namespace SCE

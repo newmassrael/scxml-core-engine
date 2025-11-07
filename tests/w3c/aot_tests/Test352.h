@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test352_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.10.1: Event origintype field validation
@@ -17,10 +17,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test352 : public SimpleAotTest<Test352, 352> {
     static constexpr const char *DESCRIPTION = "Event origintype field (W3C 5.10.1 AOT)";
-    using SM = RSM::Generated::test352::test352;
+    using SM = SCE::Generated::test352::test352;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test352> registrar_Test352;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

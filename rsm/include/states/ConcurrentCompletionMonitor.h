@@ -9,11 +9,11 @@
 #include <unordered_map>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 struct EventDescriptor;
 }
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Simplified implementation of parallel state completion monitoring
@@ -43,4 +43,4 @@ private:
     std::unordered_map<std::string, bool> regions_;
 };
 
-}  // namespace RSM
+}  // namespace SCE

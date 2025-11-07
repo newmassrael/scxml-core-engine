@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief HTTP request representation for event bridge
@@ -155,4 +155,4 @@ public:
     virtual std::vector<std::string> getSupportedConfigTypes() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

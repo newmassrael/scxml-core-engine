@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test311_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 5.9.2: error.execution for invalid assignment location
@@ -19,10 +19,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test311 : public SimpleAotTest<Test311, 311> {
     static constexpr const char *DESCRIPTION = "error.execution for invalid assign location (W3C 5.9.2 AOT)";
-    using SM = RSM::Generated::test311::test311;
+    using SM = SCE::Generated::test311::test311;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test311> registrar_Test311;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

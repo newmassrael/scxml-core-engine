@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 // Forward declaration - platform-independent
 class IXMLDocument;
@@ -49,4 +49,4 @@ public:
     virtual const std::vector<std::string> &getErrorMessages() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

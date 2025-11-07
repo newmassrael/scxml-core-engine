@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cctype>
 
-namespace RSM {
+namespace SCE {
 
 const std::string ParsingCommon::Constants::SCXML_NAMESPACE = "http://www.w3.org/2005/07/scxml";
 const std::string ParsingCommon::Constants::CODE_NAMESPACE = "http://tempuri.org/code";
@@ -226,4 +226,4 @@ std::string ParsingCommon::trimString(const std::string &str) {
     return str.substr(start, end - start);
 }
 
-}  // namespace RSM
+}  // namespace SCE

@@ -81,14 +81,14 @@
                 // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
                 {
                     ensureJSEngine();
-                    auto& jsEngine = ::RSM::JSEngine::instance();
+                    auto& jsEngine = ::SCE::JSEngine::instance();
                     jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
                     LOG_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
                 }
                 {% endif %}
 
                 // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }})
-                ::RSM::InvokeHelper::deferInvoke(pendingInvokes_,
+                ::SCE::InvokeHelper::deferInvoke(pendingInvokes_,
                     PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
                 LOG_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
@@ -108,7 +108,7 @@
                 // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
                 {
                     ensureJSEngine();
-                    auto& jsEngine = ::RSM::JSEngine::instance();
+                    auto& jsEngine = ::SCE::JSEngine::instance();
                     jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
                     LOG_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
                 }
@@ -116,7 +116,7 @@
 
                 // Defer hybrid invoke: {{ invoke_info.invoke_id }} {% if invoke_info.srcexpr %}(srcexpr: {{ invoke_info.srcexpr }}){% elif invoke_info.contentexpr %}(contentexpr: {{ invoke_info.contentexpr }}){% endif %}
 
-                ::RSM::InvokeHelper::deferInvoke(pendingInvokes_,
+                ::SCE::InvokeHelper::deferInvoke(pendingInvokes_,
                     PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
                 LOG_DEBUG("Deferred hybrid invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
 {% endfor %}
@@ -138,7 +138,7 @@
 {% endfor %}
                     // W3C SCXML 3.8: Delegate to EntryExitHelper (Single Source of Truth)
                     // This achieves ARCHITECTURE.md Zero Duplication between Interpreter and AOT engines
-                    ::RSM::EntryExitHelper<{{ model.name }}Policy, Engine>::executeEntryBlocks(
+                    ::SCE::EntryExitHelper<{{ model.name }}Policy, Engine>::executeEntryBlocks(
                         entryBlocks, engine, "{{ state_id }}"
                     );
                 }
@@ -180,7 +180,7 @@
 {% if state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements
                     this->ensureJSEngine();
-                    auto& jsEngine = ::RSM::JSEngine::instance();
+                    auto& jsEngine = ::SCE::JSEngine::instance();
                     std::vector<std::pair<std::string, std::string>> params = {
 {% for param in state.donedata.params %}
                         {"{{ param.name }}", "{{ param.location if param.location else param.expr }}"}{{ "," if not loop.last }}
@@ -189,7 +189,7 @@
 
                     // W3C SCXML 5.7: "If the location expression does not denote a valid location in the data model..."
                     // Empty param location raises error.execution and prevents done.state event generation
-                    bool success = ::RSM::DoneDataHelper::evaluateParams(
+                    bool success = ::SCE::DoneDataHelper::evaluateParams(
                         jsEngine,
                         sessionId_.value(),
                         params,
@@ -208,8 +208,8 @@
 {% elif state.donedata.contentexpr %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     this->ensureJSEngine();
-                    auto& jsEngine = ::RSM::JSEngine::instance();
-                    ::RSM::DoneDataHelper::evaluateContent(
+                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    ::SCE::DoneDataHelper::evaluateContent(
                         jsEngine,
                         sessionId_.value(),
                         "{{ state.donedata.contentexpr }}",
@@ -222,8 +222,8 @@
 {% elif state.donedata.content %}
                     // W3C SCXML 5.5: Evaluate <content> expression
                     this->ensureJSEngine();
-                    auto& jsEngine = ::RSM::JSEngine::instance();
-                    ::RSM::DoneDataHelper::evaluateContent(
+                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    ::SCE::DoneDataHelper::evaluateContent(
                         jsEngine,
                         sessionId_.value(),
                         "{{ state.donedata.content | escape_cpp }}",
@@ -260,7 +260,7 @@
                              static_cast<int>(parallelState), "{{ state.parent }}");
 
                     // W3C SCXML 3.4: Use shared Helper (ARCHITECTURE.md Zero Duplication Principle)
-                    if (::RSM::ParallelCompletionHelper::areAllRegionsInFinal<State, {{ model.name }}Policy>(
+                    if (::SCE::ParallelCompletionHelper::areAllRegionsInFinal<State, {{ model.name }}Policy>(
                             parallelState, activeStates_)) {
                         LOG_DEBUG("All regions of parallel state {} are complete, generating done.state event",
                                  static_cast<int>(parallelState));
@@ -391,7 +391,7 @@
         {% for history_id, history_info in model.history_states.items() %}
         if (state == State::{{ history_info.parent | capitalize }}) {
             // W3C SCXML 3.11: Filter states using HistoryHelper (shared with Interpreter)
-            auto filteredStates = ::RSM::HistoryHelper::recordHistory(
+            auto filteredStates = ::SCE::HistoryHelper::recordHistory(
                 activeStates,
                 State::{{ history_info.parent | capitalize }},
                 HistoryType::{{ history_info.type.upper() }},
@@ -414,7 +414,7 @@
                 {
 {% if state.static_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (ARCHITECTURE.md Zero Duplication)
-                ::RSM::InvokeHelper::cancelInvokesForState(pendingInvokes_, state);
+                ::SCE::InvokeHelper::cancelInvokesForState(pendingInvokes_, state);
                 {% for invoke_info in state.static_invokes %}
 
                 // W3C SCXML 6.4: Cleanup already-running static invoke child (if started in previous macrostep)
@@ -435,7 +435,7 @@
 {% endif %}
 {% if state.hybrid_invokes %}
                 // W3C SCXML 6.4: Cancel pending hybrid invokes for exited state
-                ::RSM::InvokeHelper::cancelInvokesForState(pendingInvokes_, state);
+                ::SCE::InvokeHelper::cancelInvokesForState(pendingInvokes_, state);
                 {% for invoke_info in state.hybrid_invokes %}
 
                 // W3C SCXML 6.4: Cleanup already-running hybrid invoke child (Interpreter instance)
@@ -463,7 +463,7 @@
 {% endfor %}
                     // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
                     // This achieves ARCHITECTURE.md Zero Duplication between Interpreter and AOT engines
-                    ::RSM::EntryExitHelper<{{ model.name }}Policy, Engine>::executeExitBlocks(
+                    ::SCE::EntryExitHelper<{{ model.name }}Policy, Engine>::executeExitBlocks(
                         exitBlocks, engine, "{{ state_id }}"
                     );
                 }
@@ -498,7 +498,7 @@
         LOG_DEBUG("Executing {} pending invokes at macrostep end", pendingInvokes_.size());
         
         // W3C SCXML 6.4: Use InvokeHelper as Single Source of Truth
-        ::RSM::InvokeHelper::executePendingInvokes(
+        ::SCE::InvokeHelper::executePendingInvokes(
             pendingInvokes_,
             [this, &engine](const PendingInvoke& pending) {
                 LOG_DEBUG("Executing pending invoke: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
@@ -519,9 +519,9 @@
                         // Step 1: Validate namelist variables before creating child
                         {
                             ensureJSEngine();
-                            auto& jsEngine = ::RSM::JSEngine::instance();
+                            auto& jsEngine = ::SCE::JSEngine::instance();
 
-                            bool namelistValid = ::RSM::NamelistHelper::evaluateNamelist(
+                            bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
                                 jsEngine,
                                 sessionId_.value(),
                                 "{{ invoke_info.namelist }}",
@@ -551,7 +551,7 @@
                         std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
                         
                         // Create child instance with parent pointer, invokeId, and childSessionId
-                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::RSM::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
 
                         {% if invoke_info.namelist %}
                         // W3C SCXML 6.4.1: Pass namelist values to child datamodel (Step 2)
@@ -613,7 +613,7 @@
                             // W3C SCXML 6.3.1: Create done.invoke event with invokeId via EventMetadataHelper
                             // ARCHITECTURE.md Zero Duplication: Single Source of Truth for event metadata
                             // Send done.invoke to external queue (matches Interpreter event ordering)
-                            self_->raiseExternal(::RSM::Common::EventMetadataHelper::createDoneInvokeEvent<
+                            self_->raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
                                 typename SelfType::Event, typename SelfType::EventWithMetadata>(
                                 {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
                                 "{{ invoke_info.invoke_id }}"
@@ -646,29 +646,29 @@
 
                         // Evaluate srcexpr via JSEngine to get file path
                         ensureJSEngine();
-                        auto& jsEngine = ::RSM::JSEngine::instance();
+                        auto& jsEngine = ::SCE::JSEngine::instance();
                         auto pathResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.srcexpr }}").get();
                         std::string filePath = pathResult.getValue<std::string>();
 
                         // W3C SCXML 6.4.3: Load SCXML file via FileLoadingHelper (ARCHITECTURE.md Zero Duplication)
                         // W3C SCXML Standard: Resolve child relative to parent SCXML location
-                        std::string scxmlContent = ::RSM::FileLoadingHelper::loadScxmlFile(filePath, this->scxmlSourcePath_);
+                        std::string scxmlContent = ::SCE::FileLoadingHelper::loadScxmlFile(filePath, this->scxmlSourcePath_);
 
                         // Create Interpreter child from SCXML string (use runtime-generated invoke ID)
-                        auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
+                        auto child = ::SCE::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
                         {% elif invoke_info.contentexpr %}
                         LOG_DEBUG("Executing hybrid invoke: {{ invoke_info.invoke_id }} (contentexpr: {{ invoke_info.contentexpr }})");
 
                         // Evaluate contentexpr via JSEngine
                         ensureJSEngine();
-                        auto& jsEngine = ::RSM::JSEngine::instance();
+                        auto& jsEngine = ::SCE::JSEngine::instance();
                         auto contentResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.contentexpr }}").get();
                         std::string scxmlContent = contentResult.getValue<std::string>();
 
                         LOG_DEBUG("Hybrid invoke contentexpr evaluated to {} bytes SCXML", scxmlContent.size());
 
                         // Create Interpreter child from SCXML string (use runtime-generated invoke ID)
-                        auto child = ::RSM::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
+                        auto child = ::SCE::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
                         {% endif %}
                         if (!child) {
                             LOG_ERROR("Failed to create child state machine from contentexpr for invoke {{ invoke_info.invoke_id }}");
@@ -683,7 +683,7 @@
                             LOG_DEBUG("Hybrid child {{ invoke_info.invoke_id }} completed, raising done.invoke");
                             // W3C SCXML 6.3.1: Create done.invoke event with invokeId via EventMetadataHelper
                             // ARCHITECTURE.md Zero Duplication: Single Source of Truth for event metadata
-                            engine.raise(::RSM::Common::EventMetadataHelper::createDoneInvokeEvent<
+                            engine.raise(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
                                 Event, typename Engine::EventWithMetadata>(
                                 {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
                                 "{{ invoke_info.invoke_id }}"

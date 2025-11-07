@@ -4,7 +4,7 @@
 
 using json = nlohmann::json;
 
-namespace RSM {
+namespace SCE {
 
 std::string EventDataHelper::buildJsonFromParams(const std::map<std::string, std::vector<std::string>> &params) {
     // W3C SCXML 5.10: Build structured JSON object from params
@@ -25,4 +25,4 @@ std::string EventDataHelper::buildJsonFromParams(const std::map<std::string, std
     return JsonUtils::toCompactString(eventDataJson);
 }
 
-}  // namespace RSM
+}  // namespace SCE

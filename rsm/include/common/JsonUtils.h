@@ -4,7 +4,7 @@
 #include <optional>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 // Type alias for compatibility
 using json = nlohmann::json;
@@ -72,4 +72,4 @@ public:
     static json createTimestampedObject();
 };
 
-}  // namespace RSM
+}  // namespace SCE

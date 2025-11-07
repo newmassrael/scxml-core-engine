@@ -3,7 +3,7 @@
 #include "BaseAction.h"
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief SCXML <assign> action implementation
@@ -85,4 +85,4 @@ private:
     bool isValidLocation(const std::string &location) const;
 };
 
-}  // namespace RSM
+}  // namespace SCE

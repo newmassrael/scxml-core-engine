@@ -1,6 +1,6 @@
 #pragma once
 
-namespace RSM::Wrappers {
+namespace SCE::Wrappers {
 
 /**
  * @brief Convenience wrapper for automatic event queue processing
@@ -10,7 +10,7 @@ namespace RSM::Wrappers {
  *
  * **Usage**:
  * @code
- * using SM = RSM::Generated::traffic_light::traffic_light;
+ * using SM = SCE::Generated::traffic_light::traffic_light;
  * AutoProcessStateMachine<SM> light;
  *
  * light.initialize();
@@ -72,4 +72,4 @@ public:
     using StateMachine::step;
 };
 
-}  // namespace RSM::Wrappers
+}  // namespace SCE::Wrappers

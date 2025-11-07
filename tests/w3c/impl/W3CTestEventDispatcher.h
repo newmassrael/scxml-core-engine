@@ -6,7 +6,7 @@
 #include <memory>
 #include <string>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief W3C SCXML Test-specific EventDispatcher implementation
@@ -24,7 +24,7 @@ namespace RSM::W3C {
  * - Parameter timing: Ensures parameters evaluated at send time, not delivery time
  * - Simplified targets: W3C tests don't require complex target resolution
  */
-class W3CTestEventDispatcher : public RSM::IEventDispatcher {
+class W3CTestEventDispatcher : public SCE::IEventDispatcher {
 private:
     std::string sessionId_;
 
@@ -112,4 +112,4 @@ public:
     std::map<std::string, std::vector<std::string>> getLastEventParams(const std::string &eventName) const;
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Abstract XML element interface
@@ -97,4 +97,4 @@ public:
     virtual std::string serializeChildContent() const = 0;
 };
 
-}  // namespace RSM
+}  // namespace SCE

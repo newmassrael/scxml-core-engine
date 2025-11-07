@@ -3,7 +3,7 @@
 #include "BaseAction.h"
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief SCXML <raise> action implementation
@@ -67,4 +67,4 @@ private:
     std::string data_;   // Event data payload
 };
 
-}  // namespace RSM
+}  // namespace SCE

@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 
@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Helper functions for parallel state transition conflict detection
@@ -114,13 +114,13 @@ public:
         // Find LCA of source and all targets
         std::optional<StateType> lca = std::nullopt;
         for (const auto &target : transition.targets) {
-            auto currentLca = RSM::Common::HierarchicalStateHelper<PolicyType>::findLCA(transition.source, target);
+            auto currentLca = SCE::Common::HierarchicalStateHelper<PolicyType>::findLCA(transition.source, target);
 
             if (!lca.has_value()) {
                 lca = currentLca;
             } else if (currentLca.has_value()) {
                 // If we have multiple LCAs, find their common ancestor
-                lca = RSM::Common::HierarchicalStateHelper<PolicyType>::findLCA(lca.value(), currentLca.value());
+                lca = SCE::Common::HierarchicalStateHelper<PolicyType>::findLCA(lca.value(), currentLca.value());
             }
         }
 
@@ -341,14 +341,14 @@ public:
                             lca = trans.source;  // Source is the LCA - don't exit it
                         } else {
                             // Target is not descendant - treat as external
-                            lca = RSM::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
+                            lca = SCE::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
                         }
                     } else {
                         // Source is NOT compound (it's parallel or atomic) - treat as external per W3C SCXML 3.13
-                        lca = RSM::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
+                        lca = SCE::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
                     }
                 } else {
-                    lca = RSM::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
+                    lca = SCE::Common::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
                 }
 
                 if (!lca.has_value()) {
@@ -536,4 +536,4 @@ public:
     }
 };
 
-}  // namespace RSM
+}  // namespace SCE

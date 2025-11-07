@@ -18,7 +18,7 @@
 #include <random>
 #include <sstream>
 
-namespace RSM {
+namespace SCE {
 
 // ============================================================================
 // SCXMLInvokeHandler Implementation
@@ -927,7 +927,7 @@ std::string SCXMLInvokeHandler::loadSCXMLFromFile(const std::string &filepath, c
     std::filesystem::path resolvedPath;
     if (std::filesystem::path(cleanPath).is_relative()) {
         // Get parent session's file path for relative resolution
-        std::string parentFilePath = RSM::JSEngine::instance().getSessionFilePath(parentSessionId);
+        std::string parentFilePath = SCE::JSEngine::instance().getSessionFilePath(parentSessionId);
 
         if (!parentFilePath.empty()) {
             // Resolve relative to parent SCXML file directory
@@ -1044,4 +1044,4 @@ std::string SCXMLInvokeHandler::getFinalizeScriptForChildSession(const std::stri
     return "";
 }
 
-}  // namespace RSM
+}  // namespace SCE

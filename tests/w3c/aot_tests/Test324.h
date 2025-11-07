@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test324_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML B.2.2: System variable _name immutability
@@ -17,10 +17,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test324 : public SimpleAotTest<Test324, 324> {
     static constexpr const char *DESCRIPTION = "_name immutability (W3C B.2.2 AOT)";
-    using SM = RSM::Generated::test324::test324;
+    using SM = SCE::Generated::test324::test324;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test324> registrar_Test324;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

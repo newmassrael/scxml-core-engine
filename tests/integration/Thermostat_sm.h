@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <memory>
 
-namespace RSM::Generated {
+namespace SCE::Generated {
 
 enum class State : uint8_t { Cooling, Idle };
 
@@ -60,4 +60,4 @@ public:
     }
 };
 
-}  // namespace RSM::Generated
+}  // namespace SCE::Generated

@@ -1,7 +1,7 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-RSM-Commercial
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 //
-// This file is part of RSM (Reactive State Machine).
+// This file is part of SCE (SCXML Core Engine).
 //
 // Dual Licensed:
 // 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
@@ -12,7 +12,7 @@
 //   Enterprise: $500 cumulative
 //   Contact: https://github.com/newmassrael
 //
-// Full terms: https://github.com/newmassrael/reactive-state-machine/blob/main/LICENSE
+// Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
 
@@ -22,7 +22,7 @@
 #include <source_location>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Centralized logging facade with dependency injection support
@@ -37,13 +37,13 @@ namespace RSM {
  *
  * Example: Using default logger
  * @code
- * RSM::Logger::initialize();
+ * SCE::Logger::initialize();
  * LOG_INFO("State machine started");
  * @endcode
  *
  * Example: Injecting custom logger
  * @code
- * RSM::Logger::setBackend(std::make_unique<MyCustomLogger>());
+ * SCE::Logger::setBackend(std::make_unique<MyCustomLogger>());
  * LOG_INFO("State machine started");  // Uses MyCustomLogger
  * @endcode
  */
@@ -99,12 +99,12 @@ private:
     static std::string extractCleanFunctionName(const std::source_location &loc);
 };
 
-}  // namespace RSM
+}  // namespace SCE
 
 // Macro definitions for std::format support with proper source_location capture
 // Uses C++20 std::format instead of spdlog's fmt::format
-#define LOG_TRACE(...) RSM::Logger::trace(std::format(__VA_ARGS__), std::source_location::current())
-#define LOG_DEBUG(...) RSM::Logger::debug(std::format(__VA_ARGS__), std::source_location::current())
-#define LOG_INFO(...) RSM::Logger::info(std::format(__VA_ARGS__), std::source_location::current())
-#define LOG_WARN(...) RSM::Logger::warn(std::format(__VA_ARGS__), std::source_location::current())
-#define LOG_ERROR(...) RSM::Logger::error(std::format(__VA_ARGS__), std::source_location::current())
+#define LOG_TRACE(...) SCE::Logger::trace(std::format(__VA_ARGS__), std::source_location::current())
+#define LOG_DEBUG(...) SCE::Logger::debug(std::format(__VA_ARGS__), std::source_location::current())
+#define LOG_INFO(...) SCE::Logger::info(std::format(__VA_ARGS__), std::source_location::current())
+#define LOG_WARN(...) SCE::Logger::warn(std::format(__VA_ARGS__), std::source_location::current())
+#define LOG_ERROR(...) SCE::Logger::error(std::format(__VA_ARGS__), std::source_location::current())

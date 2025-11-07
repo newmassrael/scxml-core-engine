@@ -2,7 +2,7 @@
 #include "HttpAotTest.h"
 #include "test532_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML C.2: HTTP Method Name Fallback for Event Naming
@@ -78,10 +78,10 @@ namespace RSM::W3C::AotTests {
  */
 struct Test532 : public HttpAotTest<Test532, 532> {
     static constexpr const char *DESCRIPTION = "BasicHTTP HTTP method name fallback (W3C C.2 AOT Static)";
-    using SM = RSM::Generated::test532::test532;
+    using SM = SCE::Generated::test532::test532;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test532> registrar_Test532;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

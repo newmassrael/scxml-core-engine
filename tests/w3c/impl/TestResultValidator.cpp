@@ -2,7 +2,7 @@
 #include "../interfaces/ITestResultValidator.h"
 #include <algorithm>
 
-namespace RSM::W3C {
+namespace SCE::W3C {
 
 /**
  * @brief W3C test result validator implementation
@@ -75,4 +75,4 @@ private:
     }
 };
 
-}  // namespace RSM::W3C
+}  // namespace SCE::W3C

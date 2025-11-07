@@ -3,7 +3,7 @@
 #include <cstring>
 #include <string>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Fast platform event prefix detection using memcmp
@@ -30,4 +30,4 @@ inline bool isPlatformEvent(const std::string &eventName) {
     return false;
 }
 
-}  // namespace RSM
+}  // namespace SCE

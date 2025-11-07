@@ -4,7 +4,7 @@
 #include <cmath>
 #include <gtest/gtest.h>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * @brief Comprehensive test suite for JSResult type conversion logic
@@ -444,4 +444,4 @@ TEST_F(JSResultTypeConversionTest, W3C_IEEE754_Compliance) {
     EXPECT_EQ(nanResult.getValue<int64_t>(), 0);
 }
 
-}  // namespace RSM
+}  // namespace SCE

@@ -2,7 +2,7 @@
 #include "SimpleAotTest.h"
 #include "test533_sm.h"
 
-namespace RSM::W3C::AotTests {
+namespace SCE::W3C::AotTests {
 
 /**
  * @brief W3C SCXML 3.13: Internal transition exit set for non-compound states
@@ -61,10 +61,10 @@ namespace RSM::W3C::AotTests {
 struct Test533 : public SimpleAotTest<Test533, 533> {
     static constexpr const char *DESCRIPTION =
         "Internal transition exit set for non-compound states (W3C 3.13 AOT Static Hybrid)";
-    using SM = RSM::Generated::test533::test533;
+    using SM = SCE::Generated::test533::test533;
 };
 
 // Auto-register
 inline static AotTestRegistrar<Test533> registrar_Test533;
 
-}  // namespace RSM::W3C::AotTests
+}  // namespace SCE::W3C::AotTests

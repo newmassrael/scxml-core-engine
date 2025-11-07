@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-namespace RSM {
+namespace SCE {
 
 /**
  * SCXML W3C Specification History States Integration Tests
@@ -26,14 +26,14 @@ class HistoryStateIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Reset JSEngine for test isolation (following SCXML specification pattern)
-        RSM::JSEngine::instance().reset();
+        SCE::JSEngine::instance().reset();
 
         // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
         stateMachine = std::make_shared<StateMachine>();
 
         // Create JSEngine session for this test
         sessionId = "history_integration_test";
-        bool sessionCreated = RSM::JSEngine::instance().createSession(sessionId);
+        bool sessionCreated = SCE::JSEngine::instance().createSession(sessionId);
         if (!sessionCreated) {
             throw std::runtime_error("Failed to create JSEngine session for HistoryStateIntegrationTest");
         }
@@ -46,11 +46,11 @@ protected:
 
         // Clean up JSEngine session
         if (!sessionId.empty()) {
-            RSM::JSEngine::instance().destroySession(sessionId);
+            SCE::JSEngine::instance().destroySession(sessionId);
         }
 
         // Shutdown JSEngine to ensure clean state for next test
-        RSM::JSEngine::instance().shutdown();
+        SCE::JSEngine::instance().shutdown();
     }
 
     std::shared_ptr<StateMachine> stateMachine;
@@ -442,18 +442,18 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_DefaultTransition_FirstVisi
     // Since we can't send events directly, simulate state machine execution
 
     // Initialize data model
-    auto initResult = RSM::JSEngine::instance().executeScript(sessionId, "var result = '';").get();
+    auto initResult = SCE::JSEngine::instance().executeScript(sessionId, "var result = '';").get();
     EXPECT_TRUE(initResult.isSuccess());
 
     // Simulate entering workflow state and triggering history transition
     auto entryResult =
-        RSM::JSEngine::instance()
+        SCE::JSEngine::instance()
             .executeScript(sessionId, "result = result + '_default_transition'; result = result + '_entered_step1';")
             .get();
     EXPECT_TRUE(entryResult.isSuccess());
 
     // Verify default transition was executed and step1 was entered
-    auto result = RSM::JSEngine::instance().evaluateExpression(sessionId, "result").get();
+    auto result = SCE::JSEngine::instance().evaluateExpression(sessionId, "result").get();
     EXPECT_TRUE(result.isSuccess());
     EXPECT_TRUE(result.getValue<std::string>().find("_default_transition") != std::string::npos);
     EXPECT_TRUE(result.getValue<std::string>().find("_entered_step1") != std::string::npos);
@@ -507,30 +507,30 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_StateRestoration_Subsequent
     ASSERT_TRUE(stateMachine->start());
 
     // Initialize data model
-    auto initResult = RSM::JSEngine::instance().executeScript(sessionId, "var result = ''; var visit_count = 0;").get();
+    auto initResult = SCE::JSEngine::instance().executeScript(sessionId, "var result = ''; var visit_count = 0;").get();
     EXPECT_TRUE(initResult.isSuccess());
 
     // First visit - should use default transition
-    auto firstVisit = RSM::JSEngine::instance()
+    auto firstVisit = SCE::JSEngine::instance()
                           .executeScript(sessionId, "visit_count = visit_count + 1; result = result + '_default_' + "
                                                     "visit_count; result = result + '_step1';")
                           .get();
     EXPECT_TRUE(firstVisit.isSuccess());
 
     // Move to step2
-    auto moveToStep2 = RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_step2';").get();
+    auto moveToStep2 = SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_step2';").get();
     EXPECT_TRUE(moveToStep2.isSuccess());
 
     // Exit workflow
-    auto exitWorkflow = RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_outside';").get();
+    auto exitWorkflow = SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_outside';").get();
     EXPECT_TRUE(exitWorkflow.isSuccess());
 
     // Return to workflow - should restore to step2 (not default step1)
     // W3C Section 3.6: Second visit should restore previous state (step2)
-    auto returnToWorkflow = RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_step2';").get();
+    auto returnToWorkflow = SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_step2';").get();
     EXPECT_TRUE(returnToWorkflow.isSuccess());
 
-    auto result = RSM::JSEngine::instance().evaluateExpression(sessionId, "result").get();
+    auto result = SCE::JSEngine::instance().evaluateExpression(sessionId, "result").get();
     EXPECT_TRUE(result.isSuccess());
 
     // Should have default transition only once, and step2 should be restored
@@ -602,13 +602,13 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ShallowVsDeep_RestorationDi
     ASSERT_TRUE(stateMachine->start());
 
     // Initialize data model
-    auto initResult = RSM::JSEngine::instance().executeScript(sessionId, "var result = '';").get();
+    auto initResult = SCE::JSEngine::instance().executeScript(sessionId, "var result = '';").get();
     EXPECT_TRUE(initResult.isSuccess());
 
     // Test shallow history behavior
     // Simulate entering shallow parent and going to nested state
     auto enterShallow =
-        RSM::JSEngine::instance()
+        SCE::JSEngine::instance()
             .executeScript(
                 sessionId,
                 "result = result + '_l1default'; result = result + '_l1nested'; result = result + '_l2nested';")
@@ -616,19 +616,19 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ShallowVsDeep_RestorationDi
     EXPECT_TRUE(enterShallow.isSuccess());
 
     // Exit and record that we were in level1_nested with level2_nested active
-    auto exitShallow = RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_outside';").get();
+    auto exitShallow = SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_outside';").get();
     EXPECT_TRUE(exitShallow.isSuccess());
 
     // Clear result for comparison
-    auto clearResult = RSM::JSEngine::instance().executeScript(sessionId, "result = '';").get();
+    auto clearResult = SCE::JSEngine::instance().executeScript(sessionId, "result = '';").get();
     EXPECT_TRUE(clearResult.isSuccess());
 
     // Return via shallow history - should only restore level1_nested, not level2_nested
     // W3C Section 3.6: Shallow history should only restore immediate children
-    auto returnShallow = RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_l1nested';").get();
+    auto returnShallow = SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_l1nested';").get();
     EXPECT_TRUE(returnShallow.isSuccess());
 
-    auto shallowResult = RSM::JSEngine::instance().evaluateExpression(sessionId, "result").get();
+    auto shallowResult = SCE::JSEngine::instance().evaluateExpression(sessionId, "result").get();
     EXPECT_TRUE(shallowResult.isSuccess());
 
     std::string shallowValue = shallowResult.getValue<std::string>();
@@ -671,20 +671,20 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ExecutionOrder_OnentryBefor
     ASSERT_TRUE(stateMachine->start());
 
     // Initialize data model
-    auto initResult = RSM::JSEngine::instance().executeScript(sessionId, "var execution_order = '';").get();
+    auto initResult = SCE::JSEngine::instance().executeScript(sessionId, "var execution_order = '';").get();
     EXPECT_TRUE(initResult.isSuccess());
 
     // Simulate entering compound state with history transition
     // W3C Section 3.6: History transition executable content should run after parent onentry
     auto simulateEntry =
-        RSM::JSEngine::instance()
+        SCE::JSEngine::instance()
             .executeScript(sessionId,
                            "execution_order = execution_order + '_parent_onentry'; execution_order = execution_order + "
                            "'_history_transition'; execution_order = execution_order + '_child_onentry';")
             .get();
     EXPECT_TRUE(simulateEntry.isSuccess());
 
-    auto result = RSM::JSEngine::instance().evaluateExpression(sessionId, "execution_order").get();
+    auto result = SCE::JSEngine::instance().evaluateExpression(sessionId, "execution_order").get();
     EXPECT_TRUE(result.isSuccess());
 
     // Verify correct execution order
@@ -744,34 +744,34 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ParallelState_IndependentRe
     ASSERT_TRUE(stateMachine->start());
 
     // Initialize data model
-    auto initResult = RSM::JSEngine::instance().executeScript(sessionId, "var result = '';").get();
+    auto initResult = SCE::JSEngine::instance().executeScript(sessionId, "var result = '';").get();
     EXPECT_TRUE(initResult.isSuccess());
 
     // Enter parallel state and navigate to different states in each region
     auto enterParallel =
-        RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_a1'; result = result + '_b1';").get();
+        SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_a1'; result = result + '_b1';").get();
     EXPECT_TRUE(enterParallel.isSuccess());
 
     // Navigate to a2 and b2
     auto navigate =
-        RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_a2'; result = result + '_b2';").get();
+        SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_a2'; result = result + '_b2';").get();
     EXPECT_TRUE(navigate.isSuccess());
 
     // Exit parallel state
-    auto exitParallel = RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_outside';").get();
+    auto exitParallel = SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_outside';").get();
     EXPECT_TRUE(exitParallel.isSuccess());
 
     // Clear previous results
-    auto clearResult = RSM::JSEngine::instance().executeScript(sessionId, "result = '';").get();
+    auto clearResult = SCE::JSEngine::instance().executeScript(sessionId, "result = '';").get();
     EXPECT_TRUE(clearResult.isSuccess());
 
     // Return to parallel state - each region should restore independently
     // W3C: Each parallel region should restore its own history independently
     auto returnParallel =
-        RSM::JSEngine::instance().executeScript(sessionId, "result = result + '_a2'; result = result + '_b2';").get();
+        SCE::JSEngine::instance().executeScript(sessionId, "result = result + '_a2'; result = result + '_b2';").get();
     EXPECT_TRUE(returnParallel.isSuccess());
 
-    auto result = RSM::JSEngine::instance().evaluateExpression(sessionId, "result").get();
+    auto result = SCE::JSEngine::instance().evaluateExpression(sessionId, "result").get();
     EXPECT_TRUE(result.isSuccess());
 
     std::string resultValue = result.getValue<std::string>();
@@ -846,7 +846,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     ASSERT_TRUE(stateMachine->start());
 
     // Initialize JavaScript variables explicitly (matching other successful tests)
-    auto initResult = RSM::JSEngine::instance()
+    auto initResult = SCE::JSEngine::instance()
                           .executeScript(sessionId, "var workflow_state = ''; var step_count = 0; step_count")
                           .get();
     EXPECT_TRUE(initResult.isSuccess());
@@ -858,7 +858,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
 
     // Step 1: Initialize workflow
     auto startWorkflow =
-        RSM::JSEngine::instance()
+        SCE::JSEngine::instance()
             .executeScript(sessionId, "workflow_state = workflow_state + '_workflow_entered'; step_count = step_count "
                                       "+ 1; workflow_state = workflow_state + '_init_' + step_count; step_count")
             .get();
@@ -870,7 +870,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     }
 
     // Step 2: Processing
-    auto proceed = RSM::JSEngine::instance()
+    auto proceed = SCE::JSEngine::instance()
                        .executeScript(sessionId, "step_count = step_count + 1; workflow_state = workflow_state + "
                                                  "'_processing_' + step_count; step_count")
                        .get();
@@ -882,7 +882,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     }
 
     // Step 3: Validation
-    auto validate = RSM::JSEngine::instance()
+    auto validate = SCE::JSEngine::instance()
                         .executeScript(sessionId, "step_count = step_count + 1; workflow_state = workflow_state + "
                                                   "'_validation_' + step_count; step_count")
                         .get();
@@ -894,7 +894,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     }
 
     // Step 4: Completion
-    auto complete = RSM::JSEngine::instance()
+    auto complete = SCE::JSEngine::instance()
                         .executeScript(sessionId, "step_count = step_count + 1; workflow_state = workflow_state + "
                                                   "'_completion_' + step_count; step_count")
                         .get();
@@ -906,7 +906,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     }
 
     // Pause workflow
-    auto pauseWorkflow = RSM::JSEngine::instance()
+    auto pauseWorkflow = SCE::JSEngine::instance()
                              .executeScript(sessionId, "workflow_state = workflow_state + '_paused'; workflow_state")
                              .get();
     EXPECT_TRUE(pauseWorkflow.isSuccess());
@@ -917,7 +917,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     // Resume workflow - should return to completion state
     // W3C Section 3.6: Deep history should restore the complete nested state (completion)
     auto resumeWorkflow =
-        RSM::JSEngine::instance()
+        SCE::JSEngine::instance()
             .executeScript(sessionId, "workflow_state = workflow_state + '_workflow_entered'; workflow_state = "
                                       "workflow_state + '_completion_' + step_count; workflow_state")
             .get();
@@ -927,11 +927,11 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     }
 
     // Debug: Check step_count value after each major operation
-    auto debug_result = RSM::JSEngine::instance().evaluateExpression(sessionId, "step_count").get();
+    auto debug_result = SCE::JSEngine::instance().evaluateExpression(sessionId, "step_count").get();
     EXPECT_TRUE(debug_result.isSuccess());
 
-    auto state_result = RSM::JSEngine::instance().evaluateExpression(sessionId, "workflow_state").get();
-    auto step_result = RSM::JSEngine::instance().evaluateExpression(sessionId, "step_count").get();
+    auto state_result = SCE::JSEngine::instance().evaluateExpression(sessionId, "workflow_state").get();
+    auto step_result = SCE::JSEngine::instance().evaluateExpression(sessionId, "step_count").get();
 
     EXPECT_TRUE(state_result.isSuccess());
     EXPECT_TRUE(step_result.isSuccess());
@@ -946,4 +946,4 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
     EXPECT_TRUE(stateValue.find("_paused") != std::string::npos);
 }
 
-}  // namespace RSM
+}  // namespace SCE

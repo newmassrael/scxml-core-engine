@@ -13,7 +13,7 @@
  * and provides hierarchy navigation and manipulation functionality.
  */
 
-namespace RSM {
+namespace SCE {
 
 class StateHierarchy {
 public:
@@ -107,4 +107,4 @@ private:
     std::unordered_map<std::string, IStateNode *> stateIdMap_;
 };
 
-}  // namespace RSM
+}  // namespace SCE
