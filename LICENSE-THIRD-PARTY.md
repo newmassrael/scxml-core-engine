@@ -4,16 +4,13 @@ This document lists all third-party libraries used by RSM (Reactive State Machin
 
 ## Summary
 
-All dependencies are MIT-compatible with one exception:
-- **CRITICAL:** libxml++ (LGPL 2.1) requires special handling for proprietary software
+**All dependencies are MIT licensed** - fully compatible with both open source and commercial use, with no LGPL or GPL dependencies.
 
-## Dependencies by License Type
+## Dependencies
 
-### MIT License (Fully Compatible)
+All libraries listed below are MIT licensed and compatible with open source and commercial use:
 
-The following libraries are MIT licensed and compatible with both open source and commercial use:
-
-#### 1. QuickJS
+### 1. QuickJS
 
 - **Purpose:** JavaScript engine for ECMAScript expression evaluation (W3C SCXML 5.3)
 - **License:** MIT License
@@ -30,7 +27,7 @@ in the Software without restriction...
 
 ---
 
-#### 2. spdlog
+### 2. spdlog
 
 - **Purpose:** Fast C++ logging library
 - **License:** MIT License
@@ -47,7 +44,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy...
 
 ---
 
-#### 3. cpp-httplib
+### 3. cpp-httplib
 
 - **Purpose:** HTTP client/server library for BasicHTTP Event I/O Processor (W3C SCXML C.2)
 - **License:** MIT License
@@ -64,13 +61,13 @@ Permission is hereby granted, free of charge, to any person obtaining a copy...
 
 ---
 
-#### 4. pugixml
+### 4. pugixml
 
-- **Purpose:** Lightweight XML parser (WebAssembly build)
+- **Purpose:** Lightweight XML parser for SCXML files
 - **License:** MIT License
 - **Copyright:** 2006-2023 Arseny Kapoulkine
 - **Website:** https://pugixml.org/
-- **Used in:** SCXML parsing (WebAssembly platform only)
+- **Used in:** SCXML parsing (all platforms - native and WebAssembly)
 
 **License Text:**
 ```
@@ -79,9 +76,11 @@ Copyright (C) 2006-2023, by Arseny Kapoulkine (arseny.kapoulkine@gmail.com)
 Permission is hereby granted, free of charge, to any person obtaining a copy...
 ```
 
+**Note:** RSM previously used libxml++ (LGPL 2.1) on native platforms, but has migrated to pugixml for all platforms to eliminate LGPL dependencies entirely.
+
 ---
 
-#### 5. nlohmann/json
+### 5. nlohmann/json
 
 - **Purpose:** JSON for Modern C++ (event data, HTTP payloads)
 - **License:** MIT License
@@ -98,89 +97,24 @@ Permission is hereby granted, free of charge, to any person obtaining a copy...
 
 ---
 
-### LGPL 2.1 (Requires Special Handling)
-
-#### 6. libxml++ (XML Parser - Native Platform)
-
-- **Purpose:** C++ XML parsing library (native platform only, not WebAssembly)
-- **License:** GNU Lesser General Public License (LGPL) 2.1
-- **Copyright:** The libxml++ development team
-- **Website:** https://libxmlplusplus.github.io/libxmlplusplus/
-- **Used in:** SCXML parsing (native platform only)
-
-**CRITICAL COMPLIANCE NOTES:**
-
-##### For Open Source Projects (MIT/GPL-compatible)
-No special action required - LGPL is compatible.
-
-##### For Commercial/Proprietary Projects
-
-LGPL 2.1 requires:
-
-1. **Dynamic Linking (Easiest)** ✅
-   - Link libxml++ as shared library (.so/.dll)
-   - RSM already does this by default (CMakeLists.txt)
-   - No source disclosure required for your code
-   - **Status:** Compliant as-is
-
-2. **If Static Linking** ⚠️
-   - Must allow users to relink with modified libxml++
-   - Provide object files (.o) or libraries (.a)
-   - Document relinking procedure
-   - **Recommendation:** Use dynamic linking instead
-
-3. **Source Availability**
-   - Must provide libxml++ source (or link to official source)
-   - Must document which version you used
-   - **Status:** Documented here
-
-##### Compliance Checklist for Commercial Use
-
-- [x] Use dynamic linking (default in CMakeLists.txt)
-- [x] Document libxml++ version in this file
-- [x] Provide link to official libxml++ source
-- [ ] Verify libxml++ .so/.dll included in distribution
-- [ ] Include LGPL 2.1 license text in distribution
-
-##### Version Information
-
-**Current Version:** libxml++ 3.0.1 or higher (detected by CMake)
-**Source:** https://github.com/libxmlplusplus/libxmlplusplus/releases
-
-##### LGPL 2.1 License Text
-
-Full text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
-
-**Key Terms Summary:**
-- You can link LGPL library with proprietary code
-- Must allow users to replace/modify LGPL library (dynamic linking satisfies this)
-- Must provide LGPL library source or offer to provide
-- Your proprietary code remains proprietary
-
----
-
 ## Dependency Resolution by Platform
 
-### Native Platform (Linux, macOS, Windows)
+### All Platforms (Linux, macOS, Windows, WebAssembly)
 
 | Dependency | License | Usage |
 |-----------|---------|-------|
 | QuickJS | MIT | ECMAScript expressions |
 | spdlog | MIT | Logging |
+| pugixml | MIT | SCXML parsing |
+| nlohmann/json | MIT | JSON serialization |
+
+### Native Platforms Only (Linux, macOS, Windows)
+
+| Dependency | License | Usage |
+|-----------|---------|-------|
 | cpp-httplib | MIT | HTTP I/O Processor |
-| **libxml++** | **LGPL 2.1** | **SCXML parsing** |
-| nlohmann/json | MIT | JSON serialization |
 
-### WebAssembly Platform
-
-| Dependency | License | Usage |
-|-----------|---------|-------|
-| QuickJS | MIT | ECMAScript expressions |
-| spdlog | MIT | Logging |
-| pugixml | MIT | SCXML parsing (replaces libxml++) |
-| nlohmann/json | MIT | JSON serialization |
-
-**Note:** WebAssembly build avoids LGPL entirely by using pugixml instead of libxml++.
+**WebAssembly note:** cpp-httplib is excluded from WebAssembly builds (HTTP support uses browser Fetch API instead).
 
 ---
 
@@ -192,54 +126,31 @@ Full text: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 # spdlog
 pkg-config --modversion spdlog
 
-# libxml++
-pkg-config --modversion libxml++-3.0
+# pugixml (header-only, version in source)
+grep "PUGIXML_VERSION" third_party/pugixml/src/pugixml.hpp
 
 # cpp-httplib (header-only, no version check)
 grep "CPPHTTPLIB_VERSION" /usr/include/httplib.h
-```
-
-### Verify Dynamic Linking (LGPL Compliance)
-
-```bash
-# Check that librsm_unified.so links libxml++ dynamically
-ldd build/librsm_unified.so | grep libxml
-
-# Expected output:
-# libxml++-3.0.so.1 => /usr/lib/x86_64-linux-gnu/libxml++-3.0.so.1
 ```
 
 ---
 
 ## License Compatibility Matrix
 
-### RSM MIT License + Dependencies
+### RSM Dual License (LGPL-2.1/Commercial) + MIT Dependencies
 
-| Your License | QuickJS | spdlog | cpp-httplib | pugixml | nlohmann/json | libxml++ |
-|-------------|---------|--------|-------------|---------|---------------|----------|
-| **MIT (Open Source)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Apache 2.0** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **GPL v2/v3** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **BSD** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Commercial (Proprietary)** | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ (dynamic link only) |
+| Your License | QuickJS | spdlog | cpp-httplib | pugixml | nlohmann/json |
+|-------------|---------|--------|-------------|---------|---------------|
+| **MIT (Open Source)** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Apache 2.0** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **GPL v2/v3** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **BSD** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Commercial (Proprietary)** | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 **Legend:**
-- ✅ Fully compatible
-- ⚠️ Compatible with conditions (see libxml++ section)
+- ✅ Fully compatible (all dependencies are MIT)
 
----
-
-## Alternative: LGPL-Free Build
-
-To avoid LGPL entirely, compile for WebAssembly:
-
-```bash
-cd build_wasm
-emcmake cmake ..
-emmake make
-```
-
-This uses pugixml (MIT) instead of libxml++, resulting in 100% MIT dependencies.
+**Key Benefit:** All third-party dependencies are MIT licensed, providing maximum flexibility for both open source and commercial use. No LGPL or GPL dependencies means no dynamic linking requirements or source disclosure obligations for dependencies.
 
 ---
 
@@ -261,7 +172,6 @@ RSM uses the following third-party libraries:
 - cpp-httplib (MIT) - Copyright Yuji Hirose
 - pugixml (MIT) - Copyright Arseny Kapoulkine
 - nlohmann/json (MIT) - Copyright Niels Lohmann
-- libxml++ (LGPL 2.1) - The libxml++ development team
 ```
 
 ---
@@ -273,9 +183,8 @@ All dependencies are open source. Sources available at:
 - **QuickJS:** https://bellard.org/quickjs/ (or rsm/external/quickjs)
 - **spdlog:** https://github.com/gabime/spdlog
 - **cpp-httplib:** https://github.com/yhirose/cpp-httplib
-- **pugixml:** https://pugixml.org/
+- **pugixml:** https://pugixml.org/ (or third_party/pugixml)
 - **nlohmann/json:** https://github.com/nlohmann/json
-- **libxml++:** https://github.com/libxmlplusplus/libxmlplusplus
 
 ---
 
@@ -283,13 +192,13 @@ All dependencies are open source. Sources available at:
 
 For questions about third-party license compliance:
 
-**Email:** licensing@rsm.dev
+**Email:** newmassrael@gmail.com
 **Subject:** Third-Party License Inquiry
 
 We provide compliance assistance as part of our Commercial License support.
 
 ---
 
-**Last Updated:** January 4, 2025
+**Last Updated:** January 7, 2025
 **RSM Version:** 1.0
 **Verified By:** RSM Development Team

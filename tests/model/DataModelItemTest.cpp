@@ -283,8 +283,7 @@ TEST_F(DataModelItemTest, CustomAttributes) {
  *
  * Verifies whether Native and WASM both preserve XML structure or only text content.
  * According to IXMLElement.h comments:
- * - Native (libxml++): Full XML structure preservation with xmlNodeDump
- * - WASM (pugixml): Text content extraction only (structure limitation)
+ * - All platforms (pugixml): Full XML structure preservation
  *
  * However, actual implementation shows both use full structure preservation.
  */
