@@ -123,43 +123,119 @@ jobs:
       run: |
         echo "=== Current Directory ==="
         pwd
-        echo "=== Resources Check ==="
-        ls -la ../../resources | head -n 20
+        echo ""
+        echo "=== Resources Directory Check ==="
+        if [ -d "resources" ]; then
+          echo "Resources found at: $(pwd)/resources"
+          ls -la resources | head -n 10
+        else
+          echo "ERROR: resources directory not found!"
+          echo "Directory contents:"
+          ls -la
+        fi
+        echo ""
         echo "=== Build Directory ==="
-        ls -la build/tests
-        echo "=== Library Check ==="
-        ldd build/tests/w3c_test_cli | grep libxml
+        ls -lh build/tests/w3c_test_cli
+        echo ""
+        echo "=== Executable Check ==="
+        file build/tests/w3c_test_cli
+        echo ""
+        echo "=== Library Dependencies ==="
+        ldd build/tests/w3c_test_cli || echo "ldd failed or static binary"
+        echo ""
+        echo "=== Test Executable Help ==="
+        build/tests/w3c_test_cli --help || echo "Failed to run --help"
 
     - name: Run W3C SCXML Test Suite
       run: |
         cd build/tests
         ulimit -c unlimited
-        
+
+        echo "=== Pre-execution Environment ==="
+        echo "Current directory: $(pwd)"
+        echo "Resources search from: $(pwd)"
+        echo "Project root should be: $(pwd)/../.."
+        ls -la ../../resources | head -n 5 || echo "../../resources not found"
+        echo ""
+
         # Determine log level (workflow_dispatch input or default 'debug')
         LOG_LEVEL="${{ inputs.log-level || 'debug' }}"
-        
+
         # Determine test arguments
         if [ -n "${{ inputs.specific-tests }}" ]; then
           # Convert comma-separated list to space-separated
           TEST_ARGS=$(echo "${{ inputs.specific-tests }}" | tr ',' ' ')
           echo "Running specific tests: $TEST_ARGS"
-          env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli $TEST_ARGS --output w3c_test_results.xml 2>&1 | tail -n 100
+          echo "Command: env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli $TEST_ARGS --output w3c_test_results.xml"
+          echo ""
+          env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli $TEST_ARGS --output w3c_test_results.xml 2>&1 | tee w3c_test_output.log
+          EXIT_CODE=${PIPESTATUS[0]}
         else
           echo "Running all tests"
-          env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli --output w3c_test_results.xml 2>&1 | tail -n 100
+          echo "Command: env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli --output w3c_test_results.xml"
+          echo ""
+          env SPDLOG_LEVEL=$LOG_LEVEL ./w3c_test_cli --output w3c_test_results.xml 2>&1 | tee w3c_test_output.log
+          EXIT_CODE=${PIPESTATUS[0]}
         fi
+
+        echo ""
+        echo "=== Test Execution Result ==="
+        echo "Exit code: $EXIT_CODE"
+        echo "Output log size: $(wc -l < w3c_test_output.log) lines"
+
+        if [ ! -f w3c_test_results.xml ]; then
+          echo "ERROR: w3c_test_results.xml was not created!"
+          echo ""
+          echo "=== Last 50 lines of output ==="
+          tail -n 50 w3c_test_output.log
+        else
+          echo "SUCCESS: w3c_test_results.xml created"
+          ls -lh w3c_test_results.xml
+        fi
+
+        exit $EXIT_CODE
       continue-on-error: true
 
     - name: Analyze Crash (if occurred)
       if: always()
       run: |
         cd build/tests
+        echo "=== Crash Analysis ==="
         if [ -f core ]; then
-          echo "=== Core dump found! ==="
+          echo "Core dump found!"
           gdb -batch -ex "bt" -ex "quit" ./w3c_test_cli core 2>&1 || echo "GDB not available"
         else
           echo "No core dump found"
         fi
+        echo ""
+        echo "=== Test Output Summary ==="
+        if [ -f w3c_test_output.log ]; then
+          echo "Log file size: $(wc -l < w3c_test_output.log) lines"
+          echo "First 20 lines:"
+          head -n 20 w3c_test_output.log
+          echo ""
+          echo "Last 30 lines:"
+          tail -n 30 w3c_test_output.log
+        else
+          echo "No output log found"
+        fi
+        echo ""
+        echo "=== XML Results Check ==="
+        if [ -f w3c_test_results.xml ]; then
+          echo "XML file created successfully"
+          head -n 20 w3c_test_results.xml
+        else
+          echo "XML file NOT created - test execution likely failed early"
+        fi
+
+    - name: Upload Test Output Log
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: w3c-test-output-log
+        path: build/tests/w3c_test_output.log
+        retention-days: 30
+        if-no-files-found: warn
 
     - name: Publish Test Report
       uses: mikepenz/action-junit-report@v4
