@@ -20,7 +20,7 @@ Online tool for generating optimized C++ code from SCXML state machine definitio
 - **Frontend**: HTML, CSS, JavaScript
 - **SCXML Engine**: W3C SCXML 1.0 compliant
 
-## About reactive-state-machine
+## About scxml-core-engine
 
-This tool is powered by [reactive-state-machine](https://github.com/newmassrael/reactive-state-machine),
+This tool is powered by [scxml-core-engine](https://github.com/newmassrael/scxml-core-engine),
 a C++ SCXML library with W3C compliance and code generation capabilities.

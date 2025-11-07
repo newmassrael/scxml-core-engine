@@ -184,7 +184,7 @@
                     '#include "static/StaticExecutionEngine.h"\n' +
                     '#include "common/TransitionHelper.h"\n' +
                     '\n' +
-                    'namespace RSM::Generated::' + smName + ' {\n' +
+                    'namespace SCE::Generated::' + smName + ' {\n' +
                     '\n' +
                     'class ' + smName + ';\n' +
                     '\n' +
@@ -209,8 +209,8 @@
                 code += '};\n\n' +
                     '// State policy for ' + smName + '\n' +
                     'struct ' + smName + 'Policy {\n' +
-                    '    using State = ::RSM::Generated::' + smName + '::State;\n' +
-                    '    using Event = ::RSM::Generated::' + smName + '::Event;\n' +
+                    '    using State = ::SCE::Generated::' + smName + '::State;\n' +
+                    '    using Event = ::SCE::Generated::' + smName + '::Event;\n' +
                     '\n' +
                     '    // Default constructor\n' +
                     '    ' + smName + 'Policy() = default;\n' +
@@ -336,12 +336,12 @@
                     '};\n' +
                     '\n' +
                     '// User-facing state machine class\n' +
-                    'class ' + smName + ' : public ::RSM::Static::StaticExecutionEngine<' + smName + 'Policy> {\n' +
+                    'class ' + smName + ' : public ::SCE::Static::StaticExecutionEngine<' + smName + 'Policy> {\n' +
                     'public:\n' +
                     '    ' + smName + '() = default;\n' +
                     '};\n' +
                     '\n' +
-                    '} // namespace RSM::Generated::' + smName + '\n';
+                    '} // namespace SCE::Generated::' + smName + '\n';
 
                 // Generate usage example
                 let example = '#include "' + smName + '_sm.h"\n' +
@@ -349,7 +349,7 @@
                     '\n' +
                     'int main() {\n' +
                     '    // Create state machine instance\n' +
-                    '    RSM::Generated::' + smName + '::' + smName + ' sm;\n' +
+                    '    SCE::Generated::' + smName + '::' + smName + ' sm;\n' +
                     '\n' +
                     '    // Initialize state machine\n' +
                     '    // This enters the initial state and processes any eventless transitions\n' +
@@ -365,7 +365,7 @@
                     const eventName = firstEvent.toUpperCase().replace(/\./g, '_');
                     example += '\n' +
                         '    std::cout << "\\nSending event: ' + firstEvent + '" << std::endl;\n' +
-                        '    sm.processEvent(RSM::Generated::' + smName + '::Event::' + eventName + ');\n' +
+                        '    sm.processEvent(SCE::Generated::' + smName + '::Event::' + eventName + ');\n' +
                         '    std::cout << "Current state: " << sm.getStateName() << std::endl;';
                 }
 
