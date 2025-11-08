@@ -1,0 +1,78 @@
+{
+  "144": {
+    "description": "Basic atomic state transitions",
+    "specs": ["3.3", "5.9"],
+    "transitions": {
+      "off_to_on": {
+        "section": "5.9.1",
+        "description": "Event-driven transitions"
+      },
+      "on_to_off": {
+        "section": "5.9.1",
+        "description": "Event-driven transitions"
+      }
+    }
+  },
+  "276": {
+    "description": "Parallel states with eventless transitions",
+    "specs": ["3.4", "D.2"],
+    "states": {
+      "p": {
+        "section": "3.4",
+        "description": "Parallel state definition"
+      }
+    },
+    "transitions": {
+      "eventless": {
+        "section": "D.2",
+        "description": "Eventless transition selection algorithm"
+      }
+    }
+  },
+  "350": {
+    "description": "Send with namelist encoding",
+    "specs": ["6.2", "C.2"],
+    "actions": {
+      "send": {
+        "section": "6.2.4",
+        "description": "Send with namelist parameter"
+      }
+    }
+  },
+  "388": {
+    "description": "Deep history state",
+    "specs": ["3.10", "3.11.2"],
+    "states": {
+      "history": {
+        "section": "3.11.2",
+        "description": "Deep history mechanism"
+      }
+    }
+  },
+  "411": {
+    "description": "Parallel state completion",
+    "specs": ["3.4", "5.7"],
+    "states": {
+      "parallel": {
+        "section": "3.4",
+        "description": "Parallel state semantics"
+      }
+    },
+    "events": {
+      "done.state": {
+        "section": "5.7",
+        "description": "Compound state completion event"
+      }
+    }
+  },
+  "422": {
+    "description": "Conditional transitions with guards",
+    "specs": ["5.9", "5.9.2"],
+    "transitions": {
+      "conditional": {
+        "section": "5.9.2",
+        "description": "Conditional transition execution"
+      }
+    }
+  }
+}
