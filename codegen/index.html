@@ -66,6 +66,7 @@
         <div class="controls">
             <button onclick="generateCode()" id="generateBtn">Generate C++ Code</button>
             <button onclick="downloadCode()" id="downloadBtn" disabled>Download Code</button>
+            <button onclick="visualizeSCXML()" style="background: #28a745;">Visualize</button>
             <button onclick="clearAll()">Clear All</button>
         </div>
 
@@ -98,7 +99,7 @@
         </div>
     </div>
 
-    <script src="scxml-codegen.js"></script>
+    <script src="aot-template.js"></script>
     <script>
         let generatedCode = '';
         let exampleCode = '';
@@ -154,17 +155,16 @@
                     throw new Error('Invalid SCXML: ' + xmlDoc.getElementsByTagName('parsererror')[0].textContent);
                 }
 
+                // Generate AOT code using production template
+                const code = generateAOTCode(xmlDoc);
+
+                // Extract state machine name for usage example
                 const stateMachine = xmlDoc.getElementsByTagName('scxml')[0];
-                const states = Array.from(xmlDoc.getElementsByTagName('state'));
                 const smName = stateMachine.getAttribute('name') || 'StateMachine';
-                const initialState = stateMachine.getAttribute('initial');
 
-                if (!initialState) {
-                    throw new Error('SCXML must have an initial state attribute');
-                }
-
-                // Collect all unique events from transitions
+                // Collect events for example
                 const eventsSet = new Set();
+                const states = Array.from(xmlDoc.getElementsByTagName('state'));
                 states.forEach(function(state) {
                     const transitions = state.getElementsByTagName('transition');
                     Array.from(transitions).forEach(function(trans) {
@@ -173,175 +173,6 @@
                     });
                 });
                 const events = Array.from(eventsSet).sort();
-
-                // Generate full C++ code structure
-                let code = '#pragma once\n' +
-                    '#include <cstdint>\n' +
-                    '#include <memory>\n' +
-                    '#include <stdexcept>\n' +
-                    '#include <string>\n' +
-                    '#include <unordered_map>\n' +
-                    '#include "static/StaticExecutionEngine.h"\n' +
-                    '#include "common/TransitionHelper.h"\n' +
-                    '\n' +
-                    'namespace SCE::Generated::' + smName + ' {\n' +
-                    '\n' +
-                    'class ' + smName + ';\n' +
-                    '\n' +
-                    'enum class State : uint8_t {\n';
-
-                // State enum
-                states.forEach(function(state, idx) {
-                    const stateId = state.getAttribute('id');
-                    const stateName = stateId[0].toUpperCase() + stateId.slice(1);
-                    code += '    ' + stateName + (idx < states.length - 1 ? ',' : '') + '\n';
-                });
-
-                code += '};\n\n' +
-                    'enum class Event : uint8_t {\n' +
-                    '    NONE,  // W3C SCXML 6.2: Default event for scheduler polling\n';
-                
-                events.forEach(function(event, idx) {
-                    const eventName = event.toUpperCase().replace(/\./g, '_');
-                    code += '    ' + eventName + (idx < events.length - 1 ? ',' : '') + '\n';
-                });
-
-                code += '};\n\n' +
-                    '// State policy for ' + smName + '\n' +
-                    'struct ' + smName + 'Policy {\n' +
-                    '    using State = ::SCE::Generated::' + smName + '::State;\n' +
-                    '    using Event = ::SCE::Generated::' + smName + '::Event;\n' +
-                    '\n' +
-                    '    // Default constructor\n' +
-                    '    ' + smName + 'Policy() = default;\n' +
-                    '\n' +
-                    '    static State initialState() {\n' +
-                    '        return State::' + (initialState[0].toUpperCase() + initialState.slice(1)) + ';\n' +
-                    '    }\n' +
-                    '\n' +
-                    '    static bool isFinalState(State state) {\n' +
-                    '        switch (state) {\n' +
-                    '            default:\n' +
-                    '                return false;\n' +
-                    '        }\n' +
-                    '    }\n' +
-                    '\n' +
-                    '    static std::optional<State> getParent(State state) {\n' +
-                    '        switch (state) {\n' +
-                    '            default:\n' +
-                    '                return std::nullopt;  // Root state\n' +
-                    '        }\n' +
-                    '    }\n' +
-                    '\n' +
-                    '    template<typename Engine>\n' +
-                    '    static void executeEntryActions(State state, Engine& engine) {\n' +
-                    '        (void)engine;\n' +
-                    '        switch (state) {\n';
-
-                states.forEach(function(state) {
-                    const stateId = state.getAttribute('id');
-                    const stateName = stateId[0].toUpperCase() + stateId.slice(1);
-                    code += '            case State::' + stateName + ':\n' +
-                            '                break;\n';
-                });
-
-                code += '            default:\n' +
-                    '                break;\n' +
-                    '        }\n' +
-                    '    }\n' +
-                    '\n' +
-                    '    template<typename Engine>\n' +
-                    '    static void executeExitActions(State state, Engine& engine) {\n' +
-                    '        (void)engine;\n' +
-                    '        switch (state) {\n';
-
-                states.forEach(function(state) {
-                    const stateId = state.getAttribute('id');
-                    const stateName = stateId[0].toUpperCase() + stateId.slice(1);
-                    code += '            case State::' + stateName + ':\n' +
-                            '                break;\n';
-                });
-
-                code += '            default:\n' +
-                    '                break;\n' +
-                    '        }\n' +
-                    '    }\n' +
-                    '\n' +
-                    '    template<typename Engine>\n' +
-                    '    static bool processTransition(State& currentState, Event event, Engine& engine) {\n' +
-                    '        (void)engine;\n' +
-                    '        bool transitionTaken = false;\n' +
-                    '\n' +
-                    '        State checkState = currentState;\n' +
-                    '        while (true) {\n' +
-                    '            bool foundTransition = tryTransitionInState(checkState, event, currentState, transitionTaken, engine);\n' +
-                    '            if (foundTransition) break;\n' +
-                    '\n' +
-                    '            auto parent = ' + smName + 'Policy::getParent(checkState);\n' +
-                    '            if (!parent.has_value()) break;\n' +
-                    '            checkState = parent.value();\n' +
-                    '        }\n' +
-                    '\n' +
-                    '        return transitionTaken;\n' +
-                    '    }\n' +
-                    '\n' +
-                    'private:\n' +
-                    '    template<typename Engine>\n' +
-                    '    static bool tryTransitionInState(State checkState, Event event, State& currentState, bool& transitionTaken, Engine& engine) {\n' +
-                    '        switch (checkState) {\n';
-
-                // Generate transitions
-                states.forEach(function(state) {
-                    const stateId = state.getAttribute('id');
-                    const stateName = stateId[0].toUpperCase() + stateId.slice(1);
-                    code += '        case State::' + stateName + ':\n';
-
-                    const transitions = Array.from(state.getElementsByTagName('transition'))
-                        .filter(function(t) { return t.getAttribute('event') && t.getAttribute('target'); });
-
-                    if (transitions.length > 0) {
-                        transitions.forEach(function(trans) {
-                            const event = trans.getAttribute('event');
-                            const target = trans.getAttribute('target');
-                            const eventName = event.toUpperCase().replace(/\./g, '_');
-                            const targetName = target[0].toUpperCase() + target.slice(1);
-                            code += '            if (event == Event::' + eventName + ') {\n' +
-                                    '                currentState = State::' + targetName + ';\n' +
-                                    '                transitionTaken = true;\n' +
-                                    '                return true;\n' +
-                                    '            }\n';
-                        });
-                    }
-                    code += '            return false;\n';
-                });
-
-                code += '        default:\n' +
-                    '            return false;\n' +
-                    '        }\n' +
-                    '    }\n' +
-                    '\n' +
-                    'public:\n' +
-                    '    static std::string getEventName(Event event) {\n' +
-                    '        switch (event) {\n' +
-                    '            case Event::NONE: return "";\n';
-
-                events.forEach(function(event) {
-                    const eventName = event.toUpperCase().replace(/\./g, '_');
-                    code += '            case Event::' + eventName + ': return "' + event + '";\n';
-                });
-
-                code += '            default: return "";\n' +
-                    '        }\n' +
-                    '    }\n' +
-                    '};\n' +
-                    '\n' +
-                    '// User-facing state machine class\n' +
-                    'class ' + smName + ' : public ::SCE::Static::StaticExecutionEngine<' + smName + 'Policy> {\n' +
-                    'public:\n' +
-                    '    ' + smName + '() = default;\n' +
-                    '};\n' +
-                    '\n' +
-                    '} // namespace SCE::Generated::' + smName + '\n';
 
                 // Generate usage example
                 let example = '#include "' + smName + '_sm.h"\n' +
@@ -362,7 +193,7 @@
                 // Generate example event processing
                 const firstEvent = events[0];
                 if (firstEvent) {
-                    const eventName = firstEvent.toUpperCase().replace(/\./g, '_');
+                    const eventName = firstEvent.split(/[_-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('_');
                     example += '\n' +
                         '    std::cout << "\\nSending event: ' + firstEvent + '" << std::endl;\n' +
                         '    sm.processEvent(SCE::Generated::' + smName + '::Event::' + eventName + ');\n' +
@@ -419,6 +250,25 @@
             document.querySelectorAll('.tab-content').forEach(function(content) { content.classList.remove('active'); });
             document.querySelectorAll('.tab')[0].classList.add('active');
             document.getElementById('generatedContent').classList.add('active');
+        }
+
+        function visualizeSCXML() {
+            const scxml = document.getElementById('scxmlInput').value.trim();
+
+            if (!scxml) {
+                showStatus('Please enter SCXML content first', 'error');
+                return;
+            }
+
+            // Base64 encode SCXML
+            const base64 = btoa(scxml);
+
+            // Open visualizer in new tab (URL-encode base64 for safe transmission)
+            const visualizerUrl = `visualizer.html#scxml=${encodeURIComponent(base64)}`;
+            window.open(visualizerUrl, '_blank');
+
+            showStatus('Opening visualizer in new tab...', 'success');
+            setTimeout(clearStatus, 2000);
         }
 
         // Check WASM module loading
