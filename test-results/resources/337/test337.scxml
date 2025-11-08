@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+
+<!-- test that origintype is blank on internal events -->
+
+<scxml initial="s0" datamodel="ecmascript"  version="1.0" name="machineName" xmlns="http://www.w3.org/2005/07/scxml">  
+   
+ <state id="s0">
+   <onentry>
+     <raise  event="foo"/>
+   </onentry>
+   <transition event="foo" target="pass"/>
+      <transition event="*" target="fail"/> 
+   </state>
+   
+
+      
+   <final id="pass"/>
+   <final id="fail"/>
+     
+</scxml>

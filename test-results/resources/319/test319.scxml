@@ -1,0 +1,25 @@
+<?xml version="1.0"?>
+
+<!-- test that _event is not bound before any event has been raised -->
+
+<scxml initial="s0" datamodel="ecmascript" version="1.0" xmlns="http://www.w3.org/2005/07/scxml"
+ name="machineName">
+
+ <state id="s0">
+   <onentry>
+     <if cond="typeof _event !== 'undefined'">
+       <raise event="bound"/>
+       <else/>
+         <raise event="unbound"/>
+     </if>
+   </onentry>
+   <transition event="unbound" target="pass"/>
+   <transition event="bound" target="fail"/> 
+
+   </state>
+   
+    
+   <final id="pass"/>
+   <final id="fail"/>
+     
+</scxml>

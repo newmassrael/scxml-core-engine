@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<!-- test that neither if clause executes, so that bat is the only event raised. -->
+
+<scxml initial="s0" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+<datamodel>
+  <data id="Var1" expr="0"/>
+  </datamodel>
+  
+<state id="s0">
+  <onentry>
+  <if cond="false">
+    <raise event="foo"/>
+    <assign location="Var1" expr="Var1 + 1"/>
+  <elseif cond="false"/>
+    <raise event="bar"/>
+    <assign location="Var1" expr="Var1 + 1"/>
+ </if>
+   <raise event="bat"/>
+    </onentry>
+  <transition event="bat" cond="Var1 == 0" target="pass"/>
+  <transition event="*" target="fail"/>
+ </state>
+
+  
+   <final id="pass"/>
+   <final id="fail"/>
+
+</scxml>
