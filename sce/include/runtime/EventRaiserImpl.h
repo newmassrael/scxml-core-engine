@@ -159,6 +159,18 @@ public:
     bool hasQueuedEvents() const override;
 
     /**
+     * @brief Get snapshot of current event queues for visualization/debugging
+     *
+     * W3C SCXML 3.13: Retrieves current contents of internal and external event queues
+     * for use in interactive visualization and time-travel debugging.
+     *
+     * @param outInternal Output vector for internal queue events
+     * @param outExternal Output vector for external queue events
+     */
+    void getEventQueues(std::vector<EventSnapshot> &outInternal,
+                        std::vector<EventSnapshot> &outExternal) const override;
+
+    /**
      * @brief Internal method to raise event with specific priority (for W3C SCXML compliance)
      * @param eventName Name of the event to raise
      * @param eventData Data associated with the event

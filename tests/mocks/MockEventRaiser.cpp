@@ -99,5 +99,12 @@ bool MockEventRaiser::hasQueuedEvents() const {
     return false;
 }
 
+void MockEventRaiser::getEventQueues(std::vector<EventSnapshot> &outInternal,
+                                     std::vector<EventSnapshot> &outExternal) const {
+    // Mock implementation - no actual queue
+    outInternal.clear();
+    outExternal.clear();
+}
+
 }  // namespace Test
 }  // namespace SCE

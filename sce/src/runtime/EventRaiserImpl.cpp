@@ -3,6 +3,7 @@
 #include "common/Logger.h"
 #include "common/StringUtils.h"
 #include "events/PlatformEventRaiserHelper.h"
+#include "runtime/StateSnapshot.h"
 #include <mutex>
 
 namespace SCE {
@@ -466,6 +467,39 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
 bool EventRaiserImpl::hasQueuedEvents() const {
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
     return !synchronousQueue_.empty();
+}
+
+void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
+                                     std::vector<EventSnapshot> &outExternal) const {
+    outInternal.clear();
+    outExternal.clear();
+
+    // W3C SCXML 3.13: Internal queue has higher priority than external queue
+    // Copy synchronousQueue_ and separate by priority
+    std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+
+    // Priority queue doesn't support iteration, so copy to vector first
+    auto queueCopy = synchronousQueue_;
+    std::vector<QueuedEvent> allEvents;
+
+    while (!queueCopy.empty()) {
+        allEvents.push_back(queueCopy.top());
+        queueCopy.pop();
+    }
+
+    // Separate by priority (INTERNAL vs EXTERNAL)
+    for (const auto &event : allEvents) {
+        EventSnapshot snapshot(event.eventName, event.eventData);
+
+        if (event.priority == EventPriority::INTERNAL) {
+            outInternal.push_back(snapshot);
+        } else {
+            outExternal.push_back(snapshot);
+        }
+    }
+
+    LOG_DEBUG("EventRaiserImpl: Queue snapshot retrieved - internal: {}, external: {}", outInternal.size(),
+              outExternal.size());
 }
 
 }  // namespace SCE

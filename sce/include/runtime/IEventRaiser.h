@@ -1,8 +1,12 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace SCE {
+
+// Forward declarations
+struct EventSnapshot;
 
 /**
  * @brief Interface for raising events in the SCXML system
@@ -130,6 +134,18 @@ public:
      * @param eventData Data associated with the event
      * @return true if the event was successfully queued, false if the raiser is not ready
      */
+    /**
+     * @brief Get snapshot of current event queues for visualization/debugging
+     *
+     * Retrieves current contents of internal and external event queues
+     * for use in interactive visualization and time-travel debugging.
+     *
+     * @param outInternal Output vector for internal queue events
+     * @param outExternal Output vector for external queue events
+     */
+    virtual void getEventQueues(std::vector<struct EventSnapshot> &outInternal,
+                                std::vector<struct EventSnapshot> &outExternal) const = 0;
+
     virtual bool raiseInternalEvent(const std::string &eventName, const std::string &eventData) = 0;
 
     /**
