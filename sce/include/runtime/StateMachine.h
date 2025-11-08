@@ -357,6 +357,14 @@ public:
      */
     std::shared_ptr<IEventDispatcher> getEventDispatcher() const;
 
+    /**
+     * @brief Get the event raiser for queue introspection
+     * @return Shared pointer to the event raiser
+     */
+    std::shared_ptr<IEventRaiser> getEventRaiser() const {
+        return eventRaiser_;
+    }
+
 private:
     /**
      * @brief RAII guard for preventing invalid reentrant state entry calls

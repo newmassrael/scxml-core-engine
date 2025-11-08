@@ -810,11 +810,11 @@ if(EMSCRIPTEN)
     # Point to Native build's generated headers
     # NOTE: Requires Native build to be run first to generate AOT test headers
     set(STATIC_W3C_OUTPUT_DIR "${CMAKE_SOURCE_DIR}/build/tests/w3c_static_generated")
-    
+
     if(NOT EXISTS "${STATIC_W3C_OUTPUT_DIR}")
         message(WARNING "WASM build requires pre-generated AOT test headers from Native build. Please run Native build first: cd ../build && cmake .. && cmake --build . --target w3c_test_cli")
     endif()
-    
+
     message(STATUS "WASM: Using pre-generated AOT test headers from ${STATIC_W3C_OUTPUT_DIR}")
 endif()
 
@@ -905,14 +905,14 @@ target_link_libraries(w3c_test_cli
 
 # WASM: Disable warnings from pre-generated Native AOT headers
 if(EMSCRIPTEN)
-    target_compile_options(w3c_test_cli PRIVATE 
+    target_compile_options(w3c_test_cli PRIVATE
         -Wno-unused-lambda-capture
         -Wno-unused-parameter
     )
-    
+
     # WASM: Use pre-js for XMLHttpRequest polyfill, NODEFS mount, and HTTP server auto-management
     set(POLYFILL_PRE_JS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/wasm_polyfill.js")
-    
+
     # WASM: Add Emscripten-specific link options (NO pthread for browser compatibility)
     target_link_options(w3c_test_cli PRIVATE
         -sFETCH                         # Enable Fetch API for HTTP requests
@@ -1078,3 +1078,76 @@ message(STATUS "✅ Core Parser tests enabled")
 message(STATUS "✅ Integration tests enabled")
 message(STATUS "🚫 std::cout usage prohibited in all test targets")
 
+# ============================================================================
+# Interactive SCXML Visualizer (WASM-only)
+# ============================================================================
+if(EMSCRIPTEN)
+    message(STATUS "🎨 Building Interactive SCXML Visualizer for WASM")
+
+    # Visualizer WASM module
+    add_executable(visualizer
+        w3c/wasm_bindings.cpp
+        w3c/InteractiveTestRunner.cpp
+        ${CMAKE_SOURCE_DIR}/sce/src/runtime/StateSnapshot.cpp
+    )
+
+    target_include_directories(visualizer PRIVATE
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/third_party/quickjs
+        ${CMAKE_CURRENT_SOURCE_DIR}/w3c
+    )
+
+    target_link_libraries(visualizer
+        PRIVATE
+            sce_unified
+            spdlog::spdlog
+    )
+
+    # WASM-specific compile flags (pthread support)
+    target_compile_options(visualizer PRIVATE
+        -pthread
+    )
+
+    # WASM-specific link flags for visualizer
+    target_link_options(visualizer PRIVATE
+        # Emscripten bindings
+        --bind
+
+        # Module configuration
+        -sMODULARIZE=1
+        -sEXPORT_NAME=createVisualizer
+
+        # Memory configuration (browser-friendly, no file embedding)
+        -sALLOW_MEMORY_GROWTH=0
+        -sINITIAL_MEMORY=67108864  # 64MB initial (browser max ~2GB, grows as needed)
+
+        # Exported functions and runtime methods
+        "-sEXPORTED_FUNCTIONS=[_malloc,_free]"
+        "-sEXPORTED_RUNTIME_METHODS=[cwrap,ccall,UTF8ToString]"
+
+        # File system (for fetch API)
+        -sFORCE_FILESYSTEM=1
+
+        # Environment (browser and Node.js)
+        -sENVIRONMENT=web,node
+
+        # Exception handling
+        -sDISABLE_EXCEPTION_CATCHING=0
+
+        # Assertions for debugging
+        -sASSERTIONS=1
+
+        # Pthread support (for JSEngine worker threads)
+        -pthread
+        -sUSE_PTHREADS=1
+        -sPTHREAD_POOL_SIZE=2
+
+        # Asyncify (for async operations)
+        -sASYNCIFY
+    )
+
+    message(STATUS "✅ Interactive SCXML Visualizer configured")
+    message(STATUS "   - Output: visualizer.wasm + visualizer.js")
+    message(STATUS "   - SCXML loading: Dynamic fetch (no embedding)")
+    message(STATUS "   - JavaScript API: createVisualizer() module")
+endif()

@@ -70,6 +70,14 @@ jobs:
         python3 -m pip install --upgrade pip
         pip install -r tools/codegen/requirements.txt
 
+    - name: Setup Emscripten (emsdk)
+      run: |
+        git clone https://github.com/emscripten-core/emsdk.git
+        cd emsdk
+        ./emsdk install latest
+        ./emsdk activate latest
+        cd ..
+
     - name: Cache CMake Build
       uses: actions/cache@v4
       with:
@@ -282,6 +290,41 @@ jobs:
           cp build/tests/w3c_test_results.html gh-pages/test-results.html
           cp build/tests/w3c_test_results.xml gh-pages/
           echo "✅ HTML report and XML copied to gh-pages/"
+
+          # Build WASM visualizer
+          echo "🎨 Building WASM visualizer..."
+          source emsdk/emsdk_env.sh
+          mkdir -p build_wasm && cd build_wasm
+          emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --target visualizer -j4
+          cd ..
+          echo "✅ WASM visualizer built"
+
+          # Copy visualizer assets to GitHub Pages
+          mkdir -p gh-pages/visualizer
+          cp build_wasm/tests/visualizer.wasm gh-pages/visualizer/
+          cp build_wasm/tests/visualizer.js gh-pages/visualizer/
+          cp tools/web/visualizer.html gh-pages/visualizer/index.html
+          cp tools/web/visualizer.css gh-pages/visualizer/
+          cp tools/web/scxml-visualizer.js gh-pages/visualizer/
+          cp tools/web/execution-controller.js gh-pages/visualizer/
+          cp tools/web/main.js gh-pages/visualizer/
+          cp tools/web/spec_references.json gh-pages/visualizer/
+          echo "✅ Visualizer assets copied to gh-pages/visualizer/"
+
+          # Convert all TXML to SCXML and copy to resources
+          echo "📦 Converting TXML to SCXML for visualizer..."
+          mkdir -p gh-pages/resources
+          for test_dir in resources/*/; do
+            test_id=$(basename "$test_dir")
+            if [ -f "$test_dir/test${test_id}.txml" ]; then
+              mkdir -p "gh-pages/resources/$test_id"
+              build/tools/txml_converter/txml-converter \
+                "$test_dir/test${test_id}.txml" \
+                "gh-pages/resources/$test_id/test${test_id}.scxml" || true
+            fi
+          done
+          echo "✅ SCXML files copied to gh-pages/resources/"
         else
           echo "❌ ERROR: w3c_test_results.xml not found - cannot generate HTML report"
           echo "GitHub Pages will not be updated"

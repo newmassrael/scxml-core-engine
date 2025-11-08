@@ -77,6 +77,15 @@ if [ $? -eq 0 ]; then
     echo -e "${GREEN}       WASM Build Completed Successfully       ${NC}"
     echo -e "${GREEN}==========================================${NC}"
     echo ""
+
+    # Auto-deploy visualizer to tools/web/
+    if [ -f "tests/visualizer.js" ] && [ -f "tests/visualizer.wasm" ]; then
+        echo -e "${YELLOW}Deploying visualizer to tools/web/...${NC}"
+        cp tests/visualizer.js tests/visualizer.wasm ../tools/web/
+        echo -e "${GREEN}✓ Deployed: visualizer.js, visualizer.wasm${NC}"
+        echo ""
+    fi
+
     echo -e "${YELLOW}Build artifacts:${NC}"
     ls -lh sce/libsce_unified.a 2>/dev/null || ls -lh libsce_unified.a
     echo ""
