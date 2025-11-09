@@ -3,7 +3,7 @@
 <!-- test that foreach causes a new variable to be declared if 'item' doesn't already exist.  Also
 test that it will use an existing var if it does exist. -->
 
-<scxml initial="s0" datamodel="ecmascript"  version="1.0" xmlns="http://www.w3.org/2005/07/scxml">
+<scxml name="test151" initial="s0" datamodel="ecmascript"  version="1.0" xmlns="http://www.w3.org/2005/07/scxml">
 <datamodel>
   <data id="Var1"/>
   <data id="Var2"/>

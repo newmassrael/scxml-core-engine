@@ -4,7 +4,7 @@ to the invoked process.  If the invoked session finds aParam==1, it exits, signa
 success.  otherwise it will hang and the timeout in this doc signifies failure.   -->
 
 
-<scxml initial="s0" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+<scxml name="test226" initial="s0" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
 
      
 <state id="s0" >
