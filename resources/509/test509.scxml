@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+
+<!-- test that Basic HTTP Event I/O processor uses POST method and that it can receive messages
+at the accessURI -->
+
+<scxml initial="s0" datamodel="ecmascript"  version="1.0" xmlns="http://www.w3.org/2005/07/scxml">
+   
+<state id="s0">
+  <onentry>
+    <send event="timeout" delay="30s"/>
+    <send event="test" target="http://localhost:8080/test" type="http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor"/>
+     </onentry>
+     <!-- if the event was send by http and we get it, we succeed -->
+    <transition event="test" target="pass"/>
+  <transition event="*" target="fail"/>
+ </state>
+  
+   <final id="pass"/>
+   <final id="fail"/>
+
+</scxml>
