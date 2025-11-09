@@ -33,6 +33,7 @@ jobs:
         cp tools/web/visualizer.js web_dist/
         cp tools/web/visualizer.wasm web_dist/
         cp tools/web/scxml-visualizer.js web_dist/
+        cp tools/web/visualizer-manager.js web_dist/
         cp tools/web/execution-controller.js web_dist/
         cp tools/web/main.js web_dist/
         cp tools/web/primer.css web_dist/
