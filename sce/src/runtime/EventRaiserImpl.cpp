@@ -443,6 +443,13 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         bool isExternal = (event.priority == EventPriority::EXTERNAL);
         currentEventType_ = EventTypeHelper::classifyEventType(event.eventName, isExternal);
 
+        // W3C SCXML 3.13: Store last processed event for time-travel debugging
+        {
+            std::lock_guard<std::mutex> lock(lastProcessedEventMutex_);
+            lastProcessedEventName_ = event.eventName;
+            lastProcessedEventData_ = event.eventData;
+        }
+
         bool result = callback(event.eventName, event.eventData);
 
         // Clear after callback
@@ -500,6 +507,38 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
 
     LOG_DEBUG("EventRaiserImpl: Queue snapshot retrieved - internal: {}, external: {}", outInternal.size(),
               outExternal.size());
+}
+
+void EventRaiserImpl::clearQueue() {
+    // W3C SCXML: Clear all queued events for time-travel debugging
+    std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+
+    // Count events before clearing for logging
+    auto queueCopy = synchronousQueue_;
+    size_t clearedCount = 0;
+    while (!queueCopy.empty()) {
+        clearedCount++;
+        queueCopy.pop();
+    }
+
+    // Clear the queue by swapping with empty priority_queue
+    std::priority_queue<QueuedEvent, std::vector<QueuedEvent>, QueuedEventComparator> emptyQueue;
+    synchronousQueue_.swap(emptyQueue);
+
+    LOG_DEBUG("EventRaiserImpl: Cleared {} queued events for state restoration", clearedCount);
+}
+
+bool EventRaiserImpl::getLastProcessedEvent(std::string &outEventName, std::string &outEventData) const {
+    // W3C SCXML 3.13: Retrieve last processed event for time-travel debugging
+    std::lock_guard<std::mutex> lock(lastProcessedEventMutex_);
+
+    if (lastProcessedEventName_.empty()) {
+        return false;
+    }
+
+    outEventName = lastProcessedEventName_;
+    outEventData = lastProcessedEventData_;
+    return true;
 }
 
 }  // namespace SCE

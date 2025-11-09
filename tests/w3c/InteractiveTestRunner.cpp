@@ -15,6 +15,12 @@
 #include "runtime/EventRaiserImpl.h"
 #include "scripting/JSEngine.h"
 
+// W3C SCXML 3.7: Action types for executable content visualization
+#include "actions/AssignAction.h"
+#include "actions/ForeachAction.h"
+#include "actions/LogAction.h"
+#include "actions/RaiseAction.h"
+
 #include <set>
 
 namespace SCE::W3C {
@@ -47,6 +53,11 @@ InteractiveTestRunner::InteractiveTestRunner()
 
     // Connect EventRaiser to EventScheduler for delayed event polling
     eventRaiser->setScheduler(scheduler_);
+
+    // W3C SCXML: Inject EventRaiser to StateMachine BEFORE setupJSEnvironment()
+    // This prevents StateMachine from auto-creating a duplicate EventRaiser
+    // Single Source of Truth: One EventRaiser per state machine (ARCHITECTURE.md Zero Duplication)
+    stateMachine_->setEventRaiser(eventRaiser_);
 
     // Create event target factory and dispatcher
     auto targetFactory = std::make_shared<EventTargetFactoryImpl>(eventRaiser, scheduler_);
@@ -97,7 +108,9 @@ bool InteractiveTestRunner::loadSCXML(const std::string &scxmlSource, bool isFil
 }
 
 bool InteractiveTestRunner::initialize() {
-    if (!stateMachine_->start()) {
+    // Interactive mode: Enter initial state only, skip auto-processing of queued events
+    // W3C SCXML 3.13: Allow manual step-by-step execution of raise/send events
+    if (!stateMachine_->start(/*autoProcessQueuedEvents=*/false)) {
         LOG_ERROR("InteractiveTestRunner: Failed to start state machine");
         return false;
     }
@@ -122,62 +135,55 @@ bool InteractiveTestRunner::stepForward() {
         return false;
     }
 
-    // W3C SCXML 3.13: Process pending event or check eventless transitions
-    StateMachine::TransitionResult result;
-
-    if (!pendingEvents_.empty()) {
-        // W3C SCXML 3.13: Microstep = dequeue event + process transitions
-        // Event is consumed regardless of whether transition succeeds
-        auto event = pendingEvents_.front();
-        pendingEvents_.pop();
-
-        result = stateMachine_->processEvent(event.name, event.data);
-        lastEventName_ = event.name;
-
-        // W3C SCXML 3.13: Record processed event to history for accurate restoration
-        executedEvents_.push_back(event);
-
-        // Update transition metadata
-        if (result.success) {
-            // Transition occurred: update source and target
-            lastTransitionSource_ = result.fromState;
-            lastTransitionTarget_ = result.toState;
+    // W3C SCXML 3.13: EventRaiser automatically handles priority (INTERNAL → EXTERNAL → Eventless)
+    // Zero Duplication: Single priority queue with QueuedEventComparator
+    auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
+    if (eventRaiserImpl && eventRaiserImpl->processNextQueuedEvent()) {
+        // EventRaiser processed an event (internal or external)
+        // W3C SCXML 3.13: Record event to history for time-travel debugging
+        std::string eventName, eventData;
+        if (eventRaiserImpl->getLastProcessedEvent(eventName, eventData)) {
+            executedEvents_.push_back(EventSnapshot(eventName, eventData));
+            lastEventName_ = eventName;
         } else {
-            // No transition occurred: clear transition metadata to prevent animation
-            lastTransitionSource_ = "";
-            lastTransitionTarget_ = "";
+            lastEventName_ = "[internal]";
         }
 
-        // Microstep occurred: event was dequeued and processed
+        // Update metadata
+        auto currentStates = stateMachine_->getActiveStates();
+        std::string currentState = currentStates.empty() ? "" : currentStates[0];
+
+        lastTransitionSource_ = "";
+        lastTransitionTarget_ = currentState;
+
         currentStep_++;
         captureSnapshot();
 
-        LOG_DEBUG("InteractiveTestRunner: Step {} - event '{}' processed (transition: {}, remaining queue: {})",
-                  currentStep_, event.name, result.success ? "success" : "none", pendingEvents_.size());
+        LOG_DEBUG("InteractiveTestRunner: Step {} - event '{}' processed (current state: {})", currentStep_,
+                  lastEventName_, currentState);
         return true;
-
-    } else {
-        // W3C SCXML 3.13: Check for eventless transitions (only if queue is empty)
-        result = stateMachine_->processEvent("");  // Null event triggers eventless transitions
-        lastEventName_ = "";
-
-        if (result.success) {
-            // W3C SCXML 3.13: Record eventless transition to history
-            executedEvents_.push_back(EventSnapshot("", ""));
-
-            lastTransitionSource_ = result.fromState;
-            lastTransitionTarget_ = result.toState;
-            currentStep_++;
-            captureSnapshot();
-
-            LOG_DEBUG("InteractiveTestRunner: Step {} - eventless transition: {} -> {}", currentStep_,
-                      lastTransitionSource_, lastTransitionTarget_);
-            return true;
-        }
-
-        LOG_DEBUG("InteractiveTestRunner: No event in queue and no eventless transitions available");
-        return false;
     }
+
+    // W3C SCXML 3.13: Check for eventless transitions (only if all queues are empty)
+    auto result = stateMachine_->processEvent("");  // Null event triggers eventless transitions
+    lastEventName_ = "";
+
+    if (result.success) {
+        // W3C SCXML 3.13: Record eventless transition to history
+        executedEvents_.push_back(EventSnapshot("", ""));
+
+        lastTransitionSource_ = result.fromState;
+        lastTransitionTarget_ = result.toState;
+        currentStep_++;
+        captureSnapshot();
+
+        LOG_DEBUG("InteractiveTestRunner: Step {} - eventless transition: {} -> {}", currentStep_,
+                  lastTransitionSource_, lastTransitionTarget_);
+        return true;
+    }
+
+    LOG_DEBUG("InteractiveTestRunner: No event in queue and no eventless transitions available");
+    return false;
 }
 
 bool InteractiveTestRunner::stepBackward() {
@@ -220,15 +226,17 @@ void InteractiveTestRunner::reset() {
 }
 
 void InteractiveTestRunner::raiseEvent(const std::string &eventName, const std::string &eventData) {
-    pendingEvents_.push(EventSnapshot(eventName, eventData));
+    // W3C SCXML 3.13: Delegate to EventRaiser's external queue (Single Source of Truth)
+    // Zero Duplication: EventRaiser owns all event queue management
+    eventRaiser_->raiseExternalEvent(eventName, eventData);
 
     // W3C SCXML 3.13: Event queuing is NOT a microstep
     // Step only increments when event is actually processed in stepForward()
     // However, we must capture snapshot to preserve queue state for time-travel debugging
     captureSnapshot();
 
-    LOG_DEBUG("InteractiveTestRunner: Queued event '{}' (queue size: {}, current step: {})", eventName,
-              pendingEvents_.size(), currentStep_);
+    LOG_DEBUG("InteractiveTestRunner: Queued external event '{}' via EventRaiser (current step: {})", eventName,
+              currentStep_);
 }
 
 std::vector<std::string> InteractiveTestRunner::getActiveStates() const {
@@ -243,17 +251,14 @@ void InteractiveTestRunner::captureSnapshot() {
     auto activeStates = stateMachine_->getActiveStates();
     auto dataModel = extractDataModel();
 
+    // W3C SCXML 3.13: Extract event queues from EventRaiser (Single Source of Truth)
     std::vector<EventSnapshot> internalQueue;
     std::vector<EventSnapshot> externalQueue;
     extractEventQueues(internalQueue, externalQueue);
 
-    // Convert InteractiveTestRunner's pending events queue to vector
-    std::vector<EventSnapshot> pendingUIEvents;
-    auto pendingQueueCopy = pendingEvents_;
-    while (!pendingQueueCopy.empty()) {
-        pendingUIEvents.push_back(pendingQueueCopy.front());
-        pendingQueueCopy.pop();
-    }
+    // W3C SCXML 3.13: UI events are now part of EventRaiser's external queue
+    // Zero Duplication: No separate pendingEvents_ tracking needed
+    std::vector<EventSnapshot> pendingUIEvents = externalQueue;  // Alias for clarity in StateSnapshot
 
     // Convert std::vector<std::string> to std::set<std::string> for StateSnapshot
     std::set<std::string> activeStatesSet(activeStates.begin(), activeStates.end());
@@ -281,7 +286,13 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
         return false;
     }
 
-    if (!stateMachine_->start()) {
+    // W3C SCXML: Re-inject EventRaiser and EventDispatcher after StateMachine recreation
+    // This prevents duplicate EventRaiser creation (ARCHITECTURE.md Zero Duplication)
+    stateMachine_->setEventRaiser(eventRaiser_);
+    stateMachine_->setEventDispatcher(eventDispatcher_);
+
+    // Interactive mode: Enter initial state only, skip auto-processing
+    if (!stateMachine_->start(/*autoProcessQueuedEvents=*/false)) {
         LOG_ERROR("InteractiveTestRunner: Failed to restart state machine");
         return false;
     }
@@ -289,35 +300,52 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
     // Restore data model
     restoreDataModel(snapshot.dataModel);
 
-    // Restore event queues (StateMachine internal queues)
+    // W3C SCXML 3.13: Restore active states directly without side effects
+    // ARCHITECTURE.md Zero Duplication: Uses StateHierarchyManager infrastructure
+    // Direct restoration prevents onentry re-execution (fixes event duplication bug)
+    stateMachine_->restoreActiveStatesDirectly(snapshot.activeStates);
+    LOG_DEBUG("InteractiveTestRunner: Restored {} active states directly", snapshot.activeStates.size());
+
+    // W3C SCXML 3.13: Restore event queues to EventRaiser (Single Source of Truth)
+    // Zero Duplication: UI events are included in externalQueue
     restoreEventQueues(snapshot.internalQueue, snapshot.externalQueue);
 
-    // Restore InteractiveTestRunner's pending UI events
-    std::queue<EventSnapshot> restoredQueue;
-    for (const auto &event : snapshot.pendingUIEvents) {
-        restoredQueue.push(event);
-    }
-    pendingEvents_ = std::move(restoredQueue);
+    // Note: snapshot.pendingUIEvents is now redundant (same as externalQueue)
+    // EventRaiser's external queue already contains all UI events
 
     // Restore metadata
     lastEventName_ = snapshot.lastEventName;
     lastTransitionSource_ = snapshot.lastTransitionSource;
     lastTransitionTarget_ = snapshot.lastTransitionTarget;
 
-    // W3C SCXML 3.13: Restore active states by replaying event history
-    // Replay all processed events to restore exact state
-    LOG_DEBUG("InteractiveTestRunner: Replaying {} events to restore state", snapshot.executedEvents.size());
-
-    for (const auto &event : snapshot.executedEvents) {
-        stateMachine_->processEvent(event.name, event.data);
-    }
-
-    // Restore execution history
+    // Restore execution history (for UI display, NOT for replay)
     executedEvents_ = snapshot.executedEvents;
 
-    LOG_DEBUG("InteractiveTestRunner: State restored to step {} via event replay", snapshot.stepNumber);
+    LOG_INFO("InteractiveTestRunner: State restored to step {} via direct restoration (no side effects)",
+             snapshot.stepNumber);
 
     return true;
+}
+
+std::string InteractiveTestRunner::typeToString(SCE::Type type) {
+    // W3C SCXML state types: atomic, compound, parallel, final, history, initial
+    // Zero Duplication: Single implementation replaces 3 duplicate lambdas
+    switch (type) {
+    case SCE::Type::ATOMIC:
+        return "atomic";
+    case SCE::Type::COMPOUND:
+        return "compound";
+    case SCE::Type::PARALLEL:
+        return "parallel";
+    case SCE::Type::FINAL:
+        return "final";
+    case SCE::Type::HISTORY:
+        return "history";
+    case SCE::Type::INITIAL:
+        return "initial";
+    default:
+        return "atomic";
+    }
 }
 
 std::map<std::string, std::string> InteractiveTestRunner::extractDataModel() const {
@@ -406,6 +434,14 @@ void InteractiveTestRunner::restoreEventQueues(const std::vector<EventSnapshot> 
         return;
     }
 
+    // Time-travel debugging: Clear existing queue before restoration
+    // This prevents duplicate events from start()'s onentry execution
+    auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser);
+    if (eventRaiserImpl) {
+        eventRaiserImpl->clearQueue();
+        LOG_DEBUG("InteractiveTestRunner: Cleared existing queue for clean restoration");
+    }
+
     // Restore internal queue (higher priority)
     for (const auto &event : internal) {
         eventRaiser->raiseInternalEvent(event.name, event.data);
@@ -454,20 +490,8 @@ emscripten::val InteractiveTestRunner::getEventQueue() const {
         internalArray.call<void>("push", eventObj);
     }
 
-    // Convert InteractiveTestRunner's pending events (UI-added events)
-    auto pendingQueueCopy = pendingEvents_;  // Copy queue for iteration
-    while (!pendingQueueCopy.empty()) {
-        const auto &event = pendingQueueCopy.front();
-        auto eventObj = emscripten::val::object();
-        eventObj.set("name", event.name);
-        if (!event.data.empty()) {
-            eventObj.set("data", event.data);
-        }
-        externalArray.call<void>("push", eventObj);
-        pendingQueueCopy.pop();
-    }
-
-    // Add StateMachine's external events (from SCXML execution)
+    // W3C SCXML 3.13: All UI events and SCXML send events are in EventRaiser's external queue
+    // Zero Duplication: No separate pendingEvents_ tracking needed
     for (const auto &event : externalQueue) {
         auto eventObj = emscripten::val::object();
         eventObj.set("name", event.name);
@@ -495,128 +519,14 @@ emscripten::val InteractiveTestRunner::getDataModel() const {
 }
 
 emscripten::val InteractiveTestRunner::getSCXMLStructure() const {
-    auto obj = emscripten::val::object();
     auto model = stateMachine_->getModel();
 
     if (!model) {
-        return obj;
+        return emscripten::val::object();
     }
 
-    // Helper function to convert Type enum to string
-    auto typeToString = [](SCE::Type type) -> std::string {
-        switch (type) {
-        case SCE::Type::ATOMIC:
-            return "atomic";
-        case SCE::Type::COMPOUND:
-            return "compound";
-        case SCE::Type::PARALLEL:
-            return "parallel";
-        case SCE::Type::FINAL:
-            return "final";
-        case SCE::Type::HISTORY:
-            return "history";
-        case SCE::Type::INITIAL:
-            return "initial";
-        default:
-            return "atomic";
-        }
-    };
-
-    // Build states array (deduplicate by ID)
-    auto statesArray = emscripten::val::array();
-    const auto &allStates = model->getAllStates();
-    std::set<std::string> seenStateIds;
-
-    LOG_DEBUG("getSCXMLStructure: Processing {} states from model", allStates.size());
-
-    for (size_t i = 0; i < allStates.size(); i++) {
-        const auto &state = allStates[i];
-        if (!state) {
-            continue;
-        }
-
-        const auto &stateId = state->getId();
-
-        // Skip duplicate state IDs
-        if (seenStateIds.find(stateId) != seenStateIds.end()) {
-            LOG_DEBUG("  Skipping duplicate state: '{}'", stateId);
-            continue;
-        }
-        seenStateIds.insert(stateId);
-
-        LOG_DEBUG("  Adding state: id='{}', type={}", stateId, typeToString(state->getType()));
-
-        auto stateObj = emscripten::val::object();
-        stateObj.set("id", stateId);
-        stateObj.set("type", typeToString(state->getType()));
-
-        statesArray.call<void>("push", stateObj);
-    }
-
-    // Build transitions array (all transitions, no deduplication for accurate SCXML visualization)
-    auto transitionsArray = emscripten::val::array();
-    int transitionId = 0;
-
-    LOG_DEBUG("getSCXMLStructure: Building transitions");
-
-    for (const auto &state : allStates) {
-        if (!state) {
-            continue;
-        }
-
-        const auto &stateId = state->getId();
-
-        // Skip already processed states (for state deduplication)
-        if (seenStateIds.find(stateId) == seenStateIds.end()) {
-            continue;
-        }
-
-        const auto &transitions = state->getTransitions();
-        for (const auto &transition : transitions) {
-            if (!transition) {
-                continue;
-            }
-
-            const auto &events = transition->getEvents();
-            const auto &targets = transition->getTargets();
-
-            // W3C SCXML: Handle eventless transitions
-            if (events.empty()) {
-                for (const auto &target : targets) {
-                    LOG_DEBUG("  Adding eventless transition: {} -> {}", stateId, target);
-
-                    auto transObj = emscripten::val::object();
-                    transObj.set("id", std::to_string(transitionId++));
-                    transObj.set("source", stateId);
-                    transObj.set("target", target);
-                    transObj.set("event", "");  // Empty string for eventless transitions
-
-                    transitionsArray.call<void>("push", transObj);
-                }
-            } else {
-                // Create one transition object per event-target combination
-                for (const auto &event : events) {
-                    for (const auto &target : targets) {
-                        LOG_DEBUG("  Adding transition: {} -> {} [{}]", stateId, target, event);
-
-                        auto transObj = emscripten::val::object();
-                        transObj.set("id", std::to_string(transitionId++));
-                        transObj.set("source", stateId);
-                        transObj.set("target", target);
-                        transObj.set("event", event);
-
-                        transitionsArray.call<void>("push", transObj);
-                    }
-                }
-            }
-        }
-    }
-
-    obj.set("states", statesArray);
-    obj.set("transitions", transitionsArray);
-    obj.set("initial", model->getInitialState());
-
-    return obj;
+    // W3C SCXML structure (Zero Duplication: delegate to buildStructureFromModel)
+    return buildStructureFromModel(model);
 }
 
 emscripten::val InteractiveTestRunner::getW3CReferences() const {
@@ -663,25 +573,7 @@ emscripten::val InteractiveTestRunner::getInvokedChildren() const {
 
     LOG_DEBUG("InteractiveTestRunner: Found {} invoked children", children.size());
 
-    // Helper function to convert Type enum to string (from getSCXMLStructure)
-    auto typeToString = [](SCE::Type type) -> std::string {
-        switch (type) {
-        case SCE::Type::ATOMIC:
-            return "atomic";
-        case SCE::Type::COMPOUND:
-            return "compound";
-        case SCE::Type::PARALLEL:
-            return "parallel";
-        case SCE::Type::FINAL:
-            return "final";
-        case SCE::Type::HISTORY:
-            return "history";
-        case SCE::Type::INITIAL:
-            return "initial";
-        default:
-            return "atomic";
-        }
-    };
+    // Zero Duplication: Use static typeToString method (removed duplicate lambda)
 
     // Build child information array
     for (const auto &child : children) {
@@ -703,89 +595,10 @@ emscripten::val InteractiveTestRunner::getInvokedChildren() const {
         }
         childObj.set("activeStates", activeStatesArray);
 
-        // SCXML structure (reuse logic from getSCXMLStructure)
+        // W3C SCXML structure (Zero Duplication: delegate to buildStructureFromModel)
         auto model = child->getModel();
         if (model) {
-            auto structure = emscripten::val::object();
-            auto statesArray = emscripten::val::array();
-            auto transitionsArray = emscripten::val::array();
-
-            const auto &allStates = model->getAllStates();
-            std::set<std::string> seenStateIds;
-
-            // Build states array
-            for (size_t i = 0; i < allStates.size(); i++) {
-                const auto &state = allStates[i];
-                if (!state) {
-                    continue;
-                }
-
-                const auto &stateId = state->getId();
-                if (seenStateIds.find(stateId) != seenStateIds.end()) {
-                    continue;
-                }
-                seenStateIds.insert(stateId);
-
-                auto stateObj = emscripten::val::object();
-                stateObj.set("id", stateId);
-                stateObj.set("type", typeToString(state->getType()));
-
-                statesArray.call<void>("push", stateObj);
-            }
-
-            // Build transitions array (all transitions, no deduplication)
-            int transitionId = 0;
-
-            for (const auto &state : allStates) {
-                if (!state) {
-                    continue;
-                }
-
-                const auto &stateId = state->getId();
-                if (seenStateIds.find(stateId) == seenStateIds.end()) {
-                    continue;
-                }
-
-                const auto &transitions = state->getTransitions();
-                for (const auto &transition : transitions) {
-                    if (!transition) {
-                        continue;
-                    }
-
-                    const auto &events = transition->getEvents();
-                    const auto &targets = transition->getTargets();
-
-                    // W3C SCXML: Handle eventless transitions
-                    if (events.empty()) {
-                        for (const auto &target : targets) {
-                            auto transObj = emscripten::val::object();
-                            transObj.set("id", std::to_string(transitionId++));
-                            transObj.set("source", stateId);
-                            transObj.set("target", target);
-                            transObj.set("event", "");  // Empty string for eventless transitions
-
-                            transitionsArray.call<void>("push", transObj);
-                        }
-                    } else {
-                        for (const auto &event : events) {
-                            for (const auto &target : targets) {
-                                auto transObj = emscripten::val::object();
-                                transObj.set("id", std::to_string(transitionId++));
-                                transObj.set("source", stateId);
-                                transObj.set("target", target);
-                                transObj.set("event", event);
-
-                                transitionsArray.call<void>("push", transObj);
-                            }
-                        }
-                    }
-                }
-            }
-
-            structure.set("states", statesArray);
-            structure.set("transitions", transitionsArray);
-            structure.set("initial", model->getInitialState());
-
+            auto structure = buildStructureFromModel(model);
             childObj.set("structure", structure);
         }
 
@@ -912,6 +725,78 @@ void InteractiveTestRunner::analyzeSubSCXML(std::shared_ptr<SCXMLModel> parentMo
 }
 
 #ifdef __EMSCRIPTEN__
+emscripten::val
+InteractiveTestRunner::serializeActions(const std::vector<std::shared_ptr<IActionNode>> &actions) const {
+    auto actionsArray = emscripten::val::array();
+
+    LOG_DEBUG("serializeActions: Serializing {} action(s)", actions.size());
+
+    for (const auto &action : actions) {
+        if (!action) {
+            continue;
+        }
+
+        auto actionObj = emscripten::val::object();
+        const auto &actionType = action->getActionType();
+        const auto &actionId = action->getId();
+
+        actionObj.set("actionType", actionType);
+        actionObj.set("id", actionId);
+
+        LOG_DEBUG("serializeActions: Processing action type='{}', id='{}'", actionType, actionId);
+
+        // W3C SCXML 3.7: Serialize action-specific properties
+        if (actionType == "assign") {
+            auto assign = std::dynamic_pointer_cast<AssignAction>(action);
+            if (assign) {
+                actionObj.set("location", assign->getLocation());
+                actionObj.set("expr", assign->getExpr());
+                if (!assign->getType().empty()) {
+                    actionObj.set("type", assign->getType());
+                }
+            }
+        } else if (actionType == "raise") {
+            auto raise = std::dynamic_pointer_cast<RaiseAction>(action);
+            if (raise) {
+                actionObj.set("event", raise->getEvent());
+                if (!raise->getData().empty()) {
+                    actionObj.set("data", raise->getData());
+                }
+            }
+        } else if (actionType == "foreach") {
+            auto foreach = std::dynamic_pointer_cast<ForeachAction>(action);
+            if (foreach) {
+                actionObj.set("array", foreach->getArray());
+                actionObj.set("item", foreach->getItem());
+                if (!foreach->getIndex().empty()) {
+                    actionObj.set("index", foreach->getIndex());
+                }
+                // Recursive: serialize nested iteration actions
+                auto nestedActions = serializeActions(foreach->getIterationActions());
+                actionObj.set("iterationActions", nestedActions);
+            }
+        } else if (actionType == "log") {
+            auto log = std::dynamic_pointer_cast<LogAction>(action);
+            if (log) {
+                if (!log->getExpr().empty()) {
+                    actionObj.set("expr", log->getExpr());
+                }
+                if (!log->getLabel().empty()) {
+                    actionObj.set("label", log->getLabel());
+                }
+                if (!log->getLevel().empty()) {
+                    actionObj.set("level", log->getLevel());
+                }
+            }
+        }
+        // Future: Add send, if, cancel, script serialization
+
+        actionsArray.call<void>("push", actionObj);
+    }
+
+    return actionsArray;
+}
+
 emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<SCXMLModel> model) const {
     auto obj = emscripten::val::object();
 
@@ -919,25 +804,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
         return obj;
     }
 
-    // Helper function to convert Type enum to string
-    auto typeToString = [](SCE::Type type) -> std::string {
-        switch (type) {
-        case SCE::Type::ATOMIC:
-            return "atomic";
-        case SCE::Type::COMPOUND:
-            return "compound";
-        case SCE::Type::PARALLEL:
-            return "parallel";
-        case SCE::Type::FINAL:
-            return "final";
-        case SCE::Type::HISTORY:
-            return "history";
-        case SCE::Type::INITIAL:
-            return "initial";
-        default:
-            return "atomic";
-        }
-    };
+    // Zero Duplication: Use static typeToString method
 
     // Build states array (deduplicate by ID)
     auto statesArray = emscripten::val::array();
@@ -960,6 +827,27 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
         auto stateObj = emscripten::val::object();
         stateObj.set("id", stateId);
         stateObj.set("type", typeToString(state->getType()));
+
+        // W3C SCXML 3.7: Extract onentry action blocks (Priority 1: assign, raise, foreach, log)
+        const auto &entryBlocks = state->getEntryActionBlocks();
+        std::vector<std::shared_ptr<IActionNode>> flatEntryActions;
+        for (const auto &block : entryBlocks) {
+            flatEntryActions.insert(flatEntryActions.end(), block.begin(), block.end());
+        }
+        LOG_DEBUG("buildStructureFromModel: State '{}' has {} onentry action(s)", stateId, flatEntryActions.size());
+        if (!flatEntryActions.empty()) {
+            stateObj.set("onentry", serializeActions(flatEntryActions));
+        }
+
+        // W3C SCXML 3.7: Extract onexit action blocks (Priority 1: assign, raise, foreach, log)
+        const auto &exitBlocks = state->getExitActionBlocks();
+        std::vector<std::shared_ptr<IActionNode>> flatExitActions;
+        for (const auto &block : exitBlocks) {
+            flatExitActions.insert(flatExitActions.end(), block.begin(), block.end());
+        }
+        if (!flatExitActions.empty()) {
+            stateObj.set("onexit", serializeActions(flatExitActions));
+        }
 
         statesArray.call<void>("push", stateObj);
     }
@@ -984,14 +872,28 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
             const auto &events = transition->getEvents();
             const auto &targets = transition->getTargets();
 
-            // W3C SCXML: Handle eventless transitions
+            // W3C SCXML 3.12.1: Extract guard condition for visualization
+            const auto &guard = transition->getGuard();
+
+            // W3C SCXML 3.7: Extract transition actions for visualization
+            const auto &actionNodes = transition->getActionNodes();
+            auto actionsArray = serializeActions(actionNodes);
+
+            // W3C SCXML 3.13: Handle eventless transitions
             if (events.empty()) {
                 for (const auto &target : targets) {
                     auto transObj = emscripten::val::object();
                     transObj.set("id", std::to_string(transitionId++));
                     transObj.set("source", stateId);
                     transObj.set("target", target);
-                    transObj.set("event", "");  // Empty string for eventless transitions
+                    transObj.set("event", "");        // Empty string for eventless transitions
+                    transObj.set("eventless", true);  // W3C SCXML 3.13: Flag for eventless transition
+                    if (!guard.empty()) {
+                        transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
+                    }
+                    if (actionsArray["length"].as<int>() > 0) {
+                        transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
+                    }
 
                     transitionsArray.call<void>("push", transObj);
                 }
@@ -1004,6 +906,13 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                         transObj.set("source", stateId);
                         transObj.set("target", target);
                         transObj.set("event", event);
+                        transObj.set("eventless", false);  // W3C SCXML 3.13: Not eventless
+                        if (!guard.empty()) {
+                            transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
+                        }
+                        if (actionsArray["length"].as<int>() > 0) {
+                            transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
+                        }
 
                         transitionsArray.call<void>("push", transObj);
                     }

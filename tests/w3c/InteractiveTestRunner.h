@@ -324,6 +324,17 @@ private:
      */
     void analyzeSubSCXML(std::shared_ptr<SCXMLModel> parentModel);
 
+    /**
+     * @brief Convert Type enum to string for visualization
+     *
+     * Zero Duplication: Single implementation used by getSCXMLStructure,
+     * getInvokedChildren, and buildStructureFromModel.
+     *
+     * @param type State type enum value
+     * @return String representation ("atomic", "compound", "parallel", etc.)
+     */
+    static std::string typeToString(SCE::Type type);
+
 #ifdef __EMSCRIPTEN__
     /**
      * @brief Build structure object from SCXML model for visualization
@@ -335,6 +346,17 @@ private:
      * @return JavaScript object with structure information
      */
     emscripten::val buildStructureFromModel(std::shared_ptr<SCXMLModel> model) const;
+
+    /**
+     * @brief Serialize action nodes to JavaScript array for visualization
+     *
+     * W3C SCXML 3.7: Converts executable content (assign, raise, foreach, log)
+     * into JavaScript-friendly format for action visualization.
+     *
+     * @param actions Vector of action nodes to serialize
+     * @return JavaScript array of action objects
+     */
+    emscripten::val serializeActions(const std::vector<std::shared_ptr<IActionNode>> &actions) const;
 #endif
 
     std::shared_ptr<StateMachine> stateMachine_;
@@ -353,8 +375,8 @@ private:
     std::string lastTransitionTarget_;
     std::string lastEventName_;
 
-    // Pending external events queue (for step-by-step execution)
-    std::queue<EventSnapshot> pendingEvents_;
+    // W3C SCXML 3.13: UI events now managed by EventRaiser's external queue (Zero Duplication)
+    // pendingEvents_ removed - EventRaiser owns all event queue management
 
     // Event execution history for accurate state restoration via replay
     // W3C SCXML 3.13: All processed events stored to enable time-travel debugging

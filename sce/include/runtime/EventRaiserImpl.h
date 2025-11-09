@@ -153,6 +153,18 @@ public:
     bool processNextQueuedEvent() override;
 
     /**
+     * @brief Get information about the last processed event (for time-travel debugging)
+     *
+     * W3C SCXML 3.13: Enable interactive visualizer to track internal events from raise actions.
+     * This allows step backward to replay internal events correctly.
+     *
+     * @param outEventName Output parameter for event name (empty if no event processed yet)
+     * @param outEventData Output parameter for event data
+     * @return true if last processed event info is available, false otherwise
+     */
+    bool getLastProcessedEvent(std::string &outEventName, std::string &outEventData) const;
+
+    /**
      * @brief Check if there are queued events waiting to be processed
      * @return true if queue has events, false if empty
      */
@@ -169,6 +181,14 @@ public:
      */
     void getEventQueues(std::vector<EventSnapshot> &outInternal,
                         std::vector<EventSnapshot> &outExternal) const override;
+
+    /**
+     * @brief Clear all queued events (for time-travel debugging reset)
+     *
+     * W3C SCXML: Removes all events from internal and external queues
+     * to allow clean state restoration in interactive visualization.
+     */
+    void clearQueue();
 
     /**
      * @brief Internal method to raise event with specific priority (for W3C SCXML compliance)
@@ -285,6 +305,11 @@ public:
     std::atomic<bool> immediateMode_;
     std::priority_queue<QueuedEvent, std::vector<QueuedEvent>, QueuedEventComparator> synchronousQueue_;
     mutable std::mutex synchronousQueueMutex_;
+
+    // W3C SCXML 3.13: Time-travel debugging support - track last processed event
+    std::string lastProcessedEventName_;
+    std::string lastProcessedEventData_;
+    mutable std::mutex lastProcessedEventMutex_;
 };
 
 }  // namespace SCE

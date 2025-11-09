@@ -196,7 +196,10 @@ bool StateMachine::loadModel(std::shared_ptr<SCXMLModel> model) {
     return initializeFromModel();
 }
 
-bool StateMachine::start() {
+bool StateMachine::start(bool autoProcessQueuedEvents) {
+    // Interactive mode: Store flag for processEvent() to skip auto-batch processing
+    autoProcessQueuedEvents_ = autoProcessQueuedEvents;
+
     if (initialState_.empty()) {
         LOG_ERROR("StateMachine: Cannot start - no initial state defined");
         return false;
@@ -356,7 +359,8 @@ bool StateMachine::start() {
     // W3C SCXML: Process all remaining queued events after initial state entry
     // This ensures the state machine reaches a stable state before returning,
     // eliminating the need for external callers to explicitly call processQueuedEvents()
-    if (eventRaiser_) {
+    // Interactive mode: Skip auto-processing to allow manual step-by-step execution
+    if (autoProcessQueuedEvents && eventRaiser_) {
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         if (eventRaiserImpl) {
             int iterations = 0;
@@ -387,6 +391,8 @@ bool StateMachine::start() {
                 LOG_DEBUG("StateMachine: All queued events processed after start ({} iterations)", iterations);
             }
         }
+    } else if (!autoProcessQueuedEvents) {
+        LOG_DEBUG("StateMachine: Interactive mode - skipping auto-processing of queued events");
     }
 
     updateStatistics();
@@ -713,7 +719,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
                 // W3C SCXML 3.3: Process all internal events before returning
                 // Only process if this is the top-level event (not nested/recursive call)
-                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && eventRaiser_) {
+                // Interactive mode: Skip auto-processing to allow manual step-by-step execution
+                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
@@ -1022,7 +1029,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
                 // W3C SCXML 3.4: Process done.state events when all regions complete
                 // Only process if this is the top-level event (not nested/recursive call)
-                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && eventRaiser_) {
+                // Interactive mode: Skip auto-processing to allow manual step-by-step execution
+                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
@@ -1097,7 +1105,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
                 // W3C SCXML 3.3: Process all internal events before returning
                 // Only process if this is the top-level event (not nested/recursive call)
-                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && eventRaiser_) {
+                // Interactive mode: Skip auto-processing to allow manual step-by-step execution
+                if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
                     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
                     if (eventRaiserImpl) {
                         // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
@@ -1136,7 +1145,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     // After processing an external event, the system MUST process all queued internal events
     // This ensures done.state events are automatically processed (test: W3C_Parallel_CompletionCriteria)
     // Only process if this is the top-level event (not nested/recursive call)
-    if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && eventRaiser_) {
+    // Interactive mode: Skip auto-processing to allow manual step-by-step execution
+    if (!eventGuard.wasAlreadySet_ && !isBatchProcessing_ && autoProcessQueuedEvents_ && eventRaiser_) {
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         if (eventRaiserImpl) {
             // W3C SCXML 3.12.1: Use shared algorithm (Single Source of Truth)
@@ -1672,6 +1682,49 @@ bool StateMachine::isInFinalState() const {
     }
 
     return isStateInFinalState(getCurrentState());
+}
+
+void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &states) {
+    // W3C SCXML 3.13: Time-travel debugging - restore configuration without side effects
+    // ARCHITECTURE.md Zero Duplication: Uses StateHierarchyManager's addStateToConfigurationWithoutOnEntry
+
+    if (!hierarchyManager_) {
+        LOG_ERROR("StateMachine::restoreActiveStatesDirectly: hierarchyManager_ is null");
+        return;
+    }
+
+    // Clear current configuration first
+    hierarchyManager_->reset();
+
+    // Restore each state without triggering onentry actions
+    // States must be added in hierarchical order (parent -> child)
+    std::vector<std::string> orderedStates(states.begin(), states.end());
+    std::sort(orderedStates.begin(), orderedStates.end(), [this](const std::string &a, const std::string &b) {
+        // Parent states come before children (shorter path = higher in hierarchy)
+        auto aNode = model_->findStateById(a);
+        auto bNode = model_->findStateById(b);
+        if (!aNode || !bNode) {
+            return a < b;  // Fallback to lexicographic
+        }
+
+        // Count ancestors to determine depth
+        int depthA = 0, depthB = 0;
+        for (auto *p = aNode->getParent(); p; p = p->getParent()) {
+            depthA++;
+        }
+        for (auto *p = bNode->getParent(); p; p = p->getParent()) {
+            depthB++;
+        }
+
+        return depthA < depthB;  // Lower depth (closer to root) comes first
+    });
+
+    for (const auto &stateId : orderedStates) {
+        hierarchyManager_->addStateToConfigurationWithoutOnEntry(stateId);
+        LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Restored state '{}' without onentry", stateId);
+    }
+
+    LOG_INFO("StateMachine::restoreActiveStatesDirectly: Restored {} states without side effects", states.size());
 }
 
 bool StateMachine::isInitialStateFinal() const {
@@ -3711,14 +3764,21 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
     EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeEntryBlocks(lambdaBlocks, *eventRaiser_, stateId);
 
     // W3C SCXML compliance: Restore immediate mode (but DON'T process queued events yet)
+    // Interactive mode: Keep immediate mode false to prevent auto-processing of queued events
     // Events must be processed AFTER the entire state tree entry completes, not during onentry
     // This ensures parent and child states are both active before processing raised events
     if (eventRaiser_) {
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         if (eventRaiserImpl) {
-            eventRaiserImpl->setImmediateMode(true);
-            LOG_DEBUG(
-                "SCXML compliance: Restored immediate mode (events will be processed after state entry completes)");
+            if (autoProcessQueuedEvents_) {
+                // Normal mode: Restore immediate mode for auto-processing
+                eventRaiserImpl->setImmediateMode(true);
+                LOG_DEBUG(
+                    "SCXML compliance: Restored immediate mode (events will be processed after state entry completes)");
+            } else {
+                // Interactive mode: Keep immediate mode false to prevent auto-processing
+                LOG_DEBUG("Interactive mode: Keeping immediate mode false (manual step-by-step execution)");
+            }
         }
     }
 
