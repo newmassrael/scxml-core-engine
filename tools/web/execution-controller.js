@@ -11,12 +11,29 @@
  * - Execution log
  */
 class ExecutionController {
-    constructor(wasmRunner, visualizer, availableEvents = []) {
+    constructor(wasmRunner, visualizer, availableEvents = [], visualizerManager = null) {
         this.runner = wasmRunner;
         this.visualizer = visualizer;
         this.currentStep = 0;
         this.maxSteps = 0;
         this.availableEvents = availableEvents;
+        this.visualizerManager = visualizerManager;
+
+        // Cache DOM elements for performance
+        this.elements = {
+            stepCounter: document.getElementById('step-counter'),
+            eventQueuePanel: document.getElementById('event-queue-panel'),
+            dataModelPanel: document.getElementById('data-model-panel'),
+            logPanel: document.getElementById('log-panel'),
+            singleViewContainer: document.getElementById('single-view-container'),
+            splitViewContainer: document.getElementById('split-view-container'),
+            childDiagramsContainer: document.getElementById('child-diagrams-container'),
+            communicationLog: document.getElementById('communication-log'),
+            btnStepBack: document.getElementById('btn-step-back'),
+            btnStepForward: document.getElementById('btn-step-forward'),
+            btnReset: document.getElementById('btn-reset'),
+            eventButtonsContainer: document.getElementById('event-buttons-container')
+        };
 
         this.setupControls();
         this.setupEventButtons();
@@ -27,24 +44,20 @@ class ExecutionController {
      */
     setupControls() {
         // Step buttons
-        const btnStepBack = document.getElementById('btn-step-back');
-        const btnStepForward = document.getElementById('btn-step-forward');
-        const btnReset = document.getElementById('btn-reset');
-
-        if (btnStepBack) {
-            btnStepBack.onclick = () => this.stepBackward();
+        if (this.elements.btnStepBack) {
+            this.elements.btnStepBack.onclick = () => this.stepBackward();
         }
 
-        if (btnStepForward) {
-            btnStepForward.onclick = () => this.stepForward();
+        if (this.elements.btnStepForward) {
+            this.elements.btnStepForward.onclick = () => this.stepForward();
         }
 
-        if (btnReset) {
-            btnReset.onclick = () => this.reset();
+        if (this.elements.btnReset) {
+            this.elements.btnReset.onclick = () => this.reset();
         }
 
         // Keyboard shortcuts
-        document.addEventListener('keydown', (e) => {
+        this.keyboardHandler = (e) => {
             // Don't capture if typing in input fields
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
                 return;
@@ -60,7 +73,9 @@ class ExecutionController {
                 e.preventDefault();
                 this.reset();
             }
-        });
+        };
+        
+        document.addEventListener('keydown', this.keyboardHandler);
 
         console.log('✅ Execution controls initialized (Arrow keys: step, R: reset)');
     }
@@ -69,14 +84,13 @@ class ExecutionController {
      * Setup event buttons from available events
      */
     setupEventButtons() {
-        const eventButtonsContainer = document.getElementById('event-buttons-container');
-        if (!eventButtonsContainer) return;
+        if (!this.elements.eventButtonsContainer) return;
 
         // Clear existing content
-        eventButtonsContainer.innerHTML = '';
+        this.elements.eventButtonsContainer.innerHTML = '';
 
         if (this.availableEvents.length === 0) {
-            eventButtonsContainer.innerHTML = '<div class="text-small text-gray">No events available</div>';
+            this.elements.eventButtonsContainer.innerHTML = '<div class="text-small text-gray">No events available</div>';
             return;
         }
 
@@ -86,7 +100,7 @@ class ExecutionController {
             button.className = 'btn btn-sm event-button';
             button.textContent = eventName;
             button.onclick = () => this.raiseEvent(eventName);
-            eventButtonsContainer.appendChild(button);
+            this.elements.eventButtonsContainer.appendChild(button);
         });
 
         console.log(`✅ Created ${this.availableEvents.length} event buttons`);
@@ -156,9 +170,8 @@ class ExecutionController {
             this.enableButton('btn-step-forward');
 
             // Clear log
-            const logPanel = document.getElementById('log-panel');
-            if (logPanel) {
-                logPanel.innerHTML = '<div class="log-entry">Reset to initial configuration</div>';
+            if (this.elements.logPanel) {
+                this.elements.logPanel.innerHTML = '<div class="log-entry">Reset to initial configuration</div>';
             }
 
             console.log('🔄 Reset to initial state');
@@ -223,9 +236,8 @@ class ExecutionController {
      * Update step counter display
      */
     updateStepCounter() {
-        const counter = document.getElementById('step-counter');
-        if (counter) {
-            counter.textContent = `Step ${this.currentStep}`;
+        if (this.elements.stepCounter) {
+            this.elements.stepCounter.textContent = `Step ${this.currentStep}`;
         }
     }
 
@@ -267,9 +279,8 @@ class ExecutionController {
      * Update event queue panel
      */
     updateEventQueue() {
-        const panel = document.getElementById('event-queue-panel');
-        if (!panel) {
-            console.warn('❌ event-queue-panel not found');
+        if (!this.elements.eventQueuePanel) {
+            console.warn('event-queue-panel not found');
             return;
         }
 
@@ -297,10 +308,10 @@ class ExecutionController {
                 html += '<div class="event">Empty</div>';
             }
 
-            panel.innerHTML = html;
+            this.elements.eventQueuePanel.innerHTML = html;
         } catch (error) {
-            console.error('❌ Error updating event queue:', error);
-            panel.innerHTML = '<div class="error-message">Failed to load event queue</div>';
+            console.error('Error updating event queue:', error);
+            this.elements.eventQueuePanel.innerHTML = '<div class="error-message">Failed to load event queue</div>';
         }
     }
 
@@ -308,8 +319,7 @@ class ExecutionController {
      * Update data model panel
      */
     updateDataModel() {
-        const panel = document.getElementById('data-model-panel');
-        if (!panel) return;
+        if (!this.elements.dataModelPanel) return;
 
         try {
             const dataModel = this.runner.getDataModel();
@@ -317,7 +327,7 @@ class ExecutionController {
             const entries = Object.entries(dataModel);
 
             if (entries.length === 0) {
-                panel.innerHTML = '<div class="data-entry">No data model variables</div>';
+                this.elements.dataModelPanel.innerHTML = '<div class="data-entry">No data model variables</div>';
                 return;
             }
 
@@ -328,10 +338,10 @@ class ExecutionController {
                 </div>
             `).join('');
 
-            panel.innerHTML = html;
+            this.elements.dataModelPanel.innerHTML = html;
         } catch (error) {
-            console.error('❌ Error updating data model:', error);
-            panel.innerHTML = '<div class="error-message">Failed to load data model</div>';
+            console.error('Error updating data model:', error);
+            this.elements.dataModelPanel.innerHTML = '<div class="error-message">Failed to load data model</div>';
         }
     }
 
@@ -339,8 +349,7 @@ class ExecutionController {
      * Update execution log
      */
     updateLog() {
-        const panel = document.getElementById('log-panel');
-        if (!panel) return;
+        if (!this.elements.logPanel) return;
 
         try {
             const lastTransition = this.runner.getLastTransition();
@@ -362,11 +371,11 @@ class ExecutionController {
             `;
 
             // Prepend (newest first)
-            panel.insertBefore(logEntry, panel.firstChild);
+            this.elements.logPanel.insertBefore(logEntry, this.elements.logPanel.firstChild);
 
             // Limit log entries (keep last 100)
-            while (panel.children.length > 100) {
-                panel.removeChild(panel.lastChild);
+            while (this.elements.logPanel.children.length > 100) {
+                this.elements.logPanel.removeChild(this.elements.logPanel.lastChild);
             }
         } catch (error) {
             console.error('❌ Error updating log:', error);
@@ -430,24 +439,34 @@ class ExecutionController {
     }
 
     /**
-     * Show user message
+     * Show debug message (console only, for development)
+     * For user-facing errors, see showMessage() in main.js
      */
     showMessage(message, type = 'info') {
-        console.log(`${type.toUpperCase()}: ${message}`);
-
-        // TODO: Add toast notification UI
-        // For now, just console log
+        console.log(`[${type.toUpperCase()}] ${message}`);
     }
 
     /**
      * Disable button
      */
     disableButton(buttonId) {
-        const button = document.getElementById(buttonId);
+        const button = this.elements[this.getElementKeyFromId(buttonId)];
         if (button) {
             button.disabled = true;
             button.classList.add('disabled');
         }
+    }
+
+    /**
+     * Get element key from element ID
+     */
+    getElementKeyFromId(id) {
+        const idToKeyMap = {
+            'btn-step-back': 'btnStepBack',
+            'btn-step-forward': 'btnStepForward',
+            'btn-reset': 'btnReset'
+        };
+        return idToKeyMap[id] || id;
     }
 
     /**
@@ -473,23 +492,17 @@ class ExecutionController {
 
             if (!childrenData || !childrenData.children || childrenData.children.length === 0) {
                 // No children (neither static nor runtime) - hide split view, show single diagram
-                const singleView = document.getElementById('single-view-container');
-                const splitView = document.getElementById('split-view-container');
-
-                if (singleView) singleView.style.display = 'block';
-                if (splitView) splitView.style.display = 'none';
+                if (this.elements.singleViewContainer) this.elements.singleViewContainer.style.display = 'block';
+                if (this.elements.splitViewContainer) this.elements.splitViewContainer.style.display = 'none';
 
                 return;
             }
 
             // Has children - show split view, hide single diagram
-            console.log(`📊 Found ${childrenData.children.length} invoked child state machines`);
+            console.log(`Found ${childrenData.children.length} invoked child state machines`);
 
-            const singleView = document.getElementById('single-view-container');
-            const splitView = document.getElementById('split-view-container');
-
-            if (singleView) singleView.style.display = 'none';
-            if (splitView) splitView.style.display = 'block';
+            if (this.elements.singleViewContainer) this.elements.singleViewContainer.style.display = 'none';
+            if (this.elements.splitViewContainer) this.elements.splitViewContainer.style.display = 'block';
 
             // Update child diagrams
             for (const childInfo of childrenData.children) {
@@ -513,31 +526,29 @@ class ExecutionController {
 
         // Create container if doesn't exist
         if (!container) {
-            const childrenContainer = document.getElementById('child-diagrams-container');
-            if (!childrenContainer) {
-                console.error('❌ child-diagrams-container not found');
+            if (!this.elements.childDiagramsContainer) {
+                console.error('child-diagrams-container not found');
                 return;
             }
 
             container = document.createElement('div');
             container.id = containerId;
             container.className = 'child-diagram active';
-            childrenContainer.appendChild(container);
+            this.elements.childDiagramsContainer.appendChild(container);
 
             // Create visualizer for this child
             const visualizer = new SCXMLVisualizer(containerId, childInfo.structure);
 
-            // Store visualizer reference
-            if (!window.childVisualizers) {
-                window.childVisualizers = {};
+            // Store visualizer reference in manager
+            if (this.visualizerManager) {
+                this.visualizerManager.addChild(childInfo.sessionId, visualizer);
             }
-            window.childVisualizers[childInfo.sessionId] = visualizer;
 
             console.log(`📊 Created child diagram for session: ${childInfo.sessionId}`);
         }
 
         // Update active states highlighting
-        const visualizer = window.childVisualizers?.[childInfo.sessionId];
+        const visualizer = this.visualizerManager?.getChild(childInfo.sessionId);
         if (visualizer) {
             visualizer.highlightActiveStates(childInfo.activeStates);
         }
@@ -547,8 +558,7 @@ class ExecutionController {
      * Update communication log between parent and children
      */
     updateCommunicationLog(childrenData) {
-        const logContainer = document.getElementById('communication-log');
-        if (!logContainer) {
+        if (!this.elements.communicationLog) {
             return;
         }
 
@@ -562,22 +572,40 @@ class ExecutionController {
         `;
 
         // Keep last 20 entries
-        while (logContainer.children.length >= 20) {
-            logContainer.removeChild(logContainer.firstChild);
+        while (this.elements.communicationLog.children.length >= 20) {
+            this.elements.communicationLog.removeChild(this.elements.communicationLog.firstChild);
         }
 
-        logContainer.appendChild(entry);
-        logContainer.scrollTop = logContainer.scrollHeight;
+        this.elements.communicationLog.appendChild(entry);
+        this.elements.communicationLog.scrollTop = this.elements.communicationLog.scrollHeight;
     }
 
     /**
      * Enable button
      */
     enableButton(buttonId) {
-        const button = document.getElementById(buttonId);
+        const button = this.elements[this.getElementKeyFromId(buttonId)];
         if (button) {
             button.disabled = false;
             button.classList.remove('disabled');
         }
     }
+
+    /**
+     * Cleanup - remove event listeners and clear references
+     */
+    destroy() {
+        // Remove keyboard event listener
+        if (this.keyboardHandler) {
+            document.removeEventListener('keydown', this.keyboardHandler);
+            this.keyboardHandler = null;
+        }
+
+        // Clear references
+        this.runner = null;
+        this.visualizer = null;
+        this.visualizerManager = null;
+        this.elements = null;
+    }
 }
+
