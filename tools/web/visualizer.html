@@ -66,13 +66,54 @@
             </div>
         </div>
 
-        <!-- State Diagram -->
+        <!-- State Diagram with Split View for Parent-Child Communication -->
         <div class="Box mb-3">
             <div class="Box-header">
                 <h3 class="Box-title">State Diagram</h3>
+                <!-- View Mode Toggle -->
+                <div id="view-mode-toggle" class="ml-3" style="display: none;">
+                    <button id="btn-view-tabs" class="btn btn-sm">Tab View</button>
+                    <button id="btn-view-split" class="btn btn-sm btn-primary">Split View</button>
+                </div>
             </div>
             <div class="Box-body">
-                <div id="state-diagram" style="width: 100%; height: 600px;"></div>
+                <!-- Split View Container (shown when child exists) -->
+                <div id="split-view-container">
+                    <div class="split-view">
+                        <!-- Parent State Machine -->
+                        <div class="split-panel parent-panel">
+                            <div class="panel-header">Parent State Machine</div>
+                            <div id="state-diagram-parent-split" class="diagram-container-split"></div>
+                        </div>
+
+                        <!-- Communication Panel -->
+                        <div class="split-panel communication-panel">
+                            <div class="panel-header">Communication</div>
+                            <div id="communication-log" class="communication-log">
+                                <div class="comm-entry comm-info">Waiting for invoke/send events...</div>
+                            </div>
+                        </div>
+
+                        <!-- Child State Machines (with tabs for multiple children) -->
+                        <div class="split-panel child-panel">
+                            <div class="panel-header">
+                                Child State Machines
+                                <!-- Child Tabs -->
+                                <nav id="child-tabs" class="child-tabs" style="display: none;">
+                                    <!-- Tabs will be generated dynamically -->
+                                </nav>
+                            </div>
+                            <div id="child-diagrams-container">
+                                <!-- Child diagrams will be added here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Single View Container (default, no children) -->
+                <div id="single-view-container">
+                    <div id="state-diagram-single" class="diagram-container active"></div>
+                </div>
             </div>
         </div>
 

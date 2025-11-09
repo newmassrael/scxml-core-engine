@@ -4,7 +4,15 @@
 #include "InteractiveTestRunner.h"
 
 #include "common/Logger.h"
+#include "events/EventDispatcherImpl.h"
+#include "events/EventSchedulerImpl.h"
+#include "events/EventTargetFactoryImpl.h"
+#include "factory/NodeFactory.h"
+#include "model/InvokeNode.h"
 #include "model/SCXMLModel.h"
+#include "model/StateNode.h"
+#include "parsing/SCXMLParser.h"
+#include "runtime/EventRaiserImpl.h"
 #include "scripting/JSEngine.h"
 
 #include <set>
@@ -14,9 +22,48 @@ namespace SCE::W3C {
 InteractiveTestRunner::InteractiveTestRunner()
     : stateMachine_(std::make_shared<StateMachine>()), snapshotManager_(1000)  // 1000 step history
       ,
-      currentStep_(0) {}
+      currentStep_(0) {
+    // W3C SCXML 6.2: Create event infrastructure for send/invoke support
+    // Event callback: For visualization, we don't auto-process scheduled events
+    // User manually steps forward via stepForward()
+    auto eventCallback = [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target,
+                            [[maybe_unused]] const std::string &sendId) -> bool {
+        // Execute event through target (InternalEventTarget will call EventRaiser)
+        try {
+            auto future = target->send(event);
+            auto result = future.get();
+            return result.isSuccess;
+        } catch (...) {
+            return false;
+        }
+    };
+
+    // Create event scheduler
+    scheduler_ = std::make_shared<EventSchedulerImpl>(eventCallback);
+
+    // Create event raiser (concrete type for setScheduler access)
+    auto eventRaiser = std::make_shared<EventRaiserImpl>();
+    eventRaiser_ = eventRaiser;
+
+    // Connect EventRaiser to EventScheduler for delayed event polling
+    eventRaiser->setScheduler(scheduler_);
+
+    // Create event target factory and dispatcher
+    auto targetFactory = std::make_shared<EventTargetFactoryImpl>(eventRaiser, scheduler_);
+    eventDispatcher_ = std::make_shared<EventDispatcherImpl>(scheduler_, targetFactory);
+
+    // Set EventDispatcher on StateMachine
+    stateMachine_->setEventDispatcher(eventDispatcher_);
+
+    LOG_DEBUG("InteractiveTestRunner: Event infrastructure initialized (scheduler, dispatcher, targets)");
+}
 
 InteractiveTestRunner::~InteractiveTestRunner() {
+    // W3C SCXML 6.2: Shutdown event infrastructure
+    if (scheduler_) {
+        scheduler_->shutdown(true);  // Wait for pending events to complete
+    }
+
     if (stateMachine_) {
         stateMachine_->stop();
     }
@@ -37,6 +84,15 @@ bool InteractiveTestRunner::loadSCXML(const std::string &scxmlSource, bool isFil
     }
 
     LOG_DEBUG("InteractiveTestRunner: Successfully loaded SCXML");
+
+    // W3C SCXML 6.3: Static analysis to detect sub-SCXML files for visualization
+    subScxmlStructures_.clear();
+
+    auto model = stateMachine_->getModel();
+    if (model) {
+        analyzeSubSCXML(model);
+    }
+
     return true;
 }
 
@@ -497,10 +553,9 @@ emscripten::val InteractiveTestRunner::getSCXMLStructure() const {
         statesArray.call<void>("push", stateObj);
     }
 
-    // Build transitions array (deduplicate by source-target-event)
+    // Build transitions array (all transitions, no deduplication for accurate SCXML visualization)
     auto transitionsArray = emscripten::val::array();
     int transitionId = 0;
-    std::set<std::string> seenTransitions;
 
     LOG_DEBUG("getSCXMLStructure: Building transitions");
 
@@ -511,7 +566,7 @@ emscripten::val InteractiveTestRunner::getSCXMLStructure() const {
 
         const auto &stateId = state->getId();
 
-        // Skip already processed states (for deduplication)
+        // Skip already processed states (for state deduplication)
         if (seenStateIds.find(stateId) == seenStateIds.end()) {
             continue;
         }
@@ -525,27 +580,33 @@ emscripten::val InteractiveTestRunner::getSCXMLStructure() const {
             const auto &events = transition->getEvents();
             const auto &targets = transition->getTargets();
 
-            // Create one transition object per event-target combination
-            for (const auto &event : events) {
+            // W3C SCXML: Handle eventless transitions
+            if (events.empty()) {
                 for (const auto &target : targets) {
-                    // Create unique key for deduplication
-                    std::string transKey = stateId + "|" + target + "|" + event;
-
-                    if (seenTransitions.find(transKey) != seenTransitions.end()) {
-                        LOG_DEBUG("  Skipping duplicate transition: {} -> {} [{}]", stateId, target, event);
-                        continue;
-                    }
-                    seenTransitions.insert(transKey);
-
-                    LOG_DEBUG("  Adding transition: {} -> {} [{}]", stateId, target, event);
+                    LOG_DEBUG("  Adding eventless transition: {} -> {}", stateId, target);
 
                     auto transObj = emscripten::val::object();
                     transObj.set("id", std::to_string(transitionId++));
                     transObj.set("source", stateId);
                     transObj.set("target", target);
-                    transObj.set("event", event);
+                    transObj.set("event", "");  // Empty string for eventless transitions
 
                     transitionsArray.call<void>("push", transObj);
+                }
+            } else {
+                // Create one transition object per event-target combination
+                for (const auto &event : events) {
+                    for (const auto &target : targets) {
+                        LOG_DEBUG("  Adding transition: {} -> {} [{}]", stateId, target, event);
+
+                        auto transObj = emscripten::val::object();
+                        transObj.set("id", std::to_string(transitionId++));
+                        transObj.set("source", stateId);
+                        transObj.set("target", target);
+                        transObj.set("event", event);
+
+                        transitionsArray.call<void>("push", transObj);
+                    }
                 }
             }
         }
@@ -565,6 +626,173 @@ emscripten::val InteractiveTestRunner::getW3CReferences() const {
     // and stored in window.specReferences for access by execution-controller.js
     // This method returns empty object as references are managed client-side
 
+    return obj;
+}
+
+bool InteractiveTestRunner::preloadFile(const std::string &filename, const std::string &content) {
+    LOG_DEBUG("InteractiveTestRunner: Preloading file: {} ({} bytes)", filename, content.size());
+    preloadedFiles_[filename] = content;
+    return true;
+}
+
+void InteractiveTestRunner::setBasePath(const std::string &basePath) {
+    basePath_ = basePath;
+
+    // Register session file path for invoke resolution
+    if (stateMachine_) {
+        // Use a dummy filename to establish the base directory
+        std::string sessionFilePath = basePath_ + "parent.scxml";
+        stateMachine_->setSessionFilePath(sessionFilePath);
+        LOG_DEBUG("InteractiveTestRunner: Base path set to: {} (session file: {})", basePath_, sessionFilePath);
+    } else {
+        LOG_DEBUG("InteractiveTestRunner: Base path set to: {} (will apply when state machine loads)", basePath_);
+    }
+}
+
+emscripten::val InteractiveTestRunner::getInvokedChildren() const {
+    auto obj = emscripten::val::object();
+    auto childrenArray = emscripten::val::array();
+
+    if (!stateMachine_) {
+        obj.set("children", childrenArray);
+        return obj;
+    }
+
+    // Get invoked child state machines
+    auto children = stateMachine_->getInvokedChildren();
+
+    LOG_DEBUG("InteractiveTestRunner: Found {} invoked children", children.size());
+
+    // Helper function to convert Type enum to string (from getSCXMLStructure)
+    auto typeToString = [](SCE::Type type) -> std::string {
+        switch (type) {
+        case SCE::Type::ATOMIC:
+            return "atomic";
+        case SCE::Type::COMPOUND:
+            return "compound";
+        case SCE::Type::PARALLEL:
+            return "parallel";
+        case SCE::Type::FINAL:
+            return "final";
+        case SCE::Type::HISTORY:
+            return "history";
+        case SCE::Type::INITIAL:
+            return "initial";
+        default:
+            return "atomic";
+        }
+    };
+
+    // Build child information array
+    for (const auto &child : children) {
+        if (!child) {
+            continue;
+        }
+
+        auto childObj = emscripten::val::object();
+
+        // Basic child info
+        childObj.set("sessionId", child->getSessionId());
+        childObj.set("isInFinalState", child->isInFinalState());
+
+        // Active states
+        auto activeStatesArray = emscripten::val::array();
+        auto activeStates = child->getActiveStates();
+        for (const auto &state : activeStates) {
+            activeStatesArray.call<void>("push", state);
+        }
+        childObj.set("activeStates", activeStatesArray);
+
+        // SCXML structure (reuse logic from getSCXMLStructure)
+        auto model = child->getModel();
+        if (model) {
+            auto structure = emscripten::val::object();
+            auto statesArray = emscripten::val::array();
+            auto transitionsArray = emscripten::val::array();
+
+            const auto &allStates = model->getAllStates();
+            std::set<std::string> seenStateIds;
+
+            // Build states array
+            for (size_t i = 0; i < allStates.size(); i++) {
+                const auto &state = allStates[i];
+                if (!state) {
+                    continue;
+                }
+
+                const auto &stateId = state->getId();
+                if (seenStateIds.find(stateId) != seenStateIds.end()) {
+                    continue;
+                }
+                seenStateIds.insert(stateId);
+
+                auto stateObj = emscripten::val::object();
+                stateObj.set("id", stateId);
+                stateObj.set("type", typeToString(state->getType()));
+
+                statesArray.call<void>("push", stateObj);
+            }
+
+            // Build transitions array (all transitions, no deduplication)
+            int transitionId = 0;
+
+            for (const auto &state : allStates) {
+                if (!state) {
+                    continue;
+                }
+
+                const auto &stateId = state->getId();
+                if (seenStateIds.find(stateId) == seenStateIds.end()) {
+                    continue;
+                }
+
+                const auto &transitions = state->getTransitions();
+                for (const auto &transition : transitions) {
+                    if (!transition) {
+                        continue;
+                    }
+
+                    const auto &events = transition->getEvents();
+                    const auto &targets = transition->getTargets();
+
+                    // W3C SCXML: Handle eventless transitions
+                    if (events.empty()) {
+                        for (const auto &target : targets) {
+                            auto transObj = emscripten::val::object();
+                            transObj.set("id", std::to_string(transitionId++));
+                            transObj.set("source", stateId);
+                            transObj.set("target", target);
+                            transObj.set("event", "");  // Empty string for eventless transitions
+
+                            transitionsArray.call<void>("push", transObj);
+                        }
+                    } else {
+                        for (const auto &event : events) {
+                            for (const auto &target : targets) {
+                                auto transObj = emscripten::val::object();
+                                transObj.set("id", std::to_string(transitionId++));
+                                transObj.set("source", stateId);
+                                transObj.set("target", target);
+                                transObj.set("event", event);
+
+                                transitionsArray.call<void>("push", transObj);
+                            }
+                        }
+                    }
+                }
+            }
+
+            structure.set("states", statesArray);
+            structure.set("transitions", transitionsArray);
+            structure.set("initial", model->getInitialState());
+
+            childObj.set("structure", structure);
+        }
+
+        childrenArray.call<void>("push", childObj);
+    }
+
+    obj.set("children", childrenArray);
     return obj;
 }
 
@@ -601,6 +829,211 @@ std::string InteractiveTestRunner::getW3CReferences() const {
     return "{}";
 }
 
+std::string InteractiveTestRunner::getInvokedChildren() const {
+    return "{\"children\":[]}";
+}
+
 #endif  // __EMSCRIPTEN__
+
+void InteractiveTestRunner::analyzeSubSCXML(std::shared_ptr<SCXMLModel> parentModel) {
+    if (!parentModel) {
+        return;
+    }
+
+    LOG_DEBUG("Analyzing parent SCXML for static invoke elements");
+
+    // Create parser for loading sub-SCXML files
+    auto nodeFactory = std::make_shared<NodeFactory>();
+    auto parser = std::make_shared<SCXMLParser>(nodeFactory);
+
+    // Iterate through all states to find invoke elements
+    const auto &allStates = parentModel->getAllStates();
+
+    for (const auto &state : allStates) {
+        if (!state) {
+            continue;
+        }
+
+        const auto &invokes = state->getInvoke();
+        if (invokes.empty()) {
+            continue;
+        }
+
+        for (const auto &invoke : invokes) {
+            if (!invoke) {
+                continue;
+            }
+
+            const std::string &src = invoke->getSrc();
+            const std::string &srcExpr = invoke->getSrcExpr();
+
+            // Only process static src (skip dynamic srcexpr)
+            if (src.empty() || !srcExpr.empty()) {
+                continue;
+            }
+
+            // Resolve file path
+            std::string fullPath = src;
+            if (src.find("file:") == 0) {
+                fullPath = src.substr(5);  // Remove "file:" prefix
+            }
+
+            // Make absolute if relative
+            if (!fullPath.empty() && fullPath[0] != '/') {
+                fullPath = basePath_ + fullPath;
+            }
+
+            LOG_DEBUG("  Attempting to load sub-SCXML: {}", fullPath);
+
+            // Parse child SCXML file
+            auto childModel = parser->parseFile(fullPath);
+
+            if (!childModel) {
+                LOG_WARN("  Failed to parse sub-SCXML '{}' - skipping visualization", fullPath);
+                continue;
+            }
+
+            // Build structure object for JavaScript
+            SubSCXMLInfo info;
+            info.parentStateId = state->getId();
+            info.invokeId =
+                invoke->getId().empty() ? ("invoke_" + std::to_string(subScxmlStructures_.size())) : invoke->getId();
+            info.srcPath = fullPath;
+#ifdef __EMSCRIPTEN__
+            info.structure = buildStructureFromModel(childModel);
+#endif
+
+            subScxmlStructures_.push_back(info);
+            LOG_DEBUG("  Successfully loaded sub-SCXML: {} (from state '{}')", fullPath, state->getId());
+        }
+    }
+
+    LOG_DEBUG("Static analysis complete: found {} sub-SCXML file(s)", subScxmlStructures_.size());
+}
+
+#ifdef __EMSCRIPTEN__
+emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<SCXMLModel> model) const {
+    auto obj = emscripten::val::object();
+
+    if (!model) {
+        return obj;
+    }
+
+    // Helper function to convert Type enum to string
+    auto typeToString = [](SCE::Type type) -> std::string {
+        switch (type) {
+        case SCE::Type::ATOMIC:
+            return "atomic";
+        case SCE::Type::COMPOUND:
+            return "compound";
+        case SCE::Type::PARALLEL:
+            return "parallel";
+        case SCE::Type::FINAL:
+            return "final";
+        case SCE::Type::HISTORY:
+            return "history";
+        case SCE::Type::INITIAL:
+            return "initial";
+        default:
+            return "atomic";
+        }
+    };
+
+    // Build states array (deduplicate by ID)
+    auto statesArray = emscripten::val::array();
+    const auto &allStates = model->getAllStates();
+    std::set<std::string> seenStateIds;
+
+    for (const auto &state : allStates) {
+        if (!state) {
+            continue;
+        }
+
+        const auto &stateId = state->getId();
+
+        // Skip duplicate state IDs
+        if (seenStateIds.find(stateId) != seenStateIds.end()) {
+            continue;
+        }
+        seenStateIds.insert(stateId);
+
+        auto stateObj = emscripten::val::object();
+        stateObj.set("id", stateId);
+        stateObj.set("type", typeToString(state->getType()));
+
+        statesArray.call<void>("push", stateObj);
+    }
+
+    // Build transitions array (all transitions, no deduplication for accurate SCXML visualization)
+    auto transitionsArray = emscripten::val::array();
+    int transitionId = 0;
+
+    for (const auto &state : allStates) {
+        if (!state) {
+            continue;
+        }
+
+        const auto &stateId = state->getId();
+
+        const auto &transitions = state->getTransitions();
+        for (const auto &transition : transitions) {
+            if (!transition) {
+                continue;
+            }
+
+            const auto &events = transition->getEvents();
+            const auto &targets = transition->getTargets();
+
+            // W3C SCXML: Handle eventless transitions
+            if (events.empty()) {
+                for (const auto &target : targets) {
+                    auto transObj = emscripten::val::object();
+                    transObj.set("id", std::to_string(transitionId++));
+                    transObj.set("source", stateId);
+                    transObj.set("target", target);
+                    transObj.set("event", "");  // Empty string for eventless transitions
+
+                    transitionsArray.call<void>("push", transObj);
+                }
+            } else {
+                // Create one transition object per event-target combination
+                for (const auto &event : events) {
+                    for (const auto &target : targets) {
+                        auto transObj = emscripten::val::object();
+                        transObj.set("id", std::to_string(transitionId++));
+                        transObj.set("source", stateId);
+                        transObj.set("target", target);
+                        transObj.set("event", event);
+
+                        transitionsArray.call<void>("push", transObj);
+                    }
+                }
+            }
+        }
+    }
+
+    obj.set("states", statesArray);
+    obj.set("transitions", transitionsArray);
+    obj.set("initial", model->getInitialState());
+
+    return obj;
+}
+
+emscripten::val InteractiveTestRunner::getSubSCXMLStructures() const {
+    auto result = emscripten::val::array();
+
+    for (const auto &info : subScxmlStructures_) {
+        auto obj = emscripten::val::object();
+        obj.set("parentStateId", info.parentStateId);
+        obj.set("invokeId", info.invokeId);
+        obj.set("srcPath", info.srcPath);
+        obj.set("structure", info.structure);
+        result.call<void>("push", obj);
+    }
+
+    LOG_DEBUG("Returning {} sub-SCXML structures to JavaScript", subScxmlStructures_.size());
+    return result;
+}
+#endif
 
 }  // namespace SCE::W3C

@@ -218,7 +218,7 @@ TEST_F(ConcurrentRegionTest, ExecuteActionNode_MixedActionTypes_AllExecuted) {
 }
 
 // ============================================================================
-// Phase 1: Exit Actions Tests (W3C SCXML 3.8)
+// W3C SCXML 3.8: Exit Actions Tests
 // ============================================================================
 
 // Test deactivate with valid exit actions
@@ -355,7 +355,7 @@ TEST_F(ConcurrentRegionTest, DeactivateWhenAlreadyInactive) {
 }
 
 // ============================================================================
-// Phase 2: State Lifecycle Tests
+// W3C SCXML 3.2: State Lifecycle Tests
 // ============================================================================
 
 // Test reset functionality
@@ -397,7 +397,7 @@ TEST_F(ConcurrentRegionTest, GetActiveStates_ReturnsCurrentConfiguration) {
 }
 
 // ============================================================================
-// Phase 3: Final State Detection Tests (W3C SCXML 3.4)
+// W3C SCXML 3.4: Final State Detection Tests
 // ============================================================================
 
 // Test isInFinalState after entering final state
@@ -428,7 +428,7 @@ TEST_F(ConcurrentRegionTest, IsInFinalState_FalseForNonFinalState) {
 }
 
 // ============================================================================
-// Phase 4: Validation Tests (W3C SCXML Compliance)
+// W3C SCXML Compliance: Validation Tests
 // ============================================================================
 
 // Test validate with null root state

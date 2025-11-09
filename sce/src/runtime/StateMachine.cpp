@@ -3819,6 +3819,21 @@ std::shared_ptr<IEventDispatcher> StateMachine::getEventDispatcher() const {
     return eventDispatcher_;
 }
 
+std::vector<std::shared_ptr<StateMachine>> StateMachine::getInvokedChildren() {
+    if (!invokeExecutor_) {
+        return {};
+    }
+
+    // Return ALL invoked children for visualization (not just autoForward ones)
+    return invokeExecutor_->getAllInvokedSessions(sessionId_);
+}
+
+void StateMachine::setSessionFilePath(const std::string &filePath) {
+    // JSEngine is a singleton, accessed via instance()
+    JSEngine::instance().registerSessionFilePath(sessionId_, filePath);
+    LOG_DEBUG("StateMachine: Registered session file path: {} for session: {}", filePath, sessionId_);
+}
+
 void StateMachine::deferInvokeExecution(const std::string &stateId,
                                         const std::vector<std::shared_ptr<IInvokeNode>> &invokes) {
     LOG_DEBUG("StateMachine: Deferring {} invokes for state: {} in session: {}", invokes.size(), stateId, sessionId_);

@@ -100,6 +100,13 @@ public:
     std::vector<std::shared_ptr<StateMachine>> getAutoForwardSessions(const std::string &parentSessionId);
 
     /**
+     * @brief Get all active invoke sessions for visualization (W3C SCXML 6.3)
+     * @param parentSessionId Parent session ID
+     * @return Vector of child StateMachine shared_ptrs regardless of autoForward setting
+     */
+    std::vector<std::shared_ptr<StateMachine>> getAllInvokedSessions(const std::string &parentSessionId);
+
+    /**
      * @brief Get finalize script for an event from an invoked child session
      * @param childSessionId Child session ID that sent the event
      * @return Finalize script if found, empty string otherwise
@@ -283,6 +290,16 @@ public:
      * @return Vector of child StateMachine shared_ptrs with autoForward=true (prevents use-after-free during iteration)
      */
     std::vector<std::shared_ptr<StateMachine>> getAutoForwardSessions(const std::string &parentSessionId);
+
+    /**
+     * @brief Get all active invoke sessions for visualization (W3C SCXML 6.3)
+     * @param parentSessionId Parent session ID
+     * @return Vector of child StateMachine shared_ptrs regardless of autoForward setting
+     *
+     * Used by visualization tools to display all invoked children.
+     * Unlike getAutoForwardSessions(), this returns ALL active children.
+     */
+    std::vector<std::shared_ptr<StateMachine>> getAllInvokedSessions(const std::string &parentSessionId);
 
     /**
      * @brief Get finalize script for an event from an invoked child session
