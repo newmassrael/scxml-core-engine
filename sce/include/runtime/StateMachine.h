@@ -202,9 +202,12 @@ public:
 
     /**
      * @brief Start the state machine
+     *
+     * @param autoProcessQueuedEvents If true (default), automatically process queued events after entering initial
+     * state. If false, queued events remain for manual processing (Interactive mode).
      * @return true if started successfully
      */
-    bool start();
+    bool start(bool autoProcessQueuedEvents = true);
 
     /**
      * @brief Stop the state machine
@@ -262,6 +265,19 @@ public:
      * @return true if current state is a final state
      */
     bool isInFinalState() const;
+
+    /**
+     * @brief Restore active states directly without executing onentry actions
+     *
+     * W3C SCXML 3.13: Time-travel debugging support for InteractiveTestRunner
+     * Restores state configuration from snapshot without side effects.
+     *
+     * ARCHITECTURE.md: Zero Duplication - Uses StateHierarchyManager infrastructure
+     * Only for debugging/visualization - NOT for production state machine execution
+     *
+     * @param states Set of state IDs to activate
+     */
+    void restoreActiveStatesDirectly(const std::set<std::string> &states);
 
     /**
      * @brief Check if the initial state of the SCXML model is a final state
@@ -493,6 +509,7 @@ private:
     std::atomic<bool> isRunning_{false};
     bool isEnteringState_ = false;                 // Guard against reentrant enterState calls
     bool isProcessingEvent_ = false;               // Track event processing context
+    bool autoProcessQueuedEvents_ = true;          // Interactive mode: disable auto-batch processing
     bool isBatchProcessing_ = false;               // Track batch event processing to prevent recursive auto-processing
     bool isEnteringInitialConfiguration_ = false;  // W3C SCXML 3.3: Track initial configuration entry
     bool inTransition_ = false;                    // Track if we're in a transition context (for history recording)

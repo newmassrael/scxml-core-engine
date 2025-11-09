@@ -130,7 +130,23 @@ class SCXMLVisualizer {
             .data(links)
             .enter().append('path')
             .attr('class', 'transition')
-            .attr('data-id', d => `${d.source.id}_${d.target.id}`);
+            .attr('data-id', d => `${d.source.id}_${d.target.id}`)
+            .style('cursor', 'pointer')
+            .on('click', (event, d) => {
+                event.stopPropagation();
+                // W3C SCXML 3.3: Dispatch custom event with transition details
+                const transitionClickEvent = new CustomEvent('transition-click', {
+                    detail: {
+                        source: typeof d.source === 'object' ? d.source.id : d.source,
+                        target: typeof d.target === 'object' ? d.target.id : d.target,
+                        event: d.event,
+                        cond: d.cond,
+                        actions: d.actions,
+                        transitionId: d.transitionId
+                    }
+                });
+                document.dispatchEvent(transitionClickEvent);
+            });
 
         // Add event labels to transitions
         this.linkLabels = this.zoomContainer.append('g')
@@ -139,7 +155,24 @@ class SCXMLVisualizer {
             .data(links)
             .enter().append('text')
             .attr('class', 'transition-label')
-            .text(d => d.event || '')
+            .text(d => {
+                // W3C SCXML: Display eventless flag, event name, and guard condition
+                let label = '';
+                
+                if (d.eventless) {
+                    label += '[eventless] ';
+                }
+                
+                if (d.event) {
+                    label += d.event;
+                }
+                
+                if (d.cond) {
+                    label += ` [${d.cond}]`;
+                }
+                
+                return label.trim() || '[no event]';
+            })
             .attr('text-anchor', 'middle')
             .style('font-size', '12px')
             .style('fill', '#57606a')
@@ -312,7 +345,10 @@ class SCXMLVisualizer {
             id: state.id,
             type: state.type || 'atomic',
             initial: state.initial,
-            children: state.children || []
+            children: state.children || [],
+            // W3C SCXML 3.7: Include action data for info panel
+            onentry: state.onentry,
+            onexit: state.onexit
         }));
 
         // Add initial pseudo-node (W3C/UML statechart standard)
@@ -335,7 +371,10 @@ class SCXMLVisualizer {
             source: trans.source,
             target: trans.target,
             event: trans.event || '',
-            guard: trans.guard || '',
+            eventless: trans.eventless || false,  // W3C SCXML: Eventless transition flag
+            cond: trans.cond || '',                // W3C SCXML: Guard condition
+            actions: trans.actions || [],          // W3C SCXML 3.7: Transition actions
+            transitionId: trans.id,                // Unique transition ID for click tracking
             id: `${trans.source}_${trans.target}`
         }));
 
