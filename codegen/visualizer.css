@@ -684,3 +684,123 @@ body {
 .p-4 {
     padding: 16px;
 }
+
+/* W3C SCXML 3.7: State Actions Panel */
+.state-actions {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.action-info {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.action-state-header {
+    font-weight: 600;
+    color: var(--color-blue);
+    margin-bottom: 4px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.action-item {
+    padding: 4px 0 4px 16px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 12px;
+    color: var(--color-gray-dark);
+}
+
+.action-onentry {
+    border-left: 3px solid var(--color-green);
+    padding-left: 8px;
+    margin-bottom: 4px;
+}
+
+.action-onexit {
+    border-left: 3px solid var(--color-red);
+    padding-left: 8px;
+    margin-bottom: 4px;
+}
+
+.action-type {
+    font-weight: 600;
+    color: #1f2328;
+}
+
+.action-details {
+    color: var(--color-gray-dark);
+    font-size: 11px;
+    margin-left: 8px;
+}
+
+/* W3C SCXML 3.3: Transition Info Panel */
+.transition-info {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.transition-hint {
+    padding: 8px 12px;
+    color: var(--color-gray);
+    font-size: 13px;
+    font-style: italic;
+    text-align: center;
+}
+
+.transition-details {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.transition-header {
+    font-weight: 600;
+    color: var(--color-blue);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.transition-field {
+    margin: 4px 0;
+    padding-left: 8px;
+}
+
+.transition-field-label {
+    font-weight: 600;
+    color: var(--color-gray-dark);
+    display: inline-block;
+    min-width: 60px;
+}
+
+.transition-field-value {
+    color: var(--color-text);
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 12px;
+}
+
+.transition-guard {
+    border-left: 3px solid var(--color-orange);
+    padding-left: 8px;
+    margin: 8px 0;
+}
+
+.transition-actions {
+    border-left: 3px solid var(--color-purple);
+    padding-left: 8px;
+    margin: 8px 0;
+}
+
+.transition-action-item {
+    margin: 4px 0;
+    font-size: 12px;
+    color: var(--color-gray-dark);
+}

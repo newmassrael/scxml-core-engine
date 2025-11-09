@@ -24,6 +24,8 @@ class ExecutionController {
             stepCounter: document.getElementById('step-counter'),
             eventQueuePanel: document.getElementById('event-queue-panel'),
             dataModelPanel: document.getElementById('data-model-panel'),
+            stateActionsPanel: document.getElementById('state-actions-panel'),
+            transitionInfoPanel: document.getElementById('transition-info-panel'),
             logPanel: document.getElementById('log-panel'),
             singleViewContainer: document.getElementById('single-view-container'),
             splitViewContainer: document.getElementById('split-view-container'),
@@ -76,6 +78,12 @@ class ExecutionController {
         };
         
         document.addEventListener('keydown', this.keyboardHandler);
+
+        // W3C SCXML 3.3: Transition click event handler
+        this.transitionClickHandler = (event) => {
+            this.updateTransitionInfo(event.detail);
+        };
+        document.addEventListener('transition-click', this.transitionClickHandler);
 
         console.log('✅ Execution controls initialized (Arrow keys: step, R: reset)');
     }
@@ -225,6 +233,7 @@ class ExecutionController {
             // Update panels
             this.updateEventQueue();
             this.updateDataModel();
+            this.updateStateActions();
             this.updateLog();
 
         } catch (error) {
@@ -342,6 +351,168 @@ class ExecutionController {
         } catch (error) {
             console.error('Error updating data model:', error);
             this.elements.dataModelPanel.innerHTML = '<div class="error-message">Failed to load data model</div>';
+        }
+    }
+
+    /**
+     * Update state actions panel
+     * W3C SCXML 3.7: Display onentry/onexit actions for all states
+     */
+    updateStateActions() {
+        if (!this.elements.stateActionsPanel) return;
+
+        try {
+            // Get states with actions from visualizer
+            const statesWithActions = this.visualizer.states.filter(state =>
+                state.onentry || state.onexit
+            );
+
+            if (statesWithActions.length === 0) {
+                this.elements.stateActionsPanel.innerHTML = '<div class="action-info">No states with actions</div>';
+                return;
+            }
+
+            const html = statesWithActions.map(state => {
+                let content = `<div class="action-info">`;
+                content += `<div class="action-state-header">State: ${state.id}</div>`;
+
+                // onentry actions
+                if (state.onentry && state.onentry.length > 0) {
+                    state.onentry.forEach(action => {
+                        content += `<div class="action-item action-onentry">`;
+                        content += `<span class="action-type">↓ ${this.escapeHtml(action.actionType)}</span>`;
+                        content += `<span class="action-details">${this.formatAction(action).substring(2)}</span>`;
+                        content += `</div>`;
+                    });
+                }
+
+                // onexit actions
+                if (state.onexit && state.onexit.length > 0) {
+                    state.onexit.forEach(action => {
+                        content += `<div class="action-item action-onexit">`;
+                        content += `<span class="action-type">↑ ${this.escapeHtml(action.actionType)}</span>`;
+                        content += `<span class="action-details">${this.formatAction(action).substring(2)}</span>`;
+                        content += `</div>`;
+                    });
+                }
+
+                content += `</div>`;
+                return content;
+            }).join('');
+
+            this.elements.stateActionsPanel.innerHTML = html;
+        } catch (error) {
+            console.error('Error updating state actions:', error);
+            this.elements.stateActionsPanel.innerHTML = '<div class="error-message">Failed to load state actions</div>';
+        }
+    }
+
+    /**
+     * Escape HTML to prevent XSS attacks
+     * @param {string} unsafe - Unsafe string from user input (SCXML file content)
+     * @return {string} HTML-escaped safe string
+     */
+    escapeHtml(unsafe) {
+        if (!unsafe) return '';
+        return String(unsafe)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    /**
+     * Format action for display (DRY principle)
+     * W3C SCXML 3.7: Reusable action formatting logic for both state and transition actions
+     * @param {object} action - Action object with actionType and properties
+     * @return {string} Formatted action text
+     */
+    formatAction(action) {
+        let text = `• ${this.escapeHtml(action.actionType)}`;
+        
+        if (action.actionType === 'raise') {
+            text += ` event: ${this.escapeHtml(action.event)}`;
+        } else if (action.actionType === 'assign') {
+            text += ` ${this.escapeHtml(action.location)} = ${this.escapeHtml(action.expr)}`;
+        } else if (action.actionType === 'log') {
+            if (action.label) text += ` label: ${this.escapeHtml(action.label)}`;
+            if (action.expr) text += ` expr: ${this.escapeHtml(action.expr)}`;
+        } else if (action.actionType === 'foreach') {
+            text += ` item: ${this.escapeHtml(action.item || 'none')}`;
+            if (action.index) text += `, index: ${this.escapeHtml(action.index)}`;
+            if (action.array) text += `, array: ${this.escapeHtml(action.array)}`;
+        } else if (action.actionType === 'send') {
+            if (action.event) text += ` event: ${this.escapeHtml(action.event)}`;
+            if (action.target) text += ` target: ${this.escapeHtml(action.target)}`;
+            if (action.delay) text += ` delay: ${this.escapeHtml(action.delay)}`;
+        }
+        
+        return text;
+    }
+
+    /**
+     * Update transition info panel
+     * W3C SCXML 3.3: Display transition details (source, target, event, guard, actions)
+     */
+    updateTransitionInfo(detail) {
+        if (!this.elements.transitionInfoPanel) return;
+
+        try {
+            if (!detail || !detail.source || !detail.target) {
+                this.elements.transitionInfoPanel.innerHTML = '<div class="transition-hint">Click a transition to view details</div>';
+                return;
+            }
+
+            let html = '<div class="transition-details">';
+            
+            // Transition header: source → target
+            html += `<div class="transition-header">${this.escapeHtml(detail.source)} → ${this.escapeHtml(detail.target)}</div>`;
+
+            // Event field
+            if (detail.event) {
+                html += `<div class="transition-field">`;
+                html += `<span class="transition-field-label">Event:</span>`;
+                html += `<span class="transition-field-value">${this.escapeHtml(detail.event)}</span>`;
+                html += `</div>`;
+            } else {
+                html += `<div class="transition-field">`;
+                html += `<span class="transition-field-label">Event:</span>`;
+                html += `<span class="transition-field-value">(eventless)</span>`;
+                html += `</div>`;
+            }
+
+            // Guard condition (W3C SCXML 3.12.1)
+            if (detail.cond) {
+                html += `<div class="transition-guard">`;
+                html += `<div class="transition-field">`;
+                html += `<span class="transition-field-label">Guard:</span>`;
+                html += `<span class="transition-field-value">${this.escapeHtml(detail.cond)}</span>`;
+                html += `</div>`;
+                html += `</div>`;
+            }
+
+            // Actions (W3C SCXML 3.7)
+            if (detail.actions && detail.actions.length > 0) {
+                html += `<div class="transition-actions">`;
+                html += `<div class="transition-field">`;
+                html += `<span class="transition-field-label">Actions:</span>`;
+                html += `</div>`;
+                
+                detail.actions.forEach(action => {
+                    html += `<div class="transition-action-item">`;
+                    html += this.formatAction(action);
+                    html += `</div>`;
+                });
+                
+                html += `</div>`;
+            }
+
+            html += '</div>';
+            this.elements.transitionInfoPanel.innerHTML = html;
+        } catch (error) {
+            console.error('Error updating transition info:', error);
+            this.elements.transitionInfoPanel.innerHTML = '<div class="error-message">Failed to load transition info</div>';
         }
     }
 
@@ -599,6 +770,12 @@ class ExecutionController {
         if (this.keyboardHandler) {
             document.removeEventListener('keydown', this.keyboardHandler);
             this.keyboardHandler = null;
+        }
+
+        // Remove transition click event listener
+        if (this.transitionClickHandler) {
+            document.removeEventListener('transition-click', this.transitionClickHandler);
+            this.transitionClickHandler = null;
         }
 
         // Clear references
