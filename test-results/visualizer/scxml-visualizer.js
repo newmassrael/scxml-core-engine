@@ -8,8 +8,8 @@
  * with support for hierarchical states, parallel regions, and transitions.
  */
 
-// Debug mode: set to true for automatic debugging
-const DEBUG_MODE = false;
+// Debug mode: enable with ?debug URL parameter (e.g., visualizer.html?debug#test=144)
+const DEBUG_MODE = new URLSearchParams(window.location.search).has('debug');
 
 class SCXMLVisualizer {
     constructor(containerId, scxmlStructure) {
@@ -487,64 +487,6 @@ class SCXMLVisualizer {
         this.activeStates.clear();
         this.nodeElements.classed('active', false);
         this.simulation.alpha(1).restart();
-    }
-
-    /**
-     * Add visual debugging markers to show path start/end points
-     * (Only called when DEBUG_MODE is enabled)
-     */
-    addDebugMarkers() {
-        if (!DEBUG_MODE) return;
-
-        console.log('%c[DEBUG] Adding visual markers to paths', 'color: #cf222e; font-weight: bold');
-
-        this.linkElements.each((d, i, nodes) => {
-            const pathElement = nodes[i];
-            const pathLength = pathElement.getTotalLength();
-
-            // Get start and end points
-            const startPoint = pathElement.getPointAtLength(0);
-            const endPoint = pathElement.getPointAtLength(pathLength);
-            const midPoint = pathElement.getPointAtLength(pathLength / 2);
-
-            // Add start marker (red circle)
-            this.zoomContainer.append('circle')
-                .attr('cx', startPoint.x)
-                .attr('cy', startPoint.y)
-                .attr('r', 4)
-                .attr('fill', 'red')
-                .attr('class', 'debug-marker')
-                .attr('opacity', 0.7);
-
-            // Add end marker (blue circle)
-            this.zoomContainer.append('circle')
-                .attr('cx', endPoint.x)
-                .attr('cy', endPoint.y)
-                .attr('r', 4)
-                .attr('fill', 'blue')
-                .attr('class', 'debug-marker')
-                .attr('opacity', 0.7);
-
-            // Add midpoint marker (yellow circle)
-            this.zoomContainer.append('circle')
-                .attr('cx', midPoint.x)
-                .attr('cy', midPoint.y)
-                .attr('r', 3)
-                .attr('fill', 'yellow')
-                .attr('class', 'debug-marker')
-                .attr('opacity', 0.7);
-
-            const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
-            const targetId = typeof d.target === 'object' ? d.target.id : d.target;
-
-            console.log(`  Markers for ${sourceId} → ${targetId}:`, {
-                start: { x: startPoint.x.toFixed(2), y: startPoint.y.toFixed(2), color: 'red' },
-                mid: { x: midPoint.x.toFixed(2), y: midPoint.y.toFixed(2), color: 'yellow' },
-                end: { x: endPoint.x.toFixed(2), y: endPoint.y.toFixed(2), color: 'blue' }
-            });
-        });
-
-        console.log('%c  Red = Path start | Yellow = Path midpoint | Blue = Path end', 'color: #666');
     }
 
     /**
