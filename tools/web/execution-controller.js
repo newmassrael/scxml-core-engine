@@ -539,7 +539,7 @@ class ExecutionController {
         // Update active states highlighting
         const visualizer = window.childVisualizers?.[childInfo.sessionId];
         if (visualizer) {
-            visualizer.updateActiveStates(childInfo.activeStates);
+            visualizer.highlightActiveStates(childInfo.activeStates);
         }
     }
 
