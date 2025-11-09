@@ -31,8 +31,13 @@ async function loadSCXMLContent() {
     // Source 1: W3C test number (#test=226)
     if (params.test) {
         const testId = params.test;
-        const url = `../../resources/${testId}/test${testId}.scxml`;
-        console.log(`📥 Loading W3C test ${testId} from ${url}`);
+
+        // Auto-detect environment: GitHub Pages vs Local Development
+        const isGitHubPages = window.location.hostname.includes('github.io');
+        const resourcesPrefix = isGitHubPages ? '../resources' : '../../resources';
+
+        const url = `${resourcesPrefix}/${testId}/test${testId}.scxml`;
+        console.log(`📥 Loading W3C test ${testId} from ${url} (${isGitHubPages ? 'GitHub Pages' : 'Local Dev'})`);
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -76,7 +81,12 @@ async function initVisualizer(scxmlContent) {
         const params = parseHashParams();
         if (params.test) {
             const testId = params.test;
-            const basePath = `../../resources/${testId}/`;
+
+            // Auto-detect environment for sub-SCXML fetch
+            const isGitHubPages = window.location.hostname.includes('github.io');
+            const basePath = isGitHubPages
+                ? `../resources/${testId}/`
+                : `../../resources/${testId}/`;
             
             // Create directory in virtual FS
             try {
@@ -94,18 +104,21 @@ async function initVisualizer(scxmlContent) {
             // Write parent SCXML to virtual FS
             Module.FS.writeFile(`/resources/${testId}/test${testId}.scxml`, scxmlContent);
             console.log(`📁 Created virtual FS: /resources/${testId}/test${testId}.scxml`);
-            
-            // Try to load sub-SCXML files (test226sub1.scxml, etc.)
-            try {
-                const subResponse = await fetch(`${basePath}test${testId}sub1.scxml`);
-                if (subResponse.ok) {
-                    const subContent = await subResponse.text();
-                    Module.FS.writeFile(`/resources/${testId}/test${testId}sub1.scxml`, subContent);
-                    console.log(`📁 Created virtual FS: /resources/${testId}/test${testId}sub1.scxml`);
+
+            // Try to load sub-SCXML files only if parent has <invoke> elements (W3C SCXML 6.3)
+            if (scxmlContent.includes('<invoke')) {
+                try {
+                    const subResponse = await fetch(`${basePath}test${testId}sub1.scxml`);
+                    if (subResponse.ok) {
+                        const subContent = await subResponse.text();
+                        Module.FS.writeFile(`/resources/${testId}/test${testId}sub1.scxml`, subContent);
+                        console.log(`📁 Created virtual FS: /resources/${testId}/test${testId}sub1.scxml`);
+                    }
+                } catch (e) {
+                    console.log(`⚠️ Parent has <invoke> but sub-SCXML not found: test${testId}sub1.scxml`);
                 }
-            } catch (e) {
-                // No sub-SCXML file, that's okay
-                console.log(`ℹ️ No sub-SCXML file found (this is normal for non-invoke tests)`);
+            } else {
+                console.log(`ℹ️ No <invoke> elements - skipping sub-SCXML fetch`);
             }
         }
 
