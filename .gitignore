@@ -92,8 +92,6 @@ docs/xml/
 
 .serena
 .cache
-# Auto-generated SCXML files from TXML conversion
-resources/*/*.scxml
 
 claudedocs
 docker_tsan/docker-tsan-build.log
