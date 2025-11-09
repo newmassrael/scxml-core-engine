@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCXML Interactive Visualizer</title>
+
+    <!-- GitHub Primer CSS (local) -->
+    <link href="primer.css" rel="stylesheet">
+
+    <!-- Custom Visualizer CSS -->
+    <link href="visualizer.css" rel="stylesheet">
+
+    <!-- D3.js for state diagram visualization (local) -->
+    <script src="d3.v7.min.js"></script>
+</head>
+<body>
+    <!-- Loading State -->
+    <div id="loading-state" class="loading" style="display: block;">
+        Loading WASM module...
+    </div>
+
+    <!-- Error Container -->
+    <div id="error-container" style="display: none;"></div>
+
+    <!-- Main Content -->
+    <div id="main-content" class="container-lg p-4" style="display: none;">
+        <!-- Header -->
+        <div class="mb-3">
+            <h1 class="h2">
+                SCXML Interactive Visualizer
+                <span id="test-id" class="Label Label--accent ml-2"></span>
+            </h1>
+            <p class="text-gray">
+                Step-by-step SCXML execution with real-time state diagram visualization
+            </p>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="Box mb-3">
+            <div class="Box-header">
+                <h3 class="Box-title">Execution Controls</h3>
+            </div>
+            <div class="Box-body d-flex flex-items-center">
+                <button id="btn-step-back" class="btn btn-step">
+                    ◀ Step Back
+                </button>
+                <span id="step-counter" class="mx-3 f3 text-bold color-fg-accent">
+                    Step 0
+                </span>
+                <button id="btn-step-forward" class="btn btn-primary btn-step">
+                    Step Forward ▶
+                </button>
+                <button id="btn-reset" class="btn ml-3">
+                    Reset
+                </button>
+                <div class="ml-3 flex-1">
+                    <label class="text-small text-gray mb-1" style="display: block;">Raise Event:</label>
+                    <div id="event-buttons-container" class="event-buttons-container">
+                        <!-- Event buttons will be generated here -->
+                    </div>
+                </div>
+                <div class="ml-auto text-small text-gray">
+                    Keyboard: ← Back | → Forward | R Reset
+                </div>
+            </div>
+        </div>
+
+        <!-- State Diagram with Split View for Parent-Child Communication -->
+        <div class="Box mb-3">
+            <div class="Box-header">
+                <h3 class="Box-title">State Diagram</h3>
+                <!-- View Mode Toggle -->
+                <div id="view-mode-toggle" class="ml-3" style="display: none;">
+                    <button id="btn-view-tabs" class="btn btn-sm">Tab View</button>
+                    <button id="btn-view-split" class="btn btn-sm btn-primary">Split View</button>
+                </div>
+            </div>
+            <div class="Box-body">
+                <!-- Split View Container (shown when child exists) -->
+                <div id="split-view-container">
+                    <div class="split-view">
+                        <!-- Parent State Machine -->
+                        <div class="split-panel parent-panel">
+                            <div class="panel-header">Parent State Machine</div>
+                            <div id="state-diagram-parent-split" class="diagram-container-split"></div>
+                        </div>
+
+                        <!-- Communication Panel -->
+                        <div class="split-panel communication-panel">
+                            <div class="panel-header">Communication</div>
+                            <div id="communication-log" class="communication-log">
+                                <div class="comm-entry comm-info">Waiting for invoke/send events...</div>
+                            </div>
+                        </div>
+
+                        <!-- Child State Machines (with tabs for multiple children) -->
+                        <div class="split-panel child-panel">
+                            <div class="panel-header">
+                                Child State Machines
+                                <!-- Child Tabs -->
+                                <nav id="child-tabs" class="child-tabs" style="display: none;">
+                                    <!-- Tabs will be generated dynamically -->
+                                </nav>
+                            </div>
+                            <div id="child-diagrams-container">
+                                <!-- Child diagrams will be added here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Single View Container (default, no children) -->
+                <div id="single-view-container">
+                    <div id="state-diagram-single" class="diagram-container active"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Side Panels Row -->
+        <div class="d-flex mb-3">
+            <!-- Event Queue Panel -->
+            <div class="Box flex-1 mr-2">
+                <div class="Box-header">
+                    <h4 class="Box-title">Event Queue</h4>
+                </div>
+                <div id="event-queue-panel" class="Box-body event-queue">
+                    <h4>Internal Queue</h4>
+                    <div class="event">Empty</div>
+                    <h4 style="margin-top: 16px;">External Queue</h4>
+                    <div class="event">Empty</div>
+                </div>
+            </div>
+
+            <!-- Data Model Panel -->
+            <div class="Box flex-1">
+                <div class="Box-header">
+                    <h4 class="Box-title">Data Model</h4>
+                </div>
+                <div id="data-model-panel" class="Box-body data-model">
+                    <div class="data-entry">No data model variables</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Execution Log -->
+        <div class="Box mt-3">
+            <div class="Box-header">
+                <h3 class="Box-title">Execution Log</h3>
+            </div>
+            <div id="log-panel" class="Box-body log-panel">
+                <div class="log-entry">Waiting for first step...</div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-4 text-center text-small text-gray">
+            <p>
+                SCXML Interactive Visualizer |
+                <a href="https://www.w3.org/TR/scxml/" target="_blank">W3C SCXML Specification</a> |
+                <a href="https://github.com/newmassrael/scxml-core-engine" target="_blank">GitHub Repository</a>
+            </p>
+        </div>
+    </div>
+
+    <!-- WASM Module (will be generated by Emscripten) -->
+    <script src="visualizer.js"></script>
+
+    <!-- Visualizer Components -->
+    <script src="scxml-visualizer.js"></script>
+    <script src="execution-controller.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
