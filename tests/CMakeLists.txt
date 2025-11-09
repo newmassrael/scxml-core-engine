@@ -1103,10 +1103,8 @@ if(EMSCRIPTEN)
             spdlog::spdlog
     )
 
-    # WASM-specific compile flags (pthread support)
-    target_compile_options(visualizer PRIVATE
-        -pthread
-    )
+    # WASM-specific compile flags (NO pthread for browser compatibility)
+    # Removed pthread to avoid SharedArrayBuffer/Cross-Origin-Isolation requirement
 
     # WASM-specific link flags for visualizer
     target_link_options(visualizer PRIVATE
@@ -1139,11 +1137,6 @@ if(EMSCRIPTEN)
 
         # Assertions for debugging
         -sASSERTIONS=1
-
-        # Pthread support (for JSEngine worker threads)
-        -pthread
-        -sUSE_PTHREADS=1
-        -sPTHREAD_POOL_SIZE=2
 
         # Asyncify (for async operations)
         -sASYNCIFY
