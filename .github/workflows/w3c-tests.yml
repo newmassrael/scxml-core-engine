@@ -314,18 +314,9 @@ jobs:
           cp tools/web/spec_references.json gh-pages/visualizer/
           echo "✅ Visualizer assets copied to gh-pages/visualizer/"
 
-          # Convert all TXML to SCXML and copy to resources
-          echo "📦 Converting TXML to SCXML for visualizer..."
-          mkdir -p gh-pages/resources
-          for test_dir in resources/*/; do
-            test_id=$(basename "$test_dir")
-            if [ -f "$test_dir/test${test_id}.txml" ]; then
-              mkdir -p "gh-pages/resources/$test_id"
-              build/tools/txml_converter/txml-converter \
-                "$test_dir/test${test_id}.txml" \
-                "gh-pages/resources/$test_id/test${test_id}.scxml" || true
-            fi
-          done
+          # Copy SCXML resources for visualizer
+          echo "📦 Copying SCXML files for visualizer..."
+          cp -r resources gh-pages/
           echo "✅ SCXML files copied to gh-pages/resources/"
         else
           echo "❌ ERROR: w3c_test_results.xml not found - cannot generate HTML report"
