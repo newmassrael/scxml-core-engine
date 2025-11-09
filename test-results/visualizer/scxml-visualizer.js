@@ -19,8 +19,16 @@ class SCXMLVisualizer {
         this.initialState = scxmlStructure.initial || '';
         this.activeStates = new Set();
 
-        this.width = parseInt(this.container.style('width')) || 800;
-        this.height = parseInt(this.container.style('height')) || 600;
+        // Get container dimensions dynamically
+        const containerNode = this.container.node();
+        const clientWidth = containerNode ? containerNode.clientWidth : 0;
+        const clientHeight = containerNode ? containerNode.clientHeight : 0;
+        
+        // Ensure minimum dimensions (container might not be rendered yet)
+        this.width = clientWidth > 0 ? clientWidth : 800;
+        this.height = clientHeight > 0 ? clientHeight : 500;
+        
+        console.log(`📐 Initial diagram size: ${this.width}x${this.height}`);
 
         if (DEBUG_MODE) {
             console.log('%c[DEBUG] SCXMLVisualizer initialized', 'color: #1a7f37; font-weight: bold');
@@ -30,6 +38,11 @@ class SCXMLVisualizer {
         }
 
         this.initGraph();
+        
+        // Delay initial resize to ensure container is fully rendered
+        setTimeout(() => {
+            this.resize();
+        }, 100);
     }
 
     /**
@@ -47,6 +60,18 @@ class SCXMLVisualizer {
 
         // Create zoom container (all content goes inside this)
         this.zoomContainer = this.svg.append('g').attr('class', 'zoom-container');
+        
+        // Add zoom/pan behavior
+        this.zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on('zoom', (event) => {
+                this.zoomContainer.attr('transform', event.transform);
+            });
+        
+        this.svg.call(this.zoom);
+        
+        // Store initial transform for reset
+        this.initialTransform = d3.zoomIdentity;
 
         // Define arrowhead marker
         this.svg.append('defs').append('marker')
@@ -68,12 +93,35 @@ class SCXMLVisualizer {
         const nodes = this.buildNodes();
         const links = this.buildLinks();
 
-        // Create force simulation
+        // Create force simulation (adjusted for comfortable state spacing)
         this.simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(links).id(d => d.id).distance(150))
+            .force('link', d3.forceLink(links).id(d => d.id).distance(d => {
+                // Initial transition should be shorter, normal transitions well-spaced
+                // Check both isInitial flag and source id (D3 might convert source to object)
+                const sourceId = typeof d.source === 'object' ? d.source.id : d.source;
+                const isInitial = d.isInitial || sourceId === '__initial__';
+                const distance = isInitial ? 40 : 150;
+                
+                // Debug log for initial transition
+                if (isInitial) {
+                    console.log('🎯 Initial transition detected:', {
+                        sourceId,
+                        targetId: typeof d.target === 'object' ? d.target.id : d.target,
+                        distance,
+                        hasIsInitialFlag: d.isInitial
+                    });
+                }
+                
+                return distance;
+            }))
             .force('charge', d3.forceManyBody().strength(-300))
             .force('center', d3.forceCenter(this.width / 2, this.height / 2))
-            .force('collision', d3.forceCollide().radius(60));
+            .force('collision', d3.forceCollide().radius(d => {
+                // Initial pseudo-node is smaller, normal states need more spacing
+                return d.type === 'initial-pseudo' ? 20 : 60;
+            }))
+            .alpha(1) // Start with maximum energy for better initial centering
+            .alphaDecay(0.02); // Slower decay for smoother animation
 
         // Create link elements
         this.linkElements = this.zoomContainer.append('g')
@@ -109,10 +157,10 @@ class SCXMLVisualizer {
         // Add rectangles to regular nodes (not initial-pseudo)
         this.nodeElements.filter(d => d.type !== 'initial-pseudo')
             .append('rect')
-            .attr('width', d => d.type === 'compound' || d.type === 'parallel' ? 120 : 80)
-            .attr('height', 50)
-            .attr('x', d => -(d.type === 'compound' || d.type === 'parallel' ? 60 : 40))
-            .attr('y', -25);
+            .attr('width', d => d.type === 'compound' || d.type === 'parallel' ? 90 : 60)
+            .attr('height', 40)
+            .attr('x', d => -(d.type === 'compound' || d.type === 'parallel' ? 45 : 30))
+            .attr('y', -20);
 
         // Add circles to initial-pseudo nodes (W3C/UML standard)
         this.nodeElements.filter(d => d.type === 'initial-pseudo')
@@ -271,9 +319,8 @@ class SCXMLVisualizer {
         if (this.initialState) {
             nodes.push({
                 id: '__initial__',
-                type: 'initial-pseudo',
-                fx: 50,  // Fixed X position (left side)
-                fy: this.height / 2  // Centered vertically
+                type: 'initial-pseudo'
+                // Let force simulation position it naturally near initial state
             });
         }
 
@@ -508,5 +555,46 @@ class SCXMLVisualizer {
             this.simulation.stop();
         }
         this.container.selectAll('*').remove();
+    }
+
+    /**
+     * Resize visualization to fit container
+     * Call this when container size changes
+     */
+    resize() {
+        const containerNode = this.container.node();
+        if (!containerNode) return;
+
+        const newWidth = containerNode.clientWidth;
+        const newHeight = containerNode.clientHeight;
+
+        // Allow resize even if dimensions are similar (for initial centering)
+        const isInitialResize = this.width === 800 || this.width === 0;
+        
+        if (newWidth === this.width && newHeight === this.height && !isInitialResize) {
+            return; // No change
+        }
+
+        this.width = newWidth > 0 ? newWidth : this.width;
+        this.height = newHeight > 0 ? newHeight : this.height;
+
+        // Update SVG viewBox
+        this.svg.attr('viewBox', `0 0 ${this.width} ${this.height}`);
+
+        // Reset zoom to center (important for initial render)
+        if (this.zoom && this.svg) {
+            const transform = d3.zoomIdentity
+                .translate(0, 0)
+                .scale(1);
+            this.svg.call(this.zoom.transform, transform);
+        }
+
+        // Update force simulation center
+        if (this.simulation) {
+            this.simulation.force('center', d3.forceCenter(this.width / 2, this.height / 2));
+            this.simulation.alpha(0.5).restart(); // Higher alpha for better centering
+        }
+
+        console.log(`📐 Resized diagram: ${this.width}x${this.height}`);
     }
 }
