@@ -202,10 +202,10 @@ async function initVisualizer(scxmlContent) {
 
         // Create parent visualizer
         const visualizer = new SCXMLVisualizer(containerIdToUse, structure);
-        const controller = new ExecutionController(runner, visualizer, Array.from(availableEvents).sort());
+        const controller = new ExecutionController(runner, visualizer, Array.from(availableEvents).sort(), visualizerManager);
 
-        // Store for resize handling
-        window.activeVisualizers = [visualizer];
+        // Register parent visualizer with manager
+        visualizerManager.setParent(visualizer);
 
         // Create child visualizers if sub-SCXML files exist
         if (hasChildren) {
@@ -229,7 +229,7 @@ async function initVisualizer(scxmlContent) {
                 
                 // Create child visualizer
                 const childVisualizer = new SCXMLVisualizer(childDiagramId, subInfo.structure);
-                window.activeVisualizers.push(childVisualizer);
+                visualizerManager.addChild(i, childVisualizer);
                 
                 // Create tab button
                 if (subSCXMLStructures.length > 1 && childTabsContainer) {
@@ -259,7 +259,7 @@ async function initVisualizer(scxmlContent) {
 
     } catch (error) {
         console.error('❌ Initialization error:', error);
-        showMessage(error.message, 'error');
+        showFatalError(error.message);
         showLoading(false);
     }
 }
@@ -281,37 +281,24 @@ function showLoading(show) {
 }
 
 /**
- * Show message to user
+ * Show fatal error to user (alert dialog for critical errors)
+ * For debug messages, see ExecutionController.showMessage()
  */
-function showMessage(message, type = 'info') {
-    console.log(`[${type.toUpperCase()}] ${message}`);
+function showFatalError(message) {
+    console.error(`[FATAL ERROR] ${message}`);
     alert(message);
 }
 
 /**
- * Handle window resize
+ * Global visualizer manager instance
  */
-let resizeTimeout;
-window.addEventListener('resize', () => {
-    clearTimeout(resizeTimeout);
-    resizeTimeout = setTimeout(() => {
-        if (window.activeVisualizers) {
-            window.activeVisualizers.forEach(visualizer => {
-                if (visualizer && visualizer.resize) {
-                    visualizer.resize();
-                }
-            });
-        }
+const visualizerManager = new VisualizerManager();
 
-        if (window.childVisualizers) {
-            Object.values(window.childVisualizers).forEach(visualizer => {
-                if (visualizer && visualizer.resize) {
-                    visualizer.resize();
-                }
-            });
-        }
-    }, 250);
-});
+/**
+ * Handle window resize
+ * Note: Resize handling is now managed by VisualizerManager
+ */
+// Resize handling is now managed by VisualizerManager (see visualizer-manager.js)
 
 /**
  * Switch active child tab
@@ -342,7 +329,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         await initVisualizer(scxmlContent);
     } catch (error) {
         console.error('❌ Fatal error:', error);
-        showMessage(`Fatal error: ${error.message}`, 'error');
+        showFatalError(`Fatal error: ${error.message}`);
         showLoading(false);
     }
 });
