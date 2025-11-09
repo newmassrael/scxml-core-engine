@@ -2,75 +2,58 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
 
 /**
- * Main entry point for SCXML Interactive Visualizer
- *
- * Handles:
- * - WASM module loading
- * - SCXML source loading (W3C test / Custom / URL)
- * - UI initialization
- * - Error handling
+ * Simplified main.js - Engine handles all invoke logic automatically
  */
 
 /**
  * Parse URL hash parameters
- * @returns {Object} Parsed parameters
  */
 function parseHashParams() {
-    const hash = window.location.hash.substring(1); // Remove #
-    const params = new URLSearchParams(hash);
+    const params = {};
+    const hash = window.location.hash.substring(1);
 
-    return {
-        test: params.get('test'),           // W3C test ID
-        scxml: params.get('scxml'),         // Base64 encoded SCXML
-        url: params.get('url')              // External SCXML URL
-    };
+    hash.split('&').forEach(param => {
+        const [key, value] = param.split('=');
+        if (key && value) {
+            params[key] = decodeURIComponent(value);
+        }
+    });
+
+    return params;
 }
 
 /**
  * Load SCXML content from various sources
- * @param {Object} params - URL parameters
- * @returns {Promise<string>} SCXML content
  */
-async function loadSCXML(params) {
-    // Mode 1: W3C Test (fetch from server)
+async function loadSCXMLContent() {
+    const params = parseHashParams();
+
+    // Source 1: W3C test number (#test=226)
     if (params.test) {
         const testId = params.test;
         const url = `../../resources/${testId}/test${testId}.scxml`;
-
         console.log(`📥 Loading W3C test ${testId} from ${url}`);
 
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`Failed to fetch test ${testId}: ${response.statusText}`);
         }
-
         return await response.text();
     }
 
-    // Mode 2: Custom SCXML (base64 from URL fragment)
+    // Source 2: Base64 encoded SCXML (#scxml=<base64>)
     if (params.scxml) {
-        console.log('📥 Loading SCXML from URL fragment');
-
-        try {
-            // URL-decode first, then base64-decode
-            const urlDecoded = decodeURIComponent(params.scxml);
-            const content = atob(urlDecoded);
-            console.log(`✅ Decoded ${content.length} bytes of SCXML`);
-            return content;
-        } catch (error) {
-            throw new Error(`Failed to decode SCXML from URL: ${error.message}`);
-        }
+        console.log('📥 Loading SCXML from base64');
+        return atob(params.scxml);
     }
 
-    // Mode 3: External URL
+    // Source 3: External URL (#url=<url>)
     if (params.url) {
-        console.log(`📥 Loading SCXML from external URL: ${params.url}`);
-
+        console.log(`📥 Loading SCXML from URL: ${params.url}`);
         const response = await fetch(params.url);
         if (!response.ok) {
-            throw new Error(`Failed to fetch SCXML from ${params.url}: ${response.statusText}`);
+            throw new Error(`Failed to fetch ${params.url}: ${response.statusText}`);
         }
-
         return await response.text();
     }
 
@@ -78,93 +61,182 @@ async function loadSCXML(params) {
 }
 
 /**
- * Initialize visualizer with SCXML content
- * @param {string} scxmlContent - SCXML content string
+ * Initialize visualizer (simplified - engine handles invoke automatically)
  */
 async function initVisualizer(scxmlContent) {
-    console.log('🎨 Initializing visualizer...');
-
-    // Show loading state
     showLoading(true);
 
     try {
         // Load WASM module
         console.log('📦 Loading WASM module...');
         const Module = await createVisualizer();
-
         console.log('✅ WASM module loaded');
 
-        // Create interactive test runner
+        // Setup Emscripten virtual file system for invoke resolution
+        const params = parseHashParams();
+        if (params.test) {
+            const testId = params.test;
+            const basePath = `../../resources/${testId}/`;
+            
+            // Create directory in virtual FS
+            try {
+                Module.FS.mkdir('/resources');
+            } catch (e) {
+                // Directory might already exist
+            }
+            
+            try {
+                Module.FS.mkdir(`/resources/${testId}`);
+            } catch (e) {
+                // Directory might already exist
+            }
+            
+            // Write parent SCXML to virtual FS
+            Module.FS.writeFile(`/resources/${testId}/test${testId}.scxml`, scxmlContent);
+            console.log(`📁 Created virtual FS: /resources/${testId}/test${testId}.scxml`);
+            
+            // Try to load sub-SCXML files (test226sub1.scxml, etc.)
+            try {
+                const subResponse = await fetch(`${basePath}test${testId}sub1.scxml`);
+                if (subResponse.ok) {
+                    const subContent = await subResponse.text();
+                    Module.FS.writeFile(`/resources/${testId}/test${testId}sub1.scxml`, subContent);
+                    console.log(`📁 Created virtual FS: /resources/${testId}/test${testId}sub1.scxml`);
+                }
+            } catch (e) {
+                // No sub-SCXML file, that's okay
+                console.log(`ℹ️ No sub-SCXML file found (this is normal for non-invoke tests)`);
+            }
+        }
+
+        // Create single InteractiveTestRunner (engine handles children automatically)
+        console.log('📊 Initializing state machine...');
         const runner = new Module.InteractiveTestRunner();
 
-        // Load SCXML (false = content string, not file path)
-        const loadSuccess = runner.loadSCXML(scxmlContent, false);
+        // Set base path BEFORE loadSCXML for static sub-SCXML analysis
+        if (params.test) {
+            runner.setBasePath(`/resources/${params.test}/`);
+            console.log(`📂 Base path set for invoke resolution: /resources/${params.test}/`);
+        }
 
-        if (!loadSuccess) {
+        if (!runner.loadSCXML(scxmlContent, false)) {
             throw new Error('Failed to load SCXML content');
         }
 
-        console.log(`✅ SCXML loaded (${scxmlContent.length} bytes)`);
-
-        // Initialize state machine
-        const initSuccess = runner.initialize();
-
-        if (!initSuccess) {
+        if (!runner.initialize()) {
             throw new Error('Failed to initialize state machine');
         }
 
-        console.log('✅ State machine initialized');
-
-        // Get SCXML structure for visualization
         const structure = runner.getSCXMLStructure();
-        console.log('📊 SCXML structure:', structure);
+        console.log(`  ✅ State machine initialized: ${structure.states.length} states`);
 
-        // Log states details
-        console.log('  - States count:', structure.states ? structure.states.length : 0);
-        if (structure.states) {
-            for (let i = 0; i < structure.states.length; i++) {
-                console.log(`    State[${i}]:`, structure.states[i]);
+        // W3C SCXML 6.3: Get statically detected sub-SCXML structures
+        const subSCXMLStructures = runner.getSubSCXMLStructures();
+        const hasChildren = subSCXMLStructures.length > 0;
+
+        console.log(`📊 Sub-SCXML detection: ${hasChildren ? subSCXMLStructures.length + ' file(s) found' : 'none'}`);
+        if (hasChildren) {
+            for (let i = 0; i < subSCXMLStructures.length; i++) {
+                const subInfo = subSCXMLStructures[i];
+                console.log(`  📄 Child ${i}: ${subInfo.srcPath} (invoked from '${subInfo.parentStateId}')`);
             }
         }
 
-        // Log transitions details
-        console.log('  - Transitions count:', structure.transitions ? structure.transitions.length : 0);
-        if (structure.transitions) {
-            for (let i = 0; i < structure.transitions.length; i++) {
-                console.log(`    Transition[${i}]:`, structure.transitions[i]);
+        // Determine container ID based on sub-SCXML presence
+        const containerIdToUse = hasChildren ? 'state-diagram-parent-split' : 'state-diagram-single';
+        console.log(`🎨 Container ID to use: ${containerIdToUse} (hasChildren: ${hasChildren})`);
+
+        // Setup view layout
+        if (hasChildren) {
+            const singleView = document.getElementById('single-view-container');
+            const splitView = document.getElementById('split-view-container');
+            console.log(`🔀 Setting up split view - singleView: ${singleView}, splitView: ${splitView}`);
+
+            if (singleView) {
+                singleView.style.display = 'none';
+                console.log(`  ✓ Single view hidden: ${singleView.style.display}`);
+            } else {
+                console.error('  ✗ single-view-container NOT FOUND!');
             }
+
+            if (splitView) {
+                splitView.style.display = 'block';
+                console.log(`  ✓ Split view shown: ${splitView.style.display}`);
+
+                // Verify setting applied
+                const computed = window.getComputedStyle(splitView);
+                console.log(`  ✓ Split view computed display: ${computed.display}, height: ${computed.height}`);
+            } else {
+                console.error('  ✗ split-view-container NOT FOUND!');
+            }
+
+            console.log(`✅ Split view enabled`);
+        } else {
+            document.getElementById('single-view-container').style.display = 'block';
+            document.getElementById('split-view-container').style.display = 'none';
+            console.log(`📱 Single view enabled`);
         }
 
-        console.log('  - Initial:', structure.initial);
-
-        // Extract unique event names from transitions
-        const eventNames = new Set();
+        // Extract available events for UI buttons
+        const availableEvents = new Set();
         if (structure.transitions) {
             structure.transitions.forEach(trans => {
                 if (trans.event && trans.event.trim() !== '') {
-                    eventNames.add(trans.event);
+                    availableEvents.add(trans.event);
                 }
             });
         }
-        const events = Array.from(eventNames).sort();
-        console.log('📨 Available events:', events);
 
-        // Create visualizer
-        const visualizer = new SCXMLVisualizer('state-diagram', structure);
+        // Create parent visualizer
+        const visualizer = new SCXMLVisualizer(containerIdToUse, structure);
+        const controller = new ExecutionController(runner, visualizer, Array.from(availableEvents).sort());
 
-        // Create execution controller with event list
-        const controller = new ExecutionController(runner, visualizer, events);
+        // Store for resize handling
+        window.activeVisualizers = [visualizer];
+
+        // Create child visualizers if sub-SCXML files exist
+        if (hasChildren) {
+            const childTabsContainer = document.getElementById('child-tabs');
+            const childDiagramsContainer = document.getElementById('child-diagrams-container');
+            
+            // Show tabs only if multiple children
+            if (subSCXMLStructures.length > 1 && childTabsContainer) {
+                childTabsContainer.style.display = 'flex';
+            }
+            
+            for (let i = 0; i < subSCXMLStructures.length; i++) {
+                const subInfo = subSCXMLStructures[i];
+                
+                // Create child diagram container
+                const childDiagramId = `child-diagram-${i}`;
+                const childDiv = document.createElement('div');
+                childDiv.id = childDiagramId;
+                childDiv.className = `child-diagram diagram-container-split ${i === 0 ? 'active' : ''}`;
+                childDiagramsContainer.appendChild(childDiv);
+                
+                // Create child visualizer
+                const childVisualizer = new SCXMLVisualizer(childDiagramId, subInfo.structure);
+                window.activeVisualizers.push(childVisualizer);
+                
+                // Create tab button
+                if (subSCXMLStructures.length > 1 && childTabsContainer) {
+                    const tabButton = document.createElement('button');
+                    tabButton.className = `child-tab ${i === 0 ? 'active' : ''}`;
+                    tabButton.textContent = subInfo.invokeId;
+                    tabButton.onclick = () => switchChildTab(i);
+                    childTabsContainer.appendChild(tabButton);
+                }
+            }
+        }
 
         // Initial state render
         await controller.updateState();
 
         console.log('✅ Visualizer ready!');
 
-        // Hide loading state
         showLoading(false);
 
-        // Update test ID in header
-        const params = parseHashParams();
+        // Update test ID in header (reuse params from above)
         if (params.test) {
             const testIdElement = document.getElementById('test-id');
             if (testIdElement) {
@@ -174,107 +246,90 @@ async function initVisualizer(scxmlContent) {
 
     } catch (error) {
         console.error('❌ Initialization error:', error);
-        showError(error.message);
+        showMessage(error.message, 'error');
         showLoading(false);
     }
 }
 
 /**
- * Show/hide loading state
- * @param {boolean} show - Show loading if true
+ * Show/hide loading overlay
  */
 function showLoading(show) {
     const loadingElement = document.getElementById('loading-state');
     const mainContent = document.getElementById('main-content');
-
+    
     if (loadingElement) {
         loadingElement.style.display = show ? 'block' : 'none';
     }
-
+    
     if (mainContent) {
         mainContent.style.display = show ? 'none' : 'block';
     }
 }
 
 /**
- * Show error message
- * @param {string} message - Error message
+ * Show message to user
  */
-function showError(message) {
-    const errorContainer = document.getElementById('error-container');
-
-    if (errorContainer) {
-        errorContainer.innerHTML = `
-            <div class="error-message">
-                <strong>Error:</strong> ${message}
-                <br><br>
-                <small>Check browser console for details.</small>
-            </div>
-        `;
-        errorContainer.style.display = 'block';
-    }
-
-    // Also hide main content
-    const mainContent = document.getElementById('main-content');
-    if (mainContent) {
-        mainContent.style.display = 'none';
-    }
+function showMessage(message, type = 'info') {
+    console.log(`[${type.toUpperCase()}] ${message}`);
+    alert(message);
 }
 
 /**
- * Load W3C spec references database
- * @returns {Promise<Object>} Spec references
+ * Handle window resize
  */
-async function loadSpecReferences() {
-    try {
-        const response = await fetch('spec_references.json');
-        if (response.ok) {
-            return await response.json();
+let resizeTimeout;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+        if (window.activeVisualizers) {
+            window.activeVisualizers.forEach(visualizer => {
+                if (visualizer && visualizer.resize) {
+                    visualizer.resize();
+                }
+            });
         }
-    } catch (error) {
-        console.warn('Failed to load spec references:', error);
-    }
-    return {};
-}
 
-/**
- * Global spec references (loaded on startup)
- * Exposed to window for access by execution-controller
- */
-window.specReferences = {};
-
-/**
- * Main initialization on page load
- */
-window.addEventListener('load', async () => {
-    console.log('🚀 SCXML Interactive Visualizer starting...');
-
-    try {
-        // Load spec references database
-        window.specReferences = await loadSpecReferences();
-        console.log('📚 Spec references loaded:', Object.keys(window.specReferences).length, 'tests');
-
-        // Parse URL parameters
-        const params = parseHashParams();
-
-        console.log('📋 URL parameters:', params);
-
-        // Load SCXML content
-        const scxmlContent = await loadSCXML(params);
-
-        // Initialize visualizer
-        await initVisualizer(scxmlContent);
-
-    } catch (error) {
-        console.error('❌ Fatal error:', error);
-        showError(error.message);
-    }
+        if (window.childVisualizers) {
+            Object.values(window.childVisualizers).forEach(visualizer => {
+                if (visualizer && visualizer.resize) {
+                    visualizer.resize();
+                }
+            });
+        }
+    }, 250);
 });
 
 /**
- * Handle hash change (for navigation)
+ * Switch active child tab
  */
-window.addEventListener('hashchange', () => {
-    console.log('🔄 Hash changed, reloading...');
-    window.location.reload();
+function switchChildTab(index) {
+    const tabs = document.querySelectorAll('.child-tab');
+    const diagrams = document.querySelectorAll('.child-diagram');
+    
+    tabs.forEach((tab, i) => {
+        tab.classList.toggle('active', i === index);
+    });
+    
+    diagrams.forEach((diagram, i) => {
+        diagram.classList.toggle('active', i === index);
+    });
+    
+    console.log(`📑 Switched to child ${index}`);
+}
+
+/**
+ * Main entry point
+ */
+window.addEventListener('DOMContentLoaded', async () => {
+    console.log('🚀 SCXML Interactive Visualizer Starting...');
+
+    try {
+        const scxmlContent = await loadSCXMLContent();
+        await initVisualizer(scxmlContent);
+    } catch (error) {
+        console.error('❌ Fatal error:', error);
+        showMessage(`Fatal error: ${error.message}`, 'error');
+        showLoading(false);
+    }
 });

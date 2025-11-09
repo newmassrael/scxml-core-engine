@@ -116,6 +116,27 @@ public:
     /**
      * @brief Destructor
      */
+
+    /**
+     * @brief Get invoked child state machines for visualization
+     *
+     * Returns all active child state machines created via invoke elements.
+     * Used by visualization tools to display parent-child hierarchies.
+     *
+     * @return Vector of child StateMachine shared_ptrs (empty if no children)
+     */
+    std::vector<std::shared_ptr<StateMachine>> getInvokedChildren();
+
+    /**
+     * @brief Set session file path for invoke resolution (WASM)
+     *
+     * Registers the SCXML file path with JSEngine so invoke elements
+     * can resolve relative paths like src="file:child.scxml".
+     *
+     * @param filePath Absolute path to SCXML file (e.g., "/resources/226/test226.scxml")
+     */
+    void setSessionFilePath(const std::string &filePath);
+
     ~StateMachine();
 
     /**

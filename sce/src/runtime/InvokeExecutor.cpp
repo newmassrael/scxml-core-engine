@@ -12,6 +12,9 @@
 #include "runtime/StateMachineBuilder.h"
 #include "runtime/StateMachineContext.h"
 #include "scripting/JSEngine.h"
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -844,6 +847,24 @@ std::vector<std::shared_ptr<StateMachine>> InvokeExecutor::getAutoForwardSession
     return result;
 }
 
+std::vector<std::shared_ptr<StateMachine>> InvokeExecutor::getAllInvokedSessions(const std::string &parentSessionId) {
+    std::vector<std::shared_ptr<StateMachine>> result;
+
+    // Iterate through all handlers and collect ALL active sessions (for visualization)
+    for (const auto &[invokeid, handler] : invokeHandlers_) {
+        // Check if handler is SCXML type
+        if (handler->getType() == "scxml") {
+            auto scxmlHandler = std::dynamic_pointer_cast<SCXMLInvokeHandler>(handler);
+            if (scxmlHandler) {
+                auto sessions = scxmlHandler->getAllInvokedSessions(parentSessionId);
+                result.insert(result.end(), sessions.begin(), sessions.end());
+            }
+        }
+    }
+
+    return result;
+}
+
 void InvokeExecutor::cleanupInvoke(const std::string &invokeid) {
     // Remove from handler tracking
     invokeHandlers_.erase(invokeid);
@@ -993,14 +1014,43 @@ std::string SCXMLInvokeHandler::loadSCXMLFromFile(const std::string &filepath, c
     LOG_DEBUG("SCXMLInvokeHandler: Found file at '{}'", finalPath.string());
 
     // Read file content
+    std::string content;
+
+#ifdef __EMSCRIPTEN__
+    // W3C SCXML 6.4: Use C-style file I/O for Emscripten virtual filesystem compatibility
+    // Emscripten's MEMFS supports fopen/fread but not std::ifstream
+    FILE *file = fopen(finalPath.string().c_str(), "rb");
+    if (!file) {
+        LOG_ERROR("SCXMLInvokeHandler: Failed to read file '{}': {}", finalPath.string(), strerror(errno));
+        return "";
+    }
+
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long fileSize = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    // Read entire file
+    content.resize(fileSize);
+    size_t bytesRead = fread(&content[0], 1, fileSize, file);
+    fclose(file);
+
+    if (bytesRead != static_cast<size_t>(fileSize)) {
+        LOG_ERROR("SCXMLInvokeHandler: Failed to read complete file: '{}' (read {} of {} bytes)", finalPath.string(),
+                  bytesRead, fileSize);
+        return "";
+    }
+#else
+    // Native build: Use C++ std::ifstream
     std::ifstream file(finalPath);
     if (!file.is_open()) {
         LOG_ERROR("SCXMLInvokeHandler: Failed to open file: '{}'", finalPath.string());
         return "";
     }
 
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    content = std::string((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
     file.close();
+#endif
 
     if (content.empty()) {
         LOG_WARN("SCXMLInvokeHandler: File is empty: '{}'", finalPath.string());
@@ -1023,6 +1073,20 @@ SCXMLInvokeHandler::getAutoForwardSessions(const std::string &parentSessionId) {
             if (session.smContext) {
                 // W3C SCXML 6.4: Use shared_ptr to prevent use-after-free during autoForward iteration (test 338)
                 // Child might reach final state during processEvent, triggering cleanup
+                result.push_back(session.smContext->getShared());
+            }
+        }
+    }
+    return result;
+}
+
+std::vector<std::shared_ptr<StateMachine>>
+SCXMLInvokeHandler::getAllInvokedSessions(const std::string &parentSessionId) {
+    std::vector<std::shared_ptr<StateMachine>> result;
+    for (auto &[invokeid, session] : activeSessions_) {
+        if (session.isActive && session.parentSessionId == parentSessionId) {
+            if (session.smContext) {
+                // Return ALL active children for visualization, not just autoForward ones
                 result.push_back(session.smContext->getShared());
             }
         }

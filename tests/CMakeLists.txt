@@ -1123,10 +1123,13 @@ if(EMSCRIPTEN)
 
         # Exported functions and runtime methods
         "-sEXPORTED_FUNCTIONS=[_malloc,_free]"
-        "-sEXPORTED_RUNTIME_METHODS=[cwrap,ccall,UTF8ToString]"
+        "-sEXPORTED_RUNTIME_METHODS=[cwrap,ccall,UTF8ToString,FS]"
 
         # File system (for fetch API)
         -sFORCE_FILESYSTEM=1
+
+        # Fetch API (for HTTP requests)
+        -sFETCH=1
 
         # Environment (browser and Node.js)
         -sENVIRONMENT=web,node

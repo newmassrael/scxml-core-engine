@@ -24,35 +24,67 @@ jobs:
     - name: Prepare Web Files
       run: |
         mkdir -p web_dist
+        
+        # Copy all web interface files
         cp tools/web/index.html web_dist/
+        cp tools/web/aot-template.js web_dist/
+        cp tools/web/visualizer.html web_dist/
+        cp tools/web/visualizer.css web_dist/
+        cp tools/web/visualizer.js web_dist/
+        cp tools/web/visualizer.wasm web_dist/
+        cp tools/web/scxml-visualizer.js web_dist/
+        cp tools/web/execution-controller.js web_dist/
+        cp tools/web/main.js web_dist/
+        cp tools/web/primer.css web_dist/
+        cp tools/web/d3.v7.min.js web_dist/
+        cp tools/web/spec_references.json web_dist/
         
         # Create README
         cat > web_dist/README.md << 'EOF'
-        # SCXML Code Generator (Web)
+        # SCXML Web Tools
 
-        Online tool for generating optimized C++ code from SCXML state machine definitions.
+        Online tools for SCXML state machine development.
 
-        ## Features
+        ## Tools
 
-        - **SCXML Validation**: Validates SCXML against W3C SCXML 1.0 specification
-        - **C++ Code Generation**: Generates type-safe, zero-overhead C++ state machines
-        - **Real-time Feedback**: Instant validation and code generation
-        - **Download**: Export generated code as C++ files
+        ### 1. Code Generator (index.html)
+        Generate optimized C++ code from SCXML state machine definitions.
 
-        ## Usage
+        **Features:**
+        - SCXML Validation against W3C SCXML 1.0 specification
+        - Type-safe, zero-overhead C++ code generation
+        - Real-time feedback and validation
+        - Download generated code
 
+        **Usage:**
         1. Paste your SCXML code in the input pane
         2. Click "Generate C++ Code"
-        3. Download the generated code
+        3. Download the generated C++ header file
+
+        ### 2. Interactive Visualizer (visualizer.html)
+        Step-by-step SCXML execution with real-time state diagram visualization.
+
+        **Features:**
+        - Time-travel debugging (step forward/backward)
+        - Real-time state diagram with D3.js
+        - Event queue and data model inspection
+        - Execution log with W3C SCXML spec references
+        - Parent-child state machine visualization (invoke support)
+
+        **Usage:**
+        - From Code Generator: Click "Visualize" button
+        - Direct access: `visualizer.html#test=226` (W3C test number)
+        - Custom SCXML: `visualizer.html#scxml=<base64>`
 
         ## Built with
 
-        - **Frontend**: HTML, CSS, JavaScript
-        - **SCXML Engine**: W3C SCXML 1.0 compliant
+        - Frontend: HTML, CSS, JavaScript
+        - Visualization: D3.js force-directed graphs
+        - SCXML Engine: W3C SCXML 1.0 compliant (WASM)
 
         ## About scxml-core-engine
 
-        This tool is powered by [scxml-core-engine](https://github.com/newmassrael/scxml-core-engine),
+        These tools are powered by [scxml-core-engine](https://github.com/newmassrael/scxml-core-engine),
         a C++ SCXML library with W3C compliance and code generation capabilities.
         EOF
 

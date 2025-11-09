@@ -309,6 +309,8 @@ jobs:
           cp tools/web/scxml-visualizer.js gh-pages/visualizer/
           cp tools/web/execution-controller.js gh-pages/visualizer/
           cp tools/web/main.js gh-pages/visualizer/
+          cp tools/web/primer.css gh-pages/visualizer/
+          cp tools/web/d3.v7.min.js gh-pages/visualizer/
           cp tools/web/spec_references.json gh-pages/visualizer/
           echo "✅ Visualizer assets copied to gh-pages/visualizer/"
 

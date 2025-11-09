@@ -8,6 +8,7 @@
 #include <optional>
 #include <queue>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #ifdef __EMSCRIPTEN__
@@ -19,6 +20,21 @@
 #include "runtime/StateSnapshot.h"
 
 namespace SCE::W3C {
+
+/**
+ * @brief Information about detected sub-SCXML file from static analysis
+ *
+ * W3C SCXML 6.3: Invoke elements with static src attributes are analyzed
+ * at loadSCXML() time to enable visualization regardless of child execution timing.
+ */
+struct SubSCXMLInfo {
+    std::string parentStateId;  // State containing the invoke element
+    std::string invokeId;       // Invoke element ID
+    std::string srcPath;        // Resolved file path (absolute)
+#ifdef __EMSCRIPTEN__
+    emscripten::val structure;  // Pre-parsed SCXML structure for visualization
+#endif
+};
 
 /**
  * @brief Interactive test runner for step-by-step SCXML execution visualization
@@ -183,6 +199,77 @@ public:
     std::string getW3CReferences() const;
 #endif
 
+    /**
+     * @brief Preload SCXML file content for invoke resolution (WASM)
+     *
+     * In WASM environment, there's no filesystem access. This method allows
+     * JavaScript to preload sub-SCXML files so invoke with src="file:..." works.
+     *
+     * @param filename Relative filename (e.g., "test226sub1.scxml")
+     * @param content Full SCXML content string
+     * @return true if preloaded successfully
+     *
+     * Example usage from JavaScript:
+     *   const subContent = await fetch("../../resources/226/test226sub1.scxml").then(r => r.text());
+     *   runner.preloadFile("test226sub1.scxml", subContent);
+     */
+    bool preloadFile(const std::string &filename, const std::string &content);
+
+    /**
+     * @brief Set base directory path for resolving relative invoke paths (WASM)
+     *
+     * Tells the engine where the parent SCXML file is located, so it can
+     * resolve relative paths in invoke src="file:...".
+     *
+     * @param basePath Base directory path (e.g., "../../resources/226/")
+     */
+    void setBasePath(const std::string &basePath);
+
+    /**
+     * @brief Get invoked child state machines for visualization
+     *
+     * Returns JavaScript object with child state machine information:
+     * {
+     *   children: [
+     *     {
+     *       sessionId: "child_session_id",
+     *       activeStates: ["state1", "state2"],
+     *       structure: { states: [...], transitions: [...] },
+     *       isInFinalState: false
+     *     }
+     *   ]
+     * }
+     *
+     * @return JavaScript object with child information
+     */
+#ifdef __EMSCRIPTEN__
+    emscripten::val getInvokedChildren() const;
+#else
+    std::string getInvokedChildren() const;
+#endif
+
+    /**
+     * @brief Get statically detected sub-SCXML structures for visualization
+     *
+     * Analyzes parent SCXML at load time to find invoke elements with static src,
+     * verifies files exist, parses structures, and caches for visualization.
+     *
+     * Returns JavaScript array of objects:
+     * [
+     *   {
+     *     parentStateId: "s0",
+     *     invokeId: "child1",
+     *     srcPath: "/resources/226/test226sub1.scxml",
+     *     structure: { states: [...], transitions: [...], initial: "..." }
+     *   }
+     * ]
+     *
+     * @return JavaScript array of sub-SCXML information
+     */
+#ifdef __EMSCRIPTEN__
+    emscripten::val getSubSCXMLStructures() const;
+#endif
+
 private:
     /**
      * @brief Capture current state machine state as snapshot
@@ -227,8 +314,36 @@ private:
      */
     void restoreEventQueues(const std::vector<EventSnapshot> &internal, const std::vector<EventSnapshot> &external);
 
+    /**
+     * @brief Analyze parent SCXML for static invoke elements
+     *
+     * W3C SCXML 6.3: Finds invoke elements with static src, verifies file existence,
+     * parses child SCXML structures, and caches for visualization.
+     *
+     * @param parentModel Parent SCXML model to analyze
+     */
+    void analyzeSubSCXML(std::shared_ptr<SCXMLModel> parentModel);
+
+#ifdef __EMSCRIPTEN__
+    /**
+     * @brief Build structure object from SCXML model for visualization
+     *
+     * Extracts states, transitions, and initial state from model into
+     * JavaScript-friendly object format.
+     *
+     * @param model SCXML model to extract structure from
+     * @return JavaScript object with structure information
+     */
+    emscripten::val buildStructureFromModel(std::shared_ptr<SCXMLModel> model) const;
+#endif
+
     std::shared_ptr<StateMachine> stateMachine_;
     SnapshotManager snapshotManager_;
+
+    // W3C SCXML 6.2: Event infrastructure for send/invoke support
+    std::shared_ptr<IEventRaiser> eventRaiser_;
+    std::shared_ptr<IEventScheduler> scheduler_;
+    std::shared_ptr<IEventDispatcher> eventDispatcher_;
 
     // Initial snapshot captured after initialize() for true reset functionality
     std::optional<StateSnapshot> initialSnapshot_;
@@ -244,6 +359,13 @@ private:
     // Event execution history for accurate state restoration via replay
     // W3C SCXML 3.13: All processed events stored to enable time-travel debugging
     std::vector<EventSnapshot> executedEvents_;
+
+    // WASM file preloading support (for invoke src="file:..." resolution)
+    std::string basePath_;                                         // Base directory for resolving relative paths
+    std::unordered_map<std::string, std::string> preloadedFiles_;  // filename -> content
+
+    // W3C SCXML 6.3: Static sub-SCXML analysis results (populated at loadSCXML time)
+    std::vector<SubSCXMLInfo> subScxmlStructures_;
 };
 
 }  // namespace SCE::W3C

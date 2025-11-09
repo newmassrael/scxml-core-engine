@@ -206,6 +206,9 @@ class ExecutionController {
             // Update last transition animation
             await this.updateTransitionAnimation();
 
+            // Update child state machines visualization
+            await this.updateChildrenVisualization();
+
             // Update panels
             this.updateEventQueue();
             this.updateDataModel();
@@ -445,6 +448,126 @@ class ExecutionController {
             button.disabled = true;
             button.classList.add('disabled');
         }
+    }
+
+    /**
+     * Update child state machines visualization
+     */
+    async updateChildrenVisualization() {
+        if (!this.runner) {
+            return;
+        }
+
+        try {
+            const childrenData = this.runner.getInvokedChildren();
+
+            // W3C SCXML 6.3: Check static sub-SCXML structures (detected at load time)
+            const staticChildren = this.runner.getSubSCXMLStructures ? this.runner.getSubSCXMLStructures() : [];
+            const hasStaticChildren = staticChildren && staticChildren.length > 0;
+
+            // Don't change layout if static children exist (main.js already set up split view)
+            if (hasStaticChildren) {
+                console.log('📊 Static sub-SCXML detected - preserving split view layout');
+                return;
+            }
+
+            if (!childrenData || !childrenData.children || childrenData.children.length === 0) {
+                // No children (neither static nor runtime) - hide split view, show single diagram
+                const singleView = document.getElementById('single-view-container');
+                const splitView = document.getElementById('split-view-container');
+
+                if (singleView) singleView.style.display = 'block';
+                if (splitView) splitView.style.display = 'none';
+
+                return;
+            }
+
+            // Has children - show split view, hide single diagram
+            console.log(`📊 Found ${childrenData.children.length} invoked child state machines`);
+
+            const singleView = document.getElementById('single-view-container');
+            const splitView = document.getElementById('split-view-container');
+
+            if (singleView) singleView.style.display = 'none';
+            if (splitView) splitView.style.display = 'block';
+
+            // Update child diagrams
+            for (const childInfo of childrenData.children) {
+                await this.updateChildDiagram(childInfo);
+            }
+
+            // Update communication log
+            this.updateCommunicationLog(childrenData);
+
+        } catch (error) {
+            console.error('❌ Error updating children visualization:', error);
+        }
+    }
+
+    /**
+     * Update individual child diagram
+     */
+    async updateChildDiagram(childInfo) {
+        const containerId = `child-diagram-${childInfo.sessionId}`;
+        let container = document.getElementById(containerId);
+
+        // Create container if doesn't exist
+        if (!container) {
+            const childrenContainer = document.getElementById('child-diagrams-container');
+            if (!childrenContainer) {
+                console.error('❌ child-diagrams-container not found');
+                return;
+            }
+
+            container = document.createElement('div');
+            container.id = containerId;
+            container.className = 'child-diagram active';
+            childrenContainer.appendChild(container);
+
+            // Create visualizer for this child
+            const visualizer = new SCXMLVisualizer(containerId, childInfo.structure);
+
+            // Store visualizer reference
+            if (!window.childVisualizers) {
+                window.childVisualizers = {};
+            }
+            window.childVisualizers[childInfo.sessionId] = visualizer;
+
+            console.log(`📊 Created child diagram for session: ${childInfo.sessionId}`);
+        }
+
+        // Update active states highlighting
+        const visualizer = window.childVisualizers?.[childInfo.sessionId];
+        if (visualizer) {
+            visualizer.updateActiveStates(childInfo.activeStates);
+        }
+    }
+
+    /**
+     * Update communication log between parent and children
+     */
+    updateCommunicationLog(childrenData) {
+        const logContainer = document.getElementById('communication-log');
+        if (!logContainer) {
+            return;
+        }
+
+        // For now, just show child count
+        const timestamp = new Date().toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.className = 'comm-entry comm-info';
+        entry.innerHTML = `
+            <div class="comm-timestamp">${timestamp}</div>
+            <div class="comm-type">Active Children: ${childrenData.children.length}</div>
+        `;
+
+        // Keep last 20 entries
+        while (logContainer.children.length >= 20) {
+            logContainer.removeChild(logContainer.firstChild);
+        }
+
+        logContainer.appendChild(entry);
+        logContainer.scrollTop = logContainer.scrollHeight;
     }
 
     /**
