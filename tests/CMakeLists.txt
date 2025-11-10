@@ -23,31 +23,33 @@ if(NOT GTest_FOUND)
 
     FetchContent_MakeAvailable(googletest)
 
-    # WASM builds: Apply pthread flags and suppress character conversion warnings
-    if(EMSCRIPTEN)
-        # Apply pthread compile options to all gtest targets
-        target_compile_options(gtest PRIVATE
-            -pthread
-            -sUSE_PTHREADS=1
-            -Wno-character-conversion
-        )
-        target_compile_options(gtest_main PRIVATE
-            -pthread
-            -sUSE_PTHREADS=1
-            -Wno-character-conversion
-        )
-        target_compile_options(gmock PRIVATE
-            -pthread
-            -sUSE_PTHREADS=1
-            -Wno-character-conversion
-        )
-        target_compile_options(gmock_main PRIVATE
-            -pthread
-            -sUSE_PTHREADS=1
-            -Wno-character-conversion
-        )
+    # GoogleTest: Disable warnings-as-errors for external library builds
+    # This prevents GoogleTest internal warnings (e.g., char8_t conversion) from failing the build
+    target_compile_options(gtest PRIVATE -Wno-error)
+    target_compile_options(gtest_main PRIVATE -Wno-error)
+    target_compile_options(gmock PRIVATE -Wno-error)
+    target_compile_options(gmock_main PRIVATE -Wno-error)
 
-        # Apply pthread link options to all gtest targets
+    # Treat GoogleTest as system library for downstream consumers
+    get_target_property(GTEST_INCLUDE_DIRS gtest INTERFACE_INCLUDE_DIRECTORIES)
+    set_target_properties(gtest PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${GTEST_INCLUDE_DIRS}")
+
+    get_target_property(GTEST_MAIN_INCLUDE_DIRS gtest_main INTERFACE_INCLUDE_DIRECTORIES)
+    set_target_properties(gtest_main PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${GTEST_MAIN_INCLUDE_DIRS}")
+
+    get_target_property(GMOCK_INCLUDE_DIRS gmock INTERFACE_INCLUDE_DIRECTORIES)
+    set_target_properties(gmock PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${GMOCK_INCLUDE_DIRS}")
+
+    get_target_property(GMOCK_MAIN_INCLUDE_DIRS gmock_main INTERFACE_INCLUDE_DIRECTORIES)
+    set_target_properties(gmock_main PROPERTIES INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${GMOCK_MAIN_INCLUDE_DIRS}")
+
+    # WASM builds: Apply pthread flags
+    if(EMSCRIPTEN)
+        target_compile_options(gtest PRIVATE -pthread -sUSE_PTHREADS=1)
+        target_compile_options(gtest_main PRIVATE -pthread -sUSE_PTHREADS=1)
+        target_compile_options(gmock PRIVATE -pthread -sUSE_PTHREADS=1)
+        target_compile_options(gmock_main PRIVATE -pthread -sUSE_PTHREADS=1)
+
         target_link_options(gtest PRIVATE -pthread -sUSE_PTHREADS=1)
         target_link_options(gtest_main PRIVATE -pthread -sUSE_PTHREADS=1)
         target_link_options(gmock PRIVATE -pthread -sUSE_PTHREADS=1)

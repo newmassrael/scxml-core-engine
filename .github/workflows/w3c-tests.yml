@@ -307,6 +307,7 @@ jobs:
           cp tools/web/visualizer.html gh-pages/visualizer/index.html
           cp tools/web/visualizer.css gh-pages/visualizer/
           cp tools/web/scxml-visualizer.js gh-pages/visualizer/
+          cp tools/web/transition-layout-optimizer.js gh-pages/visualizer/
           cp tools/web/visualizer-manager.js gh-pages/visualizer/
           cp tools/web/execution-controller.js gh-pages/visualizer/
           cp tools/web/main.js gh-pages/visualizer/

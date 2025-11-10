@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub0" version="1.0" datamodel="ecmascript">
+           <state id="sub0">
+            <onentry>
+              <send event="timeout" delay="2s"/>
+                </onentry>
+               <transition event="timeout" target="subFinal"/>
+                </state>   
+            <final id="subFinal"/>
+         </scxml>
+         

@@ -35,26 +35,39 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y cmake ninja-build libspdlog-dev
-    
+
+    - name: Install Python Dependencies
+      run: |
+        pip install lxml jinja2
+
+    - name: Generate AOT Test Headers
+      run: |
+        chmod +x tools/generate_aot_headers.sh
+        ./tools/generate_aot_headers.sh build/tests/w3c_static_generated
+
     - name: Build WASM
       run: |
         echo "Building WASM with Emscripten..."
         chmod +x build_wasm.sh
         ./build_wasm.sh
-        
+
         # Verify WASM files were created
         if [ ! -f "tools/web/visualizer.wasm" ]; then
           echo "Error: visualizer.wasm not found after build!"
           exit 1
         fi
-        
+
         echo "WASM build completed successfully"
         ls -lh tools/web/visualizer.wasm tools/web/visualizer.js
     
     - name: Prepare Web Files
       run: |
         mkdir -p web_dist
-        
+
+        # Get commit hash for cache busting
+        COMMIT_HASH=$(git rev-parse --short HEAD)
+        echo "Deployment commit: $COMMIT_HASH"
+
         # Copy all web interface files
         cp tools/web/index.html web_dist/
         cp tools/web/aot-template.js web_dist/
@@ -70,7 +83,12 @@ jobs:
         cp tools/web/primer.css web_dist/
         cp tools/web/d3.v7.min.js web_dist/
         cp tools/web/spec_references.json web_dist/
-        
+
+        # Add cache-busting query parameters to local files only (exclude external URLs)
+        echo "Adding cache-busting parameters (commit: $COMMIT_HASH)..."
+        sed -i '/src="http/! s|src="\([^"]*\.js\)"|src="\1?v='"$COMMIT_HASH"'"|g' web_dist/visualizer.html
+        sed -i '/href="http/! s|href="\([^"]*\.css\)"|href="\1?v='"$COMMIT_HASH"'"|g' web_dist/visualizer.html
+
         # Copy W3C SCXML test resources (follow symlink)
         echo "Copying W3C SCXML test resources..."
         cp -rL resources web_dist/
