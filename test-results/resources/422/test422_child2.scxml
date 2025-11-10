@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub2" version="1.0" datamodel="ecmascript">
+            <state id="sub2">
+            	 <onentry>
+                <send target="#_parent" event="invokeS12"/>
+               </onentry>
+                <transition target="subFinal2"/>
+              </state>
+           <final id="subFinal2"/>
+            </scxml>
+      
