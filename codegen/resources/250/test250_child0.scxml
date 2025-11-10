@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub0" version="1.0" datamodel="ecmascript">
+             <state id="sub0" initial="sub01">
+               <onentry>
+                <send event="timeout" delay="2s"/>
+                  </onentry>
+                 <transition event="timeout" target="subFinal"/>
+              <onexit>
+                 <log expr="'Exiting sub0'"/>
+                </onexit> 
+             <state id="sub01">
+             <onexit>
+             <log expr="'Exiting sub01'"/>
+           </onexit>
+        </state>
+      </state>     
+        <final id="subFinal">
+          <onentry>
+           <log expr="'entering final state, invocation was not cancelled'"/>
+          </onentry>
+         </final> 
+      </scxml>
+      

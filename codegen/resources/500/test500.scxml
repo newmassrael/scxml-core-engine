@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+
+<!-- test that location field is found inside entry for SCXML Event I/O processor -->
+
+<scxml initial="s0" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+<datamodel>
+  <data id="Var1" expr="_ioprocessors['scxml']['location']"/>
+  </datamodel>
+  
+<state id="s0">
+  <transition cond="typeof Var1 !== 'undefined'" target="pass"/>
+  <transition target="fail"/>
+   
+ </state>
+  
+   <final id="pass"/>
+   <final id="fail"/>
+
+</scxml>

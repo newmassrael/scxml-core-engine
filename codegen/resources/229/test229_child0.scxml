@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub0" version="1.0" datamodel="ecmascript">
+        <state id="sub0">
+          <onentry>
+             <send target="#_parent" event="childToParent"/> 
+              <send event="timeout" delay="3s"/> 
+            </onentry> 
+         <transition event="childToParent" target="subFinal">
+         <send target="#_parent" event="eventReceived"/>
+          </transition>
+           <transition event="*" target="subFinal"/>
+       </state>
+        <final id="subFinal"/>
+        </scxml>
+    
