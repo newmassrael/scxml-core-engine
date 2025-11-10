@@ -14,8 +14,11 @@
     <!-- Custom Visualizer CSS -->
     <link href="visualizer.css" rel="stylesheet">
 
-    <!-- D3.js for state diagram visualization (local) -->
+    <!-- D3.js for SVG rendering (local) -->
     <script src="d3.v7.min.js"></script>
+
+    <!-- ELK.js for hierarchical layout (CDN) -->
+    <script src="https://unpkg.com/elkjs@0.9.3/lib/elk.bundled.js"></script>
 </head>
 <body>
     <!-- Loading State -->
@@ -191,6 +194,7 @@
 
     <!-- Visualizer Components -->
     <script src="visualizer-manager.js"></script>
+    <script src="transition-layout-optimizer.js"></script>
     <script src="scxml-visualizer.js"></script>
     <script src="execution-controller.js"></script>
     <script src="main.js"></script>

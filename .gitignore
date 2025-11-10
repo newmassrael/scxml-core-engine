@@ -101,3 +101,4 @@ docker_tsan/docker-tsan-build.log
 
 tools/codegen/__pycache__/
 archive/
+*.wasm
