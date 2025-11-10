@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub0" version="1.0" datamodel="ecmascript">
+               <state id="sub0">
+               <transition cond="typeof Var2 !== 'undefined'" target="subFinal">
+                <send target="#_parent" event="failure"/>
+            </transition>
+            <transition target="subFinal">
+              <send target="#_parent" event="success"/>
+              </transition>
+          </state>    
+           <final id="subFinal"/>
+           </scxml>
+           
