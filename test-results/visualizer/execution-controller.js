@@ -85,7 +85,7 @@ class ExecutionController {
         };
         document.addEventListener('transition-click', this.transitionClickHandler);
 
-        console.log('✅ Execution controls initialized (Arrow keys: step, R: reset)');
+        console.log('Execution controls initialized (Arrow keys: step, R: reset)');
     }
 
     /**
@@ -111,7 +111,7 @@ class ExecutionController {
             this.elements.eventButtonsContainer.appendChild(button);
         });
 
-        console.log(`✅ Created ${this.availableEvents.length} event buttons`);
+        console.log(`Created ${this.availableEvents.length} event buttons`);
     }
 
     /**
@@ -133,7 +133,7 @@ class ExecutionController {
             // Update event queue after processing
             this.updateEventQueue();
 
-            console.log(`✅ Step ${this.currentStep} executed`);
+            console.log(`Step ${this.currentStep} executed`);
         } catch (error) {
             console.error('❌ Error during stepForward:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
@@ -158,7 +158,7 @@ class ExecutionController {
             // Re-enable forward button
             this.enableButton('btn-step-forward');
 
-            console.log(`⬅️ Restored to step ${this.currentStep}`);
+            console.log(`Restored to step ${this.currentStep}`);
         } catch (error) {
             console.error('❌ Error during stepBackward:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
@@ -295,9 +295,9 @@ class ExecutionController {
 
         try {
             const queue = this.runner.getEventQueue();
-            console.log('🔍 [DEBUG] getEventQueue() returned:', queue);
-            console.log('🔍 [DEBUG] queue type:', typeof queue);
-            console.log('🔍 [DEBUG] queue.external:', queue.external);
+            console.log('[DEBUG] getEventQueue() returned:', queue);
+            console.log('[DEBUG] queue type:', typeof queue);
+            console.log('[DEBUG] queue.external:', queue.external);
 
             let html = '<h4>Internal Queue</h4>';
             if (queue.internal && queue.internal.length > 0) {
@@ -657,7 +657,7 @@ class ExecutionController {
 
             // Don't change layout if static children exist (main.js already set up split view)
             if (hasStaticChildren) {
-                console.log('📊 Static sub-SCXML detected - preserving split view layout');
+                console.log('Static sub-SCXML detected - preserving split view layout');
                 return;
             }
 
@@ -715,7 +715,7 @@ class ExecutionController {
                 this.visualizerManager.addChild(childInfo.sessionId, visualizer);
             }
 
-            console.log(`📊 Created child diagram for session: ${childInfo.sessionId}`);
+            console.log(`Created child diagram for session: ${childInfo.sessionId}`);
         }
 
         // Update active states highlighting
