@@ -828,6 +828,22 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
         stateObj.set("id", stateId);
         stateObj.set("type", typeToString(state->getType()));
 
+        // W3C SCXML 3.10: Extract history state type (shallow/deep)
+        if (state->getType() == SCE::Type::HISTORY) {
+            stateObj.set("historyType", state->isDeepHistory() ? "deep" : "shallow");
+        }
+
+        // W3C SCXML 3.2: Extract child state IDs for hierarchical visualization
+        // Used for parent-child containment links (Option 1)
+        const auto &childStates = state->getChildren();
+        if (!childStates.empty()) {
+            auto childrenArray = emscripten::val::array();
+            for (const auto &child : childStates) {
+                childrenArray.call<void>("push", emscripten::val(child->getId()));
+            }
+            stateObj.set("children", childrenArray);
+        }
+
         // W3C SCXML 3.7: Extract onentry action blocks (Priority 1: assign, raise, foreach, log)
         const auto &entryBlocks = state->getEntryActionBlocks();
         std::vector<std::shared_ptr<IActionNode>> flatEntryActions;
@@ -852,9 +868,10 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
         statesArray.call<void>("push", stateObj);
     }
 
-    // Build transitions array (all transitions, no deduplication for accurate SCXML visualization)
+    // Build transitions array - prevent duplicate state processing
     auto transitionsArray = emscripten::val::array();
     int transitionId = 0;
+    std::set<std::string> processedStateIds;  // Track processed states for transitions
 
     for (const auto &state : allStates) {
         if (!state) {
@@ -863,7 +880,15 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
 
         const auto &stateId = state->getId();
 
+        // Skip duplicate state IDs to prevent duplicate transitions
+        if (processedStateIds.find(stateId) != processedStateIds.end()) {
+            LOG_DEBUG("buildStructureFromModel: Skipping duplicate state '{}' for transition extraction", stateId);
+            continue;
+        }
+        processedStateIds.insert(stateId);
+
         const auto &transitions = state->getTransitions();
+        LOG_DEBUG("buildStructureFromModel: State '{}' has {} transition(s)", stateId, transitions.size());
         for (const auto &transition : transitions) {
             if (!transition) {
                 continue;
@@ -895,6 +920,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                         transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
                     }
 
+                    LOG_DEBUG("  → Adding eventless transition: {} → {} (id={})", stateId, target, transitionId - 1);
                     transitionsArray.call<void>("push", transObj);
                 }
             } else {
@@ -914,6 +940,8 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                             transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
                         }
 
+                        LOG_DEBUG("  → Adding event transition: {} → {} event='{}' (id={})", stateId, target, event,
+                                  transitionId - 1);
                         transitionsArray.call<void>("push", transObj);
                     }
                 }
@@ -921,6 +949,7 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
         }
     }
 
+    LOG_DEBUG("buildStructureFromModel: Total {} transitions extracted", transitionId);
     obj.set("states", statesArray);
     obj.set("transitions", transitionsArray);
     obj.set("initial", model->getInitialState());

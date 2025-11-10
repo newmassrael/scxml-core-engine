@@ -136,6 +136,56 @@ body {
     stroke: none;
 }
 
+/* W3C SCXML 3.10: History State Visualization */
+.state-history {
+    cursor: pointer;
+}
+
+.history-circle {
+    fill: #ffffff;
+    stroke: var(--color-purple);
+    stroke-width: 2.5px;
+    transition: all 0.2s ease;
+}
+
+.history-label {
+    fill: var(--color-purple);
+    font-size: 18px;
+    font-weight: 700;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.history-id-label {
+    fill: #1f2328;
+    font-size: 12px;
+    font-weight: 500;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.state-history.active .history-circle {
+    fill: #fbefff;
+    stroke: var(--color-purple);
+    stroke-width: 3.5px;
+}
+
+.state-history.active .history-label {
+    fill: var(--color-purple);
+    font-weight: 800;
+}
+
+.state-history.active .history-id-label {
+    fill: var(--color-purple);
+    font-weight: 600;
+}
+
+.state-history:hover .history-circle {
+    fill: var(--color-gray-light);
+    stroke: var(--color-purple);
+    stroke-width: 3px;
+}
+
 /* Transition animation */
 .transition.animating {
     stroke: var(--color-green);
@@ -155,10 +205,13 @@ body {
 
 /* Transition labels */
 .transition-label {
-    font-size: 12px;
-    fill: var(--color-gray-dark);
+    font-size: 11px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    fill: var(--color-blue);
     text-anchor: middle;
+    dominant-baseline: middle;
     pointer-events: none;
+    user-select: none;
 }
 
 /*/* Event buttons container */
@@ -803,4 +856,112 @@ body {
     margin: 4px 0;
     font-size: 12px;
     color: var(--color-gray-dark);
+}
+/* ========================================
+   Hierarchical Visualization Enhancements (Options 1, 2, 5)
+   ======================================== */
+
+/* OPTION 1: Parent-Child Containment Links */
+.link-containment {
+    fill: none;
+    stroke: #d0d7de;
+    stroke-width: 1.5px;
+    stroke-dasharray: 5, 5;
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+/* OPTION 5: Event Delegation Links (child raises → parent handles) */
+.link-delegation {
+    fill: none;
+    stroke: #9a6700;
+    stroke-width: 2px;
+    stroke-dasharray: 3, 3;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.link-initial {
+    fill: none;
+    stroke: #57606a;
+    stroke-width: 2px;
+    opacity: 0.8;
+}
+
+.delegation-label {
+    font-size: 11px;
+    font-weight: 600;
+    fill: #9a6700;
+    pointer-events: none;
+}
+
+/* OPTION 2: Compound State Container Boxes (UML Standard) */
+.compound-container {
+    fill: none;
+    stroke: #0969da;
+    stroke-width: 2px;
+    rx: 10px;
+    ry: 10px;
+    transition: all 0.2s ease;
+    pointer-events: all;
+    cursor: pointer;
+}
+
+/* Collapsed state: small dotted box */
+.compound-container.collapsed {
+    stroke-dasharray: 5, 5;
+    opacity: 0.7;
+}
+
+.compound-container:hover {
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+.parallel-container {
+    stroke: #8250df;
+    stroke-dasharray: 10, 5;
+}
+
+.compound-label {
+    font-size: 14px;
+    font-weight: 600;
+    fill: #0969da;
+    pointer-events: none;
+}
+
+.parallel-container + .compound-label {
+    fill: #8250df;
+}
+
+/* Collapsed compound state (when compound is folded) */
+.compound-collapsed {
+    fill: none;
+    stroke: #0969da;
+    stroke-width: 2px;
+    stroke-dasharray: 5, 5;
+    opacity: 0.7;
+    rx: 5px;
+}
+
+.compound-collapsed:hover {
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+.compound-collapsed.active {
+    fill: #ddf4ff;
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+/* Active state highlighting for compound containers */
+.compound-container.active {
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+.parallel-container.active {
+    stroke-width: 3px;
 }
