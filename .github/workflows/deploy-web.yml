@@ -77,6 +77,8 @@ jobs:
         cp tools/web/visualizer.wasm web_dist/
         cp tools/web/scxml-visualizer.js web_dist/
         cp tools/web/transition-layout-optimizer.js web_dist/
+        cp tools/web/edge-direction-utils.js web_dist/
+        cp tools/web/routing-state.js web_dist/
         cp tools/web/visualizer-manager.js web_dist/
         cp tools/web/execution-controller.js web_dist/
         cp tools/web/main.js web_dist/
