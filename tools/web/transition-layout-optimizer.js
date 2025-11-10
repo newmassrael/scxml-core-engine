@@ -8,6 +8,29 @@
  * Handles connection analysis, snap point calculation, and crossing minimization.
  */
 class TransitionLayoutOptimizer {
+    // Node size constants (half-width and half-height)
+    static NODE_SIZES = {
+        'initial-pseudo': { halfWidth: 10, halfHeight: 10 },
+        'atomic': { halfWidth: 30, halfHeight: 20 },
+        'compound': { halfWidth: 30, halfHeight: 20 },
+        'final': { halfWidth: 30, halfHeight: 20 },
+        'history': { halfWidth: 15, halfHeight: 15 },
+        'parallel': { halfWidth: 30, halfHeight: 20 }
+    };
+
+    // Path segment constants
+    static MIN_SEGMENT_LENGTH = 30;
+    static MIN_SAFE_DISTANCE = 60; // MIN_SEGMENT_LENGTH * 2
+
+    /**
+     * Get node size by type
+     * @param {string} nodeType - Node type
+     * @returns {Object} {halfWidth, halfHeight}
+     */
+    static getNodeSize(nodeType) {
+        return this.NODE_SIZES[nodeType] || { halfWidth: 30, halfHeight: 20 };
+    }
+
     /**
      * @param {Array} nodes - Array of state nodes
      * @param {Array} links - Array of transition links
@@ -36,27 +59,68 @@ class TransitionLayoutOptimizer {
         if (isSourceEdge) {
             // Predict which edge the path exits from
             if (dy < 30) {
-                // Horizontal alignment: use left/right
+                // Near-horizontal alignment: use left/right
                 return tx > sx ? 'right' : 'left';
             } else if (dx < 30) {
-                // Vertical alignment: use top/bottom
+                // Near-vertical alignment: use top/bottom
                 return sy < ty ? 'bottom' : 'top';
             } else {
-                // Z-path: first segment is vertical
-                return sy < ty ? 'bottom' : 'top';
+                // **FIXED: Choose direction based on larger distance**
+                // If horizontal distance is greater, use horizontal edge
+                // If vertical distance is greater, use vertical edge (Z-path)
+                if (dx > dy) {
+                    return tx > sx ? 'right' : 'left';
+                } else {
+                    return sy < ty ? 'bottom' : 'top';
+                }
             }
         } else {
             // Predict which edge the path enters from
             if (dy < 30) {
-                // Horizontal alignment: use left/right
+                // Near-horizontal alignment: use left/right
                 return tx > sx ? 'left' : 'right';
-            } else {
-                // Vertical alignment or Z-path: last segment is vertical
-                // sy > ty: source below target → path goes UP → enters target's BOTTOM
-                // sy < ty: source above target → path goes DOWN → enters target's TOP
+            } else if (dx < 30) {
+                // Near-vertical alignment: use top/bottom
                 return sy > ty ? 'bottom' : 'top';
+            } else {
+                // **FIXED: Choose direction based on larger distance**
+                // If horizontal distance is greater, use horizontal edge
+                // If vertical distance is greater, use vertical edge (Z-path)
+                if (dx > dy) {
+                    return tx > sx ? 'left' : 'right';
+                } else {
+                    // sy > ty: source below target → path goes UP → enters target's BOTTOM
+                    // sy < ty: source above target → path goes DOWN → enters target's TOP
+                    return sy > ty ? 'bottom' : 'top';
+                }
             }
         }
+    }
+
+    /**
+     * Check if a specific edge has an initial transition
+     * @param {string} nodeId - Node ID
+     * @param {string} edge - Edge name
+     * @returns {boolean} True if initial transition exists on this edge
+     */
+    hasInitialTransitionOnEdge(nodeId, edge) {
+        return this.links.some(link => {
+            if (link.linkType !== 'initial') return false;
+            if (link.target !== nodeId) return false;
+
+            // **PRIORITY: Use actual routing if available, fallback to prediction**
+            if (link.routing && link.routing.targetEdge) {
+                return link.routing.targetEdge === edge;
+            }
+
+            // Fallback: Predict edge based on node positions
+            const source = this.nodes.find(n => n.id === link.source);
+            const target = this.nodes.find(n => n.id === link.target);
+            if (!source || !target) return false;
+
+            const targetEdge = this.predictEdge(source, target, false);
+            return targetEdge === edge;
+        });
     }
 
     /**
@@ -79,21 +143,10 @@ class TransitionLayoutOptimizer {
             // **TWO-PASS: Use confirmed directions if available, otherwise predict**
             let sourceEdge, targetEdge;
 
-            if (link.confirmedDirections) {
-                // Use confirmed directions from Pass 1
-                const outDir = link.confirmedDirections.outgoingDir;
-                const inDir = link.confirmedDirections.incomingDir;
-
-                // Map direction to edge
-                if (outDir === 'to-top') sourceEdge = 'top';
-                else if (outDir === 'to-bottom') sourceEdge = 'bottom';
-                else if (outDir === 'to-left') sourceEdge = 'left';
-                else if (outDir === 'to-right') sourceEdge = 'right';
-
-                if (inDir === 'from-top') targetEdge = 'top';
-                else if (inDir === 'from-bottom') targetEdge = 'bottom';
-                else if (inDir === 'from-left') targetEdge = 'left';
-                else if (inDir === 'from-right') targetEdge = 'right';
+            if (link.routing) {
+                // Use routing edges
+                sourceEdge = link.routing.sourceEdge;
+                targetEdge = link.routing.targetEdge;
             } else {
                 // Fallback to prediction (ELK routing)
                 sourceEdge = this.predictEdge(source, target, true);
@@ -143,14 +196,11 @@ class TransitionLayoutOptimizer {
         const target = this.nodes.find(n => n.id === targetId);
         if (!source || !target) return null;
 
-        // **TWO-PASS: Use confirmed direction if available**
+        // **TWO-PASS: Use routing edges if available**
         let sourceEdge;
-        if (link.confirmedDirections) {
-            const outDir = link.confirmedDirections.outgoingDir;
-            if (outDir === 'to-top') sourceEdge = 'top';
-            else if (outDir === 'to-bottom') sourceEdge = 'bottom';
-            else if (outDir === 'to-left') sourceEdge = 'left';
-            else if (outDir === 'to-right') sourceEdge = 'right';
+        if (link.routing) {
+            // Use routing edges
+            sourceEdge = link.routing.sourceEdge;
         } else {
             // Fallback to prediction
             sourceEdge = this.predictEdge(source, target, true);
@@ -216,6 +266,33 @@ class TransitionLayoutOptimizer {
 
         const link = this.links.find(l => l.id === linkId);
         if (!link) return null;
+
+        // Special case: Initial pseudo-node transitions always use center position
+        if (link.linkType === 'initial') {
+            const cx = node.x || 0;
+            const cy = node.y || 0;
+
+            // Get size based on node type using centralized constants
+            const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node.type);
+
+            console.log(`[SNAP INITIAL] ${nodeId} ${edge}: ${link.source}→${link.target} (INITIAL) type=${node.type}, size=${halfWidth}x${halfHeight}`);
+
+            if (edge === 'top') {
+                return { x: cx, y: cy - halfHeight, index: 0, count: 1 };
+            } else if (edge === 'bottom') {
+                return { x: cx, y: cy + halfHeight, index: 0, count: 1 };
+            } else if (edge === 'left') {
+                return { x: cx - halfWidth, y: cy, index: 0, count: 1 };
+            } else if (edge === 'right') {
+                return { x: cx + halfWidth, y: cy, index: 0, count: 1 };
+            }
+        }
+
+        // Block other transitions from using an edge that has an initial transition
+        if (this.hasInitialTransitionOnEdge(nodeId, edge)) {
+            console.log(`[SNAP BLOCKED] ${nodeId} ${edge}: ${link.source}→${link.target} blocked - initial transition owns this edge`);
+            return null;  // Force fallback to different edge or center
+        }
 
         // Get all connections on this edge
         const allConnections = this.countConnectionsOnEdge(nodeId, edge);
@@ -307,5 +384,563 @@ class TransitionLayoutOptimizer {
         }
 
         return { x, y, index: absoluteIndex, count: totalCount };
+    }
+
+    /**
+     * Get all possible snap point combinations for a link
+     * @param {Object} link - Link object
+     * @param {Object} sourceNode - Source node
+     * @param {Object} targetNode - Target node
+     * @returns {Array} Array of {sourceEdge, targetEdge, sourcePoint, targetPoint, distance}
+     */
+    getAllPossibleSnapCombinations(link, sourceNode, targetNode) {
+        const combinations = [];
+        const edges = ['top', 'bottom', 'left', 'right'];
+
+        edges.forEach(sourceEdge => {
+            // Skip if source edge has initial transition blocking
+            if (link.linkType !== 'initial' &&
+                this.hasInitialTransitionOnEdge(sourceNode.id, sourceEdge)) {
+                return;
+            }
+
+            edges.forEach(targetEdge => {
+                // Skip if target edge has initial transition blocking
+                if (link.linkType !== 'initial' &&
+                    this.hasInitialTransitionOnEdge(targetNode.id, targetEdge)) {
+                    return;
+                }
+
+                // Calculate snap points for this edge combination
+                const sourcePoint = this.getEdgeCenterPoint(sourceNode, sourceEdge);
+                const targetPoint = this.getEdgeCenterPoint(targetNode, targetEdge);
+
+                // Calculate distance
+                const dx = targetPoint.x - sourcePoint.x;
+                const dy = targetPoint.y - sourcePoint.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                combinations.push({
+                    sourceEdge,
+                    targetEdge,
+                    sourcePoint,
+                    targetPoint,
+                    distance
+                });
+            });
+        });
+
+        return combinations;
+    }
+
+    /**
+     * Get center point of a node edge
+     * @param {Object} node - Node object
+     * @param {string} edge - Edge name
+     * @returns {Object} {x, y}
+     */
+    getEdgeCenterPoint(node, edge) {
+        const cx = node.x || 0;
+        const cy = node.y || 0;
+        const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node.type);
+
+        if (edge === 'top') {
+            return { x: cx, y: cy - halfHeight };
+        } else if (edge === 'bottom') {
+            return { x: cx, y: cy + halfHeight };
+        } else if (edge === 'left') {
+            return { x: cx - halfWidth, y: cy };
+        } else if (edge === 'right') {
+            return { x: cx + halfWidth, y: cy };
+        }
+    }
+
+    /**
+     * Calculate number of intersections between two paths
+     * Uses orthogonal path assumption (Z-shaped or direct)
+     * @param {Object} path1 - {sourcePoint, targetPoint}
+     * @param {Object} path2 - {sourcePoint, targetPoint}
+     * @returns {number} Number of intersections
+     */
+    calculatePathIntersections(path1, path2) {
+        const segments1 = this.getPathSegments(path1);
+        const segments2 = this.getPathSegments(path2);
+
+        let intersections = 0;
+
+        segments1.forEach(seg1 => {
+            segments2.forEach(seg2 => {
+                if (this.segmentsIntersect(seg1, seg2)) {
+                    intersections++;
+                }
+            });
+        });
+
+        return intersections;
+    }
+
+    /**
+     * Convert path to line segments (orthogonal)
+     * @param {Object} path - {sourcePoint, targetPoint}
+     * @returns {Array} Array of {x1, y1, x2, y2}
+     */
+    getPathSegments(path) {
+        const sx = path.sourcePoint.x;
+        const sy = path.sourcePoint.y;
+        const tx = path.targetPoint.x;
+        const ty = path.targetPoint.y;
+        const sourceEdge = path.sourceEdge;
+        const targetEdge = path.targetEdge;
+
+        const segments = [];
+        const MIN_SEGMENT = TransitionLayoutOptimizer.MIN_SEGMENT_LENGTH;
+
+        // Check if direct line (horizontal or vertical alignment)
+        const dx = Math.abs(tx - sx);
+        const dy = Math.abs(ty - sy);
+
+        if (dx < 1 || dy < 1) {
+            // Direct line
+            segments.push({ x1: sx, y1: sy, x2: tx, y2: ty });
+            return segments;
+        }
+
+        // Generate path segments matching visualizer's createOrthogonalPath logic
+        const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
+        const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
+
+        if (sourceIsVertical && targetIsVertical) {
+            // Both vertical edges: vertical-horizontal-vertical (4 segments)
+            let y1 = (sourceEdge === 'top') ? sy - MIN_SEGMENT : sy + MIN_SEGMENT;
+            let y2 = (targetEdge === 'top') ? ty - MIN_SEGMENT : ty + MIN_SEGMENT;
+
+            segments.push({ x1: sx, y1: sy, x2: sx, y2: y1 });        // Vertical from source
+            segments.push({ x1: sx, y1: y1, x2: tx, y2: y1 });        // Horizontal
+            segments.push({ x1: tx, y1: y1, x2: tx, y2: y2 });        // Vertical
+            segments.push({ x1: tx, y1: y2, x2: tx, y2: ty });        // Vertical to target
+        } else if (!sourceIsVertical && !targetIsVertical) {
+            // Both horizontal edges: horizontal-vertical-horizontal (4 segments)
+            let x1 = (sourceEdge === 'right') ? sx + MIN_SEGMENT : sx - MIN_SEGMENT;
+            let x2 = (targetEdge === 'right') ? tx + MIN_SEGMENT : tx - MIN_SEGMENT;
+
+            segments.push({ x1: sx, y1: sy, x2: x1, y2: sy });        // Horizontal from source
+            segments.push({ x1: x1, y1: sy, x2: x1, y2: ty });        // Vertical
+            segments.push({ x1: x1, y1: ty, x2: x2, y2: ty });        // Horizontal
+            segments.push({ x1: x2, y1: ty, x2: tx, y2: ty });        // Horizontal to target
+        } else if (sourceIsVertical && !targetIsVertical) {
+            // Source vertical, target horizontal (3 segments)
+            let y1 = (sourceEdge === 'top') ? sy - MIN_SEGMENT : sy + MIN_SEGMENT;
+            let x2 = (targetEdge === 'right') ? tx + MIN_SEGMENT : tx - MIN_SEGMENT;
+
+            segments.push({ x1: sx, y1: sy, x2: sx, y2: y1 });        // Vertical from source
+            segments.push({ x1: sx, y1: y1, x2: x2, y2: y1 });        // Horizontal
+            segments.push({ x1: x2, y1: y1, x2: x2, y2: ty });        // Vertical
+            segments.push({ x1: x2, y1: ty, x2: tx, y2: ty });        // Horizontal to target
+        } else {
+            // Source horizontal, target vertical (3 segments)
+            let x1 = (sourceEdge === 'right') ? sx + MIN_SEGMENT : sx - MIN_SEGMENT;
+            let y2 = (targetEdge === 'top') ? ty - MIN_SEGMENT : ty + MIN_SEGMENT;
+
+            segments.push({ x1: sx, y1: sy, x2: x1, y2: sy });        // Horizontal from source
+            segments.push({ x1: x1, y1: sy, x2: x1, y2: y2 });        // Vertical
+            segments.push({ x1: x1, y1: y2, x2: tx, y2: y2 });        // Horizontal
+            segments.push({ x1: tx, y1: y2, x2: tx, y2: ty });        // Vertical to target
+        }
+
+        return segments;
+    }
+
+    /**
+     * Check if two line segments intersect
+     * @param {Object} seg1 - {x1, y1, x2, y2}
+     * @param {Object} seg2 - {x1, y1, x2, y2}
+     * @returns {boolean} True if segments intersect
+     */
+    segmentsIntersect(seg1, seg2) {
+        const ccw = (A, B, C) => {
+            return (C.y - A.y) * (B.x - A.x) > (B.y - A.y) * (C.x - A.x);
+        };
+
+        const A = { x: seg1.x1, y: seg1.y1 };
+        const B = { x: seg1.x2, y: seg1.y2 };
+        const C = { x: seg2.x1, y: seg2.y1 };
+        const D = { x: seg2.x2, y: seg2.y2 };
+
+        // Check if endpoints are the same (touching, not crossing)
+        const touching = (
+            (Math.abs(A.x - C.x) < 0.1 && Math.abs(A.y - C.y) < 0.1) ||
+            (Math.abs(A.x - D.x) < 0.1 && Math.abs(A.y - D.y) < 0.1) ||
+            (Math.abs(B.x - C.x) < 0.1 && Math.abs(B.y - C.y) < 0.1) ||
+            (Math.abs(B.x - D.x) < 0.1 && Math.abs(B.y - D.y) < 0.1)
+        );
+
+        if (touching) return false;
+
+        return ccw(A, C, D) !== ccw(B, C, D) && ccw(A, B, C) !== ccw(A, B, D);
+    }
+
+    /**
+     * Check if a path intersects with a node
+     * @param {Object} path - {sourcePoint, targetPoint}
+     * @param {Object} node - Node object
+     * @param {Object} options - { skipFirstSegment: boolean, skipLastSegment: boolean }
+     * @returns {boolean} True if path intersects node
+     */
+    pathIntersectsNode(path, node, options = {}) {
+        const { skipFirstSegment = false, skipLastSegment = false } = options;
+        const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node.type);
+
+        const nodeLeft = node.x - halfWidth;
+        const nodeRight = node.x + halfWidth;
+        const nodeTop = node.y - halfHeight;
+        const nodeBottom = node.y + halfHeight;
+
+        const segments = this.getPathSegments(path);
+
+        for (let i = 0; i < segments.length; i++) {
+            const segment = segments[i];
+
+            // Skip first segment if requested (for source node collision check)
+            if (skipFirstSegment && i === 0) continue;
+
+            // Skip last segment if requested (for target node collision check)
+            if (skipLastSegment && i === segments.length - 1) continue;
+
+            // Check if segment intersects with node bounding box
+            if (this.segmentIntersectsRect(segment, nodeLeft, nodeTop, nodeRight, nodeBottom)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if a line segment intersects with a rectangle
+     * @param {Object} segment - {x1, y1, x2, y2}
+     * @param {number} left - Rectangle left boundary
+     * @param {number} top - Rectangle top boundary
+     * @param {number} right - Rectangle right boundary
+     * @param {number} bottom - Rectangle bottom boundary
+     * @returns {boolean} True if segment intersects rectangle
+     */
+    segmentIntersectsRect(segment, left, top, right, bottom) {
+        const { x1, y1, x2, y2 } = segment;
+
+        // Check if segment is completely inside the rectangle
+        const p1Inside = (x1 >= left && x1 <= right && y1 >= top && y1 <= bottom);
+        const p2Inside = (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom);
+
+        if (p1Inside || p2Inside) {
+            return true;
+        }
+
+        // Check if segment intersects any of the rectangle edges
+        const rectSegments = [
+            { x1: left, y1: top, x2: right, y2: top },       // Top edge
+            { x1: right, y1: top, x2: right, y2: bottom },   // Right edge
+            { x1: left, y1: bottom, x2: right, y2: bottom }, // Bottom edge
+            { x1: left, y1: top, x2: left, y2: bottom }      // Left edge
+        ];
+
+        for (const rectSeg of rectSegments) {
+            if (this.segmentsIntersect(segment, rectSeg)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Optimize snap point assignments for all links
+     * Two-phase algorithm:
+     * Phase 1: Assign optimal edges to minimize intersections
+     * Phase 2: Distribute snap points on each edge
+     * @param {Array} links - Array of link objects
+     * @param {Array} nodes - Array of node objects
+     */
+    optimizeSnapPointAssignments(links, nodes) {
+        const assignedPaths = [];
+
+        // **CRITICAL: Process initial transitions first to establish edge blocking**
+        // This ensures hasInitialTransitionOnEdge() can use actual routing, not prediction
+        const sortedLinks = [...links].sort((a, b) => {
+            if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
+            if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
+            return 0;
+        });
+
+        // Phase 1: Assign optimal edges to each link
+        sortedLinks.forEach(link => {
+            const sourceNode = nodes.find(n => n.id === link.source);
+            const targetNode = nodes.find(n => n.id === link.target);
+
+            if (!sourceNode || !targetNode) return;
+
+            // Get all possible combinations
+            const combinations = this.getAllPossibleSnapCombinations(link, sourceNode, targetNode);
+
+            if (combinations.length === 0) {
+                console.warn(`No valid snap combinations for ${link.source}→${link.target}`);
+                return;
+            }
+
+            // Score each combination
+            let bestCombination = null;
+            let bestScore = Infinity;
+
+            combinations.forEach(combo => {
+                // Calculate intersections with already assigned paths
+                let intersections = 0;
+                assignedPaths.forEach(assignedPath => {
+                    intersections += this.calculatePathIntersections(combo, assignedPath);
+                });
+
+                // Calculate node collisions (path passing through nodes)
+                let nodeCollisions = 0;
+
+                // Check if path goes back through source node (skip first segment - initial departure)
+                if (this.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
+                    nodeCollisions++;
+                }
+
+                // Check if path goes through target node prematurely (skip last segment - final arrival)
+                if (this.pathIntersectsNode(combo, targetNode, { skipLastSegment: true })) {
+                    nodeCollisions++;
+                }
+
+                // Check other nodes (all segments)
+                nodes.forEach(node => {
+                    if (node.id === sourceNode.id || node.id === targetNode.id) return;
+
+                    if (this.pathIntersectsNode(combo, node)) {
+                        nodeCollisions++;
+                    }
+                });
+
+                // Check if snap points are too close (would cause path segments to intersect target node)
+                const MIN_SAFE_DISTANCE = TransitionLayoutOptimizer.MIN_SAFE_DISTANCE;
+                let tooCloseSnap = 0;
+
+                const sourceEdge = combo.sourceEdge;
+                const targetEdge = combo.targetEdge;
+                const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
+                const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
+
+                const dx = Math.abs(combo.sourcePoint.x - combo.targetPoint.x);
+                const dy = Math.abs(combo.sourcePoint.y - combo.targetPoint.y);
+
+                // For both horizontal edges (left/right), check x distance
+                if (!sourceIsVertical && !targetIsVertical) {
+                    if (dx < MIN_SAFE_DISTANCE) {
+                        tooCloseSnap = 1;
+                    }
+                }
+                // For both vertical edges (top/bottom), check y distance
+                else if (sourceIsVertical && targetIsVertical) {
+                    if (dy < MIN_SAFE_DISTANCE) {
+                        tooCloseSnap = 1;
+                    }
+                }
+
+                // Score: prioritize avoiding too-close snaps, then no node collisions, then fewer intersections, then shorter distance
+                // Too-close snap penalty: 100000 (highest priority - prevents path from intersecting target node)
+                // Node collision penalty: 10000 per collision
+                // Intersection penalty: 1000 per intersection
+                const score = tooCloseSnap * 100000 + nodeCollisions * 10000 + intersections * 1000 + combo.distance;
+
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestCombination = combo;
+                }
+            });
+
+            // Assign best edge combination (without final position yet)
+            if (bestCombination) {
+                // Create RoutingState
+                link.routing = RoutingState.fromEdges(
+                    bestCombination.sourceEdge,
+                    bestCombination.targetEdge
+                );
+
+                // Add to assigned paths for intersection checking
+                assignedPaths.push(bestCombination);
+
+                // Calculate final stats for logging
+                let finalIntersections = 0;
+                assignedPaths.slice(0, -1).forEach(assignedPath => {
+                    finalIntersections += this.calculatePathIntersections(bestCombination, assignedPath);
+                });
+
+                let finalNodeCollisions = 0;
+
+                // Check source node collision (skip first segment)
+                if (this.pathIntersectsNode(bestCombination, sourceNode, { skipFirstSegment: true })) {
+                    finalNodeCollisions++;
+                }
+
+                // Check target node collision (skip last segment)
+                if (this.pathIntersectsNode(bestCombination, targetNode, { skipLastSegment: true })) {
+                    finalNodeCollisions++;
+                }
+
+                // Check other nodes
+                nodes.forEach(node => {
+                    if (node.id === sourceNode.id || node.id === targetNode.id) return;
+                    if (this.pathIntersectsNode(bestCombination, node)) {
+                        finalNodeCollisions++;
+                    }
+                });
+
+                // Check if final combination has too-close snap points
+                const MIN_SAFE_DISTANCE = TransitionLayoutOptimizer.MIN_SAFE_DISTANCE;
+                const srcEdge = bestCombination.sourceEdge;
+                const tgtEdge = bestCombination.targetEdge;
+                const srcIsVert = (srcEdge === 'top' || srcEdge === 'bottom');
+                const tgtIsVert = (tgtEdge === 'top' || tgtEdge === 'bottom');
+                const dx = Math.abs(bestCombination.sourcePoint.x - bestCombination.targetPoint.x);
+                const dy = Math.abs(bestCombination.sourcePoint.y - bestCombination.targetPoint.y);
+
+                let finalTooClose = 0;
+                if (!srcIsVert && !tgtIsVert && dx < MIN_SAFE_DISTANCE) {
+                    finalTooClose = 1;
+                } else if (srcIsVert && tgtIsVert && dy < MIN_SAFE_DISTANCE) {
+                    finalTooClose = 1;
+                }
+
+                console.log(`[OPTIMIZE PHASE 1] ${link.source}→${link.target}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, tooClose=${finalTooClose}, nodeCollisions=${finalNodeCollisions}, intersections=${finalIntersections}, distance=${bestCombination.distance.toFixed(1)}`);
+            }
+        });
+
+        // Phase 2: Distribute snap points on each edge (use same sorted order)
+        this.distributeSnapPointsOnEdges(sortedLinks, nodes);
+
+        console.log(`Optimized snap points for ${links.length} links`);
+    }
+
+    /**
+     * Distribute snap points evenly on each edge
+     * @param {Array} links - Array of link objects
+     * @param {Array} nodes - Array of node objects
+     */
+    distributeSnapPointsOnEdges(links, nodes) {
+        // Group links by node and edge (combine incoming and outgoing)
+        const edgeGroups = new Map(); // Key: "nodeId:edge", Value: [links]
+
+        links.forEach(link => {
+            // Check routing
+            if (!link.routing) return;
+
+            // **SPECIAL: Initial transitions start from center, not edge**
+            if (link.linkType === 'initial') {
+                const sourceNode = nodes.find(n => n.id === link.source);
+                if (sourceNode && sourceNode.type === 'initial-pseudo') {
+                    // Use center of initial pseudo-node
+                    const centerPoint = {
+                        x: sourceNode.x || 0,
+                        y: sourceNode.y || 0
+                    };
+
+                    if (link.routing) {
+                        link.routing.sourcePoint = centerPoint;
+                    }
+                    console.log(`[OPTIMIZE PHASE 2] ${link.source}→${link.target} source at initial center: (${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
+                }
+
+                // Still need to add target to edge group
+                const targetKey = `${link.target}:${link.routing.targetEdge}`;
+                if (!edgeGroups.has(targetKey)) {
+                    edgeGroups.set(targetKey, []);
+                }
+                edgeGroups.get(targetKey).push({ link, isSource: false });
+                return; // Skip adding source to edge group
+            }
+
+            const sourceKey = `${link.source}:${link.routing.sourceEdge}`;
+            const targetKey = `${link.target}:${link.routing.targetEdge}`;
+
+            if (!edgeGroups.has(sourceKey)) {
+                edgeGroups.set(sourceKey, []);
+            }
+            edgeGroups.get(sourceKey).push({ link, isSource: true });
+
+            if (!edgeGroups.has(targetKey)) {
+                edgeGroups.set(targetKey, []);
+            }
+            edgeGroups.get(targetKey).push({ link, isSource: false });
+        });
+
+        // For each edge group, distribute snap points evenly
+        edgeGroups.forEach((group, key) => {
+            const [nodeId, edge] = key.split(':');
+            const node = nodes.find(n => n.id === nodeId);
+            if (!node) {
+                console.error(`[PHASE 2 ERROR] Node ${nodeId} not found!`);
+                return;
+            }
+
+            const cx = node.x || 0;
+            const cy = node.y || 0;
+            const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node.type);
+            console.log(`[PHASE 2 DEBUG] ${nodeId}.${edge}: center=(${cx.toFixed(1)}, ${cy.toFixed(1)}), type=${node.type}, size=${halfWidth}x${halfHeight}`);
+
+            // Separate incoming and outgoing, then sort each by other node position
+            const incomingGroup = group.filter(item => !item.isSource);
+            const outgoingGroup = group.filter(item => item.isSource);
+
+            const sortByOtherNodePosition = (a, b) => {
+                const aNode = nodes.find(n => n.id === (a.isSource ? a.link.target : a.link.source));
+                const bNode = nodes.find(n => n.id === (b.isSource ? b.link.target : b.link.source));
+
+                if (edge === 'top' || edge === 'bottom') {
+                    return (aNode.x || 0) - (bNode.x || 0);
+                } else {
+                    return (aNode.y || 0) - (bNode.y || 0);
+                }
+            };
+
+            incomingGroup.sort(sortByOtherNodePosition);
+            outgoingGroup.sort(sortByOtherNodePosition);
+
+            // Combine: incoming first, then outgoing
+            const sortedGroup = [...incomingGroup, ...outgoingGroup];
+            const count = sortedGroup.length;
+
+            // Calculate distributed positions
+            sortedGroup.forEach((item, index) => {
+                const position = (index + 1) / (count + 1);
+                let x, y;
+
+                if (edge === 'top') {
+                    x = cx - halfWidth + (halfWidth * 2 * position);
+                    y = cy - halfHeight;
+                } else if (edge === 'bottom') {
+                    x = cx - halfWidth + (halfWidth * 2 * position);
+                    y = cy + halfHeight;
+                } else if (edge === 'left') {
+                    x = cx - halfWidth;
+                    y = cy - halfHeight + (halfHeight * 2 * position);
+                } else if (edge === 'right') {
+                    x = cx + halfWidth;
+                    y = cy - halfHeight + (halfHeight * 2 * position);
+                }
+
+                // Assign calculated position
+                const point = { x, y };
+                if (item.isSource) {
+                    if (item.link.routing) {
+                        item.link.routing.sourcePoint = point;
+                    }
+                } else {
+                    if (item.link.routing) {
+                        item.link.routing.targetPoint = point;
+                    }
+                }
+
+                const direction = item.isSource ? 'source' : 'target';
+                console.log(`[OPTIMIZE PHASE 2] ${item.link.source}→${item.link.target} ${direction} on ${nodeId}.${edge}: position ${index + 1}/${count} at (${x.toFixed(1)}, ${y.toFixed(1)})`);
+            });
+        });
     }
 }
