@@ -25,6 +25,10 @@ class SCXMLVisualizer {
         // Show snap points from URL parameter (?show-snap)
         this.showSnapPoints = new URLSearchParams(window.location.search).has('show-snap');
 
+        // Adaptive algorithm selection for drag optimization
+        this.dragOptimizationTimer = null;
+        this.isDraggingAny = false;
+
         // Container dimensions
         const containerNode = this.container.node();
         const clientWidth = containerNode ? containerNode.clientWidth : 0;
@@ -556,6 +560,7 @@ class SCXMLVisualizer {
                     // Raise dragged element to front
                     d3.select(this).raise();
                     d.isDragging = true;
+                    self.isDraggingAny = true;
                 })
                 .on('drag', function(event, d) {
                     // Use delta movement (dx, dy) to avoid flickering
@@ -569,18 +574,33 @@ class SCXMLVisualizer {
                         cancelAnimationFrame(dragAnimationFrame);
                     }
 
+                    // Clear debounce timer
+                    if (self.dragOptimizationTimer) {
+                        clearTimeout(self.dragOptimizationTimer);
+                        self.dragOptimizationTimer = null;
+                    }
+
                     // Schedule update on next animation frame for smooth 60fps
                     dragAnimationFrame = requestAnimationFrame(() => {
                         // Update visual transform
                         d3.select(element).attr('transform', `translate(${d.x},${d.y})`);
 
-                        // Update connected links
-                        self.updateLinks();
+                        // **ADAPTIVE ALGORITHM: Use fast greedy during drag**
+                        self.updateLinksFast();
                     });
+
+                    // **DEBOUNCE: If mouse stops for 300ms, run optimal CSP**
+                    self.dragOptimizationTimer = setTimeout(() => {
+                        if (self.isDraggingAny) {
+                            console.log('[DRAG PAUSE] Mouse stopped 300ms, running optimal CSP...');
+                            self.updateLinksOptimal();
+                        }
+                    }, 300);
                 })
                 .on('end', function(event, d) {
                     console.log(`[DRAG END] ${d.id} at (${d.x}, ${d.y})`);
                     d.isDragging = false;
+                    self.isDraggingAny = false;
 
                     // Cancel any pending animation frame
                     if (dragAnimationFrame) {
@@ -588,11 +608,17 @@ class SCXMLVisualizer {
                         dragAnimationFrame = null;
                     }
 
-                    // **RE-OPTIMIZE: After drag completes, recalculate optimal snap assignments**
-                    console.log(`[DRAG END] Re-optimizing snap point assignments...`);
+                    // Clear debounce timer
+                    if (self.dragOptimizationTimer) {
+                        clearTimeout(self.dragOptimizationTimer);
+                        self.dragOptimizationTimer = null;
+                    }
 
-                    // Re-run optimizer with new node positions
-                    self.layoutOptimizer.optimizeSnapPointAssignments(self.allLinks, self.nodes);
+                    // **FINAL OPTIMIZATION: After drag completes, run optimal CSP**
+                    console.log(`[DRAG END] Re-optimizing with optimal CSP...`);
+
+                    // Re-run optimizer with new node positions (optimal mode)
+                    self.layoutOptimizer.optimizeSnapPointAssignments(self.allLinks, self.nodes, false);
 
                     // Calculate midY for new routing
                     self.allLinks.forEach(link => {
@@ -603,10 +629,10 @@ class SCXMLVisualizer {
                         }
                     });
 
-                    console.log(`[DRAG END] Re-optimization complete`);
+                    // Final update to render optimized paths
+                    self.updateLinksOptimal();
 
-                    // Final update to ensure links are correctly positioned
-                    self.updateLinks();
+                    console.log(`[DRAG END] Re-optimization complete`);
                 }));
 
         // Shapes
@@ -1629,7 +1655,7 @@ class SCXMLVisualizer {
                 // Path: start → horizontal MIN_SEGMENT → vertical to target y → horizontal MIN_SEGMENT → end
                 return `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${ty} L ${x2} ${ty} L ${tx} ${ty}`;
             } else if (sourceIsVertical && !targetIsVertical) {
-                // Source vertical, target horizontal: vertical-then-horizontal (4 points)
+                // Source vertical, target horizontal: vertical-then-horizontal (5 points)
                 // Ensure minimum segments
                 let y1;
                 if (sourceEdge === 'top') {
@@ -1648,7 +1674,7 @@ class SCXMLVisualizer {
                 // Path: start → vertical MIN_SEGMENT → horizontal to x2 → horizontal MIN_SEGMENT to end
                 return `M ${sx} ${sy} L ${sx} ${y1} L ${x2} ${y1} L ${x2} ${ty} L ${tx} ${ty}`;
             } else {
-                // Source horizontal, target vertical: horizontal-then-vertical (4 points)
+                // Source horizontal, target vertical: horizontal-then-vertical (5 points)
                 // Ensure minimum segments
                 let x1;
                 if (sourceEdge === 'right') {
@@ -1748,10 +1774,10 @@ class SCXMLVisualizer {
     /**
      * Update link paths after drag
      */
-    updateLinks() {
-        console.log('[UPDATE LINKS] >>>>>> Called updateLinks() <<<<<<');
+    updateLinks(useGreedy = false) {
+        // console.log(`[UPDATE LINKS] >>>>>> Called updateLinks(useGreedy=${useGreedy}) <<<<<<`);
         if (!this.linkElements || !this.allLinks) {
-            console.log('[UPDATE LINKS] Early return: linkElements or allLinks missing');
+            // console.log('[UPDATE LINKS] Early return: linkElements or allLinks missing');
             return;
         }
 
@@ -1762,17 +1788,19 @@ class SCXMLVisualizer {
         // Check if any node is being dragged
         const anyNodeDragging = this.nodes.some(n => n.isDragging);
 
-        if (anyNodeDragging) {
-            console.log('[DRAG UPDATE] Re-running optimizer for real-time optimization...');
+        if (anyNodeDragging || useGreedy) {
+            // const mode = useGreedy ? 'GREEDY (fast)' : 'CSP (optimal)';
+            // console.log(`[DRAG UPDATE] Re-running optimizer (${mode})...`);
 
             // Clear all routing
             this.allLinks.forEach(link => {
                 delete link.routing;
             });
 
-            // **RE-OPTIMIZE DURING DRAG: Use same algorithm as drop**
-            // This ensures drag and drop produce consistent results
-            this.layoutOptimizer.optimizeSnapPointAssignments(this.allLinks, this.nodes);
+            // **ADAPTIVE ALGORITHM SELECTION**
+            // - useGreedy=true: Fast greedy for real-time drag (1-5ms)
+            // - useGreedy=false: Optimal CSP for final result (50-200ms)
+            this.layoutOptimizer.optimizeSnapPointAssignments(this.allLinks, this.nodes, useGreedy);
 
             // Calculate midY for new routing
             visibleLinks.forEach(link => {
@@ -1783,7 +1811,7 @@ class SCXMLVisualizer {
                 }
             });
 
-            console.log('[DRAG UPDATE] Re-optimization complete');
+            // console.log('[DRAG UPDATE] Re-optimization complete');
         }
 
         // Pass 2: Render with updated directions
@@ -1798,15 +1826,29 @@ class SCXMLVisualizer {
 
         // Update snap points visualization if enabled
         if (this.showSnapPoints) {
-            console.log('[UPDATE SNAP VIZ] Re-rendering snap points during drag...');
+            // console.log('[UPDATE SNAP VIZ] Re-rendering snap points during drag...');
             // Remove old snap points
             this.zoomContainer.selectAll('g.snap-points').remove();
 
             // Re-render snap points
             const visibleNodes = this.getVisibleNodes();
             this.renderSnapPoints(visibleNodes);
-            console.log('[UPDATE SNAP VIZ] Snap points re-rendered');
+            // console.log('[UPDATE SNAP VIZ] Snap points re-rendered');
         }
+    }
+
+    /**
+     * Fast update for real-time drag (uses greedy algorithm)
+     */
+    updateLinksFast() {
+        this.updateLinks(true); // useGreedy=true
+    }
+
+    /**
+     * Optimal update for final positioning (uses CSP solver)
+     */
+    updateLinksOptimal() {
+        this.updateLinks(false); // useGreedy=false
     }
 
     /**

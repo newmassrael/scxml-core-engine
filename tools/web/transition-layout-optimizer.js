@@ -391,9 +391,10 @@ class TransitionLayoutOptimizer {
      * @param {Object} link - Link object
      * @param {Object} sourceNode - Source node
      * @param {Object} targetNode - Target node
+     * @param {Object} reverseRouting - Optional: routing of reverse link (for bidirectional transitions)
      * @returns {Array} Array of {sourceEdge, targetEdge, sourcePoint, targetPoint, distance}
      */
-    getAllPossibleSnapCombinations(link, sourceNode, targetNode) {
+    getAllPossibleSnapCombinations(link, sourceNode, targetNode, reverseRouting = null) {
         const combinations = [];
         const edges = ['top', 'bottom', 'left', 'right'];
 
@@ -409,6 +410,17 @@ class TransitionLayoutOptimizer {
                 if (link.linkType !== 'initial' &&
                     this.hasInitialTransitionOnEdge(targetNode.id, targetEdge)) {
                     return;
+                }
+
+                // **BIDIRECTIONAL CONSTRAINT**: Skip if reverse link uses same edge pair in opposite direction
+                if (reverseRouting) {
+                    // Check if current combination is reverse of the assigned routing
+                    // Example: if reverse is "on.bottom → off.right", skip "off.right → on.bottom"
+                    if (sourceEdge === reverseRouting.targetEdge &&
+                        targetEdge === reverseRouting.sourceEdge) {
+                        console.log(`[BIDIRECTIONAL SKIP] ${link.source}.${sourceEdge}→${link.target}.${targetEdge} (reverse already uses this edge pair)`);
+                        return;
+                    }
                 }
 
                 // Calculate snap points for this edge combination
@@ -653,22 +665,166 @@ class TransitionLayoutOptimizer {
     }
 
     /**
+     * Evaluate a specific edge combination for a link
+     * @param {Object} link - Link object
+     * @param {Object} sourceNode - Source node
+     * @param {Object} targetNode - Target node
+     * @param {string} sourceEdge - Source edge name
+     * @param {string} targetEdge - Target edge name
+     * @param {Array} assignedPaths - Already assigned paths (for intersection checking)
+     * @param {Array} nodes - All nodes
+     * @returns {Object} {combination, score}
+     */
+    evaluateCombination(link, sourceNode, targetNode, sourceEdge, targetEdge, assignedPaths, nodes) {
+        const sourcePoint = this.getEdgeCenterPoint(sourceNode, sourceEdge);
+        const targetPoint = this.getEdgeCenterPoint(targetNode, targetEdge);
+
+        const dx = targetPoint.x - sourcePoint.x;
+        const dy = targetPoint.y - sourcePoint.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+
+        const combo = {
+            sourceEdge,
+            targetEdge,
+            sourcePoint,
+            targetPoint,
+            distance
+        };
+
+        // Calculate intersections
+        let intersections = 0;
+        assignedPaths.forEach(assignedPath => {
+            intersections += this.calculatePathIntersections(combo, assignedPath);
+        });
+
+        // Calculate node collisions
+        let nodeCollisions = 0;
+
+        if (this.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
+            nodeCollisions++;
+        }
+        if (this.pathIntersectsNode(combo, targetNode, { skipLastSegment: true })) {
+            nodeCollisions++;
+        }
+        nodes.forEach(node => {
+            if (node.id === sourceNode.id || node.id === targetNode.id) return;
+            if (this.pathIntersectsNode(combo, node)) {
+                nodeCollisions++;
+            }
+        });
+
+        // Check too-close snap
+        const MIN_SAFE_DISTANCE = TransitionLayoutOptimizer.MIN_SAFE_DISTANCE;
+        let tooCloseSnap = 0;
+        const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
+        const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
+        const distX = Math.abs(sourcePoint.x - targetPoint.x);
+        const distY = Math.abs(sourcePoint.y - targetPoint.y);
+
+        // For horizontal edges (left/right), check if BOTH x and y are too close
+        // This allows vertical layouts where x is close but y is far
+        if (!sourceIsVertical && !targetIsVertical) {
+            if (distX < MIN_SAFE_DISTANCE && distY < MIN_SAFE_DISTANCE) {
+                tooCloseSnap = 1;
+            }
+        }
+        // For vertical edges (top/bottom), check if BOTH x and y are too close
+        else if (sourceIsVertical && targetIsVertical) {
+            if (distY < MIN_SAFE_DISTANCE && distX < MIN_SAFE_DISTANCE) {
+                tooCloseSnap = 1;
+            }
+        }
+
+        const score = tooCloseSnap * 100000 + nodeCollisions * 10000 + intersections * 1000 + distance;
+
+        return { combination: combo, score };
+    }
+
+    /**
      * Optimize snap point assignments for all links
-     * Two-phase algorithm:
-     * Phase 1: Assign optimal edges to minimize intersections
+     * Uses Constraint Satisfaction Problem (CSP) solver for globally optimal routing
+     * Phase 1: CSP solver assigns optimal edges (hard constraints + soft constraints)
      * Phase 2: Distribute snap points on each edge
      * @param {Array} links - Array of link objects
      * @param {Array} nodes - Array of node objects
      */
-    optimizeSnapPointAssignments(links, nodes) {
-        const assignedPaths = [];
+    optimizeSnapPointAssignments(links, nodes, useGreedy = false) {
+        // Adaptive Algorithm Selection:
+        // - useGreedy=true: Fast greedy algorithm for real-time drag (1-5ms)
+        // - useGreedy=false: Optimal CSP solver for final result (50-200ms)
+        
+        if (useGreedy) {
+            console.log('[OPTIMIZE] Using fast greedy algorithm (drag mode)...');
+            this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+            return;
+        }
 
-        // **CRITICAL: Process initial transitions first to establish edge blocking**
-        // This ensures hasInitialTransitionOnEdge() can use actual routing, not prediction
+        console.log('[OPTIMIZE] Using Constraint Satisfaction Solver (optimal mode)...');
+
+        // Check if ConstraintSolver is available
+        if (typeof ConstraintSolver === 'undefined') {
+            console.warn('[OPTIMIZE] ConstraintSolver not found, falling back to greedy algorithm');
+            this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+            return;
+        }
+
+        // Create CSP solver
+        const solver = new ConstraintSolver(links, nodes, this);
+
+        // Solve
+        const solution = solver.solve();
+
+        if (!solution) {
+            console.error('[OPTIMIZE] CSP failed, falling back to greedy algorithm');
+            this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+            return;
+        }
+
+        // Apply solution to links
+        solution.forEach((assignment, linkId) => {
+            const link = links.find(l => l.id === linkId);
+            if (link) {
+                link.routing = RoutingState.fromEdges(
+                    assignment.sourceEdge,
+                    assignment.targetEdge
+                );
+
+                console.log(`[OPTIMIZE CSP] ${link.source}→${link.target}: ${assignment.sourceEdge}→${assignment.targetEdge}`);
+            }
+        });
+
+        // Phase 2: Distribute snap points on each edge
         const sortedLinks = [...links].sort((a, b) => {
             if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
             if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
             return 0;
+        });
+        this.distributeSnapPointsOnEdges(sortedLinks, nodes);
+
+        // console.log(`Optimized snap points for ${links.length} links using CSP`);
+    }
+
+    /**
+     * Fallback greedy algorithm (original Phase 1 + Phase 1.5)
+     * Used when CSP solver is not available or fails
+     */
+    optimizeSnapPointAssignmentsGreedy(links, nodes) {
+        console.log('[OPTIMIZE GREEDY] Using greedy algorithm (fallback)...');
+
+        const assignedPaths = [];
+
+        // Process initial transitions first to establish edge blocking
+        const sortedLinks = [...links].sort((a, b) => {
+            if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
+            if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
+            return 0;
+        });
+
+        // Build map of reverse links
+        const reverseLinkMap = new Map();
+        links.forEach(link => {
+            const key = `${link.source}→${link.target}`;
+            reverseLinkMap.set(key, link);
         });
 
         // Phase 1: Assign optimal edges to each link
@@ -678,8 +834,17 @@ class TransitionLayoutOptimizer {
 
             if (!sourceNode || !targetNode) return;
 
-            // Get all possible combinations
-            const combinations = this.getAllPossibleSnapCombinations(link, sourceNode, targetNode);
+            // Check if reverse link exists and has routing assigned
+            const reverseKey = `${link.target}→${link.source}`;
+            const reverseLink = reverseLinkMap.get(reverseKey);
+            const reverseRouting = (reverseLink && reverseLink.routing) ? reverseLink.routing : null;
+
+            if (reverseRouting) {
+                console.log(`[BIDIRECTIONAL DETECT] ${link.source}→${link.target} has reverse link with routing: ${reverseRouting.sourceEdge}→${reverseRouting.targetEdge}`);
+            }
+
+            // Get all possible combinations (exclude reverse edge pair if bidirectional)
+            const combinations = this.getAllPossibleSnapCombinations(link, sourceNode, targetNode, reverseRouting);
 
             if (combinations.length === 0) {
                 console.warn(`No valid snap combinations for ${link.source}→${link.target}`);
@@ -697,20 +862,17 @@ class TransitionLayoutOptimizer {
                     intersections += this.calculatePathIntersections(combo, assignedPath);
                 });
 
-                // Calculate node collisions (path passing through nodes)
+                // Calculate node collisions
                 let nodeCollisions = 0;
 
-                // Check if path goes back through source node (skip first segment - initial departure)
                 if (this.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
                     nodeCollisions++;
                 }
 
-                // Check if path goes through target node prematurely (skip last segment - final arrival)
                 if (this.pathIntersectsNode(combo, targetNode, { skipLastSegment: true })) {
                     nodeCollisions++;
                 }
 
-                // Check other nodes (all segments)
                 nodes.forEach(node => {
                     if (node.id === sourceNode.id || node.id === targetNode.id) return;
 
@@ -719,7 +881,7 @@ class TransitionLayoutOptimizer {
                     }
                 });
 
-                // Check if snap points are too close (would cause path segments to intersect target node)
+                // Check if snap points are too close
                 const MIN_SAFE_DISTANCE = TransitionLayoutOptimizer.MIN_SAFE_DISTANCE;
                 let tooCloseSnap = 0;
 
@@ -731,23 +893,17 @@ class TransitionLayoutOptimizer {
                 const dx = Math.abs(combo.sourcePoint.x - combo.targetPoint.x);
                 const dy = Math.abs(combo.sourcePoint.y - combo.targetPoint.y);
 
-                // For both horizontal edges (left/right), check x distance
                 if (!sourceIsVertical && !targetIsVertical) {
-                    if (dx < MIN_SAFE_DISTANCE) {
+                    if (dx < MIN_SAFE_DISTANCE && dy < MIN_SAFE_DISTANCE) {
                         tooCloseSnap = 1;
                     }
-                }
-                // For both vertical edges (top/bottom), check y distance
-                else if (sourceIsVertical && targetIsVertical) {
-                    if (dy < MIN_SAFE_DISTANCE) {
+                } else if (sourceIsVertical && targetIsVertical) {
+                    if (dy < MIN_SAFE_DISTANCE && dx < MIN_SAFE_DISTANCE) {
                         tooCloseSnap = 1;
                     }
                 }
 
-                // Score: prioritize avoiding too-close snaps, then no node collisions, then fewer intersections, then shorter distance
-                // Too-close snap penalty: 100000 (highest priority - prevents path from intersecting target node)
-                // Node collision penalty: 10000 per collision
-                // Intersection penalty: 1000 per intersection
+                // Score with original penalty weights
                 const score = tooCloseSnap * 100000 + nodeCollisions * 10000 + intersections * 1000 + combo.distance;
 
                 if (score < bestScore) {
@@ -756,67 +912,23 @@ class TransitionLayoutOptimizer {
                 }
             });
 
-            // Assign best edge combination (without final position yet)
+            // Assign best edge combination
             if (bestCombination) {
-                // Create RoutingState
                 link.routing = RoutingState.fromEdges(
                     bestCombination.sourceEdge,
                     bestCombination.targetEdge
                 );
 
-                // Add to assigned paths for intersection checking
                 assignedPaths.push(bestCombination);
 
-                // Calculate final stats for logging
-                let finalIntersections = 0;
-                assignedPaths.slice(0, -1).forEach(assignedPath => {
-                    finalIntersections += this.calculatePathIntersections(bestCombination, assignedPath);
-                });
-
-                let finalNodeCollisions = 0;
-
-                // Check source node collision (skip first segment)
-                if (this.pathIntersectsNode(bestCombination, sourceNode, { skipFirstSegment: true })) {
-                    finalNodeCollisions++;
-                }
-
-                // Check target node collision (skip last segment)
-                if (this.pathIntersectsNode(bestCombination, targetNode, { skipLastSegment: true })) {
-                    finalNodeCollisions++;
-                }
-
-                // Check other nodes
-                nodes.forEach(node => {
-                    if (node.id === sourceNode.id || node.id === targetNode.id) return;
-                    if (this.pathIntersectsNode(bestCombination, node)) {
-                        finalNodeCollisions++;
-                    }
-                });
-
-                // Check if final combination has too-close snap points
-                const MIN_SAFE_DISTANCE = TransitionLayoutOptimizer.MIN_SAFE_DISTANCE;
-                const srcEdge = bestCombination.sourceEdge;
-                const tgtEdge = bestCombination.targetEdge;
-                const srcIsVert = (srcEdge === 'top' || srcEdge === 'bottom');
-                const tgtIsVert = (tgtEdge === 'top' || tgtEdge === 'bottom');
-                const dx = Math.abs(bestCombination.sourcePoint.x - bestCombination.targetPoint.x);
-                const dy = Math.abs(bestCombination.sourcePoint.y - bestCombination.targetPoint.y);
-
-                let finalTooClose = 0;
-                if (!srcIsVert && !tgtIsVert && dx < MIN_SAFE_DISTANCE) {
-                    finalTooClose = 1;
-                } else if (srcIsVert && tgtIsVert && dy < MIN_SAFE_DISTANCE) {
-                    finalTooClose = 1;
-                }
-
-                console.log(`[OPTIMIZE PHASE 1] ${link.source}→${link.target}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, tooClose=${finalTooClose}, nodeCollisions=${finalNodeCollisions}, intersections=${finalIntersections}, distance=${bestCombination.distance.toFixed(1)}`);
+                console.log(`[OPTIMIZE GREEDY] ${link.source}→${link.target}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, score=${bestScore.toFixed(1)}`);
             }
         });
 
-        // Phase 2: Distribute snap points on each edge (use same sorted order)
+        // Phase 2: Distribute snap points on each edge
         this.distributeSnapPointsOnEdges(sortedLinks, nodes);
 
-        console.log(`Optimized snap points for ${links.length} links`);
+        console.log(`Optimized snap points for ${links.length} links using greedy algorithm`);
     }
 
     /**
@@ -894,9 +1006,32 @@ class TransitionLayoutOptimizer {
                 const bNode = nodes.find(n => n.id === (b.isSource ? b.link.target : b.link.source));
 
                 if (edge === 'top' || edge === 'bottom') {
-                    return (aNode.x || 0) - (bNode.x || 0);
+                    // Primary: Sort by horizontal position (x)
+                    const xDiff = (aNode.x || 0) - (bNode.x || 0);
+                    if (Math.abs(xDiff) > 0.1) {
+                        return xDiff;
+                    }
+                    
+                    // Secondary: When x positions are same, sort by vertical position (y)
+                    // For INCOMING links to horizontal edge: reverse y order to prevent crossings
+                    // Higher sources (smaller y) should connect to rightmost targets (larger x)
+                    if (!a.isSource && !b.isSource) {
+                        return (bNode.y || 0) - (aNode.y || 0); // Reverse y order
+                    }
+                    return (aNode.y || 0) - (bNode.y || 0); // Normal y order for outgoing
                 } else {
-                    return (aNode.y || 0) - (bNode.y || 0);
+                    // Primary: Sort by vertical position (y)
+                    const yDiff = (aNode.y || 0) - (bNode.y || 0);
+                    if (Math.abs(yDiff) > 0.1) {
+                        return yDiff;
+                    }
+                    
+                    // Secondary: When y positions are same, sort by horizontal position (x)
+                    // For INCOMING links to vertical edge: reverse x order to prevent crossings
+                    if (!a.isSource && !b.isSource) {
+                        return (bNode.x || 0) - (aNode.x || 0); // Reverse x order
+                    }
+                    return (aNode.x || 0) - (bNode.x || 0); // Normal x order for outgoing
                 }
             };
 
