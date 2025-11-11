@@ -84,6 +84,28 @@ public:
 };
 
 /**
+ * @brief Information about a scheduled event for debugging/visualization
+ *
+ * Used by interactive debugger to display pending delayed events.
+ * Includes complete EventDescriptor fields for accurate snapshot restoration.
+ *
+ * W3C SCXML 6.2: Contains all information needed to recreate scheduled event.
+ */
+struct ScheduledEventInfo {
+    std::string eventName;
+    std::string sendId;
+    std::chrono::milliseconds remainingTime;
+    std::chrono::milliseconds originalDelay;  // Original delay for step backward restoration
+    std::string sessionId;
+
+    // W3C SCXML 6.2: Complete EventDescriptor fields for restoration
+    std::string targetUri;  // Target URI from EventDescriptor
+    std::string eventType;  // Event type (scxml, platform, etc.)
+    std::string eventData;  // Event data payload
+    std::string content;    // HTTP body content (W3C SCXML C.2)
+};
+
+/**
  * @brief Interface for event scheduling
  *
  * Handles delayed event delivery with cancellation support.
@@ -145,6 +167,17 @@ public:
      * @return true if scheduler is active
      */
     virtual bool isRunning() const = 0;
+
+    /**
+     * @brief Get list of currently scheduled events (for debugging/visualization)
+     *
+     * Returns information about all pending scheduled events, including
+     * remaining time until execution. Used by interactive debugger to
+     * visualize delayed send operations.
+     *
+     * @return Vector of ScheduledEventInfo structures
+     */
+    virtual std::vector<ScheduledEventInfo> getScheduledEvents() const = 0;
 };
 
 ;

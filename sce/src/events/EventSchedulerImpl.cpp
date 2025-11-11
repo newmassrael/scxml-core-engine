@@ -118,8 +118,9 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
     uint64_t sequenceNum = eventSequenceCounter_.fetch_add(1, std::memory_order_relaxed);
 
     // Create scheduled event as shared_ptr for safe async access
+    // Store original delay for step backward restoration
     auto scheduledEvent =
-        std::make_shared<ScheduledEvent>(event, executeAt, target, actualSendId, sessionId, sequenceNum);
+        std::make_shared<ScheduledEvent>(event, executeAt, delay, target, actualSendId, sessionId, sequenceNum);
     auto future = scheduledEvent->sendIdPromise.get_future();
 
     // Set the send ID promise immediately
@@ -600,19 +601,21 @@ void EventSchedulerImpl::callbackWorker() {
 // Thread-local variable definition
 thread_local bool EventSchedulerImpl::isInSchedulerThread_ = false;
 
-#else
-// === WASM: Polling-based execution methods ===
+#endif  // __EMSCRIPTEN__
 
+// === Polling method (Common for both Native and WASM) ===
+
+#ifdef __EMSCRIPTEN__
 size_t EventSchedulerImpl::poll() {
     if (!isRunning()) {
         return 0;
     }
 
-    // Process all ready events synchronously
+    // W3C SCXML 6.2: Process all ready events synchronously (WASM only)
+    // WASM builds have no timer thread, so poll() must be called manually
     return processReadyEvents();
 }
-
-#endif  // __EMSCRIPTEN__
+#endif
 
 std::string EventSchedulerImpl::generateSendId() {
     // REFACTOR: Use centralized UniqueIdGenerator instead of duplicate logic
@@ -637,6 +640,37 @@ std::chrono::steady_clock::time_point EventSchedulerImpl::getNextExecutionTimeUn
     // If the top event is cancelled, we still return its time
     // This is safe because processReadyEvents() will skip cancelled events
     return topEvent->executeAt;
+}
+
+std::vector<ScheduledEventInfo> EventSchedulerImpl::getScheduledEvents() const {
+    std::vector<ScheduledEventInfo> result;
+    auto now = std::chrono::steady_clock::now();
+
+    // PERFORMANCE: Use shared_lock for read-only access to index
+    std::shared_lock<std::shared_mutex> indexLock(indexMutex_);
+
+    // Iterate through sendIdIndex_ to get all scheduled events
+    // Use index instead of queue to avoid copying priority_queue
+    for (const auto &[sendId, event] : sendIdIndex_) {
+        // Skip cancelled events
+        if (event->cancelled) {
+            continue;
+        }
+
+        // Calculate remaining time until execution
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(event->executeAt - now);
+
+        // Add to result with complete EventDescriptor fields for step backward restoration
+        result.push_back({event->event.eventName, event->sendId, remaining, event->originalDelay, event->sessionId,
+                          event->event.target, event->event.type, event->event.data, event->event.content});
+    }
+
+    // Sort by remaining time (earliest first)
+    std::sort(result.begin(), result.end(), [](const ScheduledEventInfo &a, const ScheduledEventInfo &b) {
+        return a.remainingTime < b.remainingTime;
+    });
+
+    return result;
 }
 
 }  // namespace SCE
