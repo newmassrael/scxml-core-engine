@@ -1866,28 +1866,16 @@ class SCXMLVisualizer {
     }
 
     /**
-     * Animate transition
+     * Animate transition (DEPRECATED - CSS handles animation now)
+     *
+     * Zero Duplication Principle: CSS handles all animation through .highlighted class
+     * This method is kept for backward compatibility but does nothing.
+     * Animation is now automatically triggered by highlightTransition() via CSS.
      */
     animateTransition(transition) {
-        if (!transition || !transition.source || !transition.target) {
-            return;
-        }
-
-        // Find link by source and target (same as highlightTransition)
-        const link = this.linkElements.filter(d =>
-            d.source === transition.source && d.target === transition.target
-        );
-
-        if (link.empty()) {
-            console.warn(`Transition link not found: ${transition.source} → ${transition.target}`);
-            return;
-        }
-
-        link.classed('animating', true);
-
-        setTimeout(() => {
-            link.classed('animating', false);
-        }, 2000);
+        // No-op: CSS handles animation via .highlighted class
+        // See visualizer.css: .transition.highlighted { animation: transitionPulse ... }
+        console.log('[DEPRECATED] animateTransition() called - CSS handles animation now');
     }
 
     /**
