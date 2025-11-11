@@ -37,7 +37,7 @@
                 SCXML Interactive Visualizer
                 <span id="test-id" class="Label Label--accent ml-2"></span>
             </h1>
-            <p class="text-gray">
+            <p id="test-description" class="text-gray">
                 Step-by-step SCXML execution with real-time state diagram visualization
             </p>
         </div>
@@ -123,59 +123,62 @@
             </div>
         </div>
 
-        <!-- Side Panels Row -->
-        <div class="d-flex mb-3">
-            <!-- Event Queue Panel -->
-            <div class="Box flex-1 mr-2">
-                <div class="Box-header">
-                    <h4 class="Box-title">Event Queue</h4>
+        <!-- Fixed Bottom Panels Container -->
+        <div id="bottom-panels-container" class="bottom-panels-fixed">
+            <!-- Side Panels Row -->
+            <div class="d-flex mb-3">
+                <!-- Event Queue Panel -->
+                <div class="Box flex-1 mr-2">
+                    <div class="Box-header">
+                        <h4 class="Box-title">Event Queue</h4>
+                    </div>
+                    <div id="event-queue-panel" class="Box-body event-queue">
+                        <h4>Internal Queue</h4>
+                        <div class="event">Empty</div>
+                        <h4 style="margin-top: 16px;">External Queue</h4>
+                        <div class="event">Empty</div>
+                    </div>
                 </div>
-                <div id="event-queue-panel" class="Box-body event-queue">
-                    <h4>Internal Queue</h4>
-                    <div class="event">Empty</div>
-                    <h4 style="margin-top: 16px;">External Queue</h4>
-                    <div class="event">Empty</div>
+
+                <!-- Data Model Panel -->
+                <div class="Box flex-1 mr-2">
+                    <div class="Box-header">
+                        <h4 class="Box-title">Data Model</h4>
+                    </div>
+                    <div id="data-model-panel" class="Box-body data-model">
+                        <div class="data-entry">No data model variables</div>
+                    </div>
+                </div>
+
+                <!-- State Actions Panel -->
+                <div class="Box flex-1 mr-2">
+                    <div class="Box-header">
+                        <h4 class="Box-title">State Actions</h4>
+                    </div>
+                    <div id="state-actions-panel" class="Box-body state-actions">
+                        <div class="action-info">No states with actions</div>
+                    </div>
+                </div>
+
+                <!-- Transition Info Panel -->
+                <div class="Box flex-1">
+                    <div class="Box-header">
+                        <h4 class="Box-title">Transition Info</h4>
+                    </div>
+                    <div id="transition-info-panel" class="Box-body transition-info">
+                        <div class="transition-hint">Click a transition to view details</div>
+                    </div>
                 </div>
             </div>
 
-            <!-- Data Model Panel -->
-            <div class="Box flex-1 mr-2">
+            <!-- Execution Log -->
+            <div class="Box">
                 <div class="Box-header">
-                    <h4 class="Box-title">Data Model</h4>
+                    <h3 class="Box-title">Execution Log</h3>
                 </div>
-                <div id="data-model-panel" class="Box-body data-model">
-                    <div class="data-entry">No data model variables</div>
+                <div id="log-panel" class="Box-body log-panel">
+                    <div class="log-entry">Waiting for first step...</div>
                 </div>
-            </div>
-
-            <!-- State Actions Panel -->
-            <div class="Box flex-1 mr-2">
-                <div class="Box-header">
-                    <h4 class="Box-title">State Actions</h4>
-                </div>
-                <div id="state-actions-panel" class="Box-body state-actions">
-                    <div class="action-info">No states with actions</div>
-                </div>
-            </div>
-
-            <!-- Transition Info Panel -->
-            <div class="Box flex-1">
-                <div class="Box-header">
-                    <h4 class="Box-title">Transition Info</h4>
-                </div>
-                <div id="transition-info-panel" class="Box-body transition-info">
-                    <div class="transition-hint">Click a transition to view details</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Execution Log -->
-        <div class="Box mt-3">
-            <div class="Box-header">
-                <h3 class="Box-title">Execution Log</h3>
-            </div>
-            <div id="log-panel" class="Box-body log-panel">
-                <div class="log-entry">Waiting for first step...</div>
             </div>
         </div>
 
@@ -191,6 +194,9 @@
 
     <!-- WASM Module (will be generated by Emscripten) -->
     <script src="visualizer.js"></script>
+
+    <!-- Shared Utilities (DRY Principle) -->
+    <script src="utils.js"></script>
 
     <!-- Visualizer Components -->
     <script src="visualizer-manager.js"></script>

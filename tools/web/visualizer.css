@@ -22,11 +22,59 @@ body {
     line-height: 1.5;
     color: #1f2328;
     background-color: #ffffff;
+    /* Responsive spacing for fixed bottom panels - adapts to viewport height */
+    padding-bottom: min(600px, 50vh);
 }
 
 /* Override Primer CSS container-lg max-width for wider visualization */
 .container-lg {
     max-width: 1600px;
+}
+
+/* Fixed Bottom Panels Container */
+.bottom-panels-fixed {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 600px;
+    background-color: #ffffff;
+    border-top: 2px solid var(--color-border);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    overflow-y: auto;
+    padding: 16px;
+}
+
+/* Design System: Bottom panel height constraints */
+/* Constrain Box containers to prevent expansion */
+.bottom-panels-fixed .Box {
+    height: 350px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Allow Box-body to shrink and enable scrolling */
+.bottom-panels-fixed .Box-body {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Adjust panel heights in fixed bottom container */
+.bottom-panels-fixed .event-queue,
+.bottom-panels-fixed .data-model,
+.bottom-panels-fixed .state-actions,
+.bottom-panels-fixed .transition-info {
+    max-height: 280px;
+}
+
+.bottom-panels-fixed .log-panel {
+    max-height: 200px;
+}
+
+/* Adjust container padding when panels are fixed */
+#main-content {
+    padding-bottom: 0 !important;
 }
 
 /* State Diagram SVG Styles */
@@ -773,13 +821,18 @@ body {
     overflow-y: auto;
 }
 
+/* Unified panel item style - Design System */
 .action-info {
     padding: 8px 12px;
-    margin-bottom: 8px;
+    margin: 4px auto;
+    width: 95%;
     background-color: var(--color-gray-light);
     border: 1px solid var(--color-border);
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 12px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    transition: all 0.15s ease;
 }
 
 .action-state-header {
@@ -788,13 +841,92 @@ body {
     margin-bottom: 4px;
     padding: 4px 0;
     border-bottom: 1px solid var(--color-border);
+    font-size: 12px;
+}
+
+/* Design System: Clickable interactive elements */
+.clickable-state-header {
+    cursor: pointer;
+    padding: 4px 0;
+    margin: 0;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.clickable-state-header:hover {
+    background-color: rgba(9, 105, 218, 0.05);
+}
+
+.clickable-state-header:active {
+    background-color: rgba(9, 105, 218, 0.1);
+}
+
+/* Design System: Highlighted state (temporary click feedback) */
+.action-info.panel-highlighted {
+    background-color: #ddf4ff !important;
+    border: 2px solid var(--color-blue) !important;
+    animation: panel-highlight-pulse 3s ease-out;
+}
+
+/* Design System: Pulse animation for user feedback */
+@keyframes panel-highlight-pulse {
+    0%, 100% { 
+        box-shadow: 0 0 0 transparent; 
+    }
+    50% { 
+        box-shadow: 0 0 12px rgba(9, 105, 218, 0.4); 
+    }
+}
+
+/* Design System: Active state (persistent indicator) */
+.active-state-info {
+    background-color: #ddf4ff;
+    border: 2px solid var(--color-blue);
+}
+
+/* Focused state effect in diagram - blue border like Transition Info */
+/* For group elements (g.node.state), target the rect/circle inside */
+.node.state.focused > rect,
+.node.state.focused > circle {
+    stroke: var(--color-blue) !important;
+    stroke-width: 3px !important;
+}
+
+/* For direct rect/circle elements */
+.compound-collapsed.focused,
+.compound-container.focused {
+    stroke: var(--color-blue) !important;
+    stroke-width: 3px !important;
+}
+
+/* Pulse animation for all focused elements */
+.node.state.focused,
+.compound-collapsed.focused,
+.compound-container.focused {
+    animation: state-focus-pulse 2s ease-out;
+}
+
+@keyframes state-focus-pulse {
+    0%, 100% {
+        filter: drop-shadow(0 0 0 transparent);
+    }
+}
+    25%, 75% {
+        filter: drop-shadow(0 0 8px var(--color-blue));
+    }
+    50% {
+        filter: drop-shadow(0 0 16px var(--color-blue));
+    }
 }
 
 .action-item {
-    padding: 4px 0 4px 16px;
+    padding: 4px 0 4px 12px;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
-    font-size: 12px;
+    font-size: 11px;
     color: var(--color-gray-dark);
+    line-height: 1.4;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 .action-onentry {
@@ -809,9 +941,36 @@ body {
     margin-bottom: 4px;
 }
 
+.action-none {
+    border-left: 3px solid var(--color-gray-light);
+    padding-left: 8px;
+    margin-bottom: 4px;
+    color: var(--color-gray);
+    font-style: italic;
+}
+
+.action-transitions {
+    border-left: 3px solid var(--color-blue);
+    padding-left: 8px;
+    margin-bottom: 4px;
+    color: var(--color-blue-dark);
+}
+
 .action-type {
     font-weight: 600;
     color: #1f2328;
+}
+
+.state-type {
+    color: var(--color-gray);
+    font-weight: normal;
+    font-size: 11px;
+}
+
+.state-active {
+    color: var(--color-green);
+    font-weight: 600;
+    font-size: 11px;
 }
 
 .action-details {
@@ -1060,7 +1219,8 @@ body {
 /* Transition list item */
 .transition-list-item {
     padding: 8px;
-    margin-bottom: 4px;
+    margin: 4px auto;
+    width: 95%;
     border: 1px solid var(--color-border);
     border-radius: 6px;
     cursor: pointer;
