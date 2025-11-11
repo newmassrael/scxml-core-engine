@@ -534,6 +534,11 @@ class SCXMLVisualizer {
             .on('click', (event, d) => {
                 event.stopPropagation();
                 this.toggleCompoundState(d.id);
+                
+                // Highlight in State Actions panel
+                if (window.executionController) {
+                    window.executionController.highlightStateInPanel(d.id);
+                }
             });
 
         // Regular nodes
@@ -553,6 +558,7 @@ class SCXMLVisualizer {
                 if (d.type === 'initial-pseudo') return 'node state-initial-pseudo';
                 return 'node state';
             })
+            .attr('data-state-id', d => d.id)
             .attr('transform', d => `translate(${d.x},${d.y})`)
             .call(d3.drag()
                 .on('start', function(event, d) {
@@ -662,6 +668,11 @@ class SCXMLVisualizer {
                 console.log(`  Top: ${bounds.top}, Bottom: ${bounds.bottom}`);
                 console.log(`  Width: ${bounds.right - bounds.left}, Height: ${bounds.bottom - bounds.top}`);
                 console.log('====================');
+                
+                // Highlight in State Actions panel
+                if (window.executionController) {
+                    window.executionController.highlightStateInPanel(d.id);
+                }
             });
 
         this.nodeElements.filter(d => d.type === 'history')
@@ -680,6 +691,7 @@ class SCXMLVisualizer {
             .data(collapsedCompounds)
             .enter().append('rect')
             .attr('class', 'compound-collapsed')
+            .attr('data-state-id', d => d.id)
             .attr('x', d => d.x - d.width/2)
             .attr('y', d => d.y - d.height/2)
             .attr('width', d => d.width)
@@ -689,6 +701,11 @@ class SCXMLVisualizer {
             .on('click', (event, d) => {
                 event.stopPropagation();
                 this.toggleCompoundState(d.id);
+                
+                // Highlight in State Actions panel
+                if (window.executionController) {
+                    window.executionController.highlightStateInPanel(d.id);
+                }
             });
 
         // Labels

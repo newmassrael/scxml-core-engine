@@ -10,6 +10,11 @@
  * - Data model inspection
  * - Execution log
  */
+
+// UI Timing Constants
+const FOCUS_HIGHLIGHT_DURATION = 2000; // ms - Duration for state focus animation
+const PANEL_HIGHLIGHT_DURATION = 3000; // ms - Duration for panel highlight animation
+
 class ExecutionController {
     constructor(wasmRunner, visualizer, availableEvents = [], visualizerManager = null) {
         this.runner = wasmRunner;
@@ -42,6 +47,10 @@ class ExecutionController {
 
         this.setupControls();
         this.setupEventButtons();
+        this.loadTestMetadata();
+
+        // Initialize: Update state to reflect actual machine state (may already be in final state due to eventless transitions)
+        this.initializeState();
     }
 
     /**
@@ -118,6 +127,82 @@ class ExecutionController {
     }
 
     /**
+     * Load test metadata from metadata.txt and update description
+     */
+    async loadTestMetadata() {
+        try {
+            const params = new URLSearchParams(window.location.hash.substring(1));
+            const testId = params.get('test');
+            if (!testId) {
+                console.log('No test ID in URL');
+                return;
+            }
+            // DRY Principle: Use shared path resolution from utils.js
+            const resourcesPrefix = getResourcesPath();
+
+            const metadataUrl = `${resourcesPrefix}/${testId}/metadata.txt`;
+            const response = await fetch(metadataUrl);
+            if (!response.ok) {
+                console.warn(`metadata.txt not found for test ${testId}`);
+                return;
+            }
+            const text = await response.text();
+            const lines = text.split('\n');
+            let description = '';
+            let specnum = '';
+            for (const line of lines) {
+                if (line.startsWith('description:')) {
+                    description = line.substring('description:'.length).trim();
+                } else if (line.startsWith('specnum:')) {
+                    specnum = line.substring('specnum:'.length).trim();
+                }
+            }
+            const descElement = document.getElementById('test-description');
+            if (descElement && description) {
+                const specLabel = specnum ? ` (W3C SCXML ${specnum})` : '';
+                descElement.textContent = description + specLabel;
+            }
+            console.log(`Loaded metadata for test ${testId}: ${description}`);
+        } catch (error) {
+            console.error('Error loading test metadata:', error);
+        }
+    }
+
+    /**
+     * Initialize controller state after runner.initialize()
+     * W3C SCXML 3.13: Eventless transitions execute automatically during initialize(),
+     * so we must update UI to reflect actual state (may already be in final state)
+     */
+    async initializeState() {
+        try {
+            // Update all UI panels to reflect actual machine state
+            await this.updateState();
+
+            // Check if already in final state and disable step forward if needed
+            this.checkAndHandleFinalState();
+
+            console.log('ExecutionController: Initial state updated');
+        } catch (error) {
+            console.error('Error initializing controller state:', error);
+        }
+    }
+
+    /**
+     * Check if state machine is in final state and update UI accordingly
+     * W3C SCXML 3.13: Final state means no more transitions possible
+     */
+    checkAndHandleFinalState() {
+        if (this.runner.isInFinalState()) {
+            this.disableButton('btn-step-forward');
+            const activeStates = this.runner.getActiveStates();
+            const stateList = activeStates.length > 0 ? activeStates.join(', ') : 'unknown';
+            console.log(`State machine in final state: ${stateList}`);
+        } else {
+            this.enableButton('btn-step-forward');
+        }
+    }
+
+    /**
      * Execute one step forward
      */
     async stepForward() {
@@ -136,9 +221,12 @@ class ExecutionController {
             // Update event queue after processing
             this.updateEventQueue();
 
+            // Check if reached final state and disable button if needed
+            this.checkAndHandleFinalState();
+
             console.log(`Step ${this.currentStep} executed`);
         } catch (error) {
-            console.error('❌ Error during stepForward:', error);
+            console.error('Error during stepForward:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
         }
     }
@@ -165,6 +253,8 @@ class ExecutionController {
             if (restoredTransition && restoredTransition.source && restoredTransition.target) {
                 console.log(`[STEP BACK] Highlighting restored transition: ${restoredTransition.source} → ${restoredTransition.target}`);
                 this.visualizer.highlightTransition(restoredTransition);
+                // Update Transition Info panel to show restored transition
+                this.visualizer.showTransitionInfo(restoredTransition);
             } else {
                 console.log(`[STEP BACK] No transition at step ${this.currentStep}, clearing highlights`);
                 this.visualizer.clearTransitionHighlights();
@@ -180,7 +270,7 @@ class ExecutionController {
 
             console.log(`Restored to step ${this.currentStep}`);
         } catch (error) {
-            console.error('❌ Error during stepBackward:', error);
+            console.error('Error during stepBackward:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
         }
     }
@@ -198,17 +288,17 @@ class ExecutionController {
 
             await this.updateState();
 
-            // Re-enable forward button
-            this.enableButton('btn-step-forward');
+            // Check if in final state and update button accordingly
+            this.checkAndHandleFinalState();
 
             // Clear log
             if (this.elements.logPanel) {
                 this.elements.logPanel.innerHTML = '<div class="log-entry">Reset to initial configuration</div>';
             }
 
-            console.log('🔄 Reset to initial state');
+            console.log('Reset to initial state');
         } catch (error) {
-            console.error('❌ Error during reset:', error);
+            console.error('Error during reset:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
         }
     }
@@ -232,7 +322,7 @@ class ExecutionController {
 
             this.showMessage(`Event "${eventName}" added to queue`, 'info');
         } catch (error) {
-            console.error('❌ Error raising event:', error);
+            console.error('Error raising event:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
         }
     }
@@ -258,7 +348,7 @@ class ExecutionController {
                 this.showMessage(`Invalid event index`, 'warning');
             }
         } catch (error) {
-            console.error('❌ Error removing internal event:', error);
+            console.error('Error removing internal event:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
         }
     }
@@ -284,7 +374,7 @@ class ExecutionController {
                 this.showMessage(`Invalid event index`, 'warning');
             }
         } catch (error) {
-            console.error('❌ Error removing external event:', error);
+            console.error('Error removing external event:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
         }
     }
@@ -296,6 +386,9 @@ class ExecutionController {
         try {
             // Update step counter
             this.updateStepCounter();
+
+            // Get previous active states (stored from last update)
+            const previousActiveStates = this.previousActiveStates || [];
 
             // Update last transition animation BEFORE updating state diagram
             // (so we can still compare previousActiveStates vs currentActiveStates)
@@ -316,8 +409,21 @@ class ExecutionController {
             this.updateStateActions();
             this.updateLog();
 
+            // Auto-highlight newly activated state in State Actions panel
+            const currentActiveStates = this.getCurrentActiveStates();
+            const newlyActivatedStates = currentActiveStates.filter(state => 
+                !previousActiveStates.includes(state)
+            );
+
+            // Highlight the first newly activated state (if any)
+            if (newlyActivatedStates.length > 0) {
+                const stateToHighlight = newlyActivatedStates[0];
+                console.log(`[Auto Highlight] State activated: ${stateToHighlight}`);
+                this.highlightStateInPanel(stateToHighlight);
+            }
+
         } catch (error) {
-            console.error('❌ Error updating state:', error);
+            console.error('Error updating state:', error);
         }
     }
 
@@ -353,7 +459,25 @@ class ExecutionController {
             // Update previous states for next comparison
             this.previousActiveStates = [...activeStates];
         } catch (error) {
-            console.error('❌ Error updating state diagram:', error);
+            console.error('Error updating state diagram:', error);
+        }
+    }
+
+    /**
+     * Get current active states as JavaScript array
+     * Helper method for panels that need active state information
+     */
+    getCurrentActiveStates() {
+        try {
+            const activeStatesVector = this.runner.getActiveStates();
+            const activeStates = [];
+            for (let i = 0; i < activeStatesVector.size(); i++) {
+                activeStates.push(activeStatesVector.get(i));
+            }
+            return activeStates;
+        } catch (error) {
+            console.error('Error getting active states:', error);
+            return [];
         }
     }
 
@@ -380,7 +504,7 @@ class ExecutionController {
                 console.log('[UPDATE TRANSITION] No transition to display (initial state or no state change)');
             }
         } catch (error) {
-            console.error('❌ Error animating transition:', error);
+            console.error('Error animating transition:', error);
         }
     }
 
@@ -462,25 +586,36 @@ class ExecutionController {
 
     /**
      * Update state actions panel
-     * W3C SCXML 3.7: Display onentry/onexit actions for all states
+     * W3C SCXML 3.7: Display onentry/onexit actions and transitions for all states
+     * Interactive: Click state header to focus on diagram
      */
     updateStateActions() {
         if (!this.elements.stateActionsPanel) return;
 
         try {
-            // Get states with actions from visualizer
-            const statesWithActions = this.visualizer.states.filter(state =>
-                state.onentry || state.onexit
-            );
+            // Get all states from visualizer (show all, not just ones with actions)
+            const allStates = this.visualizer.states;
 
-            if (statesWithActions.length === 0) {
-                this.elements.stateActionsPanel.innerHTML = '<div class="action-info">No states with actions</div>';
+            if (allStates.length === 0) {
+                this.elements.stateActionsPanel.innerHTML = '<div class="action-info">No states defined</div>';
                 return;
             }
 
-            const html = statesWithActions.map(state => {
-                let content = `<div class="action-info">`;
-                content += `<div class="action-state-header">State: ${state.id}</div>`;
+            // Get active states for highlighting
+            const activeStates = this.getCurrentActiveStates();
+
+            const html = allStates.map(state => {
+                const isActive = activeStates.includes(state.id);
+                let content = `<div class="action-info ${isActive ? 'active-state-info' : ''}" data-state-id="${this.escapeHtml(state.id)}">`;
+
+                // State header with type and active status (clickable)
+                content += `<div class="action-state-header clickable-state-header" data-state-id="${this.escapeHtml(state.id)}">`;
+                content += `State: ${this.escapeHtml(state.id)}`;
+                content += ` <span class="state-type">(${this.escapeHtml(state.type || 'atomic')}</span>`;
+                if (isActive) {
+                    content += `<span class="state-active">, active</span>`;
+                }
+                content += `)</div>`;
 
                 // onentry actions
                 if (state.onentry && state.onentry.length > 0) {
@@ -502,14 +637,161 @@ class ExecutionController {
                     });
                 }
 
+                // Show message if no actions
+                if ((!state.onentry || state.onentry.length === 0) &&
+                    (!state.onexit || state.onexit.length === 0)) {
+                    content += `<div class="action-item action-none">No onentry/onexit actions</div>`;
+                }
+
+                // Outgoing transitions
+                const outgoingTransitions = this.visualizer.transitions.filter(t => t.source === state.id);
+                if (outgoingTransitions.length > 0) {
+                    content += `<div class="action-item action-transitions">`;
+                    content += `<span class="action-type">→ Transitions:</span> `;
+                    const transitionList = outgoingTransitions.map(t => {
+                        const event = t.event || 'eventless';
+                        return `${this.escapeHtml(event)}→${this.escapeHtml(t.target)}`;
+                    }).join(', ');
+                    content += `<span class="action-details">${transitionList}</span>`;
+                    content += `</div>`;
+                }
+
                 content += `</div>`;
                 return content;
             }).join('');
 
             this.elements.stateActionsPanel.innerHTML = html;
+
+            // Add click event listeners to state headers
+            const stateHeaders = this.elements.stateActionsPanel.querySelectorAll('.clickable-state-header');
+            stateHeaders.forEach(header => {
+                header.addEventListener('click', (e) => {
+                    const stateId = e.currentTarget.getAttribute('data-state-id');
+                    this.focusState(stateId);
+                });
+            });
         } catch (error) {
             console.error('Error updating state actions:', error);
             this.elements.stateActionsPanel.innerHTML = '<div class="error-message">Failed to load state actions</div>';
+        }
+    }
+
+    /**
+     * Focus on a specific state in the diagram
+     * Temporarily highlights the state for visual feedback
+     */
+    focusState(stateId) {
+        if (!stateId || !this.visualizer) return;
+
+        try {
+            console.log(`[Focus State] Focusing on state: ${stateId}`);
+
+            // Search across ALL diagram containers (single view + split view parent/children)
+            const allDiagramContainers = [
+                '#state-diagram-single',
+                '#state-diagram-parent-split',
+                ...Array.from(document.querySelectorAll('[id^="state-diagram-child-"]')).map(el => `#${el.id}`)
+            ];
+
+            let foundStateNode = null;
+            let foundInContainer = null;
+
+            // Find the state element across all containers
+            for (const containerId of allDiagramContainers) {
+                const container = d3.select(containerId);
+                if (!container.empty()) {
+                    const stateNode = container.select(`[data-state-id="${stateId}"]`);
+                    if (!stateNode.empty()) {
+                        foundStateNode = stateNode;
+                        foundInContainer = container;
+                        console.log(`[Focus State] Found state in container: ${containerId}`);
+                        break;
+                    }
+                }
+            }
+
+            if (!foundStateNode) {
+                console.warn(`[Focus State] State not found in any container: ${stateId}`);
+                return;
+            }
+
+            console.log(`[Focus State] Found state element: ${stateId}`);
+
+            // Visual feedback: add blue border effect (like Transition Info)
+            // Select all state elements: g.node.state, compound-collapsed, compound-container
+            const stateElements = foundInContainer.selectAll('.node.state, .compound-collapsed, .compound-container');
+            stateElements.classed('focused', d => {
+                const isFocused = d && d.id === stateId;
+                if (isFocused) {
+                    console.log(`[Focus State] Adding focused class to: ${stateId}`);
+                }
+                return isFocused;
+            });
+
+            // Scroll the state into view
+            const stateNodeElement = foundStateNode.node();
+            if (stateNodeElement && stateNodeElement.scrollIntoView) {
+                stateNodeElement.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'center',
+                    inline: 'center'
+                });
+                console.log(`[Focus State] Scrolling state into view`);
+            }
+
+            // Remove focus after animation duration
+            setTimeout(() => {
+                stateElements.classed('focused', false);
+                console.log(`[Focus State] Removed focused class from all states`);
+            }, FOCUS_HIGHLIGHT_DURATION);
+        } catch (error) {
+            console.error('Error focusing state:', error);
+        }
+    }
+
+    /**
+     * Highlight a state in the State Actions panel
+     * @param {string} stateId - State ID to highlight
+     */
+    highlightStateInPanel(stateId) {
+        if (!stateId) return;
+
+        try {
+            console.log(`[Highlight Panel] Highlighting state in panel: ${stateId}`);
+
+            // Find the state info block in the State Actions panel
+            const stateInfoBlocks = document.querySelectorAll('.action-info');
+            
+            // Remove previous highlights
+            stateInfoBlocks.forEach(block => {
+                block.classList.remove('panel-highlighted');
+            });
+
+            // Add highlight to the clicked state's entire block
+            stateInfoBlocks.forEach(block => {
+                const blockStateId = block.getAttribute('data-state-id');
+                if (blockStateId === stateId) {
+                    block.classList.add('panel-highlighted');
+                    
+                    // Scroll into view
+                    block.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest'
+                    });
+                    
+                    console.log(`[Highlight Panel] Added highlight to: ${stateId}`);
+                }
+            });
+
+            // Remove highlight after animation duration
+            setTimeout(() => {
+                stateInfoBlocks.forEach(block => {
+                    block.classList.remove('panel-highlighted');
+                });
+                console.log(`[Highlight Panel] Removed highlight from panel`);
+            }, PANEL_HIGHLIGHT_DURATION);
+        } catch (error) {
+            console.error('Error highlighting state in panel:', error);
         }
     }
 
@@ -655,7 +937,7 @@ class ExecutionController {
                 this.elements.logPanel.removeChild(this.elements.logPanel.lastChild);
             }
         } catch (error) {
-            console.error('❌ Error updating log:', error);
+            console.error('Error updating log:', error);
         }
     }
 
@@ -696,7 +978,7 @@ class ExecutionController {
                        </a>`;
             }
         } catch (error) {
-            console.error('❌ Error getting W3C reference:', error);
+            console.error('Error getting W3C reference:', error);
         }
 
         return '';
@@ -790,7 +1072,7 @@ class ExecutionController {
             this.updateCommunicationLog(childrenData);
 
         } catch (error) {
-            console.error('❌ Error updating children visualization:', error);
+            console.error('Error updating children visualization:', error);
         }
     }
 

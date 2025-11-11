@@ -32,24 +32,11 @@ async function loadSCXMLContent() {
     if (params.test) {
         const testId = params.test;
 
-        // Auto-detect environment: GitHub Pages vs Local Development
-        // GitHub Pages: hostname contains 'github.io'
-        // Local Dev: localhost or 127.0.0.1
-        const isGitHubPages = window.location.hostname.includes('github.io');
-        const isLocalhost = window.location.hostname === 'localhost' ||
-                           window.location.hostname === '127.0.0.1' ||
-                           window.location.hostname === '';
-
-        // Path resolution:
-        // - GitHub Pages: ../resources (served from docs/)
-        // - Localhost: resources (symlink in tools/web/ → ../../resources)
-        // - Project root server: ../../resources (fallback)
-        const resourcesPrefix = isGitHubPages ? '../resources' :
-                               isLocalhost ? 'resources' :
-                               '../../resources';
+        // DRY Principle: Use shared path resolution from utils.js
+        const resourcesPrefix = getResourcesPath();
+        const environment = getEnvironmentName();
 
         const url = `${resourcesPrefix}/${testId}/test${testId}.scxml`;
-        const environment = isGitHubPages ? 'GitHub Pages' : isLocalhost ? 'Localhost' : 'Local Dev';
         console.log(`Loading W3C test ${testId} from ${url} (${environment})`);
 
         const response = await fetch(url);
@@ -95,11 +82,9 @@ async function initVisualizer(scxmlContent) {
         if (params.test) {
             const testId = params.test;
 
-            // Auto-detect environment for sub-SCXML fetch
-            const isGitHubPages = window.location.hostname.includes('github.io');
-            const basePath = isGitHubPages
-                ? `../resources/${testId}/`
-                : `../../resources/${testId}/`;
+            // DRY Principle: Use shared path resolution from utils.js
+            const resourcesPrefix = getResourcesPath();
+            const basePath = `${resourcesPrefix}/${testId}/`;
             
             // Create directory in virtual FS
             try {
@@ -265,25 +250,10 @@ async function initVisualizer(scxmlContent) {
             }
         }
 
-        // Initial state render
-        console.log('[INIT] Before updateState()');
-        await controller.updateState();
-        console.log('[INIT] After updateState()');
-
-        // W3C SCXML 3.2: Before first macrostep, no state is active yet
-        // But we highlight initial state for better UX (after updateState clears it)
-        console.log('[INIT] structure.initial:', structure.initial);
-        console.log('[INIT] visualizer.initialState:', visualizer.initialState);
-
-        const initialStateId = structure.initial;
-        if (initialStateId) {
-            console.log(`[INIT] Highlighting initial state: ${initialStateId}`);
-            visualizer.highlightActiveStates([initialStateId]);
-            console.log('[INIT] highlightActiveStates() called');
-        } else {
-            console.warn('[INIT] No initial state found!');
-        }
-
+        // W3C SCXML 3.13: ExecutionController.initializeState() already called in constructor
+        // No need to manually update state here - controller handles initial state display
+        // (may already be in final state due to eventless transitions)
+        console.log('[INIT] ExecutionController initialized with actual state');
         console.log('Visualizer ready!');
 
         showLoading(false);
