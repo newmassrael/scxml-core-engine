@@ -68,23 +68,16 @@ jobs:
         COMMIT_HASH=$(git rev-parse --short HEAD)
         echo "Deployment commit: $COMMIT_HASH"
 
-        # Copy all web interface files
+        # Copy code generator files
         cp tools/web/index.html web_dist/
         cp tools/web/aot-template.js web_dist/
-        cp tools/web/visualizer.html web_dist/
-        cp tools/web/visualizer.css web_dist/
-        cp tools/web/visualizer.js web_dist/
-        cp tools/web/visualizer.wasm web_dist/
-        cp tools/web/scxml-visualizer.js web_dist/
-        cp tools/web/transition-layout-optimizer.js web_dist/
-        cp tools/web/edge-direction-utils.js web_dist/
-        cp tools/web/routing-state.js web_dist/
-        cp tools/web/visualizer-manager.js web_dist/
-        cp tools/web/execution-controller.js web_dist/
-        cp tools/web/main.js web_dist/
-        cp tools/web/primer.css web_dist/
-        cp tools/web/d3.v7.min.js web_dist/
-        cp tools/web/spec_references.json web_dist/
+
+        # Deploy visualizer files using shared script (Single Source of Truth)
+        chmod +x tools/scripts/deploy_visualizer.sh
+        ./tools/scripts/deploy_visualizer.sh \
+          web_dist \
+          tools/web/visualizer.wasm \
+          tools/web/visualizer.js
 
         # Add cache-busting query parameters to local files only (exclude external URLs)
         echo "Adding cache-busting parameters (commit: $COMMIT_HASH)..."

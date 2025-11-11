@@ -300,21 +300,15 @@ jobs:
           cd ..
           echo "✅ WASM visualizer built"
 
-          # Copy visualizer assets to GitHub Pages
-          mkdir -p gh-pages/visualizer
-          cp build_wasm/tests/visualizer.wasm gh-pages/visualizer/
-          cp build_wasm/tests/visualizer.js gh-pages/visualizer/
-          cp tools/web/visualizer.html gh-pages/visualizer/index.html
-          cp tools/web/visualizer.css gh-pages/visualizer/
-          cp tools/web/scxml-visualizer.js gh-pages/visualizer/
-          cp tools/web/transition-layout-optimizer.js gh-pages/visualizer/
-          cp tools/web/visualizer-manager.js gh-pages/visualizer/
-          cp tools/web/execution-controller.js gh-pages/visualizer/
-          cp tools/web/main.js gh-pages/visualizer/
-          cp tools/web/primer.css gh-pages/visualizer/
-          cp tools/web/d3.v7.min.js gh-pages/visualizer/
-          cp tools/web/spec_references.json gh-pages/visualizer/
-          echo "✅ Visualizer assets copied to gh-pages/visualizer/"
+          # Deploy visualizer files using shared script (Single Source of Truth)
+          chmod +x tools/scripts/deploy_visualizer.sh
+          ./tools/scripts/deploy_visualizer.sh \
+            gh-pages/visualizer \
+            build_wasm/tests/visualizer.wasm \
+            build_wasm/tests/visualizer.js
+
+          # Rename visualizer.html to index.html for GitHub Pages
+          mv gh-pages/visualizer/visualizer.html gh-pages/visualizer/index.html
 
           # Copy SCXML resources for visualizer
           echo "📦 Copying SCXML files for visualizer..."

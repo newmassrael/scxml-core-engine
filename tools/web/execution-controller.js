@@ -19,6 +19,9 @@ class ExecutionController {
         this.availableEvents = availableEvents;
         this.visualizerManager = visualizerManager;
 
+        // Transition history for time-travel debugging
+        this.transitionHistory = []; // transitionHistory[step] = transition executed at that step
+
         // Cache DOM elements for performance
         this.elements = {
             stepCounter: document.getElementById('step-counter'),
@@ -153,7 +156,24 @@ class ExecutionController {
             }
 
             this.currentStep = this.runner.getCurrentStep();
+
+            // C++ StateSnapshot automatically restores transition info
+            // Get restored transition from C++ and highlight it
+            const restoredTransition = this.runner.getLastTransition();
+            console.log(`[STEP BACK] Restored to step ${this.currentStep}, transition:`, restoredTransition);
+
+            if (restoredTransition && restoredTransition.source && restoredTransition.target) {
+                console.log(`[STEP BACK] Highlighting restored transition: ${restoredTransition.source} → ${restoredTransition.target}`);
+                this.visualizer.highlightTransition(restoredTransition);
+            } else {
+                console.log(`[STEP BACK] No transition at step ${this.currentStep}, clearing highlights`);
+                this.visualizer.clearTransitionHighlights();
+            }
+
+            // Set flag to skip transition animation during backward step
+            this.isSteppingBackward = true;
             await this.updateState();
+            this.isSteppingBackward = false;
 
             // Re-enable forward button
             this.enableButton('btn-step-forward');
@@ -172,6 +192,10 @@ class ExecutionController {
         try {
             this.runner.reset();
             this.currentStep = 0;
+
+            // Clear all transition highlights
+            this.visualizer.clearTransitionHighlights();
+
             await this.updateState();
 
             // Re-enable forward button
@@ -221,11 +245,15 @@ class ExecutionController {
             // Update step counter
             this.updateStepCounter();
 
-            // Update state diagram
-            await this.updateStateDiagram();
+            // Update last transition animation BEFORE updating state diagram
+            // (so we can still compare previousActiveStates vs currentActiveStates)
+            // Skip transition animation during step backward (time travel doesn't show transitions)
+            if (!this.isSteppingBackward) {
+                await this.updateTransitionAnimation();
+            }
 
-            // Update last transition animation
-            await this.updateTransitionAnimation();
+            // Update state diagram (this updates previousActiveStates)
+            await this.updateStateDiagram();
 
             // Update child state machines visualization
             await this.updateChildrenVisualization();
@@ -263,7 +291,15 @@ class ExecutionController {
                 activeStates.push(activeStatesVector.get(i));
             }
 
+            // Store previous active states for transition detection
+            if (!this.previousActiveStates) {
+                this.previousActiveStates = [];
+            }
+
             this.visualizer.highlightActiveStates(activeStates);
+
+            // Update previous states for next comparison
+            this.previousActiveStates = [...activeStates];
         } catch (error) {
             console.error('❌ Error updating state diagram:', error);
         }
@@ -274,10 +310,23 @@ class ExecutionController {
      */
     async updateTransitionAnimation() {
         try {
+            // Get transition from C++ (StateSnapshot restores this correctly)
             const lastTransition = this.runner.getLastTransition();
+            console.log('[UPDATE TRANSITION] getLastTransition() returned:', lastTransition);
 
             if (lastTransition && lastTransition.source && lastTransition.target) {
+                console.log(`[UPDATE TRANSITION] Valid transition: ${lastTransition.source} → ${lastTransition.target}`);
+
+                // Animate and highlight
+                console.log('[UPDATE TRANSITION] Calling animateTransition()...');
                 this.visualizer.animateTransition(lastTransition);
+                console.log('[UPDATE TRANSITION] Calling highlightTransition()...');
+                this.visualizer.highlightTransition(lastTransition);
+                console.log('[UPDATE TRANSITION] Calling showTransitionInfo()...');
+                this.visualizer.showTransitionInfo(lastTransition);
+                console.log('[UPDATE TRANSITION] All transition updates complete');
+            } else {
+                console.log('[UPDATE TRANSITION] No transition to display (initial state or no state change)');
             }
         } catch (error) {
             console.error('❌ Error animating transition:', error);
