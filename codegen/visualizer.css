@@ -965,3 +965,71 @@ body {
 .parallel-container.active {
     stroke-width: 3px;
 }
+
+/* ========================================
+   Transition List & Highlighting
+   ======================================== */
+
+/* Transition highlighted state */
+.transition.highlighted {
+    stroke: var(--color-blue);
+    stroke-width: 4px;
+    opacity: 1;
+    filter: drop-shadow(0 0 4px rgba(9, 105, 218, 0.5));
+}
+
+.transition-label.highlighted {
+    font-weight: 700;
+    fill: var(--color-blue);
+    font-size: 13px;
+}
+
+/* Transition list container */
+.transition-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.transition-list-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-gray-dark);
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+/* Transition list item */
+.transition-list-item {
+    padding: 8px;
+    margin-bottom: 4px;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background-color: #ffffff;
+}
+
+.transition-list-item:hover {
+    background-color: var(--color-gray-light);
+    border-color: var(--color-blue);
+    transform: translateX(2px);
+}
+
+.transition-list-item.selected {
+    background-color: #ddf4ff;
+    border-color: var(--color-blue);
+    border-width: 2px;
+}
+
+.transition-list-source-target {
+    font-size: 13px;
+    color: #1f2328;
+    margin-bottom: 4px;
+}
+
+.transition-list-event {
+    font-size: 11px;
+    color: var(--color-gray-dark);
+    font-style: italic;
+}

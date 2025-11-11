@@ -736,6 +736,7 @@ class SCXMLVisualizer {
             .on('click', (event, d) => {
                 if (d.linkType === 'transition') {
                     this.showTransitionInfo(d);
+                    this.highlightTransition(d);
                 }
             });
         
@@ -767,6 +768,10 @@ class SCXMLVisualizer {
         console.log('  Node groups:', this.nodeElements ? this.nodeElements.size() : 0);
         console.log('  Collapsed compounds:', this.collapsedElements ? this.collapsedElements.size() : 0);
         console.log('  Compound containers:', this.compoundContainers ? this.compoundContainers.size() : 0);
+
+        // Render transition list
+        this.renderTransitionList();
+
         console.log('[RENDER END] ========== Completed render() ==========');
     }
 
@@ -989,35 +994,98 @@ class SCXMLVisualizer {
     }
     
     /**
-     * Get transition label position (midpoint of path)
+     * Get transition label position (on the actual path)
      */
     getTransitionLabelPosition(transition) {
+        // Use routing information to get actual path coordinates
+        if (transition.routing && transition.routing.sourcePoint && transition.routing.targetPoint) {
+            const start = transition.routing.sourcePoint;
+            const end = transition.routing.targetPoint;
+            const sourceEdge = transition.routing.sourceEdge;
+            const targetEdge = transition.routing.targetEdge;
+
+            const sx = start.x;
+            const sy = start.y;
+            const tx = end.x;
+            const ty = end.y;
+
+            const MIN_SEGMENT = 30;
+            const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
+            const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
+
+            // Calculate the middle segment of the path based on edge types
+            if (sourceIsVertical && targetIsVertical) {
+                // Both vertical edges: VHV path (vertical-horizontal-vertical)
+                // Middle segment is horizontal: from (sx, y1) to (tx, y1)
+                let y1;
+                if (sourceEdge === 'top') {
+                    y1 = sy - MIN_SEGMENT;
+                } else {
+                    y1 = sy + MIN_SEGMENT;
+                }
+
+                // Return midpoint of horizontal segment, slightly above
+                return {
+                    x: (sx + tx) / 2,
+                    y: y1 - 8
+                };
+            } else if (!sourceIsVertical && !targetIsVertical) {
+                // Both horizontal edges: HVH path (horizontal-vertical-horizontal)
+                // Middle segment is vertical: from (x1, sy) to (x1, ty)
+                let x1;
+                if (sourceEdge === 'right') {
+                    x1 = sx + MIN_SEGMENT;
+                } else {
+                    x1 = sx - MIN_SEGMENT;
+                }
+
+                // Return midpoint of vertical segment, to the right
+                return {
+                    x: x1 + 10,
+                    y: (sy + ty) / 2
+                };
+            } else if (sourceIsVertical && !targetIsVertical) {
+                // Source vertical, target horizontal: V→H path
+                // Place label near the corner point
+                let y1;
+                if (sourceEdge === 'top') {
+                    y1 = sy - MIN_SEGMENT;
+                } else {
+                    y1 = sy + MIN_SEGMENT;
+                }
+
+                return {
+                    x: (sx + tx) / 2,
+                    y: y1 - 8
+                };
+            } else {
+                // Source horizontal, target vertical: H→V path
+                // Place label near the corner point
+                let x1;
+                if (sourceEdge === 'right') {
+                    x1 = sx + MIN_SEGMENT;
+                } else {
+                    x1 = sx - MIN_SEGMENT;
+                }
+
+                return {
+                    x: x1 + 10,
+                    y: (sy + ty) / 2
+                };
+            }
+        }
+
+        // Fallback to simple midpoint
         const sourceNode = this.nodes.find(n => n.id === transition.source);
         const targetNode = this.nodes.find(n => n.id === transition.target);
-        
+
         if (!sourceNode || !targetNode) {
             return { x: 0, y: 0 };
         }
-        
-        // Calculate midpoint between source and target
-        const sx = sourceNode.x || 0;
-        const sy = sourceNode.y || 0;
-        const tx = targetNode.x || 0;
-        const ty = targetNode.y || 0;
-        
-        // For Z-paths, use the horizontal segment's midpoint
-        if (transition.routing && transition.routing.midY !== null) {
-            const midY = transition.routing.midY;
-            return {
-                x: (sx + tx) / 2,
-                y: midY - 5  // Slightly above the path
-            };
-        }
-        
-        // For direct lines, use simple midpoint
+
         return {
-            x: (sx + tx) / 2,
-            y: (sy + ty) / 2 - 5  // Slightly above the path
+            x: (sourceNode.x + targetNode.x) / 2,
+            y: (sourceNode.y + targetNode.y) / 2 - 8
         };
     }
     
@@ -1805,11 +1873,13 @@ class SCXMLVisualizer {
             return;
         }
 
-        const linkId = `${transition.source}_${transition.target}`;
-        const link = this.linkElements.filter(d => d.id === linkId);
+        // Find link by source and target (same as highlightTransition)
+        const link = this.linkElements.filter(d =>
+            d.source === transition.source && d.target === transition.target
+        );
 
         if (link.empty()) {
-            console.warn(`Transition link not found: ${linkId}`);
+            console.warn(`Transition link not found: ${transition.source} → ${transition.target}`);
             return;
         }
 
@@ -1821,77 +1891,193 @@ class SCXMLVisualizer {
     }
 
     /**
-     * Show transition info
+     * Show transition info (select in list when clicked on diagram)
      */
     showTransitionInfo(transition) {
         const panel = document.getElementById('transition-info-panel');
         if (!panel) return;
 
-        // Debug: Log transition path coordinates
+        // Find the transition index in the list
+        const transitionId = `${transition.source}-${transition.target}`;
+        const transitionIndex = this.transitions.findIndex(t =>
+            `${t.source}-${t.target}` === transitionId
+        );
+
+        if (transitionIndex >= 0) {
+            // Update selected state in the list
+            const listItems = panel.querySelectorAll('.transition-list-item');
+            listItems.forEach((item, index) => {
+                if (index === transitionIndex) {
+                    item.classList.add('selected');
+                    // Scroll into view
+                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+    }
+
+    /**
+     * Render transition list in info panel
+     */
+    renderTransitionList() {
+        const panel = document.getElementById('transition-info-panel');
+        if (!panel) return;
+
+        if (!this.transitions || this.transitions.length === 0) {
+            panel.innerHTML = '<div class="transition-hint">No transitions</div>';
+            return;
+        }
+
+        let html = '<div class="transition-list">';
+        html += '<div class="transition-list-header">All Transitions</div>';
+
+        this.transitions.forEach((transition, index) => {
+            const transitionId = `${transition.source}-${transition.target}`;
+            const eventText = transition.event || '(eventless)';
+
+            html += `
+                <div class="transition-list-item" data-transition-id="${transitionId}" data-transition-index="${index}">
+                    <div class="transition-list-source-target">
+                        <strong>${transition.source}</strong> → <strong>${transition.target}</strong>
+                    </div>
+                    <div class="transition-list-event">${eventText}</div>
+                </div>
+            `;
+        });
+
+        html += '</div>';
+        panel.innerHTML = html;
+
+        // Add click handlers
+        const self = this;
+        panel.querySelectorAll('.transition-list-item').forEach(item => {
+            item.addEventListener('click', function() {
+                const index = parseInt(this.getAttribute('data-transition-index'));
+                const transition = self.transitions[index];
+                self.highlightTransition(transition);
+                self.focusOnTransition(transition);
+
+                // Update selected state
+                panel.querySelectorAll('.transition-list-item').forEach(t => t.classList.remove('selected'));
+                this.classList.add('selected');
+            });
+        });
+    }
+
+    /**
+     * Clear all transition highlights
+     */
+    clearTransitionHighlights() {
+        console.log('[CLEAR HIGHLIGHT] Clearing all transition highlights');
+
+        if (this.linkElements) {
+            this.linkElements.classed('highlighted', false);
+        }
+
+        if (this.transitionLabels) {
+            this.transitionLabels.classed('highlighted', false);
+        }
+
+        console.log('[CLEAR HIGHLIGHT] All highlights cleared');
+    }
+
+    /**
+     * Highlight a specific transition
+     */
+    highlightTransition(transition) {
+        console.log('[HIGHLIGHT] highlightTransition() called with:', transition);
+
+        if (!this.linkElements) {
+            console.log('[HIGHLIGHT] No linkElements - aborting');
+            return;
+        }
+
+        const transitionId = `${transition.source}-${transition.target}`;
+        console.log(`[HIGHLIGHT] Looking for transition ID: ${transitionId}`);
+        console.log(`[HIGHLIGHT] Available linkElements count: ${this.linkElements.size()}`);
+        console.log(`[HIGHLIGHT] Available transitionLabels: ${this.transitionLabels ? this.transitionLabels.size() : 'none'}`);
+
+        // Remove previous highlights
+        this.clearTransitionHighlights();
+        console.log('[HIGHLIGHT] Cleared previous highlights');
+
+        // Add highlight to selected transition
+        let foundLink = false;
+        this.linkElements.each(function(d) {
+            const linkId = `${d.source}-${d.target}`;
+            console.log(`[HIGHLIGHT] Checking link: ${linkId} (type: ${d.linkType})`);
+            if (linkId === transitionId) {
+                console.log(`[HIGHLIGHT] ✅ MATCH FOUND! Highlighting link: ${linkId}`);
+                d3.select(this).classed('highlighted', true);
+                foundLink = true;
+            }
+        });
+
+        if (!foundLink) {
+            console.log(`[HIGHLIGHT] ❌ NO MATCH - transition ${transitionId} not found in linkElements`);
+            console.log('[HIGHLIGHT] All available transitions:');
+            this.linkElements.each(function(d) {
+                console.log(`  - ${d.source} → ${d.target} (type: ${d.linkType}, id: ${d.id})`);
+            });
+        }
+
+        // Highlight transition label
+        if (this.transitionLabels) {
+            let foundLabel = false;
+            this.transitionLabels.each(function(d) {
+                const linkId = `${d.source}-${d.target}`;
+                if (linkId === transitionId) {
+                    console.log(`[HIGHLIGHT] ✅ Label found for: ${linkId}`);
+                    d3.select(this).classed('highlighted', true);
+                    foundLabel = true;
+                }
+            });
+
+            if (!foundLabel) {
+                console.log(`[HIGHLIGHT] ⚠️ No label found for transition ${transitionId}`);
+            }
+        }
+
+        console.log('[HIGHLIGHT] highlightTransition() complete');
+    }
+
+    /**
+     * Focus on a specific transition (pan and zoom)
+     */
+    focusOnTransition(transition) {
         const sourceNode = this.nodes.find(n => n.id === transition.source);
         const targetNode = this.nodes.find(n => n.id === transition.target);
-        
-        if (sourceNode && targetNode) {
-            console.log('=== TRANSITION CLICKED ===');
-            console.log(`Source: ${transition.source} → Target: ${transition.target}`);
-            console.log(`Source node: (${sourceNode.x}, ${sourceNode.y})`);
-            console.log(`Target node: (${targetNode.x}, ${targetNode.y})`);
-            
-            // Get the actual path being drawn
-            const pathD = this.getLinkPath(transition);
-            console.log('Path data:', pathD);
-            
-            // Parse path to show individual segments
-            const pathSegments = pathD.split(/(?=[ML])/);
-            console.log('Path segments:');
-            pathSegments.forEach((seg, i) => {
-                console.log(`  ${i}: ${seg}`);
-            });
-            
-            // Show target bounds
-            const targetBounds = this.getNodeBounds(targetNode);
-            console.log('Target bounds:', targetBounds);
-            
-            // Show source bounds
-            const sourceBounds = this.getNodeBounds(sourceNode);
-            console.log('Source bounds:', sourceBounds);
-            
-            console.log('======================');
-        }
 
-        let html = `
-            <div class="transition-detail">
-                <div class="transition-source-target">
-                    <strong>${transition.source}</strong> → <strong>${transition.target}</strong>
-                </div>
-        `;
+        if (!sourceNode || !targetNode) return;
 
-        if (transition.event) {
-            html += `<div class="transition-event">Event: <code>${transition.event}</code></div>`;
-        }
+        // Calculate center point between source and target
+        const centerX = (sourceNode.x + targetNode.x) / 2;
+        const centerY = (sourceNode.y + targetNode.y) / 2;
 
-        if (transition.cond) {
-            html += `<div class="transition-cond">Condition: <code>${transition.cond}</code></div>`;
-        }
+        // Calculate distance between nodes
+        const dx = targetNode.x - sourceNode.x;
+        const dy = targetNode.y - sourceNode.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
 
-        if (transition.actions && transition.actions.length > 0) {
-            html += `<div class="transition-actions"><strong>Actions:</strong><ul>`;
-            transition.actions.forEach(action => {
-                html += `<li>${action}</li>`;
-            });
-            html += `</ul></div>`;
-        }
+        // Calculate zoom level to fit both nodes
+        const padding = 100;
+        const zoomLevel = Math.min(
+            this.width / (Math.abs(dx) + padding * 2),
+            this.height / (Math.abs(dy) + padding * 2),
+            2.0  // Max zoom
+        );
 
-        if (transition.guards && transition.guards.length > 0) {
-            html += `<div class="transition-guards"><strong>Guards:</strong><ul>`;
-            transition.guards.forEach(guard => {
-                html += `<li><code>${guard}</code></li>`;
-            });
-            html += `</ul></div>`;
-        }
+        // Apply transform
+        const transform = d3.zoomIdentity
+            .translate(this.width / 2, this.height / 2)
+            .scale(zoomLevel)
+            .translate(-centerX, -centerY);
 
-        html += `</div>`;
-        panel.innerHTML = html;
+        this.svg.transition()
+            .duration(750)
+            .call(this.zoom.transform, transform);
     }
 
     /**
