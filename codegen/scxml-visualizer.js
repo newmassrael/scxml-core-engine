@@ -22,6 +22,9 @@ class SCXMLVisualizer {
         // Debug mode from URL parameter (?debug)
         this.debugMode = DEBUG_MODE;
 
+        // Show snap points from URL parameter (?show-snap)
+        this.showSnapPoints = new URLSearchParams(window.location.search).has('show-snap');
+
         // Container dimensions
         const containerNode = this.container.node();
         const clientWidth = containerNode ? containerNode.clientWidth : 0;
@@ -414,7 +417,7 @@ class SCXMLVisualizer {
             applyToNode(child);
         });
 
-        // Apply ELK edge routing information
+        // Apply ELK edge routing information BEFORE modifying node positions
         if (layouted.edges) {
             console.log('Applying ELK edge routing...');
             layouted.edges.forEach(elkEdge => {
@@ -422,9 +425,70 @@ class SCXMLVisualizer {
                 if (link && elkEdge.sections && elkEdge.sections.length > 0) {
                     link.elkSections = elkEdge.sections;
                     console.log(`  ${elkEdge.id}: ${elkEdge.sections.length} section(s)`);
+                    elkEdge.sections.forEach((section, idx) => {
+                        console.log(`    section ${idx}: start=(${section.startPoint.x.toFixed(1)}, ${section.startPoint.y.toFixed(1)}), end=(${section.endPoint.x.toFixed(1)}, ${section.endPoint.y.toFixed(1)})`);
+                        if (section.bendPoints && section.bendPoints.length > 0) {
+                            section.bendPoints.forEach((bp, bpIdx) => {
+                                console.log(`      bendPoint ${bpIdx}: (${bp.x.toFixed(1)}, ${bp.y.toFixed(1)})`);
+                            });
+                        }
+                    });
                 }
             });
         }
+
+        // Force vertical alignment: center nodes on x-axis, but distribute nodes on same layer
+        const centerX = this.width / 2;
+        // Dynamic Y tolerance: min 15px, max 30px, default 4% of viewport height
+        const yTolerance = Math.max(15, Math.min(30, this.height * 0.04));
+
+        // Group nodes by layer (similar Y coordinates)
+        const layers = new Map();
+        this.nodes.forEach(node => {
+            let foundLayer = false;
+            for (const [layerY, nodesInLayer] of layers.entries()) {
+                if (Math.abs(node.y - layerY) < yTolerance) {
+                    nodesInLayer.push(node);
+                    foundLayer = true;
+                    break;
+                }
+            }
+            if (!foundLayer) {
+                layers.set(node.y, [node]);
+            }
+        });
+
+        // Distribute nodes horizontally within each layer
+        layers.forEach((nodesInLayer, layerY) => {
+            if (nodesInLayer.length === 1) {
+                // Single node: center it
+                nodesInLayer[0].x = centerX;
+            } else {
+                // Multiple nodes: distribute horizontally
+                const spacing = 140; // Horizontal spacing between nodes
+                const totalWidth = (nodesInLayer.length - 1) * spacing;
+                const startX = centerX - totalWidth / 2;
+
+                nodesInLayer.forEach((node, idx) => {
+                    node.x = startX + idx * spacing;
+                });
+            }
+        });
+
+        console.log(`Aligned nodes: ${layers.size} layer(s)`);
+        layers.forEach((nodesInLayer, layerY) => {
+            console.log(`  Layer y=${layerY.toFixed(1)}: ${nodesInLayer.length} node(s) - ${nodesInLayer.map(n => n.id).join(', ')}`);
+        });
+
+        // Invalidate ELK edge routing since node positions changed
+        this.allLinks.forEach(link => {
+            delete link.elkSections;
+        });
+        console.log('Invalidated ELK edge routing for vertical alignment');
+
+        // Optimize snap point assignments to minimize intersections
+        console.log('Optimizing snap point assignments...');
+        this.layoutOptimizer.optimizeSnapPointAssignments(this.allLinks, this.nodes);
 
         console.log('Layout application complete');
     }
@@ -433,6 +497,7 @@ class SCXMLVisualizer {
      * Render SVG
      */
     render() {
+        console.log('[RENDER START] ========== Beginning render() ==========');
         // Store reference to visualizer instance for use in drag handlers
         const self = this;
 
@@ -516,13 +581,29 @@ class SCXMLVisualizer {
                 .on('end', function(event, d) {
                     console.log(`[DRAG END] ${d.id} at (${d.x}, ${d.y})`);
                     d.isDragging = false;
-                    d.hasMoved = true;  // Mark node as moved to invalidate ELK routing
 
                     // Cancel any pending animation frame
                     if (dragAnimationFrame) {
                         cancelAnimationFrame(dragAnimationFrame);
                         dragAnimationFrame = null;
                     }
+
+                    // **RE-OPTIMIZE: After drag completes, recalculate optimal snap assignments**
+                    console.log(`[DRAG END] Re-optimizing snap point assignments...`);
+
+                    // Re-run optimizer with new node positions
+                    self.layoutOptimizer.optimizeSnapPointAssignments(self.allLinks, self.nodes);
+
+                    // Calculate midY for new routing
+                    self.allLinks.forEach(link => {
+                        const sourceNode = self.nodes.find(n => n.id === link.source);
+                        const targetNode = self.nodes.find(n => n.id === link.target);
+                        if (sourceNode && targetNode) {
+                            self.calculateLinkDirections(sourceNode, targetNode, link);
+                        }
+                    });
+
+                    console.log(`[DRAG END] Re-optimization complete`);
 
                     // Final update to ensure links are correctly positioned
                     self.updateLinks();
@@ -624,14 +705,10 @@ class SCXMLVisualizer {
             const sourceNode = this.nodes.find(n => n.id === link.source);
             const targetNode = this.nodes.find(n => n.id === link.target);
 
-            // **FIXED: Always calculate directions, not just for moved nodes**
-            // This ensures Pass 1 works on initial render
+            // **Calculate midY for z-path collision avoidance**
+            // This ensures routing.midY is set for all links
             if (sourceNode && targetNode) {
-                // Calculate actual directions that will be used
-                link.confirmedDirections = this.calculateLinkDirections(sourceNode, targetNode, link);
-            } else {
-                // Missing source or target - skip this link
-                link.confirmedDirections = null;
+                this.calculateLinkDirections(sourceNode, targetNode, link);
             }
         });
         if (this.debugMode) console.log('[TWO-PASS] Pass 1 complete');
@@ -677,6 +754,11 @@ class SCXMLVisualizer {
             .style('pointer-events', 'none')
             .text(d => this.getTransitionLabelText(d));
 
+        // Snap point visualization (enabled with ?show-snap)
+        if (this.showSnapPoints) {
+            this.renderSnapPoints(visibleNodes);
+        }
+
         console.log(`Rendered ${visibleNodes.length} nodes, ${visibleLinks.length} links`);
 
         // Debug: Check actual DOM elements created
@@ -685,6 +767,182 @@ class SCXMLVisualizer {
         console.log('  Node groups:', this.nodeElements ? this.nodeElements.size() : 0);
         console.log('  Collapsed compounds:', this.collapsedElements ? this.collapsedElements.size() : 0);
         console.log('  Compound containers:', this.compoundContainers ? this.compoundContainers.size() : 0);
+        console.log('[RENDER END] ========== Completed render() ==========');
+    }
+
+    /**
+     * Render snap points visualization for debugging
+     */
+    renderSnapPoints(visibleNodes) {
+        const snapPointsData = [];
+
+        // Iterate through all visible nodes (exclude initial-pseudo)
+        visibleNodes.filter(n => n.type !== 'initial-pseudo').forEach(node => {
+            const cx = node.x || 0;
+            const cy = node.y || 0;
+            const halfWidth = 30;
+            const halfHeight = 20;
+
+            let nodeSnapIndex = 0;  // Index counter for this node
+
+            const edges = ['top', 'bottom', 'left', 'right'];
+
+            edges.forEach(edge => {
+                // Collect snap points on this edge from optimized links or confirmed directions
+                const edgeSnapPoints = [];
+
+                this.allLinks.forEach(link => {
+                    // **Use routing for snap visualization**
+                    if (link.routing) {
+                        if (link.source === node.id && link.routing.sourceEdge === edge) {
+                            edgeSnapPoints.push({
+                                point: link.routing.sourcePoint,
+                                link: link
+                            });
+                        }
+
+                        if (link.target === node.id && link.routing.targetEdge === edge) {
+                            edgeSnapPoints.push({
+                                point: link.routing.targetPoint,
+                                link: link
+                            });
+                        }
+                        return;
+                    }
+
+                    // **FALLBACK: This should not happen in new architecture**
+                    // Optimizer always runs before rendering, so routing should always exist
+                    console.warn(`[RENDER SNAP] ${link.source}→${link.target}: No routing found!`);
+                });
+
+                const hasInitial = this.layoutOptimizer.hasInitialTransitionOnEdge(node.id, edge);
+
+                if (edgeSnapPoints.length === 0) {
+                    // No connections on this edge: show center point
+                    let x, y;
+                    if (edge === 'top') {
+                        x = cx;
+                        y = cy - halfHeight;
+                    } else if (edge === 'bottom') {
+                        x = cx;
+                        y = cy + halfHeight;
+                    } else if (edge === 'left') {
+                        x = cx - halfWidth;
+                        y = cy;
+                    } else if (edge === 'right') {
+                        x = cx + halfWidth;
+                        y = cy;
+                    }
+
+                    const snapData = {
+                        x: x,
+                        y: y,
+                        index: nodeSnapIndex++,
+                        nodeId: node.id,
+                        edge: edge,
+                        hasInitial: hasInitial,
+                        hasConnection: false,
+                        isInitialConnection: false
+                    };
+                    console.log(`[SNAP INDEX] ${node.id} #${snapData.index}: ${edge} center at (${x.toFixed(1)}, ${y.toFixed(1)})`);
+                    snapPointsData.push(snapData);
+                } else {
+                    // Has connections: show actual snap points
+                    // Sort by position
+                    edgeSnapPoints.sort((a, b) => {
+                        if (edge === 'top' || edge === 'bottom') {
+                            return a.point.x - b.point.x;
+                        } else {
+                            return a.point.y - b.point.y;
+                        }
+                    });
+
+                    edgeSnapPoints.forEach(sp => {
+                        const snapData = {
+                            x: sp.point.x,
+                            y: sp.point.y,
+                            index: nodeSnapIndex++,
+                            nodeId: node.id,
+                            edge: edge,
+                            hasInitial: hasInitial,
+                            hasConnection: true,
+                            isInitialConnection: sp.link.linkType === 'initial'
+                        };
+                        const linkName = sp.link.source === node.id ?
+                            `${sp.link.source}→${sp.link.target}` :
+                            `${sp.link.source}→${sp.link.target}`;
+                        console.log(`[SNAP INDEX] ${node.id} #${snapData.index}: ${edge} (${linkName}) at (${sp.point.x.toFixed(1)}, ${sp.point.y.toFixed(1)})`);
+                        snapPointsData.push(snapData);
+                    });
+                }
+            });
+        });
+
+        // Render snap point circles
+        const snapGroup = this.zoomContainer.append('g').attr('class', 'snap-points');
+        console.log(`[RENDER SNAP] Creating snap group, data points: ${snapPointsData.length}`);
+
+        const circles = snapGroup.selectAll('circle.snap-point')
+            .data(snapPointsData)
+            .enter()
+            .append('circle')
+            .attr('class', 'snap-point')
+            .attr('cx', d => {
+                // Only log fail node snap points during drag
+                if (d.nodeId === 'fail' || d.nodeId === 's0') {
+                    console.log(`[SNAP CIRCLE] ${d.nodeId} #${d.index}: cx=${d.x.toFixed(1)}, cy=${d.y.toFixed(1)}`);
+                }
+                return d.x;
+            })
+            .attr('cy', d => d.y)
+            .attr('r', 5)
+            .style('fill', d => {
+                if (d.isInitialConnection) return '#00ff00';  // Green for initial transitions
+                if (d.hasConnection) return '#ffa500';  // Orange for connections
+                return '#87ceeb';  // Sky blue for available positions
+            })
+            .style('stroke', '#000')
+            .style('stroke-width', 1)
+            .style('pointer-events', 'none');
+
+        // Render index labels
+        snapGroup.selectAll('text.snap-index')
+            .data(snapPointsData)
+            .enter()
+            .append('text')
+            .attr('class', 'snap-index')
+            .attr('x', d => d.x)
+            .attr('y', d => d.y - 10)
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'middle')
+            .style('font-size', '11px')
+            .style('font-family', 'monospace')
+            .style('font-weight', 'bold')
+            .style('fill', d => {
+                if (d.isInitialConnection) return '#00aa00';
+                if (d.hasConnection) return '#ff8800';
+                return '#0066cc';
+            })
+            .style('pointer-events', 'none')
+            .text(d => d.index + 1);
+
+        console.log(`Rendered ${snapPointsData.length} snap points`);
+    }
+
+    /**
+     * Get direction string from edge and isSource flag
+     */
+    getDirectionForEdge(edge, isSource) {
+        if (edge === 'top') {
+            return isSource ? 'to-top' : 'from-top';
+        } else if (edge === 'bottom') {
+            return isSource ? 'to-bottom' : 'from-bottom';
+        } else if (edge === 'left') {
+            return isSource ? 'to-left' : 'from-left';
+        } else if (edge === 'right') {
+            return isSource ? 'to-right' : 'from-right';
+        }
+        return '';
     }
 
     /**
@@ -748,8 +1006,8 @@ class SCXMLVisualizer {
         const ty = targetNode.y || 0;
         
         // For Z-paths, use the horizontal segment's midpoint
-        if (transition.confirmedDirections && transition.confirmedDirections.midY !== null) {
-            const midY = transition.confirmedDirections.midY;
+        if (transition.routing && transition.routing.midY !== null) {
+            const midY = transition.routing.midY;
             return {
                 x: (sx + tx) / 2,
                 y: midY - 5  // Slightly above the path
@@ -764,7 +1022,7 @@ class SCXMLVisualizer {
     }
     
     // **REMOVED: analyzeLinkConnections() is obsolete**
-    // Two-pass algorithm uses link.confirmedDirections instead of prediction-based edge analysis
+    // Two-pass algorithm uses link.routing instead of prediction-based edge analysis
 
     /**
      * Determine which side of the node faces the given point
@@ -943,6 +1201,16 @@ class SCXMLVisualizer {
             const halfWidth = 30;
             const halfHeight = 20;
 
+            // **PRIORITY: Use routing if available (don't let direction override it)**
+            if (link && link.routing) {
+                const optPoint = isSource ? link.routing.sourcePoint : link.routing.targetPoint;
+
+                if (optPoint) {
+                    // Use the optimized snap point directly, no fallback needed
+                    return { x: optPoint.x, y: optPoint.y };
+                }
+            }
+
             // Map direction to side
             let side = null;
             if (direction === 'from-top' || direction === 'to-top') {
@@ -966,6 +1234,53 @@ class SCXMLVisualizer {
 
                 if (snapResult) {
                     return { x: snapResult.x, y: snapResult.y };
+                }
+
+                // If blocked by initial transition, try alternative edges
+                if (this.layoutOptimizer.hasInitialTransitionOnEdge(node.id, side)) {
+                    console.log(`[FALLBACK] ${node.id} ${side}: blocked, trying alternative edge`);
+
+                    // Try alternative edges based on original direction
+                    const alternatives = [];
+                    if (side === 'top' || side === 'bottom') {
+                        alternatives.push('left', 'right', side === 'top' ? 'bottom' : 'top');
+                    } else {
+                        alternatives.push('top', 'bottom', side === 'left' ? 'right' : 'left');
+                    }
+
+                    // Try each alternative
+                    for (const altSide of alternatives) {
+                        if (!this.layoutOptimizer.hasInitialTransitionOnEdge(node.id, altSide)) {
+                            console.log(`[FALLBACK] ${node.id}: using ${altSide} instead of ${side}`);
+
+                            // Calculate proper snap position for alternative edge
+                            const altDirection = isSource ? `to-${altSide}` : `from-${altSide}`;
+                            const altSnapResult = this.layoutOptimizer.calculateSnapPosition(
+                                node.id,
+                                altSide,
+                                link.id,
+                                altDirection
+                            );
+
+                            // **DO NOT MODIFY routing - it's read-only!**
+                            // Return the alternative snap position without modifying routing
+
+                            if (altSnapResult) {
+                                return { x: altSnapResult.x, y: altSnapResult.y };
+                            }
+
+                            // Fallback to edge center if snap calculation fails
+                            if (altSide === 'top') {
+                                return { x: cx, y: cy - halfHeight };
+                            } else if (altSide === 'bottom') {
+                                return { x: cx, y: cy + halfHeight };
+                            } else if (altSide === 'left') {
+                                return { x: cx - halfWidth, y: cy };
+                            } else if (altSide === 'right') {
+                                return { x: cx + halfWidth, y: cy };
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1161,313 +1476,166 @@ class SCXMLVisualizer {
      * Same logic as createOrthogonalPath but only returns directions
      */
     calculateLinkDirections(sourceNode, targetNode, link) {
-        const sx = sourceNode.x || 0;
-        const sy = sourceNode.y || 0;
-        const tx = targetNode.x || 0;
-        const ty = targetNode.y || 0;
+        // **PRIORITY: If routing exists, calculate midY and store in routing**
+        // Don't run collision avoidance again - optimizer already calculated optimal path
+        if (link.routing && link.routing.sourceEdge && link.routing.targetEdge) {
+            const sy = link.routing.sourcePoint.y;
+            const ty = link.routing.targetPoint.y;
+            const midY = (sy + ty) / 2;
 
-        const dx = Math.abs(tx - sx);
-        const dy = Math.abs(ty - sy);
-        const alignmentThreshold = 30;
-
-        // Direct alignment cases (no midY needed)
-        if (dx < 1 || dy < 1) {
-            if (dx < 1) {
-                return {
-                    outgoingDir: ty > sy ? 'to-bottom' : 'to-top',
-                    incomingDir: ty > sy ? 'from-top' : 'from-bottom',
-                    midY: null  // Direct vertical line
-                };
-            } else {
-                return {
-                    outgoingDir: tx > sx ? 'to-right' : 'to-left',
-                    incomingDir: tx > sx ? 'from-left' : 'from-right',
-                    midY: null  // Direct horizontal line
-                };
-            }
+            // Store midY in routing for z-path collision avoidance
+            link.routing.midY = midY;
+            return;
         }
 
-        // Horizontal alignment
-        if (dy < alignmentThreshold) {
-            return {
-                outgoingDir: tx > sx ? 'to-right' : 'to-left',
-                incomingDir: tx > sx ? 'from-left' : 'from-right',
-                midY: null  // Direct horizontal line
-            };
-        }
-
-        // Vertical alignment
-        if (dx < alignmentThreshold) {
-            return {
-                outgoingDir: ty > sy ? 'to-bottom' : 'to-top',
-                incomingDir: ty > sy ? 'from-top' : 'from-bottom',
-                midY: null  // Direct vertical line
-            };
-        }
-
-        // Z-path with collision avoidance
-        const obstacles = this.getObstacleNodes(sourceNode, targetNode);
-        let midY = this.findCollisionFreeY(sx, sy, tx, ty, obstacles);
-
-        const targetBounds = this.getNodeBounds(targetNode);
-        const sourceBounds = this.getNodeBounds(sourceNode);
-        const margin = 15;
-
-        const targetCollision = this.horizontalLineIntersectsNode(midY, sx, tx, targetNode);
-        const sourceCollision = this.horizontalLineIntersectsNode(midY, sx, tx, sourceNode);
-
-        if (targetCollision || sourceCollision) {
-            const candidates = [
-                targetBounds.top - margin,
-                targetBounds.bottom + margin,
-                sourceBounds.top - margin,
-                sourceBounds.bottom + margin
-            ];
-
-            let foundSafe = false;
-            for (const candidate of candidates) {
-                const avoidsTarget = !this.horizontalLineIntersectsNode(candidate, sx, tx, targetNode);
-                const avoidsSource = !this.horizontalLineIntersectsNode(candidate, sx, tx, sourceNode);
-
-                if (avoidsTarget && avoidsSource) {
-                    midY = candidate;
-                    foundSafe = true;
-                    break;
-                }
-            }
-
-            if (!foundSafe) {
-                const distToTargetTop = Math.abs(targetBounds.top - margin - sy);
-                const distToTargetBottom = Math.abs(targetBounds.bottom + margin - sy);
-                const distToSourceTop = Math.abs(sourceBounds.top - margin - ty);
-                const distToSourceBottom = Math.abs(sourceBounds.bottom + margin - ty);
-
-                const maxDist = Math.max(distToTargetTop, distToTargetBottom, distToSourceTop, distToSourceBottom);
-
-                if (maxDist === distToTargetTop) {
-                    midY = targetBounds.top - margin;
-                } else if (maxDist === distToTargetBottom) {
-                    midY = targetBounds.bottom + margin;
-                } else if (maxDist === distToSourceTop) {
-                    midY = sourceBounds.top - margin;
-                } else {
-                    midY = sourceBounds.bottom + margin;
-                }
-            }
-        }
-
-        // Return the actual directions that will be used
-        return {
-            outgoingDir: midY > sy ? 'to-bottom' : 'to-top',
-            incomingDir: ty > midY ? 'from-top' : 'from-bottom',
-            midY: midY  // Store for debugging
-        };
+        // **FALLBACK: routing should always exist after optimizer runs**
+        console.warn(`[CALC DIR WARNING] ${link.source}→${link.target}: No routing found! Optimizer should have run first.`);
     }
 
     /**
      * Create ORTHOGONAL path with comprehensive collision avoidance
      */
     createOrthogonalPath(sourceNode, targetNode, link, connections) {
-        // **TWO-PASS ALGORITHM: Use confirmed directions from Pass 1 if available**
-        if (link.confirmedDirections) {
-            if (this.debugMode) {
-                console.log(`[PASS 2] Using confirmed directions for ${link.source}→${link.target}:`, link.confirmedDirections);
-            }
+        // **OPTIMIZED SNAP POINTS: Use routing if available**
+        if (link.routing) {
+            const start = link.routing.sourcePoint;
+            const end = link.routing.targetPoint;
+            const sourceEdge = link.routing.sourceEdge;
+            const targetEdge = link.routing.targetEdge;
 
-            const outgoingDir = link.confirmedDirections.outgoingDir;
-            const incomingDir = link.confirmedDirections.incomingDir;
-            const midY = link.confirmedDirections.midY;
-
-            // Get boundary points using confirmed directions
-            const start = this.getOrthogonalBoundaryPoint(sourceNode, outgoingDir, link, true, connections);
-            const end = this.getOrthogonalBoundaryPoint(targetNode, incomingDir, link, false, connections);
-
-            // Create path based on confirmed directions
             const sx = start.x;
             const sy = start.y;
             const tx = end.x;
             const ty = end.y;
 
-            // Check if it's a direct line or Z-path
-            if (midY === null) {
-                // Direct line (horizontal or vertical alignment)
+            const dx = Math.abs(tx - sx);
+            const dy = Math.abs(ty - sy);
+
+            // Check if direct line (horizontal or vertical alignment)
+            if (dx < 1 || dy < 1) {
+                // Direct line
                 return `M ${sx} ${sy} L ${tx} ${ty}`;
+            }
+
+            // Create orthogonal path based on edge directions with minimum segment lengths
+            const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
+            const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
+            const MIN_SEGMENT = 30;  // Minimum horizontal/vertical segment length
+
+            if (sourceIsVertical && targetIsVertical) {
+                // Both vertical edges: vertical-horizontal-vertical (5 points)
+                // Ensure minimum vertical segments from source and target
+                let y1;
+                if (sourceEdge === 'top') {
+                    y1 = sy - MIN_SEGMENT;
+                } else { // bottom
+                    y1 = sy + MIN_SEGMENT;
+                }
+
+                let y2;
+                if (targetEdge === 'top') {
+                    y2 = ty - MIN_SEGMENT;
+                } else { // bottom
+                    y2 = ty + MIN_SEGMENT;
+                }
+
+                // Path: start → vertical MIN_SEGMENT → horizontal to target x → vertical MIN_SEGMENT → end
+                return `M ${sx} ${sy} L ${sx} ${y1} L ${tx} ${y1} L ${tx} ${y2} L ${tx} ${ty}`;
+            } else if (!sourceIsVertical && !targetIsVertical) {
+                // Both horizontal edges: horizontal-vertical-horizontal (5 points)
+                // Ensure minimum horizontal segments from source and target
+                let x1;
+                if (sourceEdge === 'right') {
+                    x1 = sx + MIN_SEGMENT;
+                } else { // left
+                    x1 = sx - MIN_SEGMENT;
+                }
+
+                let x2;
+                if (targetEdge === 'right') {
+                    x2 = tx + MIN_SEGMENT;
+                } else { // left
+                    x2 = tx - MIN_SEGMENT;
+                }
+
+                // Path: start → horizontal MIN_SEGMENT → vertical to target y → horizontal MIN_SEGMENT → end
+                return `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${ty} L ${x2} ${ty} L ${tx} ${ty}`;
+            } else if (sourceIsVertical && !targetIsVertical) {
+                // Source vertical, target horizontal: vertical-then-horizontal (4 points)
+                // Ensure minimum segments
+                let y1;
+                if (sourceEdge === 'top') {
+                    y1 = sy - MIN_SEGMENT;
+                } else { // bottom
+                    y1 = sy + MIN_SEGMENT;
+                }
+
+                let x2;
+                if (targetEdge === 'right') {
+                    x2 = tx + MIN_SEGMENT;
+                } else { // left
+                    x2 = tx - MIN_SEGMENT;
+                }
+
+                // Path: start → vertical MIN_SEGMENT → horizontal to x2 → horizontal MIN_SEGMENT to end
+                return `M ${sx} ${sy} L ${sx} ${y1} L ${x2} ${y1} L ${x2} ${ty} L ${tx} ${ty}`;
             } else {
-                // Z-shaped path with confirmed midY
-                return `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`;
+                // Source horizontal, target vertical: horizontal-then-vertical (4 points)
+                // Ensure minimum segments
+                let x1;
+                if (sourceEdge === 'right') {
+                    x1 = sx + MIN_SEGMENT;
+                } else { // left
+                    x1 = sx - MIN_SEGMENT;
+                }
+
+                let y2;
+                if (targetEdge === 'top') {
+                    y2 = ty - MIN_SEGMENT;
+                } else { // bottom
+                    y2 = ty + MIN_SEGMENT;
+                }
+
+                // Path: start → horizontal MIN_SEGMENT → vertical to y2 → vertical MIN_SEGMENT to end
+                return `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${y2} L ${tx} ${y2} L ${tx} ${ty}`;
             }
         }
 
-        // **FALLBACK: If no confirmed directions, calculate on-the-fly (ELK routing)**
-        // Get initial rough positions
+        // **FALLBACK: routing should always exist after optimizer runs**
+        console.warn(`[PATH WARNING] ${link.source}→${link.target}: No routing found! Falling back to node centers.`);
+
+        // Draw direct line as emergency fallback
         const sx = sourceNode.x || 0;
         const sy = sourceNode.y || 0;
         const tx = targetNode.x || 0;
         const ty = targetNode.y || 0;
-
-        const dx = Math.abs(tx - sx);
-        const dy = Math.abs(ty - sy);
-
-        // Threshold for considering nodes "horizontally aligned" or "vertically aligned"
-        const alignmentThreshold = 30;
-
-        // If points are already aligned (same x or same y), use direct path
-        if (dx < 1 || dy < 1) {
-            // Determine directions for direct line
-            let outgoingDir, incomingDir;
-
-            if (dx < 1) {
-                // Vertical line
-                outgoingDir = ty > sy ? 'to-bottom' : 'to-top';
-                incomingDir = ty > sy ? 'from-top' : 'from-bottom';
-            } else {
-                // Horizontal line
-                outgoingDir = tx > sx ? 'to-right' : 'to-left';
-                incomingDir = tx > sx ? 'from-left' : 'from-right';
-            }
-
-            const start = this.getOrthogonalBoundaryPoint(sourceNode, outgoingDir, link, true, connections);
-            const end = this.getOrthogonalBoundaryPoint(targetNode, incomingDir, link, false, connections);
-
-            return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
-        }
-
-        // SMART ROUTING: If nodes are nearly horizontally aligned, use side connections
-        if (dy < alignmentThreshold) {
-            console.log(`[PATH] Nodes are horizontally aligned (dy=${dy}), using side connection`);
-
-            const outgoingDir = tx > sx ? 'to-right' : 'to-left';
-            const incomingDir = tx > sx ? 'from-left' : 'from-right';
-
-            const start = this.getOrthogonalBoundaryPoint(sourceNode, outgoingDir, link, true, connections);
-            const end = this.getOrthogonalBoundaryPoint(targetNode, incomingDir, link, false, connections);
-
-            return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
-        }
-
-        // SMART ROUTING: If nodes are nearly vertically aligned, use top/bottom connections
-        if (dx < alignmentThreshold) {
-            console.log(`[PATH] Nodes are vertically aligned (dx=${dx}), using top/bottom connection`);
-
-            const outgoingDir = ty > sy ? 'to-bottom' : 'to-top';
-            const incomingDir = ty > sy ? 'from-top' : 'from-bottom';
-
-            const start = this.getOrthogonalBoundaryPoint(sourceNode, outgoingDir, link, true, connections);
-            const end = this.getOrthogonalBoundaryPoint(targetNode, incomingDir, link, false, connections);
-
-            return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
-        }
-
-        // Get all obstacle nodes (excluding source and target)
-        const obstacles = this.getObstacleNodes(sourceNode, targetNode);
-
-        // Find collision-free Y coordinate for horizontal segment
-        let midY = this.findCollisionFreeY(sx, sy, tx, ty, obstacles);
-
-        const targetBounds = this.getNodeBounds(targetNode);
-        const sourceBounds = this.getNodeBounds(sourceNode);
-        const margin = 15;
-
-        // CRITICAL: Check if horizontal segment passes through TARGET or SOURCE
-        // Try to find a Y that avoids BOTH in one step
-        const targetCollision = this.horizontalLineIntersectsNode(midY, sx, tx, targetNode);
-        const sourceCollision = this.horizontalLineIntersectsNode(midY, sx, tx, sourceNode);
-
-        if (targetCollision || sourceCollision) {
-            console.log(`[PATH] Horizontal segment at y=${midY} intersects ${targetCollision ? 'target' : ''} ${sourceCollision ? 'source' : ''}`);
-            
-            // Calculate candidate positions that avoid BOTH
-            const candidates = [
-                targetBounds.top - margin,      // Above target
-                targetBounds.bottom + margin,   // Below target
-                sourceBounds.top - margin,      // Above source
-                sourceBounds.bottom + margin    // Below source
-            ];
-            
-            // Find first candidate that avoids both source and target
-            let foundSafe = false;
-            for (const candidate of candidates) {
-                const avoidsTarget = !this.horizontalLineIntersectsNode(candidate, sx, tx, targetNode);
-                const avoidsSource = !this.horizontalLineIntersectsNode(candidate, sx, tx, sourceNode);
-                
-                if (avoidsTarget && avoidsSource) {
-                    midY = candidate;
-                    console.log(`[PATH] Found safe Y=${midY} (avoids both)`);
-                    foundSafe = true;
-                    break;
-                }
-            }
-            
-            // Fallback: choose the one that's farthest from both
-            if (!foundSafe) {
-                const distToTargetTop = Math.abs(targetBounds.top - margin - sy);
-                const distToTargetBottom = Math.abs(targetBounds.bottom + margin - sy);
-                const distToSourceTop = Math.abs(sourceBounds.top - margin - ty);
-                const distToSourceBottom = Math.abs(sourceBounds.bottom + margin - ty);
-                
-                const maxDist = Math.max(distToTargetTop, distToTargetBottom, distToSourceTop, distToSourceBottom);
-                
-                if (maxDist === distToTargetTop) {
-                    midY = targetBounds.top - margin;
-                } else if (maxDist === distToTargetBottom) {
-                    midY = targetBounds.bottom + margin;
-                } else if (maxDist === distToSourceTop) {
-                    midY = sourceBounds.top - margin;
-                } else {
-                    midY = sourceBounds.bottom + margin;
-                }
-                
-                console.log(`[PATH] Fallback: Using Y=${midY} (farthest option)`);
-            }
-        }
-
-        // Determine directions based on adjusted path
-        let outgoingDir = midY > sy ? 'to-bottom' : 'to-top';
-        let incomingDir = ty > midY ? 'from-top' : 'from-bottom';
-
-        // Get boundary points based on actual segment directions
-        let start = this.getOrthogonalBoundaryPoint(sourceNode, outgoingDir, link, true, connections);
-        let end = this.getOrthogonalBoundaryPoint(targetNode, incomingDir, link, false, connections);
-
-        // Additional check: verify vertical segments don't pass through nodes
-        // Note: We only adjust if absolutely necessary, since horizontal check should have handled most cases
-        const finalVerticalCollision = this.verticalLineIntersectsNode(end.x, midY, end.y, targetNode);
-        const firstVerticalCollision = this.verticalLineIntersectsNode(start.x, start.y, midY, sourceNode);
-
-        if (finalVerticalCollision || firstVerticalCollision) {
-            console.log(`[PATH] Vertical segment collision detected (final:${finalVerticalCollision}, first:${firstVerticalCollision})`);
-            console.log(`[PATH] This usually means source/target are vertically overlapping - path may not be perfect`);
-            // Don't adjust - would cause infinite loop. Accept imperfect path.
-        }
-
-        // Create Z-shaped path that avoids all rectangles
-        return `M ${start.x} ${start.y} L ${start.x} ${midY} L ${end.x} ${midY} L ${end.x} ${end.y}`;
+        return `M ${sx} ${sy} L ${tx} ${ty}`;
     }
 
     /**
      * Get link path using ELK routing information
      */
     getLinkPath(link) {
+        console.log(`[GET LINK PATH] Called for ${link.source}→${link.target}`);
         // Get source and target nodes
         const sourceNode = this.nodes.find(n => n.id === link.source);
         const targetNode = this.nodes.find(n => n.id === link.target);
 
         if (!sourceNode || !targetNode) {
+            console.log(`[GET LINK PATH] Source or target node not found`);
             return 'M 0 0';
         }
 
-        // **TWO-PASS: No need for analyzeLinkConnections(), optimizer uses link.confirmedDirections**
+        // **TWO-PASS: No need for analyzeLinkConnections(), optimizer uses link.routing**
         const connections = null;
 
-        // If either node has been moved (dragged), invalidate ELK routing
-        // and always use current node positions with ORTHOGONAL routing
-        if (sourceNode.hasMoved || targetNode.hasMoved ||
-            sourceNode.isDragging || targetNode.isDragging) {
+        // If either node is being dragged, use dynamic orthogonal path recalculation
+        if (sourceNode.isDragging || targetNode.isDragging) {
             // Create ORTHOGONAL path with direction-aware boundary snapping
             return this.createOrthogonalPath(sourceNode, targetNode, link, connections);
         }
 
-        // Use ELK edge routing only if nodes haven't been moved
+        // Use ELK edge routing only if available (only during initial ELK layout)
         if (link.elkSections && link.elkSections.length > 0) {
             const section = link.elkSections[0];
 
@@ -1504,53 +1672,73 @@ class SCXMLVisualizer {
             }
         }
 
-        // Fallback to simple straight line using current node positions with boundary calculation
-        const sx = sourceNode.x || 0;
-        const sy = sourceNode.y || 0;
-        const tx = targetNode.x || 0;
-        const ty = targetNode.y || 0;
-
-        const sourcePoint = this.getNodeBoundaryPoint(sourceNode, tx, ty, link, true, connections);
-        const targetPoint = this.getNodeBoundaryPoint(targetNode, sx, sy, link, false, connections);
-
-        return `M ${sourcePoint.x} ${sourcePoint.y} L ${targetPoint.x} ${targetPoint.y}`;
+        // Fallback to orthogonal path (after ELK routing is invalidated)
+        // This ensures all paths use routing for consistent routing
+        return this.createOrthogonalPath(sourceNode, targetNode, link, connections);
     }
 
     /**
      * Update link paths after drag
      */
     updateLinks() {
+        console.log('[UPDATE LINKS] >>>>>> Called updateLinks() <<<<<<');
         if (!this.linkElements || !this.allLinks) {
+            console.log('[UPDATE LINKS] Early return: linkElements or allLinks missing');
             return;
         }
 
-        // **TWO-PASS ALGORITHM: Recalculate directions for moved nodes (Pass 1)**
+        // **INVALIDATE ROUTING: Clear routing for dragged nodes only**
+        // This allows dynamic recalculation during drag, while preserving routing otherwise
         const visibleLinks = this.getVisibleLinks(this.allLinks, this.nodes);
-        
-        if (this.debugMode) console.log('[TWO-PASS DRAG] Pass 1: Recalculating directions after drag...');
+
+        // Check if any node is being dragged
+        const anyNodeDragging = this.nodes.some(n => n.isDragging);
+
+        if (anyNodeDragging) {
+            console.log('[DRAG UPDATE] Re-running optimizer for real-time optimization...');
+
+            // Clear all routing
+            this.allLinks.forEach(link => {
+                delete link.routing;
+            });
+
+            // **RE-OPTIMIZE DURING DRAG: Use same algorithm as drop**
+            // This ensures drag and drop produce consistent results
+            this.layoutOptimizer.optimizeSnapPointAssignments(this.allLinks, this.nodes);
+
+            // Calculate midY for new routing
             visibleLinks.forEach(link => {
                 const sourceNode = this.nodes.find(n => n.id === link.source);
                 const targetNode = this.nodes.find(n => n.id === link.target);
-
-                if (sourceNode && targetNode &&
-                    (sourceNode.hasMoved || targetNode.hasMoved ||
-                     sourceNode.isDragging || targetNode.isDragging)) {
-                    // Recalculate actual directions for moved nodes
-                    link.confirmedDirections = this.calculateLinkDirections(sourceNode, targetNode, link);
+                if (sourceNode && targetNode) {
+                    this.calculateLinkDirections(sourceNode, targetNode, link);
                 }
             });
 
-            // Pass 2: Render with updated directions
-            this.linkElements.attr('d', d => this.getLinkPath(d));
-            
-            // Update transition labels if they exist
-            if (this.transitionLabels) {
-                this.transitionLabels
-                    .attr('x', d => this.getTransitionLabelPosition(d).x)
-                    .attr('y', d => this.getTransitionLabelPosition(d).y);
-            }
-            
-            if (this.debugMode) console.log('[TWO-PASS DRAG] Pass 2 complete');
+            console.log('[DRAG UPDATE] Re-optimization complete');
+        }
+
+        // Pass 2: Render with updated directions
+        this.linkElements.attr('d', d => this.getLinkPath(d));
+
+        // Update transition labels if they exist
+        if (this.transitionLabels) {
+            this.transitionLabels
+                .attr('x', d => this.getTransitionLabelPosition(d).x)
+                .attr('y', d => this.getTransitionLabelPosition(d).y);
+        }
+
+        // Update snap points visualization if enabled
+        if (this.showSnapPoints) {
+            console.log('[UPDATE SNAP VIZ] Re-rendering snap points during drag...');
+            // Remove old snap points
+            this.zoomContainer.selectAll('g.snap-points').remove();
+
+            // Re-render snap points
+            const visibleNodes = this.getVisibleNodes();
+            this.renderSnapPoints(visibleNodes);
+            console.log('[UPDATE SNAP VIZ] Snap points re-rendered');
+        }
     }
 
     /**
