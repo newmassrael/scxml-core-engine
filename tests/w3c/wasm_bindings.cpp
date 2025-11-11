@@ -62,6 +62,10 @@ EMSCRIPTEN_BINDINGS(interactive_test_runner) {
 
         .function("raiseEvent", &InteractiveTestRunner::raiseEvent)
 
+        .function("removeInternalEvent", &InteractiveTestRunner::removeInternalEvent)
+
+        .function("removeExternalEvent", &InteractiveTestRunner::removeExternalEvent)
+
         // State introspection
         .function("getActiveStates", &InteractiveTestRunner::getActiveStates)
 

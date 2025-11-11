@@ -255,9 +255,27 @@ void InteractiveTestRunner::reset() {
     }
 
     if (restoreSnapshot(*initialSnapshot_)) {
+        // W3C SCXML 3.13: Complete history reset for time-travel debugging
+        // Zero Duplication: Single Source of Truth - clear all execution history
         currentStep_ = 0;
-        previousActiveStates_.clear();  // Reset transition tracking
-        LOG_DEBUG("InteractiveTestRunner: Reset to true initial configuration (queue cleared)");
+        previousActiveStates_.clear();
+        executedEvents_.clear();
+
+        // CRITICAL: Clear snapshot history to prevent stepBackward() from accessing old sessions
+        // Without this, stepBackward() would restore stale snapshots from previous execution
+        snapshotManager_.clear();
+
+        // Re-capture initial snapshot as step 0 (fresh start)
+        captureSnapshot();
+
+        // Update initialSnapshot_ reference to new step 0
+        auto initialSnapshotOpt = snapshotManager_.getSnapshot(0);
+        if (initialSnapshotOpt) {
+            initialSnapshot_ = *initialSnapshotOpt;
+            LOG_DEBUG("InteractiveTestRunner: Reset complete - history cleared, new step 0 captured");
+        } else {
+            LOG_ERROR("InteractiveTestRunner: Failed to capture new initial snapshot after reset");
+        }
     } else {
         LOG_ERROR("InteractiveTestRunner: Failed to restore initial snapshot");
     }
@@ -275,6 +293,58 @@ void InteractiveTestRunner::raiseEvent(const std::string &eventName, const std::
 
     LOG_DEBUG("InteractiveTestRunner: Queued external event '{}' via EventRaiser (current step: {})", eventName,
               currentStep_);
+}
+
+bool InteractiveTestRunner::removeInternalEvent(int index) {
+    // W3C SCXML 3.13: Remove event from internal queue at specified index
+    std::vector<EventSnapshot> internalQueue, externalQueue;
+    extractEventQueues(internalQueue, externalQueue);
+
+    // Validate index
+    if (index < 0 || index >= static_cast<int>(internalQueue.size())) {
+        LOG_WARN("InteractiveTestRunner: Invalid internal queue index {} (queue size: {})", index,
+                 internalQueue.size());
+        return false;
+    }
+
+    // Remove event at index
+    internalQueue.erase(internalQueue.begin() + index);
+
+    // Restore modified queues
+    restoreEventQueues(internalQueue, externalQueue);
+
+    // Capture snapshot to reflect queue modification
+    // History branching: This creates a new execution path from current step
+    captureSnapshot();
+
+    LOG_DEBUG("InteractiveTestRunner: Removed internal event at index {} (current step: {})", index, currentStep_);
+    return true;
+}
+
+bool InteractiveTestRunner::removeExternalEvent(int index) {
+    // W3C SCXML 3.13: Remove event from external queue at specified index
+    std::vector<EventSnapshot> internalQueue, externalQueue;
+    extractEventQueues(internalQueue, externalQueue);
+
+    // Validate index
+    if (index < 0 || index >= static_cast<int>(externalQueue.size())) {
+        LOG_WARN("InteractiveTestRunner: Invalid external queue index {} (queue size: {})", index,
+                 externalQueue.size());
+        return false;
+    }
+
+    // Remove event at index
+    externalQueue.erase(externalQueue.begin() + index);
+
+    // Restore modified queues
+    restoreEventQueues(internalQueue, externalQueue);
+
+    // Capture snapshot to reflect queue modification
+    // History branching: This creates a new execution path from current step
+    captureSnapshot();
+
+    LOG_DEBUG("InteractiveTestRunner: Removed external event at index {} (current step: {})", index, currentStep_);
+    return true;
 }
 
 std::vector<std::string> InteractiveTestRunner::getActiveStates() const {

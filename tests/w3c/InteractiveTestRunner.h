@@ -109,6 +109,28 @@ public:
     void raiseEvent(const std::string &eventName, const std::string &eventData = "");
 
     /**
+     * @brief Remove event from internal queue by index
+     *
+     * W3C SCXML 3.13: Removes event from internal queue at specified index.
+     * Triggers history branching: removes all snapshots after current step.
+     *
+     * @param index Zero-based index in internal queue
+     * @return true if removed successfully, false if index out of range
+     */
+    bool removeInternalEvent(int index);
+
+    /**
+     * @brief Remove event from external queue by index
+     *
+     * W3C SCXML 3.13: Removes event from external queue at specified index.
+     * Triggers history branching: removes all snapshots after current step.
+     *
+     * @param index Zero-based index in external queue
+     * @return true if removed successfully, false if index out of range
+     */
+    bool removeExternalEvent(int index);
+
+    /**
      * @brief Get current active states
      *
      * @return Vector of active state IDs
