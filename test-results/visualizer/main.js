@@ -223,6 +223,9 @@ async function initVisualizer(scxmlContent) {
 
         const controller = new ExecutionController(runner, visualizer, Array.from(availableEvents).sort(), visualizerManager);
 
+        // Expose controller globally for event deletion buttons
+        window.executionController = controller;
+
         // Register parent visualizer with manager
         visualizerManager.setParent(visualizer);
 

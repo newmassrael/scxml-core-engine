@@ -186,12 +186,8 @@ body {
     stroke-width: 3px;
 }
 
-/* Transition animation */
-.transition.animating {
-    stroke: var(--color-green);
-    stroke-width: 3px;
-    animation: pulse 0.5s ease-in-out;
-}
+/* Transition animation (DEPRECATED - merged into .highlighted) */
+/* Zero Duplication: Animation now handled by .highlighted class */
 
 @keyframes pulse {
     0%, 100% { stroke-width: 3px; }
@@ -271,6 +267,9 @@ body {
 }
 
 .event {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     padding: 8px 12px;
     margin-bottom: 4px;
     background-color: var(--color-gray-light);
@@ -278,6 +277,36 @@ body {
     border-radius: 6px;
     font-size: 13px;
     font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.event-name {
+    flex: 1;
+}
+
+.event-delete-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    margin-left: 8px;
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: bold;
+    line-height: 1;
+    color: var(--color-gray);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.event-delete-btn:hover {
+    background-color: var(--color-red);
+    color: white;
+    transform: scale(1.1);
+}
+
+.event-delete-btn:active {
+    transform: scale(0.95);
 }
 
 .event-internal {
@@ -970,18 +999,47 @@ body {
    Transition List & Highlighting
    ======================================== */
 
-/* Transition highlighted state */
+/* Transition highlighted state with integrated animation */
+/* Zero Duplication: Single source of truth for transition visualization */
 .transition.highlighted {
     stroke: var(--color-blue);
     stroke-width: 4px;
     opacity: 1;
     filter: drop-shadow(0 0 4px rgba(9, 105, 218, 0.5));
+    /* Integrated animation: pulse effect on highlight */
+    animation: transitionPulse 0.5s ease-in-out;
 }
 
 .transition-label.highlighted {
     font-weight: 700;
     fill: var(--color-blue);
     font-size: 13px;
+    /* Synchronized animation with transition line */
+    animation: labelPulse 0.5s ease-in-out;
+}
+
+/* Keyframes for transition pulse animation */
+@keyframes transitionPulse {
+    0%, 100% {
+        stroke-width: 4px;
+        opacity: 1;
+    }
+    50% {
+        stroke-width: 5px;
+        opacity: 0.7;
+    }
+}
+
+/* Keyframes for label pulse animation */
+@keyframes labelPulse {
+    0%, 100% {
+        font-size: 13px;
+        opacity: 1;
+    }
+    50% {
+        font-size: 14px;
+        opacity: 0.8;
+    }
 }
 
 /* Transition list container */
