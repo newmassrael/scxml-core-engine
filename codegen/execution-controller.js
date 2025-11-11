@@ -219,7 +219,7 @@ class ExecutionController {
     async raiseEvent(eventName, eventData = '') {
         try {
             this.runner.raiseEvent(eventName, eventData);
-            
+
             // W3C SCXML 3.13: Event queuing is NOT a step
             // Step counter remains unchanged until stepForward() processes the event
             console.log(`📨 Event queued: ${eventName} (press Step Forward to process)`);
@@ -233,6 +233,58 @@ class ExecutionController {
             this.showMessage(`Event "${eventName}" added to queue`, 'info');
         } catch (error) {
             console.error('❌ Error raising event:', error);
+            this.showMessage(`Error: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Remove event from internal queue by index
+     * W3C SCXML 3.13: Manual event queue manipulation for debugging
+     */
+    async removeInternalEvent(index) {
+        try {
+            const success = this.runner.removeInternalEvent(index);
+
+            if (success) {
+                console.log(`🗑️ Internal event at index ${index} removed`);
+
+                // Update UI to reflect queue modification
+                this.updateEventQueue();
+                this.updateState();
+
+                this.showMessage(`Internal event removed`, 'info');
+            } else {
+                console.warn(`⚠️ Failed to remove internal event at index ${index}`);
+                this.showMessage(`Invalid event index`, 'warning');
+            }
+        } catch (error) {
+            console.error('❌ Error removing internal event:', error);
+            this.showMessage(`Error: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * Remove event from external queue by index
+     * W3C SCXML 3.13: Manual event queue manipulation for debugging
+     */
+    async removeExternalEvent(index) {
+        try {
+            const success = this.runner.removeExternalEvent(index);
+
+            if (success) {
+                console.log(`🗑️ External event at index ${index} removed`);
+
+                // Update UI to reflect queue modification
+                this.updateEventQueue();
+                this.updateState();
+
+                this.showMessage(`External event removed`, 'info');
+            } else {
+                console.warn(`⚠️ Failed to remove external event at index ${index}`);
+                this.showMessage(`Invalid event index`, 'warning');
+            }
+        } catch (error) {
+            console.error('❌ Error removing external event:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
         }
     }
@@ -307,6 +359,7 @@ class ExecutionController {
 
     /**
      * Animate last transition
+     * Zero Duplication: CSS handles animation, JavaScript only toggles classes
      */
     async updateTransitionAnimation() {
         try {
@@ -317,10 +370,8 @@ class ExecutionController {
             if (lastTransition && lastTransition.source && lastTransition.target) {
                 console.log(`[UPDATE TRANSITION] Valid transition: ${lastTransition.source} → ${lastTransition.target}`);
 
-                // Animate and highlight
-                console.log('[UPDATE TRANSITION] Calling animateTransition()...');
-                this.visualizer.animateTransition(lastTransition);
-                console.log('[UPDATE TRANSITION] Calling highlightTransition()...');
+                // Single call: highlight with CSS animation
+                console.log('[UPDATE TRANSITION] Calling highlightTransition() (CSS animation)...');
                 this.visualizer.highlightTransition(lastTransition);
                 console.log('[UPDATE TRANSITION] Calling showTransitionInfo()...');
                 this.visualizer.showTransitionInfo(lastTransition);
@@ -350,8 +401,11 @@ class ExecutionController {
 
             let html = '<h4>Internal Queue</h4>';
             if (queue.internal && queue.internal.length > 0) {
-                html += queue.internal.map(e =>
-                    `<div class="event event-internal">${e.name || e}</div>`
+                html += queue.internal.map((e, index) =>
+                    `<div class="event event-internal">
+                        <span class="event-name">${e.name || e}</span>
+                        <button class="event-delete-btn" onclick="window.executionController.removeInternalEvent(${index})" title="Remove event">×</button>
+                    </div>`
                 ).join('');
             } else {
                 html += '<div class="event">Empty</div>';
@@ -359,8 +413,11 @@ class ExecutionController {
 
             html += '<h4 style="margin-top: 16px;">External Queue</h4>';
             if (queue.external && queue.external.length > 0) {
-                html += queue.external.map(e =>
-                    `<div class="event event-external">${e.name || e}</div>`
+                html += queue.external.map((e, index) =>
+                    `<div class="event event-external">
+                        <span class="event-name">${e.name || e}</span>
+                        <button class="event-delete-btn" onclick="window.executionController.removeExternalEvent(${index})" title="Remove event">×</button>
+                    </div>`
                 ).join('');
             } else {
                 html += '<div class="event">Empty</div>';
