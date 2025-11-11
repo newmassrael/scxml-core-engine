@@ -42,6 +42,9 @@ cp tools/web/visualizer.css "$DEST_DIR/"
 cp tools/web/primer.css "$DEST_DIR/"
 
 # Copy JavaScript modules (order matters for documentation clarity)
+# Shared utilities (DRY Principle)
+cp tools/web/utils.js "$DEST_DIR/"
+
 # Core visualizer
 cp tools/web/scxml-visualizer.js "$DEST_DIR/"
 
