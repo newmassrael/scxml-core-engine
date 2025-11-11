@@ -131,6 +131,19 @@ public:
     bool removeExternalEvent(int index);
 
     /**
+     * @brief Poll scheduler to move ready events to queue (WASM only)
+     *
+     * W3C SCXML 6.2: In WASM builds, polls the event scheduler to move delayed
+     * send events that are ready into the external event queue. This allows
+     * automatic queue updates in interactive mode without advancing the state machine.
+     *
+     * Native builds use automatic timer threads, so this method returns 0.
+     *
+     * @return Number of events moved from scheduler to queue (WASM), 0 (Native)
+     */
+    size_t pollScheduler();
+
+    /**
      * @brief Get current active states
      *
      * @return Vector of active state IDs
@@ -178,6 +191,25 @@ public:
      * @return JavaScript object with queue contents
      */
     emscripten::val getEventQueue() const;
+
+    /**
+     * @brief Get scheduled events (delayed <send> operations)
+     *
+     * Returns JavaScript array of scheduled events with:
+     * - eventName: Event name
+     * - sendId: Send identifier
+     * - remainingTime: Milliseconds until execution
+     * - sessionId: Session identifier
+     *
+     * Used by interactive debugger to visualize delayed events.
+     *
+     * @return JavaScript array of ScheduledEventInfo objects
+     */
+#ifdef __EMSCRIPTEN__
+    emscripten::val getScheduledEvents() const;
+#else
+    std::string getScheduledEvents() const;
+#endif
 
     /**
      * @brief Get data model snapshot

@@ -141,6 +141,22 @@ bool InteractiveTestRunner::stepForward() {
         return false;
     }
 
+#ifdef __EMSCRIPTEN__
+    // W3C SCXML 6.2: Poll scheduled events (for delayed <send> operations)
+    // WASM only: Manual polling required (no timer thread)
+    // Native: Timer thread handles scheduled events automatically
+    if (scheduler_) {
+        // Downcast to EventSchedulerImpl to access poll() method
+        auto schedulerImpl = std::dynamic_pointer_cast<EventSchedulerImpl>(scheduler_);
+        if (schedulerImpl) {
+            size_t polledCount = schedulerImpl->poll();
+            if (polledCount > 0) {
+                LOG_DEBUG("InteractiveTestRunner: Polled {} scheduled events into queue", polledCount);
+            }
+        }
+    }
+#endif
+
     // Capture current active states BEFORE transition (for source detection)
     auto preTransitionStates = stateMachine_->getActiveStates();
     previousActiveStates_.clear();
@@ -347,6 +363,31 @@ bool InteractiveTestRunner::removeExternalEvent(int index) {
     return true;
 }
 
+size_t InteractiveTestRunner::pollScheduler() {
+    // W3C SCXML 6.2: Poll event scheduler to move ready delayed send events to queue
+#ifdef __EMSCRIPTEN__
+    if (!scheduler_) {
+        return 0;
+    }
+
+    auto schedulerImpl = std::dynamic_pointer_cast<EventSchedulerImpl>(scheduler_);
+    if (!schedulerImpl) {
+        return 0;
+    }
+
+    size_t polledCount = schedulerImpl->poll();
+    if (polledCount > 0) {
+        LOG_DEBUG("InteractiveTestRunner::pollScheduler: Moved {} scheduled events to queue", polledCount);
+    }
+
+    return polledCount;
+#else
+    // Native builds use automatic timer thread for scheduled event processing
+    LOG_WARN("InteractiveTestRunner::pollScheduler: Not supported in Native builds (use timer thread)");
+    return 0;
+#endif
+}
+
 std::vector<std::string> InteractiveTestRunner::getActiveStates() const {
     return stateMachine_->getActiveStates();
 }
@@ -368,12 +409,24 @@ void InteractiveTestRunner::captureSnapshot() {
     // Zero Duplication: No separate pendingEvents_ tracking needed
     std::vector<EventSnapshot> pendingUIEvents = externalQueue;  // Alias for clarity in StateSnapshot
 
+    // W3C SCXML 6.2: Extract scheduled events for step backward restoration
+    std::vector<ScheduledEventSnapshot> scheduledEventsSnapshots;
+    if (scheduler_) {
+        auto scheduledEvents = scheduler_->getScheduledEvents();
+        scheduledEventsSnapshots.reserve(scheduledEvents.size());
+        for (const auto &event : scheduledEvents) {
+            scheduledEventsSnapshots.emplace_back(event.eventName, event.sendId, event.originalDelay.count(),
+                                                  event.sessionId, event.targetUri, event.eventType, event.eventData,
+                                                  event.content);
+        }
+    }
+
     // Convert std::vector<std::string> to std::set<std::string> for StateSnapshot
     std::set<std::string> activeStatesSet(activeStates.begin(), activeStates.end());
 
     snapshotManager_.captureSnapshot(activeStatesSet, dataModel, internalQueue, externalQueue, pendingUIEvents,
-                                     executedEvents_, currentStep_, lastEventName_, lastTransitionSource_,
-                                     lastTransitionTarget_);
+                                     scheduledEventsSnapshots, executedEvents_, currentStep_, lastEventName_,
+                                     lastTransitionSource_, lastTransitionTarget_);
 }
 
 bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
@@ -420,6 +473,45 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
 
     // Note: snapshot.pendingUIEvents is now redundant (same as externalQueue)
     // EventRaiser's external queue already contains all UI events
+
+    // W3C SCXML 6.2: Restore scheduled events state
+    // Cancel all current scheduled events, then recreate snapshot events
+    if (scheduler_ && eventDispatcher_) {
+        // Cancel all current scheduled events
+        auto currentScheduledEvents = scheduler_->getScheduledEvents();
+        for (const auto &event : currentScheduledEvents) {
+            scheduler_->cancelEvent(event.sendId);
+            LOG_DEBUG("InteractiveTestRunner: Canceled scheduled event '{}' (sendId: {}) before restore",
+                      event.eventName, event.sendId);
+        }
+
+        // Create target factory for event target recreation
+        auto targetFactory = std::make_shared<EventTargetFactoryImpl>(eventRaiser_, scheduler_);
+
+        // Recreate scheduled events from snapshot
+        for (const auto &scheduledEvent : snapshot.scheduledEvents) {
+            // Create complete EventDescriptor with all fields
+            EventDescriptor eventDesc;
+            eventDesc.eventName = scheduledEvent.eventName;
+            eventDesc.target = scheduledEvent.targetUri;
+            eventDesc.type = scheduledEvent.eventType;
+            eventDesc.data = scheduledEvent.eventData;
+            eventDesc.content = scheduledEvent.content;
+
+            // Create target with correct URI (internal/external/http)
+            auto target = targetFactory->createTarget(scheduledEvent.targetUri, scheduledEvent.sessionId);
+
+            // Schedule event with original delay and sendId
+            auto delay = std::chrono::milliseconds(scheduledEvent.originalDelayMs);
+            scheduler_->scheduleEvent(eventDesc, delay, target, scheduledEvent.sendId, scheduledEvent.sessionId);
+
+            LOG_DEBUG(
+                "InteractiveTestRunner: Recreated scheduled event '{}' (sendId: {}, delay: {}ms, target: '{}') for "
+                "step {}",
+                scheduledEvent.eventName, scheduledEvent.sendId, scheduledEvent.originalDelayMs,
+                scheduledEvent.targetUri, snapshot.stepNumber);
+        }
+    }
 
     // Restore metadata
     lastEventName_ = snapshot.lastEventName;
@@ -615,6 +707,26 @@ emscripten::val InteractiveTestRunner::getEventQueue() const {
     return obj;
 }
 
+emscripten::val InteractiveTestRunner::getScheduledEvents() const {
+    auto array = emscripten::val::array();
+
+    // Get scheduled events from scheduler (read-only, no engine impact)
+    if (scheduler_) {
+        auto scheduledEvents = scheduler_->getScheduledEvents();
+
+        for (const auto &event : scheduledEvents) {
+            auto eventObj = emscripten::val::object();
+            eventObj.set("eventName", event.eventName);
+            eventObj.set("sendId", event.sendId);
+            eventObj.set("remainingTime", event.remainingTime.count());
+            eventObj.set("sessionId", event.sessionId);
+            array.call<void>("push", eventObj);
+        }
+    }
+
+    return array;
+}
+
 emscripten::val InteractiveTestRunner::getDataModel() const {
     auto obj = emscripten::val::object();
     auto dataModel = extractDataModel();
@@ -723,6 +835,31 @@ std::string InteractiveTestRunner::getLastTransition() const {
     // JSON string for non-WASM testing
     return "{\"source\":\"" + lastTransitionSource_ + "\",\"target\":\"" + lastTransitionTarget_ + "\",\"event\":\"" +
            lastEventName_ + "\"}";
+}
+
+std::string InteractiveTestRunner::getScheduledEvents() const {
+    // JSON array string for non-WASM testing
+    std::string json = "[";
+
+    if (scheduler_) {
+        auto scheduledEvents = scheduler_->getScheduledEvents();
+        bool first = true;
+
+        for (const auto &event : scheduledEvents) {
+            if (!first) {
+                json += ",";
+            }
+            first = false;
+
+            json += "{\"eventName\":\"" + event.eventName + "\"";
+            json += ",\"sendId\":\"" + event.sendId + "\"";
+            json += ",\"remainingTime\":" + std::to_string(event.remainingTime.count());
+            json += ",\"sessionId\":\"" + event.sessionId + "\"}";
+        }
+    }
+
+    json += "]";
+    return json;
 }
 
 std::string InteractiveTestRunner::getDataModel() const {

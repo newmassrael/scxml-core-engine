@@ -10,14 +10,16 @@ namespace SCE {
 void SnapshotManager::captureSnapshot(
     const std::set<std::string> &activeStates, const std::map<std::string, std::string> &dataModel,
     const std::vector<EventSnapshot> &internalQueue, const std::vector<EventSnapshot> &externalQueue,
-    const std::vector<EventSnapshot> &pendingUIEvents, const std::vector<EventSnapshot> &executedEvents, int stepNumber,
-    const std::string &lastEvent, const std::string &transitionSource, const std::string &transitionTarget) {
+    const std::vector<EventSnapshot> &pendingUIEvents, const std::vector<ScheduledEventSnapshot> &scheduledEvents,
+    const std::vector<EventSnapshot> &executedEvents, int stepNumber, const std::string &lastEvent,
+    const std::string &transitionSource, const std::string &transitionTarget) {
     StateSnapshot snapshot;
     snapshot.activeStates = activeStates;
     snapshot.dataModel = dataModel;
     snapshot.internalQueue = internalQueue;
     snapshot.externalQueue = externalQueue;
     snapshot.pendingUIEvents = pendingUIEvents;
+    snapshot.scheduledEvents = scheduledEvents;
     snapshot.executedEvents = executedEvents;
     snapshot.stepNumber = stepNumber;
     snapshot.lastEventName = lastEvent;

@@ -66,6 +66,8 @@ EMSCRIPTEN_BINDINGS(interactive_test_runner) {
 
         .function("removeExternalEvent", &InteractiveTestRunner::removeExternalEvent)
 
+        .function("pollScheduler", &InteractiveTestRunner::pollScheduler)
+
         // State introspection
         .function("getActiveStates", &InteractiveTestRunner::getActiveStates)
 
@@ -76,6 +78,8 @@ EMSCRIPTEN_BINDINGS(interactive_test_runner) {
         .function("getLastTransition", &InteractiveTestRunner::getLastTransition)
 
         .function("getEventQueue", &InteractiveTestRunner::getEventQueue)
+
+        .function("getScheduledEvents", &InteractiveTestRunner::getScheduledEvents)
 
         .function("getDataModel", &InteractiveTestRunner::getDataModel)
 

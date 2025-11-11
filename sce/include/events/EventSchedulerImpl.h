@@ -57,14 +57,17 @@ public:
     size_t getScheduledEventCount() const override;
     void shutdown(bool waitForCompletion = true) override;
     bool isRunning() const override;
+    std::vector<ScheduledEventInfo> getScheduledEvents() const override;
 
 #ifdef __EMSCRIPTEN__
     /**
      * @brief Poll for ready events and execute them (WASM only)
      *
-     * This method is called periodically from the main loop in WASM builds
-     * to process scheduled events. It checks for events whose execution time
-     * has arrived and executes them synchronously on the main thread.
+     * W3C SCXML 6.2: In WASM environments without timer threads, this method
+     * is called periodically to check for scheduled events whose execution time
+     * has arrived and executes them synchronously on the calling thread.
+     *
+     * Native builds use automatic timer threads for scheduled event processing.
      *
      * @return Number of events that were processed
      */
@@ -78,6 +81,7 @@ private:
     struct ScheduledEvent {
         EventDescriptor event;
         std::chrono::steady_clock::time_point executeAt;
+        std::chrono::milliseconds originalDelay;  // Original delay for step backward restoration
         std::shared_ptr<IEventTarget> target;
         std::promise<std::string> sendIdPromise;
         std::string sendId;
@@ -86,10 +90,10 @@ private:
         bool cancelled = false;
 
         ScheduledEvent(const EventDescriptor &evt, std::chrono::steady_clock::time_point execTime,
-                       std::shared_ptr<IEventTarget> tgt, const std::string &id, const std::string &sessId,
-                       uint64_t seqNum)
-            : event(evt), executeAt(execTime), target(std::move(tgt)), sendId(id), sessionId(sessId),
-              sequenceNumber(seqNum) {}
+                       std::chrono::milliseconds origDelay, std::shared_ptr<IEventTarget> tgt, const std::string &id,
+                       const std::string &sessId, uint64_t seqNum)
+            : event(evt), executeAt(execTime), originalDelay(origDelay), target(std::move(tgt)), sendId(id),
+              sessionId(sessId), sequenceNumber(seqNum) {}
     };
 
     /**

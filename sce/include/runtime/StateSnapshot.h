@@ -29,6 +29,36 @@ struct EventSnapshot {
 };
 
 /**
+ * @brief Lightweight scheduled event snapshot for serialization
+ *
+ * Captures scheduled event state for step backward restoration.
+ * Contains event metadata without complex C++ objects (IEventTarget).
+ *
+ * W3C SCXML 6.2: Stores complete send element information for accurate restoration.
+ */
+struct ScheduledEventSnapshot {
+    std::string eventName;
+    std::string sendId;
+    int64_t originalDelayMs;  // Original delay in milliseconds
+    std::string sessionId;
+
+    // W3C SCXML 6.2: Complete EventDescriptor fields for restoration
+    std::string targetUri;  // Target URI (empty = external queue, "#_internal" = internal)
+    std::string eventType;  // Event type (scxml, platform, etc.)
+    std::string eventData;  // Event data payload
+    std::string content;    // HTTP body content (W3C SCXML C.2)
+    // Note: params map omitted for simplicity (can be added if needed)
+
+    ScheduledEventSnapshot() = default;
+
+    ScheduledEventSnapshot(const std::string &name, const std::string &id, int64_t delayMs, const std::string &sessId,
+                           const std::string &target = "", const std::string &type = "scxml",
+                           const std::string &data = "", const std::string &cnt = "")
+        : eventName(name), sendId(id), originalDelayMs(delayMs), sessionId(sessId), targetUri(target), eventType(type),
+          eventData(data), content(cnt) {}
+};
+
+/**
  * @brief Snapshot of state machine execution state for backward stepping
  *
  * Captures complete state machine state at a specific execution step
@@ -49,6 +79,10 @@ struct StateSnapshot {
 
     // InteractiveTestRunner UI-added events (separate from engine queues)
     std::vector<EventSnapshot> pendingUIEvents;
+
+    // Scheduled events (W3C SCXML 6.2) - delayed send operations
+    // Stores complete event info for recreation on step backward
+    std::vector<ScheduledEventSnapshot> scheduledEvents;
 
     // Event execution history for accurate state restoration via replay
     // W3C SCXML 3.13: Store all processed events to enable time-travel debugging
@@ -80,6 +114,9 @@ public:
      * @param dataModel Current data model state (serialized)
      * @param internalQueue Current internal event queue
      * @param externalQueue Current external event queue
+     * @param pendingUIEvents UI-added events (separate from engine queues)
+     * @param scheduledEvents Scheduled events for step backward restoration (W3C SCXML 6.2)
+     * @param executedEvents Event execution history
      * @param stepNumber Current execution step number
      * @param lastEvent Last processed event name
      * @param transitionSource Source state of last transition
@@ -89,6 +126,7 @@ public:
                          const std::vector<EventSnapshot> &internalQueue,
                          const std::vector<EventSnapshot> &externalQueue,
                          const std::vector<EventSnapshot> &pendingUIEvents,
+                         const std::vector<ScheduledEventSnapshot> &scheduledEvents,
                          const std::vector<EventSnapshot> &executedEvents, int stepNumber,
                          const std::string &lastEvent = "", const std::string &transitionSource = "",
                          const std::string &transitionTarget = "");
