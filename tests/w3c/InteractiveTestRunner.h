@@ -375,6 +375,9 @@ private:
     std::string lastTransitionTarget_;
     std::string lastEventName_;
 
+    // Track previous active states for transition source detection
+    std::set<std::string> previousActiveStates_;
+
     // W3C SCXML 3.13: UI events now managed by EventRaiser's external queue (Zero Duplication)
     // pendingEvents_ removed - EventRaiser owns all event queue management
 

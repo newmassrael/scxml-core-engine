@@ -115,8 +115,14 @@ bool InteractiveTestRunner::initialize() {
         return false;
     }
 
-    // Capture initial snapshot for true reset functionality
+    // Initialize tracking variables
     currentStep_ = 0;
+    previousActiveStates_.clear();
+    lastTransitionSource_.clear();
+    lastTransitionTarget_.clear();
+    lastEventName_.clear();
+
+    // Capture initial snapshot for true reset functionality
     captureSnapshot();
 
     // Save initial snapshot (before any raiseEvent() calls)
@@ -135,6 +141,13 @@ bool InteractiveTestRunner::stepForward() {
         return false;
     }
 
+    // Capture current active states BEFORE transition (for source detection)
+    auto preTransitionStates = stateMachine_->getActiveStates();
+    previousActiveStates_.clear();
+    for (const auto &state : preTransitionStates) {
+        previousActiveStates_.insert(state);
+    }
+
     // W3C SCXML 3.13: EventRaiser automatically handles priority (INTERNAL → EXTERNAL → Eventless)
     // Zero Duplication: Single priority queue with QueuedEventComparator
     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
@@ -149,18 +162,42 @@ bool InteractiveTestRunner::stepForward() {
             lastEventName_ = "[internal]";
         }
 
-        // Update metadata
-        auto currentStates = stateMachine_->getActiveStates();
-        std::string currentState = currentStates.empty() ? "" : currentStates[0];
+        // Get active states AFTER transition
+        auto postTransitionStates = stateMachine_->getActiveStates();
+        std::set<std::string> currentStates;
+        for (const auto &state : postTransitionStates) {
+            currentStates.insert(state);
+        }
 
-        lastTransitionSource_ = "";
-        lastTransitionTarget_ = currentState;
+        // Find exited states (source) and entered states (target)
+        std::string sourceState;
+        std::string targetState;
+
+        for (const auto &prev : previousActiveStates_) {
+            if (currentStates.find(prev) == currentStates.end()) {
+                sourceState = prev;  // This state was exited
+                break;
+            }
+        }
+
+        for (const auto &curr : currentStates) {
+            if (previousActiveStates_.find(curr) == previousActiveStates_.end()) {
+                targetState = curr;  // This state was entered
+                break;
+            }
+        }
+
+        // Update metadata
+        lastTransitionSource_ =
+            sourceState.empty() ? (previousActiveStates_.empty() ? "" : *previousActiveStates_.begin()) : sourceState;
+        lastTransitionTarget_ =
+            targetState.empty() ? (postTransitionStates.empty() ? "" : postTransitionStates[0]) : targetState;
 
         currentStep_++;
         captureSnapshot();
 
-        LOG_DEBUG("InteractiveTestRunner: Step {} - event '{}' processed (current state: {})", currentStep_,
-                  lastEventName_, currentState);
+        LOG_DEBUG("InteractiveTestRunner: Step {} - event '{}' processed (transition: {} -> {})", currentStep_,
+                  lastEventName_, lastTransitionSource_, lastTransitionTarget_);
         return true;
     }
 
@@ -219,6 +256,7 @@ void InteractiveTestRunner::reset() {
 
     if (restoreSnapshot(*initialSnapshot_)) {
         currentStep_ = 0;
+        previousActiveStates_.clear();  // Reset transition tracking
         LOG_DEBUG("InteractiveTestRunner: Reset to true initial configuration (queue cleared)");
     } else {
         LOG_ERROR("InteractiveTestRunner: Failed to restore initial snapshot");
