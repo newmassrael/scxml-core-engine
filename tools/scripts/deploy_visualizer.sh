@@ -46,6 +46,7 @@ cp tools/web/primer.css "$DEST_DIR/"
 cp tools/web/scxml-visualizer.js "$DEST_DIR/"
 
 # Layout and routing
+cp tools/web/constraint-solver.js "$DEST_DIR/"
 cp tools/web/transition-layout-optimizer.js "$DEST_DIR/"
 cp tools/web/edge-direction-utils.js "$DEST_DIR/"
 cp tools/web/routing-state.js "$DEST_DIR/"
