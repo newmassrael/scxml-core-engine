@@ -11,6 +11,8 @@
 // Debug mode
 const DEBUG_MODE = new URLSearchParams(window.location.search).has('debug');
 
+// PANEL_HIGHLIGHT_DURATION is defined in execution-controller.js (loaded before this file)
+
 class SCXMLVisualizer {
     constructor(containerId, scxmlStructure) {
         this.container = d3.select(`#${containerId}`);
@@ -18,7 +20,7 @@ class SCXMLVisualizer {
         this.transitions = scxmlStructure.transitions || [];
         this.initialState = scxmlStructure.initial || '';
         this.activeStates = new Set();
-        
+
         // Debug mode from URL parameter (?debug)
         this.debugMode = DEBUG_MODE;
 
@@ -28,6 +30,10 @@ class SCXMLVisualizer {
         // Adaptive algorithm selection for drag optimization
         this.dragOptimizationTimer = null;
         this.isDraggingAny = false;
+
+        // Timeout tracking for consistent cancellation (like State Actions DOM re-render)
+        this.transitionHighlightTimeout = null;
+        this.transitionPanelHighlightTimeout = null;
 
         // Container dimensions
         const containerNode = this.container.node();
@@ -39,10 +45,10 @@ class SCXMLVisualizer {
 
         console.log(`Initializing ELK-based visualizer: ${this.width}x${this.height}`);
         console.log(`Initial state: ${this.initialState}`);
+        console.log(`States: ${this.states.length}, Transitions: ${this.transitions.length}`);
 
         if (DEBUG_MODE) {
-            console.log('States:', this.states.length);
-            console.log('Transitions:', this.transitions.length);
+            console.log('[DEBUG] Transition details:', this.transitions);
         }
 
         // Initialize ELK
@@ -534,10 +540,11 @@ class SCXMLVisualizer {
             .on('click', (event, d) => {
                 event.stopPropagation();
                 this.toggleCompoundState(d.id);
-                
-                // Highlight in State Actions panel
+
+                // Design System: Panel + Diagram interaction (matches panel click behavior)
                 if (window.executionController) {
                     window.executionController.highlightStateInPanel(d.id);
+                    window.executionController.focusState(d.id);
                 }
             });
 
@@ -657,7 +664,7 @@ class SCXMLVisualizer {
             .style('cursor', 'pointer')
             .on('click', (event, d) => {
                 event.stopPropagation();
-                
+
                 // Debug: Log state coordinates
                 const bounds = this.getNodeBounds(d);
                 console.log('=== STATE CLICKED ===');
@@ -668,10 +675,11 @@ class SCXMLVisualizer {
                 console.log(`  Top: ${bounds.top}, Bottom: ${bounds.bottom}`);
                 console.log(`  Width: ${bounds.right - bounds.left}, Height: ${bounds.bottom - bounds.top}`);
                 console.log('====================');
-                
-                // Highlight in State Actions panel
+
+                // Design System: Panel + Diagram interaction (matches panel click behavior)
                 if (window.executionController) {
                     window.executionController.highlightStateInPanel(d.id);
+                    window.executionController.focusState(d.id);
                 }
             });
 
@@ -701,10 +709,11 @@ class SCXMLVisualizer {
             .on('click', (event, d) => {
                 event.stopPropagation();
                 this.toggleCompoundState(d.id);
-                
-                // Highlight in State Actions panel
+
+                // Design System: Panel + Diagram interaction (matches panel click behavior)
                 if (window.executionController) {
                     window.executionController.highlightStateInPanel(d.id);
+                    window.executionController.focusState(d.id);
                 }
             });
 
@@ -778,14 +787,18 @@ class SCXMLVisualizer {
             .style('cursor', d => d.linkType === 'transition' ? 'pointer' : 'default')
             .on('click', (event, d) => {
                 if (d.linkType === 'transition') {
-                    this.showTransitionInfo(d);
+                    // Show transition animation on diagram (temporary)
                     this.highlightTransition(d);
+                    this.focusOnTransition(d);
+
+                    // Dispatch event for execution-controller to update detail panel
+                    document.dispatchEvent(new CustomEvent('transition-click', { detail: d }));
                 }
             });
         
         // Transition labels (event, condition, actions)
         this.transitionLabels = linkGroups
-            .filter(d => d.linkType === 'transition' && d.event) // Only show labels for transitions with events
+            .filter(d => d.linkType === 'transition' && (d.event || d.cond)) // Show labels for transitions with events or guards
             .append('text')
             .attr('class', 'transition-label')
             .attr('x', d => this.getTransitionLabelPosition(d).x)
@@ -1007,10 +1020,10 @@ class SCXMLVisualizer {
         if (transition.event) {
             label = transition.event;
         }
-        
+
         // Condition (guard)
         if (transition.cond) {
-            label += ` [${transition.cond}]`;
+            label += (label ? ' ' : '') + `[${transition.cond}]`;
         }
         
         // Actions
@@ -1937,39 +1950,12 @@ class SCXMLVisualizer {
         console.log('[DEPRECATED] animateTransition() called - CSS handles animation now');
     }
 
-    /**
-     * Show transition info (select in list when clicked on diagram)
-     */
-    showTransitionInfo(transition) {
-        const panel = document.getElementById('transition-info-panel');
-        if (!panel) return;
-
-        // Find the transition index in the list
-        const transitionId = `${transition.source}-${transition.target}`;
-        const transitionIndex = this.transitions.findIndex(t =>
-            `${t.source}-${t.target}` === transitionId
-        );
-
-        if (transitionIndex >= 0) {
-            // Update selected state in the list
-            const listItems = panel.querySelectorAll('.transition-list-item');
-            listItems.forEach((item, index) => {
-                if (index === transitionIndex) {
-                    item.classList.add('selected');
-                    // Scroll into view
-                    item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                } else {
-                    item.classList.remove('selected');
-                }
-            });
-        }
-    }
 
     /**
      * Render transition list in info panel
      */
     renderTransitionList() {
-        const panel = document.getElementById('transition-info-panel');
+        const panel = document.getElementById('transition-list-panel');
         if (!panel) return;
 
         if (!this.transitions || this.transitions.length === 0) {
@@ -2003,22 +1989,106 @@ class SCXMLVisualizer {
             item.addEventListener('click', function() {
                 const index = parseInt(this.getAttribute('data-transition-index'));
                 const transition = self.transitions[index];
+
+                // Show transition animation on diagram (temporary)
                 self.highlightTransition(transition);
                 self.focusOnTransition(transition);
 
-                // Update selected state
-                panel.querySelectorAll('.transition-list-item').forEach(t => t.classList.remove('selected'));
-                this.classList.add('selected');
+                // Design System: Panel highlight animation (matches State Actions panel)
+                this.classList.add('panel-highlighted');
+                setTimeout(() => {
+                    this.classList.remove('panel-highlighted');
+                }, 3000);  // 3s animation duration
+
+                // Dispatch event for execution-controller to update detail panel
+                document.dispatchEvent(new CustomEvent('transition-click', { detail: transition }));
             });
         });
     }
 
     /**
-     * Clear all transition highlights
+     * Set active transition (permanent highlight for last executed transition - like state.active)
+     * This is different from click - it shows which transition was last executed
+     */
+    setActiveTransition(transition) {
+        console.log('[SET ACTIVE TRANSITION] Setting active transition:', transition);
+
+        const panel = document.getElementById('transition-list-panel');
+        const transitionId = transition ? `${transition.source}-${transition.target}` : null;
+
+        // Clear all previous active states in panel
+        if (panel) {
+            panel.querySelectorAll('.transition-list-item').forEach(item => {
+                item.classList.remove('active');
+            });
+        }
+
+        // Clear all previous active states in diagram (SVG)
+        if (this.linkElements) {
+            this.linkElements.classed('active', false);
+        }
+        if (this.transitionLabels) {
+            this.transitionLabels.classed('active', false);
+        }
+
+        // Set active state on matching item (panel + diagram)
+        if (transitionId) {
+            // Panel: Set active state
+            if (panel) {
+                const activeItem = panel.querySelector(`[data-transition-id="${transitionId}"]`);
+                if (activeItem) {
+                    activeItem.classList.add('active');
+                    console.log('[SET ACTIVE TRANSITION] Panel active state set on:', transitionId);
+                }
+            }
+
+            // Diagram: Set active state (permanent - like state.active)
+            if (this.linkElements) {
+                this.linkElements.each(function(d) {
+                    const linkId = `${d.source}-${d.target}`;
+                    if (linkId === transitionId) {
+                        d3.select(this).classed('active', true);
+                        console.log('[SET ACTIVE TRANSITION] Diagram active state set on:', linkId);
+                    }
+                });
+            }
+
+            // Diagram label: Set active state
+            if (this.transitionLabels) {
+                this.transitionLabels.each(function(d) {
+                    const linkId = `${d.source}-${d.target}`;
+                    if (linkId === transitionId) {
+                        d3.select(this).classed('active', true);
+                        console.log('[SET ACTIVE TRANSITION] Label active state set on:', linkId);
+                    }
+                });
+            }
+        }
+    }
+
+    /**
+     * Clear all transition highlights (SVG diagram + panel)
+     * Note: Does NOT clear active state in transition list (active = last executed)
+     * Design System: Cancel pending timeout for immediate response
      */
     clearTransitionHighlights() {
-        console.log('[CLEAR HIGHLIGHT] Clearing all transition highlights');
+        console.log('[CLEAR HIGHLIGHT] Clearing transition highlights (SVG + panel)');
 
+        // Cancel pending SVG highlight timeout (immediate cancellation on step backward)
+        if (this.transitionHighlightTimeout) {
+            clearTimeout(this.transitionHighlightTimeout);
+            this.transitionHighlightTimeout = null;
+            console.log('[CLEAR HIGHLIGHT] Cancelled pending SVG highlight timeout');
+        }
+
+        // Cancel pending panel highlight timeout (immediate cancellation on step backward)
+        if (this.transitionPanelHighlightTimeout) {
+            clearTimeout(this.transitionPanelHighlightTimeout);
+            this.transitionPanelHighlightTimeout = null;
+            console.log('[CLEAR HIGHLIGHT] Cancelled pending panel highlight timeout');
+        }
+
+        // Clear SVG diagram highlights
         if (this.linkElements) {
             this.linkElements.classed('highlighted', false);
         }
@@ -2027,11 +2097,56 @@ class SCXMLVisualizer {
             this.transitionLabels.classed('highlighted', false);
         }
 
-        console.log('[CLEAR HIGHLIGHT] All highlights cleared');
+        // Clear panel highlights
+        const panel = document.getElementById('transition-list-panel');
+        if (panel) {
+            panel.querySelectorAll('.transition-list-item').forEach(item => {
+                item.classList.remove('panel-highlighted');
+            });
+            console.log('[CLEAR HIGHLIGHT] Panel highlights cleared');
+        }
+
+        console.log('[CLEAR HIGHLIGHT] All highlights cleared (active state preserved)');
     }
 
     /**
-     * Highlight a specific transition
+     * Clear active transition state (used on reset or step backward to initial)
+     */
+    clearActiveTransition() {
+        console.log('[CLEAR ACTIVE] Clearing active transition state');
+
+        // Clear panel active state
+        const panel = document.getElementById('transition-list-panel');
+        if (panel) {
+            panel.querySelectorAll('.transition-list-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            console.log('[CLEAR ACTIVE] Panel active transition cleared');
+        }
+
+        // Clear diagram active state (SVG - permanent .active class)
+        if (this.linkElements) {
+            this.linkElements.classed('active', false);
+            console.log('[CLEAR ACTIVE] Diagram active transition cleared');
+        }
+        if (this.transitionLabels) {
+            this.transitionLabels.classed('active', false);
+        }
+
+        // Clear diagram highlights (SVG - temporary .highlighted class)
+        this.clearTransitionHighlights();
+
+        // Clear detail panel
+        const detailPanel = document.getElementById('transition-detail-panel');
+        if (detailPanel) {
+            detailPanel.innerHTML = '<div class="transition-hint">Click a transition to view details</div>';
+        }
+    }
+
+    /**
+     * Highlight a specific transition (temporary - like state.focused)
+     * Shows clicked transition with animation, auto-removed after 2 seconds
+     * Design System: Consistent timeout cancellation (like State Actions DOM re-render)
      */
     highlightTransition(transition) {
         console.log('[HIGHLIGHT] highlightTransition() called with:', transition);
@@ -2041,53 +2156,98 @@ class SCXMLVisualizer {
             return;
         }
 
+        this.cancelPendingHighlights();
         const transitionId = `${transition.source}-${transition.target}`;
+
+        this.clearTransitionHighlights();
+        this.highlightLink(transitionId);
+        this.highlightLabel(transitionId);
+        this.scheduleHighlightRemoval();
+
+        console.log('[HIGHLIGHT] highlightTransition() complete');
+    }
+
+    /**
+     * Cancel pending highlight timeout (for immediate UI response)
+     * @private
+     */
+    cancelPendingHighlights() {
+        if (this.transitionHighlightTimeout) {
+            clearTimeout(this.transitionHighlightTimeout);
+            this.transitionHighlightTimeout = null;
+            console.log('[HIGHLIGHT] Cancelled previous highlight timeout');
+        }
+    }
+
+    /**
+     * Highlight transition link in diagram
+     * @private
+     */
+    highlightLink(transitionId) {
         console.log(`[HIGHLIGHT] Looking for transition ID: ${transitionId}`);
         console.log(`[HIGHLIGHT] Available linkElements count: ${this.linkElements.size()}`);
-        console.log(`[HIGHLIGHT] Available transitionLabels: ${this.transitionLabels ? this.transitionLabels.size() : 'none'}`);
 
-        // Remove previous highlights
-        this.clearTransitionHighlights();
-        console.log('[HIGHLIGHT] Cleared previous highlights');
-
-        // Add highlight to selected transition
         let foundLink = false;
         this.linkElements.each(function(d) {
             const linkId = `${d.source}-${d.target}`;
             console.log(`[HIGHLIGHT] Checking link: ${linkId} (type: ${d.linkType})`);
             if (linkId === transitionId) {
-                console.log(`[HIGHLIGHT] ✅ MATCH FOUND! Highlighting link: ${linkId}`);
+                console.log(`[HIGHLIGHT] Match found! Highlighting link: ${linkId}`);
                 d3.select(this).classed('highlighted', true);
                 foundLink = true;
             }
         });
 
         if (!foundLink) {
-            console.log(`[HIGHLIGHT] ❌ NO MATCH - transition ${transitionId} not found in linkElements`);
-            console.log('[HIGHLIGHT] All available transitions:');
-            this.linkElements.each(function(d) {
-                console.log(`  - ${d.source} → ${d.target} (type: ${d.linkType}, id: ${d.id})`);
-            });
-        }
-
-        // Highlight transition label
-        if (this.transitionLabels) {
-            let foundLabel = false;
-            this.transitionLabels.each(function(d) {
-                const linkId = `${d.source}-${d.target}`;
-                if (linkId === transitionId) {
-                    console.log(`[HIGHLIGHT] ✅ Label found for: ${linkId}`);
-                    d3.select(this).classed('highlighted', true);
-                    foundLabel = true;
-                }
-            });
-
-            if (!foundLabel) {
-                console.log(`[HIGHLIGHT] ⚠️ No label found for transition ${transitionId}`);
+            console.log(`[HIGHLIGHT] No match - transition ${transitionId} not found in linkElements`);
+            if (this.debugMode) {
+                console.log('[HIGHLIGHT] All available transitions:');
+                this.linkElements.each(function(d) {
+                    console.log(`  - ${d.source} → ${d.target} (type: ${d.linkType}, id: ${d.id})`);
+                });
             }
         }
+    }
 
-        console.log('[HIGHLIGHT] highlightTransition() complete');
+    /**
+     * Highlight transition label in diagram
+     * @private
+     */
+    highlightLabel(transitionId) {
+        if (!this.transitionLabels) {
+            return;
+        }
+
+        console.log(`[HIGHLIGHT] Available transitionLabels: ${this.transitionLabels.size()}`);
+
+        let foundLabel = false;
+        this.transitionLabels.each(function(d) {
+            const linkId = `${d.source}-${d.target}`;
+            if (linkId === transitionId) {
+                console.log(`[HIGHLIGHT] Label found for: ${linkId}`);
+                d3.select(this).classed('highlighted', true);
+                foundLabel = true;
+            }
+        });
+
+        if (!foundLabel) {
+            console.log(`[HIGHLIGHT] No label found for transition ${transitionId}`);
+        }
+    }
+
+    /**
+     * Schedule automatic removal of highlight after 2 seconds
+     * @private
+     */
+    scheduleHighlightRemoval() {
+        const self = this;
+        // Auto-remove highlight after 2 seconds (matches FOCUS_HIGHLIGHT_DURATION in execution-controller.js)
+        // Store timeout ID for cancellation (immediate response on step backward)
+        this.transitionHighlightTimeout = setTimeout(() => {
+            self.clearTransitionHighlights();
+            self.transitionHighlightTimeout = null;
+            console.log('[HIGHLIGHT] Auto-removed temporary highlight after 2s');
+        }, 2000);
     }
 
     /**
