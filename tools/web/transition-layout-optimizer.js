@@ -22,6 +22,10 @@ class TransitionLayoutOptimizer {
     static MIN_SEGMENT_LENGTH = 30;
     static MIN_SAFE_DISTANCE = 60; // MIN_SEGMENT_LENGTH * 2
 
+    // Progressive optimization configuration
+    static PROGRESS_RENDER_INTERVAL_MS = 50;  // Minimum interval between progressive renders
+    static CSP_THRESHOLD = 15;  // Maximum links for CSP optimization
+
     /**
      * Get node size by type or from node object
      * @param {string|Object} nodeOrType - Node object or node type string
@@ -753,10 +757,325 @@ class TransitionLayoutOptimizer {
     }
 
     /**
+     * Sort links with initial transitions first
+     * @private
+     * @param {Array} links - Array of link objects
+     * @returns {Array} Sorted links array
+     */
+    _sortLinksByPriority(links) {
+        return [...links].sort((a, b) => {
+            if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
+            if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
+            return 0;
+        });
+    }
+
+    /**
+     * Apply CSP solution to links and redistribute snap points
+     * @private
+     * @param {Map|Array} assignment - CSP assignment (Map or Array format)
+     * @param {Array} links - Array of link objects
+     * @param {Array} nodes - Array of node objects
+     */
+    _applySolutionToLinks(assignment, links, nodes) {
+        // Convert different formats to uniform format
+        let assignments;
+
+        if (assignment instanceof Map) {
+            // Progress case: Map → Array of tuples [[linkId, {sourceEdge, targetEdge}], ...]
+            assignments = Array.from(assignment.entries()).map(([linkId, value]) => ({
+                linkId,
+                sourceEdge: value.sourceEdge,
+                targetEdge: value.targetEdge
+            }));
+        } else if (Array.isArray(assignment)) {
+            // Solution case: Already array of objects [{linkId, sourceEdge, targetEdge}, ...]
+            assignments = assignment;
+        } else {
+            console.error('[OPTIMIZE] Invalid assignment format:', assignment);
+            return;
+        }
+
+        // Apply routing to links
+        assignments.forEach(({ linkId, sourceEdge, targetEdge }) => {
+            const link = links.find(l => l.id === linkId);
+            if (link) {
+                link.routing = RoutingState.fromEdges(sourceEdge, targetEdge);
+            }
+        });
+
+        // Sort and redistribute snap points
+        const sortedLinks = this._sortLinksByPriority(links);
+        this.distributeSnapPointsOnEdges(sortedLinks, nodes);
+    }
+
+    /**
+     * Handle progress message from worker
+     * @private
+     * @param {Object} data - Message data from worker
+     * @param {Array} links - Array of link objects
+     * @param {Array} nodes - Array of node objects
+     * @param {number} lastProgressRender - Last render timestamp
+     * @returns {number} Updated lastProgressRender timestamp
+     */
+    _handleProgressMessage(data, links, nodes, lastProgressRender) {
+        if (data.data && data.data.type === 'solution_improved') {
+            const now = performance.now();
+            if (now - lastProgressRender >= TransitionLayoutOptimizer.PROGRESS_RENDER_INTERVAL_MS) {
+                console.log(`[OPTIMIZE PROGRESSIVE] Solution improved: score=${data.data.score.toFixed(1)}, progress=${(data.data.progress * 100).toFixed(1)}%`);
+                this._applySolutionToLinks(data.data.assignment, links, nodes);
+                return now;
+            }
+        }
+        return lastProgressRender;
+    }
+
+    /**
+     * Handle solution message from worker
+     * @private
+     * @param {Array} solution - CSP solution assignments
+     * @param {number} score - Solution score
+     * @param {Object} stats - Statistics (nodeCount, pruneCount)
+     * @param {Array} links - Array of link objects
+     * @param {Array} nodes - Array of node objects
+     * @param {Worker} worker - Web Worker instance
+     * @param {Function} onComplete - Completion callback
+     * @returns {null} Worker is terminated, returns null
+     */
+    _handleSolutionMessage(solution, score, stats, links, nodes, worker, onComplete) {
+        console.log(`[OPTIMIZE PROGRESSIVE] CSP solution received (score=${score}, nodes=${stats.nodeCount}, prunes=${stats.pruneCount})`);
+        console.log('[OPTIMIZE PROGRESSIVE] Applying CSP solution...');
+        this._applySolutionToLinks(solution, links, nodes);
+        console.log('[OPTIMIZE PROGRESSIVE] Background CSP complete!');
+        worker.terminate();
+        if (onComplete) onComplete(true);
+        return null;
+    }
+
+    /**
+     * Handle cancelled message from worker
+     * @private
+     * @param {Worker} worker - Web Worker instance
+     * @param {Function} onComplete - Completion callback
+     * @returns {null} Worker is terminated, returns null
+     */
+    _handleCancelledMessage(worker, onComplete) {
+        console.log('[OPTIMIZE PROGRESSIVE] CSP cancelled by user');
+        worker.terminate();
+        if (onComplete) onComplete(false);
+        return null;
+    }
+
+    /**
+     * Handle failed message from worker
+     * @private
+     * @param {Worker} worker - Web Worker instance
+     * @param {Function} onComplete - Completion callback
+     * @returns {null} Worker is terminated, returns null
+     */
+    _handleFailedMessage(worker, onComplete) {
+        console.log('[OPTIMIZE PROGRESSIVE] CSP failed, keeping greedy result');
+        worker.terminate();
+        if (onComplete) onComplete(false);
+        return null;
+    }
+
+    /**
+     * Handle error message from worker
+     * @private
+     * @param {string} message - Error message
+     * @param {string} stack - Error stack trace
+     * @param {Worker} worker - Web Worker instance
+     * @param {Function} onComplete - Completion callback
+     * @returns {null} Worker is terminated, returns null
+     */
+    _handleErrorMessage(message, stack, worker, onComplete) {
+        console.error('[OPTIMIZE PROGRESSIVE] Worker error:', message);
+        console.error(stack);
+        worker.terminate();
+        if (onComplete) onComplete(false);
+        return null;
+    }
+
+    /**
+     * Progressive optimization: immediate greedy + background CSP
+     * @param {Array} links - Array of link objects
+     * @param {Array} nodes - Array of node objects
+     * @param {Function} onComplete - Callback when CSP completes: (success) => void
+     * @param {number} debounceMs - Delay before starting CSP (default: 500ms)
+     * @returns {Object} { cancel: () => void } - Object with cancel method
+     */
+    optimizeSnapPointAssignmentsProgressive(links, nodes, onComplete, debounceMs = 500) {
+        console.log('[OPTIMIZE PROGRESSIVE] Starting progressive optimization...');
+
+        // Progressive optimization: greedy step for immediate feedback
+        console.log('[OPTIMIZE PROGRESSIVE] Greedy step: immediate rendering...');
+        this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+
+        // Return immediately - user sees greedy result
+        console.log('[OPTIMIZE PROGRESSIVE] Greedy step complete, scheduling background CSP refinement...');
+
+        // Progressive optimization: CSP refinement with Web Worker
+        let timeoutId = null;
+        let worker = null;
+
+        const cancel = () => {
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+                console.log('[OPTIMIZE PROGRESSIVE] Cancelled (timeout cleared)');
+            }
+            if (worker) {
+                worker.postMessage({ type: 'cancel' });
+                worker.terminate();
+                worker = null;
+                console.log('[OPTIMIZE PROGRESSIVE] Cancelled (Worker terminated)');
+            }
+        };
+
+        // Skip CSP for large state machines (threshold)
+        if (links.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
+            console.log(`[OPTIMIZE PROGRESSIVE] ${links.length} transitions exceed threshold, skipping background CSP`);
+            if (onComplete) onComplete(false);
+            return { cancel };
+        }
+
+        // Schedule background CSP with Web Worker
+        timeoutId = setTimeout(() => {
+            timeoutId = null;
+            console.log('[OPTIMIZE PROGRESSIVE] CSP refinement step: Starting background optimization with Web Worker...');
+
+            // Check if Worker is supported
+            if (typeof Worker === 'undefined') {
+                console.warn('[OPTIMIZE PROGRESSIVE] Web Workers not supported, falling back to main thread CSP');
+                this.fallbackToMainThreadCSP(links, nodes, onComplete);
+                return;
+            }
+
+            try {
+                // Create Web Worker
+                worker = new Worker('constraint-solver-worker.js');
+
+                // Throttling for progressive rendering
+                let lastProgressRender = 0;
+
+                // Handle worker messages
+                worker.onmessage = (e) => {
+                    const { type, solution, score, stats, message, stack } = e.data;
+
+                    switch (type) {
+                        case 'progress':
+                            lastProgressRender = this._handleProgressMessage(e.data, links, nodes, lastProgressRender);
+                            break;
+
+                        case 'solution':
+                            worker = this._handleSolutionMessage(solution, score, stats, links, nodes, worker, onComplete);
+                            break;
+
+                        case 'cancelled':
+                            worker = this._handleCancelledMessage(worker, onComplete);
+                            break;
+
+                        case 'failed':
+                            worker = this._handleFailedMessage(worker, onComplete);
+                            break;
+
+                        case 'error':
+                            worker = this._handleErrorMessage(message, stack, worker, onComplete);
+                            break;
+                    }
+                };
+
+                worker.onerror = (error) => {
+                    console.error('[OPTIMIZE PROGRESSIVE] Worker error:', error);
+                    worker.terminate();
+                    worker = null;
+                    if (onComplete) onComplete(false);
+                };
+
+                // Send solve request to worker
+                worker.postMessage({
+                    type: 'solve',
+                    links: links,
+                    nodes: nodes
+                });
+
+            } catch (error) {
+                console.error('[OPTIMIZE PROGRESSIVE] Failed to create Worker:', error);
+                console.warn('[OPTIMIZE PROGRESSIVE] Falling back to main thread CSP');
+                this.fallbackToMainThreadCSP(links, nodes, onComplete);
+            }
+        }, debounceMs);
+
+        return { cancel };
+    }
+
+    /**
+     * Fallback to main thread CSP when Worker is not available
+     * @private
+     */
+    fallbackToMainThreadCSP(links, nodes, onComplete) {
+        try {
+            // Check if ConstraintSolver is available
+            if (typeof ConstraintSolver === 'undefined') {
+                console.warn('[OPTIMIZE PROGRESSIVE] ConstraintSolver not found, skipping CSP');
+                if (onComplete) onComplete(false);
+                return;
+            }
+
+            // Create CSP solver
+            const solver = new ConstraintSolver(links, nodes, this);
+
+            // Run CSP (blocks main thread)
+            const solution = solver.solve();
+
+            if (solver.cancelled) {
+                console.log('[OPTIMIZE PROGRESSIVE] CSP cancelled');
+                if (onComplete) onComplete(false);
+                return;
+            }
+
+            if (!solution) {
+                console.log('[OPTIMIZE PROGRESSIVE] CSP failed, keeping greedy result');
+                if (onComplete) onComplete(false);
+                return;
+            }
+
+            // Apply CSP solution
+            console.log('[OPTIMIZE PROGRESSIVE] Applying CSP solution...');
+            solution.forEach((assignment, linkId) => {
+                const link = links.find(l => l.id === linkId);
+                if (link) {
+                    link.routing = RoutingState.fromEdges(
+                        assignment.sourceEdge,
+                        assignment.targetEdge
+                    );
+                }
+            });
+
+            // Distribute snap points
+            const sortedLinks = [...links].sort((a, b) => {
+                if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
+                if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
+                return 0;
+            });
+            this.distributeSnapPointsOnEdges(sortedLinks, nodes);
+
+            console.log('[OPTIMIZE PROGRESSIVE] Main thread CSP complete!');
+            if (onComplete) onComplete(true);
+
+        } catch (error) {
+            console.error('[OPTIMIZE PROGRESSIVE] Main thread CSP error:', error);
+            if (onComplete) onComplete(false);
+        }
+    }
+
+    /**
      * Optimize snap point assignments for all links
      * Uses Constraint Satisfaction Problem (CSP) solver for globally optimal routing
-     * Phase 1: CSP solver assigns optimal edges (hard constraints + soft constraints)
-     * Phase 2: Distribute snap points on each edge
+     * Algorithm steps:
+     * 1. CSP solver assigns optimal edges (hard constraints + soft constraints)
+     * 2. Distribute snap points on each edge to minimize congestion
      * @param {Array} links - Array of link objects
      * @param {Array} nodes - Array of node objects
      */
@@ -764,14 +1083,24 @@ class TransitionLayoutOptimizer {
         // Adaptive Algorithm Selection:
         // - useGreedy=true: Fast greedy algorithm for real-time drag (1-5ms)
         // - useGreedy=false: Optimal CSP solver for final result (50-200ms)
-        
+
+        // Complexity threshold: CSP is O(16^n), greedy is O(n^2)
+        // For n > 15, CSP becomes too slow (>1000ms), use greedy instead
+
         if (useGreedy) {
             console.log('[OPTIMIZE] Using fast greedy algorithm (drag mode)...');
             this.optimizeSnapPointAssignmentsGreedy(links, nodes);
             return;
         }
 
-        console.log('[OPTIMIZE] Using Constraint Satisfaction Solver (optimal mode)...');
+        // Auto-fallback to greedy for large state machines
+        if (links.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
+            console.log(`[OPTIMIZE] ${links.length} transitions exceed CSP threshold (${TransitionLayoutOptimizer.CSP_THRESHOLD}), using greedy algorithm...`);
+            this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+            return;
+        }
+
+        console.log(`[OPTIMIZE] Using Constraint Satisfaction Solver for ${links.length} transitions (optimal mode)...`);
 
         // Check if ConstraintSolver is available
         if (typeof ConstraintSolver === 'undefined') {
@@ -805,7 +1134,7 @@ class TransitionLayoutOptimizer {
             }
         });
 
-        // Phase 2: Distribute snap points on each edge
+        // Distribute snap points on each edge to minimize congestion
         const sortedLinks = [...links].sort((a, b) => {
             if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
             if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
@@ -817,7 +1146,7 @@ class TransitionLayoutOptimizer {
     }
 
     /**
-     * Fallback greedy algorithm (original Phase 1 + Phase 1.5)
+     * Fallback greedy algorithm (edge assignment + snap distribution)
      * Used when CSP solver is not available or fails
      */
     optimizeSnapPointAssignmentsGreedy(links, nodes) {
@@ -839,7 +1168,7 @@ class TransitionLayoutOptimizer {
             reverseLinkMap.set(key, link);
         });
 
-        // Phase 1: Assign optimal edges to each link
+        // Assign optimal edges to each link (greedy selection)
         sortedLinks.forEach(link => {
             const sourceNode = nodes.find(n => n.id === link.source);
             const targetNode = nodes.find(n => n.id === link.target);
@@ -915,8 +1244,81 @@ class TransitionLayoutOptimizer {
                     }
                 }
 
-                // Score with original penalty weights
-                const score = tooCloseSnap * 100000 + nodeCollisions * 10000 + intersections * 1000 + combo.distance;
+                // Check for MIN_SEGMENT self-overlap
+                const MIN_SEGMENT = TransitionLayoutOptimizer.MIN_SEGMENT_LENGTH;
+                let selfOverlap = 0;
+
+                // Case 1: Both horizontal edges (H-V-H path)
+                if (!sourceIsVertical && !targetIsVertical) {
+                    // Calculate intermediate points
+                    let x1; // After source MIN_SEGMENT
+                    if (sourceEdge === 'right') {
+                        x1 = combo.sourcePoint.x + MIN_SEGMENT;
+                    } else { // left
+                        x1 = combo.sourcePoint.x - MIN_SEGMENT;
+                    }
+
+                    let x2; // Before target MIN_SEGMENT
+                    if (targetEdge === 'right') {
+                        x2 = combo.targetPoint.x + MIN_SEGMENT;
+                    } else { // left
+                        x2 = combo.targetPoint.x - MIN_SEGMENT;
+                    }
+
+                    // Detect overlap: x1 should not be between x2 and tx
+                    if (targetEdge === 'left') {
+                        // Target MIN_SEGMENT: x2 ← tx
+                        // x1 must be left of x2 to avoid overlap
+                        if (x1 > x2) {
+                            selfOverlap = 1;
+                        }
+                    } else { // right
+                        // Target MIN_SEGMENT: tx → x2
+                        // x1 must be right of x2 to avoid overlap
+                        if (x1 < x2) {
+                            selfOverlap = 1;
+                        }
+                    }
+                }
+
+                // Case 2: Both vertical edges (V-H-V path)
+                if (sourceIsVertical && targetIsVertical) {
+                    // Calculate intermediate points
+                    let y1; // After source MIN_SEGMENT
+                    if (sourceEdge === 'top') {
+                        y1 = combo.sourcePoint.y - MIN_SEGMENT;
+                    } else { // bottom
+                        y1 = combo.sourcePoint.y + MIN_SEGMENT;
+                    }
+
+                    let y2; // Before target MIN_SEGMENT
+                    if (targetEdge === 'top') {
+                        y2 = combo.targetPoint.y - MIN_SEGMENT;
+                    } else { // bottom
+                        y2 = combo.targetPoint.y + MIN_SEGMENT;
+                    }
+
+                    // Detect overlap: y1 should not be between y2 and ty
+                    if (targetEdge === 'top') {
+                        // Target MIN_SEGMENT: y2 ← ty (going up)
+                        // y1 must be above y2 to avoid overlap
+                        if (y1 > y2) {
+                            selfOverlap = 1;
+                        }
+                    } else { // bottom
+                        // Target MIN_SEGMENT: ty → y2 (going down)
+                        // y1 must be below y2 to avoid overlap
+                        if (y1 < y2) {
+                            selfOverlap = 1;
+                        }
+                    }
+                }
+
+                // Case 3: Mixed edges (V-H or H-V)
+                // No self-overlap possible: MIN_SEGMENTs operate on orthogonal axes
+
+                // Score with penalty weights (selfOverlap weight: 50000, same as CSP solver)
+                const score = tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + combo.distance;
 
                 if (score < bestScore) {
                     bestScore = score;
@@ -937,7 +1339,7 @@ class TransitionLayoutOptimizer {
             }
         });
 
-        // Phase 2: Distribute snap points on each edge
+        // Distribute snap points on each edge to minimize congestion
         this.distributeSnapPointsOnEdges(sortedLinks, nodes);
 
         console.log(`Optimized snap points for ${links.length} links using greedy algorithm`);
@@ -1023,7 +1425,7 @@ class TransitionLayoutOptimizer {
                     if (Math.abs(xDiff) > 0.1) {
                         return xDiff;
                     }
-                    
+
                     // Secondary: When x positions are same, sort by vertical position (y)
                     // For INCOMING links to horizontal edge: reverse y order to prevent crossings
                     // Higher sources (smaller y) should connect to rightmost targets (larger x)
@@ -1037,7 +1439,7 @@ class TransitionLayoutOptimizer {
                     if (Math.abs(yDiff) > 0.1) {
                         return yDiff;
                     }
-                    
+
                     // Secondary: When y positions are same, sort by horizontal position (x)
                     // For INCOMING links to vertical edge: reverse x order to prevent crossings
                     if (!a.isSource && !b.isSource) {

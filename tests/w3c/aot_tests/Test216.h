@@ -10,7 +10,7 @@ namespace SCE::W3C::AotTests {
  *
  * Tests that srcexpr attribute is evaluated at runtime, not at parse time.
  * Initial value of Var1 is 'foo' (would fail if used), but is changed to
- * 'file:test216sub1.scxml' at entry, which should be the value used for invoke.
+ * 'file:test216_child0.scxml' at entry, which should be the value used for invoke.
  *
  * Uses ScheduledAotTest for runUntilCompletion() to process:
  * - Deferred hybrid invoke execution (W3C SCXML 6.4)

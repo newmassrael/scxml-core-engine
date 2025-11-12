@@ -11,7 +11,7 @@ namespace SCE::W3C::AotTests {
  * and inline content definition (<content><scxml>...</scxml></content>).
  *
  * Test scenario:
- * - State s01 invokes external file via src="file:test239sub1.scxml"
+ * - State s01 invokes external file via src="file:test239_child0.scxml"
  * - On done.invoke, transition to s02
  * - State s02 invokes inline content child (identical to test239sub1)
  * - On done.invoke, transition to pass

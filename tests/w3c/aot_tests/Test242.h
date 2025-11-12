@@ -11,16 +11,16 @@ namespace SCE::W3C::AotTests {
  * Either we get done.invoke in both cases or in neither case (timeout).
  *
  * Test scenario:
- * - State s0 invokes child with src="file:test242sub1.scxml"
+ * - State s0 invokes child with src="file:test242_child0.scxml"
  *   - Child is a simple final state
  *   - Timeout after 1s if no done.invoke
  * - On done.invoke event, transition to s02 (src worked)
  * - On timeout1 event, transition to s03 (src failed)
- * - State s02 invokes child with inline <content> (identical to test242sub1.scxml)
+ * - State s02 invokes child with inline <content> (identical to test242_child0.scxml)
  *   - Must receive done.invoke (since s0 received done.invoke)
  *   - On done.invoke → pass (consistent behavior)
  *   - On timeout2 → fail (inconsistent)
- * - State s03 invokes child with inline <content> (identical to test242sub1.scxml)
+ * - State s03 invokes child with inline <content> (identical to test242_child0.scxml)
  *   - Must receive timeout (since s0 received timeout1)
  *   - On timeout3 → pass (consistent behavior)
  *   - On done.invoke → fail (inconsistent)
@@ -44,7 +44,7 @@ namespace SCE::W3C::AotTests {
  * - W3C SCXML 6.2: Delayed send with timeout
  * - W3C SCXML 3.7.3: Final state in child state machine
  *
- * Note: This test requires test242sub1.scxml (child state machine file).
+ * Note: This test requires test242_child0.scxml (child state machine file).
  * The child is a simple state machine with only a final state.
  * Both src and inline content reference identical child state machines to verify consistency.
  */

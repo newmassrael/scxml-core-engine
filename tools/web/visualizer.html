@@ -76,46 +76,16 @@
         <div class="Box mb-3">
             <div class="Box-header">
                 <h3 class="Box-title">State Diagram</h3>
-                <!-- View Mode Toggle -->
-                <div id="view-mode-toggle" class="ml-3" style="display: none;">
-                    <button id="btn-view-tabs" class="btn btn-sm">Tab View</button>
-                    <button id="btn-view-split" class="btn btn-sm btn-primary">Split View</button>
+                <!-- Breadcrumb Navigation (W3C SCXML 6.3: Parent-Child Navigation) -->
+                <div id="breadcrumb-container" class="ml-3 d-flex flex-items-center text-small">
+                    <span class="breadcrumb-item active">Parent</span>
                 </div>
+                <!-- Back Button (hidden by default) -->
+                <button id="btn-back" class="btn btn-sm ml-auto" style="display: none;">
+                    ← Back to Parent
+                </button>
             </div>
             <div class="Box-body">
-                <!-- Split View Container (shown when child exists) -->
-                <div id="split-view-container">
-                    <div class="split-view">
-                        <!-- Parent State Machine -->
-                        <div class="split-panel parent-panel">
-                            <div class="panel-header">Parent State Machine</div>
-                            <div id="state-diagram-parent-split" class="diagram-container-split"></div>
-                        </div>
-
-                        <!-- Communication Panel -->
-                        <div class="split-panel communication-panel">
-                            <div class="panel-header">Communication</div>
-                            <div id="communication-log" class="communication-log">
-                                <div class="comm-entry comm-info">Waiting for invoke/send events...</div>
-                            </div>
-                        </div>
-
-                        <!-- Child State Machines (with tabs for multiple children) -->
-                        <div class="split-panel child-panel">
-                            <div class="panel-header">
-                                Child State Machines
-                                <!-- Child Tabs -->
-                                <nav id="child-tabs" class="child-tabs" style="display: none;">
-                                    <!-- Tabs will be generated dynamically -->
-                                </nav>
-                            </div>
-                            <div id="child-diagrams-container">
-                                <!-- Child diagrams will be added here -->
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Single View Container (default, no children) -->
                 <div id="single-view-container">
                     <div id="state-diagram-single" class="diagram-container active"></div>

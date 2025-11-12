@@ -25,6 +25,10 @@ const LAYOUT_CONSTANTS = {
 };
 
 class SCXMLVisualizer {
+    // Layout constants
+    static COMPOUND_PADDING = 25;
+    static COMPOUND_TOP_PADDING = 50;
+    
     constructor(containerId, scxmlStructure) {
         this.container = d3.select(`#${containerId}`);
         this.states = scxmlStructure.states || [];
@@ -41,6 +45,9 @@ class SCXMLVisualizer {
         // Adaptive algorithm selection for drag optimization
         this.dragOptimizationTimer = null;
         this.isDraggingAny = false;
+
+        // Progressive optimization: background CSP cancellation
+        this.backgroundOptimization = null;
 
         // Timeout tracking for consistent cancellation (like State Actions DOM re-render)
         this.transitionHighlightTimeout = null;
@@ -147,10 +154,21 @@ class SCXMLVisualizer {
                 type: state.type,
                 label: state.id,
                 children: state.children || [],
-                collapsed: (state.type === 'compound' || state.type === 'parallel'),
+                // W3C SCXML 3.4: Parallel states expanded by default to show concurrent regions
+                collapsed: (state.type === 'compound'),  // Only compound states collapsed, parallel expanded
                 onentry: state.onentry || [],
-                onexit: state.onexit || []
+                onexit: state.onexit || [],
+                // W3C SCXML 6.3: Invoke metadata for child SCXML navigation
+                hasInvoke: state.hasInvoke || false,
+                invokeSrc: state.invokeSrc || null,
+                invokeSrcExpr: state.invokeSrcExpr || null,
+                invokeId: state.invokeId || null
             };
+
+            // Debug: Log children arrays for compound/parallel states
+            if ((state.type === 'compound' || state.type === 'parallel') && node.children.length > 0) {
+                console.log(`[buildNodes] ${state.id} (${state.type}) has children: ${node.children.join(', ')}`);
+            }
 
             nodes.push(node);
         });
@@ -263,14 +281,21 @@ class SCXMLVisualizer {
 
                 // Hierarchical crossing minimization
                 'elk.layered.crossingMinimization.hierarchicalSweepiness': '0.1'
+
+                // Use default bottom-up layout: children computed first, then parents sized to fit
             },
             children: [],
             edges: []
         };
 
         const visibleNodes = this.getVisibleNodes();
+        const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
 
-        visibleNodes.forEach(node => {
+        // Recursive function to build ELK node with nested children
+        const buildELKNode = (node, depth = 0) => {
+            const indent = '  '.repeat(depth);
+            console.log(`${indent}[buildELKNode] Building ${node.id} (${node.type}, collapsed=${node.collapsed})`);
+
             const elkNode = {
                 id: node.id,
                 width: this.getNodeWidth(node),
@@ -280,29 +305,57 @@ class SCXMLVisualizer {
             // Add children for expanded compounds
             if ((node.type === 'compound' || node.type === 'parallel') && !node.collapsed) {
                 elkNode.children = [];
+
+                console.log(`${indent}  ${node.id} has ${node.children.length} children: ${node.children.join(', ')}`);
+
                 elkNode.layoutOptions = {
                     'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
                     'elk.padding': '[top=50,left=25,bottom=25,right=25]'
                 };
 
+                // Recursively build children
                 node.children.forEach(childId => {
                     const childNode = this.nodes.find(n => n.id === childId);
                     if (childNode) {
-                        elkNode.children.push({
-                            id: childId,
-                            width: this.getNodeWidth(childNode),
-                            height: this.getNodeHeight(childNode)
-                        });
+                        if (visibleNodeIds.has(childId)) {
+                            console.log(`${indent}    → Adding child ${childId} (visible)`);
+                            elkNode.children.push(buildELKNode(childNode, depth + 1));
+                        } else {
+                            console.log(`${indent}    → Skipping child ${childId} (not visible)`);
+                        }
+                    } else {
+                        console.warn(`${indent}    → Child ${childId} not found in this.nodes!`);
                     }
                 });
+
+                console.log(`${indent}  ${node.id} elkNode.children.length = ${elkNode.children.length}`);
             }
 
-            graph.children.push(elkNode);
+            return elkNode;
+        };
+
+        // Only add top-level visible nodes (nodes without visible parents)
+        const topLevelNodes = visibleNodes.filter(node => {
+            // Check if this node has a visible parent
+            const hasVisibleParent = this.nodes.some(parent =>
+                (parent.type === 'compound' || parent.type === 'parallel') &&
+                !parent.collapsed &&
+                parent.children &&
+                parent.children.includes(node.id) &&
+                visibleNodeIds.has(parent.id)
+            );
+            return !hasVisibleParent;
+        });
+
+        console.log(`[buildELKGraph] Total visible nodes: ${visibleNodes.length}, Top-level nodes: ${topLevelNodes.length}`);
+        console.log(`  Top-level: ${topLevelNodes.map(n => n.id).join(', ')}`);
+
+        topLevelNodes.forEach(node => {
+            graph.children.push(buildELKNode(node));
         });
 
         // Add edges (only if both source and target are visible)
         const visibleLinks = this.getVisibleLinks(this.allLinks, this.nodes);
-        const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
 
         visibleLinks.forEach(link => {
             if (link.linkType === 'transition' || link.linkType === 'initial') {
@@ -384,6 +437,7 @@ class SCXMLVisualizer {
      * Get visible nodes
      */
     getVisibleNodes() {
+        console.log('[getVisibleNodes] Checking visibility for all nodes...');
         const visibleIds = new Set();
 
         this.nodes.forEach(node => {
@@ -394,12 +448,23 @@ class SCXMLVisualizer {
                 parent.children.includes(node.id)
             );
 
-            if (!isHidden) {
+            if (isHidden) {
+                console.log(`  ${node.id}: HIDDEN (child of collapsed parent)`);
+            } else {
                 visibleIds.add(node.id);
+                console.log(`  ${node.id}: VISIBLE (type=${node.type})`);
             }
         });
 
-        return this.nodes.filter(n => visibleIds.has(n.id));
+        const result = this.nodes.filter(n => visibleIds.has(n.id));
+        console.log(`[getVisibleNodes] Result: ${result.map(n => n.id).join(', ')}`);
+        
+        // Debug: Show compound/parallel nodes and their children
+        this.nodes.filter(n => n.type === 'compound' || n.type === 'parallel').forEach(n => {
+            console.log(`  ${n.id} (${n.type}, collapsed=${n.collapsed}): children=${n.children ? n.children.join(', ') : 'none'}`);
+        });
+        
+        return result;
     }
 
     /**
@@ -455,8 +520,26 @@ class SCXMLVisualizer {
      */
     applyELKLayout(layouted) {
         console.log('Applying ELK layout to nodes...');
+        console.log(`  this.nodes count: ${this.nodes.length}, nodes: ${this.nodes.map(n => `${n.id}(${n.type})`).join(', ')}`);
 
-        const applyToNode = (elkNode, offsetX = 0, offsetY = 0) => {
+        // Debug: Log ELK result structure
+        console.log('ELK result structure:');
+        layouted.children.forEach(child => {
+            console.log(`  ${child.id}: hasChildren=${!!child.children}, childCount=${child.children ? child.children.length : 0}`);
+            if (child.children) {
+                child.children.forEach(grandchild => {
+                    console.log(`    └─ ${grandchild.id}: hasChildren=${!!grandchild.children}, childCount=${grandchild.children ? grandchild.children.length : 0}`);
+                    if (grandchild.children) {
+                        grandchild.children.forEach(ggrandchild => {
+                            console.log(`       └─ ${ggrandchild.id}`);
+                        });
+                    }
+                });
+            }
+        });
+
+        const applyToNode = (elkNode, offsetX = 0, offsetY = 0, depth = 0) => {
+            const indent = '  '.repeat(depth);
             const node = this.nodes.find(n => n.id === elkNode.id);
             if (node) {
                 node.x = elkNode.x + offsetX + elkNode.width / 2;
@@ -464,18 +547,75 @@ class SCXMLVisualizer {
                 node.width = elkNode.width;
                 node.height = elkNode.height;
 
-                console.log(`  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height}`);
+                console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height}, offset=(${offsetX}, ${offsetY})`);
+            } else {
+                console.warn(`${indent}  ELK node not found in this.nodes: ${elkNode.id} (possibly child state or collapsed)`);
             }
 
             if (elkNode.children) {
+                console.log(`${indent}  ${elkNode.id} has ${elkNode.children.length} children in ELK result`);
                 elkNode.children.forEach(child => {
-                    applyToNode(child, elkNode.x + offsetX, elkNode.y + offsetY);
+                    applyToNode(child, elkNode.x + offsetX, elkNode.y + offsetY, depth + 1);
                 });
             }
         };
 
+        const collectELKNodeIds = (elkNode, ids = []) => {
+            ids.push(elkNode.id);
+            if (elkNode.children) {
+                elkNode.children.forEach(child => collectELKNodeIds(child, ids));
+            }
+            return ids;
+        };
+        const elkNodeIds = [];
+        layouted.children.forEach(child => collectELKNodeIds(child, elkNodeIds));
+        console.log(`  ELK layout nodes: ${elkNodeIds.join(', ')}`);
+
         layouted.children.forEach(child => {
             applyToNode(child);
+        });
+
+        // Calculate bounding boxes for expanded compounds without coordinates
+        // (ELK may not provide coordinates for nested hierarchy)
+        console.log('Calculating bounding boxes for expanded compounds...');
+        console.log(`  Total nodes: ${this.nodes.length}`);
+        this.nodes.forEach(node => {
+            if ((node.type === 'compound' || node.type === 'parallel') && 
+                !node.collapsed && 
+                (node.x === undefined || node.y === undefined)) {
+                
+                console.log(`  Processing ${node.id} (type=${node.type}, collapsed=${node.collapsed}, hasCoords=${node.x !== undefined && node.y !== undefined})`);
+                
+                // Get children coordinates
+                if (!node.children || node.children.length === 0) {
+                    console.warn(`  ${node.id}: No children array, skipping bounding box calculation`);
+                    return;
+                }
+                
+                const childNodes = node.children
+                    .map(childId => this.nodes.find(n => n.id === childId))
+                    .filter(child => child && child.x !== undefined && child.y !== undefined);
+                
+                console.log(`    Children: ${node.children.join(', ')}, with coords: ${childNodes.map(c => c.id).join(', ')}`);
+                
+                if (childNodes.length > 0) {
+                    // Calculate bounding box with padding
+                    const padding = 25;
+                    const minX = Math.min(...childNodes.map(c => c.x - c.width/2)) - padding;
+                    const maxX = Math.max(...childNodes.map(c => c.x + c.width/2)) + padding;
+                    const minY = Math.min(...childNodes.map(c => c.y - c.height/2)) - padding;
+                    const maxY = Math.max(...childNodes.map(c => c.y + c.height/2)) + padding;
+                    
+                    node.x = (minX + maxX) / 2;
+                    node.y = (minY + maxY) / 2;
+                    node.width = maxX - minX;
+                    node.height = maxY - minY;
+                    
+                    console.log(`  ${node.id}: Calculated from children (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width.toFixed(1)}x${node.height.toFixed(1)}`);
+                } else {
+                    console.warn(`  ${node.id}: No children with coordinates, cannot calculate bounding box`);
+                }
+            }
         });
 
         // Apply ELK edge routing information BEFORE modifying node positions
@@ -506,6 +646,21 @@ class SCXMLVisualizer {
         // Group nodes by layer (similar Y coordinates)
         const layers = new Map();
         this.nodes.forEach(node => {
+            // Skip nodes without coordinates (expected for expanded compound/parallel states)
+            if (node.y === undefined || node.x === undefined) {
+                // Only warn for non-compound nodes that should have coordinates
+                if (node.type !== 'compound' && node.type !== 'parallel') {
+                    console.warn(`[LAYOUT] Node missing coordinates: ${node.id} (type=${node.type})`);
+                } else if (node.collapsed) {
+                    // Collapsed compound should have coordinates
+                    console.warn(`[LAYOUT] Collapsed compound missing coordinates: ${node.id}`);
+                } else {
+                    // Expanded compound - this is expected, children have coordinates
+                    console.log(`[LAYOUT] Skipping expanded compound (children have coordinates): ${node.id}`);
+                }
+                return;
+            }
+
             let foundLayer = false;
             for (const [layerY, nodesInLayer] of layers.entries()) {
                 if (Math.abs(node.y - layerY) < yTolerance) {
@@ -551,7 +706,145 @@ class SCXMLVisualizer {
         console.log('Optimizing snap point assignments...');
         this.layoutOptimizer.optimizeSnapPointAssignments(this.allLinks, this.nodes);
 
+        // Update all compound/parallel bounds to ensure they contain all children
+        // Process in bottom-up order: children first, then parents
+        console.log('Updating compound container bounds...');
+        
+        // Find all expanded compounds/parallels and their depths
+        const compoundsWithDepth = [];
+        const getDepth = (nodeId, visited = new Set()) => {
+            if (visited.has(nodeId)) return 0; // Cycle detection
+            visited.add(nodeId);
+            
+            const node = this.nodes.find(n => n.id === nodeId);
+            if (!node || !node.children || node.children.length === 0) return 0;
+            
+            let maxChildDepth = 0;
+            for (const childId of node.children) {
+                const childDepth = getDepth(childId, visited);
+                maxChildDepth = Math.max(maxChildDepth, childDepth);
+            }
+            return maxChildDepth + 1;
+        };
+        
+        this.nodes.forEach(node => {
+            if ((node.type === 'compound' || node.type === 'parallel') && !node.collapsed) {
+                const depth = getDepth(node.id);
+                compoundsWithDepth.push({ node, depth });
+            }
+        });
+        
+        // Sort by depth ascending (deepest children first, shallowest parents last)
+        compoundsWithDepth.sort((a, b) => a.depth - b.depth);
+        
+        console.log(`  Processing ${compoundsWithDepth.length} compounds in bottom-up order:`);
+        compoundsWithDepth.forEach(({ node, depth }) => {
+            console.log(`    depth=${depth}: ${node.id}`);
+        });
+        
+        // Update bounds in bottom-up order
+        compoundsWithDepth.forEach(({ node }) => {
+            this.updateCompoundBounds(node);
+        });
+
         console.log('Layout application complete');
+    }
+
+    /**
+     * Update compound/parallel container bounds to contain all children
+     * Ensures parent containers are always large enough for their children
+     */
+    updateCompoundBounds(compoundNode) {
+        if (!compoundNode.children || compoundNode.children.length === 0) {
+            return;
+        }
+
+        const childNodes = compoundNode.children
+            .map(childId => this.nodes.find(n => n.id === childId))
+            .filter(child => child && child.x !== undefined && child.y !== undefined);
+
+        if (childNodes.length === 0) {
+            console.warn(`[updateCompoundBounds] ${compoundNode.id}: No children with coordinates`);
+            return;
+        }
+
+        // Debug: Log child positions
+        console.log(`[updateCompoundBounds] ${compoundNode.id}: Processing ${childNodes.length} children:`);
+        childNodes.forEach(child => {
+            console.log(`  - ${child.id}: x=${child.x.toFixed(1)}, y=${child.y.toFixed(1)}, width=${child.width}, height=${child.height}`);
+        });
+
+        const padding = SCXMLVisualizer.COMPOUND_PADDING;
+        const topPadding = SCXMLVisualizer.COMPOUND_TOP_PADDING;
+
+        const minX = Math.min(...childNodes.map(c => c.x - (c.width || 0)/2)) - padding;
+        const maxX = Math.max(...childNodes.map(c => c.x + (c.width || 0)/2)) + padding;
+        const minY = Math.min(...childNodes.map(c => c.y - (c.height || 0)/2)) - topPadding;
+        const maxY = Math.max(...childNodes.map(c => c.y + (c.height || 0)/2)) + padding;
+
+        compoundNode.x = (minX + maxX) / 2;
+        compoundNode.y = (minY + maxY) / 2;
+        compoundNode.width = maxX - minX;
+        compoundNode.height = maxY - minY;
+
+        console.log(`[updateCompoundBounds] ${compoundNode.id}: Updated to (${compoundNode.x.toFixed(1)}, ${compoundNode.y.toFixed(1)}) size=${compoundNode.width.toFixed(1)}x${compoundNode.height.toFixed(1)}`);
+    }
+
+    /**
+     * Find the immediate compound/parallel parent of a node
+     * Returns null if node has no compound/parallel parent
+     */
+    findCompoundParent(nodeId) {
+        for (const node of this.nodes) {
+            if ((node.type === 'compound' || node.type === 'parallel') && 
+                !node.collapsed && 
+                node.children && 
+                node.children.includes(nodeId)) {
+                return node;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Find the topmost compound/parallel ancestor of a node
+     * Returns null if node has no compound/parallel parent
+     * Returns the highest ancestor in the hierarchy
+     */
+    findTopmostCompoundParent(nodeId) {
+        let currentId = nodeId;
+        let topmostParent = null;
+        
+        while (true) {
+            const parent = this.findCompoundParent(currentId);
+            if (!parent) {
+                break;
+            }
+            topmostParent = parent;
+            currentId = parent.id;
+        }
+        
+        return topmostParent;
+    }
+
+    /**
+     * Recursively collect all descendant IDs of a node
+     * Returns array of all children, grandchildren, great-grandchildren, etc.
+     */
+    getAllDescendantIds(parentId) {
+        const descendants = [];
+        const parent = this.nodes.find(n => n.id === parentId);
+        
+        if (parent && parent.children) {
+            parent.children.forEach(childId => {
+                descendants.push(childId);
+                // Recursively add grandchildren
+                const grandchildren = this.getAllDescendantIds(childId);
+                descendants.push(...grandchildren);
+            });
+        }
+        
+        return descendants;
     }
 
     /**
@@ -570,11 +863,33 @@ class SCXMLVisualizer {
 
         const visibleNodes = this.getVisibleNodes();
         const visibleLinks = this.getVisibleLinks(this.allLinks, this.nodes);
+        
+        console.log(`[RENDER] visibleNodes: ${visibleNodes.map(n => n.id).join(', ')}`);
 
         // Compound containers (expanded)
-        const compoundData = visibleNodes.filter(n =>
-            (n.type === 'compound' || n.type === 'parallel') && !n.collapsed
-        );
+        // Include compounds that have visible children, even if the compound itself is not in visibleNodes
+        const compoundData = [];
+        const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+        
+        this.nodes.forEach(node => {
+            if ((node.type === 'compound' || node.type === 'parallel') && !node.collapsed) {
+                // Check if this compound has any visible children
+                const hasVisibleChildren = node.children && node.children.some(childId => visibleNodeIds.has(childId));
+                
+                // Include if compound is visible OR has visible children
+                if (visibleNodeIds.has(node.id) || hasVisibleChildren) {
+                    // Ensure compound has coordinates (from bounding box calculation)
+                    if (node.x !== undefined && node.y !== undefined && node.width !== undefined && node.height !== undefined) {
+                        compoundData.push(node);
+                        console.log(`  Including compound ${node.id}: inVisibleNodes=${visibleNodeIds.has(node.id)}, hasVisibleChildren=${hasVisibleChildren}`);
+                    } else {
+                        console.warn(`  Compound ${node.id} has visible children but no coordinates!`);
+                    }
+                }
+            }
+        });
+        
+        console.log(`[RENDER] compoundData: ${compoundData.map(n => `${n.id}(${n.type})`).join(', ')}`);
 
         this.compoundContainers = this.zoomContainer.append('g')
             .attr('class', 'compound-containers')
@@ -588,16 +903,312 @@ class SCXMLVisualizer {
             .attr('height', d => d.height)
             .attr('data-state-id', d => d.id)
             .style('cursor', 'pointer')
-            .on('click', (event, d) => {
-                event.stopPropagation();
-                this.toggleCompoundState(d.id);
+            .call(d3.drag()
+                .on('start', function(event, d) {
+                    console.log(`[DRAG START COMPOUND] ${d.id} at (${d.x}, ${d.y})`);
+                    
+                    // Cancel background optimization
+                    if (self.backgroundOptimization) {
+                        self.backgroundOptimization.cancel();
+                        self.backgroundOptimization = null;
+                    }
+                    
+                    // Find the topmost parent to move the entire hierarchy
+                    const topmostParent = self.findTopmostCompoundParent(d.id);
+                    if (topmostParent) {
+                        console.log(`[DRAG START COMPOUND] ${d.id} has topmost parent ${topmostParent.id}, will move entire hierarchy`);
+                        d.dragParent = topmostParent;
+                        
+                        // Cache descendant IDs for topmost parent
+                        d._cachedDescendants = self.getAllDescendantIds(topmostParent.id);
+                    } else {
+                        // No parent: this is the topmost
+                        d.dragParent = null;
+                        
+                        // Cache descendant IDs for self
+                        d._cachedDescendants = self.getAllDescendantIds(d.id);
+                    }
+                    
+                    d3.select(this).raise();
+                    d.isDragging = true;
+                    self.isDraggingAny = true;
+                })
+                
+                .on('drag', function(event, d) {
+                    // Store delta before updating
+                    const dx = event.dx;
+                    const dy = event.dy;
 
-                // Design System: Panel + Diagram interaction (matches panel click behavior)
-                if (window.executionController) {
-                    window.executionController.highlightStateInPanel(d.id);
-                    window.executionController.focusState(d.id);
+                    // If this compound has a parent, move the parent instead (entire hierarchy)
+                    if (d.dragParent) {
+                        console.log(`[DRAG COMPOUND] ${d.id} has parent ${d.dragParent.id}, moving entire hierarchy`);
+                        
+                        // Update parent position
+                        d.dragParent.x += dx;
+                        d.dragParent.y += dy;
+                        
+                        // Update parent container visual immediately
+                        if (self.compoundContainers) {
+                            self.compoundContainers.each(function(compoundData) {
+                                if (compoundData.id === d.dragParent.id) {
+                                    d3.select(this)
+                                        .attr('x', compoundData.x - compoundData.width/2)
+                                        .attr('y', compoundData.y - compoundData.height/2);
+                                }
+                            });
+                        }
+                        
+                        // Update parent label position immediately
+                        if (self.compoundLabels) {
+                            self.compoundLabels.each(function(labelData) {
+                                if (labelData.id === d.dragParent.id) {
+                                    d3.select(this)
+                                        .attr('x', labelData.x - labelData.width/2 + 10)
+                                        .attr('y', labelData.y - labelData.height/2 + 20);
+                                }
+                            });
+                        }
+                        
+                        // Update all descendants (including this compound) with single pass
+                        if (d.dragParent.children) {
+                            // Use cached descendant IDs for performance
+                            const allDescendantIds = d._cachedDescendants;
+                            
+                            // Single pass: update data positions for ALL descendants
+                            self.nodes.forEach(node => {
+                                // Update direct children of parent
+                                if (d.dragParent.children.includes(node.id)) {
+                                node.x += dx;
+                                node.y += dy;
+                            }
+                            // Update grandchildren and deeper (not direct children)
+                            else if (allDescendantIds.includes(node.id)) {
+                                node.x += dx;
+                                node.y += dy;
+                            }
+                        });
+
+                        // Update all descendant node visuals (data already updated above)
+                        self.nodeElements.each(function(nodeData) {
+                            if (allDescendantIds.includes(nodeData.id)) {
+                                d3.select(this)
+                                    .attr('transform', `translate(${nodeData.x}, ${nodeData.y})`);
+                            }
+                        });
+
+                        // Also update compound container visuals for all descendant compounds
+                        if (self.compoundContainers) {
+                            self.compoundContainers.each(function(compoundData) {
+                                if (allDescendantIds.includes(compoundData.id)) {
+                                    d3.select(this)
+                                        .attr('x', compoundData.x - compoundData.width/2)
+                                        .attr('y', compoundData.y - compoundData.height/2);
+                                }
+                            });
+                        }
+                        
+                        // Update compound label positions for all descendant compounds
+                        if (self.compoundLabels) {
+                            self.compoundLabels.each(function(labelData) {
+                                if (allDescendantIds.includes(labelData.id)) {
+                                    d3.select(this)
+                                        .attr('x', labelData.x - labelData.width/2 + 10)
+                                        .attr('y', labelData.y - labelData.height/2 + 20);
+                                }
+                            });
+                        }
+                    }
+                    } else {
+                        // No parent: move only this compound and its children
+                        console.log(`[DRAG COMPOUND] ${d.id} is topmost, moving self + children`);
+                        
+                        // Update compound position
+                        d.x += dx;
+                        d.y += dy;
+
+                        // Update compound rect visual immediately
+                        d3.select(this)
+                            .attr('x', d.x - d.width/2)
+                            .attr('y', d.y - d.height/2);
+                        
+                        // Update compound label position immediately
+                        if (self.compoundLabels) {
+                            self.compoundLabels.each(function(labelData) {
+                                if (labelData.id === d.id) {
+                                    d3.select(this)
+                                        .attr('x', d.x - d.width/2 + 10)
+                                        .attr('y', d.y - d.height/2 + 20);
+                                }
+                            });
+                        }
+
+                        // Update children positions and visuals with single pass
+                        if (d.children) {
+                            // Use cached descendant IDs for performance
+                            const allDescendantIds = d._cachedDescendants;
+                            
+                            // Single pass: update data positions for ALL descendants
+                            self.nodes.forEach(node => {
+                                // Update direct children
+                                if (d.children.includes(node.id)) {
+                                    node.x += dx;
+                                    node.y += dy;
+                                }
+                                // Update grandchildren and deeper (not direct children)
+                                else if (allDescendantIds.includes(node.id)) {
+                                    node.x += dx;
+                                    node.y += dy;
+                                }
+                            });
+
+                            // Update all descendant node visuals (data already updated above)
+                            self.nodeElements.each(function(nodeData) {
+                                if (allDescendantIds.includes(nodeData.id)) {
+                                    d3.select(this)
+                                        .attr('transform', `translate(${nodeData.x}, ${nodeData.y})`);
+                                }
+                            });
+
+                            // Update compound container visuals for all descendant compounds
+                            if (self.compoundContainers) {
+                                self.compoundContainers.each(function(compoundData) {
+                                    if (allDescendantIds.includes(compoundData.id)) {
+                                        d3.select(this)
+                                            .attr('x', compoundData.x - compoundData.width/2)
+                                            .attr('y', compoundData.y - compoundData.height/2);
+                                    }
+                                });
+                            }
+                            
+                            // Update compound label positions for all descendant compounds
+                            if (self.compoundLabels) {
+                                self.compoundLabels.each(function(labelData) {
+                                    if (allDescendantIds.includes(labelData.id)) {
+                                        d3.select(this)
+                                            .attr('x', labelData.x - labelData.width/2 + 10)
+                                            .attr('y', labelData.y - labelData.height/2 + 20);
+                                    }
+                                });
+                            }
+                        }
+                    }
+
+                    // Throttle link updates with RAF
+                    if (self.dragOptimizationTimer) {
+                        clearTimeout(self.dragOptimizationTimer);
+                        self.dragOptimizationTimer = null;
+                    }
+
+                    if (dragAnimationFrame) {
+                        cancelAnimationFrame(dragAnimationFrame);
+                    }
+
+                    dragAnimationFrame = requestAnimationFrame(() => {
+                        self.updateLinksFast();
+                    });
+                })
+                
+                .on('end', function(event, d) {
+                    console.log(`[DRAG END COMPOUND] ${d.id}`);
+                    
+                    if (dragAnimationFrame) {
+                        cancelAnimationFrame(dragAnimationFrame);
+                        dragAnimationFrame = null;
+                    }
+                    
+                    d.isDragging = false;
+                    self.isDraggingAny = false;
+                    
+                    // Cleanup cached descendants
+                    delete d._cachedDescendants;
+                    
+                    // Update bounds based on whether we moved parent or self
+                    if (d.dragParent) {
+                        console.log(`[DRAG END COMPOUND] Updating parent ${d.dragParent.id} bounds to contain all children`);
+                        self.updateCompoundBounds(d.dragParent);
+                        
+                        // Update parent container visual
+                        if (self.compoundContainers) {
+                            self.compoundContainers.each(function(compoundData) {
+                                if (compoundData.id === d.dragParent.id) {
+                                    d3.select(this)
+                                        .attr('x', compoundData.x - compoundData.width/2)
+                                        .attr('y', compoundData.y - compoundData.height/2)
+                                        .attr('width', compoundData.width)
+                                        .attr('height', compoundData.height);
+                                }
+                            });
+                        }
+                        
+                        // Clear dragParent reference
+                        d.dragParent = null;
+                    } else {
+                        console.log(`[DRAG END COMPOUND] Updating ${d.id} bounds to contain all children`);
+                        self.updateCompoundBounds(d);
+
+                        // Final position with updated bounds
+                        d3.select(this)
+                            .attr('x', d.x - d.width/2)
+                            .attr('y', d.y - d.height/2)
+                            .attr('width', d.width)
+                            .attr('height', d.height);
+                    }
+                    
+                    // Phase 1: Immediate greedy
+                    self.updateLinksFast();
+                    
+                    // Phase 2: Background CSP
+                    console.log('[DRAG END COMPOUND] Starting progressive optimization...');
+                    
+                    if (self.backgroundOptimization) {
+                        self.backgroundOptimization.cancel();
+                        self.backgroundOptimization = null;
+                    }
+                    
+                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
+                        self.allLinks,
+                        self.nodes,
+                        (success) => {
+                            if (success) {
+                                console.log(`[DRAG END COMPOUND] Background CSP complete, updating visualization...`);
+                                
+                                self.allLinks.forEach(link => {
+                                    const sourceNode = self.nodes.find(n => n.id === link.source);
+                                    const targetNode = self.nodes.find(n => n.id === link.target);
+                                    if (sourceNode && targetNode) {
+                                        self.calculateLinkDirections(sourceNode, targetNode, link);
+                                    }
+                                });
+                                
+                                self.updateLinksOptimal();
+                                console.log(`[DRAG END COMPOUND] CSP visualization update complete`);
+                            } else {
+                                console.log(`[DRAG END COMPOUND] Background CSP cancelled or failed, keeping greedy result`);
+                            }
+                            
+                            self.backgroundOptimization = null;
+                        },
+                        500
+                    );
+                }))
+            .on('click', (event, d) => {
+                // Only toggle if not dragging
+                if (!d.isDragging && event.defaultPrevented === false) {
+                    event.stopPropagation();
+                    this.toggleCompoundState(d.id);
+
+                    // Design System: Panel + Diagram interaction (matches panel click behavior)
+                    if (window.executionController) {
+                        window.executionController.highlightStateInPanel(d.id);
+                        window.executionController.focusState(d.id);
+                    }
                 }
             });
+        
+        console.log(`[RENDER] Rendered ${compoundData.length} compound containers`);
+        compoundData.forEach(d => {
+            console.log(`  ${d.id}: x=${d.x}, y=${d.y}, width=${d.width}, height=${d.height}`);
+        });
 
         // Regular nodes
         const regularNodes = visibleNodes.filter(n =>
@@ -621,35 +1232,138 @@ class SCXMLVisualizer {
             .call(d3.drag()
                 .on('start', function(event, d) {
                     console.log(`[DRAG START] ${d.id} at (${d.x}, ${d.y})`);
+
+                    // Cancel any ongoing background optimization
+                    if (self.backgroundOptimization) {
+                        self.backgroundOptimization.cancel();
+                        self.backgroundOptimization = null;
+                        console.log(`[DRAG START] Cancelled background CSP optimization`);
+                    }
+
+                    // Check if this node has compound/parallel ancestors
+                    // Find the topmost ancestor to move the entire hierarchy
+                    const topmostParent = self.findTopmostCompoundParent(d.id);
+                    if (topmostParent) {
+                        console.log(`[DRAG START] ${d.id} has topmost parent ${topmostParent.id}, will move entire hierarchy`);
+                        d.dragParent = topmostParent;
+                        
+                        // Cache descendant IDs for performance (avoid recalculating on every drag event)
+                        d._cachedDescendants = self.getAllDescendantIds(topmostParent.id);
+                    } else {
+                        d.dragParent = null;
+                    }
+
                     // Raise dragged element to front
                     d3.select(this).raise();
                     d.isDragging = true;
                     self.isDraggingAny = true;
                 })
                 .on('drag', function(event, d) {
-                    // Use delta movement (dx, dy) to avoid flickering
-                    d.x += event.dx;
-                    d.y += event.dy;
+                    // Store delta before any updates
+                    const dx = event.dx;
+                    const dy = event.dy;
 
-                    const element = this;
+                    // If node has a compound/parallel parent, move the parent instead
+                    if (d.dragParent) {
+                        console.log(`[DRAG] Moving parent ${d.dragParent.id} instead of child ${d.id}`);
+                        
+                        // Update parent position
+                        d.dragParent.x += dx;
+                        d.dragParent.y += dy;
 
-                    // Cancel previous animation frame if exists
-                    if (dragAnimationFrame) {
-                        cancelAnimationFrame(dragAnimationFrame);
+                        // Update all children positions (including this node) with single pass
+                        if (d.dragParent.children) {
+                            // Use cached descendant IDs for performance
+                            const allDescendantIds = d._cachedDescendants;
+                            
+                            // Single pass: update data positions for ALL descendants
+                            self.nodes.forEach(node => {
+                                // Update direct children
+                                if (d.dragParent.children.includes(node.id)) {
+                                    node.x += dx;
+                                    node.y += dy;
+                                }
+                                // Update grandchildren and deeper (not direct children)
+                                else if (allDescendantIds.includes(node.id)) {
+                                    node.x += dx;
+                                    node.y += dy;
+                                }
+                            });
+
+                            // Update parent container visual immediately
+                            if (self.compoundContainers) {
+                                self.compoundContainers.each(function(compoundData) {
+                                    if (compoundData.id === d.dragParent.id) {
+                                        d3.select(this)
+                                            .attr('x', compoundData.x - compoundData.width/2)
+                                            .attr('y', compoundData.y - compoundData.height/2);
+                                    }
+                                });
+                            }
+                            
+                            // Update parent label position immediately
+                            if (self.compoundLabels) {
+                                self.compoundLabels.each(function(labelData) {
+                                    if (labelData.id === d.dragParent.id) {
+                                        d3.select(this)
+                                            .attr('x', labelData.x - labelData.width/2 + 10)
+                                            .attr('y', labelData.y - labelData.height/2 + 20);
+                                    }
+                                });
+                            }
+
+                            // Update all descendant node visuals (data already updated above)
+                            self.nodeElements.each(function(nodeData) {
+                                if (allDescendantIds.includes(nodeData.id)) {
+                                    d3.select(this)
+                                        .attr('transform', `translate(${nodeData.x}, ${nodeData.y})`);
+                                }
+                            });
+
+                            // Update nested compound container visuals for all descendant compounds
+                            if (self.compoundContainers) {
+                                self.compoundContainers.each(function(compoundData) {
+                                    if (allDescendantIds.includes(compoundData.id)) {
+                                        d3.select(this)
+                                            .attr('x', compoundData.x - compoundData.width/2)
+                                            .attr('y', compoundData.y - compoundData.height/2);
+                                    }
+                                });
+                            }
+                            
+                            // Update compound label positions for all descendant compounds
+                            if (self.compoundLabels) {
+                                self.compoundLabels.each(function(labelData) {
+                                    if (allDescendantIds.includes(labelData.id)) {
+                                        d3.select(this)
+                                            .attr('x', labelData.x - labelData.width/2 + 10)
+                                            .attr('y', labelData.y - labelData.height/2 + 20);
+                                    }
+                                });
+                            }
+                        }
+                    } else {
+                        // No parent: move only this node
+                        d.x += dx;
+                        d.y += dy;
+
+                        const element = this;
+
+                        // Update visual transform immediately
+                        d3.select(element).attr('transform', `translate(${d.x},${d.y})`);
                     }
 
-                    // Clear debounce timer
+                    // Throttle link updates with RAF (for both cases)
                     if (self.dragOptimizationTimer) {
                         clearTimeout(self.dragOptimizationTimer);
                         self.dragOptimizationTimer = null;
                     }
 
-                    // Schedule update on next animation frame for smooth 60fps
-                    dragAnimationFrame = requestAnimationFrame(() => {
-                        // Update visual transform
-                        d3.select(element).attr('transform', `translate(${d.x},${d.y})`);
+                    if (dragAnimationFrame) {
+                        cancelAnimationFrame(dragAnimationFrame);
+                    }
 
-                        // **ADAPTIVE ALGORITHM: Use fast greedy during drag**
+                    dragAnimationFrame = requestAnimationFrame(() => {
                         self.updateLinksFast();
                     });
 
@@ -678,13 +1392,71 @@ class SCXMLVisualizer {
                         self.dragOptimizationTimer = null;
                     }
 
-                    // **FINAL OPTIMIZATION: After drag completes, run optimal CSP**
-                    console.log(`[DRAG END] Re-optimizing with optimal CSP...`);
+                    // Cancel any ongoing background optimization
+                    if (self.backgroundOptimization) {
+                        self.backgroundOptimization.cancel();
+                        self.backgroundOptimization = null;
+                    }
 
-                    // Re-run optimizer with new node positions (optimal mode)
-                    self.layoutOptimizer.optimizeSnapPointAssignments(self.allLinks, self.nodes, false);
+                    // Update parent bounds if this node has a parent
+                    if (d.dragParent) {
+                        console.log(`[DRAG END] Updating parent ${d.dragParent.id} bounds to contain children`);
+                        self.updateCompoundBounds(d.dragParent);
 
-                    // Calculate midY for new routing
+                        // Update parent container visual
+                        if (self.compoundContainers) {
+                            self.compoundContainers.each(function(compoundData) {
+                                if (compoundData.id === d.dragParent.id) {
+                                    d3.select(this)
+                                        .attr('x', compoundData.x - compoundData.width/2)
+                                        .attr('y', compoundData.y - compoundData.height/2)
+                                        .attr('width', compoundData.width)
+                                        .attr('height', compoundData.height);
+                                }
+                            });
+                        }
+
+                        // Cleanup cached descendants
+                        delete d._cachedDescendants;
+                        
+                        // Clear dragParent reference
+                        d.dragParent = null;
+                    }
+
+                    // **PROGRESSIVE OPTIMIZATION: Immediate greedy + background CSP**
+                    console.log(`[DRAG END] Starting progressive optimization...`);
+
+                    // Start progressive optimization (returns immediately with greedy result)
+                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
+                        self.allLinks,
+                        self.nodes,
+                        (success) => {
+                            if (success) {
+                                console.log(`[DRAG END] Background CSP complete, updating visualization...`);
+
+                                // Calculate midY for new CSP routing
+                                self.allLinks.forEach(link => {
+                                    const sourceNode = self.nodes.find(n => n.id === link.source);
+                                    const targetNode = self.nodes.find(n => n.id === link.target);
+                                    if (sourceNode && targetNode) {
+                                        self.calculateLinkDirections(sourceNode, targetNode, link);
+                                    }
+                                });
+
+                                // Update visualization with CSP-optimized paths
+                                self.updateLinksOptimal();
+
+                                console.log(`[DRAG END] CSP visualization update complete`);
+                            } else {
+                                console.log(`[DRAG END] Background CSP cancelled or failed, keeping greedy result`);
+                            }
+
+                            self.backgroundOptimization = null;
+                        },
+                        500 // 500ms debounce
+                    );
+
+                    // Calculate midY for immediate greedy routing
                     self.allLinks.forEach(link => {
                         const sourceNode = self.nodes.find(n => n.id === link.source);
                         const targetNode = self.nodes.find(n => n.id === link.target);
@@ -693,10 +1465,10 @@ class SCXMLVisualizer {
                         }
                     });
 
-                    // Final update to render optimized paths
+                    // Immediate update to render greedy paths (fast feedback)
                     self.updateLinksOptimal();
 
-                    console.log(`[DRAG END] Re-optimization complete`);
+                    console.log(`[DRAG END] Immediate greedy rendering complete`);
                 }));
 
         // Shapes
@@ -716,6 +1488,23 @@ class SCXMLVisualizer {
             .style('cursor', 'pointer')
             .on('click', (event, d) => {
                 event.stopPropagation();
+
+                // W3C SCXML 6.3: Invoke navigation - if state has invoke, navigate to child
+                if (d.hasInvoke) {
+                    console.log(`State ${d.id} has invoke - dispatching state-navigate event`);
+                    
+                    // Dispatch custom event for navigation
+                    const navEvent = new CustomEvent('state-navigate', {
+                        detail: {
+                            stateId: d.id,
+                            invokeSrc: d.invokeSrc,
+                            invokeSrcExpr: d.invokeSrcExpr,
+                            invokeId: d.invokeId
+                        }
+                    });
+                    document.dispatchEvent(navEvent);
+                    return;
+                }
 
                 // Debug: Log state coordinates
                 const bounds = this.getNodeBounds(d);
@@ -758,15 +1547,172 @@ class SCXMLVisualizer {
             .attr('height', d => d.height)
             .attr('rx', 5)
             .style('cursor', 'pointer')
-            .on('click', (event, d) => {
-                event.stopPropagation();
-                this.toggleCompoundState(d.id);
+            .call(d3.drag()
+                .on('start', function(event, d) {
+                    console.log(`[DRAG START COLLAPSED] ${d.id} at (${d.x}, ${d.y})`);
 
-                // Design System: Panel + Diagram interaction (matches panel click behavior)
-                if (window.executionController) {
-                    window.executionController.highlightStateInPanel(d.id);
-                    window.executionController.focusState(d.id);
+                    // Cancel any ongoing background optimization
+                    if (self.backgroundOptimization) {
+                        self.backgroundOptimization.cancel();
+                        self.backgroundOptimization = null;
+                        console.log(`[DRAG START COLLAPSED] Cancelled background CSP optimization`);
+                    }
+
+                    // Raise dragged element to front
+                    d3.select(this).raise();
+                    d.isDragging = true;
+                    self.isDraggingAny = true;
+                })
+                .on('drag', function(event, d) {
+                    // Use delta movement (dx, dy) to avoid flickering
+                    d.x += event.dx;
+                    d.y += event.dy;
+
+                    const element = this;
+
+                    // Cancel previous animation frame if exists
+                    if (dragAnimationFrame) {
+                        cancelAnimationFrame(dragAnimationFrame);
+                    }
+
+                    // Clear debounce timer
+                    if (self.dragOptimizationTimer) {
+                        clearTimeout(self.dragOptimizationTimer);
+                        self.dragOptimizationTimer = null;
+                    }
+
+                    // Schedule update on next animation frame for smooth 60fps
+                    dragAnimationFrame = requestAnimationFrame(() => {
+                        // Update visual position (collapsed states use x, y with offset)
+                        d3.select(element)
+                            .attr('x', d.x - d.width/2)
+                            .attr('y', d.y - d.height/2);
+
+                        // Update label position if exists
+                        self.zoomContainer.selectAll('.collapsed-label')
+                            .filter(label => label.id === d.id)
+                            .attr('x', d.x)
+                            .attr('y', d.y);
+
+                        // **ADAPTIVE ALGORITHM: Use fast greedy during drag**
+                        self.updateLinksFast();
+                    });
+                })
+                .on('end', function(event, d) {
+                    console.log(`[DRAG END COLLAPSED] ${d.id} at (${d.x}, ${d.y})`);
+
+                    // Cancel pending animation frame
+                    if (dragAnimationFrame) {
+                        cancelAnimationFrame(dragAnimationFrame);
+                        dragAnimationFrame = null;
+                    }
+
+                    d.isDragging = false;
+                    self.isDraggingAny = false;
+
+                    // Final position update
+                    d3.select(this)
+                        .attr('x', d.x - d.width/2)
+                        .attr('y', d.y - d.height/2);
+
+                    // Update label final position
+                    self.zoomContainer.selectAll('.collapsed-label')
+                        .filter(label => label.id === d.id)
+                        .attr('x', d.x)
+                        .attr('y', d.y);
+
+                    // **PHASE 1: Immediate greedy optimization**
+                    console.log('[DRAG END COLLAPSED] Phase 1: Immediate greedy...');
+                    self.updateLinksFast();
+
+                    // **PHASE 2: Background CSP optimization**
+                    console.log('[DRAG END COLLAPSED] Starting progressive optimization...');
+                    
+                    // Cancel any ongoing background optimization
+                    if (self.backgroundOptimization) {
+                        self.backgroundOptimization.cancel();
+                        self.backgroundOptimization = null;
+                    }
+                    
+                    // Start progressive optimization
+                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
+                        self.allLinks,
+                        self.nodes,
+                        (success) => {
+                            if (success) {
+                                console.log(`[DRAG END COLLAPSED] Background CSP complete, updating visualization...`);
+                                
+                                // Calculate midY for new CSP routing
+                                self.allLinks.forEach(link => {
+                                    const sourceNode = self.nodes.find(n => n.id === link.source);
+                                    const targetNode = self.nodes.find(n => n.id === link.target);
+                                    if (sourceNode && targetNode) {
+                                        self.calculateLinkDirections(sourceNode, targetNode, link);
+                                    }
+                                });
+                                
+                                // Update visualization with CSP-optimized paths
+                                self.updateLinksOptimal();
+                                
+                                console.log(`[DRAG END COLLAPSED] CSP visualization update complete`);
+                            } else {
+                                console.log(`[DRAG END COLLAPSED] Background CSP cancelled or failed, keeping greedy result`);
+                            }
+                            
+                            self.backgroundOptimization = null;
+                        },
+                        500 // 500ms debounce
+                    );
+                }))
+            .on('click', (event, d) => {
+                // Only toggle if not dragging
+                if (!d.isDragging && event.defaultPrevented === false) {
+                    event.stopPropagation();
+                    this.toggleCompoundState(d.id);
+
+                    // Design System: Panel + Diagram interaction (matches panel click behavior)
+                    if (window.executionController) {
+                        window.executionController.highlightStateInPanel(d.id);
+                        window.executionController.focusState(d.id);
+                    }
                 }
+            });
+
+        // W3C SCXML 6.3: Invoke Badge for states with child SCXML
+        this.nodeElements.filter(d => d.hasInvoke && (d.type === 'atomic' || d.type === 'final'))
+            .each(function(d) {
+                const group = d3.select(this);
+                
+                // Badge position: top-right corner of state rect
+                const badgeX = d.width/2 - 18;
+                const badgeY = -d.height/2 + 18;
+                
+                // Badge circle (blue background)
+                group.append('circle')
+                    .attr('class', 'invoke-badge-circle')
+                    .attr('cx', badgeX)
+                    .attr('cy', badgeY)
+                    .attr('r', 12)
+                    .attr('fill', '#0969da')
+                    .attr('stroke', 'white')
+                    .attr('stroke-width', 2);
+                
+                // Badge icon (down arrow or custom symbol)
+                group.append('text')
+                    .attr('class', 'invoke-badge-icon')
+                    .attr('x', badgeX)
+                    .attr('y', badgeY)
+                    .attr('text-anchor', 'middle')
+                    .attr('dominant-baseline', 'middle')
+                    .attr('font-size', '14px')
+                    .attr('font-weight', 'bold')
+                    .attr('fill', 'white')
+                    .text('⤵');  // Unicode down-right arrow
+                
+                // Add has-invoke class to parent for CSS styling
+                group.classed('has-invoke', true);
+                
+                console.log(`Added invoke badge to state: ${d.id}`);
             });
 
         // Labels - State ID with onentry/onexit actions (getBBox precision)
@@ -846,7 +1792,7 @@ class SCXMLVisualizer {
             .attr('dy', 5)
             .text(d => d.id);
 
-        this.zoomContainer.append('g')
+        this.compoundLabels = this.zoomContainer.append('g')
             .attr('class', 'compound-labels')
             .selectAll('text')
             .data(compoundData)
@@ -2221,6 +3167,38 @@ class SCXMLVisualizer {
         console.log(`[highlightActiveStates] Called with:`, activeStateIds);
         this.activeStates = new Set(activeStateIds);
 
+        // Auto-expand compound/parallel states that are active or have active children
+        let needsReLayout = false;
+        this.nodes.forEach(node => {
+            if ((node.type === 'compound' || node.type === 'parallel') && node.collapsed) {
+                // Check if this node is active OR has any active children
+                const isActive = this.activeStates.has(node.id);
+                const hasActiveChildren = node.children && node.children.some(childId => this.activeStates.has(childId));
+
+                if (isActive || hasActiveChildren) {
+                    console.log(`  → Auto-expanding ${node.id} (${node.type}): isActive=${isActive}, hasActiveChildren=${hasActiveChildren}`);
+                    node.collapsed = false;
+                    needsReLayout = true;
+                }
+            }
+        });
+
+        // Re-layout if any compound/parallel was expanded
+        if (needsReLayout) {
+            console.log(`  → Triggering re-layout due to auto-expansion`);
+            this.computeLayout().then(() => {
+                this.render();
+                // Re-highlight after re-render
+                this.highlightActiveStatesVisual();
+            });
+            return;
+        }
+
+        this.highlightActiveStatesVisual();
+    }
+
+    highlightActiveStatesVisual() {
+        console.log(`[highlightActiveStatesVisual] Applying visual highlights`);
         console.log(`  nodeElements exists: ${this.nodeElements ? 'yes' : 'no'}, size: ${this.nodeElements ? this.nodeElements.size() : 0}`);
         console.log(`  collapsedElements exists: ${this.collapsedElements ? 'yes' : 'no'}, size: ${this.collapsedElements ? this.collapsedElements.size() : 0}`);
         console.log(`  compoundContainers exists: ${this.compoundContainers ? 'yes' : 'no'}, size: ${this.compoundContainers ? this.compoundContainers.size() : 0}`);
@@ -2576,7 +3554,21 @@ class SCXMLVisualizer {
         const sourceNode = this.nodes.find(n => n.id === transition.source);
         const targetNode = this.nodes.find(n => n.id === transition.target);
 
-        if (!sourceNode || !targetNode) return;
+        // Validate nodes exist
+        if (!sourceNode || !targetNode) {
+            console.warn('[FOCUS] Source or target node not found:', transition);
+            return;
+        }
+
+        // Validate coordinates are valid numbers
+        if (!Number.isFinite(sourceNode.x) || !Number.isFinite(sourceNode.y) ||
+            !Number.isFinite(targetNode.x) || !Number.isFinite(targetNode.y)) {
+            console.warn('[FOCUS] Invalid node coordinates:', {
+                source: { id: sourceNode.id, x: sourceNode.x, y: sourceNode.y },
+                target: { id: targetNode.id, x: targetNode.x, y: targetNode.y }
+            });
+            return;
+        }
 
         // Calculate center point between source and target
         const centerX = (sourceNode.x + targetNode.x) / 2;
@@ -2587,6 +3579,20 @@ class SCXMLVisualizer {
         const dy = targetNode.y - sourceNode.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
 
+        // Handle same-position nodes (prevent division by zero)
+        if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+            console.log('[FOCUS] Same-position nodes, using default zoom');
+            const transform = d3.zoomIdentity
+                .translate(this.width / 2, this.height / 2)
+                .scale(1.0)
+                .translate(-centerX, -centerY);
+
+            this.svg.transition()
+                .duration(750)
+                .call(this.zoom.transform, transform);
+            return;
+        }
+
         // Calculate zoom level to fit both nodes
         const padding = 100;
         const zoomLevel = Math.min(
@@ -2594,6 +3600,12 @@ class SCXMLVisualizer {
             this.height / (Math.abs(dy) + padding * 2),
             2.0  // Max zoom
         );
+
+        // Validate zoom level is finite
+        if (!Number.isFinite(zoomLevel) || zoomLevel <= 0) {
+            console.warn('[FOCUS] Invalid zoom level:', zoomLevel);
+            return;
+        }
 
         // Apply transform
         const transform = d3.zoomIdentity
