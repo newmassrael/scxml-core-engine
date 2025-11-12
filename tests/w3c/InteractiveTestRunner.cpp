@@ -17,9 +17,13 @@
 
 // W3C SCXML 3.7: Action types for executable content visualization
 #include "actions/AssignAction.h"
+#include "actions/CancelAction.h"
 #include "actions/ForeachAction.h"
+#include "actions/IfAction.h"
 #include "actions/LogAction.h"
 #include "actions/RaiseAction.h"
+#include "actions/ScriptAction.h"
+#include "actions/SendAction.h"
 
 #include <set>
 
@@ -1016,8 +1020,105 @@ InteractiveTestRunner::serializeActions(const std::vector<std::shared_ptr<IActio
                     actionObj.set("level", log->getLevel());
                 }
             }
+        } else if (actionType == "if") {
+            auto ifAction = std::dynamic_pointer_cast<IfAction>(action);
+            if (ifAction) {
+                const auto &branches = ifAction->getBranches();
+                if (!branches.empty()) {
+                    // W3C SCXML 3.12.1: Serialize if condition
+                    actionObj.set("cond", branches[0].condition);
+
+                    // Serialize all branches for complete visualization
+                    auto branchesArray = emscripten::val::array();
+                    for (const auto &branch : branches) {
+                        auto branchObj = emscripten::val::object();
+                        branchObj.set("condition", branch.condition);
+                        branchObj.set("isElse", branch.isElseBranch);
+                        branchObj.set("actions", serializeActions(branch.actions));
+                        branchesArray.call<void>("push", branchObj);
+                    }
+                    actionObj.set("branches", branchesArray);
+                }
+            }
+        } else if (actionType == "send") {
+            auto send = std::dynamic_pointer_cast<SendAction>(action);
+            if (send) {
+                // W3C SCXML 6.2: Serialize send attributes
+                if (!send->getEvent().empty()) {
+                    actionObj.set("event", send->getEvent());
+                }
+                if (!send->getEventExpr().empty()) {
+                    actionObj.set("eventexpr", send->getEventExpr());
+                }
+                if (!send->getTarget().empty()) {
+                    actionObj.set("target", send->getTarget());
+                }
+                if (!send->getTargetExpr().empty()) {
+                    actionObj.set("targetexpr", send->getTargetExpr());
+                }
+                if (!send->getDelay().empty()) {
+                    actionObj.set("delay", send->getDelay());
+                }
+                if (!send->getDelayExpr().empty()) {
+                    actionObj.set("delayexpr", send->getDelayExpr());
+                }
+                if (!send->getData().empty()) {
+                    actionObj.set("data", send->getData());
+                }
+                if (!send->getContent().empty()) {
+                    actionObj.set("content", send->getContent());
+                }
+                if (!send->getContentExpr().empty()) {
+                    actionObj.set("contentexpr", send->getContentExpr());
+                }
+                if (!send->getSendId().empty()) {
+                    actionObj.set("sendid", send->getSendId());
+                }
+                if (!send->getIdLocation().empty()) {
+                    actionObj.set("idlocation", send->getIdLocation());
+                }
+                if (!send->getType().empty()) {
+                    actionObj.set("type", send->getType());
+                }
+                if (!send->getTypeExpr().empty()) {
+                    actionObj.set("typeexpr", send->getTypeExpr());
+                }
+                if (!send->getNamelist().empty()) {
+                    actionObj.set("namelist", send->getNamelist());
+                }
+                // W3C SCXML C.1: Serialize params
+                const auto &params = send->getParamsWithExpr();
+                if (!params.empty()) {
+                    auto paramsArray = emscripten::val::array();
+                    for (const auto &param : params) {
+                        auto paramObj = emscripten::val::object();
+                        paramObj.set("name", param.name);
+                        paramObj.set("expr", param.expr);
+                        paramsArray.call<void>("push", paramObj);
+                    }
+                    actionObj.set("params", paramsArray);
+                }
+            }
+        } else if (actionType == "cancel") {
+            auto cancel = std::dynamic_pointer_cast<CancelAction>(action);
+            if (cancel) {
+                // W3C SCXML 6.3: Serialize cancel attributes
+                if (!cancel->getSendId().empty()) {
+                    actionObj.set("sendid", cancel->getSendId());
+                }
+                if (!cancel->getSendIdExpr().empty()) {
+                    actionObj.set("sendidexpr", cancel->getSendIdExpr());
+                }
+            }
+        } else if (actionType == "script") {
+            auto script = std::dynamic_pointer_cast<ScriptAction>(action);
+            if (script) {
+                // W3C SCXML 5.9: Serialize script content
+                if (!script->getContent().empty()) {
+                    actionObj.set("content", script->getContent());
+                }
+            }
         }
-        // Future: Add send, if, cancel, script serialization
 
         actionsArray.call<void>("push", actionObj);
     }
