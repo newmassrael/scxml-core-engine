@@ -36,7 +36,7 @@ class ExecutionController {
             eventQueuePanel: document.getElementById('event-queue-panel'),
             dataModelPanel: document.getElementById('data-model-panel'),
             stateActionsPanel: document.getElementById('state-actions-panel'),
-            transitionInfoPanel: document.getElementById('transition-info-panel'),
+            transitionInfoPanel: document.getElementById('transition-detail-panel'),
             logPanel: document.getElementById('log-panel'),
             singleViewContainer: document.getElementById('single-view-container'),
             splitViewContainer: document.getElementById('split-view-container'),
@@ -219,6 +219,15 @@ class ExecutionController {
             }
 
             this.currentStep = this.runner.getCurrentStep();
+
+            // Set active transition (last executed) and update detail panel
+            const executedTransition = this.runner.getLastTransition();
+            if (executedTransition && executedTransition.source && executedTransition.target) {
+                this.visualizer.setActiveTransition(executedTransition);    // Set active state (permanent)
+                this.updateTransitionInfo(executedTransition);               // Update detail panel
+                this.visualizer.highlightTransition(executedTransition);     // Highlight in diagram (temporary)
+            }
+
             await this.updateState();
 
             // Update event queue after processing
@@ -239,6 +248,9 @@ class ExecutionController {
      */
     async stepBackward() {
         try {
+            // Immediately cancel ongoing animations for instant UI response
+            this.visualizer.clearTransitionHighlights();
+
             const success = this.runner.stepBackward();
 
             if (!success) {
@@ -249,18 +261,22 @@ class ExecutionController {
             this.currentStep = this.runner.getCurrentStep();
 
             // C++ StateSnapshot automatically restores transition info
-            // Get restored transition from C++ and highlight it
+            // Get restored transition from C++ and set active state
             const restoredTransition = this.runner.getLastTransition();
             console.log(`[STEP BACK] Restored to step ${this.currentStep}, transition:`, restoredTransition);
 
             if (restoredTransition && restoredTransition.source && restoredTransition.target) {
-                console.log(`[STEP BACK] Highlighting restored transition: ${restoredTransition.source} → ${restoredTransition.target}`);
+                console.log(`[STEP BACK] Setting active transition: ${restoredTransition.source} → ${restoredTransition.target}`);
+                // Set active transition (permanent)
+                this.visualizer.setActiveTransition(restoredTransition);
+                // Update detail panel
+                this.updateTransitionInfo(restoredTransition);
+                // Highlight in diagram (temporary)
                 this.visualizer.highlightTransition(restoredTransition);
-                // Update Transition Info panel to show restored transition
-                this.visualizer.showTransitionInfo(restoredTransition);
             } else {
-                console.log(`[STEP BACK] No transition at step ${this.currentStep}, clearing highlights`);
-                this.visualizer.clearTransitionHighlights();
+                console.log(`[STEP BACK] No transition at step ${this.currentStep}, clearing active state`);
+                // Clear active transition state (step 0 = initial state, no transitions executed)
+                this.visualizer.clearActiveTransition();
             }
 
             // Set flag to skip transition animation during backward step
@@ -286,8 +302,8 @@ class ExecutionController {
             this.runner.reset();
             this.currentStep = 0;
 
-            // Clear all transition highlights
-            this.visualizer.clearTransitionHighlights();
+            // Clear active transition state (reset to initial, no transitions executed)
+            this.visualizer.clearActiveTransition();
 
             await this.updateState();
 
@@ -498,11 +514,12 @@ class ExecutionController {
             if (lastTransition && lastTransition.source && lastTransition.target) {
                 console.log(`[UPDATE TRANSITION] Valid transition: ${lastTransition.source} → ${lastTransition.target}`);
 
-                // Single call: highlight with CSS animation
-                console.log('[UPDATE TRANSITION] Calling highlightTransition() (CSS animation)...');
+                // Set active transition (permanent)
+                this.visualizer.setActiveTransition(lastTransition);
+                // Update detail panel
+                this.updateTransitionInfo(lastTransition);
+                // Highlight in diagram (temporary)
                 this.visualizer.highlightTransition(lastTransition);
-                console.log('[UPDATE TRANSITION] Calling showTransitionInfo()...');
-                this.visualizer.showTransitionInfo(lastTransition);
                 console.log('[UPDATE TRANSITION] All transition updates complete');
             } else {
                 console.log('[UPDATE TRANSITION] No transition to display (initial state or no state change)');
@@ -794,6 +811,16 @@ class ExecutionController {
             stateHeaders.forEach(header => {
                 header.addEventListener('click', (e) => {
                     const stateId = e.currentTarget.getAttribute('data-state-id');
+
+                    // Design System: Panel highlight animation (matches Transition Info panel)
+                    const actionInfo = e.currentTarget.closest('.action-info');
+                    if (actionInfo) {
+                        actionInfo.classList.add('panel-highlighted');
+                        setTimeout(() => {
+                            actionInfo.classList.remove('panel-highlighted');
+                        }, 3000);  // 3s animation duration
+                    }
+
                     this.focusState(stateId);
                 });
             });
