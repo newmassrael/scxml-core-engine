@@ -13,6 +13,17 @@ const DEBUG_MODE = new URLSearchParams(window.location.search).has('debug');
 
 // PANEL_HIGHLIGHT_DURATION is defined in execution-controller.js (loaded before this file)
 
+// Layout constants for node sizing
+const LAYOUT_CONSTANTS = {
+    STATE_BASE_HEIGHT: 70,        // Base height for state ID + separator + padding
+    ACTION_HEIGHT: 34,             // Height per action (box + spacing)
+    STATE_MIN_WIDTH: 140,          // Minimum width for state box
+    STATE_MAX_WIDTH: 800,          // Maximum width to prevent excessive expansion
+    STATE_MIN_HEIGHT: 50,          // Minimum height for states without actions
+    TEXT_LEFT_MARGIN_PERCENT: 0.10, // Left margin as percentage of state width (10%)
+    TEXT_PADDING: 8                // Additional padding for text positioning
+};
+
 class SCXMLVisualizer {
     constructor(containerId, scxmlStructure) {
         this.container = d3.select(`#${containerId}`);
@@ -136,9 +147,11 @@ class SCXMLVisualizer {
                 type: state.type,
                 label: state.id,
                 children: state.children || [],
-                collapsed: (state.type === 'compound' || state.type === 'parallel')
+                collapsed: (state.type === 'compound' || state.type === 'parallel'),
+                onentry: state.onentry || [],
+                onexit: state.onexit || []
             };
-            console.log(`[buildNodes] ${state.id}: type=${state.type}, children=${node.children.length}, collapsed=${node.collapsed}`);
+
             nodes.push(node);
         });
 
@@ -315,7 +328,37 @@ class SCXMLVisualizer {
         if (node.type === 'compound' || node.type === 'parallel') {
             return node.collapsed ? 120 : 300;
         }
-        return 60;
+
+        // Calculate width based on text content (generous estimates for ELK layout)
+        let maxWidth = LAYOUT_CONSTANTS.STATE_MIN_WIDTH;
+
+        // State ID length
+        const idWidth = (node.id || '').length * 10 + 60;
+        if (idWidth > maxWidth) maxWidth = idWidth;
+
+        // Check onentry/onexit actions for text length (use canvas measurement for accuracy)
+        const actions = [...(node.onentry || []), ...(node.onexit || [])];
+        if (actions.length > 0) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.font = '13px sans-serif';
+
+            actions.forEach(action => {
+                const text = this.formatActionText(action);
+                if (text) {
+                    // "↓ entry / " = ~10 chars + action text
+                    const fullText = `↓ entry / ${text}`;
+                    const metrics = ctx.measureText(fullText);
+                    const estimatedWidth = metrics.width + 80; // Add padding for margins, box, and scrollbar
+                    if (estimatedWidth > maxWidth) {
+                        maxWidth = estimatedWidth;
+                    }
+                }
+            });
+        }
+
+
+        return Math.min(maxWidth, LAYOUT_CONSTANTS.STATE_MAX_WIDTH);
     }
 
     /**
@@ -326,7 +369,15 @@ class SCXMLVisualizer {
         if (node.type === 'compound' || node.type === 'parallel') {
             return node.collapsed ? 50 : 200;
         }
-        return 40;
+
+        // Calculate height based on number of actions
+        const entryActions = (node.onentry || []).length;
+        const exitActions = (node.onexit || []).length;
+        const totalActions = entryActions + exitActions;
+
+        if (totalActions === 0) return LAYOUT_CONSTANTS.STATE_MIN_HEIGHT;
+
+        return LAYOUT_CONSTANTS.STATE_BASE_HEIGHT + (totalActions * LAYOUT_CONSTANTS.ACTION_HEIGHT);
     }
 
     /**
@@ -656,10 +707,11 @@ class SCXMLVisualizer {
 
         this.nodeElements.filter(d => d.type === 'atomic' || d.type === 'final')
             .append('rect')
-            .attr('width', 60)
-            .attr('height', 40)
-            .attr('x', -30)
-            .attr('y', -20)
+            .attr('width', d => d.width)
+            .attr('height', d => d.height)
+            // State rect positioning: centered at (0,0) in local coords, so x = -width/2
+            .attr('x', d => -d.width/2)
+            .attr('y', d => -d.height/2)
             .attr('rx', 5)
             .style('cursor', 'pointer')
             .on('click', (event, d) => {
@@ -717,11 +769,65 @@ class SCXMLVisualizer {
                 }
             });
 
-        // Labels
+        // Labels - State ID with onentry/onexit actions (getBBox precision)
         this.nodeElements.filter(d => d.type !== 'initial-pseudo' && d.type !== 'history')
-            .append('text')
-            .attr('dy', 5)
-            .text(d => d.id);
+            .each(function(d) {
+                const group = d3.select(this);
+                let yOffset = -d.height/2 + 26; // Start from top
+                // Calculate left margin using helper function
+                // Text positioned at 10% from left edge (separator line at 5%)
+                const leftMargin = self.getActionTextLeftMargin(d.width);
+
+// State ID (bold, centered, larger font)
+                group.append('text')
+                    .attr('x', 0)
+                    .attr('y', yOffset)
+                    .attr('text-anchor', 'middle')
+                    .attr('font-weight', 'bold')
+                    .attr('font-size', '16px')
+                    .attr('fill', '#1f2328')
+                    .text(d.id);
+
+                // Separator line if there are actions (stronger line)
+                const hasActions = (d.onentry && d.onentry.length > 0) || (d.onexit && d.onexit.length > 0);
+                if (hasActions) {
+                    yOffset += 14;
+                    group.append('line')
+                        .attr('x1', -d.width/2 + (d.width * 0.05))
+                        .attr('y1', yOffset)
+                        .attr('x2', d.width/2 - (d.width * 0.05))
+                        .attr('y2', yOffset)
+                        .attr('stroke', '#d0d7de')
+                        .attr('stroke-width', 2);
+                    yOffset += 20; // Space below separator
+                }
+
+                // Entry actions with precise background boxes (layered approach)
+                if (d.onentry && d.onentry.length > 0) {
+                    yOffset = self.renderActionTexts({
+                        prefix: '↓ entry',
+                        color: '#2e7d32',
+                        actions: d.onentry,
+                        yOffset: yOffset,
+                        stateData: d,
+                        group: group,
+                        leftMargin: leftMargin
+                    });
+                }
+
+                // Exit actions with precise background boxes (layered approach)
+                if (d.onexit && d.onexit.length > 0) {
+                    yOffset = self.renderActionTexts({
+                        prefix: '↑ exit',
+                        color: '#c62828',
+                        actions: d.onexit,
+                        yOffset: yOffset,
+                        stateData: d,
+                        group: group,
+                        leftMargin: leftMargin
+                    });
+                }
+            });
 
         this.nodeElements.filter(d => d.type === 'history')
             .append('text')
@@ -841,8 +947,8 @@ class SCXMLVisualizer {
         visibleNodes.filter(n => n.type !== 'initial-pseudo').forEach(node => {
             const cx = node.x || 0;
             const cy = node.y || 0;
-            const halfWidth = 30;
-            const halfHeight = 20;
+            const halfWidth = (node.width || 60) / 2;
+            const halfHeight = (node.height || 40) / 2;
 
             let nodeSnapIndex = 0;  // Index counter for this node
 
@@ -1009,6 +1115,216 @@ class SCXMLVisualizer {
     /**
      * Analyze link connections for each node to enable smart snapping
      */
+
+    /**
+     * Format action for state label
+     * W3C SCXML 3.7: Format actions concisely for state diagrams
+     */
+    /**
+     * Calculate left margin for action text positioning
+     * Text starts at 10% from left edge (separator line at 5%)
+     * 
+     * @param {number} width - State width
+     * @returns {number} Left margin in local coordinates
+     */
+    getActionTextLeftMargin(width) {
+        return -width/2 + (width * LAYOUT_CONSTANTS.TEXT_LEFT_MARGIN_PERCENT);
+    }
+
+    /**
+     * Render action text with background box
+     * DRY: Shared by entry and exit action rendering
+     * 
+     * @param {object} config - Configuration object
+     * @param {string} config.prefix - Text prefix ('↓ entry' or '↑ exit')
+     * @param {string} config.color - Text color
+     * @param {Array} config.actions - Actions to render
+     * @param {number} config.yOffset - Current Y position
+     * @param {object} config.stateData - State data (d)
+     * @param {object} config.group - D3 group element
+     * @param {number} config.leftMargin - Left margin
+     * @returns {number} Updated yOffset
+     */
+    renderActionTexts(config) {
+        const { prefix, color, actions, stateData, group, leftMargin } = config;
+        let yOffset = config.yOffset;
+        const self = this;
+
+        actions.forEach(action => {
+            const actionText = self.formatActionText(action);
+            if (actionText) {
+                const actionGroup = group.append('g');
+                const fullText = `${prefix} / ${actionText}`;
+
+                // Create background layer first (will be drawn behind)
+                const bgLayer = actionGroup.append('g').attr('class', 'bg-layer');
+
+                // Create text layer second (will be drawn on top)
+                const textLayer = actionGroup.append('g').attr('class', 'text-layer');
+
+                // Text x position: leftMargin + additional padding
+                const textX = leftMargin + LAYOUT_CONSTANTS.TEXT_PADDING;
+                const textElement = textLayer.append('text')
+                    .attr('x', textX)
+                    .attr('y', yOffset)
+                    .attr('text-anchor', 'start')
+                    .attr('dominant-baseline', 'middle')
+                    .attr('font-size', '13px')
+                    .attr('fill', color)
+                    .text(fullText);
+
+                // Get dimensions using getBBox (wait for render)
+                const textNode = textElement.node();
+
+                // Force layout flush to ensure getBBox returns accurate values
+                textNode.getBoundingClientRect();
+
+                let bbox;
+                try {
+                    bbox = textNode.getBBox();
+                    // Validate getBBox result
+                    if (!bbox || bbox.width === 0 || bbox.height === 0) {
+                        console.warn(`[getBBox] ${stateData.id}: getBBox returned zero, forcing reflow`);
+                        // Force another reflow attempt
+                        group.node().getBoundingClientRect();
+                        bbox = textNode.getBBox();
+                    }
+                } catch (e) {
+                    console.error(`[getBBox] ${stateData.id}: Error getting bbox: ${e.message}`);
+                    bbox = {x: 0, y: 0, width: 0, height: 0};
+                }
+
+                // Calculate box dimensions and position
+                let boxWidth, boxHeight, boxX, boxY;
+                const boxPaddingH = 12;
+                const boxPaddingV = 6;
+
+                if (bbox.width === 0 || bbox.height === 0) {
+                    // Improved fallback: use canvas measurement for accuracy
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    ctx.font = '13px sans-serif';
+                    const metrics = ctx.measureText(fullText);
+                    boxWidth = metrics.width;
+                    boxHeight = 15;
+                } else {
+                    // Use getBBox for accurate dimensions (width and height only)
+                    boxWidth = bbox.width;
+                    boxHeight = bbox.height;
+                }
+
+                // Box position: align with text start position (textX)
+                // Text starts at textX with text-anchor='start', so box should start at textX - padding
+                boxX = textX - 6;
+                boxY = yOffset - (boxHeight + boxPaddingV) / 2;
+
+                // Add background box to bg layer (behind text)
+                bgLayer.append('rect')
+                    .attr('x', boxX)
+                    .attr('y', boxY)
+                    .attr('width', boxWidth + boxPaddingH)
+                    .attr('height', boxHeight + boxPaddingV)
+                    .attr('fill', prefix.includes('entry') ? '#f0fdf4' : '#fef2f2')
+                    .attr('rx', 4)
+                    .attr('opacity', 0.6);
+
+                yOffset += boxHeight + boxPaddingV + 4; // Move to next action (reduced spacing)
+            }
+        });
+
+        return yOffset;
+    }
+
+    formatActionText(action) {
+        if (!action || !action.actionType) return '';
+
+        if (action.actionType === 'assign') {
+            return `${action.location}=${action.expr}`;
+        } else if (action.actionType === 'log') {
+            return `log(${action.label || action.expr || ''})`;
+        } else if (action.actionType === 'send') {
+            // W3C SCXML 6.2: Format send with key attributes
+            let parts = [];
+            if (action.event) {
+                parts.push(`event=${action.event}`);
+            } else if (action.eventexpr) {
+                parts.push(`eventexpr=${action.eventexpr}`);
+            }
+            if (action.target) {
+                parts.push(`target=${action.target}`);
+            }
+            if (action.delay) {
+                parts.push(`delay=${action.delay}`);
+            }
+            return parts.length > 0 ? `send(${parts.join(', ')})` : 'send()';
+        } else if (action.actionType === 'raise') {
+            return `raise(${action.event})`;
+        } else if (action.actionType === 'script') {
+            // W3C SCXML 5.9: Show truncated script content
+            if (action.content) {
+                const preview = action.content.substring(0, 30);
+                return preview.length < action.content.length ? `script(${preview}...)` : `script(${preview})`;
+            }
+            return 'script';
+        } else if (action.actionType === 'if') {
+            // W3C SCXML 3.12.1: Show all branch conditions with key actions
+            if (action.branches && action.branches.length > 0) {
+                const branchTexts = action.branches.map((branch, i) => {
+                    // Format condition part
+                    let condPart = '';
+                    if (branch.isElse) {
+                        condPart = 'else';
+                    } else if (i === 0) {
+                        condPart = `if(${branch.condition || ''})`;
+                    } else {
+                        condPart = `elseif(${branch.condition || ''})`;
+                    }
+
+                    // Extract and format key actions (prioritize raise for clarity)
+                    let actionPart = '';
+                    if (branch.actions && branch.actions.length > 0) {
+                        // Check for raise actions first (most important for state machine logic)
+                        const raiseActions = branch.actions.filter(a => a.actionType === 'raise');
+                        if (raiseActions.length > 0) {
+                            const events = raiseActions.map(a => a.event).join(',');
+                            actionPart = ` → ${events}`;
+                        } else {
+                            // Show first 2 actions for other types
+                            const actionTypes = branch.actions
+                                .slice(0, 2)
+                                .map(a => {
+                                    if (a.actionType === 'assign') return `${a.location}=..`;
+                                    if (a.actionType === 'send') return `send(${a.event || '...'})`;
+                                    return a.actionType;
+                                })
+                                .join(', ');
+                            const more = branch.actions.length > 2 ? '...' : '';
+                            actionPart = ` → ${actionTypes}${more}`;
+                        }
+                    }
+
+                    return condPart + actionPart;
+                });
+                return branchTexts.join(' / ');
+            }
+            // Fallback for missing branches data
+            const condText = action.cond || '';
+            return `if(${condText})`;
+        } else if (action.actionType === 'foreach') {
+            return `foreach(${action.item || ''} in ${action.array || ''})`;
+        } else if (action.actionType === 'cancel') {
+            // W3C SCXML 6.3: Format cancel with sendid
+            if (action.sendid) {
+                return `cancel(${action.sendid})`;
+            } else if (action.sendidexpr) {
+                return `cancel(${action.sendidexpr})`;
+            }
+            return 'cancel()';
+        }
+
+        return action.actionType;
+    }
+
     /**
      * Get transition label text (event, condition, actions)
      * Format: "event [cond] / action1, action2"
@@ -1199,9 +1515,9 @@ class SCXMLVisualizer {
                 y: cy + ndy * 20
             };
         } else if (node.type === 'atomic' || node.type === 'final') {
-            // Rectangle 60x40 with smart snapping
-            const halfWidth = 30;
-            const halfHeight = 20;
+            // Rectangle with smart snapping (use actual node dimensions)
+            const halfWidth = (node.width || 60) / 2;
+            const halfHeight = (node.height || 40) / 2;
 
             // Determine which side this connection is on
             const side = this.getNodeSide(node, fromX, fromY);
@@ -1454,11 +1770,14 @@ class SCXMLVisualizer {
         const cy = node.y || 0;
 
         if (node.type === 'atomic' || node.type === 'final') {
+            // Use actual node dimensions (not hardcoded 60x40)
+            const halfWidth = (node.width || 60) / 2;
+            const halfHeight = (node.height || 40) / 2;
             return {
-                left: cx - 30,
-                right: cx + 30,
-                top: cy - 20,
-                bottom: cy + 20
+                left: cx - halfWidth,
+                right: cx + halfWidth,
+                top: cy - halfHeight,
+                bottom: cy + halfHeight
             };
         } else if (node.type === 'initial-pseudo') {
             return {
