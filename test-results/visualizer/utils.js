@@ -21,10 +21,10 @@ function getResourcesPath() {
                        window.location.hostname === '';
 
     // Path resolution:
-    // - GitHub Pages: resources (deployed to codegen/ with resources/ subdirectory)
+    // - GitHub Pages: ../resources (visualizer at test-results/visualizer/, resources at test-results/resources/)
     // - Localhost: resources (symlink in tools/web/ → ../../resources)
     // - Project root server: ../../resources (fallback)
-    return isGitHubPages ? 'resources' :
+    return isGitHubPages ? '../resources' :
            isLocalhost ? 'resources' :
            '../../resources';
 }
