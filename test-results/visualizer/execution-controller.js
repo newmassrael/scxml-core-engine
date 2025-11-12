@@ -27,6 +27,9 @@ class ExecutionController {
         // Transition history for time-travel debugging
         this.transitionHistory = []; // transitionHistory[step] = transition executed at that step
 
+        // Scheduled events real-time update
+        this.scheduledEventsTimer = null;
+
         // Cache DOM elements for performance
         this.elements = {
             stepCounter: document.getElementById('step-counter'),
@@ -405,6 +408,7 @@ class ExecutionController {
 
             // Update panels
             this.updateEventQueue();
+            this.updateScheduledEvents();  // W3C SCXML 6.2: Visualize delayed send operations
             this.updateDataModel();
             this.updateStateActions();
             this.updateLog();
@@ -551,6 +555,129 @@ class ExecutionController {
         } catch (error) {
             console.error('Error updating event queue:', error);
             this.elements.eventQueuePanel.innerHTML = '<div class="error-message">Failed to load event queue</div>';
+        }
+    }
+
+    /**
+     * Update scheduled events panel (delayed <send> operations)
+     * W3C SCXML 6.2: Visualize pending delayed events
+     */
+    updateScheduledEvents() {
+        const panel = document.getElementById('scheduled-events-panel');
+        if (!panel) {
+            console.warn('scheduled-events-panel not found');
+            return;
+        }
+
+        try {
+            const scheduledEvents = this.runner.getScheduledEvents();
+            console.log('[DEBUG] getScheduledEvents() returned:', scheduledEvents);
+
+            let html = '';
+            if (scheduledEvents && scheduledEvents.length > 0) {
+                // Store initial snapshot with JavaScript timestamp for real-time countdown
+                const jsNow = Date.now();
+                html = scheduledEvents.map((event, index) => {
+                    // Convert BigInt to Number for JavaScript operations
+                    const remainingTime = Number(event.remainingTime);
+                    const timeStr = remainingTime >= 0
+                        ? `${remainingTime}ms`
+                        : `ready (${Math.abs(remainingTime)}ms overdue)`;
+                    return `<div class="event event-scheduled" data-initial-time="${remainingTime}" data-snapshot-time="${jsNow}" data-index="${index}">
+                        <span class="event-name">${event.eventName}</span>
+                        <span class="event-time">${timeStr}</span>
+                    </div>`;
+                }).join('');
+
+                // Start real-time update timer if not already running
+                this.startScheduledEventsTimer();
+            } else {
+                html = '<div class="event">No scheduled events</div>';
+
+                // Stop timer when no scheduled events
+                this.stopScheduledEventsTimer();
+            }
+
+            panel.innerHTML = html;
+        } catch (error) {
+            console.error('Error updating scheduled events:', error);
+            panel.innerHTML = '<div class="error-message">Failed to load scheduled events</div>';
+        }
+    }
+
+    /**
+     * Start real-time update timer for scheduled events
+     * Updates every 100ms to show decreasing remaining time
+     */
+    startScheduledEventsTimer() {
+        if (this.scheduledEventsTimer) {
+            return; // Already running
+        }
+
+        this.scheduledEventsTimer = setInterval(() => {
+            const panel = document.getElementById('scheduled-events-panel');
+            if (!panel) return;
+
+            try {
+                // JavaScript-side time calculation (WASM C++ time doesn't update in real-time)
+                const jsNow = Date.now();
+                const eventElements = panel.querySelectorAll('.event-scheduled');
+
+                if (eventElements.length === 0) {
+                    this.stopScheduledEventsTimer();
+                    return;
+                }
+
+                let anyEventsReady = false;
+
+                // Update time display using JavaScript elapsed time
+                eventElements.forEach(eventElement => {
+                    const initialTime = parseInt(eventElement.dataset.initialTime);
+                    const snapshotTime = parseInt(eventElement.dataset.snapshotTime);
+                    const elapsed = jsNow - snapshotTime;
+                    const remaining = initialTime - elapsed;
+
+                    const timeSpan = eventElement.querySelector('.event-time');
+                    if (timeSpan) {
+                        const timeStr = remaining >= 0
+                            ? `${remaining}ms`
+                            : `ready (${Math.abs(remaining)}ms overdue)`;
+                        timeSpan.textContent = timeStr;
+
+                        // Mark as ready if time expired
+                        if (remaining <= 0) {
+                            anyEventsReady = true;
+                            eventElement.classList.add('event-ready');
+                        }
+                    }
+                });
+
+                // If any events are ready, poll scheduler to move them to queue
+                if (anyEventsReady) {
+                    console.log('[Timer] Events ready, polling scheduler to move to queue');
+                    const polledCount = this.runner.pollScheduler();
+                    if (polledCount > 0) {
+                        console.log(`[Timer] Polled ${polledCount} events, updating UI`);
+                        // Update event queue display to show moved events
+                        this.updateEventQueue();
+                        // Refresh scheduled events display (events should be removed)
+                        this.updateScheduledEvents();
+                    }
+                }
+            } catch (error) {
+                console.error('Error in scheduled events timer:', error);
+                this.stopScheduledEventsTimer();
+            }
+        }, 100);
+    }
+
+    /**
+     * Stop real-time update timer for scheduled events
+     */
+    stopScheduledEventsTimer() {
+        if (this.scheduledEventsTimer) {
+            clearInterval(this.scheduledEventsTimer);
+            this.scheduledEventsTimer = null;
         }
     }
 
@@ -1154,6 +1281,9 @@ class ExecutionController {
      * Cleanup - remove event listeners and clear references
      */
     destroy() {
+        // Stop scheduled events timer
+        this.stopScheduledEventsTimer();
+
         // Remove keyboard event listener
         if (this.keyboardHandler) {
             document.removeEventListener('keydown', this.keyboardHandler);
