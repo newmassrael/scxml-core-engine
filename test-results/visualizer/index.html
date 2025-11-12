@@ -175,8 +175,15 @@
                     <div class="Box-header">
                         <h4 class="Box-title">Transition Info</h4>
                     </div>
-                    <div id="transition-info-panel" class="Box-body transition-info">
-                        <div class="transition-hint">Click a transition to view details</div>
+                    <div class="Box-body transition-info">
+                        <!-- Transition List (always visible) -->
+                        <div id="transition-list-panel">
+                            <div class="transition-hint">No transitions</div>
+                        </div>
+                        <!-- Transition Detail (shows selected transition) -->
+                        <div id="transition-detail-panel" style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #e1e4e8;">
+                            <div class="transition-hint">Click a transition to view details</div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -139,7 +139,8 @@ async function initVisualizer(scxmlContent) {
         }
 
         const structure = runner.getSCXMLStructure();
-        console.log(`  State machine initialized: ${structure.states.length} states`);
+        console.log(`  State machine initialized: ${structure.states.length} states, ${structure.transitions ? structure.transitions.length : 0} transitions`);
+        console.log('[DEBUG] Structure object:', structure);
 
         // W3C SCXML 6.3: Get statically detected sub-SCXML structures
         const subSCXMLStructures = runner.getSubSCXMLStructures();
