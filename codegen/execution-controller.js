@@ -965,6 +965,24 @@ class ExecutionController {
     }
 
     /**
+     * Helper method to append multiple optional attributes to text
+     * DRY principle: Reduces repetitive attribute formatting code
+     * @param {string} text - Current text string
+     * @param {object} action - Action object
+     * @param {string[]} attrNames - Array of attribute names
+     * @returns {string} Updated text with all present attributes
+     */
+    appendOptionalAttributes(text, action, attrNames) {
+        let result = text;
+        for (const attrName of attrNames) {
+            if (action[attrName]) {
+                result += ` ${attrName}: ${this.escapeHtml(action[attrName])}`;
+            }
+        }
+        return result;
+    }
+
+    /**
      * Format action for display (DRY principle)
      * W3C SCXML 3.7: Reusable action formatting logic for both state and transition actions
      * @param {object} action - Action object with actionType and properties
@@ -972,24 +990,52 @@ class ExecutionController {
      */
     formatAction(action) {
         let text = `• ${this.escapeHtml(action.actionType)}`;
-        
+
         if (action.actionType === 'raise') {
             text += ` event: ${this.escapeHtml(action.event)}`;
         } else if (action.actionType === 'assign') {
             text += ` ${this.escapeHtml(action.location)} = ${this.escapeHtml(action.expr)}`;
         } else if (action.actionType === 'log') {
-            if (action.label) text += ` label: ${this.escapeHtml(action.label)}`;
-            if (action.expr) text += ` expr: ${this.escapeHtml(action.expr)}`;
-        } else if (action.actionType === 'foreach') {
+            text = this.appendOptionalAttributes(text, action, ['label', 'expr', 'level']);        } else if (action.actionType === 'foreach') {
             text += ` item: ${this.escapeHtml(action.item || 'none')}`;
+            // Optional attributes
             if (action.index) text += `, index: ${this.escapeHtml(action.index)}`;
-            if (action.array) text += `, array: ${this.escapeHtml(action.array)}`;
-        } else if (action.actionType === 'send') {
-            if (action.event) text += ` event: ${this.escapeHtml(action.event)}`;
-            if (action.target) text += ` target: ${this.escapeHtml(action.target)}`;
-            if (action.delay) text += ` delay: ${this.escapeHtml(action.delay)}`;
+            if (action.array) text += `, array: ${this.escapeHtml(action.array)}`;        } else if (action.actionType === 'send') {
+            // W3C SCXML 6.2: Display comprehensive send attributes
+            text = this.appendOptionalAttributes(text, action, [
+                'event', 'eventexpr', 'target', 'targetexpr',
+                'delay', 'delayexpr', 'type', 'namelist',
+                'sendid', 'idlocation', 'data', 'contentexpr'
+            ]);
+            // Special handling for content (preview with truncation)
+            if (action.content) {
+                const preview = action.content.substring(0, 50);
+                text += ` content: ${this.escapeHtml(preview)}${action.content.length > 50 ? '...' : ''}`;
+            }            if (action.params && action.params.length > 0) {
+                text += ` params: [${action.params.map(p => `${this.escapeHtml(p.name)}=${this.escapeHtml(p.expr)}`).join(', ')}]`;
+            }
+        } else if (action.actionType === 'if') {
+            // W3C SCXML 3.12.1: Display if condition and branches
+            if (action.cond) text += ` cond: ${this.escapeHtml(action.cond)}`;
+            if (action.branches && action.branches.length > 0) {
+                text += ` [${action.branches.length} branches: `;
+                const branchTypes = action.branches.map((b, i) => {
+                    if (b.isElse) return 'else';
+                    if (i === 0) return 'if';
+                    return 'elseif';
+                });
+                text += branchTypes.join(', ') + ']';
+            }
+        } else if (action.actionType === 'cancel') {
+            // W3C SCXML 6.3: Display cancel attributes
+            text = this.appendOptionalAttributes(text, action, ['sendid', 'sendidexpr']);        } else if (action.actionType === 'script') {
+            // W3C SCXML 5.9: Display script content preview
+            if (action.content) {
+                const preview = action.content.substring(0, 50);
+                text += ` ${this.escapeHtml(preview)}${action.content.length > 50 ? '...' : ''}`;
+            }
         }
-        
+
         return text;
     }
 
