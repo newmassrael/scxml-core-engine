@@ -1970,7 +1970,7 @@ TEST_F(TXMLConverterTest, ConvertsInvokeSrcExprAttribute) {
 <state id="s0">
   <onentry>
     <send event="timeout" delay="5s"/>
-   <assign conf:location="1" conf:quoteExpr="file:test216sub1.scxml"/>
+   <assign conf:location="1" conf:quoteExpr="file:test216_child0.scxml"/>
   </onentry>
   <invoke conf:srcExpr="1" type="http://www.w3.org/TR/scxml"/>
   <transition event="done.invoke" conf:targetpass=""/>
@@ -1988,7 +1988,7 @@ TEST_F(TXMLConverterTest, ConvertsInvokeSrcExprAttribute) {
     EXPECT_TRUE(result.find("id=\"Var1\"") != std::string::npos);
     EXPECT_TRUE(result.find("expr=\"'foo'\"") != std::string::npos);
     EXPECT_TRUE(result.find("location=\"Var1\"") != std::string::npos);
-    EXPECT_TRUE(result.find("expr=\"'file:test216sub1.scxml'\"") != std::string::npos);
+    EXPECT_TRUE(result.find("expr=\"'file:test216_child0.scxml'\"") != std::string::npos);
 }
 
 // ============================================================================

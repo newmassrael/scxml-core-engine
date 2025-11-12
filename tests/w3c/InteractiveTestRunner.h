@@ -259,13 +259,13 @@ public:
      * In WASM environment, there's no filesystem access. This method allows
      * JavaScript to preload sub-SCXML files so invoke with src="file:..." works.
      *
-     * @param filename Relative filename (e.g., "test226sub1.scxml")
+     * @param filename Relative filename (e.g., "test226_child0.scxml")
      * @param content Full SCXML content string
      * @return true if preloaded successfully
      *
      * Example usage from JavaScript:
-     *   const subContent = await fetch("../../resources/226/test226sub1.scxml").then(r => r.text());
-     *   runner.preloadFile("test226sub1.scxml", subContent);
+     *   const subContent = await fetch("../../resources/226/test226_child0.scxml").then(r => r.text());
+     *   runner.preloadFile("test226_child0.scxml", subContent);
      */
     bool preloadFile(const std::string &filename, const std::string &content);
 
@@ -313,7 +313,7 @@ public:
      *   {
      *     parentStateId: "s0",
      *     invokeId: "child1",
-     *     srcPath: "/resources/226/test226sub1.scxml",
+     *     srcPath: "/resources/226/test226_child0.scxml",
      *     structure: { states: [...], transitions: [...], initial: "..." }
      *   }
      * ]

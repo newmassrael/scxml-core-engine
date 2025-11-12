@@ -911,30 +911,60 @@ void InteractiveTestRunner::analyzeSubSCXML(std::shared_ptr<SCXMLModel> parentMo
 
             const std::string &src = invoke->getSrc();
             const std::string &srcExpr = invoke->getSrcExpr();
+            const std::string &content = invoke->getContent();
+            const std::string &contentExpr = invoke->getContentExpr();
 
-            // Only process static src (skip dynamic srcexpr)
-            if (src.empty() || !srcExpr.empty()) {
+            // Skip dynamic invoke (srcexpr or contentExpr)
+            if (!srcExpr.empty() || !contentExpr.empty()) {
+                LOG_DEBUG("  Skipping dynamic invoke (srcexpr or contentExpr) in state '{}'", state->getId());
                 continue;
             }
 
-            // Resolve file path
-            std::string fullPath = src;
-            if (src.find("file:") == 0) {
-                fullPath = src.substr(5);  // Remove "file:" prefix
+            std::shared_ptr<SCXMLModel> childModel;
+            std::string srcPath;
+
+            // W3C SCXML 6.4: Process file-based invoke (src attribute)
+            if (!src.empty()) {
+                // Resolve file path
+                std::string fullPath = src;
+                if (src.find("file:") == 0) {
+                    fullPath = src.substr(5);  // Remove "file:" prefix
+                }
+
+                // Make absolute if relative
+                if (!fullPath.empty() && fullPath[0] != '/') {
+                    fullPath = basePath_ + fullPath;
+                }
+
+                LOG_DEBUG("  Attempting to load sub-SCXML from file: {}", fullPath);
+
+                // Parse child SCXML file
+                childModel = parser->parseFile(fullPath);
+
+                if (!childModel) {
+                    LOG_WARN("  Failed to parse sub-SCXML file '{}' - skipping visualization", fullPath);
+                    continue;
+                }
+
+                srcPath = fullPath;
             }
+            // W3C SCXML 6.4: Process content-based invoke (inline <content> element)
+            else if (!content.empty()) {
+                LOG_DEBUG("  Attempting to load sub-SCXML from inline content in state '{}'", state->getId());
 
-            // Make absolute if relative
-            if (!fullPath.empty() && fullPath[0] != '/') {
-                fullPath = basePath_ + fullPath;
-            }
+                // Parse child SCXML from content string
+                childModel = parser->parseContent(content);
 
-            LOG_DEBUG("  Attempting to load sub-SCXML: {}", fullPath);
+                if (!childModel) {
+                    LOG_WARN("  Failed to parse sub-SCXML inline content in state '{}' - skipping visualization",
+                             state->getId());
+                    continue;
+                }
 
-            // Parse child SCXML file
-            auto childModel = parser->parseFile(fullPath);
-
-            if (!childModel) {
-                LOG_WARN("  Failed to parse sub-SCXML '{}' - skipping visualization", fullPath);
+                // Use special marker for inline content (no actual file path)
+                srcPath = "inline-content:" + state->getId();
+            } else {
+                LOG_DEBUG("  No src or content in invoke - skipping");
                 continue;
             }
 
@@ -943,13 +973,13 @@ void InteractiveTestRunner::analyzeSubSCXML(std::shared_ptr<SCXMLModel> parentMo
             info.parentStateId = state->getId();
             info.invokeId =
                 invoke->getId().empty() ? ("invoke_" + std::to_string(subScxmlStructures_.size())) : invoke->getId();
-            info.srcPath = fullPath;
+            info.srcPath = srcPath;
 #ifdef __EMSCRIPTEN__
             info.structure = buildStructureFromModel(childModel);
 #endif
 
             subScxmlStructures_.push_back(info);
-            LOG_DEBUG("  Successfully loaded sub-SCXML: {} (from state '{}')", fullPath, state->getId());
+            LOG_DEBUG("  Successfully loaded sub-SCXML: {} (from state '{}')", srcPath, state->getId());
         }
     }
 
@@ -1192,6 +1222,35 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
         }
         if (!flatExitActions.empty()) {
             stateObj.set("onexit", serializeActions(flatExitActions));
+        }
+
+        // W3C SCXML 6.3: Extract invoke metadata for child SCXML navigation
+        const auto &invokes = state->getInvoke();
+        if (!invokes.empty()) {
+            stateObj.set("hasInvoke", true);
+
+            // Serialize first invoke (multiple invokes in single state are rare)
+            const auto &firstInvoke = invokes[0];
+            if (firstInvoke) {
+                const std::string &src = firstInvoke->getSrc();
+                const std::string &srcExpr = firstInvoke->getSrcExpr();
+                const std::string &id = firstInvoke->getId();
+
+                // Set invoke source (prefer src over srcexpr)
+                if (!src.empty()) {
+                    stateObj.set("invokeSrc", src);
+                } else if (!srcExpr.empty()) {
+                    stateObj.set("invokeSrcExpr", srcExpr);
+                }
+
+                // Set invoke ID
+                if (!id.empty()) {
+                    stateObj.set("invokeId", id);
+                }
+
+                LOG_DEBUG("buildStructureFromModel: State '{}' has invoke (src='{}', id='{}')", stateId,
+                          src.empty() ? srcExpr : src, id);
+            }
         }
 
         statesArray.call<void>("push", stateObj);
