@@ -365,6 +365,29 @@ body {
     border-left: 3px solid var(--color-green);
 }
 
+.event-scheduled {
+    border-left: 4px solid #0ea5e9;
+    background-color: #f0f9ff;
+}
+
+.event-time {
+    color: #64748b;
+    font-size: 12px;
+    margin-left: 8px;
+    font-weight: 500;
+}
+
+.event-ready {
+    border-left: 4px solid #16a34a;
+    background-color: #f0fdf4;
+    animation: pulse-ready 1s ease-in-out infinite;
+}
+
+@keyframes pulse-ready {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
 /* Data model panel */
 .data-model {
     max-height: 300px;
