@@ -1523,6 +1523,16 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
 
             LOG_DEBUG("W3C SCXML: Entering {} states for transition {} -> {}", enterSet.size(), fromState, targetState);
 
+            updateStatistics();
+            stats_.totalTransitions++;
+
+            // W3C SCXML 3.13: Track last executed transition for interactive visualizer
+            // IMPORTANT: Set BEFORE enterState() because enterState() may trigger eventless transitions
+            // that will overwrite this value with the correct final transition
+            lastTransitionSource_ = fromState;
+            lastTransitionTarget_ = targetState;
+            LOG_DEBUG("W3C SCXML 3.13: Event transition executed: {} -> {}", fromState, targetState);
+
             // Enter all states in enter set (shallowest first)
             for (const std::string &stateToEnter : enterSet) {
                 if (!enterState(stateToEnter)) {
@@ -1552,9 +1562,6 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
                     return result;
                 }
             }
-
-            updateStatistics();
-            stats_.totalTransitions++;
 
             LOG_INFO("Successfully transitioned from {} to {}", fromState, targetState);
 
@@ -1682,6 +1689,14 @@ bool StateMachine::isInFinalState() const {
     }
 
     return isStateInFinalState(getCurrentState());
+}
+
+std::string StateMachine::getLastTransitionSource() const {
+    return lastTransitionSource_;
+}
+
+std::string StateMachine::getLastTransitionTarget() const {
+    return lastTransitionTarget_;
 }
 
 void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &states) {
@@ -2467,7 +2482,10 @@ bool StateMachine::executeTransitionDirect(IStateNode *sourceState, std::shared_
     updateStatistics();
     stats_.totalTransitions++;
 
-    LOG_DEBUG("SCXML: Eventless transition executed: {} -> {}", fromState, targetState);
+    // W3C SCXML 3.13: Track last executed transition for interactive visualizer
+    lastTransitionSource_ = fromState;
+    lastTransitionTarget_ = targetState;
+    LOG_DEBUG("W3C SCXML 3.13: Eventless transition executed: {} -> {}", fromState, targetState);
     return true;
 }
 

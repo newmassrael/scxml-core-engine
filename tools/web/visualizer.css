@@ -844,6 +844,21 @@ body {
     overflow-y: auto;
 }
 
+/* ============================================================================
+   UNIFIED DESIGN SYSTEM: Panel Items (State Actions + Transition Info)
+   ============================================================================
+
+   Common Classes:
+   - Base: .action-info (State Actions) / .transition-list-item (Transition Info)
+   - Active: .active or .active-state-info (permanent, blue, indicates current state)
+   - Highlight: .panel-highlighted (temporary 3s animation on click)
+
+   Usage:
+   - State Actions: Shows all states, .active-state-info for current active state
+   - Transition Info: Shows all transitions, .active for last executed transition
+   - Click Behavior: Both panels show .panel-highlighted animation on click
+   ============================================================================ */
+
 /* Unified panel item style - Design System */
 .action-info {
     padding: 8px 12px;
@@ -856,6 +871,14 @@ body {
     word-wrap: break-word;
     overflow-wrap: break-word;
     transition: all 0.15s ease;
+    cursor: pointer;
+}
+
+/* Hover effect - consistent across both panels */
+.action-info:hover {
+    background-color: #ffffff;
+    border-color: var(--color-blue);
+    transform: translateX(2px);
 }
 
 .action-state-header {
@@ -901,8 +924,14 @@ body {
     }
 }
 
-/* Design System: Active state (persistent indicator) */
+/* Design System: Active state (persistent indicator) - used by State Actions panel */
 .active-state-info {
+    background-color: #ddf4ff;
+    border: 2px solid var(--color-blue);
+}
+
+/* Alias for consistency with Transition Info panel */
+.action-info.active {
     background-color: #ddf4ff;
     border: 2px solid var(--color-blue);
 }
@@ -923,23 +952,11 @@ body {
 }
 
 /* Pulse animation for all focused elements */
+/* Design System: Uses unified diagram-click-pulse animation */
 .node.state.focused,
 .compound-collapsed.focused,
 .compound-container.focused {
-    animation: state-focus-pulse 2s ease-out;
-}
-
-@keyframes state-focus-pulse {
-    0%, 100% {
-        filter: drop-shadow(0 0 0 transparent);
-    }
-}
-    25%, 75% {
-        filter: drop-shadow(0 0 8px var(--color-blue));
-    }
-    50% {
-        filter: drop-shadow(0 0 16px var(--color-blue));
-    }
+    animation: diagram-click-pulse 2s ease-out;
 }
 
 .action-item {
@@ -1181,46 +1198,50 @@ body {
    Transition List & Highlighting
    ======================================== */
 
-/* Transition highlighted state with integrated animation */
-/* Zero Duplication: Single source of truth for transition visualization */
+/* Transition active state (permanent - like state.active) */
+/* Shows last executed transition, remains until step forward/backward */
+.transition.active {
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+.transition-label.active {
+    font-weight: 600;
+    fill: var(--color-blue);
+    font-size: 12px;
+}
+
+/* Transition highlighted state (temporary - like state.focused) */
+/* Shows clicked transition with animation, auto-removed after duration */
+/* Design System: Matches state.focused animation (drop-shadow pulse, 2s duration) */
 .transition.highlighted {
     stroke: var(--color-blue);
     stroke-width: 4px;
     opacity: 1;
-    filter: drop-shadow(0 0 4px rgba(9, 105, 218, 0.5));
-    /* Integrated animation: pulse effect on highlight */
-    animation: transitionPulse 0.5s ease-in-out;
+    /* Unified animation: Same drop-shadow pulse as state.focused */
+    animation: diagram-click-pulse 2s ease-out;
 }
 
 .transition-label.highlighted {
     font-weight: 700;
     fill: var(--color-blue);
     font-size: 13px;
-    /* Synchronized animation with transition line */
-    animation: labelPulse 0.5s ease-in-out;
+    /* Unified animation: Same drop-shadow pulse as state.focused */
+    animation: diagram-click-pulse 2s ease-out;
 }
 
-/* Keyframes for transition pulse animation */
-@keyframes transitionPulse {
+/* Unified keyframes for all diagram clicks (state + transition) */
+/* Zero Duplication: Single animation definition for consistent UX */
+@keyframes diagram-click-pulse {
     0%, 100% {
-        stroke-width: 4px;
-        opacity: 1;
+        filter: drop-shadow(0 0 0 transparent);
+    }
+    25%, 75% {
+        filter: drop-shadow(0 0 8px var(--color-blue));
     }
     50% {
-        stroke-width: 5px;
-        opacity: 0.7;
-    }
-}
-
-/* Keyframes for label pulse animation */
-@keyframes labelPulse {
-    0%, 100% {
-        font-size: 13px;
-        opacity: 1;
-    }
-    50% {
-        font-size: 14px;
-        opacity: 0.8;
+        filter: drop-shadow(0 0 16px var(--color-blue));
     }
 }
 
@@ -1240,23 +1261,46 @@ body {
 }
 
 /* Transition list item */
+/* Unified panel item style - Transition Info (matches State Actions) */
 .transition-list-item {
     padding: 8px;
     margin: 4px auto;
     width: 95%;
+    background-color: var(--color-gray-light);
     border: 1px solid var(--color-border);
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s ease;
-    background-color: #ffffff;
 }
 
+/* Hover effect - matches State Actions panel */
 .transition-list-item:hover {
-    background-color: var(--color-gray-light);
+    background-color: #ffffff;
     border-color: var(--color-blue);
     transform: translateX(2px);
 }
 
+/* Design System: Active state (persistent indicator) - matches State Actions panel */
+.transition-list-item.active {
+    background-color: #ddf4ff;
+    border: 2px solid var(--color-blue);
+}
+
+/* Design System: Highlighted transition (temporary click feedback) - matches State Actions panel */
+.transition-list-item.panel-highlighted {
+    background-color: #ddf4ff !important;
+    border: 2px solid var(--color-blue) !important;
+    animation: panel-highlight-pulse 3s ease-out;
+}
+
+/* Deprecated: .flash class replaced by .panel-highlighted for design system consistency */
+.transition-list-item.flash {
+    background-color: #fff8c5;
+    border-color: var(--color-yellow);
+    transform: scale(1.02);
+}
+
+/* Deprecated: .selected class replaced by .active */
 .transition-list-item.selected {
     background-color: #ddf4ff;
     border-color: var(--color-blue);
