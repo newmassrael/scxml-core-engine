@@ -185,29 +185,12 @@ bool InteractiveTestRunner::stepForward() {
             currentStates.insert(state);
         }
 
-        // Find exited states (source) and entered states (target)
-        std::string sourceState;
-        std::string targetState;
-
-        for (const auto &prev : previousActiveStates_) {
-            if (currentStates.find(prev) == currentStates.end()) {
-                sourceState = prev;  // This state was exited
-                break;
-            }
-        }
-
-        for (const auto &curr : currentStates) {
-            if (previousActiveStates_.find(curr) == previousActiveStates_.end()) {
-                targetState = curr;  // This state was entered
-                break;
-            }
-        }
-
-        // Update metadata
-        lastTransitionSource_ =
-            sourceState.empty() ? (previousActiveStates_.empty() ? "" : *previousActiveStates_.begin()) : sourceState;
-        lastTransitionTarget_ =
-            targetState.empty() ? (postTransitionStates.empty() ? "" : postTransitionStates[0]) : targetState;
+        // W3C SCXML 3.13: Get last executed transition from StateMachine
+        // ARCHITECTURE.md Zero Duplication: StateMachine tracks all transitions (including eventless)
+        lastTransitionSource_ = stateMachine_->getLastTransitionSource();
+        lastTransitionTarget_ = stateMachine_->getLastTransitionTarget();
+        LOG_DEBUG("W3C SCXML 3.13: Interactive visualizer read transition: {} -> {}", lastTransitionSource_,
+                  lastTransitionTarget_);
 
         currentStep_++;
         captureSnapshot();

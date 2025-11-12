@@ -267,6 +267,28 @@ public:
     bool isInFinalState() const;
 
     /**
+     * @brief Get source state of last executed transition
+     *
+     * W3C SCXML 3.13: Interactive visualizer support for transition tracking
+     * Returns the source state of the most recently executed transition,
+     * including eventless transitions.
+     *
+     * @return Source state ID (empty if no transition executed yet)
+     */
+    std::string getLastTransitionSource() const;
+
+    /**
+     * @brief Get target state of last executed transition
+     *
+     * W3C SCXML 3.13: Interactive visualizer support for transition tracking
+     * Returns the target state of the most recently executed transition,
+     * including eventless transitions.
+     *
+     * @return Target state ID (empty if no transition executed yet)
+     */
+    std::string getLastTransitionTarget() const;
+
+    /**
      * @brief Restore active states directly without executing onentry actions
      *
      * W3C SCXML 3.13: Time-travel debugging support for InteractiveTestRunner
@@ -514,6 +536,10 @@ private:
     bool isEnteringInitialConfiguration_ = false;  // W3C SCXML 3.3: Track initial configuration entry
     bool inTransition_ = false;                    // Track if we're in a transition context (for history recording)
     std::string initialState_;
+
+    // W3C SCXML 3.13: Last executed transition tracking (for interactive visualizer)
+    std::string lastTransitionSource_{};
+    std::string lastTransitionTarget_{};
 
     // SCXML model
     std::shared_ptr<SCXMLModel> model_;
