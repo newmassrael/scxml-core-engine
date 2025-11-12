@@ -105,12 +105,18 @@ body {
     transition: all 0.2s ease;
 }
 
-.state text {
+/* State ID text (direct child only) - centered */
+.state > text {
     fill: #1f2328;
     font-size: 14px;
     font-weight: 500;
     text-anchor: middle;
     pointer-events: none;
+}
+
+/* Entry/Exit action text - left aligned */
+.state .text-layer text {
+    text-anchor: start !important;
 }
 
 /* State type variants */

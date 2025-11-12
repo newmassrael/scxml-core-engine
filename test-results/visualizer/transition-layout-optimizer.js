@@ -23,12 +23,25 @@ class TransitionLayoutOptimizer {
     static MIN_SAFE_DISTANCE = 60; // MIN_SEGMENT_LENGTH * 2
 
     /**
-     * Get node size by type
-     * @param {string} nodeType - Node type
+     * Get node size by type or from node object
+     * @param {string|Object} nodeOrType - Node object or node type string
      * @returns {Object} {halfWidth, halfHeight}
      */
-    static getNodeSize(nodeType) {
-        return this.NODE_SIZES[nodeType] || { halfWidth: 30, halfHeight: 20 };
+    static getNodeSize(nodeOrType) {
+        // If it's a node object with width/height, use actual dimensions
+        if (typeof nodeOrType === 'object' && nodeOrType !== null) {
+            const node = nodeOrType;
+            if (node.width !== undefined && node.height !== undefined) {
+                return {
+                    halfWidth: node.width / 2,
+                    halfHeight: node.height / 2
+                };
+            }
+            // Fallback to type-based lookup if no dimensions
+            nodeOrType = node.type;
+        }
+        // Type-based lookup for nodes without dimensions
+        return this.NODE_SIZES[nodeOrType] || { halfWidth: 30, halfHeight: 20 };
     }
 
     /**
@@ -227,7 +240,7 @@ class TransitionLayoutOptimizer {
             const index = connections.findIndex(c => c.link.id === link.id);
             if (index >= 0) {
                 const position = (index + 1) / (connections.length + 1);
-                const halfWidth = 30;
+                const { halfWidth } = TransitionLayoutOptimizer.getNodeSize(source);
                 return (source.x - halfWidth) + (halfWidth * 2 * position);
             }
         } else {
@@ -242,7 +255,7 @@ class TransitionLayoutOptimizer {
             const index = connections.findIndex(c => c.link.id === link.id);
             if (index >= 0) {
                 const position = (index + 1) / (connections.length + 1);
-                const halfHeight = 20;
+                const { halfHeight } = TransitionLayoutOptimizer.getNodeSize(source);
                 return (source.y - halfHeight) + (halfHeight * 2 * position);
             }
         }
@@ -272,8 +285,8 @@ class TransitionLayoutOptimizer {
             const cx = node.x || 0;
             const cy = node.y || 0;
 
-            // Get size based on node type using centralized constants
-            const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node.type);
+            // Get size from node object (uses actual dimensions if available)
+            const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
 
             console.log(`[SNAP INITIAL] ${nodeId} ${edge}: ${link.source}→${link.target} (INITIAL) type=${node.type}, size=${halfWidth}x${halfHeight}`);
 
@@ -364,8 +377,7 @@ class TransitionLayoutOptimizer {
         // Calculate actual coordinates
         const cx = node.x || 0;
         const cy = node.y || 0;
-        const halfWidth = 30;
-        const halfHeight = 20;
+        const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
 
         let x, y;
 
@@ -454,7 +466,7 @@ class TransitionLayoutOptimizer {
     getEdgeCenterPoint(node, edge) {
         const cx = node.x || 0;
         const cy = node.y || 0;
-        const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node.type);
+        const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
 
         if (edge === 'top') {
             return { x: cx, y: cy - halfHeight };
@@ -600,7 +612,7 @@ class TransitionLayoutOptimizer {
      */
     pathIntersectsNode(path, node, options = {}) {
         const { skipFirstSegment = false, skipLastSegment = false } = options;
-        const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node.type);
+        const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
 
         const nodeLeft = node.x - halfWidth;
         const nodeRight = node.x + halfWidth;
@@ -994,7 +1006,7 @@ class TransitionLayoutOptimizer {
 
             const cx = node.x || 0;
             const cy = node.y || 0;
-            const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node.type);
+            const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
             console.log(`[PHASE 2 DEBUG] ${nodeId}.${edge}: center=(${cx.toFixed(1)}, ${cy.toFixed(1)}), type=${node.type}, size=${halfWidth}x${halfHeight}`);
 
             // Separate incoming and outgoing, then sort each by other node position
