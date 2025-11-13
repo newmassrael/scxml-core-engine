@@ -526,6 +526,21 @@ class ConstraintSolver {
         // Statistics
         this.nodeCount = 0;
         this.pruneCount = 0;
+
+        // Cancellation support for background optimization
+        this.cancelled = false;
+
+        // Progress callback for incremental updates
+        this.onProgressCallback = null;
+        this.startTime = 0;
+    }
+
+    /**
+     * Cancel ongoing CSP search (for background optimization)
+     */
+    cancel() {
+        this.cancelled = true;
+        console.log('[CSP SOLVER] Cancellation requested');
     }
 
     /**
@@ -644,6 +659,12 @@ class ConstraintSolver {
     backtrack(linkIndex) {
         this.nodeCount++;
 
+        // Check cancellation (for background optimization)
+        if (this.cancelled) {
+            log('[CSP BACKTRACK] Cancelled by user input');
+            return false; // Stop search
+        }
+
         // Base case: All links assigned
         if (linkIndex >= this.sortedLinks.length) {
             // Calculate total score using pre-calculated scores
@@ -655,10 +676,13 @@ class ConstraintSolver {
 
             // Update best solution
             if (totalScore < this.bestScore) {
+                const previousScore = this.bestScore;
+                const improvement = previousScore === Infinity ? totalScore : previousScore - totalScore;
+
                 this.bestScore = totalScore;
                 this.bestAssignment = new Map(this.assignment);
                 console.log(`[CSP SOLUTION] Found solution with score=${totalScore.toFixed(1)} (nodes=${this.nodeCount}, prunes=${this.pruneCount})`);
-                
+
                 // Log assignment details for debugging
                 for (const [linkId, assignment] of this.assignment) {
                     const link = this.linkMap.get(linkId);
@@ -666,7 +690,24 @@ class ConstraintSolver {
                         console.log(`  ${link.source}→${link.target}: ${assignment.sourceEdge}→${assignment.targetEdge} (score=${assignment.score.toFixed(1)})`);
                     }
                 }
-                
+
+                // Progressive callback - solution improved
+                if (this.onProgressCallback) {
+                    this.onProgressCallback({
+                        type: 'solution_improved',
+                        assignment: new Map(this.bestAssignment),
+                        score: this.bestScore,
+                        previousScore: previousScore,
+                        improvement: improvement,
+                        progress: linkIndex / this.sortedLinks.length,
+                        stats: {
+                            nodeCount: this.nodeCount,
+                            pruneCount: this.pruneCount,
+                            elapsedMs: performance.now() - this.startTime
+                        }
+                    });
+                }
+
                 // Early termination: Perfect solution found (no crossings)
                 if (this.bestScore === 0) {
                     console.log(`[CSP SOLUTION] Perfect solution (score=0), stopping search`);
@@ -754,11 +795,18 @@ class ConstraintSolver {
         log(`[CSP] Variable ordering: MRV (Minimum Remaining Values) heuristic`);
 
         const startTime = performance.now();
+        this.startTime = startTime; // Store for progress reporting
 
         this.backtrack(0);
 
         const endTime = performance.now();
         const elapsedMs = endTime - startTime;
+
+        // Check if cancelled
+        if (this.cancelled) {
+            console.log(`[CSP SOLVER] Cancelled after ${elapsedMs.toFixed(1)}ms (nodes=${this.nodeCount})`);
+            return null; // Return null to indicate cancellation
+        }
 
         if (this.bestAssignment) {
             // Always log final results (not debug-gated)
