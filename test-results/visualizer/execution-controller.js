@@ -30,6 +30,16 @@ class ExecutionController {
         // Scheduled events real-time update
         this.scheduledEventsTimer = null;
 
+        // Navigation state for single-window sub-SCXML browsing (W3C SCXML 6.3)
+        this.navigationStack = []; // Stack of {machineId, label, structure, visualizer, subSCXMLs}
+        this.currentMachine = {
+            id: 'root',
+            label: 'Parent',
+            structure: this.runner.getSCXMLStructure(),  // Get root SCXML structure from runner
+            visualizer: this.visualizer,
+            subSCXMLs: []  // [{stateId, childStructure, invokeSrc}, ...]
+        };
+
         // Cache DOM elements for performance
         this.elements = {
             stepCounter: document.getElementById('step-counter'),
@@ -39,9 +49,6 @@ class ExecutionController {
             transitionInfoPanel: document.getElementById('transition-detail-panel'),
             logPanel: document.getElementById('log-panel'),
             singleViewContainer: document.getElementById('single-view-container'),
-            splitViewContainer: document.getElementById('split-view-container'),
-            childDiagramsContainer: document.getElementById('child-diagrams-container'),
-            communicationLog: document.getElementById('communication-log'),
             btnStepBack: document.getElementById('btn-step-back'),
             btnStepForward: document.getElementById('btn-step-forward'),
             btnReset: document.getElementById('btn-reset'),
@@ -73,6 +80,13 @@ class ExecutionController {
             this.elements.btnReset.onclick = () => this.reset();
         }
 
+        // Back button for navigation (hidden by default)
+        const backButton = document.getElementById('btn-back');
+        if (backButton) {
+            backButton.onclick = () => this.navigateBack();
+            backButton.style.display = 'none';  // Hidden until navigate to child
+        }
+
         // Keyboard shortcuts
         this.keyboardHandler = (e) => {
             // Don't capture if typing in input fields
@@ -89,6 +103,12 @@ class ExecutionController {
             } else if (e.key === 'r' || e.key === 'R') {
                 e.preventDefault();
                 this.reset();
+            } else if (e.key === 'b' || e.key === 'B' || e.key === 'Backspace') {
+                // Back to parent state machine (if navigated to child)
+                if (this.navigationStack.length > 0) {
+                    e.preventDefault();
+                    this.navigateBack();
+                }
             }
         };
         
@@ -99,6 +119,16 @@ class ExecutionController {
             this.updateTransitionInfo(event.detail);
         };
         document.addEventListener('transition-click', this.transitionClickHandler);
+
+        // W3C SCXML 6.3: State navigate event handler for invoke child SCXML
+        this.stateNavigateHandler = async (event) => {
+            const {stateId, invokeSrc, invokeSrcExpr, invokeId} = event.detail;
+            console.log(`State navigate event received: ${stateId} -> ${invokeSrc || invokeSrcExpr}`);
+            
+            // Load child SCXML structure
+            await this.handleStateNavigation(stateId, invokeSrc, invokeSrcExpr, invokeId);
+        };
+        document.addEventListener('state-navigate', this.stateNavigateHandler);
 
         console.log('Execution controls initialized (Arrow keys: step, R: reset)');
     }
@@ -418,9 +448,6 @@ class ExecutionController {
 
             // Update state diagram (this updates previousActiveStates)
             await this.updateStateDiagram();
-
-            // Update child state machines visualization
-            await this.updateChildrenVisualization();
 
             // Update panels
             this.updateEventQueue();
@@ -840,31 +867,12 @@ class ExecutionController {
         try {
             console.log(`[Focus State] Focusing on state: ${stateId}`);
 
-            // Search across ALL diagram containers (single view + split view parent/children)
-            const allDiagramContainers = [
-                '#state-diagram-single',
-                '#state-diagram-parent-split',
-                ...Array.from(document.querySelectorAll('[id^="state-diagram-child-"]')).map(el => `#${el.id}`)
-            ];
+            // Single-window navigation: Only check current diagram container
+            const container = d3.select('#state-diagram-single');
+            const foundStateNode = container.empty() ? null : container.select(`[data-state-id="${stateId}"]`);
+            const foundInContainer = foundStateNode && !foundStateNode.empty() ? container : null;
 
-            let foundStateNode = null;
-            let foundInContainer = null;
-
-            // Find the state element across all containers
-            for (const containerId of allDiagramContainers) {
-                const container = d3.select(containerId);
-                if (!container.empty()) {
-                    const stateNode = container.select(`[data-state-id="${stateId}"]`);
-                    if (!stateNode.empty()) {
-                        foundStateNode = stateNode;
-                        foundInContainer = container;
-                        console.log(`[Focus State] Found state in container: ${containerId}`);
-                        break;
-                    }
-                }
-            }
-
-            if (!foundStateNode) {
+            if (!foundStateNode || foundStateNode.empty()) {
                 console.warn(`[Focus State] State not found in any container: ${stateId}`);
                 return;
             }
@@ -1229,117 +1237,6 @@ class ExecutionController {
     }
 
     /**
-     * Update child state machines visualization
-     */
-    async updateChildrenVisualization() {
-        if (!this.runner) {
-            return;
-        }
-
-        try {
-            const childrenData = this.runner.getInvokedChildren();
-
-            // W3C SCXML 6.3: Check static sub-SCXML structures (detected at load time)
-            const staticChildren = this.runner.getSubSCXMLStructures ? this.runner.getSubSCXMLStructures() : [];
-            const hasStaticChildren = staticChildren && staticChildren.length > 0;
-
-            // Don't change layout if static children exist (main.js already set up split view)
-            if (hasStaticChildren) {
-                console.log('Static sub-SCXML detected - preserving split view layout');
-                return;
-            }
-
-            if (!childrenData || !childrenData.children || childrenData.children.length === 0) {
-                // No children (neither static nor runtime) - hide split view, show single diagram
-                if (this.elements.singleViewContainer) this.elements.singleViewContainer.style.display = 'block';
-                if (this.elements.splitViewContainer) this.elements.splitViewContainer.style.display = 'none';
-
-                return;
-            }
-
-            // Has children - show split view, hide single diagram
-            console.log(`Found ${childrenData.children.length} invoked child state machines`);
-
-            if (this.elements.singleViewContainer) this.elements.singleViewContainer.style.display = 'none';
-            if (this.elements.splitViewContainer) this.elements.splitViewContainer.style.display = 'block';
-
-            // Update child diagrams
-            for (const childInfo of childrenData.children) {
-                await this.updateChildDiagram(childInfo);
-            }
-
-            // Update communication log
-            this.updateCommunicationLog(childrenData);
-
-        } catch (error) {
-            console.error('Error updating children visualization:', error);
-        }
-    }
-
-    /**
-     * Update individual child diagram
-     */
-    async updateChildDiagram(childInfo) {
-        const containerId = `child-diagram-${childInfo.sessionId}`;
-        let container = document.getElementById(containerId);
-
-        // Create container if doesn't exist
-        if (!container) {
-            if (!this.elements.childDiagramsContainer) {
-                console.error('child-diagrams-container not found');
-                return;
-            }
-
-            container = document.createElement('div');
-            container.id = containerId;
-            container.className = 'child-diagram active';
-            this.elements.childDiagramsContainer.appendChild(container);
-
-            // Create visualizer for this child
-            const visualizer = new SCXMLVisualizer(containerId, childInfo.structure);
-
-            // Store visualizer reference in manager
-            if (this.visualizerManager) {
-                this.visualizerManager.addChild(childInfo.sessionId, visualizer);
-            }
-
-            console.log(`Created child diagram for session: ${childInfo.sessionId}`);
-        }
-
-        // Update active states highlighting
-        const visualizer = this.visualizerManager?.getChild(childInfo.sessionId);
-        if (visualizer) {
-            visualizer.highlightActiveStates(childInfo.activeStates);
-        }
-    }
-
-    /**
-     * Update communication log between parent and children
-     */
-    updateCommunicationLog(childrenData) {
-        if (!this.elements.communicationLog) {
-            return;
-        }
-
-        // For now, just show child count
-        const timestamp = new Date().toLocaleTimeString();
-        const entry = document.createElement('div');
-        entry.className = 'comm-entry comm-info';
-        entry.innerHTML = `
-            <div class="comm-timestamp">${timestamp}</div>
-            <div class="comm-type">Active Children: ${childrenData.children.length}</div>
-        `;
-
-        // Keep last 20 entries
-        while (this.elements.communicationLog.children.length >= 20) {
-            this.elements.communicationLog.removeChild(this.elements.communicationLog.firstChild);
-        }
-
-        this.elements.communicationLog.appendChild(entry);
-        this.elements.communicationLog.scrollTop = this.elements.communicationLog.scrollHeight;
-    }
-
-    /**
      * Enable button
      */
     enableButton(buttonId) {
@@ -1348,6 +1245,324 @@ class ExecutionController {
             button.disabled = false;
             button.classList.remove('disabled');
         }
+    }
+
+    /**
+     * Extract sub-SCXML information from structure
+     * W3C SCXML 6.3: Find states with invoke elements
+     * @param {object} structure - SCXML structure
+     * @returns {Array} Array of sub-SCXML info objects
+     */
+    extractSubSCXMLInfo(structure) {
+        const subSCXMLs = [];
+        
+        console.log('[extractSubSCXMLInfo] Analyzing structure:', structure);
+        
+        // Get all sub-SCXMLs from runner (includes nested children)
+        const allSubSCXMLs = this.runner.getSubSCXMLStructures ? this.runner.getSubSCXMLStructures() : [];
+        console.log('[extractSubSCXMLInfo] All sub-SCXMLs from runner:', allSubSCXMLs);
+        
+        // Recursively find states with invoke in current structure
+        const findInvokeStates = (states, parentPath = '') => {
+            for (const state of states) {
+                const statePath = parentPath ? `${parentPath}.${state.id}` : state.id;
+                
+                if (state.hasInvoke && state.invokeSrc) {
+                    console.log(`[extractSubSCXMLInfo] Found invoke state: ${state.id}, src: ${state.invokeSrc}`);
+                    
+                    // Find matching sub-SCXML from runner's list
+                    const matchingSubSCXML = allSubSCXMLs.find(sub => 
+                        sub.parentStateId === state.id || 
+                        sub.srcPath === state.invokeSrc
+                    );
+                    
+                    if (matchingSubSCXML) {
+                        subSCXMLs.push(matchingSubSCXML);
+                    } else {
+                        // Store metadata even if structure not available
+                        subSCXMLs.push({
+                            parentStateId: state.id,
+                            srcPath: state.invokeSrc,
+                            invokeId: state.invokeId || state.invokeSrc,
+                            structure: null  // Structure not available
+                        });
+                    }
+                }
+                
+                // Recursively check children
+                if (state.children && state.children.length > 0) {
+                    findInvokeStates(state.children, statePath);
+                }
+            }
+        };
+        
+        if (structure.states) {
+            findInvokeStates(structure.states);
+        }
+        
+        console.log(`Extracted ${subSCXMLs.length} sub-SCXML(s) from structure`);
+        return subSCXMLs;
+    }
+
+    /**
+     * Handle state navigation to child SCXML
+     * W3C SCXML 6.3: Load child structure and navigate
+     * @param {string} stateId - Parent state ID
+     * @param {string} invokeSrc - Static invoke src
+     * @param {string} invokeSrcExpr - Dynamic invoke srcexpr
+     * @param {string} invokeId - Invoke ID
+     */
+    async handleStateNavigation(stateId, invokeSrc, invokeSrcExpr, invokeId) {
+        console.log(`[handleStateNavigation] Handling navigation from state: ${stateId}`);
+        console.log(`[handleStateNavigation] Current machine:`, this.currentMachine);
+
+        // Get child structure from current machine (not root runner)
+        // This allows navigation within child machines, not just from root
+        const subSCXMLs = this.currentMachine.subSCXMLs || [];
+        console.log(`[handleStateNavigation] Available subSCXMLs:`, subSCXMLs);
+        
+        // Debug: Show all parentStateIds
+        subSCXMLs.forEach((sub, idx) => {
+            console.log(`  [${idx}] parentStateId: "${sub.parentStateId}", srcPath: "${sub.srcPath}"`);
+        });
+        
+        // Find matching child structure by parent state ID
+        console.log(`[handleStateNavigation] Looking for parentStateId: "${stateId}"`);
+        const childInfo = subSCXMLs.find(info => info.parentStateId === stateId);
+        
+        if (childInfo) {
+            console.log(`Found static child SCXML: ${childInfo.srcPath}`);
+            
+            // Get child structure from runner
+            const childStructure = childInfo.structure;
+            
+            if (childStructure) {
+                // Navigate to child with childInfo for better labeling
+                await this.navigateToChild(stateId, childStructure, childInfo);
+            } else {
+                console.error(`Child structure not available for ${childInfo.srcPath}`);
+                alert(`Cannot navigate to child SCXML: ${childInfo.srcPath}
+
+The child SCXML structure was not loaded. This may happen with:
+- Dynamic invoke (srcexpr or contentExpr)
+- Failed file loading or parsing
+
+Note: Both file-based (src) and content-based (inline <content>) invoke are supported.`);
+            }
+        } else {
+            console.warn(`No child SCXML found for state ${stateId}`);
+
+            // Check if this is a dynamic invoke (srcexpr or contentExpr)
+            const stateHasInvoke = invokeSrc || invokeSrcExpr ||
+                this.currentMachine.structure?.states?.find(s => s.id === stateId && s.hasInvoke);
+
+            if (invokeSrcExpr) {
+                console.warn(`Dynamic invoke (srcexpr) not yet supported: ${invokeSrcExpr}`);
+                alert(`Dynamic invoke not supported for navigation
+
+State "${stateId}" uses srcexpr attribute, which requires runtime evaluation.
+
+Navigation is only supported for static src attribute.`);
+            } else if (stateHasInvoke) {
+                alert(`No sub-SCXML found for state "${stateId}"
+
+This state has an invoke element, but it was not loaded. This may happen with:
+- Failed file loading or parsing
+- Dynamic invoke with srcexpr or contentExpr (not supported for navigation)
+
+Note: Both file-based (src) and content-based (inline <content>) invoke are supported.`);
+            } else {
+                alert(`No sub-SCXML found for state "${stateId}"
+
+This state does not appear to have an invoke element.`);
+            }
+        }
+    }
+
+    /**
+     * Navigate to child state machine
+     * W3C SCXML 6.3: Invoke transitions to child state machine visualization
+     * @param {string} stateId - Parent state ID with invoke
+     * @param {object} childStructure - Child SCXML structure
+     * @param {object} childInfo - Child info with srcPath (optional)
+     */
+    async navigateToChild(stateId, childStructure, childInfo = null) {
+        console.log(`Navigating to child state machine from state: ${stateId}`);
+
+        // Push current machine to stack for back navigation
+        this.navigationStack.push({
+            id: this.currentMachine.id,
+            label: this.currentMachine.label,
+            structure: this.currentMachine.structure,
+            visualizer: this.currentMachine.visualizer,
+            subSCXMLs: this.currentMachine.subSCXMLs
+        });
+
+        // Create new visualizer for child in single-view container
+        const containerId = 'state-diagram-single';
+        const container = document.getElementById(containerId);
+        if (!container) {
+            console.error('state-diagram-single container not found');
+            return;
+        }
+
+        // Clear existing visualization
+        container.innerHTML = '';
+
+        // Create child visualizer
+        const childVisualizer = new SCXMLVisualizer(containerId, childStructure);
+
+        // Extract sub-SCXML info from child structure
+        // Look for states with hasInvoke = true in the child structure
+        const childSubSCXMLs = this.extractSubSCXMLInfo(childStructure);
+
+        // Generate label based on srcPath
+        let label = `Child of ${stateId}`;
+        if (childInfo && childInfo.srcPath) {
+            if (childInfo.srcPath.startsWith('inline-content:')) {
+                label = `${stateId} (inline content)`;
+            } else {
+                // Extract filename from path
+                const filename = childInfo.srcPath.split('/').pop();
+                label = `${stateId} (${filename})`;
+            }
+        }
+
+        // Update current machine
+        this.currentMachine = {
+            id: stateId,
+            label: label,
+            structure: childStructure,
+            visualizer: childVisualizer,
+            subSCXMLs: childSubSCXMLs
+        };
+
+        // Update breadcrumb UI
+        this.updateBreadcrumb();
+
+        // Show back button
+        const backButton = document.getElementById('btn-back');
+        if (backButton) {
+            backButton.style.display = 'block';
+        }
+
+        // Update state highlighting for child
+        await this.updateState();
+
+        console.log(`Navigation complete. Stack depth: ${this.navigationStack.length}`);
+    }
+
+    /**
+     * Navigate back to parent state machine
+     */
+    async navigateBack() {
+        if (this.navigationStack.length === 0) {
+            console.log('Already at root level');
+            return;
+        }
+
+        console.log('Navigating back to parent');
+
+        // Pop parent from stack
+        const parent = this.navigationStack.pop();
+
+        // Get container
+        const containerId = 'state-diagram-single';
+        const container = document.getElementById(containerId);
+        if (!container) {
+            console.error('state-diagram-single container not found');
+            return;
+        }
+
+        // Clear existing visualization
+        container.innerHTML = '';
+
+        // Restore parent visualizer (re-create to ensure clean state)
+        const parentVisualizer = new SCXMLVisualizer(containerId, parent.structure);
+
+        // Restore current machine
+        this.currentMachine = {
+            id: parent.id,
+            label: parent.label,
+            structure: parent.structure,
+            visualizer: parentVisualizer,
+            subSCXMLs: parent.subSCXMLs
+        };
+
+        // Update breadcrumb UI
+        this.updateBreadcrumb();
+
+        // Hide back button if at root
+        if (this.navigationStack.length === 0) {
+            const backButton = document.getElementById('btn-back');
+            if (backButton) {
+                backButton.style.display = 'none';
+            }
+        }
+
+        // Update state highlighting
+        await this.updateState();
+
+        console.log(`Navigation back complete. Stack depth: ${this.navigationStack.length}`);
+    }
+
+    /**
+     * Navigate to specific depth in navigation stack
+     * @param {number} depth - Target depth (0 = root)
+     */
+    async navigateToDepth(depth) {
+        if (depth < 0 || depth > this.navigationStack.length) {
+            console.error(`Invalid depth: ${depth}`);
+            return;
+        }
+
+        // Navigate back multiple times to reach target depth
+        const stepsBack = this.navigationStack.length - depth;
+        for (let i = 0; i < stepsBack; i++) {
+            await this.navigateBack();
+        }
+    }
+
+    /**
+     * Update breadcrumb navigation UI
+     */
+    updateBreadcrumb() {
+        const breadcrumbContainer = document.getElementById('breadcrumb-container');
+        if (!breadcrumbContainer) {
+            console.warn('breadcrumb-container not found');
+            return;
+        }
+
+        // Build breadcrumb path: [stack items] + current
+        const path = [
+            ...this.navigationStack.map(m => m.label),
+            this.currentMachine.label
+        ];
+
+        // Render breadcrumb with separators
+        const breadcrumbHTML = path.map((label, i) => {
+            const isLast = (i === path.length - 1);
+            if (isLast) {
+                // Current (active) item
+                return `<span class="breadcrumb-item active">${this.escapeHtml(label)}</span>`;
+            } else {
+                // Clickable parent items
+                return `<a href="#" class="breadcrumb-item" data-depth="${i}">${this.escapeHtml(label)}</a>`;
+            }
+        }).join(' <span class="breadcrumb-separator">›</span> ');
+
+        breadcrumbContainer.innerHTML = breadcrumbHTML;
+
+        // Add click handlers for breadcrumb navigation
+        breadcrumbContainer.querySelectorAll('a.breadcrumb-item').forEach(item => {
+            item.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const depth = parseInt(e.target.dataset.depth);
+                await this.navigateToDepth(depth);
+            });
+        });
+
+        console.log(`Breadcrumb updated: ${path.join(' > ')}`);
     }
 
     /**
@@ -1367,6 +1582,12 @@ class ExecutionController {
         if (this.transitionClickHandler) {
             document.removeEventListener('transition-click', this.transitionClickHandler);
             this.transitionClickHandler = null;
+        }
+
+        // Remove state navigate event listener
+        if (this.stateNavigateHandler) {
+            document.removeEventListener('state-navigate', this.stateNavigateHandler);
+            this.stateNavigateHandler = null;
         }
 
         // Clear references
