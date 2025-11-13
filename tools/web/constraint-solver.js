@@ -11,8 +11,8 @@
  * Key Features:
  * 1. Snap Point Simulation
  *    Instead of using edge center points for intersection detection (which caused
- *    Phase 1/Phase 2 mismatch), this solver simulates the actual snap point positions
- *    that will be distributed in Phase 2 when multiple transitions share an edge.
+ *    greedy/CSP algorithm mismatch), this solver simulates the actual snap point positions
+ *    that will be distributed during snap point distribution when multiple transitions share an edge.
  *    This ensures accurate crossing detection during CSP solving.
  *
  * 2. Performance Optimizations
@@ -56,22 +56,84 @@ class HardConstraints {
     /**
      * HC2: No node collisions
      * Path가 source/target 이외의 노드를 관통하지 않음
+     * **Exception: Compound hierarchy (parent-child) paths are allowed to intersect parent nodes**
      */
-    static validateNodeCollisions(combo, sourceNode, targetNode, allNodes, optimizer) {
+    static validateNodeCollisions(combo, sourceNode, targetNode, allNodes, optimizer, parentChildMap = new Map()) {
         // Source node collision (skip first segment)
         if (optimizer.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
             return false; // FAIL
         }
 
         // Target node collision (skip last segment)
-        if (optimizer.pathIntersectsNode(combo, targetNode, { skipLastSegment: true })) {
+        const targetCollision = optimizer.pathIntersectsNode(combo, targetNode, { skipLastSegment: true });
+        if (targetCollision) {
+            log(`[HC2-TARGET] ${combo.sourceEdge}→${combo.targetEdge}: Path penetrates target node ${targetNode.id}`);
             return false; // FAIL
         }
+
+        // Helper: Get all ancestors of a node
+        const getAncestors = (nodeId) => {
+            const ancestors = new Set();
+            let current = nodeId;
+            while (parentChildMap.has(current)) {
+                const parent = parentChildMap.get(current);
+                ancestors.add(parent);
+                current = parent;
+            }
+            return ancestors;
+        };
+
+        // Helper: Get siblings of a node (nodes with same parent)
+        const getSiblings = (nodeId) => {
+            const siblings = new Set();
+            if (parentChildMap.has(nodeId)) {
+                const parent = parentChildMap.get(nodeId);
+                // Find all nodes with same parent
+                for (const [child, childParent] of parentChildMap.entries()) {
+                    if (childParent === parent && child !== nodeId) {
+                        siblings.add(child);
+                    }
+                }
+            }
+            return siblings;
+        };
+
+        // Get ancestors for source and target
+        const sourceAncestors = getAncestors(sourceNode.id);
+        const targetAncestors = getAncestors(targetNode.id);
+        
+        // Get siblings for target (for parent→child transitions)
+        const targetSiblings = getSiblings(targetNode.id);
 
         // Other nodes collision
         for (const node of allNodes) {
             if (node.id === sourceNode.id || node.id === targetNode.id) continue;
-            if (optimizer.pathIntersectsNode(combo, node)) {
+            
+            // **CRITICAL: Skip parent/ancestor nodes for compound hierarchy**
+            // Visualizer layout: Parent→child transitions (e.g., p→ps1) should not be blocked by parent node collision
+            if (sourceAncestors.has(node.id) || targetAncestors.has(node.id)) {
+                continue; // Allow path to intersect parent/ancestor nodes
+            }
+            
+            // **CRITICAL: Skip sibling compound nodes for parent→child transitions**
+            // Visualizer layout: Parent→child transitions (e.g., p→ps1) can intersect compound siblings (user can route around)
+            // BUT: Block intersection with atomic siblings (leaf nodes like ps2) - no way to route around them
+            const isParentToChild = targetAncestors.has(sourceNode.id);
+            if (isParentToChild && targetSiblings.has(node.id)) {
+                // Allow path to intersect sibling COMPOUND states (user can route around them)
+                // Block path through sibling ATOMIC states (leaf nodes - cannot route around)
+                if (node.type !== 'atomic') {
+                    log(`[HC2-SIBLING] Allowing compound sibling ${node.id} (type=${node.type})`);
+                    continue; // Allow intersection with compound siblings
+                }
+                // Fall through: Check atomic sibling collision (will FAIL if intersects)
+                log(`[HC2-SIBLING] Checking atomic sibling ${node.id} collision...`);
+            }
+            
+            // Check actual intersection
+            const intersects = optimizer.pathIntersectsNode(combo, node);
+            
+            if (intersects) {
                 return false; // FAIL
             }
         }
@@ -133,13 +195,26 @@ class HardConstraints {
      * Validate all hard constraints
      */
     static validateAll(link, sourceEdge, targetEdge, combo, sourceNode, targetNode,
-                       allNodes, assignment, reverseLinkMap, optimizer) {
-        return (
-            this.validateInitialBlocking(link, sourceEdge, targetEdge, optimizer) &&
-            this.validateNodeCollisions(combo, sourceNode, targetNode, allNodes, optimizer) &&
-            this.validateMinimumDistance(combo) &&
-            this.validateBidirectionalConflict(link, sourceEdge, targetEdge, assignment, reverseLinkMap)
-        );
+                       allNodes, assignment, reverseLinkMap, optimizer, debugLinkIndex = -1, parentChildMap = new Map()) {
+        const debug = debugLinkIndex >= 0 && debugLinkIndex < 3; // Debug first 3 links
+        
+        if (!this.validateInitialBlocking(link, sourceEdge, targetEdge, optimizer)) {
+            if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Initial blocking`);
+            return false;
+        }
+        if (!this.validateNodeCollisions(combo, sourceNode, targetNode, allNodes, optimizer, parentChildMap)) {
+            if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Node collision`);
+            return false;
+        }
+        if (!this.validateMinimumDistance(combo)) {
+            if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Minimum distance`);
+            return false;
+        }
+        if (!this.validateBidirectionalConflict(link, sourceEdge, targetEdge, assignment, reverseLinkMap)) {
+            if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Bidirectional conflict`);
+            return false;
+        }
+        return true;
     }
 }
 
@@ -192,7 +267,7 @@ class SoftConstraints {
 
     /**
      * Simulate snap point distribution for a link based on current assignments
-     * Matches Phase 2 logic in TransitionLayoutOptimizer.distributeSnapPointsOnEdges()
+     * Matches snap point distribution logic in TransitionLayoutOptimizer.distributeSnapPointsOnEdges()
      */
     static simulateSnapPoints(link, combo, assignment, solver) {
         const sourceNode = solver.nodeMap.get(link.source);
@@ -284,7 +359,7 @@ class SoftConstraints {
         incoming.sort(sortByOtherNode);
         outgoing.sort(sortByOtherNode);
 
-        // Combine: incoming first, then outgoing (matches Phase 2)
+        // Combine: incoming first, then outgoing (matches snap point distribution)
         const sortedLinks = [...incoming, ...outgoing];
         const totalCount = sortedLinks.length;
 
@@ -295,7 +370,7 @@ class SoftConstraints {
             return optimizer.getEdgeCenterPoint(node, edge);
         }
 
-        // Calculate position (matches Phase 2 distribution)
+        // Calculate position (matches snap point distribution)
         const position = (currentIndex + 1) / (totalCount + 1);
 
         const cx = node.x || 0;
@@ -472,6 +547,86 @@ class SoftConstraints {
     }
 
     /**
+     * SC5: Penalize sibling node overlap for parent→child transitions
+     * Weight: 50000 (critical - same as SC1 intersection)
+     * 
+     * Context: HC2 allows parent→child transitions to penetrate sibling nodes for visualizer layout requirements,
+     * but we want CSP to prefer non-overlapping paths when possible.
+     * 
+     * Example: p→ps1 transition may penetrate ps2 (sibling), but should avoid if alternative exists.
+     */
+    static scoreSiblingOverlap(link, combo, solver) {
+        const sourceNode = solver.nodeMap.get(link.source);
+        const targetNode = solver.nodeMap.get(link.target);
+
+        if (!sourceNode || !targetNode) {
+            log(`[SC5-DEBUG] ${link.id}: Missing nodes (source=${!!sourceNode}, target=${!!targetNode})`);
+            return 0;
+        }
+
+        log(`[SC5-DEBUG] ${link.id} (${combo.sourceEdge}→${combo.targetEdge}): Checking sibling overlap...`);
+
+        // Check if this is a parent→child transition
+        const targetAncestors = new Set();
+        let current = targetNode.id;
+        while (solver.parentChildMap.has(current)) {
+            const parent = solver.parentChildMap.get(current);
+            targetAncestors.add(parent);
+            current = parent;
+        }
+
+        const isParentToChild = targetAncestors.has(sourceNode.id);
+        log(`[SC5-DEBUG] ${link.id}: isParentToChild=${isParentToChild}, ancestors=[${Array.from(targetAncestors).join(',')}]`);
+
+        if (!isParentToChild) {
+            return 0; // Not a parent→child transition, no sibling overlap concern
+        }
+
+        // Get target's siblings
+        const targetSiblings = new Set();
+        if (solver.parentChildMap.has(targetNode.id)) {
+            const parent = solver.parentChildMap.get(targetNode.id);
+            for (const [child, childParent] of solver.parentChildMap.entries()) {
+                if (childParent === parent && child !== targetNode.id) {
+                    targetSiblings.add(child);
+                }
+            }
+        }
+
+        log(`[SC5-DEBUG] ${link.id}: Found ${targetSiblings.size} siblings: [${Array.from(targetSiblings).join(',')}]`);
+
+        if (targetSiblings.size === 0) {
+            return 0; // No siblings to check
+        }
+
+        // Check if path overlaps any sibling nodes
+        let overlapCount = 0;
+        for (const siblingId of targetSiblings) {
+            const siblingNode = solver.nodeMap.get(siblingId);
+            if (!siblingNode) {
+                log(`[SC5-DEBUG] ${link.id}: Sibling node ${siblingId} not found in nodeMap`);
+                continue;
+            }
+
+            const overlaps = solver.optimizer.pathIntersectsNode(combo, siblingNode);
+            log(`[SC5-DEBUG] ${link.id} vs ${siblingId}: pathIntersectsNode=${overlaps}`);
+
+            if (overlaps) {
+                overlapCount++;
+                log(`[SC5-SIBLING] ${link.id} (${combo.sourceEdge}→${combo.targetEdge}): Overlaps sibling ${siblingId}`);
+            }
+        }
+
+        if (overlapCount > 0) {
+            const penalty = overlapCount * 50000;
+            log(`[SC5-SIBLING] ${link.id}: Total sibling overlap penalty = ${penalty} (${overlapCount} siblings)`);
+            return penalty;
+        }
+
+        return 0;
+    }
+
+    /**
      * Calculate total soft constraint score
      */
     static calculateTotal(link, combo, assignment, reverseLinkMap, solver) {
@@ -480,8 +635,9 @@ class SoftConstraints {
         const symmetryBonus = this.scoreSymmetry(link, combo.sourceEdge, combo.targetEdge,
                                                  assignment, reverseLinkMap);
         const selfOverlapScore = this.scoreSelfOverlap(combo);
+        const siblingOverlapScore = this.scoreSiblingOverlap(link, combo, solver);
 
-        return intersectionScore + distanceScore + symmetryBonus + selfOverlapScore;
+        return intersectionScore + distanceScore + symmetryBonus + selfOverlapScore + siblingOverlapScore;
     }
 }
 
@@ -489,10 +645,11 @@ class SoftConstraints {
  * ConstraintSolver - Backtracking search with constraint propagation
  */
 class ConstraintSolver {
-    constructor(links, nodes, optimizer) {
+    constructor(links, nodes, optimizer, parentChildMap = new Map(), greedySolution = null, draggedNodeId = null) {
         this.links = links;
         this.nodes = nodes;
         this.optimizer = optimizer;
+        this.parentChildMap = parentChildMap; // Map<childId, parentId>
 
         // Performance Optimization: O(1) lookup maps
         this.nodeMap = new Map(nodes.map(n => [n.id, n]));
@@ -505,11 +662,64 @@ class ConstraintSolver {
             this.reverseLinkMap.set(key, link);
         });
 
-        // Priority: Initial transitions first
+        // Calculate distance from dragged node for locality-aware optimization
+        const getDraggedNodeDistance = (link) => {
+            if (!draggedNodeId) return 0;
+
+            const sourceNode = this.nodeMap.get(link.source);
+            const targetNode = this.nodeMap.get(link.target);
+            const draggedNode = this.nodeMap.get(draggedNodeId);
+
+            if (!sourceNode || !targetNode || !draggedNode) return Infinity;
+
+            // Calculate minimum distance from link endpoints to dragged node
+            const sourceDist = Math.hypot(sourceNode.x - draggedNode.x, sourceNode.y - draggedNode.y);
+            const targetDist = Math.hypot(targetNode.x - draggedNode.x, targetNode.y - draggedNode.y);
+            return Math.min(sourceDist, targetDist);
+        };
+
+        // Priority: Most constrained first + Locality-aware
+        // 1. Initial transitions (highest priority - must not be blocked)
+        // 2. Parent→child transitions (e.g., p→ps1 - constrained by parent edge availability)
+        // 3. Links close to dragged node (locality)
+        // 4. Other transitions
         this.sortedLinks = [...links].sort((a, b) => {
-            if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
-            if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
-            return 0;
+            const aIsInitial = a.linkType === 'initial';
+            const bIsInitial = b.linkType === 'initial';
+            const aIsParentToChild = parentChildMap.has(a.target) && parentChildMap.get(a.target) === a.source;
+            const bIsParentToChild = parentChildMap.has(b.target) && parentChildMap.get(b.target) === b.source;
+
+            // Initial transitions first
+            if (aIsInitial && !bIsInitial) return -1;
+            if (!aIsInitial && bIsInitial) return 1;
+
+            // Then parent→child transitions
+            if (aIsParentToChild && !bIsParentToChild) return -1;
+            if (!aIsParentToChild && bIsParentToChild) return 1;
+
+            // Then by distance to dragged node (closest first)
+            if (draggedNodeId) {
+                const aDist = getDraggedNodeDistance(a);
+                const bDist = getDraggedNodeDistance(b);
+                return aDist - bDist;
+            }
+
+            return 0; // Other transitions (preserve original order)
+        });
+
+        // Log sorted link order with dragged node context
+        if (draggedNodeId) {
+            console.log(`[CSP] Variable ordering (locality-aware, dragged node: ${draggedNodeId}):`);
+        } else {
+            console.log('[CSP] Variable ordering (links to assign):');
+        }
+        this.sortedLinks.forEach((link, index) => {
+            const type = link.linkType === 'initial' ? '(initial)' :
+                        (parentChildMap.has(link.target) && parentChildMap.get(link.target) === link.source) ? '(parent→child)' :
+                        '';
+            const dist = draggedNodeId ? getDraggedNodeDistance(link) : null;
+            const distTag = dist !== null && dist !== Infinity ? ` [dist=${dist.toFixed(0)}px]` : '';
+            console.log(`  ${index}. ${link.source}→${link.target} ${type}${distTag}`);
         });
 
         // Assignment: Map<linkId, {sourceEdge, targetEdge, combo}>
@@ -523,6 +733,17 @@ class ConstraintSolver {
         this.bestAssignment = null;
         this.bestScore = Infinity;
 
+        // Greedy solution warm-start (Strategy 1 + 3: Initial solution + Value ordering)
+        this.greedyPreferences = new Map(); // Map<linkId, {sourceEdge, targetEdge}>
+        if (greedySolution) {
+            console.log('[CSP WARM-START] Initializing with greedy solution...');
+            this.bestAssignment = greedySolution.assignment;
+            this.bestScore = greedySolution.score;
+            this.greedyPreferences = greedySolution.preferences;
+            console.log(`[CSP WARM-START] Baseline score=${this.bestScore.toFixed(1)} from greedy algorithm`);
+            console.log(`[CSP WARM-START] Greedy preferences for ${this.greedyPreferences.size} links`);
+        }
+
         // Statistics
         this.nodeCount = 0;
         this.pruneCount = 0;
@@ -533,6 +754,13 @@ class ConstraintSolver {
         // Progress callback for incremental updates
         this.onProgressCallback = null;
         this.startTime = 0;
+
+        // Early termination limits (prevent infinite search)
+        // Reduced for background optimization to avoid blocking UI
+        // 250ms per iteration, 8 iterations = 2000ms total progressive refinement
+        this.TIME_LIMIT_MS = 250; // 250ms per iteration for progressive improvement
+        this.NO_IMPROVEMENT_LIMIT = 10000; // Stop after 10k nodes without improvement
+        this.lastImprovementNode = 0;
     }
 
     /**
@@ -617,14 +845,29 @@ class ConstraintSolver {
     /**
      * Get valid domain for a link (filter by hard constraints)
      */
-    getValidDomain(link) {
+    getValidDomain(link, linkIndex = -1) {
         const sourceNode = this.nodeMap.get(link.source);
         const targetNode = this.nodeMap.get(link.target);
 
         if (!sourceNode || !targetNode) return [];
 
+        // Debug p→ps1 link
+        const debugLink = link.source === 'p' && link.target === 'ps1';
+        if (debugLink) {
+            console.log(`[DEBUG] Validating p→ps1 link (linkIndex=${linkIndex})`);
+            console.log(`  Source node p:`, sourceNode);
+            console.log(`  Target node ps1:`, targetNode);
+            console.log(`  Distance: ${Math.sqrt(Math.pow(targetNode.x - sourceNode.x, 2) + Math.pow(targetNode.y - sourceNode.y, 2)).toFixed(1)}px`);
+            console.log(`  Parent-child map:`, Array.from(this.parentChildMap.entries()));
+            console.log(`  Current assignment:`, Array.from(this.assignment.entries()).map(([id, a]) => {
+                const l = this.linkMap.get(id);
+                return `${l.source}→${l.target}: ${a.sourceEdge}→${a.targetEdge}`;
+            }));
+        }
+
         const validCombos = [];
         const edges = ['top', 'bottom', 'left', 'right'];
+        const rejectionReasons = new Map(); // Track why each combo fails
 
         for (const sourceEdge of edges) {
             for (const targetEdge of edges) {
@@ -640,13 +883,37 @@ class ConstraintSolver {
                 const dy = combo.targetPoint.y - combo.sourcePoint.y;
                 combo.distance = Math.sqrt(dx * dx + dy * dy);
 
-                // Validate hard constraints
-                if (HardConstraints.validateAll(
-                    link, sourceEdge, targetEdge, combo, sourceNode, targetNode,
-                    this.nodes, this.assignment, this.reverseLinkMap, this.optimizer
-                )) {
-                    validCombos.push(combo);
+                // Validate each hard constraint individually for debugging
+                let passed = true;
+                let reason = '';
+
+                if (!HardConstraints.validateInitialBlocking(link, sourceEdge, targetEdge, this.optimizer)) {
+                    passed = false;
+                    reason = 'HC1: Initial blocking';
+                } else if (!HardConstraints.validateNodeCollisions(combo, sourceNode, targetNode, this.nodes, this.optimizer, this.parentChildMap)) {
+                    passed = false;
+                    reason = 'HC2: Node collision';
+                } else if (!HardConstraints.validateMinimumDistance(combo)) {
+                    passed = false;
+                    reason = 'HC3: Minimum distance';
+                } else if (!HardConstraints.validateBidirectionalConflict(link, sourceEdge, targetEdge, this.assignment, this.reverseLinkMap)) {
+                    passed = false;
+                    reason = 'HC4: Bidirectional conflict';
                 }
+
+                if (passed) {
+                    validCombos.push(combo);
+                } else if (debugLink) {
+                    rejectionReasons.set(`${sourceEdge}→${targetEdge}`, reason);
+                }
+            }
+        }
+
+        if (debugLink) {
+            console.log(`[DEBUG] p→ps1 validation results: ${validCombos.length}/16 combos passed`);
+            console.log(`  Rejection reasons:`);
+            for (const [combo, reason] of rejectionReasons.entries()) {
+                console.log(`    ${combo}: ${reason}`);
             }
         }
 
@@ -662,6 +929,18 @@ class ConstraintSolver {
         // Check cancellation (for background optimization)
         if (this.cancelled) {
             log('[CSP BACKTRACK] Cancelled by user input');
+            return false; // Stop search
+        }
+
+        // Check time limit (prevent infinite search)
+        if (performance.now() - this.startTime > this.TIME_LIMIT_MS) {
+            console.log(`[CSP BACKTRACK] Time limit reached (${this.TIME_LIMIT_MS}ms), stopping with best solution found`);
+            return false; // Stop search
+        }
+
+        // Check no-improvement limit (prevent infinite search)
+        if (this.nodeCount - this.lastImprovementNode > this.NO_IMPROVEMENT_LIMIT) {
+            console.log(`[CSP BACKTRACK] No improvement for ${this.NO_IMPROVEMENT_LIMIT} nodes, stopping with best solution found`);
             return false; // Stop search
         }
 
@@ -681,6 +960,7 @@ class ConstraintSolver {
 
                 this.bestScore = totalScore;
                 this.bestAssignment = new Map(this.assignment);
+                this.lastImprovementNode = this.nodeCount; // Reset no-improvement counter
                 console.log(`[CSP SOLUTION] Found solution with score=${totalScore.toFixed(1)} (nodes=${this.nodeCount}, prunes=${this.pruneCount})`);
 
                 // Log assignment details for debugging
@@ -721,14 +1001,22 @@ class ConstraintSolver {
         const link = this.sortedLinks[linkIndex];
 
         // Get valid domain (filtered by hard constraints)
-        const validDomain = this.getValidDomain(link);
+        const validDomain = this.getValidDomain(link, linkIndex);
 
         if (validDomain.length === 0) {
             log(`[CSP BACKTRACK] No valid domain for ${link.source}→${link.target} (prune)`);
+            // Log early link failures (helps debug complete failures)
+            if (linkIndex < 3) {
+                console.log(`[CSP] Link #${linkIndex} ${link.source}→${link.target} has no valid domain - all combinations rejected by hard constraints`);
+            }
             this.pruneCount++;
             return false; // Backtrack
         }
 
+        // Log domain size for early links (helps debug)
+        if (linkIndex < 3) {
+            console.log(`[CSP] Link #${linkIndex} ${link.source}→${link.target}: ${validDomain.length} valid combinations`);
+        }
         log(`[CSP] ${link.source}→${link.target}: ${validDomain.length} valid combinations`);
 
         // Calculate current partial score once (outside combo loop)
@@ -740,13 +1028,41 @@ class ConstraintSolver {
             }
         }
 
-        // Try each value in domain (on-demand scoring)
-        for (const combo of validDomain) {
-            // Calculate score on-demand (only when actually trying this combo)
+        // Value Ordering Heuristic: Score all combos and sort by score (best first)
+        // Strategy 3: Prioritize greedy preferences + score-based ordering
+        const scoredDomain = validDomain.map(combo => {
             const score = SoftConstraints.calculateTotal(
                 link, combo, this.assignment,
                 this.reverseLinkMap, this
             );
+
+            // Check if this combo matches greedy preference
+            const greedyPref = this.greedyPreferences.get(link.id);
+            const isGreedyPreferred = greedyPref &&
+                combo.sourceEdge === greedyPref.sourceEdge &&
+                combo.targetEdge === greedyPref.targetEdge;
+
+            return { combo, score, isGreedyPreferred };
+        });
+
+        // Sort by greedy preference first, then by score (ascending = best first)
+        scoredDomain.sort((a, b) => {
+            // Prioritize greedy preferences
+            if (a.isGreedyPreferred && !b.isGreedyPreferred) return -1;
+            if (!a.isGreedyPreferred && b.isGreedyPreferred) return 1;
+
+            // Then sort by score
+            return a.score - b.score;
+        });
+
+        // Always log value ordering for first few links (debugging warm-start)
+        if (scoredDomain.length > 0 && linkIndex < 3) {
+            const greedyTag = scoredDomain[0].isGreedyPreferred ? ' (greedy)' : '';
+            console.log(`[CSP VALUE ORDER] Link #${linkIndex}: Sorted ${scoredDomain.length} combos, best score=${scoredDomain[0].score.toFixed(1)}${greedyTag}`);
+        }
+
+        // Try each value in domain (best-first order)
+        for (const { combo, score } of scoredDomain) {
             log(`  [CSP TRY] ${combo.sourceEdge}→${combo.targetEdge}, score=${score.toFixed(1)}`);
 
             // Early pruning: If partial score already exceeds best, skip
@@ -791,11 +1107,13 @@ class ConstraintSolver {
         log(`[CSP] Variables: ${this.sortedLinks.length} links`);
         log(`[CSP] Domain size per variable: up to 16 combinations`);
         log(`[CSP] Hard constraints: 4 (initial blocking, node collisions, min distance, bidirectional)`);
-        log(`[CSP] Soft constraints: 3 (intersections weight=50000, distance weight=1, symmetry bonus=-5000)`);
+        log(`[CSP] Soft constraints: 5 (SC1: intersections=50000, SC2: distance=1, SC3: symmetry=-5000, SC4: self-overlap=50000, SC5: sibling-overlap=50000)`);
         log(`[CSP] Variable ordering: MRV (Minimum Remaining Values) heuristic`);
 
         const startTime = performance.now();
         this.startTime = startTime; // Store for progress reporting
+        
+        console.log('[CSP BACKTRACK] Starting backtracking search with value ordering...');
 
         this.backtrack(0);
 
@@ -809,13 +1127,19 @@ class ConstraintSolver {
         }
 
         if (this.bestAssignment) {
-            // Always log final results (not debug-gated)
-            // console.log(`[CSP SOLVER] Solution found with score: ${this.bestScore.toFixed(1)}`);
-            // console.log(`[CSP SOLVER] Search statistics: nodes=${this.nodeCount}, prunes=${this.pruneCount}, time=${elapsedMs.toFixed(1)}ms`);
-            // console.log(`[CSP SOLVER] Cache statistics: size=${SoftConstraints.snapPointCache.size} entries`);
+            // Log final optimization results
+            console.log(`[CSP SOLVER] Solution found with score=${this.bestScore.toFixed(1)}`);
+            console.log(`[CSP SOLVER] Statistics: nodes=${this.nodeCount}, prunes=${this.pruneCount}, time=${elapsedMs.toFixed(1)}ms`);
+            const pruneRate = ((this.pruneCount / Math.max(this.nodeCount, 1)) * 100).toFixed(1);
+            console.log(`[CSP SOLVER] Prune efficiency: ${pruneRate}% (${this.pruneCount} prunes / ${this.nodeCount} nodes)`);
             return this.bestAssignment;
         } else {
-            // console.warn('[CSP SOLVER] No solution found!');
+            console.log('[CSP SOLVER] No solution found - using greedy result');
+            console.log(`[CSP SOLVER] Statistics: nodes=${this.nodeCount}, prunes=${this.pruneCount}, time=${elapsedMs.toFixed(1)}ms`);
+            console.log(`[CSP SOLVER] Explored ${this.nodeCount} nodes, ${this.pruneCount} prunes (${((this.pruneCount/this.nodeCount)*100).toFixed(1)}% prune rate)`);
+            if (this.nodeCount < 100) {
+                console.log(`[CSP SOLVER] Very few nodes explored - likely early constraint failure`);
+            }
             return null;
         }
     }

@@ -464,15 +464,11 @@ class SCXMLVisualizer {
         const visibleIds = new Set();
 
         this.nodes.forEach(node => {
-            const isHidden = this.nodes.some(parent =>
-                (parent.type === 'compound' || parent.type === 'parallel') &&
-                parent.collapsed &&
-                parent.children &&
-                parent.children.includes(node.id)
-            );
-
-            if (isHidden) {
-                console.log(`  ${node.id}: HIDDEN (child of collapsed parent)`);
+            // Recursive check: node is hidden if ANY ancestor is collapsed
+            const collapsedAncestor = this.findCollapsedAncestor(node.id, this.nodes);
+            
+            if (collapsedAncestor) {
+                console.log(`  ${node.id}: HIDDEN (ancestor ${collapsedAncestor.id} collapsed)`);
             } else {
                 visibleIds.add(node.id);
                 console.log(`  ${node.id}: VISIBLE (type=${node.type})`);
@@ -527,6 +523,7 @@ class SCXMLVisualizer {
      * Find collapsed ancestor
      */
     findCollapsedAncestor(nodeId, nodes) {
+        // First check direct parent
         for (const parent of nodes) {
             if ((parent.type === 'compound' || parent.type === 'parallel') &&
                 parent.collapsed &&
@@ -535,6 +532,19 @@ class SCXMLVisualizer {
                 return parent;
             }
         }
+        
+        // Recursive check: check if parent has a collapsed ancestor
+        for (const parent of nodes) {
+            if ((parent.type === 'compound' || parent.type === 'parallel') &&
+                parent.children &&
+                parent.children.includes(nodeId)) {
+                const grandparent = this.findCollapsedAncestor(parent.id, nodes);
+                if (grandparent) {
+                    return grandparent; // Return the collapsed ancestor, not the parent
+                }
+            }
+        }
+        
         return null;
     }
 
@@ -836,8 +846,9 @@ class SCXMLVisualizer {
         // Store reference to visualizer instance for use in drag handlers
         const self = this;
 
-        // RequestAnimationFrame throttling for smooth drag
-        let dragAnimationFrame = null;
+        // Time-based throttling for link updates during drag
+        let lastLinkUpdateTime = 0;
+        const LINK_UPDATE_INTERVAL = 50; // 50ms = 20fps max for link updates
 
         // Clear
         this.zoomContainer.selectAll('*').remove();
@@ -887,7 +898,11 @@ class SCXMLVisualizer {
             .call(d3.drag()
                 .on('start', function(event, d) {
                     console.log(`[DRAG START COMPOUND] ${d.id} at (${d.x}, ${d.y})`);
-                    
+
+                    // Store initial position for click vs drag detection
+                    d.dragStartX = d.x;
+                    d.dragStartY = d.y;
+
                     // Cancel background optimization
                     if (self.backgroundOptimization) {
                         self.backgroundOptimization.cancel();
@@ -924,178 +939,76 @@ class SCXMLVisualizer {
                     if (d.dragParent) {
                         console.log(`[DRAG COMPOUND] ${d.id} has parent ${d.dragParent.id}, moving entire hierarchy`);
                         
-                        // Update parent position
+                        // Update parent position (data only)
                         d.dragParent.x += dx;
                         d.dragParent.y += dy;
                         
-                        // Update parent container visual immediately
-                        if (self.compoundContainers) {
-                            self.compoundContainers.each(function(compoundData) {
-                                if (compoundData.id === d.dragParent.id) {
-                                    d3.select(this)
-                                        .attr('x', compoundData.x - compoundData.width/2)
-                                        .attr('y', compoundData.y - compoundData.height/2);
-                                }
-                            });
-                        }
-                        
-                        // Update parent label position immediately
-                        if (self.compoundLabels) {
-                            self.compoundLabels.each(function(labelData) {
-                                if (labelData.id === d.dragParent.id) {
-                                    d3.select(this)
-                                        .attr('x', labelData.x - labelData.width/2 + 10)
-                                        .attr('y', labelData.y - labelData.height/2 + 20);
-                                }
-                            });
-                        }
-                        
                         // Update all descendants (including this compound) with single pass
                         if (d.dragParent.children) {
-                            // Use cached descendant IDs for performance
-                            const allDescendantIds = d._cachedDescendants;
+                            // Convert to Set for O(1) lookup performance
+                            const allDescendantIds = new Set(d._cachedDescendants);
+                            const parentChildrenSet = new Set(d.dragParent.children);
                             
                             // Single pass: update data positions for ALL descendants
                             self.nodes.forEach(node => {
                                 // Update direct children of parent
-                                if (d.dragParent.children.includes(node.id)) {
-                                node.x += dx;
-                                node.y += dy;
-                            }
-                            // Update grandchildren and deeper (not direct children)
-                            else if (allDescendantIds.includes(node.id)) {
-                                node.x += dx;
-                                node.y += dy;
-                            }
-                        });
-
-                        // Update all descendant node visuals (data already updated above)
-                        self.nodeElements.each(function(nodeData) {
-                            if (allDescendantIds.includes(nodeData.id)) {
-                                d3.select(this)
-                                    .attr('transform', `translate(${nodeData.x}, ${nodeData.y})`);
-                            }
-                        });
-
-                        // Also update compound container visuals for all descendant compounds
-                        if (self.compoundContainers) {
-                            self.compoundContainers.each(function(compoundData) {
-                                if (allDescendantIds.includes(compoundData.id)) {
-                                    d3.select(this)
-                                        .attr('x', compoundData.x - compoundData.width/2)
-                                        .attr('y', compoundData.y - compoundData.height/2);
-                                }
-                            });
-                        }
-                        
-                        // Update compound label positions for all descendant compounds
-                        if (self.compoundLabels) {
-                            self.compoundLabels.each(function(labelData) {
-                                if (allDescendantIds.includes(labelData.id)) {
-                                    d3.select(this)
-                                        .attr('x', labelData.x - labelData.width/2 + 10)
-                                        .attr('y', labelData.y - labelData.height/2 + 20);
-                                }
-                            });
-                        }
-                    }
-                    } else {
-                        // No parent: move only this compound and its children
-                        console.log(`[DRAG COMPOUND] ${d.id} is topmost, moving self + children`);
-                        
-                        // Update compound position
-                        d.x += dx;
-                        d.y += dy;
-
-                        // Update compound rect visual immediately
-                        d3.select(this)
-                            .attr('x', d.x - d.width/2)
-                            .attr('y', d.y - d.height/2);
-                        
-                        // Update compound label position immediately
-                        if (self.compoundLabels) {
-                            self.compoundLabels.each(function(labelData) {
-                                if (labelData.id === d.id) {
-                                    d3.select(this)
-                                        .attr('x', d.x - d.width/2 + 10)
-                                        .attr('y', d.y - d.height/2 + 20);
-                                }
-                            });
-                        }
-
-                        // Update children positions and visuals with single pass
-                        if (d.children) {
-                            // Use cached descendant IDs for performance
-                            const allDescendantIds = d._cachedDescendants;
-                            
-                            // Single pass: update data positions for ALL descendants
-                            self.nodes.forEach(node => {
-                                // Update direct children
-                                if (d.children.includes(node.id)) {
+                                if (parentChildrenSet.has(node.id)) {
                                     node.x += dx;
                                     node.y += dy;
                                 }
                                 // Update grandchildren and deeper (not direct children)
-                                else if (allDescendantIds.includes(node.id)) {
+                                else if (allDescendantIds.has(node.id)) {
                                     node.x += dx;
                                     node.y += dy;
                                 }
                             });
+                    }
+                    } else {
+                        // No parent: move only this compound and its children
+                        // console.log(`[DRAG COMPOUND] ${d.id} at (${d.x.toFixed(1)}, ${d.y.toFixed(1)}) dx=${dx.toFixed(1)} dy=${dy.toFixed(1)}`);
+                        
+                        // Update compound position (data only)
+                        d.x += dx;
+                        d.y += dy;
 
-                            // Update all descendant node visuals (data already updated above)
-                            self.nodeElements.each(function(nodeData) {
-                                if (allDescendantIds.includes(nodeData.id)) {
-                                    d3.select(this)
-                                        .attr('transform', `translate(${nodeData.x}, ${nodeData.y})`);
+                        // Update children positions and visuals with single pass
+                        if (d.children) {
+                            // Convert to Set for O(1) lookup performance
+                            const allDescendantIds = new Set(d._cachedDescendants);
+                            const childrenSet = new Set(d.children);
+                            
+                            // Debug logs removed for performance
+                            
+                            // Single pass: update data positions for ALL descendants
+                            self.nodes.forEach(node => {
+                                // Update direct children
+                                if (childrenSet.has(node.id)) {
+                                    node.x += dx;
+                                    node.y += dy;
+                                    // Debug log removed
+                                }
+                                // Update grandchildren and deeper (not direct children)
+                                else if (allDescendantIds.has(node.id)) {
+                                    node.x += dx;
+                                    node.y += dy;
+                                    // Debug log removed
                                 }
                             });
-
-                            // Update compound container visuals for all descendant compounds
-                            if (self.compoundContainers) {
-                                self.compoundContainers.each(function(compoundData) {
-                                    if (allDescendantIds.includes(compoundData.id)) {
-                                        d3.select(this)
-                                            .attr('x', compoundData.x - compoundData.width/2)
-                                            .attr('y', compoundData.y - compoundData.height/2);
-                                    }
-                                });
-                            }
-                            
-                            // Update compound label positions for all descendant compounds
-                            if (self.compoundLabels) {
-                                self.compoundLabels.each(function(labelData) {
-                                    if (allDescendantIds.includes(labelData.id)) {
-                                        d3.select(this)
-                                            .attr('x', labelData.x - labelData.width/2 + 10)
-                                            .attr('y', labelData.y - labelData.height/2 + 20);
-                                    }
-                                });
-                            }
                         }
                     }
 
-                    // Throttle link updates with RAF
-                    if (self.dragOptimizationTimer) {
-                        clearTimeout(self.dragOptimizationTimer);
-                        self.dragOptimizationTimer = null;
-                    }
-
-                    if (dragAnimationFrame) {
-                        cancelAnimationFrame(dragAnimationFrame);
-                    }
-
-                    dragAnimationFrame = requestAnimationFrame(() => {
+                    // Time-based throttling: max 20fps for link path updates (50ms interval)
+                    const now = performance.now();
+                    if (now - lastLinkUpdateTime >= LINK_UPDATE_INTERVAL) {
+                        lastLinkUpdateTime = now;
                         self.updateLinksFast();
-                    });
+                    }
                 })
                 
                 .on('end', function(event, d) {
                     console.log(`[DRAG END COMPOUND] ${d.id}`);
                     
-                    if (dragAnimationFrame) {
-                        cancelAnimationFrame(dragAnimationFrame);
-                        dragAnimationFrame = null;
-                    }
+                    // dragAnimationFrame removed (using time-based throttling instead)
                     
                     d.isDragging = false;
                     self.isDraggingAny = false;
@@ -1135,24 +1048,41 @@ class SCXMLVisualizer {
                             .attr('height', d.height);
                     }
                     
-                    // Phase 1: Immediate greedy
+                    // Immediate greedy optimization for instant UI feedback
                     self.updateLinksFast();
-                    
-                    // Phase 2: Background CSP
+
+                    // Background CSP refinement for optimal solution quality
+                    // Calculate drag distance to distinguish click vs drag
+                    const dragDistance = Math.hypot(d.x - d.dragStartX, d.y - d.dragStartY);
+                    const DRAG_THRESHOLD = 5; // pixels
+                    const isDrag = dragDistance > DRAG_THRESHOLD;
+
+                    if (isDrag) {
+                        console.log(`[DRAG END COMPOUND] Node moved ${dragDistance.toFixed(0)}px, starting progressive optimization...`);
+                    } else {
+                        console.log(`[DRAG END COMPOUND] Click detected (${dragDistance.toFixed(0)}px < ${DRAG_THRESHOLD}px threshold), skipping optimization`);
+                    }
+
+                    // Only optimize if node was actually dragged
+                    if (!isDrag) {
+                        return; // Skip optimization for clicks
+                    }
+
                     console.log('[DRAG END COMPOUND] Starting progressive optimization...');
-                    
+
                     if (self.backgroundOptimization) {
                         self.backgroundOptimization.cancel();
                         self.backgroundOptimization = null;
                     }
-                    
+
                     self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
                         self.allLinks,
                         self.nodes,
+                        d.id,  // Dragged compound node ID
                         (success) => {
                             if (success) {
                                 console.log(`[DRAG END COMPOUND] Background CSP complete, updating visualization...`);
-                                
+
                                 self.allLinks.forEach(link => {
                                     const sourceNode = self.nodes.find(n => n.id === link.source);
                                     const targetNode = self.nodes.find(n => n.id === link.target);
@@ -1160,14 +1090,30 @@ class SCXMLVisualizer {
                                         self.calculateLinkDirections(sourceNode, targetNode, link);
                                     }
                                 });
-                                
+
                                 self.updateLinksOptimal();
                                 console.log(`[DRAG END COMPOUND] CSP visualization update complete`);
                             } else {
                                 console.log(`[DRAG END COMPOUND] Background CSP cancelled or failed, keeping greedy result`);
                             }
-                            
+
                             self.backgroundOptimization = null;
+                        },
+                        (iteration, totalIterations, score) => {
+                            // Progressive update: called for each intermediate solution
+                            console.log(`[DRAG END COMPOUND] Intermediate update (${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
+
+                            // Recalculate link directions
+                            self.allLinks.forEach(link => {
+                                const sourceNode = self.nodes.find(n => n.id === link.source);
+                                const targetNode = self.nodes.find(n => n.id === link.target);
+                                if (sourceNode && targetNode) {
+                                    self.calculateLinkDirections(sourceNode, targetNode, link);
+                                }
+                            });
+
+                            // Update visualization with intermediate solution
+                            self.updateLinksOptimal();
                         },
                         500
                     );
@@ -1214,6 +1160,10 @@ class SCXMLVisualizer {
                 .on('start', function(event, d) {
                     console.log(`[DRAG START] ${d.id} at (${d.x}, ${d.y})`);
 
+                    // Store initial position for click vs drag detection
+                    d.dragStartX = d.x;
+                    d.dragStartY = d.y;
+
                     // Cancel any ongoing background optimization
                     if (self.backgroundOptimization) {
                         self.backgroundOptimization.cancel();
@@ -1254,84 +1204,28 @@ class SCXMLVisualizer {
 
                         // Update all children positions (including this node) with single pass
                         if (d.dragParent.children) {
-                            // Use cached descendant IDs for performance
-                            const allDescendantIds = d._cachedDescendants;
+                            // Convert to Set for O(1) lookup performance
+                            const allDescendantIds = new Set(d._cachedDescendants);
+                            const parentChildrenSet = new Set(d.dragParent.children);
                             
                             // Single pass: update data positions for ALL descendants
                             self.nodes.forEach(node => {
                                 // Update direct children
-                                if (d.dragParent.children.includes(node.id)) {
+                                if (parentChildrenSet.has(node.id)) {
                                     node.x += dx;
                                     node.y += dy;
                                 }
                                 // Update grandchildren and deeper (not direct children)
-                                else if (allDescendantIds.includes(node.id)) {
+                                else if (allDescendantIds.has(node.id)) {
                                     node.x += dx;
                                     node.y += dy;
                                 }
                             });
-
-                            // Update parent container visual immediately
-                            if (self.compoundContainers) {
-                                self.compoundContainers.each(function(compoundData) {
-                                    if (compoundData.id === d.dragParent.id) {
-                                        d3.select(this)
-                                            .attr('x', compoundData.x - compoundData.width/2)
-                                            .attr('y', compoundData.y - compoundData.height/2);
-                                    }
-                                });
-                            }
-                            
-                            // Update parent label position immediately
-                            if (self.compoundLabels) {
-                                self.compoundLabels.each(function(labelData) {
-                                    if (labelData.id === d.dragParent.id) {
-                                        d3.select(this)
-                                            .attr('x', labelData.x - labelData.width/2 + 10)
-                                            .attr('y', labelData.y - labelData.height/2 + 20);
-                                    }
-                                });
-                            }
-
-                            // Update all descendant node visuals (data already updated above)
-                            self.nodeElements.each(function(nodeData) {
-                                if (allDescendantIds.includes(nodeData.id)) {
-                                    d3.select(this)
-                                        .attr('transform', `translate(${nodeData.x}, ${nodeData.y})`);
-                                }
-                            });
-
-                            // Update nested compound container visuals for all descendant compounds
-                            if (self.compoundContainers) {
-                                self.compoundContainers.each(function(compoundData) {
-                                    if (allDescendantIds.includes(compoundData.id)) {
-                                        d3.select(this)
-                                            .attr('x', compoundData.x - compoundData.width/2)
-                                            .attr('y', compoundData.y - compoundData.height/2);
-                                    }
-                                });
-                            }
-                            
-                            // Update compound label positions for all descendant compounds
-                            if (self.compoundLabels) {
-                                self.compoundLabels.each(function(labelData) {
-                                    if (allDescendantIds.includes(labelData.id)) {
-                                        d3.select(this)
-                                            .attr('x', labelData.x - labelData.width/2 + 10)
-                                            .attr('y', labelData.y - labelData.height/2 + 20);
-                                    }
-                                });
-                            }
                         }
                     } else {
-                        // No parent: move only this node
+                        // No parent: move only this node (data only)
                         d.x += dx;
                         d.y += dy;
-
-                        const element = this;
-
-                        // Update visual transform immediately
-                        d3.select(element).attr('transform', `translate(${d.x},${d.y})`);
                     }
 
                     // Throttle link updates with RAF (for both cases)
@@ -1340,21 +1234,12 @@ class SCXMLVisualizer {
                         self.dragOptimizationTimer = null;
                     }
 
-                    if (dragAnimationFrame) {
-                        cancelAnimationFrame(dragAnimationFrame);
-                    }
-
-                    dragAnimationFrame = requestAnimationFrame(() => {
+                    // Time-based throttling: max 20fps for link path updates (50ms interval)
+                    const now = performance.now();
+                    if (now - lastLinkUpdateTime >= LINK_UPDATE_INTERVAL) {
+                        lastLinkUpdateTime = now;
                         self.updateLinksFast();
-                    });
-
-                    // **DEBOUNCE: If mouse stops for 300ms, run optimal CSP**
-                    self.dragOptimizationTimer = setTimeout(() => {
-                        if (self.isDraggingAny) {
-                            console.log('[DRAG PAUSE] Mouse stopped 300ms, running optimal CSP...');
-                            self.updateLinksOptimal();
-                        }
-                    }, 300);
+                    }
                 })
                 .on('end', function(event, d) {
                     console.log(`[DRAG END] ${d.id} at (${d.x}, ${d.y})`);
@@ -1362,10 +1247,7 @@ class SCXMLVisualizer {
                     self.isDraggingAny = false;
 
                     // Cancel any pending animation frame
-                    if (dragAnimationFrame) {
-                        cancelAnimationFrame(dragAnimationFrame);
-                        dragAnimationFrame = null;
-                    }
+                    // dragAnimationFrame removed (using time-based throttling instead)
 
                     // Clear debounce timer
                     if (self.dragOptimizationTimer) {
@@ -1405,12 +1287,28 @@ class SCXMLVisualizer {
                     }
 
                     // **PROGRESSIVE OPTIMIZATION: Immediate greedy + background CSP**
-                    console.log(`[DRAG END] Starting progressive optimization...`);
+                    // Calculate drag distance to distinguish click vs drag
+                    const dragDistance = Math.hypot(d.x - d.dragStartX, d.y - d.dragStartY);
+                    const DRAG_THRESHOLD = 5; // pixels
+                    const isDrag = dragDistance > DRAG_THRESHOLD;
+
+                    if (isDrag) {
+                        console.log(`[DRAG END] Node moved ${dragDistance.toFixed(0)}px, starting progressive optimization...`);
+                    } else {
+                        console.log(`[DRAG END] Click detected (${dragDistance.toFixed(0)}px < ${DRAG_THRESHOLD}px threshold), skipping optimization`);
+                    }
+
+                    // Only optimize if node was actually dragged
+                    if (!isDrag) {
+                        return; // Skip optimization for clicks
+                    }
 
                     // Start progressive optimization (returns immediately with greedy result)
+                    // Pass dragged node ID for locality-aware optimization
                     self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
                         self.allLinks,
                         self.nodes,
+                        d.id,  // Dragged node ID for distance-based prioritization
                         (success) => {
                             if (success) {
                                 console.log(`[DRAG END] Background CSP complete, updating visualization...`);
@@ -1433,6 +1331,22 @@ class SCXMLVisualizer {
                             }
 
                             self.backgroundOptimization = null;
+                        },
+                        (iteration, totalIterations, score) => {
+                            // Progressive update: called for each intermediate solution
+                            console.log(`[DRAG END] Intermediate update (${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
+
+                            // Recalculate link directions
+                            self.allLinks.forEach(link => {
+                                const sourceNode = self.nodes.find(n => n.id === link.source);
+                                const targetNode = self.nodes.find(n => n.id === link.target);
+                                if (sourceNode && targetNode) {
+                                    self.calculateLinkDirections(sourceNode, targetNode, link);
+                                }
+                            });
+
+                            // Update visualization with intermediate solution
+                            self.updateLinksOptimal();
                         },
                         500 // 500ms debounce
                     );
@@ -1532,6 +1446,10 @@ class SCXMLVisualizer {
                 .on('start', function(event, d) {
                     console.log(`[DRAG START COLLAPSED] ${d.id} at (${d.x}, ${d.y})`);
 
+                    // Store initial position for click vs drag detection
+                    d.dragStartX = d.x;
+                    d.dragStartY = d.y;
+
                     // Cancel any ongoing background optimization
                     if (self.backgroundOptimization) {
                         self.backgroundOptimization.cancel();
@@ -1556,37 +1474,43 @@ class SCXMLVisualizer {
                         cancelAnimationFrame(dragAnimationFrame);
                     }
 
-                    // Clear debounce timer
-                    if (self.dragOptimizationTimer) {
-                        clearTimeout(self.dragOptimizationTimer);
-                        self.dragOptimizationTimer = null;
-                    }
+                    // Update visual position synchronously for perfect synchronization
+                    d3.select(element)
+                        .attr('x', d.x - d.width/2)
+                        .attr('y', d.y - d.height/2);
 
-                    // Schedule update on next animation frame for smooth 60fps
-                    dragAnimationFrame = requestAnimationFrame(() => {
-                        // Update visual position (collapsed states use x, y with offset)
-                        d3.select(element)
-                            .attr('x', d.x - d.width/2)
-                            .attr('y', d.y - d.height/2);
+                    // Update label position if exists
+                    self.zoomContainer.selectAll('.collapsed-label')
+                        .filter(label => label.id === d.id)
+                        .attr('x', d.x)
+                        .attr('y', d.y);
 
-                        // Update label position if exists
-                        self.zoomContainer.selectAll('.collapsed-label')
-                            .filter(label => label.id === d.id)
-                            .attr('x', d.x)
-                            .attr('y', d.y);
-
-                        // **ADAPTIVE ALGORITHM: Use fast greedy during drag**
+                    // Time-based throttling: max 20fps for link path updates (50ms interval)
+                    const now = performance.now();
+                    if (now - lastLinkUpdateTime >= LINK_UPDATE_INTERVAL) {
+                        lastLinkUpdateTime = now;
                         self.updateLinksFast();
-                    });
+                    }
                 })
                 .on('end', function(event, d) {
                     console.log(`[DRAG END COLLAPSED] ${d.id} at (${d.x}, ${d.y})`);
 
-                    // Cancel pending animation frame
-                    if (dragAnimationFrame) {
-                        cancelAnimationFrame(dragAnimationFrame);
-                        dragAnimationFrame = null;
+                    // Calculate drag distance to distinguish click vs drag
+                    const dragDistance = Math.hypot(d.x - d.dragStartX, d.y - d.dragStartY);
+                    const DRAG_THRESHOLD = 5; // pixels
+                    const isDrag = dragDistance > DRAG_THRESHOLD;
+
+                    if (!isDrag) {
+                        console.log(`[DRAG END COLLAPSED] Click detected (${dragDistance.toFixed(0)}px < ${DRAG_THRESHOLD}px threshold), skipping optimization`);
+                        d.isDragging = false;
+                        self.isDraggingAny = false;
+                        return; // Skip optimization for clicks
                     }
+
+                    console.log(`[DRAG END COLLAPSED] Node moved ${dragDistance.toFixed(0)}px, starting progressive optimization...`);
+
+                    // Cancel pending animation frame
+                    // dragAnimationFrame removed (using time-based throttling instead)
 
                     d.isDragging = false;
                     self.isDraggingAny = false;
@@ -1602,27 +1526,26 @@ class SCXMLVisualizer {
                         .attr('x', d.x)
                         .attr('y', d.y);
 
-                    // **PHASE 1: Immediate greedy optimization**
-                    console.log('[DRAG END COLLAPSED] Phase 1: Immediate greedy...');
+                    // Immediate greedy optimization for instant UI feedback
+                    console.log('[DRAG END COLLAPSED] Immediate greedy optimization...');
                     self.updateLinksFast();
 
-                    // **PHASE 2: Background CSP optimization**
-                    console.log('[DRAG END COLLAPSED] Starting progressive optimization...');
+                    // Background CSP refinement for optimal solution quality
+                    console.log('[DRAG END COLLAPSED] Starting background CSP refinement...');
                     
-                    // Cancel any ongoing background optimization
                     if (self.backgroundOptimization) {
                         self.backgroundOptimization.cancel();
                         self.backgroundOptimization = null;
                     }
                     
-                    // Start progressive optimization
                     self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
                         self.allLinks,
                         self.nodes,
+                        d.id,  // Dragged collapsed node ID
                         (success) => {
                             if (success) {
-                                console.log(`[DRAG END COLLAPSED] Background CSP complete, updating visualization...`);
-                                
+                                console.log('[DRAG END COLLAPSED] Background CSP complete, updating visualization...');
+
                                 // Calculate midY for new CSP routing
                                 self.allLinks.forEach(link => {
                                     const sourceNode = self.nodes.find(n => n.id === link.source);
@@ -1631,16 +1554,32 @@ class SCXMLVisualizer {
                                         self.calculateLinkDirections(sourceNode, targetNode, link);
                                     }
                                 });
-                                
+
                                 // Update visualization with CSP-optimized paths
                                 self.updateLinksOptimal();
-                                
-                                console.log(`[DRAG END COLLAPSED] CSP visualization update complete`);
+
+                                console.log('[DRAG END COLLAPSED] CSP visualization update complete');
                             } else {
-                                console.log(`[DRAG END COLLAPSED] Background CSP cancelled or failed, keeping greedy result`);
+                                console.log('[DRAG END COLLAPSED] Background CSP cancelled or failed, keeping greedy result');
                             }
-                            
+
                             self.backgroundOptimization = null;
+                        },
+                        (iteration, totalIterations, score) => {
+                            // Progressive update: called for each intermediate solution
+                            console.log(`[DRAG END COLLAPSED] Intermediate update (${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
+
+                            // Recalculate link directions
+                            self.allLinks.forEach(link => {
+                                const sourceNode = self.nodes.find(n => n.id === link.source);
+                                const targetNode = self.nodes.find(n => n.id === link.target);
+                                if (sourceNode && targetNode) {
+                                    self.calculateLinkDirections(sourceNode, targetNode, link);
+                                }
+                            });
+
+                            // Update visualization with intermediate solution
+                            self.updateLinksOptimal();
                         },
                         500 // 500ms debounce
                     );
@@ -1867,7 +1806,11 @@ class SCXMLVisualizer {
     /**
      * Render snap points visualization for debugging
      */
-    renderSnapPoints(visibleNodes) {
+    /**
+     * Generate snap points data array from visible nodes
+     * Shared by renderSnapPoints() and updateSnapPointPositions()
+     */
+    generateSnapPointsData(visibleNodes) {
         const snapPointsData = [];
 
         // Iterate through all visible nodes (exclude initial-pseudo)
@@ -1887,6 +1830,7 @@ class SCXMLVisualizer {
 
                 this.allLinks.forEach(link => {
                     // **Use routing for snap visualization**
+                    // Only transition and initial links should have routing (containment/delegation links are structural, not routed)
                     if (link.routing) {
                         if (link.source === node.id && link.routing.sourceEdge === edge) {
                             edgeSnapPoints.push({
@@ -1904,8 +1848,14 @@ class SCXMLVisualizer {
                         return;
                     }
 
+                    // **SKIP containment and delegation links** (they don't have routing)
+                    // Visualizer layout: containment is hierarchical structure, not routing path
+                    if (link.linkType === 'containment' || link.linkType === 'delegation') {
+                        return;
+                    }
+
                     // **FALLBACK: This should not happen in new architecture**
-                    // Optimizer always runs before rendering, so routing should always exist
+                    // Optimizer always runs before rendering, so routing should always exist for transition/initial links
                     console.warn(`[RENDER SNAP] ${link.source}→${link.target}: No routing found!`);
                 });
 
@@ -1972,6 +1922,16 @@ class SCXMLVisualizer {
             });
         });
 
+        return snapPointsData;
+    }
+
+    /**
+     * Render snap points (initial render)
+     */
+    renderSnapPoints(visibleNodes) {
+        // Generate snap points data
+        const snapPointsData = this.generateSnapPointsData(visibleNodes);
+
         // Remove old snap points before rendering new ones
         const oldSnapGroups = this.zoomContainer.selectAll('g.snap-points');
         const removedCount = oldSnapGroups.size();
@@ -1982,7 +1942,8 @@ class SCXMLVisualizer {
         const snapGroup = this.zoomContainer.append('g').attr('class', 'snap-points');
         console.log(`[RENDER SNAP] Creating snap group, data points: ${snapPointsData.length}`);
 
-        const circles = snapGroup.selectAll('circle.snap-point')
+        // Store references for later updates
+        this.snapPointCircles = snapGroup.selectAll('circle.snap-point')
             .data(snapPointsData)
             .enter()
             .append('circle')
@@ -2006,7 +1967,7 @@ class SCXMLVisualizer {
             .style('pointer-events', 'none');
 
         // Render index labels
-        snapGroup.selectAll('text.snap-index')
+        this.snapPointLabels = snapGroup.selectAll('text.snap-index')
             .data(snapPointsData)
             .enter()
             .append('text')
@@ -2027,6 +1988,92 @@ class SCXMLVisualizer {
             .text(d => d.index + 1);
 
         console.log(`Rendered ${snapPointsData.length} snap points`);
+    }
+
+    /**
+     * Fast update of snap point positions using D3 enter/update/exit pattern
+     * Efficiently handles snap point count changes without full DOM re-creation
+     */
+    updateSnapPointPositions() {
+        if (!this.showSnapPoints) {
+            return;
+        }
+
+        // Generate latest snap points data
+        const visibleNodes = this.getVisibleNodes();
+        const snapPointsData = this.generateSnapPointsData(visibleNodes);
+
+        // Get or create snap group
+        let snapGroup = this.zoomContainer.select('g.snap-points');
+        if (snapGroup.empty()) {
+            snapGroup = this.zoomContainer.append('g').attr('class', 'snap-points');
+        }
+
+        // Key function for data binding (ensures correct element tracking)
+        const keyFn = d => `${d.nodeId}-${d.edge}-${d.index}`;
+
+        // === UPDATE CIRCLES ===
+        const circles = snapGroup.selectAll('circle.snap-point')
+            .data(snapPointsData, keyFn);
+
+        // Update existing circles (only change position)
+        circles
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y);
+
+        // Enter new circles
+        circles.enter()
+            .append('circle')
+            .attr('class', 'snap-point')
+            .attr('cx', d => d.x)
+            .attr('cy', d => d.y)
+            .attr('r', 5)
+            .style('fill', d => {
+                if (d.isInitialConnection) return '#00ff00';  // Green for initial transitions
+                if (d.hasConnection) return '#ffa500';  // Orange for connections
+                return '#87ceeb';  // Sky blue for available positions
+            })
+            .style('stroke', '#000')
+            .style('stroke-width', 1)
+            .style('pointer-events', 'none');
+
+        // Exit old circles
+        circles.exit().remove();
+
+        // === UPDATE LABELS ===
+        const labels = snapGroup.selectAll('text.snap-index')
+            .data(snapPointsData, keyFn);
+
+        // Update existing labels (only change position)
+        labels
+            .attr('x', d => d.x)
+            .attr('y', d => d.y - 10);
+
+        // Enter new labels
+        labels.enter()
+            .append('text')
+            .attr('class', 'snap-index')
+            .attr('x', d => d.x)
+            .attr('y', d => d.y - 10)
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'middle')
+            .style('font-size', '11px')
+            .style('font-family', 'monospace')
+            .style('font-weight', 'bold')
+            .style('fill', d => {
+                if (d.isInitialConnection) return '#00aa00';
+                if (d.hasConnection) return '#ff8800';
+                return '#0066cc';
+            })
+            .style('pointer-events', 'none')
+            .text(d => d.index + 1);
+
+        // Exit old labels
+        labels.exit().remove();
+
+        // Update stored references
+        this.snapPointCircles = snapGroup.selectAll('circle.snap-point');
+        this.snapPointLabels = snapGroup.selectAll('text.snap-index');
     }
 
     /**
@@ -2117,8 +2164,7 @@ class SCXMLVisualizer {
                     bbox = textNode.getBBox();
                     // Validate getBBox result
                     if (!bbox || bbox.width === 0 || bbox.height === 0) {
-                        console.warn(`[getBBox] ${stateData.id}: getBBox returned zero, forcing reflow`);
-                        // Force another reflow attempt
+                        // getBBox returned zero, forcing reflow (normal during initial render)
                         group.node().getBoundingClientRect();
                         bbox = textNode.getBBox();
                     }
@@ -2864,8 +2910,11 @@ class SCXMLVisualizer {
             return;
         }
 
-        // **FALLBACK: routing should always exist after optimizer runs**
-        console.warn(`[CALC DIR WARNING] ${link.source}→${link.target}: No routing found! Optimizer should have run first.`);
+        // **FALLBACK: routing should always exist after optimizer runs for transition/initial links**
+        // Containment and delegation links don't have routing (hierarchical structure, not routing path)
+        if (link.linkType !== 'containment' && link.linkType !== 'delegation') {
+            console.warn(`[CALC DIR WARNING] ${link.source}→${link.target}: No routing found! Optimizer should have run first.`);
+        }
     }
 
     /**
@@ -2982,8 +3031,11 @@ class SCXMLVisualizer {
             }
         }
 
-        // **FALLBACK: routing should always exist after optimizer runs**
-        console.warn(`[PATH WARNING] ${link.source}→${link.target}: No routing found! Falling back to node centers.`);
+        // **FALLBACK: routing should always exist after optimizer runs for transition/initial links**
+        // Containment and delegation links don't have routing (hierarchical structure, not routing path)
+        if (link.linkType !== 'containment' && link.linkType !== 'delegation') {
+            console.warn(`[PATH WARNING] ${link.source}→${link.target}: No routing found! Falling back to node centers.`);
+        }
 
         // Draw direct line as emergency fallback
         const sx = sourceNode.x || 0;
@@ -3062,7 +3114,7 @@ class SCXMLVisualizer {
      * Update link paths after drag
      */
     updateLinks(useGreedy = false) {
-        // console.log(`[UPDATE LINKS] >>>>>> Called updateLinks(useGreedy=${useGreedy}) <<<<<<`);
+        // console.log(`[UPDATE LINKS] Called with useGreedy=${useGreedy}`);
         if (!this.linkElements || !this.allLinks) {
             // console.log('[UPDATE LINKS] Early return: linkElements or allLinks missing');
             return;
@@ -3111,16 +3163,47 @@ class SCXMLVisualizer {
                 .attr('y', d => this.getTransitionLabelPosition(d).y);
         }
 
+        // Update node visuals with latest positions from this.nodes
+        // Performance: Create Map for O(1) lookup instead of O(n) find()
+        const nodeMap = new Map(this.nodes.map(n => [n.id, n]));
+        
+        if (this.nodeElements) {
+            this.nodeElements.each(function(nodeData) {
+                const latestNode = nodeMap.get(nodeData.id);
+                if (latestNode) {
+                    d3.select(this).attr('transform', `translate(${latestNode.x}, ${latestNode.y})`);
+                }
+            });
+        }
+
+        // Update compound container visuals with latest positions
+        if (this.compoundContainers) {
+            this.compoundContainers.each(function(compoundData) {
+                const latestNode = nodeMap.get(compoundData.id);
+                if (latestNode) {
+                    d3.select(this)
+                        .attr('x', latestNode.x - latestNode.width/2)
+                        .attr('y', latestNode.y - latestNode.height/2);
+                }
+            });
+        }
+
+        // Update compound label positions with latest positions
+        if (this.compoundLabels) {
+            this.compoundLabels.each(function(labelData) {
+                const latestNode = nodeMap.get(labelData.id);
+                if (latestNode) {
+                    d3.select(this)
+                        .attr('x', latestNode.x - latestNode.width/2 + 10)
+                        .attr('y', latestNode.y - latestNode.height/2 + 20);
+                }
+            });
+        }
+
         // Update snap points visualization if enabled
         if (this.showSnapPoints) {
-            // console.log('[UPDATE SNAP VIZ] Re-rendering snap points during drag...');
-            // Remove old snap points
-            this.zoomContainer.selectAll('g.snap-points').remove();
-
-            // Re-render snap points
-            const visibleNodes = this.getVisibleNodes();
-            this.renderSnapPoints(visibleNodes);
-            // console.log('[UPDATE SNAP VIZ] Snap points re-rendered');
+            // Fast update: only change positions, no DOM re-creation
+            this.updateSnapPointPositions();
         }
     }
 

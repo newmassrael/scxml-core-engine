@@ -7,6 +7,16 @@
  * Optimizes transition arrow layout for minimal crossing and optimal snap positioning.
  * Handles connection analysis, snap point calculation, and crossing minimization.
  */
+
+// Debug flag - set to true to enable detailed logging
+const DEBUG_LAYOUT_OPTIMIZER = false;
+
+// No-op logging function for production (reuse if already defined by constraint-solver.js)
+// Use global assignment to avoid const/var declaration conflicts
+if (typeof log === 'undefined') {
+    log = DEBUG_LAYOUT_OPTIMIZER ? console.log.bind(console) : () => {};
+}
+
 class TransitionLayoutOptimizer {
     // Node size constants (half-width and half-height)
     static NODE_SIZES = {
@@ -55,6 +65,7 @@ class TransitionLayoutOptimizer {
     constructor(nodes, links) {
         this.nodes = nodes;
         this.links = links;
+        this.cspRunning = false; // Flag to prevent concurrent CSP executions
     }
 
     /**
@@ -632,10 +643,26 @@ class TransitionLayoutOptimizer {
             if (skipFirstSegment && i === 0) continue;
 
             // Skip last segment if requested (for target node collision check)
-            if (skipLastSegment && i === segments.length - 1) continue;
+            if (skipLastSegment && i === segments.length - 1) {
+                // Special case: Direct line (single segment)
+                // Don't skip the entire segment, only exclude the endpoint area
+                if (segments.length === 1) {
+                    log(`[PATH-NODE] Direct line for ${node.id}: checking segment except endpoint`);
+                    // Check segment but exclude endpoint (target point) area
+                    if (this.segmentIntersectsRectExcludingEndpoint(segment, nodeLeft, nodeTop, nodeRight, nodeBottom, path.targetPoint)) {
+                        log(`[PATH-NODE] Direct line segment intersects ${node.id} (excluding endpoint)`);
+                        return true;
+                    }
+                    continue; // Skip normal check
+                } else {
+                    log(`[PATH-NODE] Skipping last segment for ${node.id}: segment ${i}/${segments.length-1}`);
+                    continue;
+                }
+            }
 
             // Check if segment intersects with node bounding box
             if (this.segmentIntersectsRect(segment, nodeLeft, nodeTop, nodeRight, nodeBottom)) {
+                log(`[PATH-NODE] Segment ${i} intersects ${node.id}: (${segment.x1.toFixed(1)},${segment.y1.toFixed(1)})→(${segment.x2.toFixed(1)},${segment.y2.toFixed(1)})`);
                 return true;
             }
         }
@@ -678,6 +705,52 @@ class TransitionLayoutOptimizer {
         }
 
         return false;
+    }
+
+    /**
+     * Check if a line segment intersects with a rectangle, excluding endpoint area
+     * Used for direct line segments where the endpoint is the target snap point
+     * @param {Object} segment - {x1, y1, x2, y2}
+     * @param {number} left - Rectangle left boundary
+     * @param {number} top - Rectangle top boundary
+     * @param {number} right - Rectangle right boundary
+     * @param {number} bottom - Rectangle bottom boundary
+     * @param {Object} endpoint - {x, y} - The endpoint to exclude
+     * @returns {boolean} True if segment intersects rectangle (excluding endpoint area)
+     */
+    segmentIntersectsRectExcludingEndpoint(segment, left, top, right, bottom, endpoint) {
+        const MIN_SEGMENT = TransitionLayoutOptimizer.MIN_SEGMENT_LENGTH;
+        const { x1, y1, x2, y2 } = segment;
+
+        // Determine which end is the endpoint (usually x2, y2 for target)
+        const isVertical = Math.abs(x2 - x1) < 1;
+        const isHorizontal = Math.abs(y2 - y1) < 1;
+
+        // Shorten the segment to exclude the endpoint area (MIN_SEGMENT distance)
+        let shortenedSegment = { ...segment };
+
+        if (isVertical) {
+            // Vertical segment: exclude endpoint in Y direction
+            if (y2 > y1) {
+                // Going down
+                shortenedSegment.y2 = y2 - MIN_SEGMENT;
+            } else {
+                // Going up
+                shortenedSegment.y2 = y2 + MIN_SEGMENT;
+            }
+        } else if (isHorizontal) {
+            // Horizontal segment: exclude endpoint in X direction
+            if (x2 > x1) {
+                // Going right
+                shortenedSegment.x2 = x2 - MIN_SEGMENT;
+            } else {
+                // Going left
+                shortenedSegment.x2 = x2 + MIN_SEGMENT;
+            }
+        }
+
+        // Check if shortened segment intersects the rectangle
+        return this.segmentIntersectsRect(shortenedSegment, left, top, right, bottom);
     }
 
     /**
@@ -778,6 +851,8 @@ class TransitionLayoutOptimizer {
      * @param {Array} nodes - Array of node objects
      */
     _applySolutionToLinks(assignment, links, nodes) {
+        // Note: Expects already filtered links (transition and initial only)
+
         // Convert different formats to uniform format
         let assignments;
 
@@ -901,16 +976,24 @@ class TransitionLayoutOptimizer {
      * Progressive optimization: immediate greedy + background CSP
      * @param {Array} links - Array of link objects
      * @param {Array} nodes - Array of node objects
+     * @param {string|null} draggedNodeId - ID of dragged node
      * @param {Function} onComplete - Callback when CSP completes: (success) => void
+     * @param {Function} onProgress - Callback for intermediate updates: (iteration, totalIterations, score) => void
      * @param {number} debounceMs - Delay before starting CSP (default: 500ms)
      * @returns {Object} { cancel: () => void } - Object with cancel method
      */
-    optimizeSnapPointAssignmentsProgressive(links, nodes, onComplete, debounceMs = 500) {
+    optimizeSnapPointAssignmentsProgressive(links, nodes, draggedNodeId, onComplete, onProgress = null, debounceMs = 500) {
+        // Filter out containment and delegation links (only optimize transition and initial links)
+        // Visualizer layout: containment is hierarchical structure, not routing path
+        const transitionLinks = links.filter(link => 
+            link.linkType === 'transition' || link.linkType === 'initial'
+        );
+
         console.log('[OPTIMIZE PROGRESSIVE] Starting progressive optimization...');
 
         // Progressive optimization: greedy step for immediate feedback
         console.log('[OPTIMIZE PROGRESSIVE] Greedy step: immediate rendering...');
-        this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+        this.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
 
         // Return immediately - user sees greedy result
         console.log('[OPTIMIZE PROGRESSIVE] Greedy step complete, scheduling background CSP refinement...');
@@ -934,8 +1017,8 @@ class TransitionLayoutOptimizer {
         };
 
         // Skip CSP for large state machines (threshold)
-        if (links.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
-            console.log(`[OPTIMIZE PROGRESSIVE] ${links.length} transitions exceed threshold, skipping background CSP`);
+        if (transitionLinks.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
+            console.log(`[OPTIMIZE PROGRESSIVE] ${transitionLinks.length} transitions exceed threshold, skipping background CSP`);
             if (onComplete) onComplete(false);
             return { cancel };
         }
@@ -948,7 +1031,7 @@ class TransitionLayoutOptimizer {
             // Check if Worker is supported
             if (typeof Worker === 'undefined') {
                 console.warn('[OPTIMIZE PROGRESSIVE] Web Workers not supported, falling back to main thread CSP');
-                this.fallbackToMainThreadCSP(links, nodes, onComplete);
+                this.fallbackToMainThreadCSP(transitionLinks, nodes, draggedNodeId, onComplete);
                 return;
             }
 
@@ -961,15 +1044,26 @@ class TransitionLayoutOptimizer {
 
                 // Handle worker messages
                 worker.onmessage = (e) => {
-                    const { type, solution, score, stats, message, stack } = e.data;
+                    const { type, solution, score, stats, message, stack, iteration, totalIterations } = e.data;
 
                     switch (type) {
                         case 'progress':
-                            lastProgressRender = this._handleProgressMessage(e.data, links, nodes, lastProgressRender);
+                            lastProgressRender = this._handleProgressMessage(e.data, transitionLinks, nodes, lastProgressRender);
+                            break;
+
+                        case 'intermediate_solution':
+                            // Progressive refinement: apply intermediate solution without completing
+                            console.log(`[OPTIMIZE PROGRESSIVE] Intermediate solution (iteration ${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
+                            this._applySolutionToLinks(solution, transitionLinks, nodes);
+
+                            // Trigger visualization update via progress callback
+                            if (onProgress) {
+                                onProgress(iteration, totalIterations, score);
+                            }
                             break;
 
                         case 'solution':
-                            worker = this._handleSolutionMessage(solution, score, stats, links, nodes, worker, onComplete);
+                            worker = this._handleSolutionMessage(solution, score, stats, transitionLinks, nodes, worker, onComplete);
                             break;
 
                         case 'cancelled':
@@ -993,17 +1087,40 @@ class TransitionLayoutOptimizer {
                     if (onComplete) onComplete(false);
                 };
 
-                // Send solve request to worker
+                // Convert greedy results to CSP solution format
+                const greedySolution = this.convertGreedyToCSPSolution(transitionLinks);
+
+                // Build parent-child map
+                const parentChildMap = {};
+                this.links.forEach(link => {
+                    if (link.linkType === 'containment') {
+                        parentChildMap[link.target] = link.source;
+                    }
+                });
+
+                // Serialize greedySolution for Worker (Map → Object)
+                const greedySolutionSerialized = {
+                    assignment: Object.fromEntries(greedySolution.assignment),
+                    score: greedySolution.score,
+                    preferences: Object.fromEntries(greedySolution.preferences)
+                };
+
+                console.log(`[OPTIMIZE PROGRESSIVE] Sending greedy solution to Worker: score=${greedySolution.score.toFixed(1)}`);
+
+                // Send solve request to worker with greedy warm-start and dragged node
                 worker.postMessage({
                     type: 'solve',
-                    links: links,
-                    nodes: nodes
+                    links: transitionLinks,
+                    nodes: nodes,
+                    greedySolution: greedySolutionSerialized,
+                    parentChildMap: parentChildMap,
+                    draggedNodeId: draggedNodeId
                 });
 
             } catch (error) {
                 console.error('[OPTIMIZE PROGRESSIVE] Failed to create Worker:', error);
                 console.warn('[OPTIMIZE PROGRESSIVE] Falling back to main thread CSP');
-                this.fallbackToMainThreadCSP(links, nodes, onComplete);
+                this.fallbackToMainThreadCSP(transitionLinks, nodes, draggedNodeId, onComplete);
             }
         }, debounceMs);
 
@@ -1014,7 +1131,9 @@ class TransitionLayoutOptimizer {
      * Fallback to main thread CSP when Worker is not available
      * @private
      */
-    fallbackToMainThreadCSP(links, nodes, onComplete) {
+    fallbackToMainThreadCSP(links, nodes, draggedNodeId, onComplete) {
+        // Note: Expects already filtered links (transition and initial only)
+
         try {
             // Check if ConstraintSolver is available
             if (typeof ConstraintSolver === 'undefined') {
@@ -1023,46 +1142,102 @@ class TransitionLayoutOptimizer {
                 return;
             }
 
-            // Create CSP solver
-            const solver = new ConstraintSolver(links, nodes, this);
+            console.log('[OPTIMIZE PROGRESSIVE] Starting progressive CSP refinement (8 iterations × 250ms, main thread)...');
 
-            // Run CSP (blocks main thread)
-            const solution = solver.solve();
-
-            if (solver.cancelled) {
-                console.log('[OPTIMIZE PROGRESSIVE] CSP cancelled');
-                if (onComplete) onComplete(false);
-                return;
-            }
-
-            if (!solution) {
-                console.log('[OPTIMIZE PROGRESSIVE] CSP failed, keeping greedy result');
-                if (onComplete) onComplete(false);
-                return;
-            }
-
-            // Apply CSP solution
-            console.log('[OPTIMIZE PROGRESSIVE] Applying CSP solution...');
-            solution.forEach((assignment, linkId) => {
-                const link = links.find(l => l.id === linkId);
-                if (link) {
-                    link.routing = RoutingState.fromEdges(
-                        assignment.sourceEdge,
-                        assignment.targetEdge
-                    );
+            // Build parent-child map
+            const parentChildMap = new Map();
+            this.links.forEach(link => {
+                if (link.linkType === 'containment') {
+                    parentChildMap.set(link.target, link.source);
                 }
             });
 
-            // Distribute snap points
-            const sortedLinks = [...links].sort((a, b) => {
-                if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
-                if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
-                return 0;
-            });
-            this.distributeSnapPointsOnEdges(sortedLinks, nodes);
+            // Convert greedy results to CSP solution format
+            let currentBestSolution = this.convertGreedyToCSPSolution(links);
+            console.log(`[OPTIMIZE PROGRESSIVE] Initial solution: score=${currentBestSolution.score.toFixed(1)}`);
 
-            console.log('[OPTIMIZE PROGRESSIVE] Main thread CSP complete!');
-            if (onComplete) onComplete(true);
+            // Progressive refinement: 8 iterations × 250ms = 2000ms total
+            const MAX_ITERATIONS = 8;
+            let bestScoreOverall = currentBestSolution.score;
+            let bestSolutionOverall = null;
+
+            for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
+                console.log(`[OPTIMIZE PROGRESSIVE] === Iteration ${iteration + 1}/${MAX_ITERATIONS} ===`);
+
+                // Create CSP solver with current best solution as warm-start
+                const solver = new ConstraintSolver(links, nodes, this, parentChildMap, currentBestSolution, draggedNodeId);
+
+                // Run CSP for 250ms (blocks main thread)
+                const solution = solver.solve();
+
+                if (solver.cancelled) {
+                    console.log(`[OPTIMIZE PROGRESSIVE] CSP cancelled during iteration ${iteration + 1}`);
+                    if (onComplete) onComplete(false);
+                    return;
+                }
+
+                // Update best solution if improved
+                if (solution && solver.bestScore < bestScoreOverall) {
+                    bestScoreOverall = solver.bestScore;
+                    bestSolutionOverall = solution;
+
+                    console.log(`[OPTIMIZE PROGRESSIVE] Iteration ${iteration + 1}: New best score=${bestScoreOverall.toFixed(1)}`);
+
+                    // Convert solution to warm-start format for next iteration
+                    currentBestSolution = {
+                        assignment: solution,
+                        score: solver.bestScore,
+                        preferences: new Map()
+                    };
+
+                    // Extract preferences from solution
+                    solution.forEach((assignment, linkId) => {
+                        currentBestSolution.preferences.set(linkId, {
+                            sourceEdge: assignment.sourceEdge,
+                            targetEdge: assignment.targetEdge
+                        });
+                    });
+                } else {
+                    console.log(`[OPTIMIZE PROGRESSIVE] Iteration ${iteration + 1}: No improvement (current best: ${bestScoreOverall.toFixed(1)})`);
+                }
+
+                // Apply intermediate solution EVERY iteration (even if no improvement)
+                if (bestSolutionOverall) {
+                    console.log(`[OPTIMIZE PROGRESSIVE] Applying intermediate solution (iteration ${iteration + 1}/${MAX_ITERATIONS})...`);
+                    bestSolutionOverall.forEach((assignment, linkId) => {
+                        const link = links.find(l => l.id === linkId);
+                        if (link) {
+                            link.routing = RoutingState.fromEdges(
+                                assignment.sourceEdge,
+                                assignment.targetEdge
+                            );
+                        }
+                    });
+
+                    // Distribute snap points for intermediate solution
+                    const sortedLinks = [...links].sort((a, b) => {
+                        if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
+                        if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
+                        return 0;
+                    });
+                    this.distributeSnapPointsOnEdges(sortedLinks, nodes);
+
+                    // Invoke onProgress callback
+                    if (onProgress) {
+                        onProgress(iteration + 1, MAX_ITERATIONS, bestScoreOverall);
+                    }
+                }
+            }
+
+            // Apply final best solution
+            if (bestSolutionOverall) {
+                console.log(`[OPTIMIZE PROGRESSIVE] All iterations complete. Final solution: score=${bestScoreOverall.toFixed(1)}`);
+                console.log('[OPTIMIZE PROGRESSIVE] Main thread CSP complete!');
+                if (onComplete) onComplete(true);
+            } else {
+                console.log('[OPTIMIZE PROGRESSIVE] No solution found after all iterations');
+                if (onComplete) onComplete(false);
+            }
 
         } catch (error) {
             console.error('[OPTIMIZE PROGRESSIVE] Main thread CSP error:', error);
@@ -1078,8 +1253,16 @@ class TransitionLayoutOptimizer {
      * 2. Distribute snap points on each edge to minimize congestion
      * @param {Array} links - Array of link objects
      * @param {Array} nodes - Array of node objects
+     * @param {boolean} useGreedy - Use greedy algorithm instead of CSP
+     * @param {string} draggedNodeId - ID of dragged node for locality-aware optimization (optional)
      */
-    optimizeSnapPointAssignments(links, nodes, useGreedy = false) {
+    optimizeSnapPointAssignments(links, nodes, useGreedy = false, draggedNodeId = null) {
+        // Filter out containment and delegation links (only optimize transition and initial links)
+        // Visualizer layout: containment is hierarchical structure, not routing path
+        const transitionLinks = links.filter(link => 
+            link.linkType === 'transition' || link.linkType === 'initial'
+        );
+
         // Adaptive Algorithm Selection:
         // - useGreedy=true: Fast greedy algorithm for real-time drag (1-5ms)
         // - useGreedy=false: Optimal CSP solver for final result (50-200ms)
@@ -1089,70 +1272,295 @@ class TransitionLayoutOptimizer {
 
         if (useGreedy) {
             console.log('[OPTIMIZE] Using fast greedy algorithm (drag mode)...');
-            this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+            this.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
             return;
         }
 
-        // Auto-fallback to greedy for large state machines
-        if (links.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
-            console.log(`[OPTIMIZE] ${links.length} transitions exceed CSP threshold (${TransitionLayoutOptimizer.CSP_THRESHOLD}), using greedy algorithm...`);
-            this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+        // Progressive Enhancement Strategy:
+        // 1. First: Apply Greedy algorithm immediately (fast, O(n))
+        // 2. Then: Run CSP solver in background (slow, optimal)
+        // 3. Update layout if CSP finds better solution
+
+        console.log(`[OPTIMIZE] Progressive optimization for ${transitionLinks.length} transitions...`);
+        console.log('[OPTIMIZE GREEDY] Applying Greedy algorithm immediately...');
+
+        // Apply Greedy first for instant feedback
+        this.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
+        
+        console.log('[OPTIMIZE GREEDY] Greedy layout applied');
+
+        // Skip CSP if too many transitions
+        if (transitionLinks.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
+            console.log(`[OPTIMIZE] ${transitionLinks.length} > ${TransitionLayoutOptimizer.CSP_THRESHOLD}, skipping CSP optimization`);
             return;
         }
-
-        console.log(`[OPTIMIZE] Using Constraint Satisfaction Solver for ${links.length} transitions (optimal mode)...`);
 
         // Check if ConstraintSolver is available
         if (typeof ConstraintSolver === 'undefined') {
-            console.warn('[OPTIMIZE] ConstraintSolver not found, falling back to greedy algorithm');
-            this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+            console.warn('[OPTIMIZE] ConstraintSolver not found, skipping CSP optimization');
             return;
         }
 
-        // Create CSP solver
-        const solver = new ConstraintSolver(links, nodes, this);
+        // Run CSP solver asynchronously in background
+        // Check if CSP is already running to avoid concurrent executions
+        if (this.cspRunning) {
+            console.log('[OPTIMIZE CSP] CSP already running, skipping duplicate optimization');
+            return;
+        }
+
+        console.log('[OPTIMIZE CSP] Starting background CSP optimization...');
+        
+        // Set flag IMMEDIATELY to prevent duplicate scheduling
+        // (requestIdleCallback has delay between schedule and execution)
+        this.cspRunning = true;
+        
+        // Use requestIdleCallback for truly non-blocking execution
+        // CSP will only run when browser is idle (not blocking user interactions)
+        const scheduleCSP = () => {
+            if (typeof requestIdleCallback !== 'undefined') {
+                requestIdleCallback(() => {
+                    this.runBackgroundCSPOptimization(transitionLinks, nodes, draggedNodeId);
+                }, { timeout: 5000 }); // Fallback to setTimeout after 5s
+            } else {
+                // Fallback for browsers without requestIdleCallback
+                setTimeout(() => {
+                    this.runBackgroundCSPOptimization(transitionLinks, nodes, draggedNodeId);
+                }, 100); // Small delay to let UI render
+            }
+        };
+        
+        scheduleCSP();
+    }
+
+    /**
+     * Convert greedy routing results to CSP solution format
+     * @param {Array} links - Links with routing assigned by greedy
+     * @returns {Object} {assignment: Map, score: number, preferences: Map}
+     */
+    convertGreedyToCSPSolution(links) {
+        const assignment = new Map();
+        const preferences = new Map();
+        let totalScore = 0;
+
+        links.forEach(link => {
+            if (!link.routing) return;
+
+            const sourceNode = this.nodes.find(n => n.id === link.source);
+            const targetNode = this.nodes.find(n => n.id === link.target);
+            if (!sourceNode || !targetNode) return;
+
+            const combo = {
+                sourceEdge: link.routing.sourceEdge,
+                targetEdge: link.routing.targetEdge,
+                sourcePoint: this.getEdgeCenterPoint(sourceNode, link.routing.sourceEdge),
+                targetPoint: this.getEdgeCenterPoint(targetNode, link.routing.targetEdge)
+            };
+
+            const dx = combo.targetPoint.x - combo.sourcePoint.x;
+            const dy = combo.targetPoint.y - combo.sourcePoint.y;
+            combo.distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Calculate score (use same logic as greedy for consistency)
+            const score = this.calculateComboScore(link, combo, assignment, links);
+
+            assignment.set(link.id, {
+                sourceEdge: link.routing.sourceEdge,
+                targetEdge: link.routing.targetEdge,
+                combo: combo,
+                score: score
+            });
+
+            preferences.set(link.id, {
+                sourceEdge: link.routing.sourceEdge,
+                targetEdge: link.routing.targetEdge
+            });
+
+            totalScore += score;
+        });
+
+        return { assignment, score: totalScore, preferences };
+    }
+
+    /**
+     * Calculate score for a combo (shared by greedy and CSP)
+     * @private
+     */
+    calculateComboScore(link, combo, existingAssignment, allLinks) {
+        // Calculate intersections with existing assignments
+        let intersections = 0;
+        for (const [assignedLinkId, assignedData] of existingAssignment) {
+            intersections += this.calculatePathIntersections(combo, assignedData.combo);
+        }
+
+        // Calculate node collisions
+        let nodeCollisions = 0;
+        const sourceNode = this.nodes.find(n => n.id === link.source);
+        const targetNode = this.nodes.find(n => n.id === link.target);
+
+        if (sourceNode && this.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
+            nodeCollisions++;
+        }
+        if (targetNode && this.pathIntersectsNode(combo, targetNode, { skipLastSegment: true })) {
+            nodeCollisions++;
+        }
+
+        this.nodes.forEach(node => {
+            if (node.id === link.source || node.id === link.target) return;
+            if (this.pathIntersectsNode(combo, node)) {
+                nodeCollisions++;
+            }
+        });
+
+        // Check too-close snap points
+        const MIN_SAFE_DISTANCE = TransitionLayoutOptimizer.MIN_SAFE_DISTANCE;
+        let tooCloseSnap = 0;
+        const sourceIsVertical = (combo.sourceEdge === 'top' || combo.sourceEdge === 'bottom');
+        const targetIsVertical = (combo.targetEdge === 'top' || combo.targetEdge === 'bottom');
+        const dx = Math.abs(combo.sourcePoint.x - combo.targetPoint.x);
+        const dy = Math.abs(combo.sourcePoint.y - combo.targetPoint.y);
+
+        if (!sourceIsVertical && !targetIsVertical) {
+            if (dx < MIN_SAFE_DISTANCE && dy < MIN_SAFE_DISTANCE) {
+                tooCloseSnap = 1;
+            }
+        } else if (sourceIsVertical && targetIsVertical) {
+            if (dy < MIN_SAFE_DISTANCE && dx < MIN_SAFE_DISTANCE) {
+                tooCloseSnap = 1;
+            }
+        }
+
+        // Check self-overlap
+        const MIN_SEGMENT = TransitionLayoutOptimizer.MIN_SEGMENT_LENGTH;
+        let selfOverlap = 0;
+
+        if (!sourceIsVertical && !targetIsVertical) {
+            let x1 = (combo.sourceEdge === 'right') ? combo.sourcePoint.x + MIN_SEGMENT : combo.sourcePoint.x - MIN_SEGMENT;
+            let x2 = (combo.targetEdge === 'right') ? combo.targetPoint.x + MIN_SEGMENT : combo.targetPoint.x - MIN_SEGMENT;
+            if (combo.targetEdge === 'left' && x1 > x2) selfOverlap = 1;
+            if (combo.targetEdge === 'right' && x1 < x2) selfOverlap = 1;
+        } else if (sourceIsVertical && targetIsVertical) {
+            let y1 = (combo.sourceEdge === 'top') ? combo.sourcePoint.y - MIN_SEGMENT : combo.sourcePoint.y + MIN_SEGMENT;
+            let y2 = (combo.targetEdge === 'top') ? combo.targetPoint.y - MIN_SEGMENT : combo.targetPoint.y + MIN_SEGMENT;
+            if (combo.targetEdge === 'top' && y1 > y2) selfOverlap = 1;
+            if (combo.targetEdge === 'bottom' && y1 < y2) selfOverlap = 1;
+        }
+
+        return tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + combo.distance;
+    }
+
+    /**
+     * Run CSP solver in background and update layout if better solution found
+     * Called asynchronously after Greedy layout is applied
+     */
+    runBackgroundCSPOptimization(transitionLinks, nodes, draggedNodeId) {
+        // Note: cspRunning flag already set in optimizeSnapPointAssignments()
+        // to prevent duplicate scheduling before requestIdleCallback executes
+        
+        console.log('[CSP BACKGROUND] Starting CSP solver (non-blocking, max 500ms)...');
+        const startTime = performance.now();
+
+        // Build parent-child map from containment links
+        const parentChildMap = new Map(); // Map<childId, parentId>
+        this.links.forEach(link => {
+            if (link.linkType === 'containment') {
+                parentChildMap.set(link.target, link.source);
+            }
+        });
+        
+        console.log(`[CSP BACKGROUND] Built parent-child map with ${parentChildMap.size} entries`);
+        for (const [child, parent] of parentChildMap.entries()) {
+            console.log(`  ${parent} → ${child}`);
+        }
+
+        // Convert greedy results to CSP solution format (Strategy 1 + 3)
+        const greedySolution = this.convertGreedyToCSPSolution(transitionLinks);
+        console.log(`[CSP BACKGROUND] Converted greedy solution: score=${greedySolution.score.toFixed(1)}, ${greedySolution.preferences.size} link preferences`);
+
+        // Backup greedy routing for potential restore
+        const previousRoutings = new Map();
+        transitionLinks.forEach(link => {
+            if (link.routing) {
+                previousRoutings.set(link.id, link.routing);
+            }
+        });
+
+        // Clear routing before CSP (CSP will use greedy as initial solution, not direct routing)
+        transitionLinks.forEach(link => {
+            link.routing = null;
+        });
+
+        // Create CSP solver with greedy warm-start and dragged node locality
+        const solver = new ConstraintSolver(transitionLinks, nodes, this, parentChildMap, greedySolution, draggedNodeId);
 
         // Solve
         const solution = solver.solve();
+        const elapsedMs = performance.now() - startTime;
 
         if (!solution) {
-            console.error('[OPTIMIZE] CSP failed, falling back to greedy algorithm');
-            this.optimizeSnapPointAssignmentsGreedy(links, nodes);
+            console.warn(`[CSP BACKGROUND] No solution found after ${elapsedMs.toFixed(1)}ms, keeping Greedy layout`);
+            // Restore previous routing
+            transitionLinks.forEach(link => {
+                if (previousRoutings.has(link.id)) {
+                    link.routing = previousRoutings.get(link.id);
+                }
+            });
+            // Clear flag
+            this.cspRunning = false;
             return;
         }
 
+        console.log(`[CSP BACKGROUND] Solution found after ${elapsedMs.toFixed(1)}ms, updating layout...`);
+
         // Apply solution to links
         solution.forEach((assignment, linkId) => {
-            const link = links.find(l => l.id === linkId);
+            const link = transitionLinks.find(l => l.id === linkId);
             if (link) {
                 link.routing = RoutingState.fromEdges(
                     assignment.sourceEdge,
                     assignment.targetEdge
                 );
 
-                console.log(`[OPTIMIZE CSP] ${link.source}→${link.target}: ${assignment.sourceEdge}→${assignment.targetEdge}`);
+                console.log(`[CSP BACKGROUND UPDATE] ${link.source}→${link.target}: ${assignment.sourceEdge}→${assignment.targetEdge}`);
             }
         });
 
         // Distribute snap points on each edge to minimize congestion
-        const sortedLinks = [...links].sort((a, b) => {
+        const sortedLinks = [...transitionLinks].sort((a, b) => {
             if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
             if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
             return 0;
         });
         this.distributeSnapPointsOnEdges(sortedLinks, nodes);
 
-        // console.log(`Optimized snap points for ${links.length} links using CSP`);
+        console.log('[CSP BACKGROUND] Layout updated with CSP solution');
+        
+        // Trigger re-render if callback exists
+        if (this.onLayoutUpdated) {
+            console.log('[CSP BACKGROUND] Triggering re-render...');
+            this.onLayoutUpdated();
+        }
+
+        // Clear flag
+        this.cspRunning = false;
     }
 
     /**
      * Fallback greedy algorithm (edge assignment + snap distribution)
      * Used when CSP solver is not available or fails
+     * @param {Array} links - Array of link objects
+     * @param {Array} nodes - Array of node objects
+     * @param {string|null} draggedNodeId - ID of dragged node (for caching optimization)
      */
-    optimizeSnapPointAssignmentsGreedy(links, nodes) {
+    optimizeSnapPointAssignmentsGreedy(links, nodes, draggedNodeId = null) {
         console.log('[OPTIMIZE GREEDY] Using greedy algorithm (fallback)...');
 
+        // OPTIMIZATION: Cache CSP routing for links unaffected by drag
+        // Distance threshold: links within this distance are affected by drag
+        const DRAG_IMPACT_RADIUS = 300; // pixels
+
         const assignedPaths = [];
+        let cachedCount = 0;
+        let recalculatedCount = 0;
 
         // Process initial transitions first to establish edge blocking
         const sortedLinks = [...links].sort((a, b) => {
@@ -1175,6 +1583,49 @@ class TransitionLayoutOptimizer {
 
             if (!sourceNode || !targetNode) return;
 
+            // OPTIMIZATION: Check if link is affected by drag
+            let isAffectedByDrag = true; // Default: recalculate everything
+
+            if (draggedNodeId && link.routing) {
+                // Has dragged node and link has existing routing (from CSP)
+
+                // Direct connection to dragged node?
+                const isDirectlyConnected = (link.source === draggedNodeId || link.target === draggedNodeId);
+
+                if (!isDirectlyConnected) {
+                    // Check distance to dragged node
+                    const draggedNode = nodes.find(n => n.id === draggedNodeId);
+                    if (draggedNode) {
+                        const sourceDist = Math.hypot(sourceNode.x - draggedNode.x, sourceNode.y - draggedNode.y);
+                        const targetDist = Math.hypot(targetNode.x - draggedNode.x, targetNode.y - draggedNode.y);
+                        const minDist = Math.min(sourceDist, targetDist);
+
+                        // Far enough from drag? Cache CSP result!
+                        if (minDist > DRAG_IMPACT_RADIUS) {
+                            isAffectedByDrag = false;
+                        }
+                    }
+                }
+            }
+
+            // CACHE: Keep CSP routing for unaffected links
+            if (!isAffectedByDrag) {
+                // Reconstruct path combo from cached routing
+                const cachedCombo = this.getAllPossibleSnapCombinations(link, sourceNode, targetNode, null)
+                    .find(combo => combo.sourceEdge === link.routing.sourceEdge &&
+                                   combo.targetEdge === link.routing.targetEdge);
+
+                if (cachedCombo) {
+                    assignedPaths.push(cachedCombo);
+                    cachedCount++;
+                    console.log(`[OPTIMIZE GREEDY CACHE] ${link.source}→${link.target}: keeping CSP routing ${link.routing.sourceEdge}→${link.routing.targetEdge}`);
+                    return; // Skip recalculation
+                }
+            }
+
+            // Link affected by drag: recalculate
+            recalculatedCount++;
+
             // Check if reverse link exists and has routing assigned
             const reverseKey = `${link.target}→${link.source}`;
             const reverseLink = reverseLinkMap.get(reverseKey);
@@ -1190,6 +1641,22 @@ class TransitionLayoutOptimizer {
             if (combinations.length === 0) {
                 console.warn(`No valid snap combinations for ${link.source}→${link.target}`);
                 return;
+            }
+
+            // OPTIMIZATION: Prioritize previous CSP routing in value ordering
+            // Check combinations in order: CSP routing first, then others
+            if (link.routing) {
+                const previousRouting = link.routing;
+                combinations.sort((a, b) => {
+                    const aMatchesCSP = (a.sourceEdge === previousRouting.sourceEdge &&
+                                        a.targetEdge === previousRouting.targetEdge);
+                    const bMatchesCSP = (b.sourceEdge === previousRouting.sourceEdge &&
+                                        b.targetEdge === previousRouting.targetEdge);
+
+                    if (aMatchesCSP && !bMatchesCSP) return -1;
+                    if (!aMatchesCSP && bMatchesCSP) return 1;
+                    return 0; // Preserve original order for others
+                });
             }
 
             // Score each combination
@@ -1342,7 +1809,7 @@ class TransitionLayoutOptimizer {
         // Distribute snap points on each edge to minimize congestion
         this.distributeSnapPointsOnEdges(sortedLinks, nodes);
 
-        console.log(`Optimized snap points for ${links.length} links using greedy algorithm`);
+        console.log(`[OPTIMIZE GREEDY] Completed: ${links.length} links (cached: ${cachedCount}, recalculated: ${recalculatedCount})`);
     }
 
     /**
@@ -1352,6 +1819,7 @@ class TransitionLayoutOptimizer {
      */
     distributeSnapPointsOnEdges(links, nodes) {
         // Group links by node and edge (combine incoming and outgoing)
+        // Note: Expects already filtered links (transition and initial only)
         const edgeGroups = new Map(); // Key: "nodeId:edge", Value: [links]
 
         links.forEach(link => {
@@ -1371,7 +1839,7 @@ class TransitionLayoutOptimizer {
                     if (link.routing) {
                         link.routing.sourcePoint = centerPoint;
                     }
-                    console.log(`[OPTIMIZE PHASE 2] ${link.source}→${link.target} source at initial center: (${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
+                    console.log(`[OPTIMIZE CSP] ${link.source}→${link.target} source at initial center: (${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
                 }
 
                 // Still need to add target to edge group
@@ -1402,14 +1870,14 @@ class TransitionLayoutOptimizer {
             const [nodeId, edge] = key.split(':');
             const node = nodes.find(n => n.id === nodeId);
             if (!node) {
-                console.error(`[PHASE 2 ERROR] Node ${nodeId} not found!`);
+                console.error(`[CSP ERROR] Node ${nodeId} not found!`);
                 return;
             }
 
             const cx = node.x || 0;
             const cy = node.y || 0;
             const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
-            console.log(`[PHASE 2 DEBUG] ${nodeId}.${edge}: center=(${cx.toFixed(1)}, ${cy.toFixed(1)}), type=${node.type}, size=${halfWidth}x${halfHeight}`);
+            console.log(`[CSP DEBUG] ${nodeId}.${edge}: center=(${cx.toFixed(1)}, ${cy.toFixed(1)}), type=${node.type}, size=${halfWidth}x${halfHeight}`);
 
             // Separate incoming and outgoing, then sort each by other node position
             const incomingGroup = group.filter(item => !item.isSource);
@@ -1488,7 +1956,7 @@ class TransitionLayoutOptimizer {
                 }
 
                 const direction = item.isSource ? 'source' : 'target';
-                console.log(`[OPTIMIZE PHASE 2] ${item.link.source}→${item.link.target} ${direction} on ${nodeId}.${edge}: position ${index + 1}/${count} at (${x.toFixed(1)}, ${y.toFixed(1)})`);
+                console.log(`[OPTIMIZE CSP] ${item.link.source}→${item.link.target} ${direction} on ${nodeId}.${edge}: position ${index + 1}/${count} at (${x.toFixed(1)}, ${y.toFixed(1)})`);
             });
         });
     }
