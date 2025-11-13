@@ -24,6 +24,22 @@ const LAYOUT_CONSTANTS = {
     TEXT_PADDING: 8                // Additional padding for text positioning
 };
 
+// ELK (Eclipse Layout Kernel) configuration constants
+const ELK_LAYOUT_CONFIG = {
+    NODE_SPACING: '150',           // Horizontal spacing between nodes on same layer
+    LAYER_SPACING: '180',          // Vertical spacing between layers
+    COMPOUND_PADDING_TOP: '60',    // Top padding for compound/parallel containers
+    COMPOUND_PADDING_SIDE: '35',   // Left/right/bottom padding for compounds
+    PARALLEL_CHILD_SPACING: '40'   // Spacing between parallel children (horizontal layout)
+};
+
+// Path routing constants
+const PATH_CONSTANTS = {
+    MIN_SEGMENT_LENGTH: 30,        // Minimum orthogonal path segment length (prevents tight corners)
+    COMPOUND_BOUNDS_PADDING: 25,   // Padding when calculating compound bounding boxes from children
+    INITIAL_NODE_HALF_WIDTH: 30    // Half-width of initial pseudo-node for boundary calculations
+};
+
 class SCXMLVisualizer {
     // Layout constants
     static COMPOUND_PADDING = 25;
@@ -258,8 +274,8 @@ class SCXMLVisualizer {
             layoutOptions: {
                 'elk.algorithm': 'layered',
                 'elk.direction': 'DOWN',
-                'elk.spacing.nodeNode': '80',
-                'elk.layered.spacing.nodeNodeBetweenLayers': '100',
+                'elk.spacing.nodeNode': ELK_LAYOUT_CONFIG.NODE_SPACING,
+                'elk.layered.spacing.nodeNodeBetweenLayers': ELK_LAYOUT_CONFIG.LAYER_SPACING,
                 'elk.edgeRouting': 'ORTHOGONAL',
                 'elk.layered.unnecessaryBendpoints': 'false',
                 'elk.layered.nodePlacement.favorStraightEdges': 'true',
@@ -310,8 +326,15 @@ class SCXMLVisualizer {
 
                 elkNode.layoutOptions = {
                     'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
-                    'elk.padding': '[top=50,left=25,bottom=25,right=25]'
+                    'elk.padding': `[top=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_TOP},left=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE},bottom=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE},right=${ELK_LAYOUT_CONFIG.COMPOUND_PADDING_SIDE}]`
                 };
+
+                // Parallel states: arrange children horizontally (left-to-right)
+                // W3C SCXML semantics: parallel children execute concurrently, visualized side-by-side
+                if (node.type === 'parallel') {
+                    elkNode.layoutOptions['elk.direction'] = 'RIGHT';
+                    elkNode.layoutOptions['elk.spacing.nodeNode'] = ELK_LAYOUT_CONFIG.PARALLEL_CHILD_SPACING;
+                }
 
                 // Recursively build children
                 node.children.forEach(childId => {
@@ -600,7 +623,7 @@ class SCXMLVisualizer {
                 
                 if (childNodes.length > 0) {
                     // Calculate bounding box with padding
-                    const padding = 25;
+                    const padding = PATH_CONSTANTS.COMPOUND_BOUNDS_PADDING;
                     const minX = Math.min(...childNodes.map(c => c.x - c.width/2)) - padding;
                     const maxX = Math.max(...childNodes.map(c => c.x + c.width/2)) + padding;
                     const minY = Math.min(...childNodes.map(c => c.y - c.height/2)) - padding;
@@ -638,69 +661,20 @@ class SCXMLVisualizer {
             });
         }
 
-        // Force vertical alignment: center nodes on x-axis, but distribute nodes on same layer
-        const centerX = this.width / 2;
-        // Dynamic Y tolerance: min 15px, max 30px, default 4% of viewport height
-        const yTolerance = Math.max(15, Math.min(30, this.height * 0.04));
+        // Trust ELK (Eclipse Layout Kernel) hierarchical layout algorithm
+        // ELK handles node positioning, overlap prevention, and hierarchical nesting
+        // Manual alignment removed as it conflicts with ELK's optimized calculations
+        // Reference: https://www.eclipse.org/elk/
+        console.log('[LAYOUT] Using ELK calculated positions (no manual alignment)');
 
-        // Group nodes by layer (similar Y coordinates)
-        const layers = new Map();
-        this.nodes.forEach(node => {
-            // Skip nodes without coordinates (expected for expanded compound/parallel states)
-            if (node.y === undefined || node.x === undefined) {
-                // Only warn for non-compound nodes that should have coordinates
-                if (node.type !== 'compound' && node.type !== 'parallel') {
-                    console.warn(`[LAYOUT] Node missing coordinates: ${node.id} (type=${node.type})`);
-                } else if (node.collapsed) {
-                    // Collapsed compound should have coordinates
-                    console.warn(`[LAYOUT] Collapsed compound missing coordinates: ${node.id}`);
-                } else {
-                    // Expanded compound - this is expected, children have coordinates
-                    console.log(`[LAYOUT] Skipping expanded compound (children have coordinates): ${node.id}`);
-                }
-                return;
-            }
-
-            let foundLayer = false;
-            for (const [layerY, nodesInLayer] of layers.entries()) {
-                if (Math.abs(node.y - layerY) < yTolerance) {
-                    nodesInLayer.push(node);
-                    foundLayer = true;
-                    break;
-                }
-            }
-            if (!foundLayer) {
-                layers.set(node.y, [node]);
-            }
-        });
-
-        // Distribute nodes horizontally within each layer
-        layers.forEach((nodesInLayer, layerY) => {
-            if (nodesInLayer.length === 1) {
-                // Single node: center it
-                nodesInLayer[0].x = centerX;
-            } else {
-                // Multiple nodes: distribute horizontally
-                const spacing = 140; // Horizontal spacing between nodes
-                const totalWidth = (nodesInLayer.length - 1) * spacing;
-                const startX = centerX - totalWidth / 2;
-
-                nodesInLayer.forEach((node, idx) => {
-                    node.x = startX + idx * spacing;
-                });
-            }
-        });
-
-        console.log(`Aligned nodes: ${layers.size} layer(s)`);
-        layers.forEach((nodesInLayer, layerY) => {
-            console.log(`  Layer y=${layerY.toFixed(1)}: ${nodesInLayer.length} node(s) - ${nodesInLayer.map(n => n.id).join(', ')}`);
-        });
-
-        // Invalidate ELK edge routing since node positions changed
+        // Invalidate ELK edge routing to use optimizer-calculated snap points
+        // ELK routing is only used during initial layout, afterward we use optimizer routing
         this.allLinks.forEach(link => {
-            delete link.elkSections;
+            if (link.elkSections) {
+                delete link.elkSections;
+            }
         });
-        console.log('Invalidated ELK edge routing for vertical alignment');
+        console.log('[LAYOUT] Invalidated ELK edge routing (will use optimizer routing)');
 
         // Optimize snap point assignments to minimize intersections
         console.log('Optimizing snap point assignments...');
@@ -746,6 +720,13 @@ class SCXMLVisualizer {
         compoundsWithDepth.forEach(({ node }) => {
             this.updateCompoundBounds(node);
         });
+
+        // Re-optimize snap points after compound bounds update
+        // Compound bounds changes affect node positions and sizes
+        if (compoundsWithDepth.length > 0) {
+            console.log('Re-optimizing snap points after compound bounds update...');
+            this.layoutOptimizer.optimizeSnapPointAssignments(this.allLinks, this.nodes);
+        }
 
         console.log('Layout application complete');
     }
@@ -1991,6 +1972,12 @@ class SCXMLVisualizer {
             });
         });
 
+        // Remove old snap points before rendering new ones
+        const oldSnapGroups = this.zoomContainer.selectAll('g.snap-points');
+        const removedCount = oldSnapGroups.size();
+        oldSnapGroups.remove();
+        console.log(`[RENDER SNAP] Removed ${removedCount} old snap-points groups`);
+
         // Render snap point circles
         const snapGroup = this.zoomContainer.append('g').attr('class', 'snap-points');
         console.log(`[RENDER SNAP] Creating snap group, data points: ${snapPointsData.length}`);
@@ -2001,8 +1988,8 @@ class SCXMLVisualizer {
             .append('circle')
             .attr('class', 'snap-point')
             .attr('cx', d => {
-                // Only log fail node snap points during drag
-                if (d.nodeId === 'fail' || d.nodeId === 's0') {
+                // Debug mode: log snap circle coordinates
+                if (this.debugMode) {
                     console.log(`[SNAP CIRCLE] ${d.nodeId} #${d.index}: cx=${d.x.toFixed(1)}, cy=${d.y.toFixed(1)}`);
                 }
                 return d.x;
@@ -2327,7 +2314,7 @@ class SCXMLVisualizer {
             const tx = end.x;
             const ty = end.y;
 
-            const MIN_SEGMENT = 30;
+            const MIN_SEGMENT = PATH_CONSTANTS.MIN_SEGMENT_LENGTH;
             const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
             const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
 
@@ -2584,7 +2571,7 @@ class SCXMLVisualizer {
         const cy = node.y || 0;
 
         if (node.type === 'atomic' || node.type === 'final') {
-            const halfWidth = 30;
+            const halfWidth = PATH_CONSTANTS.INITIAL_NODE_HALF_WIDTH;
             const halfHeight = 20;
 
             // **PRIORITY: Use routing if available (don't let direction override it)**
@@ -2897,6 +2884,11 @@ class SCXMLVisualizer {
             const tx = end.x;
             const ty = end.y;
 
+            // Debug mode: log path coordinates
+            if (this.debugMode) {
+                console.log(`[PATH DEBUG] ${link.source}→${link.target}: source=(${sx.toFixed(1)}, ${sy.toFixed(1)}), target=(${tx.toFixed(1)}, ${ty.toFixed(1)})`);
+            }
+
             const dx = Math.abs(tx - sx);
             const dy = Math.abs(ty - sy);
 
@@ -2909,7 +2901,7 @@ class SCXMLVisualizer {
             // Create orthogonal path based on edge directions with minimum segment lengths
             const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
             const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
-            const MIN_SEGMENT = 30;  // Minimum horizontal/vertical segment length
+            const MIN_SEGMENT = PATH_CONSTANTS.MIN_SEGMENT_LENGTH;  // Minimum horizontal/vertical segment length
 
             if (sourceIsVertical && targetIsVertical) {
                 // Both vertical edges: vertical-horizontal-vertical (5 points)
