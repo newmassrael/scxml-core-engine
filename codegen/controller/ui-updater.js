@@ -310,64 +310,8 @@ class UIUpdater {
     }
 
     updateTransitionInfo(detail) {
-        if (!this.controller.elements.transitionInfoPanel) return;
-
-        try {
-            if (!detail || !detail.source || !detail.target) {
-                this.controller.elements.transitionInfoPanel.innerHTML = '<div class="transition-hint">Click a transition to view details</div>';
-                return;
-            }
-
-            let html = '<div class="transition-details">';
-            
-            // Transition header: source → target
-            html += `<div class="transition-header">${this.controller.escapeHtml(detail.source)} → ${this.controller.escapeHtml(detail.target)}</div>`;
-
-            // Event field
-            if (detail.event) {
-                html += `<div class="transition-field">`;
-                html += `<span class="transition-field-label">Event:</span>`;
-                html += `<span class="transition-field-value">${this.controller.escapeHtml(detail.event)}</span>`;
-                html += `</div>`;
-            } else {
-                html += `<div class="transition-field">`;
-                html += `<span class="transition-field-label">Event:</span>`;
-                html += `<span class="transition-field-value">(eventless)</span>`;
-                html += `</div>`;
-            }
-
-            // Guard condition (W3C SCXML 3.12.1)
-            if (detail.cond) {
-                html += `<div class="transition-guard">`;
-                html += `<div class="transition-field">`;
-                html += `<span class="transition-field-label">Guard:</span>`;
-                html += `<span class="transition-field-value">${this.controller.escapeHtml(detail.cond)}</span>`;
-                html += `</div>`;
-                html += `</div>`;
-            }
-
-            // Actions (W3C SCXML 3.7)
-            if (detail.actions && detail.actions.length > 0) {
-                html += `<div class="transition-actions">`;
-                html += `<div class="transition-field">`;
-                html += `<span class="transition-field-label">Actions:</span>`;
-                html += `</div>`;
-                
-                detail.actions.forEach(action => {
-                    html += `<div class="transition-action-item">`;
-                    html += this.controller.formatAction(action);
-                    html += `</div>`;
-                });
-                
-                html += `</div>`;
-            }
-
-            html += '</div>';
-            this.controller.elements.transitionInfoPanel.innerHTML = html;
-        } catch (error) {
-            console.error('Error updating transition info:', error);
-            this.controller.elements.transitionInfoPanel.innerHTML = '<div class="error-message">Failed to load transition info</div>';
-        }
+        // No-op: Transition detail panel removed (only list panel remains)
+        // Transition info is shown in the transition-list-panel via setActiveTransition()
     }
 
     updateLog() {
@@ -484,8 +428,6 @@ class UIUpdater {
 
                 // Set active transition (permanent)
                 this.controller.visualizer.setActiveTransition(lastTransition);
-                // Update detail panel
-                this.updateTransitionInfo(lastTransition);
                 // Highlight in diagram (temporary)
                 this.controller.visualizer.highlightTransition(lastTransition);
                 console.log('[UPDATE TRANSITION] All transition updates complete');
