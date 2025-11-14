@@ -254,17 +254,17 @@ class InteractionHandler {
         const self = this;
         panel.querySelectorAll('.transition-list-item').forEach(item => {
             item.addEventListener('click', function() {
-                const index = parseInt(this.visualizer.getAttribute('data-transition-index'));
-                const transition = self.transitions[index];
+                const index = parseInt(this.getAttribute('data-transition-index'));
+                const transition = self.visualizer.transitions[index];
 
                 // Show transition animation on diagram (temporary)
                 self.highlightTransition(transition);
                 self.focusOnTransition(transition);
 
                 // Design System: Panel highlight animation (matches State Actions panel)
-                this.visualizer.classList.add('panel-highlighted');
+                this.classList.add('panel-highlighted');
                 setTimeout(() => {
-                    this.visualizer.classList.remove('panel-highlighted');
+                    this.classList.remove('panel-highlighted');
                 }, 3000);  // 3s animation duration
 
                 // Dispatch event for execution-controller to update detail panel
@@ -275,6 +275,9 @@ class InteractionHandler {
 
     setActiveTransition(transition) {
         console.log('[SET ACTIVE TRANSITION] Setting active transition:', transition);
+
+        // Store active transition for re-application after render
+        this.visualizer.activeTransition = transition;
 
         const panel = document.getElementById('transition-list-panel');
         const transitionId = transition ? `${transition.source}-${transition.target}` : null;
@@ -369,6 +372,9 @@ class InteractionHandler {
 
     clearActiveTransition() {
         console.log('[CLEAR ACTIVE] Clearing active transition state');
+
+        // Clear stored active transition
+        this.visualizer.activeTransition = null;
 
         // Clear panel active state
         const panel = document.getElementById('transition-list-panel');
