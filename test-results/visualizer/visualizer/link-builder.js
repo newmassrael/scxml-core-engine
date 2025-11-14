@@ -67,58 +67,113 @@ class LinkBuilder {
     }
 
     getVisibleLinks(allLinks, nodes) {
-        return allLinks.filter(link => {
-            const sourceNode = nodes.find(n => n.id === link.source);
-            const targetNode = nodes.find(n => n.id === link.target);
-
-            if (!sourceNode || !targetNode) return false;
-
+        if (this.visualizer.debugMode) {
+            console.log(`[GET VISIBLE LINKS] Processing ${allLinks.length} links...`);
+        }
+        return allLinks.map(link => {
             // Hide containment/delegation
             if (link.linkType === 'containment' || link.linkType === 'delegation') {
-                return false;
+                return null;
             }
 
             // Check hidden states
-            const sourceHidden = this.visualizer.findCollapsedAncestor(link.source, nodes);
-            const targetHidden = this.visualizer.findCollapsedAncestor(link.target, nodes);
+            const sourceHidden = this.findCollapsedAncestor(link.source, nodes);
+            const targetHidden = this.findCollapsedAncestor(link.target, nodes);
 
-            // Both hidden in same compound
+            // Both hidden in same compound - completely hide
             if (sourceHidden && targetHidden && sourceHidden.id === targetHidden.id) {
-                return false;
+                return null;
             }
 
-            // Source hidden, target is collapsed parent
-            if (sourceHidden && link.target === sourceHidden.id) {
-                return false;
+            // Create modified link - keep original data, add visual redirect fields
+            let modifiedLink = {
+                ...link,
+                originalLink: link,         // Store reference to original for routing sync
+                visualSource: link.source,  // Default to original
+                visualTarget: link.target   // Default to original
+            };
+
+            // Target hidden - visual redirect to collapsed ancestor (e.g., s1→p visually becomes s1→s2)
+            if (targetHidden && !sourceHidden) {
+                // Check if redirect would create self-loop (e.g., p→ps1 becomes p→p)
+                if (link.source === targetHidden.id) {
+                    if (this.visualizer.debugMode) {
+                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${link.source}→${targetHidden.id}, hiding link`);
+                }
+                    return null;
+                }
+                if (this.visualizer.debugMode) {
+                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: target hidden, redirect to ${targetHidden.id}`);
+                }
+                modifiedLink.visualTarget = targetHidden.id;
+                modifiedLink.originalTarget = link.target;  // Store for auto-expand
             }
 
-            return true;
-        });
+            // Source hidden - visual redirect to collapsed ancestor (e.g., p→fail visually becomes s2→fail)
+            if (sourceHidden && !targetHidden) {
+                // Check if redirect would create self-loop (e.g., s2→p becomes s2→s2)
+                if (link.target === sourceHidden.id) {
+                    if (this.visualizer.debugMode) {
+                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${sourceHidden.id}→${link.target}, hiding link`);
+                }
+                    return null;
+                }
+                if (this.visualizer.debugMode) {
+                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: source hidden, redirect from ${sourceHidden.id}`);
+                }
+                modifiedLink.visualSource = sourceHidden.id;
+                modifiedLink.originalSource = link.source;
+            }
+
+            // Both hidden in different ancestors - redirect both ends
+            if (sourceHidden && targetHidden && sourceHidden.id !== targetHidden.id) {
+                if (this.visualizer.debugMode) {
+                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: both hidden in different ancestors, redirecting ${sourceHidden.id}→${targetHidden.id}`);
+                }
+                modifiedLink.visualSource = sourceHidden.id;
+                modifiedLink.visualTarget = targetHidden.id;
+                modifiedLink.originalSource = link.source;
+                modifiedLink.originalTarget = link.target;
+            }
+
+            // **FINAL VALIDATION: Check if visual nodes exist in visible nodes**
+            const visualSourceNode = nodes.find(n => n.id === modifiedLink.visualSource);
+            const visualTargetNode = nodes.find(n => n.id === modifiedLink.visualTarget);
+
+            if (!visualSourceNode || !visualTargetNode) {
+                console.warn(`[GET VISIBLE LINKS] Skipping ${link.source}→${link.target}: visual nodes not found (${modifiedLink.visualSource}, ${modifiedLink.visualTarget})`);
+                return null;
+            }
+
+            return modifiedLink;
+        }).filter(link => link !== null);
     }
 
     findCollapsedAncestor(nodeId, nodes) {
-        // First check direct parent
-        for (const parent of nodes) {
-            if ((parent.type === 'compound' || parent.type === 'parallel') &&
-                parent.collapsed &&
-                parent.children &&
-                parent.children.includes(nodeId)) {
-                return parent;
-            }
+        let outermostCollapsed = null;
+        
+        // Find direct parent first
+        const parent = nodes.find(n => 
+            SCXMLVisualizer.isCompoundOrParallel(n) &&
+            n.children &&
+            n.children.includes(nodeId)
+        );
+        
+        if (!parent) {
+            return null;
         }
         
-        // Recursive check: check if parent has a collapsed ancestor
-        for (const parent of nodes) {
-            if ((parent.type === 'compound' || parent.type === 'parallel') &&
-                parent.children &&
-                parent.children.includes(nodeId)) {
-                const grandparent = this.visualizer.findCollapsedAncestor(parent.id, nodes);
-                if (grandparent) {
-                    return grandparent; // Return the collapsed ancestor, not the parent
-                }
-            }
+        // If parent is collapsed, remember it
+        if (parent.collapsed) {
+            outermostCollapsed = parent;
         }
         
-        return null;
+        // Recursively check if parent has collapsed ancestors
+        const grandparent = this.findCollapsedAncestor(parent.id, nodes);
+        if (grandparent) {
+            outermostCollapsed = grandparent;  // Prefer outermost
+        }
+        
+        return outermostCollapsed;
     }
 }
