@@ -122,8 +122,10 @@ bool InteractiveTestRunner::initialize() {
     // Initialize tracking variables
     currentStep_ = 0;
     previousActiveStates_.clear();
-    lastTransitionSource_.clear();
-    lastTransitionTarget_.clear();
+    // Preserve initial transition executed by start() for UI display
+    // start() already ran eventless transitions - don't clear(), read from StateMachine
+    lastTransitionSource_ = stateMachine_->getLastTransitionSource();
+    lastTransitionTarget_ = stateMachine_->getLastTransitionTarget();
     lastEventName_.clear();
 
     // Capture initial snapshot for true reset functionality
