@@ -141,6 +141,20 @@ body {
     stroke-width: 3px;
 }
 
+/* Collapsed compound state - inherits base .state rect style, only dashed border differs */
+.collapsed-state-rect {
+    fill: #ffffff;
+    stroke: var(--color-border);
+    stroke-width: 2px;
+    stroke-dasharray: 5,5;  /* Only difference: dashed border for collapsed state */
+    transition: all 0.2s ease;
+}
+
+.collapsed-state-rect:hover {
+    fill: var(--color-gray-light);
+    stroke: var(--color-gray-dark);
+}
+
 /* Active state highlighting */
 .state.active rect {
     fill: #ddf4ff;
@@ -150,6 +164,18 @@ body {
 }
 
 .state.active text {
+    fill: var(--color-blue);
+    font-weight: 600;
+}
+
+/* Active highlighting for collapsed compound states */
+.collapsed-compound.active .collapsed-state-rect {
+    fill: #ddf4ff;
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+}
+
+.collapsed-compound.active text {
     fill: var(--color-blue);
     font-weight: 600;
 }

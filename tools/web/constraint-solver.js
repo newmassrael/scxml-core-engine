@@ -41,13 +41,16 @@ class HardConstraints {
      * HC1: No initial edge blocking
      * Initial transition이 사용하는 edge는 다른 transition 사용 불가
      */
-    static validateInitialBlocking(link, sourceEdge, targetEdge, optimizer) {
+    static validateInitialBlocking(link, sourceEdge, targetEdge, optimizer, visualSourceId = null, visualTargetId = null) {
         if (link.linkType === 'initial') return true;
 
-        if (optimizer.hasInitialTransitionOnEdge(link.source, sourceEdge)) {
+        const sourceId = visualSourceId || link.source;
+        const targetId = visualTargetId || link.target;
+
+        if (optimizer.hasInitialTransitionOnEdge(sourceId, sourceEdge)) {
             return false; // FAIL: Source edge blocked
         }
-        if (optimizer.hasInitialTransitionOnEdge(link.target, targetEdge)) {
+        if (optimizer.hasInitialTransitionOnEdge(targetId, targetEdge)) {
             return false; // FAIL: Target edge blocked
         }
         return true; // PASS
@@ -172,8 +175,10 @@ class HardConstraints {
      * HC4: No bidirectional edge pair conflicts
      * 양방향 링크는 같은 edge pair를 반대 방향으로 사용할 수 없음
      */
-    static validateBidirectionalConflict(link, sourceEdge, targetEdge, assignment, reverseLinkMap) {
-        const reverseKey = `${link.target}→${link.source}`;
+    static validateBidirectionalConflict(link, sourceEdge, targetEdge, assignment, reverseLinkMap, visualSourceId = null, visualTargetId = null) {
+        const sourceId = visualSourceId || link.source;
+        const targetId = visualTargetId || link.target;
+        const reverseKey = `${targetId}→${sourceId}`;
         const reverseLink = reverseLinkMap.get(reverseKey);
 
         if (!reverseLink || !assignment.has(reverseLink.id)) {
@@ -198,8 +203,8 @@ class HardConstraints {
                        allNodes, assignment, reverseLinkMap, optimizer, debugLinkIndex = -1, parentChildMap = new Map()) {
         const debug = debugLinkIndex >= 0 && debugLinkIndex < 3; // Debug first 3 links
         
-        if (!this.validateInitialBlocking(link, sourceEdge, targetEdge, optimizer)) {
-            if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Initial blocking`);
+        if (!this.validateInitialBlocking(link, sourceEdge, targetEdge, optimizer, sourceNode.id, targetNode.id)) {
+            if (debug) console.log(`  [HC FAIL] ${sourceNode.id}→${targetNode.id} ${sourceEdge}→${targetEdge}: Initial blocking`);
             return false;
         }
         if (!this.validateNodeCollisions(combo, sourceNode, targetNode, allNodes, optimizer, parentChildMap)) {
@@ -210,8 +215,8 @@ class HardConstraints {
             if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Minimum distance`);
             return false;
         }
-        if (!this.validateBidirectionalConflict(link, sourceEdge, targetEdge, assignment, reverseLinkMap)) {
-            if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Bidirectional conflict`);
+        if (!this.validateBidirectionalConflict(link, sourceEdge, targetEdge, assignment, reverseLinkMap, sourceNode.id, targetNode.id)) {
+            if (debug) console.log(`  [HC FAIL] ${sourceNode.id}→${targetNode.id} ${sourceEdge}→${targetEdge}: Bidirectional conflict`);
             return false;
         }
         return true;
@@ -270,8 +275,8 @@ class SoftConstraints {
      * Matches snap point distribution logic in TransitionLayoutOptimizer.distributeSnapPointsOnEdges()
      */
     static simulateSnapPoints(link, combo, assignment, solver) {
-        const sourceNode = solver.nodeMap.get(link.source);
-        const targetNode = solver.nodeMap.get(link.target);
+        const sourceNode = solver.nodeMap.get(solver.getVisualSource(link));
+        const targetNode = solver.nodeMap.get(solver.getVisualTarget(link));
 
         if (!sourceNode || !targetNode) return combo;
 
@@ -344,8 +349,8 @@ class SoftConstraints {
 
         // Sort by other node position
         const sortByOtherNode = (a, b) => {
-            const aOther = solver.nodeMap.get(a.isSource ? a.link.target : a.link.source);
-            const bOther = solver.nodeMap.get(b.isSource ? b.link.target : b.link.source);
+            const aOther = solver.nodeMap.get(a.isSource ? solver.getVisualTarget(a.link) : solver.getVisualSource(a.link));
+            const bOther = solver.nodeMap.get(b.isSource ? solver.getVisualTarget(b.link) : solver.getVisualSource(b.link));
 
             if (!aOther || !bOther) return 0;
 
@@ -415,8 +420,10 @@ class SoftConstraints {
      * SC3: Prefer symmetry for bidirectional pairs
      * Bonus: -5000 (negative = reward)
      */
-    static scoreSymmetry(link, sourceEdge, targetEdge, assignment, reverseLinkMap) {
-        const reverseKey = `${link.target}→${link.source}`;
+    static scoreSymmetry(link, sourceEdge, targetEdge, assignment, reverseLinkMap, visualSourceId = null, visualTargetId = null) {
+        const sourceId = visualSourceId || link.source;
+        const targetId = visualTargetId || link.target;
+        const reverseKey = `${targetId}→${sourceId}`;
         const reverseLink = reverseLinkMap.get(reverseKey);
 
         if (!reverseLink || !assignment.has(reverseLink.id)) {
@@ -556,8 +563,8 @@ class SoftConstraints {
      * Example: p→ps1 transition may penetrate ps2 (sibling), but should avoid if alternative exists.
      */
     static scoreSiblingOverlap(link, combo, solver) {
-        const sourceNode = solver.nodeMap.get(link.source);
-        const targetNode = solver.nodeMap.get(link.target);
+        const sourceNode = solver.nodeMap.get(solver.getVisualSource(link));
+        const targetNode = solver.nodeMap.get(solver.getVisualTarget(link));
 
         if (!sourceNode || !targetNode) {
             log(`[SC5-DEBUG] ${link.id}: Missing nodes (source=${!!sourceNode}, target=${!!targetNode})`);
@@ -633,7 +640,7 @@ class SoftConstraints {
         const intersectionScore = this.scoreIntersections(link, combo, assignment, solver);
         const distanceScore = this.scoreDistance(combo);
         const symmetryBonus = this.scoreSymmetry(link, combo.sourceEdge, combo.targetEdge,
-                                                 assignment, reverseLinkMap);
+                                                 assignment, reverseLinkMap, solver.getVisualSource(link), solver.getVisualTarget(link));
         const selfOverlapScore = this.scoreSelfOverlap(combo);
         const siblingOverlapScore = this.scoreSiblingOverlap(link, combo, solver);
 
@@ -645,6 +652,15 @@ class SoftConstraints {
  * ConstraintSolver - Backtracking search with constraint propagation
  */
 class ConstraintSolver {
+    // Helper methods for visual redirect support
+    getVisualSource(link) {
+        return link.visualSource || link.source;
+    }
+
+    getVisualTarget(link) {
+        return link.visualTarget || link.target;
+    }
+
     constructor(links, nodes, optimizer, parentChildMap = new Map(), greedySolution = null, draggedNodeId = null) {
         this.links = links;
         this.nodes = nodes;
@@ -655,10 +671,12 @@ class ConstraintSolver {
         this.nodeMap = new Map(nodes.map(n => [n.id, n]));
         this.linkMap = new Map(links.map(l => [l.id, l]));
 
-        // Build reverse link map
+        // Build reverse link map (using visual node IDs for collapsed state support)
         this.reverseLinkMap = new Map();
         links.forEach(link => {
-            const key = `${link.source}→${link.target}`;
+            const visualSource = link.visualSource || link.source;
+            const visualTarget = link.visualTarget || link.target;
+            const key = `${visualSource}→${visualTarget}`;
             this.reverseLinkMap.set(key, link);
         });
 
@@ -666,8 +684,8 @@ class ConstraintSolver {
         const getDraggedNodeDistance = (link) => {
             if (!draggedNodeId) return 0;
 
-            const sourceNode = this.nodeMap.get(link.source);
-            const targetNode = this.nodeMap.get(link.target);
+            const sourceNode = this.nodeMap.get(this.getVisualSource(link));
+            const targetNode = this.nodeMap.get(this.getVisualTarget(link));
             const draggedNode = this.nodeMap.get(draggedNodeId);
 
             if (!sourceNode || !targetNode || !draggedNode) return Infinity;
@@ -793,14 +811,14 @@ class ConstraintSolver {
         this.assignment.set(link.id, { sourceEdge, targetEdge, combo, score });
 
         // Track source edge usage
-        const sourceKey = `${link.source}:${sourceEdge}`;
+        const sourceKey = `${this.getVisualSource(link)}:${sourceEdge}`;
         if (!this.edgeUsage.has(sourceKey)) {
             this.edgeUsage.set(sourceKey, new Set());
         }
         this.edgeUsage.get(sourceKey).add(link.id);
 
         // Track target edge usage
-        const targetKey = `${link.target}:${targetEdge}`;
+        const targetKey = `${this.getVisualTarget(link)}:${targetEdge}`;
         if (!this.edgeUsage.has(targetKey)) {
             this.edgeUsage.set(targetKey, new Set());
         }
@@ -846,8 +864,8 @@ class ConstraintSolver {
      * Get valid domain for a link (filter by hard constraints)
      */
     getValidDomain(link, linkIndex = -1) {
-        const sourceNode = this.nodeMap.get(link.source);
-        const targetNode = this.nodeMap.get(link.target);
+        const sourceNode = this.nodeMap.get(this.getVisualSource(link));
+        const targetNode = this.nodeMap.get(this.getVisualTarget(link));
 
         if (!sourceNode || !targetNode) return [];
 
@@ -887,7 +905,7 @@ class ConstraintSolver {
                 let passed = true;
                 let reason = '';
 
-                if (!HardConstraints.validateInitialBlocking(link, sourceEdge, targetEdge, this.optimizer)) {
+                if (!HardConstraints.validateInitialBlocking(link, sourceEdge, targetEdge, this.optimizer, this.getVisualSource(link), this.getVisualTarget(link))) {
                     passed = false;
                     reason = 'HC1: Initial blocking';
                 } else if (!HardConstraints.validateNodeCollisions(combo, sourceNode, targetNode, this.nodes, this.optimizer, this.parentChildMap)) {
@@ -896,7 +914,7 @@ class ConstraintSolver {
                 } else if (!HardConstraints.validateMinimumDistance(combo)) {
                     passed = false;
                     reason = 'HC3: Minimum distance';
-                } else if (!HardConstraints.validateBidirectionalConflict(link, sourceEdge, targetEdge, this.assignment, this.reverseLinkMap)) {
+                } else if (!HardConstraints.validateBidirectionalConflict(link, sourceEdge, targetEdge, this.assignment, this.reverseLinkMap, this.getVisualSource(link), this.getVisualTarget(link))) {
                     passed = false;
                     reason = 'HC4: Bidirectional conflict';
                 }
@@ -1007,7 +1025,11 @@ class ConstraintSolver {
             log(`[CSP BACKTRACK] No valid domain for ${link.source}→${link.target} (prune)`);
             // Log early link failures (helps debug complete failures)
             if (linkIndex < 3) {
-                console.log(`[CSP] Link #${linkIndex} ${link.source}→${link.target} has no valid domain - all combinations rejected by hard constraints`);
+                const visualSource = this.getVisualSource(link);
+                const visualTarget = this.getVisualTarget(link);
+                const redirectLabel = (visualSource !== link.source || visualTarget !== link.target)
+                    ? ` (visual: ${visualSource}→${visualTarget})` : '';
+                console.log(`[CSP] Link #${linkIndex} ${link.source}→${link.target}${redirectLabel} has no valid domain - all combinations rejected by hard constraints`);
             }
             this.pruneCount++;
             return false; // Backtrack
@@ -1015,7 +1037,11 @@ class ConstraintSolver {
 
         // Log domain size for early links (helps debug)
         if (linkIndex < 3) {
-            console.log(`[CSP] Link #${linkIndex} ${link.source}→${link.target}: ${validDomain.length} valid combinations`);
+            const visualSource = this.getVisualSource(link);
+            const visualTarget = this.getVisualTarget(link);
+            const redirectLabel = (visualSource !== link.source || visualTarget !== link.target)
+                ? ` (visual: ${visualSource}→${visualTarget})` : '';
+            console.log(`[CSP] Link #${linkIndex} ${link.source}→${link.target}${redirectLabel}: ${validDomain.length} valid combinations`);
         }
         log(`[CSP] ${link.source}→${link.target}: ${validDomain.length} valid combinations`);
 

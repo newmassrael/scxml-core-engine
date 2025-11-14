@@ -127,7 +127,9 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         # Add sub SCXML to dependencies and headers
         list(APPEND SUB_SCXML_DEPENDENCIES "${SUB_SCXML_FILE}")
         list(APPEND SUB_HEADER_DEPENDENCIES "${SUB_HEADER_FILE}")
-        set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} "${SUB_HEADER_FILE}" PARENT_SCOPE)
+        # Update both local scope (for line 228) and parent scope (for caller)
+        list(APPEND GENERATED_W3C_HEADERS "${SUB_HEADER_FILE}")
+        set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
     endforeach()
 
     # Step 1: TXML -> SCXML conversion with name attribute
@@ -224,8 +226,9 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         VERBATIM
     )
 
-    # Add to parent scope variable
-    set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} "${GENERATED_HEADER}" PARENT_SCOPE)
+    # Add to parent scope variable (update both local and parent scopes)
+    list(APPEND GENERATED_W3C_HEADERS "${GENERATED_HEADER}")
+    set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
 endfunction()
 
 # sce_generate_static_w3c_test_batch: Generate C++ code for multiple W3C tests

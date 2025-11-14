@@ -10,6 +10,24 @@ class SnapCalculator {
         this.optimizer = optimizer;
     }
 
+    /**
+     * Get visual source ID (for collapsed state redirect)
+     * @param {Object} link - Link object with optional visualSource
+     * @returns {string} Visual source node ID
+     */
+    getVisualSource(link) {
+        return link.visualSource || link.source;
+    }
+
+    /**
+     * Get visual target ID (for collapsed state redirect)
+     * @param {Object} link - Link object with optional visualTarget
+     * @returns {string} Visual target node ID
+     */
+    getVisualTarget(link) {
+        return link.visualTarget || link.target;
+    }
+
     predictEdge(source, target, isSourceEdge) {
         const sx = source.x || 0;
         const sy = source.y || 0;
@@ -63,7 +81,7 @@ class SnapCalculator {
     hasInitialTransitionOnEdge(nodeId, edge) {
         return this.optimizer.links.some(link => {
             if (link.linkType !== 'initial') return false;
-            if (link.target !== nodeId) return false;
+            if (this.getVisualTarget(link) !== nodeId) return false;
 
             // **PRIORITY: Use actual routing if available, fallback to prediction**
             if (link.routing && link.routing.targetEdge) {
@@ -71,8 +89,8 @@ class SnapCalculator {
             }
 
             // Fallback: Predict edge based on node positions
-            const source = this.optimizer.nodes.find(n => n.id === link.source);
-            const target = this.optimizer.nodes.find(n => n.id === link.target);
+            const source = this.optimizer.nodes.find(n => n.id === this.getVisualSource(link));
+            const target = this.optimizer.nodes.find(n => n.id === this.getVisualTarget(link));
             if (!source || !target) return false;
 
             const targetEdge = this.optimizer.predictEdge(source, target, false);
@@ -87,8 +105,8 @@ class SnapCalculator {
         const connections = [];
 
         this.optimizer.links.forEach(link => {
-            const source = this.optimizer.nodes.find(n => n.id === link.source);
-            const target = this.optimizer.nodes.find(n => n.id === link.target);
+            const source = this.optimizer.nodes.find(n => n.id === this.getVisualSource(link));
+            const target = this.optimizer.nodes.find(n => n.id === this.getVisualTarget(link));
             if (!source || !target) return;
 
             // **TWO-PASS: Use confirmed directions if available, otherwise predict**
@@ -105,7 +123,7 @@ class SnapCalculator {
             }
 
             // Check if this link uses the specified edge
-            if (link.source === nodeId) {
+            if (this.getVisualSource(link) === nodeId) {
                 // Outgoing from this node
                 if (sourceEdge === edge) {
                     connections.push({
@@ -116,7 +134,7 @@ class SnapCalculator {
                         otherNode: target
                     });
                 }
-            } else if (link.target === nodeId) {
+            } else if (this.getVisualTarget(link) === nodeId) {
                 // Incoming to this node
                 if (targetEdge === edge) {
                     connections.push({
@@ -194,8 +212,16 @@ class SnapCalculator {
     }
 
     calculateSnapPosition(nodeId, edge, linkId, direction) {
-        const node = this.optimizer.nodes.find(n => n.id === nodeId);
+        let node = this.optimizer.nodes.find(n => n.id === nodeId);
         if (!node) return null;
+
+        // If this node is a child of a collapsed parent, use the parent's coordinates instead
+        const collapsedParent = this.optimizer.nodes.find(p => p.collapsed && p.children && p.children.includes(nodeId));
+        if (collapsedParent) {
+            console.log(`[SNAP] ${nodeId} is child of collapsed ${collapsedParent.id}, using parent coordinates`);
+            node = collapsedParent;
+            nodeId = collapsedParent.id;
+        }
 
         const link = this.optimizer.links.find(l => l.id === linkId);
         if (!link) return null;
@@ -208,7 +234,7 @@ class SnapCalculator {
             // Get size from node object (uses actual dimensions if available)
             const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
 
-            console.log(`[SNAP INITIAL] ${nodeId} ${edge}: ${link.source}→${link.target} (INITIAL) type=${node.type}, size=${halfWidth}x${halfHeight}`);
+            console.log(`[SNAP INITIAL] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} (INITIAL) type=${node.type}, collapsed=${node.collapsed}, size=${halfWidth}x${halfHeight}`);
 
             if (edge === 'top') {
                 return { x: cx, y: cy - halfHeight, index: 0, count: 1 };
@@ -223,7 +249,7 @@ class SnapCalculator {
 
         // Block other transitions from using an edge that has an initial transition
         if (this.optimizer.hasInitialTransitionOnEdge(nodeId, edge)) {
-            console.log(`[SNAP BLOCKED] ${nodeId} ${edge}: ${link.source}→${link.target} blocked - initial transition owns this edge`);
+            console.log(`[SNAP BLOCKED] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} blocked - initial transition owns this edge`);
             return null;  // Force fallback to different edge or center
         }
 
@@ -268,7 +294,7 @@ class SnapCalculator {
         outgoingConns.sort((a, b) => sortByPosition(a, b, isHorizontal));
 
         // Determine which group this link belongs to and find its index
-        const isIncoming = (link.target === nodeId);
+        const isIncoming = (this.getVisualTarget(link) === nodeId);
         const group = isIncoming ? incomingConns : outgoingConns;
         const groupIndex = group.findIndex(c => c.link.id === linkId);
 
@@ -292,7 +318,7 @@ class SnapCalculator {
 
         const position = (absoluteIndex + 1) / (totalCount + 1);
 
-        console.log(`[SNAP] ${nodeId} ${edge}: ${link.source}→${link.target} (${isIncoming ? 'IN' : 'OUT'}) at ${groupIndex + 1}/${group.length} in group, absolute ${absoluteIndex + 1}/${totalCount}, position ${position.toFixed(3)}`);
+        console.log(`[SNAP] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} (${isIncoming ? 'IN' : 'OUT'}) at ${groupIndex + 1}/${group.length} in group, absolute ${absoluteIndex + 1}/${totalCount}, position ${position.toFixed(3)}`);
 
         // Calculate actual coordinates
         const cx = node.x || 0;
@@ -394,8 +420,8 @@ class SnapCalculator {
 
         // Calculate node collisions
         let nodeCollisions = 0;
-        const sourceNode = this.optimizer.nodes.find(n => n.id === link.source);
-        const targetNode = this.optimizer.nodes.find(n => n.id === link.target);
+        const sourceNode = this.optimizer.nodes.find(n => n.id === this.getVisualSource(link));
+        const targetNode = this.optimizer.nodes.find(n => n.id === this.getVisualTarget(link));
 
         if (sourceNode && this.optimizer.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
             nodeCollisions++;
@@ -405,7 +431,7 @@ class SnapCalculator {
         }
 
         this.optimizer.nodes.forEach(node => {
-            if (node.id === link.source || node.id === link.target) return;
+            if (node.id === this.getVisualSource(link) || node.id === this.getVisualTarget(link)) return;
             if (this.optimizer.pathIntersectsNode(combo, node)) {
                 nodeCollisions++;
             }
@@ -449,6 +475,8 @@ class SnapCalculator {
     }
 
     distributeSnapPointsOnEdges(links, nodes) {
+        console.log(`[DISTRIBUTE SNAP] Processing ${links.length} links, ${nodes.length} nodes`);
+        console.log(`[DISTRIBUTE SNAP] Node IDs: ${nodes.map(n => n.id).join(', ')}`);
         // Group links by node and edge (combine incoming and outgoing)
         // Note: Expects already filtered links (transition and initial only)
         const edgeGroups = new Map(); // Key: "nodeId:edge", Value: [links]
@@ -459,7 +487,7 @@ class SnapCalculator {
 
             // **SPECIAL: Initial transitions start from center, not edge**
             if (link.linkType === 'initial') {
-                const sourceNode = nodes.find(n => n.id === link.source);
+                const sourceNode = nodes.find(n => n.id === this.getVisualSource(link));
                 if (sourceNode && sourceNode.type === 'initial-pseudo') {
                     // Use center of initial pseudo-node
                     const centerPoint = {
@@ -470,11 +498,11 @@ class SnapCalculator {
                     if (link.routing) {
                         link.routing.sourcePoint = centerPoint;
                     }
-                    console.log(`[OPTIMIZE CSP] ${link.source}→${link.target} source at initial center: (${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
+                    console.log(`[OPTIMIZE CSP] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} source at initial center: (${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
                 }
 
                 // Still need to add target to edge group
-                const targetKey = `${link.target}:${link.routing.targetEdge}`;
+                const targetKey = `${this.getVisualTarget(link)}:${link.routing.targetEdge}`;
                 if (!edgeGroups.has(targetKey)) {
                     edgeGroups.set(targetKey, []);
                 }
@@ -482,8 +510,8 @@ class SnapCalculator {
                 return; // Skip adding source to edge group
             }
 
-            const sourceKey = `${link.source}:${link.routing.sourceEdge}`;
-            const targetKey = `${link.target}:${link.routing.targetEdge}`;
+            const sourceKey = `${this.getVisualSource(link)}:${link.routing.sourceEdge}`;
+            const targetKey = `${this.getVisualTarget(link)}:${link.routing.targetEdge}`;
 
             if (!edgeGroups.has(sourceKey)) {
                 edgeGroups.set(sourceKey, []);
@@ -498,25 +526,34 @@ class SnapCalculator {
 
         // For each edge group, distribute snap points evenly
         edgeGroups.forEach((group, key) => {
-            const [nodeId, edge] = key.split(':');
-            const node = nodes.find(n => n.id === nodeId);
+            let [nodeId, edge] = key.split(':');
+            let node = nodes.find(n => n.id === nodeId);
             if (!node) {
                 console.error(`[CSP ERROR] Node ${nodeId} not found!`);
                 return;
             }
 
+            // If this node is a child of a collapsed parent, use the parent's coordinates instead
+            // This handles visual redirect where hidden nodes (p) should use their collapsed parent (s2)
+            const collapsedParent = nodes.find(p => p.collapsed && p.children && p.children.includes(nodeId));
+            if (collapsedParent) {
+                console.log(`[CSP] ${nodeId} is child of collapsed ${collapsedParent.id}, using parent coordinates`);
+                node = collapsedParent;
+                nodeId = collapsedParent.id;
+            }
+
             const cx = node.x || 0;
             const cy = node.y || 0;
             const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
-            console.log(`[CSP DEBUG] ${nodeId}.${edge}: center=(${cx.toFixed(1)}, ${cy.toFixed(1)}), type=${node.type}, size=${halfWidth}x${halfHeight}`);
+            console.log(`[CSP DEBUG] ${nodeId}.${edge}: center=(${cx.toFixed(1)}, ${cy.toFixed(1)}), type=${node.type}, collapsed=${node.collapsed}, size=${halfWidth}x${halfHeight}`);
 
             // Separate incoming and outgoing, then sort each by other node position
             const incomingGroup = group.filter(item => !item.isSource);
             const outgoingGroup = group.filter(item => item.isSource);
 
             const sortByOtherNodePosition = (a, b) => {
-                const aNode = nodes.find(n => n.id === (a.isSource ? a.link.target : a.link.source));
-                const bNode = nodes.find(n => n.id === (b.isSource ? b.link.target : b.link.source));
+                const aNode = nodes.find(n => n.id === (a.isSource ? this.getVisualTarget(a.link) : this.getVisualSource(a.link)));
+                const bNode = nodes.find(n => n.id === (b.isSource ? this.getVisualTarget(b.link) : this.getVisualSource(b.link)));
 
                 if (edge === 'top' || edge === 'bottom') {
                     // Primary: Sort by horizontal position (x)
@@ -587,7 +624,7 @@ class SnapCalculator {
                 }
 
                 const direction = item.isSource ? 'source' : 'target';
-                console.log(`[OPTIMIZE CSP] ${item.link.source}→${item.link.target} ${direction} on ${nodeId}.${edge}: position ${index + 1}/${count} at (${x.toFixed(1)}, ${y.toFixed(1)})`);
+                console.log(`[OPTIMIZE CSP] ${this.getVisualSource(item.link)}→${this.getVisualTarget(item.link)} ${direction} on ${nodeId}.${edge}: position ${index + 1}/${count} at (${x.toFixed(1)}, ${y.toFixed(1)})`);
             });
         });
     }

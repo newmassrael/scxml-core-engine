@@ -45,6 +45,23 @@ class TransitionLayoutOptimizer {
         // If it's a node object with width/height, use actual dimensions
         if (typeof nodeOrType === 'object' && nodeOrType !== null) {
             const node = nodeOrType;
+
+            // Check if node is collapsed - use minimum size for collapsed compound/parallel states
+            if (node.collapsed && (node.type === 'compound' || node.type === 'parallel')) {
+                // Use LAYOUT_CONSTANTS from visualizer-core.js
+                if (typeof LAYOUT_CONSTANTS !== 'undefined') {
+                    return {
+                        halfWidth: LAYOUT_CONSTANTS.STATE_MIN_WIDTH / 2,
+                        halfHeight: LAYOUT_CONSTANTS.STATE_MIN_HEIGHT / 2
+                    };
+                }
+                // Fallback if LAYOUT_CONSTANTS not available
+                return {
+                    halfWidth: 70,   // Default STATE_MIN_WIDTH/2
+                    halfHeight: 25   // Default STATE_MIN_HEIGHT/2
+                };
+            }
+
             if (node.width !== undefined && node.height !== undefined) {
                 return {
                     halfWidth: node.width / 2,

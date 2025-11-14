@@ -11,14 +11,17 @@ class InteractionHandler {
     }
 
     updateLinks(useGreedy = false) {
-        // console.log(`[UPDATE LINKS] Called with useGreedy=${useGreedy}`);
+        if (this.visualizer.debugMode) {
+            console.log(`[UPDATE LINKS] Called with useGreedy=${useGreedy}`);
+        }
         if (!this.visualizer.linkElements || !this.visualizer.allLinks) {
-            // console.log('[UPDATE LINKS] Early return: linkElements or allLinks missing');
+            if (this.visualizer.debugMode) {
+                console.log('[UPDATE LINKS] Early return: linkElements or allLinks missing');
+            }
             return;
         }
 
-        // **INVALIDATE ROUTING: Clear routing for dragged nodes only**
-        // This allows dynamic recalculation during drag, while preserving routing otherwise
+        // **Get visibleLinks BEFORE optimization for filtering**
         const visibleLinks = this.visualizer.getVisibleLinks(this.visualizer.allLinks, this.visualizer.nodes);
 
         // Check if any node is being dragged
@@ -36,12 +39,20 @@ class InteractionHandler {
             // **ADAPTIVE ALGORITHM SELECTION**
             // - useGreedy=true: Fast greedy for real-time drag (1-5ms)
             // - useGreedy=false: Optimal CSP for final result (50-200ms)
-            this.visualizer.layoutOptimizer.optimizeSnapPointAssignments(this.visualizer.allLinks, this.visualizer.nodes, useGreedy);
+            // Use visibleLinks for optimization (only visible nodes)
+            this.visualizer.layoutOptimizer.optimizeSnapPointAssignments(visibleLinks, this.visualizer.nodes, useGreedy);
+
+            // Sync routing back to original allLinks
+            visibleLinks.forEach(vlink => {
+                if (vlink.routing && vlink.originalLink) {
+                    vlink.originalLink.routing = vlink.routing;
+                }
+            });
 
             // Calculate midY for new routing
             visibleLinks.forEach(link => {
-                const sourceNode = this.visualizer.nodes.find(n => n.id === link.source);
-                const targetNode = this.visualizer.nodes.find(n => n.id === link.target);
+                const sourceNode = this.visualizer.nodes.find(n => n.id === (link.visualSource || link.source));
+                const targetNode = this.visualizer.nodes.find(n => n.id === (link.visualTarget || link.target));
                 if (sourceNode && targetNode) {
                     this.visualizer.calculateLinkDirections(sourceNode, targetNode, link);
                 }
@@ -50,11 +61,24 @@ class InteractionHandler {
             // console.log('[DRAG UPDATE] Re-optimization complete');
         }
 
-        // Pass 2: Render with updated directions
+        // Pass 2: Rebind linkElements with updated visibleLinks data
+        // CRITICAL: linkElements was created by render() with old data
+        // We need to rebind with new visibleLinks that have updated routing
+        this.visualizer.linkElements = this.visualizer.linkElements
+            .data(visibleLinks, d => d.id);
+
+        // Pass 3: Render with updated directions
+        if (this.visualizer.debugMode) {
+            console.log(`[UPDATE LINKS] Updating ${this.visualizer.linkElements.size()} link paths`);
+        }
         this.visualizer.linkElements.attr('d', d => this.visualizer.getLinkPath(d));
 
         // Update transition labels if they exist
         if (this.visualizer.transitionLabels) {
+            // Rebind with updated visibleLinks data
+            this.visualizer.transitionLabels = this.visualizer.transitionLabels
+                .data(visibleLinks, d => d.id);
+            
             this.visualizer.transitionLabels
                 .attr('x', d => this.visualizer.getTransitionLabelPosition(d).x)
                 .attr('y', d => this.visualizer.getTransitionLabelPosition(d).y);
@@ -65,12 +89,20 @@ class InteractionHandler {
         const nodeMap = new Map(this.visualizer.nodes.map(n => [n.id, n]));
         
         if (this.visualizer.nodeElements) {
+            if (this.visualizer.debugMode) {
+                const nodeCount = this.visualizer.nodeElements.size();
+                console.log(`[UPDATE LINKS] Updating ${nodeCount} node DOM positions`);
+            }
             this.visualizer.nodeElements.each(function(nodeData) {
                 const latestNode = nodeMap.get(nodeData.id);
                 if (latestNode) {
                     d3.select(this).attr('transform', `translate(${latestNode.x}, ${latestNode.y})`);
                 }
             });
+        } else {
+            if (this.visualizer.debugMode) {
+                console.log('[UPDATE LINKS] nodeElements not found!');
+            }
         }
 
         // Update compound container visuals with latest positions
@@ -119,7 +151,7 @@ class InteractionHandler {
         // Auto-expand compound/parallel states that are active or have active children
         let needsReLayout = false;
         this.visualizer.nodes.forEach(node => {
-            if ((node.type === 'compound' || node.type === 'parallel') && node.collapsed) {
+            if (this.visualizer.constructor.isCompoundOrParallel(node) && node.collapsed) {
                 // Check if this node is active OR has any active children
                 const isActive = this.visualizer.activeStates.has(node.id);
                 const hasActiveChildren = node.children && node.children.some(childId => this.visualizer.activeStates.has(childId));
@@ -550,7 +582,113 @@ class InteractionHandler {
         state.collapsed = !state.collapsed;
         console.log(`Toggled ${stateId}: ${state.collapsed ? 'collapsed' : 'expanded'}`);
 
-        await this.visualizer.computeLayout();
+        // Update size based on collapsed state (preserve position)
+        state.width = this.visualizer.getNodeWidth(state);
+        state.height = this.visualizer.getNodeHeight(state);
+        console.log(`Updated ${stateId} size: ${state.width}x${state.height}`);
+
+        // Update compound bounds (both expand/collapse) and propagate to parent
+        if (!state.collapsed) {
+            console.log(`  → Expanded: updating compound bounds to fit children`);
+            
+            // Check if children have positions
+            const children = state.children
+                ?.map(childId => this.visualizer.nodes.find(n => n.id === childId))
+                .filter(child => child);
+            
+            const childrenWithCoords = children?.filter(child => 
+                child.x !== undefined && child.y !== undefined
+            );
+            
+            if (children && children.length > 0 && (!childrenWithCoords || childrenWithCoords.length === 0)) {
+                console.log(`  → Children missing coordinates, assigning default positions`);
+                // Assign default positions relative to parent
+                const padding = this.visualizer.constructor.COMPOUND_PADDING;
+                const topPadding = this.visualizer.constructor.COMPOUND_TOP_PADDING;
+                const childSpacing = 30;
+                let yOffset = state.y - state.height / 2 + topPadding;
+                
+                children.forEach((child, idx) => {
+                    child.x = state.x;
+                    child.y = yOffset;
+                    yOffset += (child.height || LAYOUT_CONSTANTS.STATE_MIN_HEIGHT) + childSpacing;
+                    console.log(`    → Assigned ${child.id}: (${child.x}, ${child.y})`);
+                });
+            }
+            
+            this.visualizer.updateCompoundBounds(state);
+        }
+        
+        // Always update parent bounds when child size changes
+        console.log(`  → Updating parent compound bounds after size change`);
+        const parent = this.visualizer.nodes.find(p =>
+            this.visualizer.constructor.isCompoundOrParallel(p) &&
+            p.children &&
+            p.children.includes(stateId)
+        );
+        if (parent) {
+            console.log(`  → Found parent: ${parent.id}, updating bounds`);
+            this.visualizer.updateCompoundBounds(parent);
+            console.log(`  → Parent ${parent.id} updated to size: ${parent.width}x${parent.height}`);
+        }
+
+        // Re-render to show/hide children with new size
         this.visualizer.render();
+
+        // Update transition paths with new snap points
+        // Clear routing to force recalculation
+        this.visualizer.allLinks.forEach(link => {
+            delete link.routing;
+        });
+
+        // Get visible nodes (collapsed ancestors hide their children)
+        const visibleNodes = this.visualizer.getVisibleNodes();
+        console.log(`[TOGGLE] Visible nodes after toggle: ${visibleNodes.map(n => n.id).join(', ')}`);
+
+        // Get visible links with visual redirect applied
+        const visibleLinks = this.visualizer.getVisibleLinks(this.visualizer.allLinks, visibleNodes);
+        console.log(`[TOGGLE] Visible links after filter: ${visibleLinks.length} links`);
+        visibleLinks.forEach(link => {
+            const vs = link.visualSource || link.source;
+            const vt = link.visualTarget || link.target;
+            if (vs !== link.source || vt !== link.target) {
+                console.log(`[TOGGLE] Visual redirect: ${link.source}→${link.target} becomes ${vs}→${vt}`);
+            }
+        });
+
+        // Re-optimize snap points with visibleLinks and visible nodes
+        this.visualizer.layoutOptimizer.optimizeSnapPointAssignments(visibleLinks, visibleNodes, false);
+
+        // Sync routing back to original allLinks
+        visibleLinks.forEach(vlink => {
+            if (vlink.routing && vlink.originalLink) {
+                vlink.originalLink.routing = vlink.routing;
+            }
+        });
+
+        // Re-render snap points with updated routing info
+        this.visualizer.renderSnapPoints(visibleNodes, visibleLinks);
+        console.log(`[TOGGLE] Re-rendered snap points after optimization`);
+
+        // Recalculate directions for visible links only
+        visibleLinks.forEach(link => {
+            const visualSourceId = link.visualSource || link.source;
+            const visualTargetId = link.visualTarget || link.target;
+            const sourceNode = visibleNodes.find(n => n.id === visualSourceId);
+            const targetNode = visibleNodes.find(n => n.id === visualTargetId);
+            if (sourceNode && targetNode) {
+                this.visualizer.calculateLinkDirections(sourceNode, targetNode, link);
+            }
+        });
+
+        // Update link visuals: rebind data with updated routing info, then update paths
+        // IMPORTANT: linkElements was created by render() with old visibleLinks
+        // We need to rebind with new visibleLinks that have updated routing
+        this.visualizer.linkElements = this.visualizer.linkElements
+            .data(visibleLinks, d => d.id);  // Rebind with new data (use id as key)
+        
+        this.visualizer.linkElements.attr('d', d => this.visualizer.getLinkPath(d));
+        
+        console.log(`[TOGGLE] Updated ${this.visualizer.linkElements.size()} link paths`);
     }
 }

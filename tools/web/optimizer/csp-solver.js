@@ -10,6 +10,24 @@ class CSPSolver {
         this.optimizer = optimizer;
     }
 
+    /**
+     * Get visual source ID (for collapsed state redirect)
+     * @param {Object} link - Link object with optional visualSource
+     * @returns {string} Visual source node ID
+     */
+    getVisualSource(link) {
+        return link.visualSource || link.source;
+    }
+
+    /**
+     * Get visual target ID (for collapsed state redirect)
+     * @param {Object} link - Link object with optional visualTarget
+     * @returns {string} Visual target node ID
+     */
+    getVisualTarget(link) {
+        return link.visualTarget || link.target;
+    }
+
     _handleProgressMessage(data, links, nodes, lastProgressRender) {
         if (data.data && data.data.type === 'solution_improved') {
             const now = performance.now();
@@ -397,8 +415,8 @@ class CSPSolver {
         links.forEach(link => {
             if (!link.routing) return;
 
-            const sourceNode = this.optimizer.nodes.find(n => n.id === link.source);
-            const targetNode = this.optimizer.nodes.find(n => n.id === link.target);
+            const sourceNode = this.optimizer.nodes.find(n => n.id === this.getVisualSource(link));
+            const targetNode = this.optimizer.nodes.find(n => n.id === this.getVisualTarget(link));
             if (!sourceNode || !targetNode) return;
 
             const combo = {
@@ -501,7 +519,7 @@ class CSPSolver {
                     assignment.targetEdge
                 );
 
-                console.log(`[CSP BACKGROUND UPDATE] ${link.source}→${link.target}: ${assignment.sourceEdge}→${assignment.targetEdge}`);
+                console.log(`[CSP BACKGROUND UPDATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: ${assignment.sourceEdge}→${assignment.targetEdge}`);
             }
         });
 
@@ -526,6 +544,8 @@ class CSPSolver {
     }
 
     optimizeSnapPointAssignmentsGreedy(links, nodes, draggedNodeId = null) {
+        console.log(`[OPTIMIZE GREEDY] Input: ${links.length} links, ${nodes.length} nodes`);
+        console.log(`[OPTIMIZE GREEDY] Node IDs: ${nodes.map(n => n.id).join(', ')}`);
         console.log('[OPTIMIZE GREEDY] Using greedy algorithm (fallback)...');
 
         // OPTIMIZATION: Cache CSP routing for links unaffected by drag
@@ -546,14 +566,14 @@ class CSPSolver {
         // Build map of reverse links
         const reverseLinkMap = new Map();
         links.forEach(link => {
-            const key = `${link.source}→${link.target}`;
+            const key = `${this.getVisualSource(link)}→${this.getVisualTarget(link)}`;
             reverseLinkMap.set(key, link);
         });
 
         // Assign optimal edges to each link (greedy selection)
         sortedLinks.forEach(link => {
-            const sourceNode = nodes.find(n => n.id === link.source);
-            const targetNode = nodes.find(n => n.id === link.target);
+            const sourceNode = nodes.find(n => n.id === this.getVisualSource(link));
+            const targetNode = nodes.find(n => n.id === this.getVisualTarget(link));
 
             if (!sourceNode || !targetNode) return;
 
@@ -564,7 +584,7 @@ class CSPSolver {
                 // Has dragged node and link has existing routing (from CSP)
 
                 // Direct connection to dragged node?
-                const isDirectlyConnected = (link.source === draggedNodeId || link.target === draggedNodeId);
+                const isDirectlyConnected = (this.getVisualSource(link) === draggedNodeId || this.getVisualTarget(link) === draggedNodeId);
 
                 if (!isDirectlyConnected) {
                     // Check distance to dragged node
@@ -592,7 +612,7 @@ class CSPSolver {
                 if (cachedCombo) {
                     assignedPaths.push(cachedCombo);
                     cachedCount++;
-                    console.log(`[OPTIMIZE GREEDY CACHE] ${link.source}→${link.target}: keeping CSP routing ${link.routing.sourceEdge}→${link.routing.targetEdge}`);
+                    console.log(`[OPTIMIZE GREEDY CACHE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: keeping CSP routing ${link.routing.sourceEdge}→${link.routing.targetEdge}`);
                     return; // Skip recalculation
                 }
             }
@@ -601,19 +621,19 @@ class CSPSolver {
             recalculatedCount++;
 
             // Check if reverse link exists and has routing assigned
-            const reverseKey = `${link.target}→${link.source}`;
+            const reverseKey = `${this.getVisualTarget(link)}→${this.getVisualSource(link)}`;
             const reverseLink = reverseLinkMap.get(reverseKey);
             const reverseRouting = (reverseLink && reverseLink.routing) ? reverseLink.routing : null;
 
             if (reverseRouting) {
-                console.log(`[BIDIRECTIONAL DETECT] ${link.source}→${link.target} has reverse link with routing: ${reverseRouting.sourceEdge}→${reverseRouting.targetEdge}`);
+                console.log(`[BIDIRECTIONAL DETECT] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} has reverse link with routing: ${reverseRouting.sourceEdge}→${reverseRouting.targetEdge}`);
             }
 
             // Get all possible combinations (exclude reverse edge pair if bidirectional)
             const combinations = this.optimizer.getAllPossibleSnapCombinations(link, sourceNode, targetNode, reverseRouting);
 
             if (combinations.length === 0) {
-                console.warn(`No valid snap combinations for ${link.source}→${link.target}`);
+                console.warn(`No valid snap combinations for ${this.getVisualSource(link)}→${this.getVisualTarget(link)}`);
                 return;
             }
 
@@ -776,7 +796,7 @@ class CSPSolver {
 
                 assignedPaths.push(bestCombination);
 
-                console.log(`[OPTIMIZE GREEDY] ${link.source}→${link.target}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, score=${bestScore.toFixed(1)}`);
+                console.log(`[OPTIMIZE GREEDY] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, score=${bestScore.toFixed(1)}`);
             }
         });
 
