@@ -11,8 +11,15 @@
  * - Immediate critical updates (solution_improved)
  */
 
-// Import the constraint solver (will be handled by Worker context)
-importScripts('constraint-solver.js', 'transition-layout-optimizer.js');
+// Import the constraint solver and optimizer modules (dependency order)
+importScripts(
+    'routing-state.js',
+    'optimizer/snap-calculator.js',
+    'optimizer/path-utils.js',
+    'optimizer/csp-solver.js',
+    'optimizer/optimizer-core.js',
+    'constraint-solver.js'
+);
 
 let currentSolver = null;
 

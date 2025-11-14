@@ -45,19 +45,39 @@ cp tools/web/primer.css "$DEST_DIR/"
 # Shared utilities (DRY Principle)
 cp tools/web/utils.js "$DEST_DIR/"
 
-# Core visualizer
-cp tools/web/scxml-visualizer.js "$DEST_DIR/"
-
 # Layout and routing
 cp tools/web/constraint-solver.js "$DEST_DIR/"
 cp tools/web/constraint-solver-worker.js "$DEST_DIR/"
-cp tools/web/transition-layout-optimizer.js "$DEST_DIR/"
 cp tools/web/edge-direction-utils.js "$DEST_DIR/"
 cp tools/web/routing-state.js "$DEST_DIR/"
 
-# Controllers and managers
-cp tools/web/execution-controller.js "$DEST_DIR/"
+# Visualizer manager
 cp tools/web/visualizer-manager.js "$DEST_DIR/"
+
+# Transition Layout Optimizer Modules
+mkdir -p "$DEST_DIR/optimizer"
+cp tools/web/optimizer/snap-calculator.js "$DEST_DIR/optimizer/"
+cp tools/web/optimizer/path-utils.js "$DEST_DIR/optimizer/"
+cp tools/web/optimizer/csp-solver.js "$DEST_DIR/optimizer/"
+cp tools/web/optimizer/optimizer-core.js "$DEST_DIR/optimizer/"
+
+# SCXML Visualizer Modules
+mkdir -p "$DEST_DIR/visualizer"
+cp tools/web/visualizer/node-builder.js "$DEST_DIR/visualizer/"
+cp tools/web/visualizer/link-builder.js "$DEST_DIR/visualizer/"
+cp tools/web/visualizer/layout-manager.js "$DEST_DIR/visualizer/"
+cp tools/web/visualizer/path-calculator.js "$DEST_DIR/visualizer/"
+cp tools/web/visualizer/renderer.js "$DEST_DIR/visualizer/"
+cp tools/web/visualizer/interaction-handler.js "$DEST_DIR/visualizer/"
+cp tools/web/visualizer/visualizer-core.js "$DEST_DIR/visualizer/"
+
+# Execution Controller Modules
+mkdir -p "$DEST_DIR/controller"
+cp tools/web/controller/formatters.js "$DEST_DIR/controller/"
+cp tools/web/controller/ui-updater.js "$DEST_DIR/controller/"
+cp tools/web/controller/control-handler.js "$DEST_DIR/controller/"
+cp tools/web/controller/breadcrumb-manager.js "$DEST_DIR/controller/"
+cp tools/web/controller/controller-core.js "$DEST_DIR/controller/"
 
 # Main entry point
 cp tools/web/main.js "$DEST_DIR/"
@@ -73,4 +93,11 @@ echo "✅ Visualizer files deployed to $DEST_DIR"
 # List deployed JavaScript files for verification
 echo ""
 echo "Deployed JavaScript modules:"
-ls -1 "$DEST_DIR"/*.js | sed 's/.*\//  - /'
+echo "  Core files:"
+ls -1 "$DEST_DIR"/*.js 2>/dev/null | sed 's/.*\//    - /' || echo "    (none)"
+echo "  Optimizer modules:"
+ls -1 "$DEST_DIR/optimizer"/*.js 2>/dev/null | sed 's/.*\//    - /' || echo "    (none)"
+echo "  Visualizer modules:"
+ls -1 "$DEST_DIR/visualizer"/*.js 2>/dev/null | sed 's/.*\//    - /' || echo "    (none)"
+echo "  Controller modules:"
+ls -1 "$DEST_DIR/controller"/*.js 2>/dev/null | sed 's/.*\//    - /' || echo "    (none)"
