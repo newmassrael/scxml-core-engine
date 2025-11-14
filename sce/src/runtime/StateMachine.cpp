@@ -2483,13 +2483,24 @@ bool StateMachine::executeTransitionDirect(IStateNode *sourceState, std::shared_
     stats_.totalTransitions++;
 
     // W3C SCXML 3.13: Track last executed transition for interactive visualizer
-    lastTransitionSource_ = fromState;
-    lastTransitionTarget_ = targetState;
-    LOG_DEBUG("W3C SCXML 3.13: Eventless transition executed: {} -> {}", fromState, targetState);
+    // Only update if at deeper recursion level (preserves actual last transition in eventless chains)
+    if (eventlessRecursionDepth_ == 0 || eventlessRecursionDepth_ > lastTransitionDepth_) {
+        lastTransitionSource_ = fromState;
+        lastTransitionTarget_ = targetState;
+        lastTransitionDepth_ = eventlessRecursionDepth_;
+        LOG_DEBUG("W3C SCXML 3.13: Eventless transition executed (depth {}): {} -> {}", eventlessRecursionDepth_,
+                  fromState, targetState);
+    } else {
+        LOG_DEBUG("W3C SCXML 3.13: Eventless transition at depth {} skipped (preserving depth {}): {} -> {}",
+                  eventlessRecursionDepth_, lastTransitionDepth_, fromState, targetState);
+    }
     return true;
 }
 
 bool StateMachine::checkEventlessTransitions() {
+    // Track recursion depth for visualizer transition tracking
+    ++eventlessRecursionDepth_;
+
     // W3C SCXML 3.13: Eventless Transition Selection Algorithm
     //
     // 1. For each active state (reverse document order):
@@ -2503,6 +2514,10 @@ bool StateMachine::checkEventlessTransitions() {
     // Internal transitions count as "first" and prevent further checking
 
     if (!model_) {
+        --eventlessRecursionDepth_;
+        if (eventlessRecursionDepth_ == 0) {
+            lastTransitionDepth_ = 0;
+        }
         return false;
     }
 
@@ -2563,6 +2578,10 @@ bool StateMachine::checkEventlessTransitions() {
 
     if (!firstEnabledState) {
         LOG_DEBUG("SCXML: No eventless transitions found");
+        --eventlessRecursionDepth_;
+        if (eventlessRecursionDepth_ == 0) {
+            lastTransitionDepth_ = 0;
+        }
         return false;
     }
 
@@ -2571,7 +2590,12 @@ bool StateMachine::checkEventlessTransitions() {
     // to avoid side effects (e.g., ++var1 would increment twice - W3C test 444)
     if (!parallelAncestor) {
         LOG_DEBUG("SCXML: Single eventless transition (non-parallel)");
-        return executeTransitionDirect(firstEnabledState, firstTransition);
+        bool result = executeTransitionDirect(firstEnabledState, firstTransition);
+        --eventlessRecursionDepth_;
+        if (eventlessRecursionDepth_ == 0) {
+            lastTransitionDepth_ = 0;
+        }
+        return result;
     }
 
     // W3C SCXML 3.13: Parallel state - collect ALL eventless transitions from all regions
@@ -2702,6 +2726,10 @@ bool StateMachine::checkEventlessTransitions() {
 
     if (enabledTransitions.empty()) {
         LOG_DEBUG("W3C SCXML Appendix D.2: All transitions preempted by conflict resolution");
+        --eventlessRecursionDepth_;
+        if (eventlessRecursionDepth_ == 0) {
+            lastTransitionDepth_ = 0;
+        }
         return false;
     }
 
@@ -2766,6 +2794,10 @@ bool StateMachine::checkEventlessTransitions() {
         }
     }
 
+    --eventlessRecursionDepth_;
+    if (eventlessRecursionDepth_ == 0) {
+        lastTransitionDepth_ = 0;
+    }
     return success;
 }
 

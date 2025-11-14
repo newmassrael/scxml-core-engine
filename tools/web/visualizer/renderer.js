@@ -901,7 +901,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     this.visualizer.highlightTransition(d);
                     this.visualizer.focusOnTransition(d);
 
-                    // Dispatch event for execution-controller to update detail panel
+                    // Dispatch event for cross-component communication (diagram -> list panel sync)
                     document.dispatchEvent(new CustomEvent('transition-click', { detail: d }));
                 }
             });

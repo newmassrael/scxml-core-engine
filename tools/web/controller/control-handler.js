@@ -58,9 +58,12 @@ class ControlHandler {
         
         document.addEventListener('keydown', this.controller.keyboardHandler);
 
-        // W3C SCXML 3.3: Transition click event handler
+        // W3C SCXML 3.3: Transition click event handler (diagram -> list panel sync)
         this.controller.transitionClickHandler = (event) => {
-            this.controller.updateTransitionInfo(event.detail);
+            // When diagram transition is clicked, highlight in list panel (temporary)
+            if (event.detail && event.detail.source && event.detail.target) {
+                this.controller.highlightTransitionInPanel(event.detail);
+            }
         };
         document.addEventListener('transition-click', this.controller.transitionClickHandler);
 
@@ -203,6 +206,50 @@ class ControlHandler {
         }
     }
 
+    highlightTransitionInPanel(transition) {
+        if (!transition || !transition.source || !transition.target) return;
+
+        try {
+            const transitionId = `${transition.source}-${transition.target}`;
+            console.log(`[Highlight Panel] Highlighting transition in panel: ${transitionId}`);
+
+            const panel = document.getElementById('transition-list-panel');
+            if (!panel) return;
+
+            // Find the transition list item
+            const transitionItems = panel.querySelectorAll('.transition-list-item');
+            
+            // Remove previous highlights
+            transitionItems.forEach(item => {
+                item.classList.remove('panel-highlighted');
+            });
+
+            // Add highlight to the clicked transition's item
+            const targetItem = panel.querySelector(`[data-transition-id="${transitionId}"]`);
+            if (targetItem) {
+                targetItem.classList.add('panel-highlighted');
+                
+                // Scroll into view (matches State Actions panel behavior)
+                targetItem.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest'
+                });
+                
+                console.log(`[Highlight Panel] Added highlight to: ${transitionId}`);
+            }
+
+            // Remove highlight after animation duration
+            setTimeout(() => {
+                transitionItems.forEach(item => {
+                    item.classList.remove('panel-highlighted');
+                });
+                console.log(`[Highlight Panel] Removed highlight from transition panel`);
+            }, PANEL_HIGHLIGHT_DURATION);
+        } catch (error) {
+            console.error('Error highlighting transition in panel:', error);
+        }
+    }
+
     showMessage(message, type = 'info') {
         console.log(`[${type.toUpperCase()}] ${message}`);
     }
@@ -239,7 +286,6 @@ class ControlHandler {
             const executedTransition = this.controller.runner.getLastTransition();
             if (executedTransition && executedTransition.source && executedTransition.target) {
                 this.controller.visualizer.setActiveTransition(executedTransition);
-                this.controller.updateTransitionInfo(executedTransition);
                 this.controller.visualizer.highlightTransition(executedTransition);
             }
 
@@ -279,7 +325,6 @@ class ControlHandler {
             if (restoredTransition && restoredTransition.source && restoredTransition.target) {
                 console.log(`[STEP BACK] Setting active transition: ${restoredTransition.source} → ${restoredTransition.target}`);
                 this.controller.visualizer.setActiveTransition(restoredTransition);
-                this.controller.updateTransitionInfo(restoredTransition);
                 this.controller.visualizer.highlightTransition(restoredTransition);
             } else {
                 console.log(`[STEP BACK] No transition at step ${this.controller.currentStep}, clearing active state`);
