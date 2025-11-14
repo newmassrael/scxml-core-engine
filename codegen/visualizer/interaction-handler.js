@@ -230,8 +230,7 @@ class InteractionHandler {
             return;
         }
 
-        let html = '<div class="transition-list">';
-        html += '<div class="transition-list-header">All Transitions</div>';
+        let html = '';
 
         this.visualizer.transitions.forEach((transition, index) => {
             const transitionId = `${transition.source}-${transition.target}`;
@@ -247,7 +246,6 @@ class InteractionHandler {
             `;
         });
 
-        html += '</div>';
         panel.innerHTML = html;
 
         // Add click handlers
@@ -265,10 +263,7 @@ class InteractionHandler {
                 this.classList.add('panel-highlighted');
                 setTimeout(() => {
                     this.classList.remove('panel-highlighted');
-                }, 3000);  // 3s animation duration
-
-                // Dispatch event for execution-controller to update detail panel
-                document.dispatchEvent(new CustomEvent('transition-click', { detail: transition }));
+                }, 3000);  // 3s (PANEL_HIGHLIGHT_DURATION in controller-core.js)
             });
         });
     }
@@ -299,12 +294,17 @@ class InteractionHandler {
 
         // Set active state on matching item (panel + diagram)
         if (transitionId) {
-            // Panel: Set active state
+            // Panel: Set active state and auto-scroll
             if (panel) {
                 const activeItem = panel.querySelector(`[data-transition-id="${transitionId}"]`);
                 if (activeItem) {
                     activeItem.classList.add('active');
-                    console.log('[SET ACTIVE TRANSITION] Panel active state set on:', transitionId);
+                    // Auto-scroll into view (matches State Actions panel behavior)
+                    activeItem.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'nearest'
+                    });
+                    console.log('[SET ACTIVE TRANSITION] Panel active state set and scrolled to:', transitionId);
                 }
             }
 
@@ -396,12 +396,6 @@ class InteractionHandler {
 
         // Clear diagram highlights (SVG - temporary .highlighted class)
         this.visualizer.clearTransitionHighlights();
-
-        // Clear detail panel
-        const detailPanel = document.getElementById('transition-detail-panel');
-        if (detailPanel) {
-            detailPanel.innerHTML = '<div class="transition-hint">Click a transition to view details</div>';
-        }
     }
 
     highlightTransition(transition) {
