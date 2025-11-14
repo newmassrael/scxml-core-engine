@@ -1106,10 +1106,15 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
         // Render transition list
         this.visualizer.renderTransitionList();
-        
+
         // Re-apply active state highlights after render
         if (this.visualizer.activeStates && this.visualizer.activeStates.size > 0) {
             this.visualizer.highlightActiveStatesVisual();
+        }
+
+        // Re-apply active transition after render (renderTransitionList recreates HTML)
+        if (this.visualizer.activeTransition) {
+            this.visualizer.setActiveTransition(this.visualizer.activeTransition);
         }
 
         console.log('[RENDER END] ========== Completed render() ==========');

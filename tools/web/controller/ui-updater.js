@@ -480,48 +480,7 @@ class UIUpdater {
             if (lastTransition && lastTransition.source && lastTransition.target) {
                 console.log(`[UPDATE TRANSITION] Valid transition: ${lastTransition.source} → ${lastTransition.target}`);
 
-                // Auto-expand collapsed states containing transition source or target
-                const sourceNode = this.controller.visualizer.nodes.find(
-                    n => n.id === lastTransition.source
-                );
-                const targetNode = this.controller.visualizer.nodes.find(
-                    n => n.id === lastTransition.target
-                );
-                
-                let needsRelayout = false;
-                
-                // Check if source is hidden in collapsed ancestor
-                if (sourceNode) {
-                    const sourceCollapsed = this.controller.visualizer.findCollapsedAncestor(
-                        lastTransition.source,
-                        this.controller.visualizer.nodes
-                    );
-                    
-                    if (sourceCollapsed) {
-                        console.log(`[AUTO-EXPAND] Expanding ${sourceCollapsed.id} to reveal transition source ${lastTransition.source}`);
-                        sourceCollapsed.collapsed = false;
-                        needsRelayout = true;
-                    }
-                }
-                
-                // Check if target is hidden in collapsed ancestor
-                if (targetNode) {
-                    const targetCollapsed = this.controller.visualizer.findCollapsedAncestor(
-                        lastTransition.target,
-                        this.controller.visualizer.nodes
-                    );
-                    
-                    if (targetCollapsed) {
-                        console.log(`[AUTO-EXPAND] Expanding ${targetCollapsed.id} to reveal transition target ${lastTransition.target}`);
-                        targetCollapsed.collapsed = false;
-                        needsRelayout = true;
-                    }
-                }
-                
-                // Relayout once if any expansion occurred
-                if (needsRelayout) {
-                    this.controller.visualizer.relayout();
-                }
+                // Note: Auto-expansion is handled by InteractionHandler.highlightActiveStates()
 
                 // Set active transition (permanent)
                 this.controller.visualizer.setActiveTransition(lastTransition);
