@@ -42,7 +42,7 @@ class NodeBuilder {
             };
 
             // Debug: Log children arrays for compound/parallel states
-            if ((state.type === 'compound' || state.type === 'parallel') && node.children.length > 0) {
+            if (SCXMLVisualizer.isCompoundOrParallel(state) && node.children.length > 0) {
                 console.log(`[buildNodes] ${state.id} (${state.type}) has children: ${node.children.join(', ')}`);
             }
 
@@ -54,8 +54,8 @@ class NodeBuilder {
 
     getNodeWidth(node) {
         if (node.type === 'initial-pseudo') return 20;
-        if (node.type === 'compound' || node.type === 'parallel') {
-            return node.collapsed ? 120 : 300;
+        if (SCXMLVisualizer.isCompoundOrParallel(node)) {
+            return node.collapsed ? LAYOUT_CONSTANTS.STATE_MIN_WIDTH : 300;
         }
 
         // Calculate width based on text content (generous estimates for ELK layout)
@@ -92,7 +92,7 @@ class NodeBuilder {
 
     getNodeHeight(node) {
         if (node.type === 'initial-pseudo') return 20;
-        if (node.type === 'compound' || node.type === 'parallel') {
+        if (SCXMLVisualizer.isCompoundOrParallel(node)) {
             return node.collapsed ? 50 : 200;
         }
 

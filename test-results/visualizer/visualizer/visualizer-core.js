@@ -45,6 +45,11 @@ class SCXMLVisualizer {
     static COMPOUND_PADDING = 25;
     static COMPOUND_TOP_PADDING = 50;
     
+    // Helper: Check if node is compound or parallel type
+    static isCompoundOrParallel(node) {
+        return node && (node.type === 'compound' || node.type === 'parallel');
+    }
+    
     constructor(containerId, scxmlStructure) {
         this.container = d3.select(`#${containerId}`);
         this.states = scxmlStructure.states || [];
@@ -81,7 +86,7 @@ class SCXMLVisualizer {
         console.log(`Initial state: ${this.initialState}`);
         console.log(`States: ${this.states.length}, Transitions: ${this.transitions.length}`);
 
-        if (DEBUG_MODE) {
+        if (this.debugMode) {
             console.log('[DEBUG] Transition details:', this.transitions);
         }
 
@@ -156,24 +161,34 @@ class SCXMLVisualizer {
     }
 
     async computeLayout() {
-        console.log('Computing ELK layout...');
+        if (this.debugMode) {
+            console.log('Computing ELK layout...');
+        }
 
         const elkGraph = this.buildELKGraph();
         const layouted = await this.elk.layout(elkGraph);
 
         this.applyELKLayout(layouted);
 
-        console.log('ELK layout computed');
+        if (this.debugMode) {
+            console.log('ELK layout computed');
+        }
     }
 
     // Delegate methods to helper modules
     buildNodes() { return this.nodeBuilder.buildNodes(); }
     getNodeWidth(node) { return this.nodeBuilder.getNodeWidth(node); }
     getNodeHeight(node) { return this.nodeBuilder.getNodeHeight(node); }
-    getVisibleNodes() { return this.nodeBuilder.getVisibleNodes(); }
+    getVisibleNodes() { 
+        // Always recalculate - visibility is cheap and critical to be correct
+        return this.nodeBuilder.getVisibleNodes();
+    }
 
     buildLinks() { return this.linkBuilder.buildLinks(); }
-    getVisibleLinks(allLinks, nodes) { return this.linkBuilder.getVisibleLinks(allLinks, nodes); }
+    getVisibleLinks(allLinks, nodes) {
+        // Always recalculate - link visibility depends on node states
+        return this.linkBuilder.getVisibleLinks(allLinks, nodes);
+    }
     findCollapsedAncestor(nodeId, nodes) { return this.linkBuilder.findCollapsedAncestor(nodeId, nodes); }
 
     buildELKGraph() { return this.layoutManager.buildELKGraph(); }
@@ -184,8 +199,8 @@ class SCXMLVisualizer {
     getAllDescendantIds(parentId) { return this.layoutManager.getAllDescendantIds(parentId); }
 
     render() { return this.renderer.render(); }
-    generateSnapPointsData(visibleNodes) { return this.renderer.generateSnapPointsData(visibleNodes); }
-    renderSnapPoints(visibleNodes) { return this.renderer.renderSnapPoints(visibleNodes); }
+    generateSnapPointsData(visibleNodes, visibleLinks = null) { return this.renderer.generateSnapPointsData(visibleNodes, visibleLinks); }
+    renderSnapPoints(visibleNodes, visibleLinks = null) { return this.renderer.renderSnapPoints(visibleNodes, visibleLinks); }
     updateSnapPointPositions() { return this.renderer.updateSnapPointPositions(); }
     getDirectionForEdge(edge) { return this.renderer.getDirectionForEdge(edge); }
     getActionTextLeftMargin(node) { return this.renderer.getActionTextLeftMargin(node); }
@@ -204,8 +219,8 @@ class SCXMLVisualizer {
     verticalLineIntersectsNode(node, x, y1, y2) { return this.pathCalculator.verticalLineIntersectsNode(node, x, y1, y2); }
     getObstacleNodes(sourceId, targetId) { return this.pathCalculator.getObstacleNodes(sourceId, targetId); }
     findCollisionFreeY(x, y, direction, obstacles, margin = 20) { return this.pathCalculator.findCollisionFreeY(x, y, direction, obstacles, margin); }
-    calculateLinkDirections(link, sourceNode, targetNode) { return this.pathCalculator.calculateLinkDirections(link, sourceNode, targetNode); }
-    createOrthogonalPath(link, sourceNode, targetNode, snapConfig) { return this.pathCalculator.createOrthogonalPath(link, sourceNode, targetNode, snapConfig); }
+    calculateLinkDirections(sourceNode, targetNode, link) { return this.pathCalculator.calculateLinkDirections(sourceNode, targetNode, link); }
+    createOrthogonalPath(sourceNode, targetNode, link, snapConfig) { return this.pathCalculator.createOrthogonalPath(sourceNode, targetNode, link, snapConfig); }
     getLinkPath(link) { return this.pathCalculator.getLinkPath(link); }
 
     updateLinks(fastMode = false) { return this.interactionHandler.updateLinks(fastMode); }

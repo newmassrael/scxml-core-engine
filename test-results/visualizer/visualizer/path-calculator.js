@@ -232,7 +232,7 @@ class PathCalculator {
                 x: cx + ndx * t,
                 y: cy + ndy * t
             };
-        } else if (node.type === 'compound' || node.type === 'parallel') {
+        } else if (SCXMLVisualizer.isCompoundOrParallel(node)) {
             // Use node's width and height
             const halfWidth = (node.width || 60) / 2;
             const halfHeight = (node.height || 40) / 2;
@@ -450,7 +450,7 @@ class PathCalculator {
                 top: cy - 20,
                 bottom: cy + 20
             };
-        } else if (node.type === 'compound' || node.type === 'parallel') {
+        } else if (SCXMLVisualizer.isCompoundOrParallel(node)) {
             const halfWidth = (node.width || 60) / 2;
             const halfHeight = (node.height || 40) / 2;
             return {
@@ -574,7 +574,12 @@ class PathCalculator {
 
         // **FALLBACK: routing should always exist after optimizer runs for transition/initial links**
         // Containment and delegation links don't have routing (hierarchical structure, not routing path)
-        if (link.linkType !== 'containment' && link.linkType !== 'delegation') {
+        // Skip warning if either node lacks coordinates (expected when ELK doesn't layout nested hierarchies)
+        const hasCoords = sourceNode && targetNode &&
+                         sourceNode.x !== undefined && sourceNode.y !== undefined &&
+                         targetNode.x !== undefined && targetNode.y !== undefined;
+
+        if (link.linkType !== 'containment' && link.linkType !== 'delegation' && hasCoords) {
             console.warn(`[CALC DIR WARNING] ${link.source}→${link.target}: No routing found! Optimizer should have run first.`);
         }
     }
@@ -692,7 +697,12 @@ class PathCalculator {
 
         // **FALLBACK: routing should always exist after optimizer runs for transition/initial links**
         // Containment and delegation links don't have routing (hierarchical structure, not routing path)
-        if (link.linkType !== 'containment' && link.linkType !== 'delegation') {
+        // Skip warning if either node lacks coordinates (expected when ELK doesn't layout nested hierarchies)
+        const hasCoords = sourceNode && targetNode &&
+                         sourceNode.x !== undefined && sourceNode.y !== undefined &&
+                         targetNode.x !== undefined && targetNode.y !== undefined;
+
+        if (link.linkType !== 'containment' && link.linkType !== 'delegation' && hasCoords) {
             console.warn(`[PATH WARNING] ${link.source}→${link.target}: No routing found! Falling back to node centers.`);
         }
 
@@ -706,9 +716,11 @@ class PathCalculator {
 
     getLinkPath(link) {
         console.log(`[GET LINK PATH] Called for ${link.source}→${link.target}`);
-        // Get source and target nodes
-        const sourceNode = this.visualizer.nodes.find(n => n.id === link.source);
-        const targetNode = this.visualizer.nodes.find(n => n.id === link.target);
+        // Get source and target nodes (use visual redirect if available)
+        const visualSourceId = link.visualSource || link.source;
+        const visualTargetId = link.visualTarget || link.target;
+        const sourceNode = this.visualizer.nodes.find(n => n.id === visualSourceId);
+        const targetNode = this.visualizer.nodes.find(n => n.id === visualTargetId);
 
         if (!sourceNode || !targetNode) {
             console.log(`[GET LINK PATH] Source or target node not found`);
