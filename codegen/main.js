@@ -103,20 +103,43 @@ async function initVisualizer(scxmlContent) {
             Module.FS.writeFile(`/resources/${testId}/test${testId}.scxml`, scxmlContent);
             console.log(`Created virtual FS: /resources/${testId}/test${testId}.scxml`);
 
-            // Try to load sub-SCXML files only if parent has <invoke> elements (W3C SCXML 6.3)
+            // W3C SCXML 6.3: Extract child SCXML files from invoke src attributes
+            // Parse invoke elements with static src="file:..." to avoid 404 errors
             if (scxmlContent.includes('<invoke')) {
-                try {
-                    const subResponse = await fetch(`${basePath}test${testId}sub1.scxml`);
-                    if (subResponse.ok) {
-                        const subContent = await subResponse.text();
-                        Module.FS.writeFile(`/resources/${testId}/test${testId}sub1.scxml`, subContent);
-                        console.log(`Created virtual FS: /resources/${testId}/test${testId}sub1.scxml`);
+                const invokePattern = /<invoke[^>]*\ssrc=["']file:([^"']+)["']/g;
+                const childFiles = new Set();  // Use Set to avoid duplicates
+                let match;
+
+                while ((match = invokePattern.exec(scxmlContent)) !== null) {
+                    const filename = match[1];
+                    childFiles.add(filename);
+                }
+
+                if (childFiles.size > 0) {
+                    console.log(`Static analysis: ${childFiles.size} child SCXML file(s) detected`);
+
+                    // Load only detected child files (no 404 errors)
+                    for (const childFile of childFiles) {
+                        try {
+                            const childResponse = await fetch(`${basePath}${childFile}`);
+                            if (childResponse.ok) {
+                                const childContent = await childResponse.text();
+                                Module.FS.writeFile(`/resources/${testId}/${childFile}`, childContent);
+                                console.log(`Created virtual FS: /resources/${testId}/${childFile}`);
+                            } else {
+                                console.warn(`Child file not found: ${childFile} (referenced but missing)`);
+                            }
+                        } catch (e) {
+                            console.error(`Failed to load child file ${childFile}:`, e);
+                        }
                     }
-                } catch (e) {
-                    console.log(`Parent has <invoke> but sub-SCXML not found: test${testId}sub1.scxml`);
+
+                    console.log(`Child SCXML loading complete`);
+                } else {
+                    console.log(`No file-based invokes detected (content-based invokes may be used)`);
                 }
             } else {
-                console.log(`No <invoke> elements - skipping sub-SCXML fetch`);
+                console.log(`No <invoke> elements - skipping child SCXML fetch`);
             }
         }
 
@@ -154,40 +177,10 @@ async function initVisualizer(scxmlContent) {
             }
         }
 
-        // Determine container ID based on sub-SCXML presence
-        const containerIdToUse = hasChildren ? 'state-diagram-parent-split' : 'state-diagram-single';
-        console.log(`Container ID to use: ${containerIdToUse} (hasChildren: ${hasChildren})`);
-
-        // Setup view layout
-        if (hasChildren) {
-            const singleView = document.getElementById('single-view-container');
-            const splitView = document.getElementById('split-view-container');
-            console.log(`Setting up split view - singleView: ${singleView}, splitView: ${splitView}`);
-
-            if (singleView) {
-                singleView.style.display = 'none';
-                console.log(`  ✓ Single view hidden: ${singleView.style.display}`);
-            } else {
-                console.error('  ✗ single-view-container NOT FOUND!');
-            }
-
-            if (splitView) {
-                splitView.style.display = 'block';
-                console.log(`  ✓ Split view shown: ${splitView.style.display}`);
-
-                // Verify setting applied
-                const computed = window.getComputedStyle(splitView);
-                console.log(`  ✓ Split view computed display: ${computed.display}, height: ${computed.height}`);
-            } else {
-                console.error('  ✗ split-view-container NOT FOUND!');
-            }
-
-            console.log(`Split view enabled`);
-        } else {
-            document.getElementById('single-view-container').style.display = 'block';
-            document.getElementById('split-view-container').style.display = 'none';
-            console.log(`Single view enabled`);
-        }
+        // Single-window navigation for all visualizations
+        // Child SCXML navigation is handled via breadcrumb + state click
+        const containerIdToUse = 'state-diagram-single';
+        console.log(`Container ID: ${containerIdToUse} (single-window navigation mode)`);
 
         // Extract available events for UI buttons
         const availableEvents = new Set();
@@ -215,40 +208,12 @@ async function initVisualizer(scxmlContent) {
         // Register parent visualizer with manager
         visualizerManager.setParent(visualizer);
 
-        // Create child visualizers if sub-SCXML files exist
+        // Single-window navigation: Child visualizers are created on-demand when navigating
+        // No need to pre-create child visualizers - they will be created in navigateToChild()
         if (hasChildren) {
-            const childTabsContainer = document.getElementById('child-tabs');
-            const childDiagramsContainer = document.getElementById('child-diagrams-container');
-            
-            // Show tabs only if multiple children
-            if (subSCXMLStructures.length > 1 && childTabsContainer) {
-                childTabsContainer.style.display = 'flex';
-            }
-            
-            for (let i = 0; i < subSCXMLStructures.length; i++) {
-                const subInfo = subSCXMLStructures[i];
-                
-                // Create child diagram container
-                const childDiagramId = `child-diagram-${i}`;
-                const childDiv = document.createElement('div');
-                childDiv.id = childDiagramId;
-                childDiv.className = `child-diagram diagram-container-split ${i === 0 ? 'active' : ''}`;
-                childDiagramsContainer.appendChild(childDiv);
-                
-                // Create child visualizer and wait for render
-                const childVisualizer = new SCXMLVisualizer(childDiagramId, subInfo.structure);
-                await childVisualizer.initPromise;
-                visualizerManager.addChild(i, childVisualizer);
-                
-                // Create tab button
-                if (subSCXMLStructures.length > 1 && childTabsContainer) {
-                    const tabButton = document.createElement('button');
-                    tabButton.className = `child-tab ${i === 0 ? 'active' : ''}`;
-                    tabButton.textContent = subInfo.invokeId;
-                    tabButton.onclick = () => switchChildTab(i);
-                    childTabsContainer.appendChild(tabButton);
-                }
-            }
+            console.log(`✓ ${subSCXMLStructures.length} child SCXML(s) detected - available for navigation`);
+            // Store sub-SCXML info in currentMachine for navigation
+            controller.currentMachine.subSCXMLs = subSCXMLStructures;
         }
 
         // W3C SCXML 3.13: ExecutionController.initializeState() already called in constructor
