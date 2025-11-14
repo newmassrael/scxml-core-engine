@@ -47,7 +47,6 @@ class ExecutionController {
             eventQueuePanel: document.getElementById('event-queue-panel'),
             dataModelPanel: document.getElementById('data-model-panel'),
             stateActionsPanel: document.getElementById('state-actions-panel'),
-            transitionInfoPanel: document.getElementById('transition-detail-panel'),
             logPanel: document.getElementById('log-panel'),
             singleViewContainer: document.getElementById('single-view-container'),
             btnStepBack: document.getElementById('btn-step-back'),
@@ -184,6 +183,7 @@ class ExecutionController {
     checkAndHandleFinalState() { return this.controlHandler.checkAndHandleFinalState(); }
     focusState(stateId) { return this.controlHandler.focusState(stateId); }
     highlightStateInPanel(stateId) { return this.controlHandler.highlightStateInPanel(stateId); }
+    highlightTransitionInPanel(transition) { return this.controlHandler.highlightTransitionInPanel(transition); }
     showMessage(message, type) { return this.controlHandler.showMessage(message, type); }
     disableButton(buttonId) { return this.controlHandler.disableButton(buttonId); }
     enableButton(buttonId) { return this.controlHandler.enableButton(buttonId); }
