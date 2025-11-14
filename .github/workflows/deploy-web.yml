@@ -34,7 +34,21 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y cmake ninja-build libspdlog-dev
+        sudo apt-get install -y cmake ninja-build libspdlog-dev ccache lld
+
+    - name: Setup ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ${{ runner.os }}-ccache-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-ccache-
+
+    - name: Verify lld Installation
+      run: |
+        echo "=== Checking lld installation ==="
+        which ld.lld || echo "Warning: ld.lld not found in PATH"
+        ld.lld --version || echo "Warning: ld.lld version check failed"
 
     - name: Install Python Dependencies
       run: |

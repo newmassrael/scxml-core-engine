@@ -61,7 +61,7 @@ class LayoutManager {
             };
 
             // Add children for expanded compounds
-            if ((node.type === 'compound' || node.type === 'parallel') && !node.collapsed) {
+            if (SCXMLVisualizer.isCompoundOrParallel(node) && !node.collapsed) {
                 elkNode.children = [];
 
                 console.log(`${indent}  ${node.id} has ${node.children.length} children: ${node.children.join(', ')}`);
@@ -164,10 +164,15 @@ class LayoutManager {
             if (node) {
                 node.x = elkNode.x + offsetX + elkNode.width / 2;
                 node.y = elkNode.y + offsetY + elkNode.height / 2;
-                node.width = elkNode.width;
-                node.height = elkNode.height;
 
-                console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height}, offset=(${offsetX}, ${offsetY})`);
+                // Preserve collapsed node size - don't overwrite with ELK's expanded layout
+                if (node.collapsed && SCXMLVisualizer.isCompoundOrParallel(node)) {
+                    console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size preserved), offset=(${offsetX}, ${offsetY})`);
+                } else {
+                    node.width = elkNode.width;
+                    node.height = elkNode.height;
+                    console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height}, offset=(${offsetX}, ${offsetY})`);
+                }
             } else {
                 console.warn(`${indent}  ELK node not found in this.visualizer.nodes: ${elkNode.id} (possibly child state or collapsed)`);
             }
@@ -212,28 +217,35 @@ class LayoutManager {
                     return;
                 }
                 
-                const childNodes = node.children
+                const allChildNodes = node.children
                     .map(childId => this.visualizer.nodes.find(n => n.id === childId))
-                    .filter(child => child && child.x !== undefined && child.y !== undefined);
-                
-                console.log(`    Children: ${node.children.join(', ')}, with coords: ${childNodes.map(c => c.id).join(', ')}`);
-                
-                if (childNodes.length > 0) {
+                    .filter(child => child);
+
+                const childNodesWithCoords = allChildNodes
+                    .filter(child => child.x !== undefined && child.y !== undefined);
+
+                console.log(`    Children: ${node.children.join(', ')}, with coords: ${childNodesWithCoords.map(c => c.id).join(', ')}`);
+
+                if (childNodesWithCoords.length > 0) {
                     // Calculate bounding box with padding
                     const padding = PATH_CONSTANTS.COMPOUND_BOUNDS_PADDING;
-                    const minX = Math.min(...childNodes.map(c => c.x - c.width/2)) - padding;
-                    const maxX = Math.max(...childNodes.map(c => c.x + c.width/2)) + padding;
-                    const minY = Math.min(...childNodes.map(c => c.y - c.height/2)) - padding;
-                    const maxY = Math.max(...childNodes.map(c => c.y + c.height/2)) + padding;
-                    
+                    const minX = Math.min(...childNodesWithCoords.map(c => c.x - c.width/2)) - padding;
+                    const maxX = Math.max(...childNodesWithCoords.map(c => c.x + c.width/2)) + padding;
+                    const minY = Math.min(...childNodesWithCoords.map(c => c.y - c.height/2)) - padding;
+                    const maxY = Math.max(...childNodesWithCoords.map(c => c.y + c.height/2)) + padding;
+
                     node.x = (minX + maxX) / 2;
                     node.y = (minY + maxY) / 2;
                     node.width = maxX - minX;
                     node.height = maxY - minY;
-                    
+
                     console.log(`  ${node.id}: Calculated from children (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width.toFixed(1)}x${node.height.toFixed(1)}`);
-                } else {
-                    console.warn(`  ${node.id}: No children with coordinates, cannot calculate bounding box`);
+                } else if (childNodesWithCoords.length === 0 && allChildNodes.length > 0 && allChildNodes.some(c => c.x === undefined || c.y === undefined)) {
+                    // All children exist but none have coordinates - this is expected when ELK doesn't layout nested hierarchies
+                    console.log(`  ${node.id}: Children not yet laid out by ELK, skipping bounding box calculation`);
+                } else if (childNodesWithCoords.length < allChildNodes.length) {
+                    // Some children have coordinates but not all - this is unexpected
+                    console.warn(`  ${node.id}: Partial child coordinates (${childNodesWithCoords.length}/${allChildNodes.length}), cannot calculate reliable bounding box`);
                 }
             }
         });
@@ -299,7 +311,7 @@ class LayoutManager {
         };
         
         this.visualizer.nodes.forEach(node => {
-            if ((node.type === 'compound' || node.type === 'parallel') && !node.collapsed) {
+            if (SCXMLVisualizer.isCompoundOrParallel(node) && !node.collapsed) {
                 const depth = getDepth(node.id);
                 compoundsWithDepth.push({ node, depth });
             }
@@ -329,18 +341,35 @@ class LayoutManager {
     }
 
     updateCompoundBounds(compoundNode) {
+        // Skip collapsed nodes - they use fixed minimum size, not child-based bounds
+        if (compoundNode.collapsed) {
+            console.log(`[updateCompoundBounds] ${compoundNode.id}: Skipped (collapsed)`);
+            return;
+        }
+
         if (!compoundNode.children || compoundNode.children.length === 0) {
             return;
         }
 
-        const childNodes = compoundNode.children
+        const allChildNodes = compoundNode.children
             .map(childId => this.visualizer.nodes.find(n => n.id === childId))
-            .filter(child => child && child.x !== undefined && child.y !== undefined);
+            .filter(child => child);
 
-        if (childNodes.length === 0) {
-            console.warn(`[updateCompoundBounds] ${compoundNode.id}: No children with coordinates`);
+        const childNodesWithCoords = allChildNodes
+            .filter(child => child.x !== undefined && child.y !== undefined);
+
+        if (childNodesWithCoords.length === 0) {
+            // All children exist but none have coordinates - expected when ELK doesn't layout nested hierarchies
+            if (allChildNodes.length > 0) {
+                console.log(`[updateCompoundBounds] ${compoundNode.id}: Children not yet laid out by ELK, skipping bounds calculation`);
+            }
             return;
+        } else if (childNodesWithCoords.length < allChildNodes.length) {
+            // Some children have coordinates but not all - unexpected
+            console.warn(`[updateCompoundBounds] ${compoundNode.id}: Partial child coordinates (${childNodesWithCoords.length}/${allChildNodes.length})`);
         }
+
+        const childNodes = childNodesWithCoords;
 
         // Debug: Log child positions
         console.log(`[updateCompoundBounds] ${compoundNode.id}: Processing ${childNodes.length} children:`);
@@ -366,7 +395,7 @@ class LayoutManager {
 
     findCompoundParent(nodeId) {
         for (const node of this.visualizer.nodes) {
-            if ((node.type === 'compound' || node.type === 'parallel') && 
+            if (SCXMLVisualizer.isCompoundOrParallel(node) && 
                 !node.collapsed && 
                 node.children && 
                 node.children.includes(nodeId)) {

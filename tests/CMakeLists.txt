@@ -545,6 +545,11 @@ set(STATIC_W3C_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/w3c_static_generated")
 
 # Generate C++ code for W3C tests BEFORE defining executables
 include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
+
+# Initialize GENERATED_W3C_HEADERS before any sce_generate_static_w3c_test calls
+# This ensures proper accumulation across multiple function calls
+set(GENERATED_W3C_HEADERS "")
+
 sce_generate_static_w3c_test(144 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.2: raise element inserts events at rear of internal queue (FIFO ordering) (Pure Static)
 sce_generate_static_w3c_test(147 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.3: if/elseif/else conditional execution (first true clause only) (Static Hybrid)
 sce_generate_static_w3c_test(148 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.3: else clause execution when if/elseif both false (Static Hybrid)
