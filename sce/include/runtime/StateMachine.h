@@ -540,6 +540,8 @@ private:
     // W3C SCXML 3.13: Last executed transition tracking (for interactive visualizer)
     std::string lastTransitionSource_{};
     std::string lastTransitionTarget_{};
+    size_t eventlessRecursionDepth_ = 0;  // Track recursion depth for eventless transitions
+    size_t lastTransitionDepth_ = 0;      // Track depth where lastTransition was set
 
     // SCXML model
     std::shared_ptr<SCXMLModel> model_;
