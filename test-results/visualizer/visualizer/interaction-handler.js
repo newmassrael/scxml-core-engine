@@ -179,38 +179,21 @@ class InteractionHandler {
     }
 
     highlightActiveStatesVisual() {
-        console.log(`[highlightActiveStatesVisual] Applying visual highlights`);
-        console.log(`  nodeElements exists: ${this.visualizer.nodeElements ? 'yes' : 'no'}, size: ${this.visualizer.nodeElements ? this.visualizer.nodeElements.size() : 0}`);
-        console.log(`  collapsedElements exists: ${this.visualizer.collapsedElements ? 'yes' : 'no'}, size: ${this.visualizer.collapsedElements ? this.visualizer.collapsedElements.size() : 0}`);
-        console.log(`  compoundContainers exists: ${this.visualizer.compoundContainers ? 'yes' : 'no'}, size: ${this.visualizer.compoundContainers ? this.visualizer.compoundContainers.size() : 0}`);
-
         if (this.visualizer.nodeElements) {
             this.visualizer.nodeElements.classed('active', d => {
-                const isActive = this.visualizer.activeStates.has(d.id);
-                if (isActive) {
-                    console.log(`  → Activating node: ${d.id} (type: ${d.type})`);
-                }
-                return isActive;
+                return this.visualizer.activeStates.has(d.id);
             });
         }
 
         if (this.visualizer.collapsedElements) {
             this.visualizer.collapsedElements.classed('active', d => {
-                const isActive = this.visualizer.activeStates.has(d.id);
-                if (isActive) {
-                    console.log(`  → Activating collapsed: ${d.id}`);
-                }
-                return isActive;
+                return this.visualizer.activeStates.has(d.id);
             });
         }
 
         if (this.visualizer.compoundContainers) {
             this.visualizer.compoundContainers.classed('active', d => {
-                const isActive = this.visualizer.activeStates.has(d.id);
-                if (isActive) {
-                    console.log(`  → Activating compound container: ${d.id}`);
-                }
-                return isActive;
+                return this.visualizer.activeStates.has(d.id);
             });
         }
     }

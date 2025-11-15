@@ -567,11 +567,8 @@ class SoftConstraints {
         const targetNode = solver.nodeMap.get(solver.getVisualTarget(link));
 
         if (!sourceNode || !targetNode) {
-            log(`[SC5-DEBUG] ${link.id}: Missing nodes (source=${!!sourceNode}, target=${!!targetNode})`);
             return 0;
         }
-
-        log(`[SC5-DEBUG] ${link.id} (${combo.sourceEdge}→${combo.targetEdge}): Checking sibling overlap...`);
 
         // Check if this is a parent→child transition
         const targetAncestors = new Set();
@@ -583,7 +580,6 @@ class SoftConstraints {
         }
 
         const isParentToChild = targetAncestors.has(sourceNode.id);
-        log(`[SC5-DEBUG] ${link.id}: isParentToChild=${isParentToChild}, ancestors=[${Array.from(targetAncestors).join(',')}]`);
 
         if (!isParentToChild) {
             return 0; // Not a parent→child transition, no sibling overlap concern
@@ -600,8 +596,6 @@ class SoftConstraints {
             }
         }
 
-        log(`[SC5-DEBUG] ${link.id}: Found ${targetSiblings.size} siblings: [${Array.from(targetSiblings).join(',')}]`);
-
         if (targetSiblings.size === 0) {
             return 0; // No siblings to check
         }
@@ -611,22 +605,18 @@ class SoftConstraints {
         for (const siblingId of targetSiblings) {
             const siblingNode = solver.nodeMap.get(siblingId);
             if (!siblingNode) {
-                log(`[SC5-DEBUG] ${link.id}: Sibling node ${siblingId} not found in nodeMap`);
                 continue;
             }
 
             const overlaps = solver.optimizer.pathIntersectsNode(combo, siblingNode);
-            log(`[SC5-DEBUG] ${link.id} vs ${siblingId}: pathIntersectsNode=${overlaps}`);
 
             if (overlaps) {
                 overlapCount++;
-                log(`[SC5-SIBLING] ${link.id} (${combo.sourceEdge}→${combo.targetEdge}): Overlaps sibling ${siblingId}`);
             }
         }
 
         if (overlapCount > 0) {
             const penalty = overlapCount * 50000;
-            log(`[SC5-SIBLING] ${link.id}: Total sibling overlap penalty = ${penalty} (${overlapCount} siblings)`);
             return penalty;
         }
 
@@ -1089,13 +1079,9 @@ class ConstraintSolver {
 
         // Try each value in domain (best-first order)
         for (const { combo, score } of scoredDomain) {
-            log(`  [CSP TRY] ${combo.sourceEdge}→${combo.targetEdge}, score=${score.toFixed(1)}`);
-
             // Early pruning: If partial score already exceeds best, skip
-            // Performance: Reuse pre-calculated currentPartialScore (O(1) check)
             if (this.bestScore !== Infinity) {
                 if (currentPartialScore + score > this.bestScore) {
-                    log(`  [CSP PRUNE] Partial score ${(currentPartialScore + score).toFixed(1)} > best ${this.bestScore.toFixed(1)}`);
                     this.pruneCount++;
                     continue; // Skip this branch
                 }
@@ -1129,12 +1115,12 @@ class ConstraintSolver {
         // Clear snap point cache for fresh start
         SoftConstraints.clearCache();
 
-        log('[CSP SOLVER] Starting constraint satisfaction solver...');
-        log(`[CSP] Variables: ${this.sortedLinks.length} links`);
-        log(`[CSP] Domain size per variable: up to 16 combinations`);
-        log(`[CSP] Hard constraints: 4 (initial blocking, node collisions, min distance, bidirectional)`);
-        log(`[CSP] Soft constraints: 5 (SC1: intersections=50000, SC2: distance=1, SC3: symmetry=-5000, SC4: self-overlap=50000, SC5: sibling-overlap=50000)`);
-        log(`[CSP] Variable ordering: MRV (Minimum Remaining Values) heuristic`);
+        console.log('[CSP SOLVER] Starting constraint satisfaction solver...');
+        console.log(`[CSP] Variables: ${this.sortedLinks.length} links`);
+        console.log(`[CSP] Domain size per variable: up to 16 combinations`);
+        console.log(`[CSP] Hard constraints: 4 (initial blocking, node collisions, min distance, bidirectional)`);
+        console.log(`[CSP] Soft constraints: 5 (SC1: intersections=50000, SC2: distance=1, SC3: symmetry=-5000, SC4: self-overlap=50000, SC5: sibling-overlap=50000)`);
+        console.log(`[CSP] Variable ordering: MRV (Minimum Remaining Values) heuristic`);
 
         const startTime = performance.now();
         this.startTime = startTime; // Store for progress reporting
