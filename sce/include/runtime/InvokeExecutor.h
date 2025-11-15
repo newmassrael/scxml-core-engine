@@ -2,6 +2,7 @@
 
 #include "events/IEventDispatcher.h"
 #include "model/IInvokeNode.h"
+#include "runtime/StateSnapshot.h"
 #include "scripting/JSEngine.h"
 #include <deque>
 #include <memory>
@@ -42,12 +43,14 @@ public:
      * @param parentSessionId Parent session ID for hierarchical sessions
      * @param eventDispatcher Event dispatcher for communication
      * @param childSessionId Pre-allocated child session ID to ensure mapping consistency
+     * @param isRestoration W3C SCXML 3.11: If true, skip completion callback and start() (restoration without side
+     * effects)
      * @return Generated invokeid for tracking (should match invoke ID)
      */
     virtual std::string startInvokeWithSessionId(const std::shared_ptr<IInvokeNode> &invoke,
                                                  const std::string &parentSessionId,
                                                  std::shared_ptr<IEventDispatcher> eventDispatcher,
-                                                 const std::string &childSessionId) = 0;
+                                                 const std::string &childSessionId, bool isRestoration = false) = 0;
 
     /**
      * @brief Cancel an ongoing invoke operation
@@ -86,7 +89,7 @@ public:
 
     std::string startInvokeWithSessionId(const std::shared_ptr<IInvokeNode> &invoke, const std::string &parentSessionId,
                                          std::shared_ptr<IEventDispatcher> eventDispatcher,
-                                         const std::string &childSessionId) override;
+                                         const std::string &childSessionId, bool isRestoration = false) override;
 
     bool cancelInvoke(const std::string &invokeid) override;
     bool isInvokeActive(const std::string &invokeid) const override;
@@ -126,6 +129,38 @@ public:
      */
     bool shouldFilterCancelledInvokeEvent(const std::string &childSessionId) const;
 
+    /**
+     * @brief Capture child state machine state for snapshot
+     *
+     * W3C SCXML 3.11: Child state is part of invoke configuration
+     * Zero Duplication: Delegates to child StateMachine for state capture
+     *
+     * @return Shared pointer to child StateSnapshot, or nullptr if not applicable
+     */
+    std::shared_ptr<StateSnapshot> captureChildState() const;
+
+    /**
+     * @brief Restore child state machine from snapshot
+     *
+     * W3C SCXML 3.11: Restore child configuration without side effects
+     *
+     * @param childSnapshot Child state to restore
+     * @param childSessionId Pre-allocated child session ID
+     */
+    void restoreChildState(const StateSnapshot &childSnapshot, const std::string &childSessionId);
+
+    /**
+     * @brief Get child session ID for active invoke
+     * @return Child session ID if active, empty string otherwise
+     */
+    std::string getChildSessionId() const;
+
+    /**
+     * @brief Get SCXML content used for this invoke
+     * @return SCXML content string
+     */
+    std::string getSCXMLContent() const;
+
 private:
     struct InvokeSession {
         std::string invokeid;
@@ -136,6 +171,7 @@ private:
         bool isActive = true;
         bool autoForward = false;
         std::string finalizeScript;  // W3C SCXML: finalize handler script to execute before processing child events
+        std::string scxmlContent;    // W3C SCXML 3.11: SCXML content for snapshot restoration
     };
 
     std::unordered_map<std::string, InvokeSession> activeSessions_;
@@ -174,11 +210,14 @@ private:
      * @param eventDispatcher Event dispatcher for communication
      * @param childSessionId Child session ID (either generated or pre-allocated)
      * @param sessionAlreadyExists Whether the child session was pre-created
+     * @param isRestoration W3C SCXML 3.11: If true, skip completion callback and start() (restoration without side
+     * effects)
      * @return Generated invokeid for tracking
      */
     std::string startInvokeInternal(const std::shared_ptr<IInvokeNode> &invoke, const std::string &parentSessionId,
                                     std::shared_ptr<IEventDispatcher> eventDispatcher,
-                                    const std::string &childSessionId, bool sessionAlreadyExists);
+                                    const std::string &childSessionId, bool sessionAlreadyExists,
+                                    bool isRestoration = false);
 
     /**
      * @brief Load SCXML content from file, resolving relative paths
@@ -314,6 +353,33 @@ public:
      * @return true if event should be filtered (from cancelled invoke), false otherwise
      */
     bool shouldFilterCancelledInvokeEvent(const std::string &childSessionId) const;
+
+    /**
+     * @brief Capture state of all active invocations for snapshot
+     *
+     * W3C SCXML 3.11: Invocations are part of configuration
+     * Zero Duplication: Single Source of Truth for invoke state
+     *
+     * Collects all active invoke IDs, child sessions, and child state machine states
+     * to enable complete state restoration during step backward/reset operations.
+     *
+     * @param out Vector to populate with InvokeSnapshot instances
+     */
+    void captureInvokeState(std::vector<InvokeSnapshot> &out) const;
+
+    /**
+     * @brief Restore active invocations from snapshot
+     *
+     * W3C SCXML 3.11: Restore invoke configuration without side effects
+     * Zero Duplication: Delegates to IInvokeHandler for actual restoration
+     *
+     * Creates child state machines and restores their states using
+     * restoreActiveStatesDirectly() to prevent onentry re-execution.
+     *
+     * @param invokes Vector of InvokeSnapshot instances to restore
+     * @param parentSM Parent state machine (for child creation context)
+     */
+    void restoreInvokeState(const std::vector<InvokeSnapshot> &invokes, std::shared_ptr<StateMachine> parentSM);
 
 private:
     std::shared_ptr<IEventDispatcher> eventDispatcher_;

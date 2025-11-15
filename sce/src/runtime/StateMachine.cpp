@@ -3929,6 +3929,10 @@ std::shared_ptr<IEventDispatcher> StateMachine::getEventDispatcher() const {
     return eventDispatcher_;
 }
 
+InvokeExecutor *StateMachine::getInvokeExecutor() const {
+    return invokeExecutor_.get();
+}
+
 std::vector<std::shared_ptr<StateMachine>> StateMachine::getInvokedChildren() {
     if (!invokeExecutor_) {
         return {};

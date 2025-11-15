@@ -410,12 +410,20 @@ void InteractiveTestRunner::captureSnapshot() {
         }
     }
 
+    // W3C SCXML 3.11: Capture active invocations (part of configuration)
+    std::vector<InvokeSnapshot> activeInvokes;
+    auto invokeExecutor = stateMachine_->getInvokeExecutor();
+    if (invokeExecutor) {
+        invokeExecutor->captureInvokeState(activeInvokes);
+        LOG_DEBUG("InteractiveTestRunner: Captured {} active invocations", activeInvokes.size());
+    }
+
     // Convert std::vector<std::string> to std::set<std::string> for StateSnapshot
     std::set<std::string> activeStatesSet(activeStates.begin(), activeStates.end());
 
     snapshotManager_.captureSnapshot(activeStatesSet, dataModel, internalQueue, externalQueue, pendingUIEvents,
-                                     scheduledEventsSnapshots, executedEvents_, currentStep_, lastEventName_,
-                                     lastTransitionSource_, lastTransitionTarget_);
+                                     scheduledEventsSnapshots, activeInvokes, executedEvents_, currentStep_,
+                                     lastEventName_, lastTransitionSource_, lastTransitionTarget_);
 }
 
 bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
@@ -500,6 +508,13 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
                 scheduledEvent.eventName, scheduledEvent.sendId, scheduledEvent.originalDelayMs,
                 scheduledEvent.targetUri, snapshot.stepNumber);
         }
+    }
+
+    // W3C SCXML 3.11: Restore active invocations (part of configuration)
+    auto invokeExecutor = stateMachine_->getInvokeExecutor();
+    if (invokeExecutor && !snapshot.activeInvokes.empty()) {
+        invokeExecutor->restoreInvokeState(snapshot.activeInvokes, stateMachine_);
+        LOG_DEBUG("InteractiveTestRunner: Restored {} active invocations", snapshot.activeInvokes.size());
     }
 
     // Restore metadata
