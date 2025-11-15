@@ -324,13 +324,8 @@ class Renderer {
                                     console.log(`[DRAG END COMPOUND] Background CSP complete, updating visualization...`);
                                 }
 
-                                self.allLinks.forEach(link => {
-                                    const sourceNode = self.nodes.find(n => n.id === (link.visualSource || link.source));
-                                    const targetNode = self.nodes.find(n => n.id === (link.visualTarget || link.target));
-                                    if (sourceNode && targetNode) {
-                                        self.calculateLinkDirections(sourceNode, targetNode, link);
-                                    }
-                                });
+                                // Update link directions for all visible links
+                                self.renderer._updateVisibleLinkDirections();
 
                                 self.updateLinksOptimal();
                                 if (self.debugMode) {
@@ -351,13 +346,9 @@ class Renderer {
                             }
 
                             // Recalculate link directions
-                            self.allLinks.forEach(link => {
-                                const sourceNode = self.nodes.find(n => n.id === (link.visualSource || link.source));
-                                    const targetNode = self.nodes.find(n => n.id === (link.visualTarget || link.target));
-                                if (sourceNode && targetNode) {
-                                    self.calculateLinkDirections(sourceNode, targetNode, link);
-                                }
-                            });
+                            // Get visible links (exclude hidden links in collapsed states)
+                            // Update link directions for all visible links
+                            self.renderer._updateVisibleLinkDirections();
 
                             // Update visualization with intermediate solution
                             self.updateLinksOptimal();
@@ -648,13 +639,8 @@ class Renderer {
                                 }
 
                                 // Calculate midY for new CSP routing
-                                self.allLinks.forEach(link => {
-                                    const sourceNode = self.nodes.find(n => n.id === (link.visualSource || link.source));
-                                    const targetNode = self.nodes.find(n => n.id === (link.visualTarget || link.target));
-                                    if (sourceNode && targetNode) {
-                                        self.calculateLinkDirections(sourceNode, targetNode, link);
-                                    }
-                                });
+                                // Update link directions for all visible links
+                                self.renderer._updateVisibleLinkDirections();
 
                                 // Update visualization with CSP-optimized paths
                                 self.updateLinksOptimal();
@@ -677,13 +663,9 @@ class Renderer {
                             }
 
                             // Recalculate link directions
-                            self.allLinks.forEach(link => {
-                                const sourceNode = self.nodes.find(n => n.id === (link.visualSource || link.source));
-                                    const targetNode = self.nodes.find(n => n.id === (link.visualTarget || link.target));
-                                if (sourceNode && targetNode) {
-                                    self.calculateLinkDirections(sourceNode, targetNode, link);
-                                }
-                            });
+                            // Get visible links (exclude hidden links in collapsed states)
+                            // Update link directions for all visible links
+                            self.renderer._updateVisibleLinkDirections();
 
                             // Update visualization with intermediate solution
                             self.updateLinksOptimal();
@@ -692,13 +674,9 @@ class Renderer {
                     );
 
                     // Calculate midY for immediate greedy routing
-                    self.allLinks.forEach(link => {
-                        const sourceNode = self.nodes.find(n => n.id === (link.visualSource || link.source));
-                                    const targetNode = self.nodes.find(n => n.id === (link.visualTarget || link.target));
-                        if (sourceNode && targetNode) {
-                            self.calculateLinkDirections(sourceNode, targetNode, link);
-                        }
-                    });
+                    // Get visible links (exclude hidden links in collapsed states)
+                    // Update link directions for all visible links
+                    self.renderer._updateVisibleLinkDirections();
 
                     // Immediate update to render greedy paths (fast feedback)
                     self.updateLinksOptimal();
@@ -1079,7 +1057,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
         // Snap point visualization (enabled with ?show-snap)
         if (this.visualizer.showSnapPoints) {
-            this.visualizer.renderSnapPoints(visibleNodes);
+            this.visualizer.renderSnapPoints(visibleNodes, visibleLinks);
         }
 
         if (this.visualizer.debugMode) {
@@ -1310,7 +1288,8 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
     updateSnapPointPositions() {
         // Generate latest snap points data
         const visibleNodes = this.visualizer.getVisibleNodes();
-        const snapPointsData = this.visualizer.generateSnapPointsData(visibleNodes);
+        const visibleLinks = this.visualizer.getVisibleLinks(this.visualizer.allLinks, visibleNodes);
+        const snapPointsData = this.visualizer.generateSnapPointsData(visibleNodes, visibleLinks);
 
         // Get or create snap group
         let snapGroup = this.visualizer.zoomContainer.select('g.snap-points');
@@ -1493,6 +1472,21 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         });
 
         return yOffset;
+    }
+
+    /**
+     * Update link directions for all visible links
+     * Centralized helper to avoid code duplication across drag handlers
+     */
+    _updateVisibleLinkDirections() {
+        const visibleLinks = this.visualizer.getVisibleLinks(this.visualizer.allLinks, this.visualizer.nodes);
+        visibleLinks.forEach(link => {
+            const sourceNode = this.visualizer.nodes.find(n => n.id === (link.visualSource || link.source));
+            const targetNode = this.visualizer.nodes.find(n => n.id === (link.visualTarget || link.target));
+            if (sourceNode && targetNode) {
+                this.visualizer.calculateLinkDirections(sourceNode, targetNode, link);
+            }
+        });
     }
 
     formatActionText(action) {

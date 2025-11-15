@@ -151,7 +151,7 @@ class SCXMLVisualizer {
         this.allLinks = this.buildLinks();
 
         // Initialize layout optimizer
-        this.layoutOptimizer = new TransitionLayoutOptimizer(this.nodes, this.allLinks);
+        this.layoutOptimizer = new TransitionLayoutOptimizer(this.nodes, this.allLinks, this);
 
         // Compute layout
         await this.computeLayout();

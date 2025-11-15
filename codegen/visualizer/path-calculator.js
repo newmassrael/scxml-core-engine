@@ -494,10 +494,10 @@ class PathCalculator {
         return !(lineBottom < bounds.top || lineTop > bounds.bottom);
     }
 
-    getObstacleNodes(sourceNode, targetNode) {
+    getObstacleNodes(sourceId, targetId) {
         return this.visualizer.nodes.filter(node => 
-            node.id !== sourceNode.id && 
-            node.id !== targetNode.id &&
+            node.id !== sourceId && 
+            node.id !== targetId &&
             node.type !== 'initial'  // Initial state markers are small, ignore them
         );
     }
@@ -653,7 +653,11 @@ class PathCalculator {
                 }
 
                 // Path: start → horizontal MIN_SEGMENT → vertical to target y → horizontal MIN_SEGMENT → end
-                return `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${ty} L ${x2} ${ty} L ${tx} ${ty}`;
+                const path = `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${ty} L ${x2} ${ty} L ${tx} ${ty}`;
+                if (this.visualizer.debugMode) {
+                    console.log(`[PATH GEN] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: M(${sx.toFixed(1)},${sy.toFixed(1)}) →H(${x1.toFixed(1)},${sy.toFixed(1)}) →V(${x1.toFixed(1)},${ty.toFixed(1)}) →H(${x2.toFixed(1)},${ty.toFixed(1)}) →H(${tx.toFixed(1)},${ty.toFixed(1)})`);
+                }
+                return path;
             } else if (sourceIsVertical && !targetIsVertical) {
                 // Source vertical, target horizontal: vertical-then-horizontal (5 points)
                 // Ensure minimum segments
@@ -691,7 +695,11 @@ class PathCalculator {
                 }
 
                 // Path: start → horizontal MIN_SEGMENT → vertical to y2 → vertical MIN_SEGMENT to end
-                return `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${y2} L ${tx} ${y2} L ${tx} ${ty}`;
+                const path = `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${y2} L ${tx} ${y2} L ${tx} ${ty}`;
+                if (this.visualizer.debugMode) {
+                    console.log(`[PATH GEN] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: M(${sx.toFixed(1)},${sy.toFixed(1)}) →H(${x1.toFixed(1)},${sy.toFixed(1)}) →V(${x1.toFixed(1)},${y2.toFixed(1)}) →H(${tx.toFixed(1)},${y2.toFixed(1)}) →V(${tx.toFixed(1)},${ty.toFixed(1)})`);
+                }
+                return path;
             }
         }
 
