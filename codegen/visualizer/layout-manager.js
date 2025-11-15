@@ -167,7 +167,14 @@ class LayoutManager {
 
                 // Preserve collapsed node size - don't overwrite with ELK's expanded layout
                 if (node.collapsed && SCXMLVisualizer.isCompoundOrParallel(node)) {
-                    console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size preserved), offset=(${offsetX}, ${offsetY})`);
+                    // Initialize size if not set (first render of collapsed node)
+                    if (node.width === undefined || node.height === undefined) {
+                        node.width = this.visualizer.getNodeWidth(node);
+                        node.height = this.visualizer.getNodeHeight(node);
+                        console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size initialized), offset=(${offsetX}, ${offsetY})`);
+                    } else {
+                        console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size preserved), offset=(${offsetX}, ${offsetY})`);
+                    }
                 } else {
                     node.width = elkNode.width;
                     node.height = elkNode.height;
