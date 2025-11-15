@@ -417,6 +417,12 @@ public:
     std::shared_ptr<IEventDispatcher> getEventDispatcher() const;
 
     /**
+     * @brief Get InvokeExecutor for invoke state capture/restore
+     * @return Pointer to InvokeExecutor instance
+     */
+    InvokeExecutor *getInvokeExecutor() const;
+
+    /**
      * @brief Get the event raiser for queue introspection
      * @return Shared pointer to the event raiser
      */

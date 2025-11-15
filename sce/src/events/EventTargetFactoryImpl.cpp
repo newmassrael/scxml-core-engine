@@ -70,7 +70,7 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createTarget(const std::st
     // Handle special parent target URI (#_parent)
     if (targetUri == "#_parent") {
         LOG_DEBUG("EventTargetFactoryImpl::createTarget() - Creating #_parent target");
-        return createParentTarget(targetUri);
+        return createParentTarget(targetUri, sessionId);
     }
 
     // W3C SCXML C.1 (test 190, 350): #_scxml_sessionid → external queue
@@ -267,17 +267,23 @@ std::shared_ptr<IEventTarget> EventTargetFactoryImpl::createExternalTarget(const
     }
 }
 
-std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createParentTarget(const std::string &targetUri) {
+std::shared_ptr<SCE::IEventTarget> SCE::EventTargetFactoryImpl::createParentTarget(const std::string &targetUri,
+                                                                                   const std::string &sessionId) {
     try {
-        // For parent target, we need to determine the child session ID
-        // This will be passed through the event dispatcher context
-        // For now, we create a ParentEventTarget that will resolve the child session at send time
+        // W3C SCXML 6.4: Use provided sessionId for parent-child relationship tracking
+        // Session ID should always be provided during invoke creation
+        if (sessionId.empty()) {
+            LOG_ERROR("EventTargetFactoryImpl: Empty sessionId for parent target creation - cannot route events");
+            return nullptr;
+        }
 
-        // Note: The actual child session ID will be determined when the event is sent
-        // ParentEventTarget will use the current session context to find the parent
-        auto target = std::make_shared<SCE::ParentEventTarget>("dynamic", eventRaiser_, scheduler_);
+        std::string childSessionId = sessionId;
 
-        LOG_DEBUG("EventTargetFactoryImpl: Created parent target for URI: {}", targetUri);
+        // Create parent target with child session ID for proper event routing
+        auto target = std::make_shared<SCE::ParentEventTarget>(childSessionId, eventRaiser_, scheduler_);
+
+        LOG_DEBUG("EventTargetFactoryImpl: Created parent target for URI: {} with child session: {}", targetUri,
+                  childSessionId);
         return target;
 
     } catch (const std::exception &e) {

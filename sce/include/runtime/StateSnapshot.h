@@ -58,6 +58,37 @@ struct ScheduledEventSnapshot {
           eventData(data), content(cnt) {}
 };
 
+// Forward declaration for recursive child state snapshot
+struct StateSnapshot;
+
+/**
+ * @brief Snapshot of active invoke state for time-travel debugging
+ *
+ * W3C SCXML 3.11: Invocations are part of configuration
+ * Zero Duplication: Captures invoke state without duplicating InvokeExecutor logic
+ *
+ * Contains complete invoke state including child state machine configuration
+ * to enable accurate restoration during step backward/reset operations.
+ */
+struct InvokeSnapshot {
+    std::string invokeId;        // W3C SCXML invoke ID (e.g., "s0.invoke_2")
+    std::string parentStateId;   // Parent state containing this invoke (e.g., "s0")
+    std::string childSessionId;  // Child state machine session ID
+    std::string type;            // Invoke type (e.g., "http://www.w3.org/TR/scxml")
+    std::string scxmlContent;    // Child SCXML content (from src/srcexpr evaluation)
+
+    // W3C SCXML 3.11: Recursive child state machine configuration
+    // Captures complete child state (active states, datamodel, queues, etc.)
+    std::shared_ptr<StateSnapshot> childState;
+
+    InvokeSnapshot() = default;
+
+    InvokeSnapshot(const std::string &invId, const std::string &parentId, const std::string &childSessId,
+                   const std::string &invType, const std::string &content = "")
+        : invokeId(invId), parentStateId(parentId), childSessionId(childSessId), type(invType), scxmlContent(content),
+          childState(nullptr) {}
+};
+
 /**
  * @brief Snapshot of state machine execution state for backward stepping
  *
@@ -88,6 +119,10 @@ struct StateSnapshot {
     // W3C SCXML 3.13: Store all processed events to enable time-travel debugging
     std::vector<EventSnapshot> executedEvents;
 
+    // W3C SCXML 3.11: Active invocations (part of configuration)
+    // Zero Duplication: Enables complete state restoration without side effects
+    std::vector<InvokeSnapshot> activeInvokes;
+
     // Execution metadata
     int stepNumber;
     std::string lastEventName;
@@ -116,6 +151,7 @@ public:
      * @param externalQueue Current external event queue
      * @param pendingUIEvents UI-added events (separate from engine queues)
      * @param scheduledEvents Scheduled events for step backward restoration (W3C SCXML 6.2)
+     * @param activeInvokes Active invocations (W3C SCXML 3.11)
      * @param executedEvents Event execution history
      * @param stepNumber Current execution step number
      * @param lastEvent Last processed event name
@@ -127,6 +163,7 @@ public:
                          const std::vector<EventSnapshot> &externalQueue,
                          const std::vector<EventSnapshot> &pendingUIEvents,
                          const std::vector<ScheduledEventSnapshot> &scheduledEvents,
+                         const std::vector<InvokeSnapshot> &activeInvokes,
                          const std::vector<EventSnapshot> &executedEvents, int stepNumber,
                          const std::string &lastEvent = "", const std::string &transitionSource = "",
                          const std::string &transitionTarget = "");

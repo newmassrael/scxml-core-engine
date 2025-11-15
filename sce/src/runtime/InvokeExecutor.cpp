@@ -6,6 +6,7 @@
 #include "common/Logger.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
+#include "model/InvokeNode.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/InvokeExecutor.h"
 #include "runtime/StateMachine.h"
@@ -22,6 +23,30 @@
 #include <sstream>
 
 namespace SCE {
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * @brief Extract parent state ID from invoke ID
+ *
+ * W3C SCXML 6.4: Invoke ID format is "stateId.platformid" (e.g., "s0.invoke_2")
+ * Zero Duplication: Single source of truth for invoke ID parsing logic
+ *
+ * @param invokeId Full invoke ID
+ * @return Parent state ID (portion before first dot)
+ */
+static std::string extractParentStateIdFromInvokeId(const std::string &invokeId) {
+    auto dotPos = invokeId.find('.');
+    if (dotPos == std::string::npos) {
+        // W3C SCXML 6.4: If no dot found, entire string is the state ID
+        // This handles custom invoke IDs without platform suffix
+        LOG_DEBUG("InvokeExecutor: Invoke ID has no dot separator, using entire ID as parent state: {}", invokeId);
+        return invokeId;
+    }
+    return invokeId.substr(0, dotPos);
+}
 
 // ============================================================================
 // SCXMLInvokeHandler Implementation
@@ -59,7 +84,7 @@ std::string SCXMLInvokeHandler::startInvoke(const std::shared_ptr<IInvokeNode> &
 std::string SCXMLInvokeHandler::startInvokeWithSessionId(const std::shared_ptr<IInvokeNode> &invoke,
                                                          const std::string &parentSessionId,
                                                          std::shared_ptr<IEventDispatcher> eventDispatcher,
-                                                         const std::string &childSessionId) {
+                                                         const std::string &childSessionId, bool isRestoration) {
     if (!invoke) {
         LOG_ERROR("SCXMLInvokeHandler: Cannot start invoke - invoke node is null");
         return "";
@@ -73,13 +98,14 @@ std::string SCXMLInvokeHandler::startInvokeWithSessionId(const std::shared_ptr<I
     bool sessionExists = JSEngine::instance().hasSession(childSessionId);
 
     // Delegate to internal method with session existence information
-    return startInvokeInternal(invoke, parentSessionId, eventDispatcher, childSessionId, sessionExists);
+    return startInvokeInternal(invoke, parentSessionId, eventDispatcher, childSessionId, sessionExists, isRestoration);
 }
 
 std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvokeNode> &invoke,
                                                     const std::string &parentSessionId,
                                                     std::shared_ptr<IEventDispatcher> eventDispatcher,
-                                                    const std::string &childSessionId, bool sessionAlreadyExists) {
+                                                    const std::string &childSessionId, bool sessionAlreadyExists,
+                                                    bool isRestoration) {
     // W3C SCXML 6.4: Generate invoke ID with state ID for "stateid.platformid" format (test 224)
     std::string invokeid = invoke->getId().empty() ? generateInvokeId(invoke->getStateId()) : invoke->getId();
 
@@ -199,6 +225,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     session.autoForward = invoke->isAutoForward();
     session.finalizeScript =
         invoke->getFinalize();  // W3C SCXML 6.4: Store finalize handler for execution before processing child events
+    session.scxmlContent = scxmlContent;  // W3C SCXML 3.11: Store SCXML content for snapshot restoration
 
     // Build StateMachine with dependency injection, then wrap in RAII context
     StateMachineBuilder builder;
@@ -217,11 +244,13 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
               childSessionId);
 
     // W3C SCXML 6.5: Register completion callback for done.invoke generation
+    // W3C SCXML 3.11: Skip during restoration to prevent duplicate done.invoke events
     // This callback is invoked AFTER the child's final state onexit handlers complete
     // IMPORTANT: Use weak_ptr to prevent accessing destroyed parent StateMachine (thread-safe)
     std::weak_ptr<StateMachine> weakParentSM = parentStateMachine_;
-    weakChildSM.lock()->setCompletionCallback(
-        [weakParentSM, invokeid, childSessionId, parentSessionId, eventDispatcher]() {
+    if (!isRestoration) {
+        weakChildSM.lock()->setCompletionCallback([weakParentSM, invokeid, childSessionId, parentSessionId,
+                                                   eventDispatcher]() {
             LOG_INFO("SCXMLInvokeHandler: Child completion callback invoked - invokeid: {}, session: {}", invokeid,
                      childSessionId);
             LOG_INFO("SCXMLInvokeHandler: Parent check - weakPtr valid: {}, parentSessionId: {}",
@@ -264,7 +293,11 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                          doneEvent);
             }
         });
-    LOG_DEBUG("SCXMLInvokeHandler: Registered completion callback for invoke: {}", invokeid);
+        LOG_DEBUG("SCXMLInvokeHandler: Registered completion callback for invoke: {}", invokeid);
+    } else {
+        LOG_DEBUG("SCXMLInvokeHandler: Skipping completion callback registration (restoration mode) for invoke: {}",
+                  invokeid);
+    }
 
     // Set up EventRaiser callback to child StateMachine's processEvent
     LOG_DEBUG("SCXMLInvokeHandler: Setting EventRaiser callback for session: {}, EventRaiser: {}", childSessionId,
@@ -419,26 +452,32 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         LOG_DEBUG("SCXMLInvokeHandler: Registered finalize script for child session: {}", childSessionId);
     }
 
-    // Start the child StateMachine
-    LOG_DEBUG("SCXMLInvokeHandler: Starting child StateMachine for invoke: {}", invokeid);
-    if (!activeSession.smContext->get()->start()) {
-        LOG_ERROR("SCXMLInvokeHandler: Failed to start child StateMachine for invoke: {}", invokeid);
-        activeSessions_.erase(invokeid);
-        // Unregister mapping if we registered it above
-        if (!sessionAlreadyExists) {
-            JSEngine::instance().unregisterInvokeMapping(parentSessionId, invokeid);
+    // W3C SCXML 3.11: Start child StateMachine or restore state based on mode
+    if (!isRestoration) {
+        // Normal mode: Start the child StateMachine (will execute initial transitions)
+        LOG_DEBUG("SCXMLInvokeHandler: Starting child StateMachine for invoke: {}", invokeid);
+        if (!activeSession.smContext->get()->start()) {
+            LOG_ERROR("SCXMLInvokeHandler: Failed to start child StateMachine for invoke: {}", invokeid);
+            activeSessions_.erase(invokeid);
+            // Unregister mapping if we registered it above
+            if (!sessionAlreadyExists) {
+                JSEngine::instance().unregisterInvokeMapping(parentSessionId, invokeid);
+            }
+            // Remove finalize script if registered
+            {
+                std::lock_guard<std::mutex> lock(finalizeScriptsMutex_);
+                finalizeScripts_.erase(childSessionId);
+            }
+            JSEngine::instance().destroySession(childSessionId);
+            return "";
         }
-        // Remove finalize script if registered
-        {
-            std::lock_guard<std::mutex> lock(finalizeScriptsMutex_);
-            finalizeScripts_.erase(childSessionId);
-        }
-        JSEngine::instance().destroySession(childSessionId);
-        return "";
+        LOG_INFO("SCXMLInvokeHandler: Child StateMachine started successfully for invoke: {} (session: {})", invokeid,
+                 childSessionId);
+    } else {
+        // Restoration mode: Skip start() - state will be restored by restoreChildState()
+        LOG_DEBUG("SCXMLInvokeHandler: Skipping start() for invoke restoration: {} (state will be restored separately)",
+                  invokeid);
     }
-
-    LOG_INFO("SCXMLInvokeHandler: Child StateMachine started successfully for invoke: {} (session: {})", invokeid,
-             childSessionId);
 
     // W3C SCXML 6.5: done.invoke generation is now handled by completion callback
     // The callback ensures proper event ordering: child onexit → done.invoke
@@ -1106,6 +1145,164 @@ std::string SCXMLInvokeHandler::getFinalizeScriptForChildSession(const std::stri
 
     LOG_DEBUG("SCXMLInvokeHandler: No finalize script found for child session: {}", childSessionId);
     return "";
+}
+
+std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
+    // W3C SCXML 3.11: Capture child state machine configuration
+    // Find active session for this handler
+    for (const auto &[invokeid, session] : activeSessions_) {
+        if (!session.isActive || !session.smContext) {
+            continue;
+        }
+
+        // Get child StateMachine from context
+        auto childSM = session.smContext->get();
+        if (!childSM) {
+            continue;
+        }
+
+        // Create child snapshot
+        auto childSnapshot = std::make_shared<StateSnapshot>();
+
+        // Capture active states
+        auto activeStates = childSM->getActiveStates();
+        childSnapshot->activeStates = std::set<std::string>(activeStates.begin(), activeStates.end());
+
+        // Capture datamodel (simplified - would need JSEngine integration for full implementation)
+        // For now, return minimal snapshot with active states only
+        // Full implementation would extract datamodel via JSEngine
+
+        LOG_DEBUG("SCXMLInvokeHandler: Captured child state - {} active states", childSnapshot->activeStates.size());
+
+        return childSnapshot;
+    }
+
+    return nullptr;
+}
+
+void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, const std::string &childSessionId) {
+    // W3C SCXML 3.11: Restore child configuration without side effects
+    // Find session by child session ID
+    for (auto &[invokeid, session] : activeSessions_) {
+        if (session.sessionId != childSessionId || !session.smContext) {
+            continue;
+        }
+
+        auto childSM = session.smContext->get();
+        if (!childSM) {
+            continue;
+        }
+
+        // Restore active states directly (no onentry execution)
+        childSM->restoreActiveStatesDirectly(childSnapshot.activeStates);
+
+        LOG_DEBUG("SCXMLInvokeHandler: Restored child state - {} active states for session {}",
+                  childSnapshot.activeStates.size(), childSessionId);
+        return;
+    }
+
+    LOG_WARN("SCXMLInvokeHandler: Could not restore child state - session {} not found", childSessionId);
+}
+
+std::string SCXMLInvokeHandler::getChildSessionId() const {
+    // Return first active session's ID
+    for (const auto &[invokeid, session] : activeSessions_) {
+        if (session.isActive) {
+            return session.sessionId;
+        }
+    }
+    return "";
+}
+
+std::string SCXMLInvokeHandler::getSCXMLContent() const {
+    // Return SCXML content from first active session
+    for (const auto &[invokeid, session] : activeSessions_) {
+        if (session.isActive) {
+            return session.scxmlContent;
+        }
+    }
+    return "";
+}
+
+void InvokeExecutor::captureInvokeState(std::vector<InvokeSnapshot> &out) const {
+    // W3C SCXML 3.11: Capture all active invocations
+    // Zero Duplication: Iterate through handlers and delegate to them
+
+    for (const auto &[invokeid, handler] : invokeHandlers_) {
+        if (!handler->isInvokeActive(invokeid)) {
+            continue;
+        }
+
+        // Only handle SCXML invokes (can be extended for other types)
+        auto scxmlHandler = std::dynamic_pointer_cast<SCXMLInvokeHandler>(handler);
+        if (!scxmlHandler) {
+            LOG_DEBUG("InvokeExecutor: Skipping non-SCXML invoke: {}", invokeid);
+            continue;
+        }
+
+        // Create invoke snapshot
+        InvokeSnapshot snapshot;
+        snapshot.invokeId = invokeid;
+        snapshot.parentStateId = extractParentStateIdFromInvokeId(invokeid);
+        snapshot.childSessionId = scxmlHandler->getChildSessionId();
+        snapshot.type = scxmlHandler->getType();
+        snapshot.scxmlContent = scxmlHandler->getSCXMLContent();
+
+        // Capture child state recursively
+        snapshot.childState = scxmlHandler->captureChildState();
+
+        out.push_back(snapshot);
+
+        LOG_DEBUG("InvokeExecutor: Captured invoke state - invokeId: {}, childSession: {}", invokeid,
+                  snapshot.childSessionId);
+    }
+
+    LOG_INFO("InvokeExecutor: Captured {} active invocations", out.size());
+}
+
+void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invokes,
+                                        std::shared_ptr<StateMachine> parentSM) {
+    // W3C SCXML 3.11: Restore invoke configuration without side effects
+    // Zero Duplication: Use captured SCXML content directly (no src/srcexpr re-evaluation)
+
+    LOG_INFO("InvokeExecutor: Restoring {} invocations", invokes.size());
+
+    for (const auto &snapshot : invokes) {
+        // W3C SCXML 6.4: Extract parent state ID from invoke ID format
+        std::string parentStateId = extractParentStateIdFromInvokeId(snapshot.invokeId);
+
+        // W3C SCXML 3.11: Create temporary InvokeNode with captured SCXML content
+        // This bypasses src/srcexpr evaluation which would fail in new parent session context
+        // (new session after reset has no file path context)
+        auto invokeNode = std::make_shared<InvokeNode>(snapshot.invokeId);
+        invokeNode->setContent(snapshot.scxmlContent);  // Use captured content directly
+        invokeNode->setStateId(parentStateId);
+        invokeNode->setType(snapshot.type);
+        // Leave src/srcexpr/contentexpr empty - startInvokeInternal will use content field
+
+        // Create SCXML invoke handler
+        auto handler = std::make_shared<SCXMLInvokeHandler>();
+        handler->setParentStateMachine(parentSM);
+
+        // Register handler
+        invokeHandlers_[snapshot.invokeId] = handler;
+
+        // W3C SCXML 3.11: Restore invoke with isRestoration=true (skip completion callback and start())
+        handler->startInvokeWithSessionId(invokeNode,                // Temporary InvokeNode with captured content
+                                          parentSM->getSessionId(),  // parentSessionId
+                                          eventDispatcher_,          // eventDispatcher
+                                          snapshot.childSessionId,   // childSessionId
+                                          true                       // isRestoration - skip side effects
+        );
+
+        // Restore child state if available
+        if (snapshot.childState) {
+            handler->restoreChildState(*snapshot.childState, snapshot.childSessionId);
+        }
+
+        LOG_DEBUG("InvokeExecutor: Restored invoke - invokeId: {}, childSession: {}", snapshot.invokeId,
+                  snapshot.childSessionId);
+    }
 }
 
 }  // namespace SCE

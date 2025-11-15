@@ -87,9 +87,10 @@ private:
      * @brief Create parent event target for #_parent routing
      *
      * @param targetUri Target URI (should be "#_parent")
+     * @param sessionId Child session ID for parent-child relationship tracking
      * @return Parent event target
      */
-    std::shared_ptr<IEventTarget> createParentTarget(const std::string &targetUri);
+    std::shared_ptr<IEventTarget> createParentTarget(const std::string &targetUri, const std::string &sessionId);
 
     /**
      * @brief Create invoke event target for #_invokeId routing
