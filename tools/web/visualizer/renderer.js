@@ -1315,13 +1315,12 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         if (this.visualizer.debugMode) {
             console.log(`Rendered ${snapPointsData.length} snap points`);
         }
+
+        // Control visibility based on showSnapPoints flag
+        snapGroup.style('display', this.visualizer.showSnapPoints ? 'block' : 'none');
     }
 
     updateSnapPointPositions() {
-        if (!this.visualizer.showSnapPoints) {
-            return;
-        }
-
         // Generate latest snap points data
         const visibleNodes = this.visualizer.getVisibleNodes();
         const snapPointsData = this.visualizer.generateSnapPointsData(visibleNodes);
@@ -1397,6 +1396,9 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         // Update stored references
         this.visualizer.snapPointCircles = snapGroup.selectAll('circle.snap-point');
         this.visualizer.snapPointLabels = snapGroup.selectAll('text.snap-index');
+
+        // Control visibility based on showSnapPoints flag
+        snapGroup.style('display', this.visualizer.showSnapPoints ? 'block' : 'none');
     }
 
     getDirectionForEdge(edge, isSource) {
