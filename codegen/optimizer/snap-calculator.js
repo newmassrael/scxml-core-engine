@@ -430,8 +430,32 @@ class SnapCalculator {
             nodeCollisions++;
         }
 
+        // Get parent-child map for hierarchy awareness
+        const parentChildMap = this.optimizer.parentChildMap || new Map();
+        
+        // Helper: Get all ancestors of a node
+        const getAncestors = (nodeId) => {
+            const ancestors = new Set();
+            let current = nodeId;
+            while (parentChildMap.has(current)) {
+                const parent = parentChildMap.get(current);
+                ancestors.add(parent);
+                current = parent;
+            }
+            return ancestors;
+        };
+
+        const sourceAncestors = getAncestors(this.getVisualSource(link));
+        const targetAncestors = getAncestors(this.getVisualTarget(link));
+
         this.optimizer.nodes.forEach(node => {
             if (node.id === this.getVisualSource(link) || node.id === this.getVisualTarget(link)) return;
+            
+            // Skip parent/ancestor nodes (consistent with Hard Constraints)
+            if (sourceAncestors.has(node.id) || targetAncestors.has(node.id)) {
+                return; // Allow path to intersect parent/ancestor nodes
+            }
+            
             if (this.optimizer.pathIntersectsNode(combo, node)) {
                 nodeCollisions++;
             }
@@ -545,7 +569,6 @@ class SnapCalculator {
             const cx = node.x || 0;
             const cy = node.y || 0;
             const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
-            console.log(`[CSP DEBUG] ${nodeId}.${edge}: center=(${cx.toFixed(1)}, ${cy.toFixed(1)}), type=${node.type}, collapsed=${node.collapsed}, size=${halfWidth}x${halfHeight}`);
 
             // Separate incoming and outgoing, then sort each by other node position
             const incomingGroup = group.filter(item => !item.isSource);
