@@ -129,31 +129,35 @@ class PathUtils {
 
         for (let i = 0; i < segments.length; i++) {
             const segment = segments[i];
+            const isFirstSegment = i === 0;
+            const isLastSegment = i === segments.length - 1;
+            const isDirectLine = segments.length === 1;
+
+            // Special handling for direct line (single segment)
+            if (isDirectLine && (skipFirstSegment || skipLastSegment)) {
+                const excludeStart = skipFirstSegment;
+                const excludeEnd = skipLastSegment;
+                
+                if (this.optimizer.segmentIntersectsRectExcludingPoints(
+                    segment, nodeLeft, nodeTop, nodeRight, nodeBottom, excludeStart, excludeEnd
+                )) {
+                    return true;
+                }
+                continue; // Skip normal check
+            }
 
             // Skip first segment if requested (for source node collision check)
-            if (skipFirstSegment && i === 0) continue;
+            if (skipFirstSegment && isFirstSegment) {
+                continue;
+            }
 
             // Skip last segment if requested (for target node collision check)
-            if (skipLastSegment && i === segments.length - 1) {
-                // Special case: Direct line (single segment)
-                // Don't skip the entire segment, only exclude the endpoint area
-                if (segments.length === 1) {
-                    log(`[PATH-NODE] Direct line for ${node.id}: checking segment except endpoint`);
-                    // Check segment but exclude endpoint (target point) area
-                    if (this.optimizer.segmentIntersectsRectExcludingEndpoint(segment, nodeLeft, nodeTop, nodeRight, nodeBottom, path.targetPoint)) {
-                        log(`[PATH-NODE] Direct line segment intersects ${node.id} (excluding endpoint)`);
-                        return true;
-                    }
-                    continue; // Skip normal check
-                } else {
-                    log(`[PATH-NODE] Skipping last segment for ${node.id}: segment ${i}/${segments.length-1}`);
-                    continue;
-                }
+            if (skipLastSegment && isLastSegment) {
+                continue;
             }
 
             // Check if segment intersects with node bounding box
             if (this.optimizer.segmentIntersectsRect(segment, nodeLeft, nodeTop, nodeRight, nodeBottom)) {
-                log(`[PATH-NODE] Segment ${i} intersects ${node.id}: (${segment.x1.toFixed(1)},${segment.y1.toFixed(1)})→(${segment.x2.toFixed(1)},${segment.y2.toFixed(1)})`);
                 return true;
             }
         }
@@ -167,6 +171,7 @@ class PathUtils {
         // Check if segment is completely inside the rectangle
         const p1Inside = (x1 >= left && x1 <= right && y1 >= top && y1 <= bottom);
         const p2Inside = (x2 >= left && x2 <= right && y2 >= top && y2 <= bottom);
+
 
         if (p1Inside || p2Inside) {
             return true;
@@ -189,42 +194,69 @@ class PathUtils {
         return false;
     }
 
-    segmentIntersectsRectExcludingEndpoint(segment, left, top, right, bottom, endpoint) {
-        const MIN_SEGMENT = TransitionLayoutOptimizer.MIN_SEGMENT_LENGTH;
-        const { x1, y1, x2, y2 } = segment;
+    /**
+     * Check if segment intersects rectangle, optionally excluding start/end points
+     * @param {Object} segment - {x1, y1, x2, y2}
+     * @param {number} left - Rectangle left edge
+     * @param {number} top - Rectangle top edge
+     * @param {number} right - Rectangle right edge
+     * @param {number} bottom - Rectangle bottom edge
+     * @param {boolean} excludeStart - Exclude startpoint area (MIN_SEGMENT distance)
+     * @param {boolean} excludeEnd - Exclude endpoint area (MIN_SEGMENT distance)
+     * @returns {boolean} True if (shortened) segment intersects rectangle
+     */
+    segmentIntersectsRectExcludingPoints(segment, left, top, right, bottom, excludeStart = false, excludeEnd = false) {
+        // Early return: no exclusion needed
+        if (!excludeStart && !excludeEnd) {
+            return this.optimizer.segmentIntersectsRect(segment, left, top, right, bottom);
+        }
 
-        // Determine which end is the endpoint (usually x2, y2 for target)
+        const MIN_SEGMENT = TransitionLayoutOptimizer.MIN_SEGMENT_LENGTH;
+        let { x1, y1, x2, y2 } = segment;
+
         const isVertical = Math.abs(x2 - x1) < 1;
         const isHorizontal = Math.abs(y2 - y1) < 1;
 
-        // Shorten the segment to exclude the endpoint area (MIN_SEGMENT distance)
-        let shortenedSegment = { ...segment };
+        // Only orthogonal segments are supported (W3C SCXML transitions are always orthogonal)
+        if (!isVertical && !isHorizontal) {
+            console.warn('[PATH-UTILS] Non-orthogonal segment detected, using full segment for collision check');
+            return this.optimizer.segmentIntersectsRect(segment, left, top, right, bottom);
+        }
 
-        if (isVertical) {
-            // Vertical segment: exclude endpoint in Y direction
-            if (y2 > y1) {
-                // Going down
-                shortenedSegment.y2 = y2 - MIN_SEGMENT;
-            } else {
-                // Going up
-                shortenedSegment.y2 = y2 + MIN_SEGMENT;
-            }
-        } else if (isHorizontal) {
-            // Horizontal segment: exclude endpoint in X direction
-            if (x2 > x1) {
-                // Going right
-                shortenedSegment.x2 = x2 - MIN_SEGMENT;
-            } else {
-                // Going left
-                shortenedSegment.x2 = x2 + MIN_SEGMENT;
+        // Calculate segment length
+        const segmentLength = isVertical ? Math.abs(y2 - y1) : Math.abs(x2 - x1);
+        
+        // If segment is too short to exclude both ends, check full segment
+        if (excludeStart && excludeEnd && segmentLength <= 2 * MIN_SEGMENT) {
+            console.warn(`[PATH-UTILS] Segment too short (${segmentLength.toFixed(1)}px) to exclude both endpoints, using full segment`);
+            return this.optimizer.segmentIntersectsRect(segment, left, top, right, bottom);
+        }
+
+        // Shorten segment from start if requested
+        if (excludeStart) {
+            if (isVertical) {
+                y1 = y2 > y1 ? y1 + MIN_SEGMENT : y1 - MIN_SEGMENT;
+            } else { // isHorizontal
+                x1 = x2 > x1 ? x1 + MIN_SEGMENT : x1 - MIN_SEGMENT;
             }
         }
 
-        // Check if shortened segment intersects the rectangle
+        // Shorten segment from end if requested
+        if (excludeEnd) {
+            if (isVertical) {
+                y2 = y2 > y1 ? y2 - MIN_SEGMENT : y2 + MIN_SEGMENT;
+            } else { // isHorizontal
+                x2 = x2 > x1 ? x2 - MIN_SEGMENT : x2 + MIN_SEGMENT;
+            }
+        }
+
+        // Reuse segment object to avoid allocation
+        const shortenedSegment = { x1, y1, x2, y2 };
         return this.optimizer.segmentIntersectsRect(shortenedSegment, left, top, right, bottom);
     }
 
     evaluateCombination(link, sourceNode, targetNode, sourceEdge, targetEdge, assignedPaths, nodes) {
+        
         const sourcePoint = this.optimizer.getEdgeCenterPoint(sourceNode, sourceEdge);
         const targetPoint = this.optimizer.getEdgeCenterPoint(targetNode, targetEdge);
 
@@ -252,9 +284,11 @@ class PathUtils {
         if (this.optimizer.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
             nodeCollisions++;
         }
+        
         if (this.optimizer.pathIntersectsNode(combo, targetNode, { skipLastSegment: true })) {
             nodeCollisions++;
         }
+        
         nodes.forEach(node => {
             if (node.id === sourceNode.id || node.id === targetNode.id) return;
             if (this.optimizer.pathIntersectsNode(combo, node)) {
@@ -285,6 +319,7 @@ class PathUtils {
         }
 
         const score = tooCloseSnap * 100000 + nodeCollisions * 10000 + intersections * 1000 + distance;
+
 
         return { combination: combo, score };
     }
