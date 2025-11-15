@@ -5,9 +5,81 @@
  * Breadcrumb Manager - Handles breadcrumb navigation for sub-SCXML
  */
 
+// DOM Element IDs
+const DOM_IDS = {
+    STATE_DIAGRAM_CONTAINER: 'state-diagram-single',
+    BREADCRUMB_CONTAINER: 'breadcrumb-container',
+    BACK_BUTTON: 'btn-back'
+};
+
+// CSS Classes
+const CSS_CLASSES = {
+    BREADCRUMB_ITEM: 'breadcrumb-item',
+    BREADCRUMB_SEPARATOR: 'breadcrumb-separator',
+    ACTIVE: 'active'
+};
+
+// Display Styles
+const DISPLAY_STYLES = {
+    BLOCK: 'block',
+    NONE: 'none'
+};
+
+// UI Constants
+const UI_CONSTANTS = {
+    BREADCRUMB_SEPARATOR_CHAR: '›',
+    BREADCRUMB_DEPTH_ATTR: 'data-depth'
+};
+
 class BreadcrumbManager {
     constructor(controller) {
         this.controller = controller;
+    }
+
+    /**
+     * Helper: Create and initialize a new visualizer instance
+     * @param {Object} structure - SCXML structure
+     * @returns {Promise<SCXMLVisualizer|null>} Initialized visualizer or null if container not found
+     */
+    async _createVisualizer(structure) {
+        const containerId = DOM_IDS.STATE_DIAGRAM_CONTAINER;
+        const container = document.getElementById(containerId);
+        
+        if (!container) {
+            console.error(`${containerId} container not found`);
+            return null;
+        }
+
+        // Clear container
+        container.innerHTML = '';
+        
+        // Create new visualizer
+        const visualizer = new SCXMLVisualizer(containerId, structure);
+        
+        // Wait for initialization to complete
+        if (visualizer.initPromise) {
+            await visualizer.initPromise;
+        } else {
+            console.warn('Visualizer has no initPromise, assuming synchronous initialization');
+        }
+        
+        return visualizer;
+    }
+
+    /**
+     * Helper: Cleanup previous visualizer to prevent memory leaks
+     * @param {SCXMLVisualizer} visualizer - Visualizer to cleanup
+     */
+    _cleanupVisualizer(visualizer) {
+        if (!visualizer) return;
+        
+        // Check if visualizer has destroy method
+        if (typeof visualizer.destroy === 'function') {
+            visualizer.destroy();
+        }
+        
+        // Note: D3 selections and event listeners should be cleaned up by visualizer.destroy()
+        // If destroy() doesn't exist, we rely on garbage collection
     }
 
     extractSubSCXMLInfo(structure) {
@@ -79,9 +151,9 @@ class BreadcrumbManager {
     }
 
     updateBreadcrumb() {
-        const breadcrumbContainer = document.getElementById('breadcrumb-container');
+        const breadcrumbContainer = document.getElementById(DOM_IDS.BREADCRUMB_CONTAINER);
         if (!breadcrumbContainer) {
-            console.warn('breadcrumb-container not found');
+            console.warn(`${DOM_IDS.BREADCRUMB_CONTAINER} not found`);
             return;
         }
 
@@ -96,17 +168,17 @@ class BreadcrumbManager {
             const isLast = (i === path.length - 1);
             if (isLast) {
                 // Current (active) item
-                return `<span class="breadcrumb-item active">${this.controller.escapeHtml(label)}</span>`;
+                return `<span class="${CSS_CLASSES.BREADCRUMB_ITEM} ${CSS_CLASSES.ACTIVE}">${this.controller.escapeHtml(label)}</span>`;
             } else {
                 // Clickable parent items
-                return `<a href="#" class="breadcrumb-item" data-depth="${i}">${this.controller.escapeHtml(label)}</a>`;
+                return `<a href="#" class="${CSS_CLASSES.BREADCRUMB_ITEM}" ${UI_CONSTANTS.BREADCRUMB_DEPTH_ATTR}="${i}">${this.controller.escapeHtml(label)}</a>`;
             }
-        }).join(' <span class="breadcrumb-separator">›</span> ');
+        }).join(` <span class="${CSS_CLASSES.BREADCRUMB_SEPARATOR}">${UI_CONSTANTS.BREADCRUMB_SEPARATOR_CHAR}</span> `);
 
         breadcrumbContainer.innerHTML = breadcrumbHTML;
 
         // Add click handlers for breadcrumb navigation
-        breadcrumbContainer.querySelectorAll('a.breadcrumb-item').forEach(item => {
+        breadcrumbContainer.querySelectorAll(`a.${CSS_CLASSES.BREADCRUMB_ITEM}`).forEach(item => {
             item.addEventListener('click', async (e) => {
                 e.preventDefault();
                 const depth = parseInt(e.target.dataset.depth);
@@ -313,16 +385,16 @@ class BreadcrumbManager {
             subSCXMLs: this.controller.currentMachine.subSCXMLs
         });
 
+        // Cleanup previous visualizer to prevent memory leaks
+        this._cleanupVisualizer(this.controller.visualizer);
+
         // Create new visualizer for child
-        const containerId = 'state-diagram-single';
-        const container = document.getElementById(containerId);
-        if (!container) {
-            console.error('state-diagram-single container not found');
+        const childVisualizer = await this._createVisualizer(childStructure);
+        if (!childVisualizer) {
+            console.error('Failed to create child visualizer');
             return;
         }
-
-        container.innerHTML = '';
-        const childVisualizer = new SCXMLVisualizer(containerId, childStructure);
+        
         const childSubSCXMLs = this.extractSubSCXMLInfo(childStructure);
 
         // Generate label
@@ -345,11 +417,15 @@ class BreadcrumbManager {
             subSCXMLs: childSubSCXMLs
         };
 
+        // CRITICAL: Update controller.visualizer to point to current active visualizer
+        // ui-updater.js uses controller.visualizer.highlightActiveStates()
+        this.controller.visualizer = childVisualizer;
+
         this.updateBreadcrumb();
 
-        const backButton = document.getElementById('btn-back');
+        const backButton = document.getElementById(DOM_IDS.BACK_BUTTON);
         if (backButton) {
-            backButton.style.display = 'block';
+            backButton.style.display = DISPLAY_STYLES.BLOCK;
         }
 
         await this.controller.updateState();
@@ -365,15 +441,17 @@ class BreadcrumbManager {
         console.log('Navigating back to parent');
         const parent = this.controller.navigationStack.pop();
 
-        const containerId = 'state-diagram-single';
-        const container = document.getElementById(containerId);
-        if (!container) {
-            console.error('state-diagram-single container not found');
+        // Cleanup current visualizer to prevent memory leaks
+        this._cleanupVisualizer(this.controller.visualizer);
+
+        // Create new visualizer for parent
+        const parentVisualizer = await this._createVisualizer(parent.structure);
+        if (!parentVisualizer) {
+            console.error('Failed to create parent visualizer');
+            // Restore stack state
+            this.controller.navigationStack.push(parent);
             return;
         }
-
-        container.innerHTML = '';
-        const parentVisualizer = new SCXMLVisualizer(containerId, parent.structure);
 
         this.controller.currentMachine = {
             id: parent.id,
@@ -383,12 +461,16 @@ class BreadcrumbManager {
             subSCXMLs: parent.subSCXMLs
         };
 
+        // CRITICAL: Update controller.visualizer to point to current active visualizer
+        // ui-updater.js uses controller.visualizer.highlightActiveStates()
+        this.controller.visualizer = parentVisualizer;
+
         this.updateBreadcrumb();
 
         if (this.controller.navigationStack.length === 0) {
-            const backButton = document.getElementById('btn-back');
+            const backButton = document.getElementById(DOM_IDS.BACK_BUTTON);
             if (backButton) {
-                backButton.style.display = 'none';
+                backButton.style.display = DISPLAY_STYLES.NONE;
             }
         }
 
