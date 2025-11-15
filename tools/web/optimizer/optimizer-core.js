@@ -144,7 +144,7 @@ class TransitionLayoutOptimizer {
     segmentsIntersect(seg1, seg2) { return this.pathUtils.segmentsIntersect(seg1, seg2); }
     pathIntersectsNode(path, node, options) { return this.pathUtils.pathIntersectsNode(path, node, options); }
     segmentIntersectsRect(segment, left, top, right, bottom) { return this.pathUtils.segmentIntersectsRect(segment, left, top, right, bottom); }
-    segmentIntersectsRectExcludingEndpoint(segment, left, top, right, bottom, endpoint) { return this.pathUtils.segmentIntersectsRectExcludingEndpoint(segment, left, top, right, bottom, endpoint); }
+    segmentIntersectsRectExcludingPoints(segment, left, top, right, bottom, excludeStart, excludeEnd) { return this.pathUtils.segmentIntersectsRectExcludingPoints(segment, left, top, right, bottom, excludeStart, excludeEnd); }
     evaluateCombination(link, sourceNode, targetNode, sourceEdge, targetEdge, assignedPaths, nodes) { return this.pathUtils.evaluateCombination(link, sourceNode, targetNode, sourceEdge, targetEdge, assignedPaths, nodes); }
 
     optimizeSnapPointAssignmentsProgressive(links, nodes, draggedNodeId, onComplete, onProgress, debounceMs) { return this.cspSolver.optimizeSnapPointAssignmentsProgressive(links, nodes, draggedNodeId, onComplete, onProgress, debounceMs); }
