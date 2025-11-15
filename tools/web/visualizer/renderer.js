@@ -609,6 +609,29 @@ class Renderer {
 
                     // Only optimize if node was actually dragged
                     if (!isDrag) {
+                        // W3C SCXML 6.3: Invoke navigation - if state has invoke, navigate to child
+                        if (d.hasInvoke) {
+                            console.log(`State ${d.id} has invoke - dispatching state-navigate event`);
+                            
+                            // Dispatch custom event for navigation
+                            const navEvent = new CustomEvent('state-navigate', {
+                                detail: {
+                                    stateId: d.id,
+                                    invokeSrc: d.invokeSrc,
+                                    invokeSrcExpr: d.invokeSrcExpr,
+                                    invokeId: d.invokeId
+                                }
+                            });
+                            document.dispatchEvent(navEvent);
+                            return;
+                        }
+
+                        // Design System: Panel + Diagram interaction
+                        if (window.executionController) {
+                            window.executionController.highlightStateInPanel(d.id);
+                            window.executionController.focusState(d.id);
+                        }
+                        
                         return; // Skip optimization for clicks
                     }
 
@@ -699,46 +722,8 @@ class Renderer {
             .attr('x', d => -d.width/2)
             .attr('y', d => -d.height/2)
             .attr('rx', 5)
-            .style('cursor', 'pointer')
-            .on('click', (event, d) => {
-                event.stopPropagation();
-
-                // W3C SCXML 6.3: Invoke navigation - if state has invoke, navigate to child
-                if (d.hasInvoke) {
-                    console.log(`State ${d.id} has invoke - dispatching state-navigate event`);
-                    
-                    // Dispatch custom event for navigation
-                    const navEvent = new CustomEvent('state-navigate', {
-                        detail: {
-                            stateId: d.id,
-                            invokeSrc: d.invokeSrc,
-                            invokeSrcExpr: d.invokeSrcExpr,
-                            invokeId: d.invokeId
-                        }
-                    });
-                    document.dispatchEvent(navEvent);
-                    return;
-                }
-
-                // Debug: Log state coordinates
-                const bounds = this.visualizer.getNodeBounds(d);
-                if (self.debugMode) {
-                    console.log('=== STATE CLICKED ===');
-                    console.log(`State: ${d.id} (type: ${d.type})`);
-                    console.log(`Center: (${d.x}, ${d.y})`);
-                    console.log(`Bounds:`, bounds);
-                    console.log(`  Left: ${bounds.left}, Right: ${bounds.right}`);
-                    console.log(`  Top: ${bounds.top}, Bottom: ${bounds.bottom}`);
-                    console.log(`  Width: ${bounds.right - bounds.left}, Height: ${bounds.bottom - bounds.top}`);
-                    console.log('====================');
-                }
-
-                // Design System: Panel + Diagram interaction (matches panel click behavior)
-                if (window.executionController) {
-                    window.executionController.highlightStateInPanel(d.id);
-                    window.executionController.focusState(d.id);
-                }
-            });
+            .style('cursor', 'pointer');
+            // Click handler removed: D3 drag prevents click events, handled in drag end instead
 
         this.visualizer.nodeElements.filter(d => d.type === 'history')
             .append('circle')
@@ -801,6 +786,7 @@ class Renderer {
                     .attr('font-weight', 'bold')
                     .attr('font-size', '16px')
                     .attr('fill', '#1f2328')
+                    .style('pointer-events', 'none')
                     .text(d.id);
 
                 // Separator line if there are actions (stronger line)
@@ -895,6 +881,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             .attr('d', d => this.visualizer.getLinkPath(d))
             .style('marker-end', 'url(#arrowhead)')
             .style('cursor', d => d.linkType === 'transition' ? 'pointer' : 'default')
+            .style('pointer-events', 'stroke')  // Only stroke is clickable, area is transparent
             .on('click', (event, d) => {
                 if (d.linkType === 'transition') {
                     // Show transition animation on diagram (temporary)
@@ -1444,6 +1431,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     .attr('dominant-baseline', 'middle')
                     .attr('font-size', '13px')
                     .attr('fill', color)
+                    .style('pointer-events', 'none')
                     .text(fullText);
 
                 // Get dimensions using getBBox (wait for render)

@@ -74,7 +74,8 @@ async function initVisualizer(scxmlContent) {
     try {
         // Load WASM module
         console.log('Loading WASM module...');
-        const Module = await createVisualizer();
+        window.Module = await createVisualizer();  // Make Module globally accessible
+        const Module = window.Module;  // Local alias for convenience
         console.log('WASM module loaded');
 
         // Setup Emscripten virtual file system for invoke resolution
@@ -103,22 +104,83 @@ async function initVisualizer(scxmlContent) {
             Module.FS.writeFile(`/resources/${testId}/test${testId}.scxml`, scxmlContent);
             console.log(`Created virtual FS: /resources/${testId}/test${testId}.scxml`);
 
-            // W3C SCXML 6.3: Extract child SCXML files from invoke src attributes
-            // Parse invoke elements with static src="file:..." to avoid 404 errors
+            // W3C SCXML 6.3/6.4: Extract child SCXML files from invoke src/srcexpr attributes
             if (scxmlContent.includes('<invoke')) {
-                const invokePattern = /<invoke[^>]*\ssrc=["']file:([^"']+)["']/g;
                 const childFiles = new Set();  // Use Set to avoid duplicates
-                let match;
 
-                while ((match = invokePattern.exec(scxmlContent)) !== null) {
-                    const filename = match[1];
-                    childFiles.add(filename);
+                try {
+                    // Use DOMParser for robust XML parsing (avoids regex pitfalls)
+                    const parser = new DOMParser();
+                    const xmlDoc = parser.parseFromString(scxmlContent, 'text/xml');
+
+                    // Check for parse errors
+                    const parseError = xmlDoc.querySelector('parsererror');
+                    if (parseError) {
+                        console.warn('XML parsing failed, falling back to regex extraction:', parseError.textContent);
+                        throw new Error('XML parse error');
+                    }
+
+                    // Extract static src="file:..." from invoke elements
+                    const invokeElements = xmlDoc.querySelectorAll('invoke[src]');
+                    invokeElements.forEach(invoke => {
+                        const src = invoke.getAttribute('src');
+                        if (src && src.startsWith('file:')) {
+                            const filename = src.replace(/^file:/, '');
+                            childFiles.add(filename);
+                        }
+                    });
+
+                    // W3C SCXML 6.4: Extract file references from data/assign expressions
+                    // Look for 'file:...' string literals in expr attributes
+                    if (scxmlContent.includes('srcexpr')) {
+                        console.log(`Dynamic invoke (srcexpr) detected - extracting file references from XML`);
+
+                        const exprElements = xmlDoc.querySelectorAll('[expr]');
+                        exprElements.forEach(elem => {
+                            const expr = elem.getAttribute('expr');
+                            // Match 'file:...' or "file:..." in expressions
+                            const fileMatches = expr.match(/['"]file:([^'"]+)['"]/g);
+                            if (fileMatches) {
+                                fileMatches.forEach(match => {
+                                    const filename = match.replace(/^['"]file:/, '').replace(/['"]$/, '');
+                                    childFiles.add(filename);
+                                    console.log(`Extracted file reference from expr: ${filename}`);
+                                });
+                            }
+                        });
+
+                        if (childFiles.size > 0) {
+                            console.log(`XML parsing extracted ${childFiles.size} file reference(s)`);
+                        }
+                    }
+                } catch (e) {
+                    // Fallback to regex if XML parsing fails
+                    console.warn('XML parsing failed, using regex fallback:', e.message);
+
+                    // Extract static src="file:..." references
+                    const invokePattern = /<invoke[^>]*\ssrc=["']file:([^"']+)["']/g;
+                    let match;
+
+                    while ((match = invokePattern.exec(scxmlContent)) !== null) {
+                        const filename = match[1];
+                        childFiles.add(filename);
+                    }
+
+                    // Extract file references from expressions
+                    if (scxmlContent.includes('srcexpr')) {
+                        const fileRefPattern = /['"']file:([^'"']+)['"']/g;
+                        while ((match = fileRefPattern.exec(scxmlContent)) !== null) {
+                            const filename = match[1];
+                            childFiles.add(filename);
+                        }
+                    }
                 }
 
                 if (childFiles.size > 0) {
-                    console.log(`Static analysis: ${childFiles.size} child SCXML file(s) detected`);
+                    console.log(`Loading ${childFiles.size} potential child SCXML file(s)`);
 
-                    // Load only detected child files (no 404 errors)
+                    // Load detected/potential child files
+                    let loadedCount = 0;
                     for (const childFile of childFiles) {
                         try {
                             const childResponse = await fetch(`${basePath}${childFile}`);
@@ -126,15 +188,18 @@ async function initVisualizer(scxmlContent) {
                                 const childContent = await childResponse.text();
                                 Module.FS.writeFile(`/resources/${testId}/${childFile}`, childContent);
                                 console.log(`Created virtual FS: /resources/${testId}/${childFile}`);
+                                loadedCount++;
                             } else {
-                                console.warn(`Child file not found: ${childFile} (referenced but missing)`);
+                                // Log failed HTTP responses at debug level
+                                console.debug(`Skipped potential child file ${childFile}: HTTP ${childResponse.status}`);
                             }
                         } catch (e) {
-                            console.error(`Failed to load child file ${childFile}:`, e);
+                            // Log errors at debug level (network issues, FS errors, etc.)
+                            console.debug(`Skipped potential child file ${childFile}: ${e.message}`);
                         }
                     }
 
-                    console.log(`Child SCXML loading complete`);
+                    console.log(`Child SCXML loading complete: ${loadedCount}/${childFiles.size} files loaded`);
                 } else {
                     console.log(`No file-based invokes detected (content-based invokes may be used)`);
                 }

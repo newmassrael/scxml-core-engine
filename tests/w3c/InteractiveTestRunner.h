@@ -225,6 +225,20 @@ public:
 #endif
 
     /**
+     * @brief Evaluate ECMAScript expression in current session
+     *
+     * W3C SCXML 5.9: Evaluates arbitrary ECMAScript expression using JSEngine.
+     * Used for dynamic invoke srcexpr evaluation in visualization.
+     *
+     * Zero Duplication: Delegates to JSEngine::evaluateExpression() as Single Source of Truth
+     * for expression evaluation logic.
+     *
+     * @param expression ECMAScript expression (e.g., "pathVar", "'file:' + pathVar")
+     * @return Evaluated result as string, or empty string on error
+     */
+    std::string evaluateExpression(const std::string &expression) const;
+
+    /**
      * @brief Get SCXML structure for visualization
      *
      * Returns JavaScript object with:

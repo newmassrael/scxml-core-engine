@@ -83,6 +83,8 @@ EMSCRIPTEN_BINDINGS(interactive_test_runner) {
 
         .function("getDataModel", &InteractiveTestRunner::getDataModel)
 
+        .function("evaluateExpression", &InteractiveTestRunner::evaluateExpression)
+
         // SCXML structure for visualization
         .function("getSCXMLStructure", &InteractiveTestRunner::getSCXMLStructure)
 
