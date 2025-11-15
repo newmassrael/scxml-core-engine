@@ -671,7 +671,20 @@ class InteractionHandler {
             .data(visibleLinks, d => d.id);  // Rebind with new data (use id as key)
         
         this.visualizer.linkElements.attr('d', d => this.visualizer.getLinkPath(d));
-        
+
         console.log(`[TOGGLE] Updated ${this.visualizer.linkElements.size()} link paths`);
+
+        // Update transition labels if they exist
+        if (this.visualizer.transitionLabels) {
+            // Rebind with updated visibleLinks data
+            this.visualizer.transitionLabels = this.visualizer.transitionLabels
+                .data(visibleLinks, d => d.id);
+
+            this.visualizer.transitionLabels
+                .attr('x', d => this.visualizer.getTransitionLabelPosition(d).x)
+                .attr('y', d => this.visualizer.getTransitionLabelPosition(d).y);
+
+            console.log(`[TOGGLE] Updated ${this.visualizer.transitionLabels.size()} transition label positions`);
+        }
     }
 }
