@@ -75,9 +75,10 @@ class TransitionLayoutOptimizer {
         return this.NODE_SIZES[nodeOrType] || { halfWidth: 30, halfHeight: 20 };
     }
 
-    constructor(nodes, links) {
+    constructor(nodes, links, visualizer = null) {
         this.nodes = nodes;
         this.links = links;
+        this.visualizer = visualizer;  // Optional visualizer reference for getVisibleLinks
         this.cspRunning = false; // Flag to prevent concurrent CSP executions
 
         // Initialize helper modules
