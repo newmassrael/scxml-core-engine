@@ -727,6 +727,33 @@ emscripten::val InteractiveTestRunner::getDataModel() const {
     return obj;
 }
 
+std::string InteractiveTestRunner::evaluateExpression(const std::string &expression) const {
+    if (!stateMachine_) {
+        LOG_ERROR("evaluateExpression: No state machine available");
+        return "";
+    }
+
+    // Zero Duplication: Use JSEngine as Single Source of Truth for expression evaluation
+    auto &jsEngine = JSEngine::instance();
+    const std::string &sessionId = stateMachine_->getSessionId();
+
+    try {
+        // W3C SCXML 5.9: Evaluate expression in current session context
+        auto future = jsEngine.evaluateExpression(sessionId, expression);
+        auto result = future.get();
+
+        if (result.isSuccess()) {
+            return result.getValueAsString();
+        } else {
+            LOG_ERROR("evaluateExpression failed: {}", result.getErrorMessage());
+            return "";
+        }
+    } catch (const std::exception &e) {
+        LOG_ERROR("evaluateExpression exception: {}", e.what());
+        return "";
+    }
+}
+
 emscripten::val InteractiveTestRunner::getSCXMLStructure() const {
     auto model = stateMachine_->getModel();
 
