@@ -28,12 +28,200 @@ class CSPSolver {
         return link.visualTarget || link.target;
     }
 
+    /**
+     * Simulate snap point distribution for greedy algorithm
+     * Adapts ConstraintSolver.simulateSnapPoints() for greedy's sequential assignment
+     *
+     * @param {Object} link - Current link being evaluated
+     * @param {Object} combo - Edge combination with sourceEdge, targetEdge, sourcePoint (edge center), targetPoint (edge center)
+     * @param {Map} greedyAssignment - Map of linkId → {sourceEdge, targetEdge} for already assigned links
+     * @param {Array} nodes - All nodes
+     * @returns {Object} Combo with simulated distributed snap points
+     */
+    simulateSnapPointsForGreedy(link, combo, greedyAssignment, nodes) {
+        // Use visual redirect determined by link-builder (visualSource/visualTarget already set)
+        const actualSource = this.getVisualSource(link);
+        const actualTarget = this.getVisualTarget(link);
+
+        if (this.optimizer.visualizer?.debugMode) {
+            console.log(`[GREEDY SIMULATE] ${link.source}→${link.target}: actualSource=${actualSource}, actualTarget=${actualTarget} (visualSource=${link.visualSource || 'unset'})`);
+        }
+
+        const sourceNode = nodes.find(n => n.id === actualSource);
+        const targetNode = nodes.find(n => n.id === actualTarget);
+
+        if (!sourceNode || !targetNode) {
+            if (this.optimizer.visualizer?.debugMode) {
+                console.log(`[GREEDY SIMULATE ERROR] Node not found: sourceNode=${!!sourceNode}, targetNode=${!!targetNode}`);
+            }
+            return combo;
+        }
+
+        // Simulate source snap point
+        const sourcePoint = this.simulateEdgeSnapPointForGreedy(
+            link, sourceNode, combo.sourceEdge, true, greedyAssignment, nodes
+        );
+
+        // Simulate target snap point
+        const targetPoint = this.simulateEdgeSnapPointForGreedy(
+            link, targetNode, combo.targetEdge, false, greedyAssignment, nodes
+        );
+
+        // Return new combo with simulated snap points
+        return {
+            ...combo,
+            sourcePoint,
+            targetPoint
+        };
+    }
+
+    /**
+     * Simulate snap point on a specific edge for greedy algorithm
+     * Implements same logic as ConstraintSolver.simulateEdgeSnapPoint()
+     *
+     * @param {Object} link - Current link
+     * @param {Object} node - Node containing the edge
+     * @param {string} edge - Edge name (top/bottom/left/right)
+     * @param {boolean} isSource - True if source snap point, false if target
+     * @param {Map} greedyAssignment - Already assigned link routings
+     * @param {Array} nodes - All nodes
+     * @returns {Object} {x, y} snap point
+     */
+    simulateEdgeSnapPointForGreedy(link, node, edge, isSource, greedyAssignment, nodes) {
+        // Initial transitions use node center
+        if (link.linkType === 'initial' && isSource) {
+            return { x: node.x || 0, y: node.y || 0 };
+        }
+
+        // Collect all links using this edge (including current link)
+        const edgeLinks = [];
+
+        // Add current link
+        edgeLinks.push({ link, isSource, isCurrentLink: true });
+
+        // Add already assigned links
+        if (this.optimizer.visualizer?.debugMode) {
+            console.log(`[GREEDY SIMULATE DEBUG] Checking ${greedyAssignment.size} assigned links for ${node.id}.${edge}`);
+        }
+        for (const [linkId, routing] of greedyAssignment.entries()) {
+            if (linkId === link.id) continue; // Skip current link
+
+            const assignedLink = this.optimizer.links.find(l => l.id === linkId);
+            if (!assignedLink) {
+                if (this.optimizer.visualizer?.debugMode) {
+                    console.log(`[GREEDY SIMULATE DEBUG] Link ${linkId} not found in optimizer.links`);
+                }
+                continue;
+            }
+
+            const assignedSource = this.getVisualSource(assignedLink);
+            const assignedTarget = this.getVisualTarget(assignedLink);
+
+            // Check if assigned link uses this edge
+            if (assignedSource === node.id && routing.sourceEdge === edge) {
+                if (this.optimizer.visualizer?.debugMode) {
+                    console.log(`[GREEDY SIMULATE DEBUG] Found ${assignedSource}→${assignedTarget} using ${node.id}.${edge} as source`);
+                }
+                edgeLinks.push({ link: assignedLink, isSource: true, isCurrentLink: false });
+            } else if (assignedTarget === node.id && routing.targetEdge === edge) {
+                if (this.optimizer.visualizer?.debugMode) {
+                    console.log(`[GREEDY SIMULATE DEBUG] Found ${assignedSource}→${assignedTarget} using ${node.id}.${edge} as target`);
+                }
+                edgeLinks.push({ link: assignedLink, isSource: false, isCurrentLink: false });
+            }
+        }
+        if (this.optimizer.visualizer?.debugMode) {
+            console.log(`[GREEDY SIMULATE DEBUG] Total edgeLinks for ${node.id}.${edge}: ${edgeLinks.length}`);
+        }
+
+        // Single link on edge: use edge center
+        if (edgeLinks.length === 1) {
+            const centerPoint = this.optimizer.getEdgeCenterPoint(node, edge);
+            if (this.optimizer.visualizer?.debugMode) {
+                console.log(`[GREEDY SIMULATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${isSource ? 'source' : 'target'} on ${node.id}.${edge}: single link, using center=(${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
+            }
+            return centerPoint;
+        }
+
+        // Separate incoming and outgoing
+        const incoming = edgeLinks.filter(item => !item.isSource);
+        const outgoing = edgeLinks.filter(item => item.isSource);
+
+        // Sort by other node position
+        const sortByOtherNode = (a, b) => {
+            const aOther = nodes.find(n => n.id === (a.isSource ? this.getVisualTarget(a.link) : this.getVisualSource(a.link)));
+            const bOther = nodes.find(n => n.id === (b.isSource ? this.getVisualTarget(b.link) : this.getVisualSource(b.link)));
+
+            if (!aOther || !bOther) return 0;
+
+            if (edge === 'top' || edge === 'bottom') {
+                return (aOther.x || 0) - (bOther.x || 0);
+            } else {
+                return (aOther.y || 0) - (bOther.y || 0);
+            }
+        };
+
+        incoming.sort(sortByOtherNode);
+        outgoing.sort(sortByOtherNode);
+
+        // Combine: incoming first, then outgoing (matches distributeSnapPointsOnEdges)
+        const sortedLinks = [...incoming, ...outgoing];
+        const totalCount = sortedLinks.length;
+
+        // Find index of current link
+        const currentIndex = sortedLinks.findIndex(item => item.isCurrentLink);
+        if (currentIndex < 0) {
+            console.error('[GREEDY SIMULATE] Current link not found in sorted list');
+            return this.optimizer.getEdgeCenterPoint(node, edge);
+        }
+
+        // Calculate position (matches distributeSnapPointsOnEdges)
+        const position = (currentIndex + 1) / (totalCount + 1);
+
+        const cx = node.x || 0;
+        const cy = node.y || 0;
+        const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
+
+        let x, y;
+
+        if (edge === 'top') {
+            x = cx - halfWidth + (halfWidth * 2 * position);
+            y = cy - halfHeight;
+        } else if (edge === 'bottom') {
+            x = cx - halfWidth + (halfWidth * 2 * position);
+            y = cy + halfHeight;
+        } else if (edge === 'left') {
+            x = cx - halfWidth;
+            y = cy - halfHeight + (halfHeight * 2 * position);
+        } else if (edge === 'right') {
+            x = cx + halfWidth;
+            y = cy - halfHeight + (halfHeight * 2 * position);
+        }
+
+        if (this.optimizer.visualizer?.debugMode) {
+            console.log(`[GREEDY SIMULATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${isSource ? 'source' : 'target'} on ${node.id}.${edge}: position ${currentIndex + 1}/${totalCount}, simulated=(${x.toFixed(1)}, ${y.toFixed(1)})`);
+        }
+
+        return { x, y };
+    }
+
+    _syncRoutingToOriginalLinks(effectiveLinks) {
+        // Sync routing from effectiveLinks back to original allLinks
+        // CRITICAL: Without this, drop updates fail because routing is not on allLinks
+        effectiveLinks.forEach(vlink => {
+            if (vlink.routing && vlink.originalLink) {
+                vlink.originalLink.routing = vlink.routing;
+            }
+        });
+    }
+
     _handleProgressMessage(data, links, nodes, lastProgressRender) {
         if (data.data && data.data.type === 'solution_improved') {
             const now = performance.now();
             if (now - lastProgressRender >= TransitionLayoutOptimizer.PROGRESS_RENDER_INTERVAL_MS) {
                 console.log(`[OPTIMIZE PROGRESSIVE] Solution improved: score=${data.data.score.toFixed(1)}, progress=${(data.data.progress * 100).toFixed(1)}%`);
                 this.optimizer._applySolutionToLinks(data.data.assignment, links, nodes);
+                this._syncRoutingToOriginalLinks(links);  // Sync routing back
                 return now;
             }
         }
@@ -44,6 +232,7 @@ class CSPSolver {
         console.log(`[OPTIMIZE PROGRESSIVE] CSP solution received (score=${score}, nodes=${stats.nodeCount}, prunes=${stats.pruneCount})`);
         console.log('[OPTIMIZE PROGRESSIVE] Applying CSP solution...');
         this.optimizer._applySolutionToLinks(solution, links, nodes);
+        this._syncRoutingToOriginalLinks(links);  // Sync routing back
         console.log('[OPTIMIZE PROGRESSIVE] Background CSP complete!');
         worker.terminate();
         if (onComplete) onComplete(true);
@@ -73,9 +262,15 @@ class CSPSolver {
     }
 
     optimizeSnapPointAssignmentsProgressive(links, nodes, draggedNodeId, onComplete, onProgress = null, debounceMs = 500) {
+        // Apply visual redirect if visualizer is available (handles collapsed states)
+        // Otherwise use links as-is (fallback for standalone optimizer usage)
+        const effectiveLinks = this.optimizer.visualizer 
+            ? this.optimizer.visualizer.getVisibleLinks(links, nodes)
+            : links;
+
         // Filter out containment and delegation links (only optimize transition and initial links)
         // Visualizer layout: containment is hierarchical structure, not routing path
-        const transitionLinks = links.filter(link => 
+        const transitionLinks = effectiveLinks.filter(link => 
             link.linkType === 'transition' || link.linkType === 'initial'
         );
 
@@ -84,7 +279,8 @@ class CSPSolver {
         // Progressive optimization: greedy step for immediate feedback
         console.log('[OPTIMIZE PROGRESSIVE] Greedy step: immediate rendering...');
         this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
-
+        this._syncRoutingToOriginalLinks(effectiveLinks);  // Sync routing back
+        
         // Return immediately - user sees greedy result
         console.log('[OPTIMIZE PROGRESSIVE] Greedy step complete, scheduling background CSP refinement...');
 
@@ -145,6 +341,7 @@ class CSPSolver {
                             // Progressive refinement: apply intermediate solution without completing
                             console.log(`[OPTIMIZE PROGRESSIVE] Intermediate solution (iteration ${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
                             this.optimizer._applySolutionToLinks(solution, transitionLinks, nodes);
+                            this._syncRoutingToOriginalLinks(transitionLinks);  // Sync routing back
 
                             // Trigger visualization update via progress callback
                             if (onProgress) {
@@ -657,28 +854,47 @@ class CSPSolver {
             let bestCombination = null;
             let bestScore = Infinity;
 
+            // Build assignment map for snap point simulation (greedy uses sequential assignment)
+            // Use link.routing which was set by previous iterations
+            const greedyAssignment = new Map();
+            sortedLinks.forEach(l => {
+                if (l.id === link.id) return; // Skip current link
+                if (l.routing && l.routing.sourceEdge && l.routing.targetEdge) {
+                    greedyAssignment.set(l.id, {
+                        sourceEdge: l.routing.sourceEdge,
+                        targetEdge: l.routing.targetEdge
+                    });
+                }
+            });
+
             combinations.forEach(combo => {
+                // Simulate snap points using constraint solver's simulation logic
+                // This accounts for snap point distribution when multiple links share an edge
+                const simulatedCombo = this.simulateSnapPointsForGreedy(
+                    link, combo, greedyAssignment, nodes
+                );
+
                 // Calculate intersections with already assigned paths
                 let intersections = 0;
                 assignedPaths.forEach(assignedPath => {
-                    intersections += this.optimizer.calculatePathIntersections(combo, assignedPath);
+                    intersections += this.optimizer.calculatePathIntersections(simulatedCombo, assignedPath);
                 });
 
-                // Calculate node collisions
+                // Calculate node collisions using simulated snap points
                 let nodeCollisions = 0;
 
-                if (this.optimizer.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
+                if (this.optimizer.pathIntersectsNode(simulatedCombo, sourceNode, { skipFirstSegment: true })) {
                     nodeCollisions++;
                 }
 
-                if (this.optimizer.pathIntersectsNode(combo, targetNode, { skipLastSegment: true })) {
+                if (this.optimizer.pathIntersectsNode(simulatedCombo, targetNode, { skipLastSegment: true })) {
                     nodeCollisions++;
                 }
 
                 nodes.forEach(node => {
                     if (node.id === sourceNode.id || node.id === targetNode.id) return;
 
-                    if (this.optimizer.pathIntersectsNode(combo, node)) {
+                    if (this.optimizer.pathIntersectsNode(simulatedCombo, node)) {
                         nodeCollisions++;
                     }
                 });
@@ -687,13 +903,13 @@ class CSPSolver {
                 const MIN_SAFE_DISTANCE = TransitionLayoutOptimizer.MIN_SAFE_DISTANCE;
                 let tooCloseSnap = 0;
 
-                const sourceEdge = combo.sourceEdge;
-                const targetEdge = combo.targetEdge;
+                const sourceEdge = simulatedCombo.sourceEdge;
+                const targetEdge = simulatedCombo.targetEdge;
                 const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
                 const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
 
-                const dx = Math.abs(combo.sourcePoint.x - combo.targetPoint.x);
-                const dy = Math.abs(combo.sourcePoint.y - combo.targetPoint.y);
+                const dx = Math.abs(simulatedCombo.sourcePoint.x - simulatedCombo.targetPoint.x);
+                const dy = Math.abs(simulatedCombo.sourcePoint.y - simulatedCombo.targetPoint.y);
 
                 if (!sourceIsVertical && !targetIsVertical) {
                     if (dx < MIN_SAFE_DISTANCE && dy < MIN_SAFE_DISTANCE) {
@@ -705,7 +921,7 @@ class CSPSolver {
                     }
                 }
 
-                // Check for MIN_SEGMENT self-overlap
+                // Check for MIN_SEGMENT self-overlap using simulated snap points
                 const MIN_SEGMENT = TransitionLayoutOptimizer.MIN_SEGMENT_LENGTH;
                 let selfOverlap = 0;
 
@@ -714,16 +930,16 @@ class CSPSolver {
                     // Calculate intermediate points
                     let x1; // After source MIN_SEGMENT
                     if (sourceEdge === 'right') {
-                        x1 = combo.sourcePoint.x + MIN_SEGMENT;
+                        x1 = simulatedCombo.sourcePoint.x + MIN_SEGMENT;
                     } else { // left
-                        x1 = combo.sourcePoint.x - MIN_SEGMENT;
+                        x1 = simulatedCombo.sourcePoint.x - MIN_SEGMENT;
                     }
 
                     let x2; // Before target MIN_SEGMENT
                     if (targetEdge === 'right') {
-                        x2 = combo.targetPoint.x + MIN_SEGMENT;
+                        x2 = simulatedCombo.targetPoint.x + MIN_SEGMENT;
                     } else { // left
-                        x2 = combo.targetPoint.x - MIN_SEGMENT;
+                        x2 = simulatedCombo.targetPoint.x - MIN_SEGMENT;
                     }
 
                     // Detect overlap: x1 should not be between x2 and tx
@@ -737,6 +953,9 @@ class CSPSolver {
                         // Target MIN_SEGMENT: tx → x2
                         // x1 must be right of x2 to avoid overlap
                         if (x1 < x2) {
+                            if (this.optimizer.visualizer?.debugMode) {
+                                console.log(`[GREEDY SELF-OVERLAP] ${sourceEdge}→${targetEdge}: x1=${x1.toFixed(1)} < x2=${x2.toFixed(1)} (overlap!) sx=${simulatedCombo.sourcePoint.x.toFixed(1)}, tx=${simulatedCombo.targetPoint.x.toFixed(1)}`);
+                            }
                             selfOverlap = 1;
                         }
                     }
@@ -747,16 +966,16 @@ class CSPSolver {
                     // Calculate intermediate points
                     let y1; // After source MIN_SEGMENT
                     if (sourceEdge === 'top') {
-                        y1 = combo.sourcePoint.y - MIN_SEGMENT;
+                        y1 = simulatedCombo.sourcePoint.y - MIN_SEGMENT;
                     } else { // bottom
-                        y1 = combo.sourcePoint.y + MIN_SEGMENT;
+                        y1 = simulatedCombo.sourcePoint.y + MIN_SEGMENT;
                     }
 
                     let y2; // Before target MIN_SEGMENT
                     if (targetEdge === 'top') {
-                        y2 = combo.targetPoint.y - MIN_SEGMENT;
+                        y2 = simulatedCombo.targetPoint.y - MIN_SEGMENT;
                     } else { // bottom
-                        y2 = combo.targetPoint.y + MIN_SEGMENT;
+                        y2 = simulatedCombo.targetPoint.y + MIN_SEGMENT;
                     }
 
                     // Detect overlap: y1 should not be between y2 and ty
@@ -779,11 +998,16 @@ class CSPSolver {
                 // No self-overlap possible: MIN_SEGMENTs operate on orthogonal axes
 
                 // Score with penalty weights (selfOverlap weight: 50000, same as CSP solver)
-                const score = tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + combo.distance;
+                const score = tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + simulatedCombo.distance;
+
+                // Debug logging for greedy scoring
+                if (this.optimizer.visualizer?.debugMode) {
+                    console.log(`[GREEDY SCORE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${sourceEdge}→${targetEdge}: tooClose=${tooCloseSnap}, selfOverlap=${selfOverlap}, nodeCol=${nodeCollisions}, intersect=${intersections}, dist=${simulatedCombo.distance.toFixed(1)}, total=${score.toFixed(1)}`);
+                }
 
                 if (score < bestScore) {
                     bestScore = score;
-                    bestCombination = combo;
+                    bestCombination = simulatedCombo; // Use simulated combo for best combination
                 }
             });
 
@@ -802,6 +1026,96 @@ class CSPSolver {
 
         // Distribute snap points on each edge to minimize congestion
         this.optimizer.distributeSnapPointsOnEdges(sortedLinks, nodes);
+
+        // Post-distribution validation: Check for violations that weren't detected during greedy evaluation
+        // This detects when edge center evaluation differs from distributed snap point evaluation
+        if (this.optimizer.visualizer?.debugMode) {
+            console.log('[GREEDY POST-VALIDATION] Checking for collisions/overlaps after snap distribution...');
+        }
+        let violationsDetected = 0;
+        
+        sortedLinks.forEach(link => {
+            if (!link.routing || !link.routing.sourcePoint || !link.routing.targetPoint) return;
+            
+            const sourceNode = nodes.find(n => n.id === this.getVisualSource(link));
+            const targetNode = nodes.find(n => n.id === this.getVisualTarget(link));
+            if (!sourceNode || !targetNode) return;
+
+            // Create combo with ACTUAL distributed snap points
+            const actualCombo = {
+                sourceEdge: link.routing.sourceEdge,
+                targetEdge: link.routing.targetEdge,
+                sourcePoint: link.routing.sourcePoint,
+                targetPoint: link.routing.targetPoint
+            };
+
+            // Check self-overlap with actual snap points
+            const MIN_SEGMENT = TransitionLayoutOptimizer.MIN_SEGMENT_LENGTH;
+            const sourceIsVertical = (actualCombo.sourceEdge === 'top' || actualCombo.sourceEdge === 'bottom');
+            const targetIsVertical = (actualCombo.targetEdge === 'top' || actualCombo.targetEdge === 'bottom');
+            let hasOverlap = false;
+
+            if (!sourceIsVertical && !targetIsVertical) {
+                let x1 = actualCombo.sourceEdge === 'right' 
+                    ? actualCombo.sourcePoint.x + MIN_SEGMENT 
+                    : actualCombo.sourcePoint.x - MIN_SEGMENT;
+                let x2 = actualCombo.targetEdge === 'right'
+                    ? actualCombo.targetPoint.x + MIN_SEGMENT
+                    : actualCombo.targetPoint.x - MIN_SEGMENT;
+                
+                if (actualCombo.targetEdge === 'right' && x1 < x2) {
+                    hasOverlap = true;
+                } else if (actualCombo.targetEdge === 'left' && x1 > x2) {
+                    hasOverlap = true;
+                }
+            } else if (sourceIsVertical && targetIsVertical) {
+                let y1 = actualCombo.sourceEdge === 'top'
+                    ? actualCombo.sourcePoint.y - MIN_SEGMENT
+                    : actualCombo.sourcePoint.y + MIN_SEGMENT;
+                let y2 = actualCombo.targetEdge === 'top'
+                    ? actualCombo.targetPoint.y - MIN_SEGMENT
+                    : actualCombo.targetPoint.y + MIN_SEGMENT;
+                
+                if (actualCombo.targetEdge === 'bottom' && y1 < y2) {
+                    hasOverlap = true;
+                } else if (actualCombo.targetEdge === 'top' && y1 > y2) {
+                    hasOverlap = true;
+                }
+            }
+
+            if (hasOverlap) {
+                if (this.optimizer.visualizer?.debugMode) {
+                    console.log(`[GREEDY VIOLATION] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${actualCombo.sourceEdge}→${actualCombo.targetEdge}: Self-overlap detected after snap distribution! Source=(${actualCombo.sourcePoint.x.toFixed(1)}, ${actualCombo.sourcePoint.y.toFixed(1)}), Target=(${actualCombo.targetPoint.x.toFixed(1)}, ${actualCombo.targetPoint.y.toFixed(1)})`);
+                }
+                violationsDetected++;
+            }
+
+            // Check node collisions with actual snap points
+            let hasCollision = false;
+            nodes.forEach(node => {
+                if (node.id === sourceNode.id || node.id === targetNode.id) return;
+                if (this.optimizer.pathIntersectsNode(actualCombo, node)) {
+                    hasCollision = true;
+                }
+            });
+
+            if (hasCollision) {
+                if (this.optimizer.visualizer?.debugMode) {
+                    console.log(`[GREEDY VIOLATION] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${actualCombo.sourceEdge}→${actualCombo.targetEdge}: Node collision detected after snap distribution!`);
+                }
+                violationsDetected++;
+            }
+        });
+
+        if (violationsDetected > 0) {
+            if (this.optimizer.visualizer?.debugMode) {
+                console.log(`[GREEDY POST-VALIDATION] Found ${violationsDetected} violation(s). CSP solver will attempt to fix.`);
+            }
+        } else {
+            if (this.optimizer.visualizer?.debugMode) {
+                console.log('[GREEDY POST-VALIDATION] No violations detected.');
+            }
+        }
 
         console.log(`[OPTIMIZE GREEDY] Completed: ${links.length} links (cached: ${cachedCount}, recalculated: ${recalculatedCount})`);
     }
