@@ -211,6 +211,11 @@
       "verified_date": "2025-11-01",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.4: When the platform generates an identifier for 'idlocation', the identifier MUST have the form stateid.platformid, where stateid is the id of the state containing this element and platformid is automatically generated."
+    },
+    "225": {
+      "verified_date": "2025-11-16",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.4: Invoke auto-generated ID uniqueness within session - Validated with 1:1 behavior comparison"
     }
   }
 }
