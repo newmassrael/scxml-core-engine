@@ -871,20 +871,33 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 }
             });
         
-        // Transition labels (event, condition, actions)
+        // Transition labels (event, condition, actions) using foreignObject for HTML rendering
         this.visualizer.transitionLabels = linkGroups
-            .filter(d => d.linkType === 'transition' && (d.event || d.cond)) // Show labels for transitions with events or guards
-            .append('text')
-            .attr('class', 'transition-label')
-            .attr('x', d => this.visualizer.getTransitionLabelPosition(d).x)
-            .attr('y', d => this.visualizer.getTransitionLabelPosition(d).y)
-            .attr('text-anchor', 'middle')
-            .attr('dominant-baseline', 'middle')
-            .style('font-size', '11px')
-            .style('font-family', 'monospace')
-            .style('fill', '#0969da')
+            .filter(d => d.linkType === 'transition' && (d.event || d.cond || (d.actions && d.actions.length > 0)))
+            .append('foreignObject')
+            .attr('class', 'transition-label-container')
+            .attr('width', 300)  // Initial width for measurement
+            .attr('height', 200)  // Initial height for measurement
+            .style('overflow', 'visible')
             .style('pointer-events', 'none')
-            .text(d => this.visualizer.getTransitionLabelText(d));
+            .html(d => this.visualizer.getTransitionLabelText(d))
+            .each(function(d) {
+                // Measure actual content size using shared helper method
+                const size = self.renderer.measureElementSize(this);
+                const padding = 4;  // Small padding for visual comfort
+
+                // Update dimensions to fit content exactly
+                const finalWidth = size.width + padding;
+                const finalHeight = size.height + padding;
+
+                // Update foreignObject size and center position
+                const pos = self.getTransitionLabelPosition(d);
+                d3.select(this)
+                    .attr('width', finalWidth)
+                    .attr('height', finalHeight)
+                    .attr('x', pos.x - finalWidth / 2)   // Center horizontally
+                    .attr('y', pos.y - finalHeight / 2);  // Center vertically
+            });
 
         // Collapsed compound states (rendered AFTER links/labels for proper z-order)
         const collapsedCompounds = visibleNodes.filter(d =>
@@ -1577,5 +1590,53 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         }
 
         return action.actionType;
+    }
+
+    /**
+     * Measure element size using getBBox with fallback to canvas measurement
+     * Shared logic for accurate dimension calculation
+     * @param {SVGElement} element - SVG element to measure
+     * @param {string} fallbackText - Text for canvas fallback measurement
+     * @param {string} fallbackFont - Font for canvas fallback (default: '13px sans-serif')
+     * @returns {{width: number, height: number}} Measured dimensions
+     */
+    measureElementSize(element, fallbackText = '', fallbackFont = '13px sans-serif') {
+        if (!element) {
+            return { width: 0, height: 0 };
+        }
+
+        // Force layout flush to ensure getBBox returns accurate values
+        element.getBoundingClientRect();
+
+        let bbox;
+        try {
+            bbox = element.getBBox();
+            // Validate getBBox result
+            if (!bbox || bbox.width === 0 || bbox.height === 0) {
+                // getBBox returned zero, forcing reflow
+                element.parentNode?.getBoundingClientRect();
+                bbox = element.getBBox();
+            }
+        } catch (e) {
+            console.error(`[measureElementSize] Error getting bbox: ${e.message}`);
+            bbox = { width: 0, height: 0 };
+        }
+
+        if (bbox.width === 0 || bbox.height === 0) {
+            // Fallback: use canvas measurement for accuracy
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.font = fallbackFont;
+            const metrics = ctx.measureText(fallbackText);
+            return {
+                width: metrics.width,
+                height: 15
+            };
+        }
+
+        return {
+            width: bbox.width,
+            height: bbox.height
+        };
     }
 }
