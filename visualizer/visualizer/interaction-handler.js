@@ -427,7 +427,8 @@ class InteractionHandler {
         }
 
         this.visualizer.cancelPendingHighlights();
-        const transitionId = `${transition.source}-${transition.target}`;
+        // Use new transitionId property for precise matching
+        const transitionId = transition.transitionId || `${transition.source}-${transition.target}`;
 
         this.visualizer.clearTransitionHighlights();
         this.visualizer.highlightLink(transitionId);
@@ -490,23 +491,21 @@ class InteractionHandler {
         console.log(`[HIGHLIGHT] Looking for transition ID: ${transitionId}`);
         console.log(`[HIGHLIGHT] Available linkElements count: ${this.visualizer.linkElements.size()}`);
 
-        let foundLink = false;
-        this.visualizer.linkElements.each(function(d) {
-            const linkId = `${d.source}-${d.target}`;
-            console.log(`[HIGHLIGHT] Checking link: ${linkId} (type: ${d.linkType})`);
-            if (linkId === transitionId) {
-                console.log(`[HIGHLIGHT] Match found! Highlighting link: ${linkId}`);
-                d3.select(this).classed('highlighted', true);
-                foundLink = true;
-            }
+        // Use data-transition-id attribute for precise matching
+        const matchingLinks = this.visualizer.linkElements.filter(function() {
+            return d3.select(this).attr('data-transition-id') === transitionId;
         });
 
-        if (!foundLink) {
+        if (matchingLinks.size() > 0) {
+            matchingLinks.classed('highlighted', true);
+            console.log(`[HIGHLIGHT] Match found! Highlighted ${matchingLinks.size()} link(s)`);
+        } else {
             console.log(`[HIGHLIGHT] No match - transition ${transitionId} not found in linkElements`);
             if (this.visualizer.debugMode) {
                 console.log('[HIGHLIGHT] All available transitions:');
                 this.visualizer.linkElements.each(function(d) {
-                    console.log(`  - ${d.source} → ${d.target} (type: ${d.linkType}, id: ${d.id})`);
+                    const tid = d3.select(this).attr('data-transition-id');
+                    console.log(`  - ${d.source} → ${d.target} (transitionId: ${tid})`);
                 });
             }
         }
@@ -519,12 +518,14 @@ class InteractionHandler {
 
         console.log(`[HIGHLIGHT] Available transitionLabels: ${this.visualizer.transitionLabels.size()}`);
 
+        // Use data-transition-id attribute for precise matching
+        // transitionLabels are foreignObject containers, need to check the inner .transition-label element
         let foundLabel = false;
         this.visualizer.transitionLabels.each(function(d) {
-            const linkId = `${d.source}-${d.target}`;
-            if (linkId === transitionId) {
-                console.log(`[HIGHLIGHT] Label found for: ${linkId}`);
-                d3.select(this).classed('highlighted', true);
+            const labelElement = this.querySelector('.transition-label');
+            if (labelElement && labelElement.getAttribute('data-transition-id') === transitionId) {
+                console.log(`[HIGHLIGHT] Label found for transition: ${transitionId}`);
+                d3.select(labelElement).classed('highlighted', true);
                 foundLabel = true;
             }
         });
@@ -546,6 +547,42 @@ class InteractionHandler {
     }
 
     focusOnTransition(transition) {
+        // Try to find and focus on transition label (text) first
+        if (transition.transitionId) {
+            const labelElement = document.querySelector(`.transition-label[data-transition-id="${transition.transitionId}"]`);
+
+            if (labelElement) {
+                const foreignObject = labelElement.closest('foreignObject');
+                if (foreignObject) {
+                    const x = parseFloat(foreignObject.getAttribute('x'));
+                    const y = parseFloat(foreignObject.getAttribute('y'));
+                    const width = parseFloat(foreignObject.getAttribute('width'));
+                    const height = parseFloat(foreignObject.getAttribute('height'));
+
+                    // Validate label coordinates
+                    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && Number.isFinite(height)) {
+                        // Focus on label center
+                        const centerX = x + width / 2;
+                        const centerY = y + height / 2;
+
+                        console.log('[FOCUS] Focusing on transition label at:', { centerX, centerY });
+
+                        // Apply transform with comfortable zoom level
+                        const transform = d3.zoomIdentity
+                            .translate(this.visualizer.width / 2, this.visualizer.height / 2)
+                            .scale(1.5)  // Comfortable zoom for reading text
+                            .translate(-centerX, -centerY);
+
+                        this.visualizer.svg.transition()
+                            .duration(750)
+                            .call(this.visualizer.zoom.transform, transform);
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Fallback: Focus on midpoint between source and target nodes
         const sourceNode = this.visualizer.nodes.find(n => n.id === transition.source);
         const targetNode = this.visualizer.nodes.find(n => n.id === transition.target);
 

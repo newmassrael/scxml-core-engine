@@ -25,7 +25,10 @@ class Renderer {
 
         const visibleNodes = this.visualizer.getVisibleNodes();
         const visibleLinks = this.visualizer.getVisibleLinks(this.visualizer.allLinks, this.visualizer.nodes);
-        
+
+        // Assign colors to transitions for visual matching
+        this.assignTransitionColors(visibleLinks);
+
         if (this.visualizer.debugMode) {
             console.log(`[RENDER] visibleNodes: ${visibleNodes.map(n => n.id).join(', ')}`);
         }
@@ -854,10 +857,21 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         this.visualizer.linkElements = linkGroups.append('path')
             .attr('class', d => {
                 if (d.linkType === 'initial') return 'link-initial';
-                return 'transition';
+                let classes = 'transition';
+                if (d.colorIndex !== null && d.colorIndex !== undefined) {
+                    classes += ` transition-color-${d.colorIndex}`;
+                }
+                return classes;
             })
+            .attr('data-transition-id', d => d.transitionId || null)
             .attr('d', d => this.visualizer.getLinkPath(d))
-            .style('marker-end', 'url(#arrowhead)')
+            .style('marker-end', d => {
+                // Use color-specific arrowhead marker for colored transitions
+                if (d.colorIndex !== null && d.colorIndex !== undefined) {
+                    return `url(#arrowhead-${d.colorIndex})`;
+                }
+                return 'url(#arrowhead)';
+            })
             .style('cursor', d => d.linkType === 'transition' ? 'pointer' : 'default')
             .style('pointer-events', 'stroke')  // Only stroke is clickable, area is transparent
             .on('click', (event, d) => {
@@ -868,6 +882,20 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
                     // Dispatch event for cross-component communication (diagram -> list panel sync)
                     document.dispatchEvent(new CustomEvent('transition-click', { detail: d }));
+                }
+            })
+            .on('mouseenter', function(event, d) {
+                if (d.linkType === 'transition' && d.transitionId) {
+                    // Highlight corresponding label
+                    d3.selectAll(`.transition-label[data-transition-id="${d.transitionId}"]`)
+                        .classed('arrow-hovered', true);
+                }
+            })
+            .on('mouseleave', function(event, d) {
+                if (d.linkType === 'transition' && d.transitionId) {
+                    // Remove highlight from label
+                    d3.selectAll(`.transition-label[data-transition-id="${d.transitionId}"]`)
+                        .classed('arrow-hovered', false);
                 }
             });
         
@@ -889,6 +917,28 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 if (!labelElement) {
                     console.warn('[transition-label] No .transition-label element found');
                     return;
+                }
+
+                // Add hover event listeners for label-arrow matching
+                if (d.transitionId) {
+                    labelElement.addEventListener('mouseenter', () => {
+                        // Highlight corresponding arrow
+                        d3.selectAll(`.transition[data-transition-id="${d.transitionId}"]`)
+                            .classed('label-hovered', true);
+                    });
+
+                    labelElement.addEventListener('mouseleave', () => {
+                        // Remove highlight from arrow
+                        d3.selectAll(`.transition[data-transition-id="${d.transitionId}"]`)
+                            .classed('label-hovered', false);
+                    });
+
+                    // Add click handler for label (same behavior as arrow click)
+                    labelElement.addEventListener('click', () => {
+                        self.highlightTransition(d);
+                        self.focusOnTransition(d);
+                        document.dispatchEvent(new CustomEvent('transition-click', { detail: d }));
+                    });
                 }
 
                 // Force layout flush and measure actual rendered size
@@ -1649,5 +1699,29 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             width: bbox.width,
             height: bbox.height
         };
+    }
+
+    /**
+     * Assigns color indices to all transitions for visual distinction
+     * Each transition gets a unique color (cycling through 0-5)
+     * @param {Array} links - Array of link data objects
+     * @returns {Array} Links with colorIndex and transitionId properties added
+     */
+    assignTransitionColors(links) {
+        const colorCount = 6; // Number of color variants in CSS
+        let transitionCounter = 0;
+
+        links.forEach(link => {
+            if (link.linkType !== 'transition') {
+                return;
+            }
+
+            // Assign color index (cycles 0-5)
+            link.colorIndex = transitionCounter % colorCount;
+            link.transitionId = `transition-${transitionCounter}`;
+            transitionCounter++;
+        });
+
+        return links;
     }
 }

@@ -289,31 +289,7 @@ jobs:
           mkdir -p gh-pages
           cp build/tests/w3c_test_results.html gh-pages/test-results.html
           cp build/tests/w3c_test_results.xml gh-pages/
-          echo "✅ HTML report and XML copied to gh-pages/"
-
-          # Build WASM visualizer
-          echo "🎨 Building WASM visualizer..."
-          source emsdk/emsdk_env.sh
-          mkdir -p build_wasm && cd build_wasm
-          emcmake cmake .. -DCMAKE_BUILD_TYPE=Release
-          cmake --build . --target visualizer -j4
-          cd ..
-          echo "✅ WASM visualizer built"
-
-          # Deploy visualizer files using shared script (Single Source of Truth)
-          chmod +x tools/scripts/deploy_visualizer.sh
-          ./tools/scripts/deploy_visualizer.sh \
-            gh-pages/visualizer \
-            build_wasm/tests/visualizer.wasm \
-            build_wasm/tests/visualizer.js
-
-          # Rename visualizer.html to index.html for GitHub Pages
-          mv gh-pages/visualizer/visualizer.html gh-pages/visualizer/index.html
-
-          # Copy SCXML resources for visualizer
-          echo "📦 Copying SCXML files for visualizer..."
-          cp -r resources gh-pages/
-          echo "✅ SCXML files copied to gh-pages/resources/"
+          echo "HTML report and XML copied to gh-pages/"
         else
           echo "❌ ERROR: w3c_test_results.xml not found - cannot generate HTML report"
           echo "GitHub Pages will not be updated"
