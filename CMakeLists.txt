@@ -197,6 +197,35 @@ if(BUILD_EXAMPLES)
     add_subdirectory(examples/traffic_light)
 endif()
 
+# =============================================================================
+# Local Visualizer Deployment
+# =============================================================================
+# Deploy visualizer to project root matching GitHub Pages structure
+# Automatic deployment: Runs during build if visualizer/ doesn't exist
+# Manual deployment: cmake --build build --target deploy-visualizer-local
+
+# Determine if automatic deployment is needed
+if(NOT EXISTS "${CMAKE_SOURCE_DIR}/visualizer")
+    set(AUTO_DEPLOY ALL)
+    message(STATUS "Visualizer directory not found, will deploy automatically during build")
+else()
+    set(AUTO_DEPLOY "")
+endif()
+
+# Deployment target (automatic if visualizer/ missing, always available for manual updates)
+add_custom_target(deploy-visualizer-local ${AUTO_DEPLOY}
+    COMMAND ${CMAKE_SOURCE_DIR}/tools/scripts/deploy_visualizer.sh
+            ${CMAKE_SOURCE_DIR}/visualizer
+            ${CMAKE_SOURCE_DIR}/tools/web/visualizer.wasm
+            ${CMAKE_SOURCE_DIR}/tools/web/visualizer.js
+    COMMAND ${CMAKE_COMMAND} -E create_symlink
+            visualizer.html
+            ${CMAKE_SOURCE_DIR}/visualizer/index.html
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Deploying visualizer to local environment (matching GitHub Pages structure)"
+    VERBATIM
+)
+
 # Installation configuration (using GNUInstallDirs variables)
 install(TARGETS sce_unified
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

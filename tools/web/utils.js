@@ -15,18 +15,18 @@
  * @returns {string} Resources path prefix
  */
 function getResourcesPath() {
+    // Environment detection
     const isGitHubPages = window.location.hostname.includes('github.io');
-    const isLocalhost = window.location.hostname === 'localhost' ||
-                       window.location.hostname === '127.0.0.1' ||
-                       window.location.hostname === '';
-
-    // Path resolution:
-    // - GitHub Pages: ../resources (visualizer at test-results/visualizer/, resources at test-results/resources/)
-    // - Localhost: resources (symlink in tools/web/ → ../../resources)
-    // - Project root server: ../../resources (fallback)
-    return isGitHubPages ? '../resources' :
-           isLocalhost ? 'resources' :
-           '../../resources';
+    const isToolsWeb = window.location.pathname.includes('/tools/web/');
+    
+    // Path resolution (Single Source of Truth):
+    // - GitHub Pages: ../resources (test-results/visualizer/ → test-results/resources/)
+    // - Deployed localhost: ../resources (visualizer/ → resources/)
+    // - Development (tools/web/): ../../resources (tools/web/ → resources/)
+    if (isToolsWeb) {
+        return '../../resources';  // Development: tools/web/visualizer.html
+    }
+    return '../resources';  // Production: deployed visualizer/index.html or GitHub Pages
 }
 
 /**

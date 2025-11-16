@@ -88,7 +88,7 @@ cp tools/web/d3.v7.min.js "$DEST_DIR/"
 # Configuration and data
 cp tools/web/spec_references.json "$DEST_DIR/"
 
-echo "✅ Visualizer files deployed to $DEST_DIR"
+echo "Visualizer files deployed successfully to $DEST_DIR"
 
 # List deployed JavaScript files for verification
 echo ""

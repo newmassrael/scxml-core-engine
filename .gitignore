@@ -3,6 +3,7 @@ build/
 build_wasm/
 build_tsan/
 bin/
+visualizer/
 lib/
 out/
 cmake-build-*/
