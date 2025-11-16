@@ -216,6 +216,11 @@
       "verified_date": "2025-11-16",
       "risk_assessment": "LOW",
       "notes": "W3C SCXML 6.4: Invoke auto-generated ID uniqueness within session - Validated with 1:1 behavior comparison"
+    },
+    "226": {
+      "verified_date": "2025-11-16",
+      "risk_assessment": "LOW",
+      "notes": "W3C SCXML 6.4: invoke element starts new child instance with param data passing - Validated with 1:1 behavior comparison"
     }
   }
 }

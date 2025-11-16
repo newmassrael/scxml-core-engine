@@ -216,8 +216,44 @@ class InteractionHandler {
         let html = '';
 
         this.visualizer.transitions.forEach((transition, index) => {
-            const transitionId = `${transition.source}-${transition.target}`;
+            const transitionId = `${transition.source}-${transition.target}-${index}`;  // Use index for uniqueness
             const eventText = transition.event || '(eventless)';
+
+            // Add condition and actions for better distinction
+            let detailsHtml = '';
+
+            // Condition (guard)
+            if (transition.cond) {
+                detailsHtml += `<div class="transition-list-condition">🔍 [${transition.cond}]</div>`;
+            }
+
+            // Actions
+            if (transition.actions && transition.actions.length > 0) {
+                transition.actions.forEach(action => {
+                    const actionType = action.actionType || action.type;
+                    let actionText = '';
+
+                    if (actionType === 'send') {
+                        const icon = '📤';
+                        actionText = `${icon} send(${action.event || '?'})`;
+                        if (action.target) {
+                            actionText += ` → ${action.target}`;
+                        }
+                    } else if (actionType === 'raise') {
+                        actionText = `📢 raise(${action.event || '?'})`;
+                    } else if (actionType === 'assign') {
+                        actionText = `= ${action.location || '?'} = ${action.expr || '?'}`;
+                    } else if (actionType === 'log') {
+                        actionText = `📝 log(${action.label || action.expr || '?'})`;
+                    } else if (actionType === 'cancel') {
+                        actionText = `🚫 cancel(${action.sendid || action.sendidexpr || '?'})`;
+                    }
+
+                    if (actionText) {
+                        detailsHtml += `<div class="transition-list-action">${actionText}</div>`;
+                    }
+                });
+            }
 
             html += `
                 <div class="transition-list-item" data-transition-id="${transitionId}" data-transition-index="${index}">
@@ -225,6 +261,7 @@ class InteractionHandler {
                         <strong>${transition.source}</strong> → <strong>${transition.target}</strong>
                     </div>
                     <div class="transition-list-event">${eventText}</div>
+                    ${detailsHtml}
                 </div>
             `;
         });
@@ -238,8 +275,8 @@ class InteractionHandler {
                 const index = parseInt(this.getAttribute('data-transition-index'));
                 const transition = self.visualizer.transitions[index];
 
-                // Show transition animation on diagram (temporary)
-                self.highlightTransition(transition);
+                // Show transition animation on diagram (temporary) - use index for unique identification
+                self.highlightTransitionByIndex(index, transition);
                 self.focusOnTransition(transition);
 
                 // Design System: Panel highlight animation (matches State Actions panel)
@@ -398,6 +435,47 @@ class InteractionHandler {
         this.visualizer.scheduleHighlightRemoval();
 
         console.log('[HIGHLIGHT] highlightTransition() complete');
+    }
+
+    highlightTransitionByIndex(index, transition) {
+        console.log(`[HIGHLIGHT] highlightTransitionByIndex() called with index ${index}:`, transition);
+
+        if (!this.visualizer.linkElements) {
+            console.log('[HIGHLIGHT] No linkElements - aborting');
+            return;
+        }
+
+        this.visualizer.cancelPendingHighlights();
+        this.visualizer.clearTransitionHighlights();
+
+        // Match transition using unique properties: id, source, target, and cond
+        const matchTransition = (d) => {
+            if (d.linkType !== 'transition') return false;
+            if (d.source !== transition.source) return false;
+            if (d.target !== transition.target) return false;
+
+            // Use id for exact match if available
+            if (d.id && transition.id && d.id === transition.id) return true;
+
+            // Otherwise use condition to distinguish between transitions with same source/target
+            // Both must have same condition (or both have no condition)
+            const dCond = d.cond || '';
+            const tCond = transition.cond || '';
+            return dCond === tCond;
+        };
+
+        // Highlight specific transition arrow
+        const highlightedLinks = this.visualizer.linkElements.filter(matchTransition).classed('highlighted', true);
+        console.log('[HIGHLIGHT] Highlighted links count:', highlightedLinks.size());
+
+        // Highlight corresponding label
+        if (this.visualizer.transitionLabels) {
+            const highlightedLabels = this.visualizer.transitionLabels.filter(matchTransition).classed('highlighted', true);
+            console.log('[HIGHLIGHT] Highlighted labels count:', highlightedLabels.size());
+        }
+
+        this.visualizer.scheduleHighlightRemoval();
+        console.log(`[HIGHLIGHT] highlightTransitionByIndex() complete for index ${index}`);
     }
 
     cancelPendingHighlights() {
