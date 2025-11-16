@@ -43,7 +43,7 @@ body {
     box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
     z-index: 100;
     overflow-y: auto;
-    padding: 16px;
+    padding: 48px 16px 16px 16px;  /* Top padding for resize handle */
 }
 
 /* Design System: Bottom panel height constraints */
@@ -542,8 +542,13 @@ body {
 
 /* Transition label container positioning */
 .transition-label-container {
-    pointer-events: all !important;  /* Allow hover */
+    pointer-events: none;  /* Allow click-through to underlying states */
     cursor: default;
+}
+
+/* Only the label itself (not the container) should be clickable */
+.transition-label-container .transition-label {
+    pointer-events: auto;  /* Label is clickable for highlighting */
 }
 
 /* W3C spec reference links */
@@ -1312,4 +1317,76 @@ body {
 .state.has-invoke:hover rect {
     stroke: #0969da;
     stroke-width: 3;
+}
+
+/* ============================================
+ * Panel Controller (Resize Handle & Minimize Button)
+ * ============================================ */
+
+/* Panel resize handle container */
+.panel-resize-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 32px;
+    cursor: ns-resize;
+    background: linear-gradient(to bottom, #f6f8fa 0%, #ffffff 100%);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;  /* Center the button */
+    z-index: 10;
+    transition: background-color 0.2s ease;
+}
+
+.panel-resize-handle:hover {
+    background: linear-gradient(to bottom, #eef2f5 0%, #f6f8fa 100%);
+}
+
+/* Panel toggle button (minimize/maximize) */
+.panel-toggle-btn {
+    padding: 4px 8px;
+    background-color: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: #57606a;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.panel-toggle-btn:hover {
+    background-color: #f6f8fa;
+    border-color: #0969da;
+    color: #0969da;
+    box-shadow: 0 2px 6px rgba(9, 105, 218, 0.15);
+}
+
+.panel-toggle-btn:active {
+    background-color: #eef2f5;
+    transform: translateY(1px);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.panel-toggle-btn svg {
+    transition: transform 0.2s ease;
+}
+
+/* Rotate arrow icon when minimized */
+.bottom-panels-fixed.minimized .panel-toggle-btn svg {
+    transform: rotate(180deg);
+}
+
+/* Disable transition during resize for smooth dragging */
+.bottom-panels-fixed.resizing {
+    transition: none !important;
+}
+
+/* Hide overflow content when minimized */
+.bottom-panels-fixed.minimized {
+    overflow: hidden;
 }

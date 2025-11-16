@@ -93,6 +93,14 @@
 
         <!-- Fixed Bottom Panels Container -->
         <div id="bottom-panels-container" class="bottom-panels-fixed">
+            <!-- Resize Handle -->
+            <div id="panel-resize-handle" class="panel-resize-handle">
+                <button id="panel-toggle-btn" class="panel-toggle-btn" title="Minimize/Maximize Panel">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 12l-5-5h10l-5 5z"/>
+                    </svg>
+                </button>
+            </div>
             <!-- Side Panels Row -->
             <div class="d-flex mb-3">
                 <!-- Event Queue Panel -->
@@ -206,6 +214,9 @@
     <script src="controller/control-handler.js"></script>
     <script src="controller/breadcrumb-manager.js"></script>
     <script src="controller/controller-core.js"></script>
+
+    <!-- Panel Controller (Resize and Minimize/Maximize) -->
+    <script src="panel-controller.js"></script>
 
     <script src="main.js"></script>
 </body>

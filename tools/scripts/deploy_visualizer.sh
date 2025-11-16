@@ -79,6 +79,9 @@ cp tools/web/controller/control-handler.js "$DEST_DIR/controller/"
 cp tools/web/controller/breadcrumb-manager.js "$DEST_DIR/controller/"
 cp tools/web/controller/controller-core.js "$DEST_DIR/controller/"
 
+# Panel controller (resize and minimize/maximize)
+cp tools/web/panel-controller.js "$DEST_DIR/"
+
 # Main entry point
 cp tools/web/main.js "$DEST_DIR/"
 
