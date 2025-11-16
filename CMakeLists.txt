@@ -205,35 +205,34 @@ endif()
 # Manual deployment: cmake --build build --target deploy-visualizer-local
 
 # Determine if automatic deployment is needed
-# Non-EMSCRIPTEN builds require pre-built WASM files from tools/web/
-# EMSCRIPTEN builds generate WASM files during build
+# EMSCRIPTEN builds generate WASM files during build and copy directly to visualizer/
+# visualizer/ directory is now the source directory (tracked in git)
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/visualizer")
     if(EMSCRIPTEN)
         set(AUTO_DEPLOY ALL)
-        message(STATUS "Visualizer directory not found, will deploy automatically during EMSCRIPTEN build")
-    elseif(EXISTS "${CMAKE_SOURCE_DIR}/tools/web/visualizer.wasm")
-        set(AUTO_DEPLOY ALL)
-        message(STATUS "Visualizer directory not found, will deploy from pre-built WASM files")
+        message(STATUS "Visualizer directory not found, will create during EMSCRIPTEN build")
     else()
         set(AUTO_DEPLOY "")
-        message(STATUS "Visualizer deployment skipped: WASM files not found (use EMSCRIPTEN build or deploy-web workflow)")
+        message(STATUS "Visualizer deployment skipped: visualizer/ source directory not found")
     endif()
 else()
-    set(AUTO_DEPLOY "")
+    # Check if WASM files need to be built
+    if(EMSCRIPTEN AND NOT EXISTS "${CMAKE_SOURCE_DIR}/visualizer/visualizer.wasm")
+        set(AUTO_DEPLOY ALL)
+        message(STATUS "WASM files not found, will build automatically")
+    else()
+        set(AUTO_DEPLOY "")
+    endif()
 endif()
 
-# Deployment target (automatic if visualizer/ missing, always available for manual updates)
-# EMSCRIPTEN builds: Depends on visualizer target to ensure WASM files are built first
-# Non-EMSCRIPTEN builds: Expects pre-built WASM files in tools/web/
-#
-# Zero Duplication: Common deployment paths extracted to variables
-set(VISUALIZER_DEPLOY_SCRIPT "${CMAKE_SOURCE_DIR}/tools/scripts/deploy_visualizer.sh")
-set(VISUALIZER_DEPLOY_DIR "${CMAKE_SOURCE_DIR}/visualizer")
-set(VISUALIZER_WASM_FILE "${CMAKE_SOURCE_DIR}/tools/web/visualizer.wasm")
-set(VISUALIZER_JS_FILE "${CMAKE_SOURCE_DIR}/tools/web/visualizer.js")
+# Deployment target: Copy WASM build outputs to visualizer/ source directory
+# visualizer/ contains both source files (tracked in git) and build outputs (gitignored)
+set(VISUALIZER_DIR "${CMAKE_SOURCE_DIR}/visualizer")
+set(VISUALIZER_WASM_FILE "${VISUALIZER_DIR}/visualizer.wasm")
+set(VISUALIZER_JS_FILE "${VISUALIZER_DIR}/visualizer.js")
 
 if(EMSCRIPTEN)
-    # EMSCRIPTEN: Build WASM, copy to tools/web/, then deploy
+    # EMSCRIPTEN: Build WASM and copy directly to visualizer/
     add_custom_target(deploy-visualizer-local ${AUTO_DEPLOY}
         COMMAND ${CMAKE_COMMAND} -E copy
                 ${CMAKE_CURRENT_BINARY_DIR}/tests/visualizer.wasm
@@ -241,30 +240,23 @@ if(EMSCRIPTEN)
         COMMAND ${CMAKE_COMMAND} -E copy
                 ${CMAKE_CURRENT_BINARY_DIR}/tests/visualizer.js
                 ${VISUALIZER_JS_FILE}
-        COMMAND ${VISUALIZER_DEPLOY_SCRIPT}
-                ${VISUALIZER_DEPLOY_DIR}
-                ${VISUALIZER_WASM_FILE}
-                ${VISUALIZER_JS_FILE}
         COMMAND ${CMAKE_COMMAND} -E create_symlink
                 visualizer.html
-                ${CMAKE_SOURCE_DIR}/visualizer/index.html
+                ${VISUALIZER_DIR}/index.html
         DEPENDS visualizer
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Deploying visualizer to local environment (matching GitHub Pages structure)"
+        COMMENT "Copying WASM build outputs to visualizer/"
         VERBATIM
     )
 else()
-    # Non-EMSCRIPTEN: Deploy using pre-built WASM files from tools/web/
+    # Non-EMSCRIPTEN: WASM files should be pre-built or obtained from CI
     add_custom_target(deploy-visualizer-local ${AUTO_DEPLOY}
-        COMMAND ${VISUALIZER_DEPLOY_SCRIPT}
-                ${VISUALIZER_DEPLOY_DIR}
-                ${VISUALIZER_WASM_FILE}
-                ${VISUALIZER_JS_FILE}
+        COMMAND ${CMAKE_COMMAND} -E echo "Non-EMSCRIPTEN build: WASM files should be pre-built"
         COMMAND ${CMAKE_COMMAND} -E create_symlink
                 visualizer.html
-                ${CMAKE_SOURCE_DIR}/visualizer/index.html
+                ${VISUALIZER_DIR}/index.html
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Deploying visualizer to local environment (matching GitHub Pages structure)"
+        COMMENT "Visualizer source files in place, WASM pre-built or from CI"
         VERBATIM
     )
 endif()

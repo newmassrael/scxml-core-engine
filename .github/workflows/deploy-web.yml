@@ -1,14 +1,18 @@
-name: Deploy Web Interface
+# DISABLED: Code Generator Web UI not yet implemented
+# This workflow is preserved for future use when web-based code generator is developed
+# Current visualizer deployment handled by deploy-visualizer.yml
+# To re-enable: implement tools/codegen/web/ UI and update file paths below
+
+name: Deploy Web Interface (DISABLED)
 
 on:
-  push:
-    branches: [ main ]
-    paths:
-      - 'tools/web/**'
-      - 'rsm/**'
-      - 'tests/w3c/InteractiveTestRunner.cpp'
-      - '.github/workflows/deploy-web.yml'
-  workflow_dispatch:
+  workflow_dispatch:  # Manual trigger only
+  # push:
+  #   branches: [ main ]
+  #   paths:
+  #     - 'tools/codegen/web/**'  # Future: web-based code generator
+  #     - 'rsm/**'
+  #     - '.github/workflows/deploy-web.yml'
 
 jobs:
   deploy:

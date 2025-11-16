@@ -82,7 +82,7 @@ if [ $? -eq 0 ]; then
     # with proper dependency on visualizer build target
     if [ -f "tests/visualizer.js" ] && [ -f "tests/visualizer.wasm" ]; then
         echo -e "${GREEN}✓ Visualizer built successfully${NC}"
-        echo -e "${YELLOW}  WASM files deployed by CMake: tools/web/visualizer.{js,wasm}${NC}"
+        echo -e "${YELLOW}  WASM files deployed by CMake: visualizer/visualizer.{js,wasm}${NC}"
         echo ""
     fi
 

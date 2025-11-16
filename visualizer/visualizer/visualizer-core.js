@@ -133,8 +133,11 @@ class SCXMLVisualizer {
         this.svg.call(this.zoom);
         this.initialTransform = d3.zoomIdentity;
 
-        // Arrowhead marker
-        this.svg.append('defs').append('marker')
+        // Arrowhead markers (default + color variants)
+        const defs = this.svg.append('defs');
+
+        // Default arrowhead
+        defs.append('marker')
             .attr('id', 'arrowhead')
             .attr('viewBox', '0 -5 10 10')
             .attr('refX', 7)
@@ -145,6 +148,30 @@ class SCXMLVisualizer {
             .append('path')
             .attr('d', 'M0,-5L10,0L0,5')
             .attr('fill', '#57606a');
+
+        // Color variant arrowheads (matching CSS transition-color-N)
+        const arrowColors = [
+            '#0969da',  // Blue (color-0)
+            '#1a7f37',  // Green (color-1)
+            '#d18616',  // Orange (color-2)
+            '#8250df',  // Purple (color-3)
+            '#0a7ea4',  // Teal (color-4)
+            '#cf222e'   // Pink/Red (color-5)
+        ];
+
+        arrowColors.forEach((color, index) => {
+            defs.append('marker')
+                .attr('id', `arrowhead-${index}`)
+                .attr('viewBox', '0 -5 10 10')
+                .attr('refX', 7)
+                .attr('refY', 0)
+                .attr('markerWidth', 6)
+                .attr('markerHeight', 6)
+                .attr('orient', 'auto')
+                .append('path')
+                .attr('d', 'M0,-5L10,0L0,5')
+                .attr('fill', color);
+        });
 
         // Build data
         this.nodes = this.buildNodes();
@@ -158,6 +185,9 @@ class SCXMLVisualizer {
 
         // Render
         this.render();
+
+        // Center diagram in viewport
+        this.centerDiagram();
     }
 
     async computeLayout() {
@@ -173,6 +203,64 @@ class SCXMLVisualizer {
         if (this.debugMode) {
             console.log('ELK layout computed');
         }
+    }
+
+    centerDiagram() {
+        const visibleNodes = this.getVisibleNodes();
+
+        if (visibleNodes.length === 0) {
+            console.log('[CENTER] No visible nodes, skipping center alignment');
+            return;
+        }
+
+        // Calculate bounding box of all visible nodes
+        let minX = Infinity, minY = Infinity;
+        let maxX = -Infinity, maxY = -Infinity;
+
+        visibleNodes.forEach(node => {
+            if (node.x !== undefined && node.y !== undefined &&
+                node.width !== undefined && node.height !== undefined) {
+                const left = node.x - node.width / 2;
+                const right = node.x + node.width / 2;
+                const top = node.y - node.height / 2;
+                const bottom = node.y + node.height / 2;
+
+                minX = Math.min(minX, left);
+                maxX = Math.max(maxX, right);
+                minY = Math.min(minY, top);
+                maxY = Math.max(maxY, bottom);
+            }
+        });
+
+        const diagramWidth = maxX - minX;
+        const diagramHeight = maxY - minY;
+        const diagramCenterX = minX + diagramWidth / 2;
+        const diagramCenterY = minY + diagramHeight / 2;
+
+        // Calculate scale to fit diagram in viewport with padding
+        const padding = 40; // 40px padding on each side
+        const availableWidth = this.width - 2 * padding;
+        const availableHeight = this.height - 2 * padding;
+
+        const scaleX = availableWidth / diagramWidth;
+        const scaleY = availableHeight / diagramHeight;
+        const scale = Math.min(scaleX, scaleY, 1.0); // Don't zoom in beyond 1.0
+
+        // Calculate transform to center the diagram
+        const transform = d3.zoomIdentity
+            .translate(this.width / 2, this.height / 2)
+            .scale(scale)
+            .translate(-diagramCenterX, -diagramCenterY);
+
+        // Apply transform
+        this.svg.transition()
+            .duration(750)
+            .call(this.zoom.transform, transform);
+
+        // Update initialTransform so resetView() returns to centered state
+        this.initialTransform = transform;
+
+        console.log(`[CENTER] Diagram centered: bbox=(${minX.toFixed(1)}, ${minY.toFixed(1)}, ${maxX.toFixed(1)}, ${maxY.toFixed(1)}), scale=${scale.toFixed(2)}`);
     }
 
     // Delegate methods to helper modules

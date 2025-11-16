@@ -15,6 +15,22 @@
     --color-gray-medium: #d0d7de;
     --color-gray-dark: #57606a;
     --color-border: #d0d7de;
+
+    /* Transition color palette (accessibility-friendly) */
+    --transition-color-0: #0969da;  /* Blue */
+    --transition-color-1: #1a7f37;  /* Green */
+    --transition-color-2: #d18616;  /* Orange */
+    --transition-color-3: #8250df;  /* Purple */
+    --transition-color-4: #0a7ea4;  /* Teal */
+    --transition-color-5: #cf222e;  /* Pink/Red */
+
+    /* Lighter variants for label backgrounds */
+    --transition-bg-0: rgba(9, 105, 218, 0.08);
+    --transition-bg-1: rgba(26, 127, 55, 0.08);
+    --transition-bg-2: rgba(209, 134, 22, 0.08);
+    --transition-bg-3: rgba(130, 80, 223, 0.08);
+    --transition-bg-4: rgba(10, 126, 164, 0.08);
+    --transition-bg-5: rgba(207, 34, 46, 0.08);
 }
 
 body {
@@ -43,7 +59,15 @@ body {
     box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
     z-index: 100;
     overflow-y: auto;
-    padding: 48px 16px 16px 16px;  /* Top padding for resize handle */
+    padding: 0 0 16px 0;  /* No padding - handle full width, content has own padding */
+}
+
+/* Content areas below resize handle - add horizontal padding */
+.bottom-panels-fixed > .d-flex,
+.bottom-panels-fixed > .Box {
+    margin-top: 8px;
+    padding-left: 16px;
+    padding-right: 16px;
 }
 
 /* Design System: Bottom panel height constraints */
@@ -52,6 +76,15 @@ body {
     height: 350px;
     display: flex;
     flex-direction: column;
+}
+
+/* Sticky headers for panels - remain visible during scroll */
+.bottom-panels-fixed .Box-header {
+    position: sticky;
+    top: 0;
+    background-color: #ffffff;
+    z-index: 5;
+    border-bottom: 1px solid var(--color-border);
 }
 
 /* Allow Box-body to shrink and enable scrolling */
@@ -193,12 +226,42 @@ body {
     stroke-width: 2px;
     marker-end: url(#arrowhead);
     transition: all 0.2s ease;
+    position: relative;  /* Enable z-index */
+    z-index: 1;  /* Below transition labels (z-index: 100) */
 }
 
 .transition:hover {
     stroke: var(--color-blue);
     stroke-width: 3px;
 }
+
+/* Transition color variants for multiple transitions between same states */
+.transition.transition-color-0 {
+    stroke: var(--transition-color-0);
+}
+.transition.transition-color-1 {
+    stroke: var(--transition-color-1);
+}
+.transition.transition-color-2 {
+    stroke: var(--transition-color-2);
+}
+.transition.transition-color-3 {
+    stroke: var(--transition-color-3);
+}
+.transition.transition-color-4 {
+    stroke: var(--transition-color-4);
+}
+.transition.transition-color-5 {
+    stroke: var(--transition-color-5);
+}
+
+/* Hover state maintains color but thickens */
+.transition.transition-color-0:hover { stroke: var(--transition-color-0); stroke-width: 3px; }
+.transition.transition-color-1:hover { stroke: var(--transition-color-1); stroke-width: 3px; }
+.transition.transition-color-2:hover { stroke: var(--transition-color-2); stroke-width: 3px; }
+.transition.transition-color-3:hover { stroke: var(--transition-color-3); stroke-width: 3px; }
+.transition.transition-color-4:hover { stroke: var(--transition-color-4); stroke-width: 3px; }
+.transition.transition-color-5:hover { stroke: var(--transition-color-5); stroke-width: 3px; }
 
 /* Initial transition (W3C/UML standard) */
 .transition[data-id="__initial_transition__"] {
@@ -491,7 +554,7 @@ body {
     font-family: var(--font-mono);
     font-size: 11px;
     line-height: 1.5;
-    background: rgba(255, 255, 255, 0.95);
+    background: rgba(255, 255, 255, 1);  /* Fully opaque - prevent arrows from showing through */
     padding: 6px 10px;
     border-radius: 6px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
@@ -505,6 +568,65 @@ body {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     transform: scale(1.05);
     z-index: 1000;
+}
+
+/* Transition label color variants */
+.transition-label.label-color-0 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-0);
+}
+.transition-label.label-color-1 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-1);
+}
+.transition-label.label-color-2 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-2);
+}
+.transition-label.label-color-3 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-3);
+}
+.transition-label.label-color-4 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-4);
+}
+.transition-label.label-color-5 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-5);
+}
+
+/* Hover-linked highlighting: arrow hover highlights label */
+.transition-label.arrow-hovered {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.08);
+    z-index: 1001;
+}
+
+/* Color-specific hover effects */
+.transition-label.label-color-0.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3);  /* Blue */
+}
+.transition-label.label-color-1.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(26, 127, 55, 0.3);  /* Green */
+}
+.transition-label.label-color-2.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(209, 134, 22, 0.3);  /* Orange */
+}
+.transition-label.label-color-3.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(130, 80, 223, 0.3);  /* Purple */
+}
+.transition-label.label-color-4.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(10, 126, 164, 0.3);  /* Teal */
+}
+.transition-label.label-color-5.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.3);  /* Pink/Red */
+}
+
+/* Hover-linked highlighting: label hover highlights arrow (applied via JS) */
+.transition.label-hovered {
+    stroke-width: 4px;
+    filter: drop-shadow(0 0 4px currentColor);
 }
 
 .label-event {
@@ -544,6 +666,8 @@ body {
 .transition-label-container {
     pointer-events: none;  /* Allow click-through to underlying states */
     cursor: default;
+    position: relative;  /* Enable z-index */
+    z-index: 100;  /* Above transition arrows */
 }
 
 /* Only the label itself (not the container) should be clickable */
@@ -1127,19 +1251,55 @@ body {
 /* Shows clicked transition with animation, auto-removed after duration */
 /* Design System: Matches state.focused animation (drop-shadow pulse, 2s duration) */
 .transition.highlighted {
-    stroke: var(--color-blue);
+    /* Keep original color - don't override to blue */
     stroke-width: 4px;
     opacity: 1;
-    /* Unified animation: Same drop-shadow pulse as state.focused */
-    animation: diagram-click-pulse 2s ease-out;
+}
+
+/* Color-specific click animations for transition arrows */
+.transition.transition-color-0.highlighted {
+    animation: diagram-click-pulse-0 2s ease-out;
+}
+.transition.transition-color-1.highlighted {
+    animation: diagram-click-pulse-1 2s ease-out;
+}
+.transition.transition-color-2.highlighted {
+    animation: diagram-click-pulse-2 2s ease-out;
+}
+.transition.transition-color-3.highlighted {
+    animation: diagram-click-pulse-3 2s ease-out;
+}
+.transition.transition-color-4.highlighted {
+    animation: diagram-click-pulse-4 2s ease-out;
+}
+.transition.transition-color-5.highlighted {
+    animation: diagram-click-pulse-5 2s ease-out;
 }
 
 .transition-label.highlighted {
     font-weight: 700;
-    fill: var(--color-blue);
+    /* Keep original color - don't override to blue */
     font-size: 13px;
-    /* Unified animation: Same drop-shadow pulse as state.focused */
-    animation: diagram-click-pulse 2s ease-out;
+}
+
+/* Color-specific click animations */
+.transition-label.label-color-0.highlighted {
+    animation: diagram-click-pulse-0 2s ease-out;
+}
+.transition-label.label-color-1.highlighted {
+    animation: diagram-click-pulse-1 2s ease-out;
+}
+.transition-label.label-color-2.highlighted {
+    animation: diagram-click-pulse-2 2s ease-out;
+}
+.transition-label.label-color-3.highlighted {
+    animation: diagram-click-pulse-3 2s ease-out;
+}
+.transition-label.label-color-4.highlighted {
+    animation: diagram-click-pulse-4 2s ease-out;
+}
+.transition-label.label-color-5.highlighted {
+    animation: diagram-click-pulse-5 2s ease-out;
 }
 
 /* Unified keyframes for all diagram clicks (state + transition) */
@@ -1154,6 +1314,43 @@ body {
     50% {
         filter: drop-shadow(0 0 16px var(--color-blue));
     }
+}
+
+/* Color-specific animations for transition labels */
+@keyframes diagram-click-pulse-0 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-0)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-0)); }
+}
+
+@keyframes diagram-click-pulse-1 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-1)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-1)); }
+}
+
+@keyframes diagram-click-pulse-2 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-2)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-2)); }
+}
+
+@keyframes diagram-click-pulse-3 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-3)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-3)); }
+}
+
+@keyframes diagram-click-pulse-4 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-4)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-4)); }
+}
+
+@keyframes diagram-click-pulse-5 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-5)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-5)); }
 }
 
 /* Transition list container */
@@ -1325,7 +1522,7 @@ body {
 
 /* Panel resize handle container */
 .panel-resize-handle {
-    position: absolute;
+    position: sticky;
     top: 0;
     left: 0;
     right: 0;

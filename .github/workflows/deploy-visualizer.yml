@@ -1,0 +1,86 @@
+name: Deploy Visualizer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'visualizer/**'
+      - 'rsm/**'
+      - 'tests/w3c/InteractiveTestRunner.cpp'
+      - '.github/workflows/deploy-visualizer.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Build and Deploy Visualizer
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          g++ \
+          ninja-build \
+          pkg-config \
+          libxml2-dev \
+          libspdlog-dev \
+          libfmt-dev \
+          libboost-dev
+
+    - name: Setup Emscripten (emsdk)
+      run: |
+        git clone https://github.com/emscripten-core/emsdk.git
+        cd emsdk
+        ./emsdk install latest
+        ./emsdk activate latest
+
+    - name: Build WASM Visualizer
+      run: |
+        source emsdk/emsdk_env.sh
+        mkdir -p build_wasm && cd build_wasm
+        emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
+        cmake --build . --target visualizer -j$(nproc)
+
+    - name: Prepare Deployment Directory
+      run: |
+        mkdir -p gh-pages/visualizer
+
+        # Copy visualizer source files
+        echo "Copying visualizer source files..."
+        cp -r visualizer/* gh-pages/visualizer/
+
+        # Copy WASM build outputs (overwrite placeholder files if present)
+        echo "Copying WASM build outputs..."
+        cp build_wasm/tests/visualizer.wasm gh-pages/visualizer/
+        cp build_wasm/tests/visualizer.js gh-pages/visualizer/
+
+        # Rename visualizer.html to index.html for GitHub Pages
+        if [ -f gh-pages/visualizer/visualizer.html ]; then
+          mv gh-pages/visualizer/visualizer.html gh-pages/visualizer/index.html
+        fi
+
+        # Copy SCXML resources for visualizer
+        echo "Copying SCXML test resources..."
+        cp -r resources gh-pages/
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./gh-pages
+        destination_dir: visualizer
+        keep_files: true

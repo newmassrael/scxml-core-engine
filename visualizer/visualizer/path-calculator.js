@@ -74,7 +74,16 @@ class PathCalculator {
             }
         }
 
-        return `<div class="transition-label">${parts.join('')}</div>`;
+        // Build label classes with color variant
+        let labelClasses = 'transition-label';
+        if (transition.colorIndex !== null && transition.colorIndex !== undefined) {
+            labelClasses += ` label-color-${transition.colorIndex}`;
+        }
+
+        // Add data-transition-id attribute
+        const transitionId = transition.transitionId ? `data-transition-id="${transition.transitionId}"` : '';
+
+        return `<div class="${labelClasses}" ${transitionId}>${parts.join('')}</div>`;
     }
 
     /**
