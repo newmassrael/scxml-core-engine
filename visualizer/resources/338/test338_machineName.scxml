@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub0" version="1.0" datamodel="ecmascript" name="machineName">     
+       <final id="sub0">
+         <onentry>
+            <send target="#_parent" event="event1"/>
+        </onentry>
+        </final>
+       </scxml>
+      

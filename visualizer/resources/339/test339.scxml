@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+
+<!-- test that invokeid is blank in an event that wasn't returned from an invoked process -->
+
+<scxml initial="s0" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml" name="machineName">  
+   
+ <state id="s0">
+   <onentry>
+     <raise  event="foo"/>
+   </onentry>
+   <transition event="foo" target="pass"/>
+      <transition event="*" target="fail"/> 
+   </state>
+   
+
+      
+   <final id="pass"/>
+   <final id="fail"/>
+     
+</scxml>
