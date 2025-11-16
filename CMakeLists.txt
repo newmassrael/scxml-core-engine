@@ -205,9 +205,19 @@ endif()
 # Manual deployment: cmake --build build --target deploy-visualizer-local
 
 # Determine if automatic deployment is needed
+# Non-EMSCRIPTEN builds require pre-built WASM files from tools/web/
+# EMSCRIPTEN builds generate WASM files during build
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/visualizer")
-    set(AUTO_DEPLOY ALL)
-    message(STATUS "Visualizer directory not found, will deploy automatically during build")
+    if(EMSCRIPTEN)
+        set(AUTO_DEPLOY ALL)
+        message(STATUS "Visualizer directory not found, will deploy automatically during EMSCRIPTEN build")
+    elseif(EXISTS "${CMAKE_SOURCE_DIR}/tools/web/visualizer.wasm")
+        set(AUTO_DEPLOY ALL)
+        message(STATUS "Visualizer directory not found, will deploy from pre-built WASM files")
+    else()
+        set(AUTO_DEPLOY "")
+        message(STATUS "Visualizer deployment skipped: WASM files not found (use EMSCRIPTEN build or deploy-web workflow)")
+    endif()
 else()
     set(AUTO_DEPLOY "")
 endif()

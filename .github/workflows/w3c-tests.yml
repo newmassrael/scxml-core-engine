@@ -113,7 +113,7 @@ jobs:
     - name: Build
       run: |
         echo "=== Starting build with timing ==="
-        time cmake --build build --parallel $(nproc)
+        time cmake --build build --target w3c_test_cli --parallel $(nproc)
 
     - name: Verify Resources
       run: |
