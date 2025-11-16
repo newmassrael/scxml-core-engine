@@ -8,45 +8,133 @@
 class PathCalculator {
     constructor(visualizer) {
         this.visualizer = visualizer;
+
+        // Label positioning constants
+        this.COORDINATE_TOLERANCE = 1.0;      // Pixel tolerance for straight line detection
+        this.LABEL_OFFSET_VERTICAL = 8;       // Vertical offset for bent paths
+        this.LABEL_OFFSET_HORIZONTAL = 10;    // Horizontal offset for bent paths
+        this.MIN_LABEL_DISTANCE = 20;         // Minimum distance from state edges
     }
 
     getTransitionLabelText(transition) {
-        let label = '';
-        
-        // Event name
+        // Generate hierarchical HTML structure for better readability
+        const parts = [];
+
+        // Event name (W3C SCXML 3.12.1)
         if (transition.event) {
-            label = transition.event;
+            parts.push(`<div class="label-event">${transition.event}</div>`);
         }
 
-        // Condition (guard)
+        // Condition (guard) - W3C SCXML 3.12.1
         if (transition.cond) {
-            label += (label ? ' ' : '') + `[${transition.cond}]`;
+            const icon = '🔍';  // Condition icon
+            parts.push(`<div class="label-condition">${icon} [${transition.cond}]</div>`);
         }
-        
-        // Actions
-        const actions = [];
-        if (transition.actions) {
+
+        // Actions - W3C SCXML 3.7
+        if (transition.actions && transition.actions.length > 0) {
             transition.actions.forEach(action => {
-                if (action.type === 'assign') {
-                    actions.push(`${action.location}=${action.expr}`);
-                } else if (action.type === 'log') {
-                    actions.push(`log(${action.label || action.expr})`);
-                } else if (action.type === 'send') {
-                    actions.push(`send(${action.event})`);
-                } else if (action.type === 'raise') {
-                    actions.push(`raise(${action.event})`);
+                const actionType = action.actionType || action.type;
+                let icon = '';
+                let text = '';
+
+                if (actionType === 'send') {
+                    icon = '📤';
+                    text = `send(${action.event || '?'})`;
+                    if (action.target) {
+                        text += `<span class="label-target"> → ${action.target}</span>`;
+                    }
+                } else if (actionType === 'raise') {
+                    icon = '📢';
+                    text = `raise(${action.event || '?'})`;
+                } else if (actionType === 'assign') {
+                    icon = '=';
+                    text = `${action.location || '?'} = ${action.expr || '?'}`;
+                } else if (actionType === 'log') {
+                    icon = '📝';
+                    text = `log(${action.label || action.expr || '?'})`;
+                } else if (actionType === 'cancel') {
+                    icon = '🚫';
+                    text = `cancel(${action.sendid || action.sendidexpr || '?'})`;
+                } else {
+                    icon = '•';
+                    text = actionType || 'unknown';
                 }
+
+                parts.push(`<div class="label-action">↳ ${icon} ${text}</div>`);
             });
         }
-        
-        if (actions.length > 0) {
-            label += ` / ${actions.join(', ')}`;
+
+        // Fallback for completely empty transitions
+        if (parts.length === 0) {
+            if (transition.eventless) {
+                parts.push(`<div class="label-eventless">(eventless)</div>`);
+            } else {
+                parts.push(`<div class="label-always">(always)</div>`);
+            }
         }
-        
-        return label;
+
+        return `<div class="transition-label">${parts.join('')}</div>`;
+    }
+
+    /**
+     * Helper: Check if two coordinates are close enough to be considered a straight line
+     * @param {number} coord1 - First coordinate
+     * @param {number} coord2 - Second coordinate
+     * @returns {boolean} True if coordinates are within tolerance
+     */
+    _isStraightPath(coord1, coord2) {
+        return Math.abs(coord1 - coord2) < this.COORDINATE_TOLERANCE;
+    }
+
+    /**
+     * Helper: Calculate midpoint between two values with optional offset
+     * @param {number} start - Start value
+     * @param {number} end - End value
+     * @param {number} offset - Optional offset to apply (default: 0)
+     * @returns {number} Calculated midpoint
+     */
+    _calculateMidpoint(start, end, offset = 0) {
+        if (start == null || end == null) {
+            console.error('[MIDPOINT] Invalid coordinates:', { start, end });
+            return 0;
+        }
+        return (start + end) / 2 + offset;
+    }
+
+    /**
+     * Helper: Create label position object with logging
+     * @param {number} x - X coordinate
+     * @param {number} y - Y coordinate
+     * @param {string} pathType - Description of path type for logging
+     * @param {string} transitionId - Transition identifier
+     * @returns {{x: number, y: number}} Position object
+     */
+    _createLabelPosition(x, y, pathType, transitionId) {
+        const pos = { x, y };
+        console.log(`[LABEL POS] ${transitionId}: ${pathType} → position(${x.toFixed(1)}, ${y.toFixed(1)})`);
+        return pos;
+    }
+
+    /**
+     * Helper: Ensure minimum distance from state edge
+     * @param {number} position - Calculated position
+     * @param {number} stateEdge - State edge position
+     * @returns {number} Adjusted position
+     */
+    _ensureMinimumDistance(position, stateEdge) {
+        const distance = Math.abs(position - stateEdge);
+        if (distance < this.MIN_LABEL_DISTANCE) {
+            const direction = position > stateEdge ? 1 : -1;
+            return stateEdge + (this.MIN_LABEL_DISTANCE * direction);
+        }
+        return position;
     }
 
     getTransitionLabelPosition(transition) {
+        const transitionId = `${transition.source}→${transition.target}`;
+        console.log(`[LABEL POS] Calculating position for ${transitionId}`);
+
         // Use routing information to get actual path coordinates
         if (transition.routing && transition.routing.sourcePoint && transition.routing.targetPoint) {
             const start = transition.routing.sourcePoint;
@@ -59,6 +147,8 @@ class PathCalculator {
             const tx = end.x;
             const ty = end.y;
 
+            console.log(`[LABEL POS] ${transitionId}: Has routing - source(${sx}, ${sy}) [${sourceEdge}] → target(${tx}, ${ty}) [${targetEdge}]`);
+
             const MIN_SEGMENT = PATH_CONSTANTS.MIN_SEGMENT_LENGTH;
             const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
             const targetIsVertical = (targetEdge === 'top' || targetEdge === 'bottom');
@@ -66,77 +156,74 @@ class PathCalculator {
             // Calculate the middle segment of the path based on edge types
             if (sourceIsVertical && targetIsVertical) {
                 // Both vertical edges: VHV path (vertical-horizontal-vertical)
-                // Middle segment is horizontal: from (sx, y1) to (tx, y1)
-                let y1;
-                if (sourceEdge === 'top') {
-                    y1 = sy - MIN_SEGMENT;
-                } else {
-                    y1 = sy + MIN_SEGMENT;
-                }
 
-                // Return midpoint of horizontal segment, slightly above
-                return {
-                    x: (sx + tx) / 2,
-                    y: y1 - 8
-                };
+                if (this._isStraightPath(sx, tx)) {
+                    // Straight vertical transition: place label at visual midpoint
+                    const midY = this._calculateMidpoint(sy, ty);
+                    const adjustedY = this._ensureMinimumDistance(midY, sy);
+                    return this._createLabelPosition(sx, adjustedY, 'Straight vertical', transitionId);
+                } else {
+                    // Bent VHV path: place label on horizontal segment
+                    const cornerY = sourceEdge === 'top'
+                        ? sy - MIN_SEGMENT
+                        : sy + MIN_SEGMENT;
+                    const labelX = this._calculateMidpoint(sx, tx);
+                    const rawLabelY = cornerY - this.LABEL_OFFSET_VERTICAL;
+                    const labelY = this._ensureMinimumDistance(rawLabelY, sy);
+                    return this._createLabelPosition(labelX, labelY, 'Bent VHV path', transitionId);
+                }
             } else if (!sourceIsVertical && !targetIsVertical) {
                 // Both horizontal edges: HVH path (horizontal-vertical-horizontal)
-                // Middle segment is vertical: from (x1, sy) to (x1, ty)
-                let x1;
-                if (sourceEdge === 'right') {
-                    x1 = sx + MIN_SEGMENT;
-                } else {
-                    x1 = sx - MIN_SEGMENT;
-                }
 
-                // Return midpoint of vertical segment, to the right
-                return {
-                    x: x1 + 10,
-                    y: (sy + ty) / 2
-                };
+                if (this._isStraightPath(sy, ty)) {
+                    // Straight horizontal transition: place label at visual midpoint
+                    const midX = this._calculateMidpoint(sx, tx);
+                    const adjustedX = this._ensureMinimumDistance(midX, sx);
+                    return this._createLabelPosition(adjustedX, sy, 'Straight horizontal', transitionId);
+                } else {
+                    // Bent HVH path: place label on vertical segment
+                    const cornerX = sourceEdge === 'right'
+                        ? sx + MIN_SEGMENT
+                        : sx - MIN_SEGMENT;
+                    const rawLabelX = cornerX + this.LABEL_OFFSET_HORIZONTAL;
+                    const labelX = this._ensureMinimumDistance(rawLabelX, sx);
+                    const labelY = this._calculateMidpoint(sy, ty);
+                    return this._createLabelPosition(labelX, labelY, 'Bent HVH path', transitionId);
+                }
             } else if (sourceIsVertical && !targetIsVertical) {
                 // Source vertical, target horizontal: V→H path
-                // Place label near the corner point
-                let y1;
-                if (sourceEdge === 'top') {
-                    y1 = sy - MIN_SEGMENT;
-                } else {
-                    y1 = sy + MIN_SEGMENT;
-                }
-
-                return {
-                    x: (sx + tx) / 2,
-                    y: y1 - 8
-                };
+                const cornerY = sourceEdge === 'top'
+                    ? sy - MIN_SEGMENT
+                    : sy + MIN_SEGMENT;
+                const labelX = this._calculateMidpoint(sx, tx);
+                const rawLabelY = cornerY - this.LABEL_OFFSET_VERTICAL;
+                const labelY = this._ensureMinimumDistance(rawLabelY, sy);
+                return this._createLabelPosition(labelX, labelY, 'V→H path', transitionId);
             } else {
                 // Source horizontal, target vertical: H→V path
-                // Place label near the corner point
-                let x1;
-                if (sourceEdge === 'right') {
-                    x1 = sx + MIN_SEGMENT;
-                } else {
-                    x1 = sx - MIN_SEGMENT;
-                }
-
-                return {
-                    x: x1 + 10,
-                    y: (sy + ty) / 2
-                };
+                const cornerX = sourceEdge === 'right'
+                    ? sx + MIN_SEGMENT
+                    : sx - MIN_SEGMENT;
+                const rawLabelX = cornerX + this.LABEL_OFFSET_HORIZONTAL;
+                const labelX = this._ensureMinimumDistance(rawLabelX, sx);
+                const labelY = this._calculateMidpoint(sy, ty);
+                return this._createLabelPosition(labelX, labelY, 'H→V path', transitionId);
             }
         }
 
-        // Fallback to simple midpoint
+        // Fallback to simple midpoint (no routing information)
+        console.log(`[LABEL POS] ${transitionId}: No routing info - using fallback midpoint`);
         const sourceNode = this.visualizer.nodes.find(n => n.id === transition.source);
         const targetNode = this.visualizer.nodes.find(n => n.id === transition.target);
 
         if (!sourceNode || !targetNode) {
+            console.log(`[LABEL POS] ${transitionId}: ERROR - Source or target node not found`);
             return { x: 0, y: 0 };
         }
 
-        return {
-            x: (sourceNode.x + targetNode.x) / 2,
-            y: (sourceNode.y + targetNode.y) / 2 - 8
-        };
+        const labelX = this._calculateMidpoint(sourceNode.x, targetNode.x);
+        const labelY = this._calculateMidpoint(sourceNode.y, targetNode.y, -this.LABEL_OFFSET_VERTICAL);
+        return this._createLabelPosition(labelX, labelY, 'Fallback midpoint', transitionId);
     }
 
     getNodeSide(node, toX, toY) {
