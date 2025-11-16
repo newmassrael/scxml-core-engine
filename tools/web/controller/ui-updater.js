@@ -324,15 +324,52 @@ class UIUpdater {
                 return;
             }
 
+            // W3C SCXML 3.7: Find transition actions from structure (getLastTransition doesn't include actions)
+            // Use currentMachine.structure.transitions to support both parent and child SCXMLs
+            const transitions = this.controller.currentMachine?.structure?.transitions || [];
+            const matchingTransition = transitions.find(t =>
+                t.source === lastTransition.source &&
+                t.target === lastTransition.target &&
+                (t.event === lastTransition.event || (!t.event && !lastTransition.event))
+            );
+
             const logEntry = document.createElement('div');
             logEntry.className = 'log-entry';
 
             const eventText = lastTransition.event || '(eventless)';
 
+            // W3C SCXML 3.13: Transition executable content display
+            let actionsHtml = '';
+            const actions = matchingTransition?.actions || lastTransition.actions;
+            if (actions && actions.length > 0) {
+                const actionList = actions.map(action => {
+                    const actionType = action.actionType || action.type;  // Support both field names
+                    if (actionType === 'send') {
+                        let sendText = `send(${action.event || '?'})`;
+                        if (action.target) {
+                            sendText += ` to ${action.target}`;
+                        }
+                        return sendText;
+                    } else if (actionType === 'raise') {
+                        return `raise(${action.event || '?'})`;
+                    } else if (actionType === 'assign') {
+                        return `${action.location || '?'}=${action.expr || '?'}`;
+                    } else if (actionType === 'log') {
+                        return `log(${action.label || action.expr || '?'})`;
+                    } else if (actionType === 'cancel') {
+                        return `cancel(${action.sendid || action.sendidexpr || '?'})`;
+                    } else {
+                        return actionType || 'unknown';
+                    }
+                }).join(', ');
+                actionsHtml = `<br><span class="log-actions">  → Execute: ${actionList}</span>`;
+            }
+
             logEntry.innerHTML = `
                 <span class="log-step">[Step ${this.controller.currentStep}]</span>
                 <span class="log-event">${eventText}</span>
                 <span class="log-transition">${lastTransition.source} → ${lastTransition.target}</span>
+                ${actionsHtml}
                 ${this.controller.getW3CReference(lastTransition)}
             `;
 

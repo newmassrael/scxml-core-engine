@@ -78,11 +78,11 @@ if [ $? -eq 0 ]; then
     echo -e "${GREEN}==========================================${NC}"
     echo ""
 
-    # Auto-deploy visualizer to tools/web/
+    # Visualizer deployment is now handled by CMake target (deploy-visualizer-local)
+    # with proper dependency on visualizer build target
     if [ -f "tests/visualizer.js" ] && [ -f "tests/visualizer.wasm" ]; then
-        echo -e "${YELLOW}Deploying visualizer to tools/web/...${NC}"
-        cp tests/visualizer.js tests/visualizer.wasm ../tools/web/
-        echo -e "${GREEN}✓ Deployed: visualizer.js, visualizer.wasm${NC}"
+        echo -e "${GREEN}✓ Visualizer built successfully${NC}"
+        echo -e "${YELLOW}  WASM files deployed by CMake: tools/web/visualizer.{js,wasm}${NC}"
         echo ""
     fi
 
