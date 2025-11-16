@@ -882,13 +882,24 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             .style('pointer-events', 'none')
             .html(d => this.visualizer.getTransitionLabelText(d))
             .each(function(d) {
-                // Measure actual content size using shared helper method
-                const size = self.renderer.measureElementSize(this);
-                const padding = 4;  // Small padding for visual comfort
+                // Measure actual HTML content size (not foreignObject getBBox)
+                // foreignObject.getBBox() returns the foreignObject's width/height attributes,
+                // not the actual HTML content size inside it
+                const labelElement = this.querySelector('.transition-label');
+                if (!labelElement) {
+                    console.warn('[transition-label] No .transition-label element found');
+                    return;
+                }
+
+                // Force layout flush and measure actual rendered size
+                labelElement.getBoundingClientRect();  // Force reflow
+                const labelRect = labelElement.getBoundingClientRect();
+
+                const padding = 8;  // Padding for visual comfort and click area
 
                 // Update dimensions to fit content exactly
-                const finalWidth = size.width + padding;
-                const finalHeight = size.height + padding;
+                const finalWidth = labelRect.width + padding;
+                const finalHeight = labelRect.height + padding;
 
                 // Update foreignObject size and center position
                 const pos = self.getTransitionLabelPosition(d);
