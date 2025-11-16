@@ -68,11 +68,6 @@ jobs:
         cp build_wasm/tests/visualizer.wasm gh-pages/
         cp build_wasm/tests/visualizer.js gh-pages/
 
-        # Rename visualizer.html to index.html for GitHub Pages
-        if [ -f gh-pages/visualizer.html ]; then
-          mv gh-pages/visualizer.html gh-pages/index.html
-        fi
-
         # Copy SCXML resources for visualizer
         echo "Copying SCXML test resources..."
         cp -r resources gh-pages/
