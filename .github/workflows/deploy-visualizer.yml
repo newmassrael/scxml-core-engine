@@ -57,20 +57,20 @@ jobs:
 
     - name: Prepare Deployment Directory
       run: |
-        mkdir -p gh-pages/visualizer
+        mkdir -p gh-pages
 
         # Copy visualizer source files
         echo "Copying visualizer source files..."
-        cp -r visualizer/* gh-pages/visualizer/
+        cp -r visualizer/* gh-pages/
 
         # Copy WASM build outputs (overwrite placeholder files if present)
         echo "Copying WASM build outputs..."
-        cp build_wasm/tests/visualizer.wasm gh-pages/visualizer/
-        cp build_wasm/tests/visualizer.js gh-pages/visualizer/
+        cp build_wasm/tests/visualizer.wasm gh-pages/
+        cp build_wasm/tests/visualizer.js gh-pages/
 
         # Rename visualizer.html to index.html for GitHub Pages
-        if [ -f gh-pages/visualizer/visualizer.html ]; then
-          mv gh-pages/visualizer/visualizer.html gh-pages/visualizer/index.html
+        if [ -f gh-pages/visualizer.html ]; then
+          mv gh-pages/visualizer.html gh-pages/index.html
         fi
 
         # Copy SCXML resources for visualizer

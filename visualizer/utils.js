@@ -18,15 +18,18 @@ function getResourcesPath() {
     // Environment detection
     const isGitHubPages = window.location.hostname.includes('github.io');
     const isToolsWeb = window.location.pathname.includes('/tools/web/');
-    
+
     // Path resolution (Single Source of Truth):
-    // - GitHub Pages: ../resources (test-results/visualizer/ → test-results/resources/)
+    // - GitHub Pages: resources/ (visualizer/ → visualizer/resources/)
     // - Deployed localhost: ../resources (visualizer/ → resources/)
     // - Development (tools/web/): ../../resources (tools/web/ → resources/)
+    if (isGitHubPages) {
+        return 'resources/';  // GitHub Pages: same directory
+    }
     if (isToolsWeb) {
         return '../../resources';  // Development: tools/web/visualizer.html
     }
-    return '../resources';  // Production: deployed visualizer/index.html or GitHub Pages
+    return '../resources';  // Local: visualizer/ → resources/
 }
 
 /**
