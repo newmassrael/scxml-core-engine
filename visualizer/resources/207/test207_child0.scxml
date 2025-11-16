@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub0" version="1.0" datamodel="ecmascript">
+           <state id="sub0">
+            <onentry>
+             <send event="event1" id="foo" delay="1s"/>
+              <send event="event2" delay="1.5s"/>
+              <send target="#_parent" event="childToParent"/>
+              </onentry>
+ 
+               <transition event="event1" target="subFinal">
+                   <send target="#_parent" event="pass"/>
+                   </transition>
+               <transition event="*" target="subFinal">
+                      <send target="#_parent" event="fail"/>
+              </transition>
+ 
+               </state>
+            <final id="subFinal"/>
+           </scxml>
+    

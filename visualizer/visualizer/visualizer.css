@@ -1,0 +1,1589 @@
+/* SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial */
+/* SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael */
+
+/*
+ * SCXML Interactive Visualizer Styles
+ * Based on GitHub Primer CSS design system
+ */
+
+:root {
+    --color-blue: #0969da;
+    --color-green: #1a7f37;
+    --color-red: #cf222e;
+    --color-yellow: #9a6700;
+    --color-gray-light: #f6f8fa;
+    --color-gray-medium: #d0d7de;
+    --color-gray-dark: #57606a;
+    --color-border: #d0d7de;
+
+    /* Transition color palette (accessibility-friendly) */
+    --transition-color-0: #0969da;  /* Blue */
+    --transition-color-1: #1a7f37;  /* Green */
+    --transition-color-2: #d18616;  /* Orange */
+    --transition-color-3: #8250df;  /* Purple */
+    --transition-color-4: #0a7ea4;  /* Teal */
+    --transition-color-5: #cf222e;  /* Pink/Red */
+
+    /* Lighter variants for label backgrounds */
+    --transition-bg-0: rgba(9, 105, 218, 0.08);
+    --transition-bg-1: rgba(26, 127, 55, 0.08);
+    --transition-bg-2: rgba(209, 134, 22, 0.08);
+    --transition-bg-3: rgba(130, 80, 223, 0.08);
+    --transition-bg-4: rgba(10, 126, 164, 0.08);
+    --transition-bg-5: rgba(207, 34, 46, 0.08);
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    color: #1f2328;
+    background-color: #ffffff;
+    /* Responsive spacing for fixed bottom panels - adapts to viewport height */
+    padding-bottom: min(600px, 50vh);
+}
+
+/* Override Primer CSS container-lg max-width for wider visualization */
+.container-lg {
+    max-width: 1600px;
+}
+
+/* Fixed Bottom Panels Container */
+.bottom-panels-fixed {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 600px;
+    background-color: #ffffff;
+    border-top: 2px solid var(--color-border);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    overflow-y: auto;
+    padding: 0 0 16px 0;  /* No padding - handle full width, content has own padding */
+}
+
+/* Content areas below resize handle - add horizontal padding */
+.bottom-panels-fixed > .d-flex,
+.bottom-panels-fixed > .Box {
+    margin-top: 8px;
+    padding-left: 16px;
+    padding-right: 16px;
+}
+
+/* Design System: Bottom panel height constraints */
+/* Constrain Box containers to prevent expansion */
+.bottom-panels-fixed .Box {
+    height: 350px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Sticky headers for panels - remain visible during scroll */
+.bottom-panels-fixed .Box-header {
+    position: sticky;
+    top: 0;
+    background-color: #ffffff;
+    z-index: 5;
+    border-bottom: 1px solid var(--color-border);
+}
+
+/* Allow Box-body to shrink and enable scrolling */
+.bottom-panels-fixed .Box-body {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Adjust panel heights in fixed bottom container */
+.bottom-panels-fixed .event-queue,
+.bottom-panels-fixed .data-model,
+.bottom-panels-fixed .state-actions,
+.bottom-panels-fixed .transition-info {
+    max-height: 280px;
+}
+
+.bottom-panels-fixed .log-panel {
+    max-height: 200px;
+}
+
+/* Adjust container padding when panels are fixed */
+#main-content {
+    padding-bottom: 0 !important;
+}
+
+/* State Diagram SVG Styles */
+#state-diagram {
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;  /* Prevent SVG from overflowing */
+    position: relative;
+}
+
+#state-diagram svg {
+    display: block;  /* Remove inline spacing */
+    width: 100%;
+    height: 100%;
+}
+
+/* State node styles */
+.state {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.state rect {
+    fill: #ffffff;
+    stroke: var(--color-border);
+    stroke-width: 2px;
+    transition: all 0.2s ease;
+}
+
+/* State ID text (direct child only) - centered */
+.state > text {
+    fill: #1f2328;
+    font-size: 14px;
+    font-weight: 500;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+/* Entry/Exit action text - left aligned */
+.state .text-layer text {
+    text-anchor: start !important;
+}
+
+/* State type variants */
+.state-atomic rect {
+    rx: 6px;
+}
+
+.state-compound rect {
+    rx: 10px;
+    stroke-dasharray: 5,3;
+}
+
+.state-parallel rect {
+    rx: 10px;
+    stroke-width: 3px;
+    stroke: var(--color-blue);
+}
+
+.state-final rect {
+    fill: var(--color-gray-light);
+    stroke: var(--color-gray-dark);
+    stroke-width: 3px;
+}
+
+/* Collapsed compound state - inherits base .state rect style, only dashed border differs */
+.collapsed-state-rect {
+    fill: #ffffff;
+    stroke: var(--color-border);
+    stroke-width: 2px;
+    stroke-dasharray: 5,5;  /* Only difference: dashed border for collapsed state */
+    transition: all 0.2s ease;
+}
+
+.collapsed-state-rect:hover {
+    fill: var(--color-gray-light);
+    stroke: var(--color-gray-dark);
+}
+
+/* Active state highlighting */
+.state.active rect {
+    fill: #ddf4ff;
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+    box-shadow: 0 0 10px rgba(9, 105, 218, 0.3);
+}
+
+.state.active text {
+    fill: var(--color-blue);
+    font-weight: 600;
+}
+
+/* Active highlighting for collapsed compound states */
+.collapsed-compound.active .collapsed-state-rect {
+    fill: #ddf4ff;
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+}
+
+.collapsed-compound.active text {
+    fill: var(--color-blue);
+    font-weight: 600;
+}
+
+/* Hover effect */
+.state:hover rect {
+    fill: var(--color-gray-light);
+    stroke: var(--color-gray-dark);
+}
+
+/* Transition styles */
+.transition {
+    fill: none;
+    stroke: var(--color-gray-dark);
+    stroke-width: 2px;
+    marker-end: url(#arrowhead);
+    transition: all 0.2s ease;
+    position: relative;  /* Enable z-index */
+    z-index: 1;  /* Below transition labels (z-index: 100) */
+}
+
+.transition:hover {
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+}
+
+/* Transition color variants for multiple transitions between same states */
+.transition.transition-color-0 {
+    stroke: var(--transition-color-0);
+}
+.transition.transition-color-1 {
+    stroke: var(--transition-color-1);
+}
+.transition.transition-color-2 {
+    stroke: var(--transition-color-2);
+}
+.transition.transition-color-3 {
+    stroke: var(--transition-color-3);
+}
+.transition.transition-color-4 {
+    stroke: var(--transition-color-4);
+}
+.transition.transition-color-5 {
+    stroke: var(--transition-color-5);
+}
+
+/* Hover state maintains color but thickens */
+.transition.transition-color-0:hover { stroke: var(--transition-color-0); stroke-width: 3px; }
+.transition.transition-color-1:hover { stroke: var(--transition-color-1); stroke-width: 3px; }
+.transition.transition-color-2:hover { stroke: var(--transition-color-2); stroke-width: 3px; }
+.transition.transition-color-3:hover { stroke: var(--transition-color-3); stroke-width: 3px; }
+.transition.transition-color-4:hover { stroke: var(--transition-color-4); stroke-width: 3px; }
+.transition.transition-color-5:hover { stroke: var(--transition-color-5); stroke-width: 3px; }
+
+/* Initial transition (W3C/UML standard) */
+.transition[data-id="__initial_transition__"] {
+    stroke: var(--color-green);
+    stroke-width: 3px;
+}
+
+/* Initial pseudo-node */
+.state-initial-pseudo {
+    cursor: default;
+}
+
+.initial-pseudo-circle {
+    fill: var(--color-green);
+    stroke: none;
+}
+
+/* W3C SCXML 3.10: History State Visualization */
+.state-history {
+    cursor: pointer;
+}
+
+.history-circle {
+    fill: #ffffff;
+    stroke: var(--color-purple);
+    stroke-width: 2.5px;
+    transition: all 0.2s ease;
+}
+
+.history-label {
+    fill: var(--color-purple);
+    font-size: 18px;
+    font-weight: 700;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.history-id-label {
+    fill: #1f2328;
+    font-size: 12px;
+    font-weight: 500;
+    text-anchor: middle;
+    pointer-events: none;
+}
+
+.state-history.active .history-circle {
+    fill: #fbefff;
+    stroke: var(--color-purple);
+    stroke-width: 3.5px;
+}
+
+.state-history.active .history-label {
+    fill: var(--color-purple);
+    font-weight: 800;
+}
+
+.state-history.active .history-id-label {
+    fill: var(--color-purple);
+    font-weight: 600;
+}
+
+.state-history:hover .history-circle {
+    fill: var(--color-gray-light);
+    stroke: var(--color-purple);
+    stroke-width: 3px;
+}
+
+/* Transition animation (DEPRECATED - merged into .highlighted) */
+/* Zero Duplication: Animation now handled by .highlighted class */
+
+@keyframes pulse {
+    0%, 100% { stroke-width: 3px; }
+    50% { stroke-width: 5px; }
+}
+
+.transition-arrow {
+    fill: var(--color-green);
+    animation: moveAlongPath 0.5s linear;
+}
+
+/* Transition labels */
+.transition-label {
+    font-size: 11px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', 'source-code-pro', monospace;
+    fill: var(--color-blue);
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+    user-select: none;
+}
+
+/*/* Event buttons container */
+.event-buttons-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-start;
+    max-width: 500px;
+}
+
+.event-button {
+    flex: 0 0 auto;
+    min-width: 100px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    background-color: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.event-button:hover {
+    background-color: #ddf4ff;
+    border-color: var(--color-blue);
+    color: var(--color-blue);
+}
+
+.event-button:active {
+    background-color: #b6e3ff;
+    transform: scale(0.98);
+}
+
+/* Control buttons */
+.btn-step {
+    min-width: 120px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#step-counter {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-blue);
+    padding: 0 16px;
+}
+
+/* Event queue panel */
+.event-queue {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.event {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.event-name {
+    flex: 1;
+}
+
+.event-delete-btn {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    margin-left: 8px;
+    background-color: transparent;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: bold;
+    line-height: 1;
+    color: var(--color-gray);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.event-delete-btn:hover {
+    background-color: var(--color-red);
+    color: white;
+    transform: scale(1.1);
+}
+
+.event-delete-btn:active {
+    transform: scale(0.95);
+}
+
+.event-internal {
+    border-left: 3px solid var(--color-blue);
+}
+
+.event-external {
+    border-left: 3px solid var(--color-green);
+}
+
+.event-scheduled {
+    border-left: 4px solid #0ea5e9;
+    background-color: #f0f9ff;
+}
+
+.event-time {
+    color: #64748b;
+    font-size: 12px;
+    margin-left: 8px;
+    font-weight: 500;
+}
+
+.event-ready {
+    border-left: 4px solid #16a34a;
+    background-color: #f0fdf4;
+    animation: pulse-ready 1s ease-in-out infinite;
+}
+
+@keyframes pulse-ready {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Data model panel */
+.data-model {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.data-entry {
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.var-name {
+    font-weight: 600;
+    color: var(--color-blue);
+}
+
+.var-value {
+    color: var(--color-gray-dark);
+}
+
+/* Execution log */
+.log-panel {
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 13px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+.log-entry {
+    padding: 8px 12px;
+    margin-bottom: 4px;
+    border-left: 3px solid var(--color-border);
+    transition: background-color 0.2s ease;
+}
+
+.log-entry:hover {
+    background-color: var(--color-gray-light);
+}
+
+.log-step {
+    color: var(--color-gray-dark);
+    font-weight: 600;
+}
+
+.log-event {
+    color: var(--color-blue);
+    font-weight: 600;
+    padding: 0 4px;
+}
+
+.log-transition {
+    color: var(--color-gray-dark);
+}
+
+.log-actions {
+    color: var(--color-green);
+    font-style: italic;
+    font-size: 0.95em;
+    padding-left: 8px;
+}
+
+/* Transition label hierarchical display */
+.transition-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.5;
+    background: rgba(255, 255, 255, 1);  /* Fully opaque - prevent arrows from showing through */
+    padding: 6px 10px;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    transition: all 0.2s ease;
+    width: fit-content;  /* Size to exact content width */
+}
+
+.transition-label:hover {
+    background: rgba(255, 255, 255, 1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    transform: scale(1.05);
+    z-index: 1000;
+}
+
+/* Transition label color variants */
+.transition-label.label-color-0 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-0);
+}
+.transition-label.label-color-1 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-1);
+}
+.transition-label.label-color-2 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-2);
+}
+.transition-label.label-color-3 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-3);
+}
+.transition-label.label-color-4 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-4);
+}
+.transition-label.label-color-5 {
+    background: rgba(255, 255, 255, 1);  /* Opaque white background */
+    border-left: 3px solid var(--transition-color-5);
+}
+
+/* Hover-linked highlighting: arrow hover highlights label */
+.transition-label.arrow-hovered {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.08);
+    z-index: 1001;
+}
+
+/* Color-specific hover effects */
+.transition-label.label-color-0.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3);  /* Blue */
+}
+.transition-label.label-color-1.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(26, 127, 55, 0.3);  /* Green */
+}
+.transition-label.label-color-2.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(209, 134, 22, 0.3);  /* Orange */
+}
+.transition-label.label-color-3.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(130, 80, 223, 0.3);  /* Purple */
+}
+.transition-label.label-color-4.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(10, 126, 164, 0.3);  /* Teal */
+}
+.transition-label.label-color-5.arrow-hovered {
+    box-shadow: 0 0 0 3px rgba(207, 34, 46, 0.3);  /* Pink/Red */
+}
+
+/* Hover-linked highlighting: label hover highlights arrow (applied via JS) */
+.transition.label-hovered {
+    stroke-width: 4px;
+    filter: drop-shadow(0 0 4px currentColor);
+}
+
+.label-event {
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 3px;
+    font-size: 12px;
+}
+
+.label-condition {
+    color: #2563eb;  /* Blue for conditions */
+    margin-bottom: 3px;
+    padding: 2px 0;
+}
+
+.label-action {
+    color: #059669;  /* Green for actions */
+    padding-left: 14px;
+    margin-bottom: 2px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+}
+
+.label-target {
+    color: #6b7280;  /* Gray for targets */
+    font-size: 0.9em;
+    opacity: 0.8;
+}
+
+.label-eventless,
+.label-always {
+    color: #9ca3af;
+    font-style: italic;
+}
+
+/* Transition label container positioning */
+.transition-label-container {
+    pointer-events: none;  /* Allow click-through to underlying states */
+    cursor: default;
+    position: relative;  /* Enable z-index */
+    z-index: 100;  /* Above transition arrows */
+}
+
+/* Only the label itself (not the container) should be clickable */
+.transition-label-container .transition-label {
+    pointer-events: auto;  /* Label is clickable for highlighting */
+}
+
+/* W3C spec reference links */
+.w3c-ref {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 6px;
+    background-color: #ddf4ff;
+    color: var(--color-blue);
+    border-radius: 3px;
+    text-decoration: none;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.w3c-ref:hover {
+    background-color: #b6e3ff;
+    text-decoration: underline;
+}
+
+/* Loading state */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    color: var(--color-gray-dark);
+}
+
+.loading::after {
+    content: "Loading WASM module...";
+    animation: dots 1.5s infinite;
+}
+
+@keyframes dots {
+    0%, 20% { content: "Loading WASM module."; }
+    40% { content: "Loading WASM module.."; }
+    60%, 100% { content: "Loading WASM module..."; }
+}
+
+/* Error state */
+.error-message {
+    padding: 16px;
+    background-color: #ffebe9;
+    border: 1px solid #ff8182;
+    border-radius: 6px;
+    color: var(--color-red);
+    font-weight: 500;
+}
+
+/* State Machine Tabs */
+.tabnav-tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: 16px;
+}
+
+.tab-item {
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-gray-dark);
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tab-item:hover {
+    color: #1f2328;
+    background-color: var(--color-gray-light);
+}
+
+.tab-item.active {
+    color: var(--color-blue);
+    border-bottom-color: var(--color-blue);
+    font-weight: 600;
+}
+
+/* Diagram Container Management (for single view) */
+.diagram-container {
+    display: none;
+    width: 100%;
+    min-height: 500px;
+    height: 70vh;
+    max-height: 800px;
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+}
+
+.diagram-container.active {
+    display: block;
+}
+
+.diagram-container svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* Child SCXML indicator badge */
+.child-badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 2px 6px;
+    background-color: #ddf4ff;
+    color: var(--color-blue);
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+/* View Container */
+#single-view-container {
+    display: block;  /* Default view */
+}
+
+
+
+.comm-details {
+    font-size: 12px;
+    color: var(--color-gray-dark);
+}
+
+.comm-arrow {
+    display: inline-block;
+    margin: 0 4px;
+    color: var(--color-blue);
+    font-weight: bold;
+}
+
+/* View Mode Toggle */
+#view-mode-toggle {
+    display: inline-flex;
+    gap: 4px;
+}
+
+#view-mode-toggle .btn {
+    padding: 4px 12px;
+    font-size: 13px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    #state-diagram {
+        height: 400px !important;
+    }
+
+    .btn-step {
+        min-width: auto;  /* Remove fixed min-width */
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    #step-counter {
+        font-size: 14px;
+        padding: 0 8px;
+    }
+    
+    /* Stack buttons on very small screens */
+    .Box-body.d-flex {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+}
+
+/* Utility classes */
+.hidden {
+    display: none !important;
+}
+
+.flex-1 {
+    flex: 1;
+}
+
+.mr-2 {
+    margin-right: 8px;
+}
+
+.ml-3 {
+    margin-left: 12px;
+}
+
+.mb-3 {
+    margin-bottom: 16px;
+}
+
+.mt-3 {
+    margin-top: 16px;
+}
+
+.p-4 {
+    padding: 16px;
+}
+
+/* W3C SCXML 3.7: State Actions Panel */
+.state-actions {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* ============================================================================
+   UNIFIED DESIGN SYSTEM: Panel Items (State Actions + Transition Info)
+   ============================================================================
+
+   Common Classes:
+   - Base: .action-info (State Actions) / .transition-list-item (Transition Info)
+   - Active: .active or .active-state-info (permanent, blue, indicates current state)
+   - Highlight: .panel-highlighted (temporary 3s animation on click)
+
+   Usage:
+   - State Actions: Shows all states, .active-state-info for current active state
+   - Transition Info: Shows all transitions, .active for last executed transition
+   - Click Behavior: Both panels show .panel-highlighted animation on click
+   ============================================================================ */
+
+/* Unified panel item style - Design System */
+.action-info {
+    padding: 8px 12px;
+    margin: 4px auto;
+    width: 95%;
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 12px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+
+/* Hover effect - consistent across both panels */
+.action-info:hover {
+    background-color: #ffffff;
+    border-color: var(--color-blue);
+    transform: translateX(2px);
+}
+
+.action-state-header {
+    font-weight: 600;
+    color: var(--color-blue);
+    margin-bottom: 4px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 12px;
+}
+
+/* Design System: Clickable interactive elements */
+.clickable-state-header {
+    cursor: pointer;
+    padding: 4px 0;
+    margin: 0;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+}
+
+.clickable-state-header:hover {
+    background-color: rgba(9, 105, 218, 0.05);
+}
+
+.clickable-state-header:active {
+    background-color: rgba(9, 105, 218, 0.1);
+}
+
+/* Design System: Highlighted state (temporary click feedback) */
+.action-info.panel-highlighted {
+    background-color: #ddf4ff !important;
+    border: 2px solid var(--color-blue) !important;
+    animation: panel-highlight-pulse 3s ease-out;
+}
+
+/* Design System: Pulse animation for user feedback */
+@keyframes panel-highlight-pulse {
+    0%, 100% { 
+        box-shadow: 0 0 0 transparent; 
+    }
+    50% { 
+        box-shadow: 0 0 12px rgba(9, 105, 218, 0.4); 
+    }
+}
+
+/* Design System: Active state (persistent indicator) - used by State Actions panel */
+.active-state-info {
+    background-color: #ddf4ff;
+    border: 2px solid var(--color-blue);
+}
+
+/* Alias for consistency with Transition Info panel */
+.action-info.active {
+    background-color: #ddf4ff;
+    border: 2px solid var(--color-blue);
+}
+
+/* Focused state effect in diagram - blue border like Transition Info */
+/* For group elements (g.node.state), target the rect/circle inside */
+.node.state.focused > rect,
+.node.state.focused > circle {
+    stroke: var(--color-blue) !important;
+    stroke-width: 3px !important;
+}
+
+/* For direct rect/circle elements */
+.compound-collapsed.focused,
+.compound-container.focused {
+    stroke: var(--color-blue) !important;
+    stroke-width: 3px !important;
+}
+
+/* Pulse animation for all focused elements */
+/* Design System: Uses unified diagram-click-pulse animation */
+.node.state.focused,
+.compound-collapsed.focused,
+.compound-container.focused {
+    animation: diagram-click-pulse 2s ease-out;
+}
+
+.action-item {
+    padding: 4px 0 4px 12px;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 11px;
+    color: var(--color-gray-dark);
+    line-height: 1.4;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.action-onentry {
+    border-left: 3px solid var(--color-green);
+    padding-left: 8px;
+    margin-bottom: 4px;
+}
+
+.action-onexit {
+    border-left: 3px solid var(--color-red);
+    padding-left: 8px;
+    margin-bottom: 4px;
+}
+
+.action-none {
+    border-left: 3px solid var(--color-gray-light);
+    padding-left: 8px;
+    margin-bottom: 4px;
+    color: var(--color-gray);
+    font-style: italic;
+}
+
+.action-transitions {
+    border-left: 3px solid var(--color-blue);
+    padding-left: 8px;
+    margin-bottom: 4px;
+    color: var(--color-blue-dark);
+}
+
+.action-type {
+    font-weight: 600;
+    color: #1f2328;
+}
+
+.state-type {
+    color: var(--color-gray);
+    font-weight: normal;
+    font-size: 11px;
+}
+
+.state-active {
+    color: var(--color-green);
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.action-details {
+    color: var(--color-gray-dark);
+    font-size: 11px;
+    margin-left: 8px;
+}
+
+/* W3C SCXML 3.3: Transition Info Panel */
+.transition-info {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.transition-hint {
+    padding: 8px 12px;
+    color: var(--color-gray);
+    font-size: 13px;
+    font-style: italic;
+    text-align: center;
+}
+
+.transition-details {
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.transition-header {
+    font-weight: 600;
+    color: var(--color-blue);
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.transition-field {
+    margin: 4px 0;
+    padding-left: 8px;
+}
+
+.transition-field-label {
+    font-weight: 600;
+    color: var(--color-gray-dark);
+    display: inline-block;
+    min-width: 60px;
+}
+
+.transition-field-value {
+    color: var(--color-text);
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 12px;
+}
+
+.transition-guard {
+    border-left: 3px solid var(--color-orange);
+    padding-left: 8px;
+    margin: 8px 0;
+}
+
+.transition-actions {
+    border-left: 3px solid var(--color-purple);
+    padding-left: 8px;
+    margin: 8px 0;
+}
+
+.transition-action-item {
+    margin: 4px 0;
+    font-size: 12px;
+    color: var(--color-gray-dark);
+}
+/* ========================================
+   Hierarchical Visualization Enhancements (Options 1, 2, 5)
+   ======================================== */
+
+/* OPTION 1: Parent-Child Containment Links */
+.link-containment {
+    fill: none;
+    stroke: #d0d7de;
+    stroke-width: 1.5px;
+    stroke-dasharray: 5, 5;
+    opacity: 0.3;
+    pointer-events: none;
+}
+
+/* OPTION 5: Event Delegation Links (child raises → parent handles) */
+.link-delegation {
+    fill: none;
+    stroke: #9a6700;
+    stroke-width: 2px;
+    stroke-dasharray: 3, 3;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.link-initial {
+    fill: none;
+    stroke: #57606a;
+    stroke-width: 2px;
+    opacity: 0.8;
+}
+
+.delegation-label {
+    font-size: 11px;
+    font-weight: 600;
+    fill: #9a6700;
+    pointer-events: none;
+}
+
+/* OPTION 2: Compound State Container Boxes (UML Standard) */
+.compound-container {
+    fill: none;
+    stroke: #0969da;
+    stroke-width: 2px;
+    rx: 10px;
+    ry: 10px;
+    transition: all 0.2s ease;
+    pointer-events: all;
+    cursor: pointer;
+}
+
+/* Collapsed state: small dotted box */
+.compound-container.collapsed {
+    stroke-dasharray: 5, 5;
+    opacity: 0.7;
+}
+
+.compound-container:hover {
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+.parallel-container {
+    stroke: #8250df;
+    stroke-dasharray: 10, 5;
+}
+
+.compound-label {
+    font-size: 14px;
+    font-weight: 600;
+    fill: #0969da;
+    pointer-events: none;
+}
+
+.parallel-container + .compound-label {
+    fill: #8250df;
+}
+
+/* Collapsed compound state (when compound is folded) */
+.compound-collapsed {
+    fill: none;
+    stroke: #0969da;
+    stroke-width: 2px;
+    stroke-dasharray: 5, 5;
+    opacity: 0.7;
+    rx: 5px;
+}
+
+.compound-collapsed:hover {
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+.compound-collapsed.active {
+    fill: #ddf4ff;
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+/* Active state highlighting for compound containers */
+.compound-container.active {
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+.parallel-container.active {
+    stroke-width: 3px;
+}
+
+/* ========================================
+   Transition List & Highlighting
+   ======================================== */
+
+/* Transition active state (permanent - like state.active) */
+/* Shows last executed transition, remains until step forward/backward */
+.transition.active {
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+    opacity: 1;
+}
+
+.transition-label.active {
+    font-weight: 600;
+    fill: var(--color-blue);
+    font-size: 12px;
+}
+
+/* Transition highlighted state (temporary - like state.focused) */
+/* Shows clicked transition with animation, auto-removed after duration */
+/* Design System: Matches state.focused animation (drop-shadow pulse, 2s duration) */
+.transition.highlighted {
+    /* Keep original color - don't override to blue */
+    stroke-width: 4px;
+    opacity: 1;
+}
+
+/* Color-specific click animations for transition arrows */
+.transition.transition-color-0.highlighted {
+    animation: diagram-click-pulse-0 2s ease-out;
+}
+.transition.transition-color-1.highlighted {
+    animation: diagram-click-pulse-1 2s ease-out;
+}
+.transition.transition-color-2.highlighted {
+    animation: diagram-click-pulse-2 2s ease-out;
+}
+.transition.transition-color-3.highlighted {
+    animation: diagram-click-pulse-3 2s ease-out;
+}
+.transition.transition-color-4.highlighted {
+    animation: diagram-click-pulse-4 2s ease-out;
+}
+.transition.transition-color-5.highlighted {
+    animation: diagram-click-pulse-5 2s ease-out;
+}
+
+.transition-label.highlighted {
+    font-weight: 700;
+    /* Keep original color - don't override to blue */
+    font-size: 13px;
+}
+
+/* Color-specific click animations */
+.transition-label.label-color-0.highlighted {
+    animation: diagram-click-pulse-0 2s ease-out;
+}
+.transition-label.label-color-1.highlighted {
+    animation: diagram-click-pulse-1 2s ease-out;
+}
+.transition-label.label-color-2.highlighted {
+    animation: diagram-click-pulse-2 2s ease-out;
+}
+.transition-label.label-color-3.highlighted {
+    animation: diagram-click-pulse-3 2s ease-out;
+}
+.transition-label.label-color-4.highlighted {
+    animation: diagram-click-pulse-4 2s ease-out;
+}
+.transition-label.label-color-5.highlighted {
+    animation: diagram-click-pulse-5 2s ease-out;
+}
+
+/* Unified keyframes for all diagram clicks (state + transition) */
+/* Zero Duplication: Single animation definition for consistent UX */
+@keyframes diagram-click-pulse {
+    0%, 100% {
+        filter: drop-shadow(0 0 0 transparent);
+    }
+    25%, 75% {
+        filter: drop-shadow(0 0 8px var(--color-blue));
+    }
+    50% {
+        filter: drop-shadow(0 0 16px var(--color-blue));
+    }
+}
+
+/* Color-specific animations for transition labels */
+@keyframes diagram-click-pulse-0 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-0)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-0)); }
+}
+
+@keyframes diagram-click-pulse-1 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-1)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-1)); }
+}
+
+@keyframes diagram-click-pulse-2 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-2)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-2)); }
+}
+
+@keyframes diagram-click-pulse-3 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-3)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-3)); }
+}
+
+@keyframes diagram-click-pulse-4 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-4)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-4)); }
+}
+
+@keyframes diagram-click-pulse-5 {
+    0%, 100% { filter: drop-shadow(0 0 0 transparent); }
+    25%, 75% { filter: drop-shadow(0 0 8px var(--transition-color-5)); }
+    50% { filter: drop-shadow(0 0 16px var(--transition-color-5)); }
+}
+
+/* Transition list container */
+.transition-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.transition-list-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-gray-dark);
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+/* Transition list item */
+/* Unified panel item style - Transition Info (matches State Actions) */
+.transition-list-item {
+    padding: 8px;
+    margin: 4px auto;
+    width: 95%;
+    background-color: var(--color-gray-light);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+/* Hover effect - matches State Actions panel */
+.transition-list-item:hover {
+    background-color: #ffffff;
+    border-color: var(--color-blue);
+    transform: translateX(2px);
+}
+
+/* Design System: Active state (persistent indicator) - matches State Actions panel */
+.transition-list-item.active {
+    background-color: #ddf4ff;
+    border: 2px solid var(--color-blue);
+}
+
+/* Design System: Highlighted transition (temporary click feedback) - matches State Actions panel */
+.transition-list-item.panel-highlighted {
+    background-color: #ddf4ff !important;
+    border: 2px solid var(--color-blue) !important;
+    animation: panel-highlight-pulse 3s ease-out;
+}
+
+/* Deprecated: .flash class replaced by .panel-highlighted for design system consistency */
+.transition-list-item.flash {
+    background-color: #fff8c5;
+    border-color: var(--color-yellow);
+    transform: scale(1.02);
+}
+
+/* Deprecated: .selected class replaced by .active */
+.transition-list-item.selected {
+    background-color: #ddf4ff;
+    border-color: var(--color-blue);
+    border-width: 2px;
+}
+
+.transition-list-source-target {
+    font-size: 13px;
+    color: #1f2328;
+    margin-bottom: 4px;
+}
+
+.transition-list-event {
+    font-size: 11px;
+    color: var(--color-gray-dark);
+    font-style: italic;
+}
+
+.transition-list-condition {
+    font-size: 11px;
+    color: #2563eb;  /* Blue for conditions */
+    margin-top: 4px;
+    padding: 2px 0;
+    font-family: var(--font-mono);
+}
+
+.transition-list-action {
+    font-size: 11px;
+    color: #059669;  /* Green for actions */
+    margin-top: 2px;
+    padding-left: 8px;
+    font-family: var(--font-mono);
+}
+
+/* ============================================
+ * Breadcrumb Navigation (W3C SCXML 6.3)
+ * ============================================ */
+
+#breadcrumb-container {
+    font-size: 14px;
+    color: #57606a;
+    display: flex;
+    align-items: center;
+}
+
+.breadcrumb-item {
+    color: #0969da;
+    text-decoration: none;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+    cursor: pointer;
+}
+
+.breadcrumb-item:hover {
+    background-color: #ddf4ff;
+    text-decoration: none;
+}
+
+.breadcrumb-item.active {
+    color: #1f2328;
+    font-weight: 600;
+    cursor: default;
+}
+
+.breadcrumb-separator {
+    margin: 0 8px;
+    color: #8c959f;
+    font-weight: normal;
+}
+
+/* Back Button Styling */
+#btn-back {
+    font-size: 14px;
+    padding: 4px 12px;
+}
+
+/* ============================================
+ * Invoke Badge (State with Child SCXML)
+ * ============================================ */
+
+.state .invoke-badge-circle {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.state:hover .invoke-badge-circle {
+    fill: #0550ae;
+    r: 12;
+}
+
+.state .invoke-badge-icon {
+    pointer-events: none;
+    user-select: none;
+}
+
+/* Invoke State Highlight on Hover */
+.state.has-invoke rect {
+    cursor: pointer;
+    transition: stroke 0.2s ease;
+}
+
+.state.has-invoke:hover rect {
+    stroke: #0969da;
+    stroke-width: 3;
+}
+
+/* ============================================
+ * Panel Controller (Resize Handle & Minimize Button)
+ * ============================================ */
+
+/* Panel resize handle container */
+.panel-resize-handle {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 32px;
+    cursor: ns-resize;
+    background: linear-gradient(to bottom, #f6f8fa 0%, #ffffff 100%);
+    border-bottom: 1px solid var(--color-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;  /* Center the button */
+    z-index: 10;
+    transition: background-color 0.2s ease;
+}
+
+.panel-resize-handle:hover {
+    background: linear-gradient(to bottom, #eef2f5 0%, #f6f8fa 100%);
+}
+
+/* Panel toggle button (minimize/maximize) */
+.panel-toggle-btn {
+    padding: 4px 8px;
+    background-color: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    cursor: pointer;
+    color: #57606a;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.panel-toggle-btn:hover {
+    background-color: #f6f8fa;
+    border-color: #0969da;
+    color: #0969da;
+    box-shadow: 0 2px 6px rgba(9, 105, 218, 0.15);
+}
+
+.panel-toggle-btn:active {
+    background-color: #eef2f5;
+    transform: translateY(1px);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.panel-toggle-btn svg {
+    transition: transform 0.2s ease;
+}
+
+/* Rotate arrow icon when minimized */
+.bottom-panels-fixed.minimized .panel-toggle-btn svg {
+    transform: rotate(180deg);
+}
+
+/* Disable transition during resize for smooth dragging */
+.bottom-panels-fixed.resizing {
+    transition: none !important;
+}
+
+/* Hide overflow content when minimized */
+.bottom-panels-fixed.minimized {
+    overflow: hidden;
+}
