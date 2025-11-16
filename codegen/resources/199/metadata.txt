@@ -1,6 +1,0 @@
-id: 199
-specnum: 6.2
-conformance: mandatory
-manual: False
-description: If the SCXML Processor does not support the type that is specified, it MUST place the event error.execution on the internal event queue.
-variants: 1

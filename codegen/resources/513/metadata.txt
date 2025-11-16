@@ -1,6 +1,0 @@
-id: 513
-specnum: C.2
-conformance: optional
-manual: False
-description: After it adds the received message to the appropriate event queue, the SCXML Processor MUST then indicate the result to the external component via a success response code 2XX. (Automated validation: HTTP event received successfully validates 200 OK response)
-variants: 1
