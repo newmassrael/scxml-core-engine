@@ -376,13 +376,23 @@ class BreadcrumbManager {
     async navigateToChild(stateId, childStructure, childInfo = null) {
         console.log(`Navigating to child state machine from state: ${stateId}`);
 
+        // Save current node positions for layout restoration
+        const savedNodePositions = this.controller.currentMachine.visualizer?.nodes?.map(node => ({
+            id: node.id,
+            x: node.x,
+            y: node.y,
+            width: node.width,
+            height: node.height
+        })) || [];
+
         // Push current machine to stack
         this.controller.navigationStack.push({
             id: this.controller.currentMachine.id,
             label: this.controller.currentMachine.label,
             structure: this.controller.currentMachine.structure,
             visualizer: this.controller.currentMachine.visualizer,
-            subSCXMLs: this.controller.currentMachine.subSCXMLs
+            subSCXMLs: this.controller.currentMachine.subSCXMLs,
+            nodePositions: savedNodePositions  // Save layout state
         });
 
         // Cleanup previous visualizer to prevent memory leaks
@@ -451,6 +461,31 @@ class BreadcrumbManager {
             // Restore stack state
             this.controller.navigationStack.push(parent);
             return;
+        }
+
+        // Restore saved node positions to preserve layout
+        if (parent.nodePositions && parent.nodePositions.length > 0) {
+            console.log(`Restoring ${parent.nodePositions.length} node positions from saved state`);
+
+            parent.nodePositions.forEach(savedPos => {
+                const node = parentVisualizer.nodes.find(n => n.id === savedPos.id);
+                if (node) {
+                    node.x = savedPos.x;
+                    node.y = savedPos.y;
+                    node.width = savedPos.width;
+                    node.height = savedPos.height;
+                }
+            });
+
+            // Re-optimize transition snap points with restored node positions
+            console.log('Re-optimizing transition layout with restored positions...');
+            parentVisualizer.layoutOptimizer.optimizeSnapPointAssignments(
+                parentVisualizer.allLinks,
+                parentVisualizer.nodes
+            );
+
+            // Re-render with restored positions and updated transitions
+            parentVisualizer.render();
         }
 
         this.controller.currentMachine = {
