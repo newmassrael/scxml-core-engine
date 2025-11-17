@@ -900,6 +900,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             });
         
         // Transition labels (event, condition, actions) using foreignObject for HTML rendering
+        // Labels are draggable - custom positions persist until transition coordinates change
         this.visualizer.transitionLabels = linkGroups
             .filter(d => d.linkType === 'transition' && (d.event || d.cond || (d.actions && d.actions.length > 0)))
             .append('foreignObject')
@@ -907,8 +908,77 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             .attr('width', 300)  // Initial width for measurement
             .attr('height', 200)  // Initial height for measurement
             .style('overflow', 'visible')
-            .style('pointer-events', 'none')
+            .style('pointer-events', 'auto')  // Enable pointer events for dragging
+            .style('cursor', 'move')  // Show move cursor on hover
             .html(d => this.visualizer.getTransitionLabelText(d))
+            // Drag behavior: allows repositioning labels, auto-resets on coordinate changes
+            .call(d3.drag()
+                .on('start', function(event, d) {
+                    // Store initial position for drag distance calculation
+                    const foreignObj = d3.select(this);
+                    d.labelDragStartX = parseFloat(foreignObj.attr('x'));
+                    d.labelDragStartY = parseFloat(foreignObj.attr('y'));
+                    d.labelIsDragging = false;
+
+                    // Prevent click event propagation
+                    event.sourceEvent.stopPropagation();
+
+                    if (self.debugMode) {
+                        console.log(`[LABEL DRAG START] ${d.source}→${d.target}`);
+                    }
+                })
+                .on('drag', function(event, d) {
+                    // Update foreignObject position directly (dx, dy are deltas)
+                    const foreignObj = d3.select(this);
+                    const currentX = parseFloat(foreignObj.attr('x'));
+                    const currentY = parseFloat(foreignObj.attr('y'));
+                    const newX = currentX + event.dx;
+                    const newY = currentY + event.dy;
+
+                    foreignObj
+                        .attr('x', newX)
+                        .attr('y', newY);
+
+                    // Calculate drag distance
+                    const dx = newX - d.labelDragStartX;
+                    const dy = newY - d.labelDragStartY;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    // Mark as dragging if moved more than threshold
+                    if (distance > 5) {
+                        d.labelIsDragging = true;
+                    }
+                })
+                .on('end', function(event, d) {
+                    if (self.debugMode) {
+                        console.log(`[LABEL DRAG END] ${d.source}→${d.target} isDragging=${d.labelIsDragging}`);
+                    }
+
+                    // Only save position if actually dragged
+                    if (d.labelIsDragging) {
+                        // Calculate center position from foreignObject position
+                        const foreignObj = d3.select(this);
+                        const x = parseFloat(foreignObj.attr('x'));
+                        const y = parseFloat(foreignObj.attr('y'));
+                        const width = parseFloat(foreignObj.attr('width'));
+                        const height = parseFloat(foreignObj.attr('height'));
+
+                        // Calculate center (labels are centered on position)
+                        const centerX = x + width / 2;
+                        const centerY = y + height / 2;
+
+                        // Save custom position
+                        self.setCustomLabelPosition(d, centerX, centerY);
+                    }
+
+                    // Clean up
+                    delete d.labelDragStartX;
+                    delete d.labelDragStartY;
+                    delete d.labelIsDragging;
+
+                    // Prevent click event propagation
+                    event.sourceEvent.stopPropagation();
+                }))
             .each(function(d) {
                 // Measure actual HTML content size (not foreignObject getBBox)
                 // foreignObject.getBBox() returns the foreignObject's width/height attributes,
@@ -1541,6 +1611,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
                         yOffset += 16; // Spacing between detail lines
                     });
+                    yOffset += 8; // Additional spacing after detail lines before next action
                 }
             }
         });
