@@ -169,6 +169,8 @@ class UIUpdater {
                         this.controller.updateEventQueue();
                         // Refresh scheduled events display (events should be removed)
                         this.controller.updateScheduledEvents();
+                        // CRITICAL FIX: Enable step forward button when events are available
+                        this.controller.enableButton('btn-step-forward');
                     }
                 }
             } catch (error) {

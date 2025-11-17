@@ -43,19 +43,20 @@ struct ScheduledEventSnapshot {
     std::string sessionId;
 
     // W3C SCXML 6.2: Complete EventDescriptor fields for restoration
-    std::string targetUri;  // Target URI (empty = external queue, "#_internal" = internal)
-    std::string eventType;  // Event type (scxml, platform, etc.)
-    std::string eventData;  // Event data payload
-    std::string content;    // HTTP body content (W3C SCXML C.2)
-    // Note: params map omitted for simplicity (can be added if needed)
+    std::string targetUri;                      // Target URI (empty = external queue, "#_internal" = internal)
+    std::string eventType;                      // Event type (scxml, platform, etc.)
+    std::string eventData;                      // Event data payload
+    std::string content;                        // HTTP body content (W3C SCXML C.2)
+    std::map<std::string, std::string> params;  // W3C SCXML 6.2: param name-value pairs for _event.data restoration
 
     ScheduledEventSnapshot() = default;
 
     ScheduledEventSnapshot(const std::string &name, const std::string &id, int64_t delayMs, const std::string &sessId,
                            const std::string &target = "", const std::string &type = "scxml",
-                           const std::string &data = "", const std::string &cnt = "")
+                           const std::string &data = "", const std::string &cnt = "",
+                           const std::map<std::string, std::string> &prms = {})
         : eventName(name), sendId(id), originalDelayMs(delayMs), sessionId(sessId), targetUri(target), eventType(type),
-          eventData(data), content(cnt) {}
+          eventData(data), content(cnt), params(prms) {}
 };
 
 // Forward declaration for recursive child state snapshot

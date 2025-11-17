@@ -204,24 +204,17 @@ endif()
 # Automatic deployment: Runs during build if visualizer/ doesn't exist
 # Manual deployment: cmake --build build --target deploy-visualizer-local
 
-# Determine if automatic deployment is needed
-# EMSCRIPTEN builds generate WASM files during build and copy directly to visualizer/
-# visualizer/ directory is now the source directory (tracked in git)
+# Automatic deployment strategy:
+# EMSCRIPTEN builds always deploy WASM files after visualizer target builds
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/visualizer")
     if(EMSCRIPTEN)
-        set(AUTO_DEPLOY ALL)
         message(STATUS "Visualizer directory not found, will create during EMSCRIPTEN build")
     else()
-        set(AUTO_DEPLOY "")
         message(STATUS "Visualizer deployment skipped: visualizer/ source directory not found")
     endif()
 else()
-    # Check if WASM files need to be built
-    if(EMSCRIPTEN AND NOT EXISTS "${CMAKE_SOURCE_DIR}/visualizer/visualizer.wasm")
-        set(AUTO_DEPLOY ALL)
-        message(STATUS "WASM files not found, will build automatically")
-    else()
-        set(AUTO_DEPLOY "")
+    if(EMSCRIPTEN)
+        message(STATUS "WASM files will be automatically deployed to visualizer/ after build")
     endif()
 endif()
 
@@ -233,11 +226,12 @@ set(VISUALIZER_JS_FILE "${VISUALIZER_DIR}/visualizer.js")
 
 if(EMSCRIPTEN)
     # EMSCRIPTEN: Build WASM and copy directly to visualizer/
-    add_custom_target(deploy-visualizer-local ${AUTO_DEPLOY}
-        COMMAND ${CMAKE_COMMAND} -E copy
+    # Manual deployment target (always available)
+    add_custom_target(deploy-visualizer-local
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${CMAKE_CURRENT_BINARY_DIR}/tests/visualizer.wasm
                 ${VISUALIZER_WASM_FILE}
-        COMMAND ${CMAKE_COMMAND} -E copy
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${CMAKE_CURRENT_BINARY_DIR}/tests/visualizer.js
                 ${VISUALIZER_JS_FILE}
         COMMAND ${CMAKE_COMMAND} -E create_symlink
@@ -245,13 +239,13 @@ if(EMSCRIPTEN)
                 ${VISUALIZER_DIR}/index.html
         DEPENDS visualizer
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-        COMMENT "Copying WASM build outputs to visualizer/"
+        COMMENT "Deploying WASM files to visualizer/"
         VERBATIM
     )
 else()
     # Non-EMSCRIPTEN: WASM files should be pre-built or obtained from CI
-    add_custom_target(deploy-visualizer-local ${AUTO_DEPLOY}
-        COMMAND ${CMAKE_COMMAND} -E echo "Non-EMSCRIPTEN build: WASM files should be pre-built"
+    add_custom_target(deploy-visualizer-local
+        COMMAND ${CMAKE_COMMAND} -E echo "Non-EMSCRIPTEN build: WASM files should be pre-built or obtained from CI"
         COMMAND ${CMAKE_COMMAND} -E create_symlink
                 visualizer.html
                 ${VISUALIZER_DIR}/index.html
