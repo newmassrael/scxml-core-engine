@@ -35,37 +35,16 @@ class PathCalculator {
             parts.push(`<div class="label-condition">${icon} [${transition.cond}]</div>`);
         }
 
-        // Actions - W3C SCXML 3.7
+        // Actions - W3C SCXML 3.7 (using ActionFormatter for consistency)
         if (transition.actions && transition.actions.length > 0) {
             transition.actions.forEach(action => {
-                const actionType = action.actionType || action.type;
-                let icon = '';
-                let text = '';
+                // Use ActionFormatter for consistent formatting
+                const formatted = (typeof ActionFormatter !== 'undefined')
+                    ? ActionFormatter.formatAction(action)
+                    : { main: 'action', details: [] };
 
-                if (actionType === 'send') {
-                    icon = '📤';
-                    text = `send(${action.event || '?'})`;
-                    if (action.target) {
-                        text += `<span class="label-target"> → ${action.target}</span>`;
-                    }
-                } else if (actionType === 'raise') {
-                    icon = '📢';
-                    text = `raise(${action.event || '?'})`;
-                } else if (actionType === 'assign') {
-                    icon = '💾';
-                    text = `${action.location || '?'} = ${action.expr || '?'}`;
-                } else if (actionType === 'log') {
-                    icon = '📝';
-                    text = `log(${action.label || action.expr || '?'})`;
-                } else if (actionType === 'cancel') {
-                    icon = '🚫';
-                    text = `cancel(${action.sendid || action.sendidexpr || '?'})`;
-                } else {
-                    icon = '•';
-                    text = actionType || 'unknown';
-                }
-
-                parts.push(`<div class="label-action">↳ ${icon} ${text}</div>`);
+                // Wrap in label-action div with arrow prefix
+                parts.push(`<div class="label-action">↳ ${formatted.main}</div>`);
             });
         }
 
