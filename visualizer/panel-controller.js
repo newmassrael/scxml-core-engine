@@ -12,7 +12,8 @@ const PANEL_CONFIG = {
     MINIMIZED_HEIGHT: 40,
     DEFAULT_HEIGHT: 600,
     STORAGE_KEY: 'scxml-visualizer-panel-height',
-    DEBUG_MODE: false  // Set to true to enable debug logging
+    DEBUG_MODE: false,  // Set to true to enable debug logging
+    START_MINIMIZED: true  // Start with panel minimized by default
 };
 
 class PanelController {
@@ -117,6 +118,14 @@ class PanelController {
             e.stopPropagation();
             this.toggleMinimize();
         });
+
+        // Apply initial minimized state if configured
+        if (PANEL_CONFIG.START_MINIMIZED) {
+            this.isMinimized = true;
+            this.panel.style.maxHeight = `${PANEL_CONFIG.MINIMIZED_HEIGHT}px`;
+            this.panel.classList.add('minimized');
+            this.log('Panel started in minimized state');
+        }
 
         this.log('Initialization complete');
     }
