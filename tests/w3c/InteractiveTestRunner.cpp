@@ -466,11 +466,14 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
     // Restore data model
     restoreDataModel(snapshot.dataModel);
 
-    // W3C SCXML 3.13: Restore active states directly without side effects
-    // ARCHITECTURE.md Zero Duplication: Uses StateHierarchyManager infrastructure
-    // Direct restoration prevents onentry re-execution (fixes event duplication bug)
-    stateMachine_->restoreActiveStatesDirectly(snapshot.activeStates);
-    LOG_DEBUG("InteractiveTestRunner: Restored {} active states directly", snapshot.activeStates.size());
+    // W3C SCXML 3.13: Complete snapshot restoration using Template Method pattern
+    // ARCHITECTURE.md: Zero Duplication - delegates to StateMachine::restoreFromSnapshot()
+    // Handles JS environment (already initialized by start()), state restoration, and running flag
+    if (!stateMachine_->restoreFromSnapshot(snapshot.activeStates)) {
+        LOG_ERROR("InteractiveTestRunner: Failed to restore snapshot states");
+        return false;
+    }
+    LOG_DEBUG("InteractiveTestRunner: Restored {} active states from snapshot", snapshot.activeStates.size());
 
     // W3C SCXML 3.13: Restore event queues to EventRaiser (Single Source of Truth)
     // Zero Duplication: UI events are included in externalQueue
