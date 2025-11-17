@@ -404,9 +404,17 @@ void InteractiveTestRunner::captureSnapshot() {
         auto scheduledEvents = scheduler_->getScheduledEvents();
         scheduledEventsSnapshots.reserve(scheduledEvents.size());
         for (const auto &event : scheduledEvents) {
+            // W3C SCXML 6.2: Extract params (convert vector<string> to single string - first value only)
+            std::map<std::string, std::string> paramsMap;
+            for (const auto &[paramName, paramValues] : event.params) {
+                if (!paramValues.empty()) {
+                    paramsMap[paramName] = paramValues[0];  // Take first value (W3C allows duplicates)
+                }
+            }
+
             scheduledEventsSnapshots.emplace_back(event.eventName, event.sendId, event.originalDelay.count(),
                                                   event.sessionId, event.targetUri, event.eventType, event.eventData,
-                                                  event.content);
+                                                  event.content, paramsMap);
         }
     }
 
@@ -495,18 +503,26 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
             eventDesc.data = scheduledEvent.eventData;
             eventDesc.content = scheduledEvent.content;
 
+            // W3C SCXML 6.2: Restore params (convert map<string,string> to map<string,vector<string>>)
+            for (const auto &[paramName, paramValue] : scheduledEvent.params) {
+                eventDesc.params[paramName] = {paramValue};  // Wrap in vector
+            }
+
+            // CRITICAL FIX: Use current session ID, not snapshot's old session ID
+            // After restoreSnapshot() recreates StateMachine, we have a new session ID
+            const std::string &currentSessionId = stateMachine_->getSessionId();
+
             // Create target with correct URI (internal/external/http)
-            auto target = targetFactory->createTarget(scheduledEvent.targetUri, scheduledEvent.sessionId);
+            auto target = targetFactory->createTarget(scheduledEvent.targetUri, currentSessionId);
 
             // Schedule event with original delay and sendId
             auto delay = std::chrono::milliseconds(scheduledEvent.originalDelayMs);
-            scheduler_->scheduleEvent(eventDesc, delay, target, scheduledEvent.sendId, scheduledEvent.sessionId);
+            scheduler_->scheduleEvent(eventDesc, delay, target, scheduledEvent.sendId, currentSessionId);
 
-            LOG_DEBUG(
-                "InteractiveTestRunner: Recreated scheduled event '{}' (sendId: {}, delay: {}ms, target: '{}') for "
-                "step {}",
-                scheduledEvent.eventName, scheduledEvent.sendId, scheduledEvent.originalDelayMs,
-                scheduledEvent.targetUri, snapshot.stepNumber);
+            LOG_DEBUG("InteractiveTestRunner: Recreated scheduled event '{}' (sendId: {}, delay: {}ms, target: '{}', "
+                      "params: {}) for step {}",
+                      scheduledEvent.eventName, scheduledEvent.sendId, scheduledEvent.originalDelayMs,
+                      scheduledEvent.targetUri, scheduledEvent.params.size(), snapshot.stepNumber);
         }
     }
 

@@ -1178,6 +1178,19 @@ if(EMSCRIPTEN)
         -sASYNCIFY
     )
 
+    # Auto-deploy WASM files to visualizer/ directory after build
+    add_custom_command(TARGET visualizer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_BINARY_DIR}/visualizer.wasm
+                ${CMAKE_SOURCE_DIR}/visualizer/visualizer.wasm
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_CURRENT_BINARY_DIR}/visualizer.js
+                ${CMAKE_SOURCE_DIR}/visualizer/visualizer.js
+        COMMENT "Auto-deploying WASM files to visualizer/"
+        VERBATIM
+    )
+    message(STATUS "   - WASM files will be automatically deployed after build")
+
     message(STATUS "✅ Interactive SCXML Visualizer configured")
     message(STATUS "   - Output: visualizer.wasm + visualizer.js")
     message(STATUS "   - SCXML loading: Dynamic fetch (no embedding)")

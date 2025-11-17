@@ -662,7 +662,8 @@ std::vector<ScheduledEventInfo> EventSchedulerImpl::getScheduledEvents() const {
 
         // Add to result with complete EventDescriptor fields for step backward restoration
         result.push_back({event->event.eventName, event->sendId, remaining, event->originalDelay, event->sessionId,
-                          event->event.target, event->event.type, event->event.data, event->event.content});
+                          event->event.target, event->event.type, event->event.data, event->event.content,
+                          event->event.params});
     }
 
     // Sort by remaining time (earliest first)

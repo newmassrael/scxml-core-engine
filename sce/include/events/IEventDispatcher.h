@@ -99,10 +99,11 @@ struct ScheduledEventInfo {
     std::string sessionId;
 
     // W3C SCXML 6.2: Complete EventDescriptor fields for restoration
-    std::string targetUri;  // Target URI from EventDescriptor
-    std::string eventType;  // Event type (scxml, platform, etc.)
-    std::string eventData;  // Event data payload
-    std::string content;    // HTTP body content (W3C SCXML C.2)
+    std::string targetUri;                                   // Target URI from EventDescriptor
+    std::string eventType;                                   // Event type (scxml, platform, etc.)
+    std::string eventData;                                   // Event data payload
+    std::string content;                                     // HTTP body content (W3C SCXML C.2)
+    std::map<std::string, std::vector<std::string>> params;  // W3C SCXML 6.2: param name-value pairs
 };
 
 /**
