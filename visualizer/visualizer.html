@@ -29,23 +29,25 @@
 
     <!-- Main Content -->
     <div id="main-content" class="container-lg p-4" style="display: none;">
-        <!-- Header -->
-        <div class="mb-3">
-            <h1 class="h2">
-                SCXML Interactive Visualizer
-                <span id="test-id" class="Label Label--accent ml-2"></span>
-            </h1>
-            <p id="test-description" class="text-gray">
-                Step-by-step SCXML execution with real-time state diagram visualization
-            </p>
-        </div>
-
-        <!-- Control Panel -->
-        <div class="Box mb-3">
-            <div class="Box-header">
-                <h3 class="Box-title">Execution Controls</h3>
+        <!-- Sticky Header and Controls -->
+        <div class="sticky-header">
+            <!-- Header -->
+            <div class="mb-3">
+                <h1 class="h2">
+                    SCXML Interactive Visualizer
+                    <span id="test-id" class="Label Label--accent ml-2"></span>
+                </h1>
+                <p id="test-description" class="text-gray">
+                    Step-by-step SCXML execution with real-time state diagram visualization
+                </p>
             </div>
-            <div class="Box-body d-flex flex-items-center">
+
+            <!-- Control Panel -->
+            <div class="Box mb-3">
+                <div class="Box-header">
+                    <h3 class="Box-title">Execution Controls</h3>
+                </div>
+                <div class="Box-body d-flex flex-items-center">
                 <button id="btn-step-back" class="btn btn-step">
                     ◀ Step Back
                 </button>
@@ -58,6 +60,20 @@
                 <button id="btn-reset" class="btn ml-3">
                     Reset
                 </button>
+                <button id="btn-center-view" class="btn ml-2" title="Center diagram on active states">
+                    Center View
+                </button>
+                
+                <!-- Test Navigation -->
+                <div class="ml-3" style="border-left: 1px solid var(--color-border); padding-left: 12px;">
+                    <button id="btn-prev-test" class="btn btn-sm">
+                        ◀ Prev Test
+                    </button>
+                    <button id="btn-next-test" class="btn btn-sm ml-2">
+                        Next Test ▶
+                    </button>
+                </div>
+                
                 <div class="ml-3 flex-1">
                     <label class="text-small text-gray mb-1" style="display: block;">Raise Event:</label>
                     <div id="event-buttons-container" class="event-buttons-container">
@@ -69,6 +85,8 @@
                 </div>
             </div>
         </div>
+        </div>
+        <!-- End Sticky Header -->
 
         <!-- State Diagram with Split View for Parent-Child Communication -->
         <div class="Box mb-3">
@@ -172,7 +190,7 @@
         </div>
 
         <!-- Footer -->
-        <div class="mt-4 text-center text-small text-gray">
+        <div class="text-center text-small text-gray">
             <p>
                 SCXML Interactive Visualizer |
                 <a href="https://www.w3.org/TR/scxml/" target="_blank">W3C SCXML Specification</a> |
@@ -186,6 +204,7 @@
 
     <!-- Shared Utilities (DRY Principle) -->
     <script src="utils.js"></script>
+    <script src="test-list.js"></script>
 
     <!-- Visualizer Components -->
     <script src="visualizer-manager.js"></script>
@@ -205,6 +224,7 @@
     <script src="visualizer/layout-manager.js"></script>
     <script src="visualizer/path-calculator.js"></script>
     <script src="visualizer/renderer.js"></script>
+    <script src="visualizer/focus-manager.js"></script>
     <script src="visualizer/interaction-handler.js"></script>
     <script src="visualizer/visualizer-core.js"></script>
 

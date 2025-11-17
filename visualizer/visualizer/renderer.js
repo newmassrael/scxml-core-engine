@@ -1129,7 +1129,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
         this.visualizer.collapsedElements = collapsedMerge;
 
-        // Snap point visualization (enabled with ?show-snap)
+        // Snap point visualization (enabled with ?debug)
         if (this.visualizer.showSnapPoints) {
             this.visualizer.renderSnapPoints(visibleNodes, visibleLinks);
         }
@@ -1718,7 +1718,8 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
             // Assign color index (cycles 0-5)
             link.colorIndex = transitionCounter % colorCount;
-            link.transitionId = `transition-${transitionCounter}`;
+            // Always use source_target format (C++ transition.id is just an index)
+            link.transitionId = `${link.source}_${link.target}`;
             transitionCounter++;
         });
 

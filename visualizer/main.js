@@ -289,12 +289,34 @@ async function initVisualizer(scxmlContent) {
 
         showLoading(false);
 
+        // Recenter diagram after container is visible (accurate dimensions)
+        requestAnimationFrame(() => {
+            visualizer.centerDiagram();
+            console.log('[INIT] Diagram recentered with actual container dimensions');
+        });
+
         // Update test ID in header (reuse params from above)
         if (params.test) {
             const testIdElement = document.getElementById('test-id');
             if (testIdElement) {
                 testIdElement.textContent = params.test;
             }
+        }
+
+        // Center View button handler
+        const btnCenterView = document.getElementById('btn-center-view');
+        if (btnCenterView) {
+            btnCenterView.addEventListener('click', () => {
+                // Center diagram on active states
+                const activeStateIds = Array.from(visualizer.activeStates || []);
+                
+                if (activeStateIds.length > 0) {
+                    visualizer.centerDiagram(activeStateIds);
+                } else {
+                    // No active states, center on all visible nodes
+                    visualizer.centerDiagram();
+                }
+            });
         }
 
     } catch (error) {
