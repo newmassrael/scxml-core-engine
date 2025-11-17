@@ -849,6 +849,35 @@ set(W3C_AOT_TESTS
 # HttpAotTest.h handles WASM platform limitation with skip logic (#ifdef __EMSCRIPTEN__)
 list(APPEND W3C_AOT_TESTS 201 509 510 513 518 519 520 522 531 532 534 567 577)
 
+# ============================================================================
+# Auto-generate visualizer/test-list.js from W3C_AOT_TESTS
+# ============================================================================
+# Zero Duplication: CMakeLists.txt W3C_AOT_TESTS is the single source of truth
+find_package(Python3 COMPONENTS Interpreter)
+
+if(Python3_FOUND)
+    add_custom_command(
+        OUTPUT ${CMAKE_SOURCE_DIR}/visualizer/test-list.js
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt
+                ${CMAKE_SOURCE_DIR}/visualizer/test-list.js
+        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt
+                ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
+        COMMENT "Generating visualizer/test-list.js from W3C_AOT_TESTS"
+        VERBATIM
+    )
+
+    add_custom_target(generate_test_list ALL
+        DEPENDS ${CMAKE_SOURCE_DIR}/visualizer/test-list.js
+    )
+
+    message(STATUS "Visualizer test list will be auto-generated from W3C_AOT_TESTS")
+else()
+    message(WARNING "Python3 not found - visualizer/test-list.js will not be auto-generated")
+    message(WARNING "Run manually: python3 tools/generate_test_list.py")
+endif()
+
 # Interpreter-Only Tests: Dynamic features requiring runtime SCXML parsing
 set(W3C_INTERPRETER_ONLY_TESTS
 )

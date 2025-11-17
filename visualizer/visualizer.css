@@ -38,8 +38,7 @@ body {
     line-height: 1.5;
     color: #1f2328;
     background-color: #ffffff;
-    /* Responsive spacing for fixed bottom panels - adapts to viewport height */
-    padding-bottom: min(600px, 50vh);
+    padding-bottom: 0;
 }
 
 /* Override Primer CSS container-lg max-width for wider visualization */
@@ -1236,14 +1235,14 @@ body {
 /* Transition active state (permanent - like state.active) */
 /* Shows last executed transition, remains until step forward/backward */
 .transition.active {
-    stroke: var(--color-blue);
+    /* Keep original color - don't override to blue */
     stroke-width: 3px;
     opacity: 1;
 }
 
 .transition-label.active {
+    /* Keep original color - don't override to blue */
     font-weight: 600;
-    fill: var(--color-blue);
     font-size: 12px;
 }
 
@@ -1586,4 +1585,46 @@ body {
 /* Hide overflow content when minimized */
 .bottom-panels-fixed.minimized {
     overflow: hidden;
+}
+
+/* ========================================
+   Sticky Header (Header + Controls)
+   ======================================== */
+
+/* Remove all padding from main container to eliminate gaps */
+#main-content {
+    padding: 0 !important;
+}
+
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background-color: #ffffff;
+    padding: 16px;
+    padding-top: 0;
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Remove top margin from header elements to eliminate gap */
+.sticky-header > :first-child {
+    margin-top: 0 !important;
+}
+
+.sticky-header h1,
+.sticky-header .h2 {
+    margin-top: 0 !important;
+}
+
+/* Add padding to content after sticky header */
+.sticky-header ~ * {
+    padding-left: 16px;
+    padding-right: 16px;
+}
+
+/* Adjust State Diagram top margin to account for sticky header */
+.sticky-header + .Box {
+    margin-top: 16px;
 }
