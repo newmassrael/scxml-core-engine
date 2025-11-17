@@ -288,6 +288,13 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 auto resultFuture = eventDispatcher->sendEvent(event);
                 LOG_INFO("SCXMLInvokeHandler: {} sent to parent after child completion (target: {}, parentSession: {})",
                          doneEvent, event.target, parentSessionId);
+
+                // W3C SCXML 6.2: Cancel pending delayed sends when child session terminates
+                // "If the SCXML session terminates before the delay interval has elapsed,
+                // the SCXML Processor MUST discard the message without attempting to deliver it."
+                size_t cancelledCount = eventDispatcher->cancelEventsForSession(childSessionId);
+                LOG_INFO("SCXMLInvokeHandler: Cancelled {} pending delayed send(s) for terminated child session: {}",
+                         cancelledCount, childSessionId);
             } else {
                 LOG_WARN("SCXMLInvokeHandler: Child reached final state but no EventDispatcher available for: {}",
                          doneEvent);
