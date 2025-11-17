@@ -123,6 +123,13 @@ class PathCalculator {
         const transitionId = `${transition.source}→${transition.target}`;
         console.log(`[LABEL POS] Calculating position for ${transitionId}`);
 
+        // Check for custom position first (user-dragged)
+        const customPos = this.visualizer.getCustomLabelPosition(transition);
+        if (customPos) {
+            console.log(`[LABEL POS] ${transitionId}: Using custom position (${customPos.x.toFixed(1)}, ${customPos.y.toFixed(1)})`);
+            return customPos;
+        }
+
         // Use routing information to get actual path coordinates
         if (transition.routing && transition.routing.sourcePoint && transition.routing.targetPoint) {
             const start = transition.routing.sourcePoint;
