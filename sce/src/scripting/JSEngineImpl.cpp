@@ -500,9 +500,17 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
                 JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
                 LOG_ERROR("JSEngine: Failed to parse event data for eventDataProperty");
             }
+
+            // W3C SCXML testing extension: _event.raw for manual inspection
+            // Used by W3C tests 178, 509, 519, 520, 534 for visual verification
+            // Contains raw event data string for debugging and test validation
+            JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, dataStr.c_str()));
+            LOG_DEBUG("JSEngine: Set _event.raw = '{}'", dataStr);
         } else {
             LOG_DEBUG("JSEngine: Event has no data, setting _event.data to undefined");
             JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
+            // W3C SCXML testing extension: _event.raw as empty string when no data
+            JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, ""));
         }
     } else {
         // Reset all event properties to empty/undefined values
@@ -511,6 +519,8 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
             JS_SetPropertyStr(ctx, eventDataProperty, props[i], JS_NewString(ctx, ""));
         }
         JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
+        // W3C SCXML testing extension: Clear _event.raw on event reset
+        JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, ""));
     }
 
     JS_FreeValue(ctx, eventDataProperty);

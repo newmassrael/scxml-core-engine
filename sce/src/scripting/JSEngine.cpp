@@ -587,7 +587,8 @@ void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
                 origin: '',
                 origintype: '',
                 invokeid: '',
-                data: null
+                data: null,
+                raw: ''  // W3C SCXML testing extension for event data inspection
             };
 
             // Create the _event object with read-only properties
@@ -606,7 +607,7 @@ void JSEngine::setupEventObject(JSContext *ctx, const std::string &sessionId) {
             });
 
             // Define each property with getter only to make them read-only
-            var eventProps = ['name', 'type', 'sendid', 'origin', 'origintype', 'invokeid', 'data'];
+            var eventProps = ['name', 'type', 'sendid', 'origin', 'origintype', 'invokeid', 'data', 'raw'];
             for (var i = 0; i < eventProps.length; i++) {
                 (function(propName) {
                     Object.defineProperty(_event, propName, {
