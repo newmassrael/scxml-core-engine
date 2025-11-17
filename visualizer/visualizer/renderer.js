@@ -1541,6 +1541,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
                         yOffset += 16; // Spacing between detail lines
                     });
+                    yOffset += 8; // Additional spacing after detail lines before next action
                 }
             }
         });
