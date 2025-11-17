@@ -73,19 +73,56 @@ class NodeBuilder {
             ctx.font = '13px sans-serif';
 
             actions.forEach(action => {
-                const text = this.visualizer.formatActionText(action);
-                if (text) {
-                    // "↓ entry / " = ~10 chars + action text
-                    const fullText = `↓ entry / ${text}`;
+                // Use ActionFormatter to get both main and detail lines
+                const formatted = ActionFormatter.formatAction(action);
+
+                // Measure main line
+                if (formatted.main) {
+                    const fullText = `↓ entry / ${formatted.main}`;
                     const metrics = ctx.measureText(fullText);
-                    const estimatedWidth = metrics.width + 80; // Add padding for margins, box, and scrollbar
-                    if (estimatedWidth > maxWidth) {
-                        maxWidth = estimatedWidth;
+
+                    // Calculate required state width to fit this text
+                    // Text rendering position calculation:
+                    // - textX = -width/2 + (width * TEXT_LEFT_MARGIN_PERCENT) + TEXT_PADDING
+                    // - textX = -width/2 + (width * 0.10) + 8 = -0.4*width + 8
+                    // - Right boundary = width/2 - (width * 0.05) = 0.45*width (5% right margin)
+                    // - Available text space = 0.45*width - (-0.4*width + 8) = 0.85*width - 8
+                    // - Therefore: textWidth = 0.85*width - 8
+                    // - Solving for width: width = (textWidth + 8) / 0.85
+
+                    const textWidth = metrics.width;
+                    const paddingLeft = 6;  // Background box padding
+                    const paddingRight = 6;
+                    const requiredWidth = (textWidth + paddingLeft + paddingRight + 20) / 0.85;
+
+                    if (requiredWidth > maxWidth) {
+                        maxWidth = requiredWidth;
                     }
+                }
+
+                // Measure detail lines (indented)
+                if (formatted.details && formatted.details.length > 0) {
+                    const detailCtx = canvas.getContext('2d');
+                    detailCtx.font = '11px sans-serif'; // Detail lines use 11px font
+
+                    formatted.details.forEach(detail => {
+                        const detailText = detail; // Detail already includes "↳ " prefix
+                        const detailMetrics = detailCtx.measureText(detailText);
+
+                        // Detail lines are indented by 10px from main text position
+                        // So effective text width is detail width + 10px indent
+                        const textWidth = detailMetrics.width + 10;
+                        const paddingLeft = 6;
+                        const paddingRight = 6;
+                        const requiredWidth = (textWidth + paddingLeft + paddingRight + 20) / 0.85;
+
+                        if (requiredWidth > maxWidth) {
+                            maxWidth = requiredWidth;
+                        }
+                    });
                 }
             });
         }
-
 
         return Math.min(maxWidth, LAYOUT_CONSTANTS.STATE_MAX_WIDTH);
     }
@@ -96,14 +133,44 @@ class NodeBuilder {
             return node.collapsed ? 50 : 200;
         }
 
-        // Calculate height based on number of actions
-        const entryActions = (node.onentry || []).length;
-        const exitActions = (node.onexit || []).length;
-        const totalActions = entryActions + exitActions;
+        // Precise height calculation based on actual content rendering
+        // Matches renderer.js spacing exactly (lines 757-1542)
 
-        if (totalActions === 0) return LAYOUT_CONSTANTS.STATE_MIN_HEIGHT;
+        const STATE_ID_HEIGHT = 26;        // Initial offset + state ID text (renderer.js:757)
+        const SEPARATOR_SPACING = 36;      // 14 (before) + 2 (line) + 20 (after) (renderer.js:776-784)
+        const MAIN_LINE_HEIGHT = 25;       // 15 (text) + 6 (padding) + 4 (spacing) (renderer.js:1527)
+        const DETAIL_LINE_HEIGHT = 16;     // Detail line spacing (renderer.js:1542)
+        const BOTTOM_PADDING = 10;         // Bottom margin
 
-        return LAYOUT_CONSTANTS.STATE_BASE_HEIGHT + (totalActions * LAYOUT_CONSTANTS.ACTION_HEIGHT);
+        let totalHeight = STATE_ID_HEIGHT;
+
+        // Count all action lines (main + details)
+        let mainLines = 0;
+        let detailLines = 0;
+
+        (node.onentry || []).forEach(action => {
+            const formatted = ActionFormatter.formatAction(action);
+            mainLines += 1;
+            detailLines += (formatted.details?.length || 0);
+        });
+
+        (node.onexit || []).forEach(action => {
+            const formatted = ActionFormatter.formatAction(action);
+            mainLines += 1;
+            detailLines += (formatted.details?.length || 0);
+        });
+
+        // If has actions, add separator
+        if (mainLines > 0) {
+            totalHeight += SEPARATOR_SPACING;
+        }
+
+        // Add space for all lines
+        totalHeight += (mainLines * MAIN_LINE_HEIGHT);
+        totalHeight += (detailLines * DETAIL_LINE_HEIGHT);
+        totalHeight += BOTTOM_PADDING;
+
+        return Math.max(totalHeight, LAYOUT_CONSTANTS.STATE_MIN_HEIGHT);
     }
 
     getVisibleNodes() {

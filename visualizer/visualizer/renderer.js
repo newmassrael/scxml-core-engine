@@ -1479,9 +1479,13 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
                 // Text x position: leftMargin + additional padding
                 const textX = leftMargin + LAYOUT_CONSTANTS.TEXT_PADDING;
+
+                // CRITICAL: Capture current yOffset as const for this iteration
+                const currentYOffset = yOffset;
+
                 const textElement = textLayer.append('text')
                     .attr('x', textX)
-                    .attr('y', yOffset)
+                    .attr('y', currentYOffset)
                     .attr('text-anchor', 'start')
                     .attr('dominant-baseline', 'middle')
                     .attr('font-size', '13px')
@@ -1489,61 +1493,38 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     .style('pointer-events', 'none')
                     .text(fullText);
 
-                // Get dimensions using getBBox (wait for render)
-                const textNode = textElement.node();
-
-                // Force layout flush to ensure getBBox returns accurate values
-                textNode.getBoundingClientRect();
-
-                let bbox;
-                try {
-                    bbox = textNode.getBBox();
-                    // Validate getBBox result
-                    if (!bbox || bbox.width === 0 || bbox.height === 0) {
-                        // getBBox returned zero, forcing reflow (normal during initial render)
-                        group.node().getBoundingClientRect();
-                        bbox = textNode.getBBox();
-                    }
-                } catch (e) {
-                    console.error(`[getBBox] ${stateData.id}: Error getting bbox: ${e.message}`);
-                    bbox = {x: 0, y: 0, width: 0, height: 0};
-                }
-
-                // Calculate box dimensions and position
-                let boxWidth, boxHeight, boxX, boxY;
-                const boxPaddingH = 12;
+                // Use requestAnimationFrame to ensure layout is complete before measuring
+                const paddingLeft = 6;
+                const paddingRight = 6;
                 const boxPaddingV = 6;
+                const defaultHeight = 15; // Default height for spacing calculation
 
-                if (bbox.width === 0 || bbox.height === 0) {
-                    // Improved fallback: use canvas measurement for accuracy
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    ctx.font = '13px sans-serif';
-                    const metrics = ctx.measureText(fullText);
-                    boxWidth = metrics.width;
-                    boxHeight = 15;
-                } else {
-                    // Use getBBox for accurate dimensions (width and height only)
-                    boxWidth = bbox.width;
-                    boxHeight = bbox.height;
-                }
+                requestAnimationFrame(() => {
+                    const textNode = textElement.node();
+                    const bbox = textNode.getBBox();
 
-                // Box position: align with text start position (textX)
-                // Text starts at textX with text-anchor='start', so box should start at textX - padding
-                boxX = textX - 6;
-                boxY = yOffset - (boxHeight + boxPaddingV) / 2;
+                    const textLeft = bbox.x;
+                    const textRight = bbox.x + bbox.width;
 
-                // Add background box to bg layer (behind text)
-                bgLayer.append('rect')
-                    .attr('x', boxX)
-                    .attr('y', boxY)
-                    .attr('width', boxWidth + boxPaddingH)
-                    .attr('height', boxHeight + boxPaddingV)
-                    .attr('fill', prefix.includes('entry') ? '#f0fdf4' : '#fef2f2')
-                    .attr('rx', 4)
-                    .attr('opacity', 0.6);
+                    // Calculate box position - center box vertically around text position
+                    // Text is at currentYOffset with dominant-baseline: middle
+                    const boxX = textLeft - paddingLeft;
+                    const boxWidth = (textRight - textLeft) + paddingLeft + paddingRight;
+                    const boxHeight = bbox.height + boxPaddingV;
+                    const boxY = currentYOffset - boxHeight / 2;
 
-                yOffset += boxHeight + boxPaddingV + 4; // Move to next action (reduced spacing)
+                    // Add background box to bg layer (behind text)
+                    bgLayer.append('rect')
+                        .attr('x', boxX)
+                        .attr('y', boxY)
+                        .attr('width', boxWidth)
+                        .attr('height', boxHeight)
+                        .attr('fill', prefix.includes('entry') ? '#f0fdf4' : '#fef2f2')
+                        .attr('rx', 4)
+                        .attr('opacity', 0.6);
+                });
+
+                yOffset += defaultHeight + boxPaddingV + 4; // Move to next action (reduced spacing)
 
                 // Render detail lines (for send actions with content, params, etc.)
                 if (formatted.details && formatted.details.length > 0) {
@@ -1648,54 +1629,6 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         }
 
         return action.actionType;
-    }
-
-    /**
-     * Measure element size using getBBox with fallback to canvas measurement
-     * Shared logic for accurate dimension calculation
-     * @param {SVGElement} element - SVG element to measure
-     * @param {string} fallbackText - Text for canvas fallback measurement
-     * @param {string} fallbackFont - Font for canvas fallback (default: '13px sans-serif')
-     * @returns {{width: number, height: number}} Measured dimensions
-     */
-    measureElementSize(element, fallbackText = '', fallbackFont = '13px sans-serif') {
-        if (!element) {
-            return { width: 0, height: 0 };
-        }
-
-        // Force layout flush to ensure getBBox returns accurate values
-        element.getBoundingClientRect();
-
-        let bbox;
-        try {
-            bbox = element.getBBox();
-            // Validate getBBox result
-            if (!bbox || bbox.width === 0 || bbox.height === 0) {
-                // getBBox returned zero, forcing reflow
-                element.parentNode?.getBoundingClientRect();
-                bbox = element.getBBox();
-            }
-        } catch (e) {
-            console.error(`[measureElementSize] Error getting bbox: ${e.message}`);
-            bbox = { width: 0, height: 0 };
-        }
-
-        if (bbox.width === 0 || bbox.height === 0) {
-            // Fallback: use canvas measurement for accuracy
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            ctx.font = fallbackFont;
-            const metrics = ctx.measureText(fallbackText);
-            return {
-                width: metrics.width,
-                height: 15
-            };
-        }
-
-        return {
-            width: bbox.width,
-            height: bbox.height
-        };
     }
 
     /**
