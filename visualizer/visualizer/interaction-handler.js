@@ -280,8 +280,8 @@ class InteractionHandler {
                 const index = parseInt(this.getAttribute('data-transition-index'));
                 const transition = self.visualizer.transitions[index];
 
-                // Show transition animation on diagram (temporary) - use index for unique identification
-                self.highlightTransitionByIndex(index, transition);
+                // Show transition animation on diagram (temporary)
+                self.highlightTransition(transition);
                 self.focusOnTransition(transition);
 
                 // Design System: Panel highlight animation (matches State Actions panel)
