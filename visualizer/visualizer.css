@@ -1456,6 +1456,15 @@ body {
     font-family: var(--font-mono);
 }
 
+.action-detail-line {
+    font-size: 10px;
+    color: #6b7280;  /* Gray for secondary details */
+    margin-top: 1px;
+    margin-left: 16px;
+    font-family: var(--font-mono);
+    line-height: 1.4;
+}
+
 /* ============================================
  * Breadcrumb Navigation (W3C SCXML 6.3)
  * ============================================ */

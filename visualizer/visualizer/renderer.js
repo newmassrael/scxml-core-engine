@@ -1464,10 +1464,12 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         const self = this;
 
         actions.forEach(action => {
-            const actionText = self.formatActionText(action);
-            if (actionText) {
+            // Use ActionFormatter for consistent multi-line display
+            const formatted = ActionFormatter.formatAction(action);
+
+            if (formatted.main) {
                 const actionGroup = group.append('g');
-                const fullText = `${prefix} / ${actionText}`;
+                const fullText = `${prefix} / ${formatted.main}`;
 
                 // Create background layer first (will be drawn behind)
                 const bgLayer = actionGroup.append('g').attr('class', 'bg-layer');
@@ -1542,6 +1544,23 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     .attr('opacity', 0.6);
 
                 yOffset += boxHeight + boxPaddingV + 4; // Move to next action (reduced spacing)
+
+                // Render detail lines (for send actions with content, params, etc.)
+                if (formatted.details && formatted.details.length > 0) {
+                    formatted.details.forEach(detail => {
+                        const detailElement = textLayer.append('text')
+                            .attr('x', textX + 10) // Indent detail lines
+                            .attr('y', yOffset)
+                            .attr('text-anchor', 'start')
+                            .attr('dominant-baseline', 'middle')
+                            .attr('font-size', '11px')
+                            .attr('fill', '#6b7280') // Gray color for details
+                            .style('pointer-events', 'none')
+                            .text(detail);
+
+                        yOffset += 16; // Spacing between detail lines
+                    });
+                }
             }
         });
 
@@ -1566,28 +1585,14 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
     formatActionText(action) {
         if (!action || !action.actionType) return '';
 
-        if (action.actionType === 'assign') {
-            return `${action.location}=${action.expr}`;
-        } else if (action.actionType === 'log') {
-            return `log(${action.label || action.expr || ''})`;
-        } else if (action.actionType === 'send') {
-            // W3C SCXML 6.2: Format send with key attributes
-            let parts = [];
-            if (action.event) {
-                parts.push(`event=${action.event}`);
-            } else if (action.eventexpr) {
-                parts.push(`eventexpr=${action.eventexpr}`);
-            }
-            if (action.target) {
-                parts.push(`target=${action.target}`);
-            }
-            if (action.delay) {
-                parts.push(`delay=${action.delay}`);
-            }
-            return parts.length > 0 ? `send(${parts.join(', ')})` : 'send()';
-        } else if (action.actionType === 'raise') {
-            return `raise(${action.event})`;
-        } else if (action.actionType === 'script') {
+        // Use ActionFormatter for simple atomic actions (send, raise, assign, log, cancel)
+        if (['send', 'raise', 'assign', 'log', 'cancel'].includes(action.actionType)) {
+            const formatted = ActionFormatter.formatAction(action);
+            return formatted.main;
+        }
+
+        // Handle compound actions not supported by ActionFormatter
+        if (action.actionType === 'script') {
             // W3C SCXML 5.9: Show truncated script content
             if (action.content) {
                 const preview = action.content.substring(0, 30);
@@ -1640,14 +1645,6 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             return `if(${condText})`;
         } else if (action.actionType === 'foreach') {
             return `foreach(${action.item || ''} in ${action.array || ''})`;
-        } else if (action.actionType === 'cancel') {
-            // W3C SCXML 6.3: Format cancel with sendid
-            if (action.sendid) {
-                return `cancel(${action.sendid})`;
-            } else if (action.sendidexpr) {
-                return `cancel(${action.sendidexpr})`;
-            }
-            return 'cancel()';
         }
 
         return action.actionType;
