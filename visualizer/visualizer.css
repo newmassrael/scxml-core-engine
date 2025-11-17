@@ -633,12 +633,14 @@ body {
     color: #1f2937;
     margin-bottom: 3px;
     font-size: 12px;
+    white-space: nowrap;  /* Prevent line breaks within event name */
 }
 
 .label-condition {
     color: #2563eb;  /* Blue for conditions */
     margin-bottom: 3px;
     padding: 2px 0;
+    white-space: nowrap;  /* Prevent line breaks within condition text */
 }
 
 .label-action {
@@ -647,6 +649,7 @@ body {
     margin-bottom: 2px;
     padding-top: 1px;
     padding-bottom: 1px;
+    white-space: nowrap;  /* Prevent line breaks within action text */
 }
 
 .label-target {
@@ -655,9 +658,20 @@ body {
     opacity: 0.8;
 }
 
-.label-eventless,
+.label-eventless {
+    color: #d97706;           /* Amber-600 orange for visibility */
+    font-weight: 600;         /* Semi-bold for emphasis */
+    font-style: italic;       /* Keep italic style */
+    margin-bottom: 3px;       /* Match event spacing */
+    padding: 2px 4px;         /* Compact padding */
+    background: #fef3c7;      /* Amber-100 light yellow background */
+    border-radius: 3px;       /* Rounded corners */
+    width: fit-content;       /* Fit to content width */
+    white-space: nowrap;      /* Prevent line breaks within eventless text */
+}
+
 .label-always {
-    color: #9ca3af;
+    color: #9ca3af;           /* Gray for fallback case */
     font-style: italic;
 }
 

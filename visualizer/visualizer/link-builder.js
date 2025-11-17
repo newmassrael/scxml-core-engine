@@ -56,6 +56,7 @@ class LinkBuilder {
                 source: transition.source,
                 target: transition.target,
                 event: transition.event,
+                eventless: transition.eventless,  // W3C SCXML 3.13: eventless transition flag
                 cond: transition.cond,
                 linkType: 'transition',
                 actions: transition.actions || [],
