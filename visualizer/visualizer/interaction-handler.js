@@ -171,11 +171,15 @@ class InteractionHandler {
                 this.visualizer.render();
                 // Re-highlight after re-render
                 this.visualizer.highlightActiveStatesVisual();
+                // Auto-center on active states
+                this.visualizer.focusManager.centerDiagram(activeStateIds);
             });
             return;
         }
 
         this.visualizer.highlightActiveStatesVisual();
+        // Auto-center on active states
+        this.visualizer.focusManager.centerDiagram(activeStateIds);
     }
 
     highlightActiveStatesVisual() {
@@ -216,7 +220,8 @@ class InteractionHandler {
         let html = '';
 
         this.visualizer.transitions.forEach((transition, index) => {
-            const transitionId = `${transition.source}-${transition.target}-${index}`;  // Use index for uniqueness
+            // Always use source_target format (C++ transition.id is just an index)
+            const transitionId = `${transition.source}_${transition.target}`;
             const eventText = transition.event || '(eventless)';
 
             // Add condition and actions for better distinction
@@ -289,365 +294,31 @@ class InteractionHandler {
     }
 
     setActiveTransition(transition) {
-        console.log('[SET ACTIVE TRANSITION] Setting active transition:', transition);
-
-        // Store active transition for re-application after render
-        this.visualizer.activeTransition = transition;
-
-        const panel = document.getElementById('transition-list-panel');
-        const transitionId = transition ? `${transition.source}-${transition.target}` : null;
-
-        // Clear all previous active states in panel
-        if (panel) {
-            panel.querySelectorAll('.transition-list-item').forEach(item => {
-                item.classList.remove('active');
-            });
-        }
-
-        // Clear all previous active states in diagram (SVG)
-        if (this.visualizer.linkElements) {
-            this.visualizer.linkElements.classed('active', false);
-        }
-        if (this.visualizer.transitionLabels) {
-            this.visualizer.transitionLabels.classed('active', false);
-        }
-
-        // Set active state on matching item (panel + diagram)
-        if (transitionId) {
-            // Panel: Set active state and auto-scroll
-            if (panel) {
-                const activeItem = panel.querySelector(`[data-transition-id="${transitionId}"]`);
-                if (activeItem) {
-                    activeItem.classList.add('active');
-                    // Auto-scroll into view (matches State Actions panel behavior)
-                    activeItem.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'nearest'
-                    });
-                    console.log('[SET ACTIVE TRANSITION] Panel active state set and scrolled to:', transitionId);
-                }
-            }
-
-            // Diagram: Set active state (permanent - like state.active)
-            if (this.visualizer.linkElements) {
-                this.visualizer.linkElements.each(function(d) {
-                    const linkId = `${d.source}-${d.target}`;
-                    if (linkId === transitionId) {
-                        d3.select(this).classed('active', true);
-                        console.log('[SET ACTIVE TRANSITION] Diagram active state set on:', linkId);
-                    }
-                });
-            }
-
-            // Diagram label: Set active state
-            if (this.visualizer.transitionLabels) {
-                this.visualizer.transitionLabels.each(function(d) {
-                    const linkId = `${d.source}-${d.target}`;
-                    if (linkId === transitionId) {
-                        d3.select(this).classed('active', true);
-                        console.log('[SET ACTIVE TRANSITION] Label active state set on:', linkId);
-                    }
-                });
-            }
-        }
+        // Delegated to FocusManager for centralized focus management
+        return this.visualizer.focusManager.setActive(transition);
     }
 
     clearTransitionHighlights() {
-        console.log('[CLEAR HIGHLIGHT] Clearing transition highlights (SVG + panel)');
-
-        // Cancel pending SVG highlight timeout (immediate cancellation on step backward)
-        if (this.visualizer.transitionHighlightTimeout) {
-            clearTimeout(this.visualizer.transitionHighlightTimeout);
-            this.visualizer.transitionHighlightTimeout = null;
-            console.log('[CLEAR HIGHLIGHT] Cancelled pending SVG highlight timeout');
-        }
-
-        // Cancel pending panel highlight timeout (immediate cancellation on step backward)
-        if (this.visualizer.transitionPanelHighlightTimeout) {
-            clearTimeout(this.visualizer.transitionPanelHighlightTimeout);
-            this.visualizer.transitionPanelHighlightTimeout = null;
-            console.log('[CLEAR HIGHLIGHT] Cancelled pending panel highlight timeout');
-        }
-
-        // Clear SVG diagram highlights
-        if (this.visualizer.linkElements) {
-            this.visualizer.linkElements.classed('highlighted', false);
-        }
-
-        if (this.visualizer.transitionLabels) {
-            this.visualizer.transitionLabels.classed('highlighted', false);
-        }
-
-        // Clear panel highlights
-        const panel = document.getElementById('transition-list-panel');
-        if (panel) {
-            panel.querySelectorAll('.transition-list-item').forEach(item => {
-                item.classList.remove('panel-highlighted');
-            });
-            console.log('[CLEAR HIGHLIGHT] Panel highlights cleared');
-        }
-
-        console.log('[CLEAR HIGHLIGHT] All highlights cleared (active state preserved)');
+        // Delegated to FocusManager for centralized focus management
+        return this.visualizer.focusManager.clearHighlights();
     }
 
     clearActiveTransition() {
-        console.log('[CLEAR ACTIVE] Clearing active transition state');
-
-        // Clear stored active transition
-        this.visualizer.activeTransition = null;
-
-        // Clear panel active state
-        const panel = document.getElementById('transition-list-panel');
-        if (panel) {
-            panel.querySelectorAll('.transition-list-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            console.log('[CLEAR ACTIVE] Panel active transition cleared');
-        }
-
-        // Clear diagram active state (SVG - permanent .active class)
-        if (this.visualizer.linkElements) {
-            this.visualizer.linkElements.classed('active', false);
-            console.log('[CLEAR ACTIVE] Diagram active transition cleared');
-        }
-        if (this.visualizer.transitionLabels) {
-            this.visualizer.transitionLabels.classed('active', false);
-        }
-
-        // Clear diagram highlights (SVG - temporary .highlighted class)
-        this.visualizer.clearTransitionHighlights();
+        // Delegated to FocusManager for centralized focus management
+        this.visualizer.focusManager.clearActive();
+        this.visualizer.focusManager.clearHighlights();
     }
 
-    highlightTransition(transition) {
-        console.log('[HIGHLIGHT] highlightTransition() called with:', transition);
-
-        if (!this.visualizer.linkElements) {
-            console.log('[HIGHLIGHT] No linkElements - aborting');
-            return;
-        }
-
-        this.visualizer.cancelPendingHighlights();
-        // Use new transitionId property for precise matching
-        const transitionId = transition.transitionId || `${transition.source}-${transition.target}`;
-
-        this.visualizer.clearTransitionHighlights();
-        this.visualizer.highlightLink(transitionId);
-        this.visualizer.highlightLabel(transitionId);
-        this.visualizer.scheduleHighlightRemoval();
-
-        console.log('[HIGHLIGHT] highlightTransition() complete');
+    highlightTransition(transition, duration = 2000) {
+        // Delegated to FocusManager for centralized focus management
+        return this.visualizer.focusManager.highlightTemporary(transition, duration);
     }
 
-    highlightTransitionByIndex(index, transition) {
-        console.log(`[HIGHLIGHT] highlightTransitionByIndex() called with index ${index}:`, transition);
 
-        if (!this.visualizer.linkElements) {
-            console.log('[HIGHLIGHT] No linkElements - aborting');
-            return;
-        }
-
-        this.visualizer.cancelPendingHighlights();
-        this.visualizer.clearTransitionHighlights();
-
-        // Match transition using unique properties: id, source, target, and cond
-        const matchTransition = (d) => {
-            if (d.linkType !== 'transition') return false;
-            if (d.source !== transition.source) return false;
-            if (d.target !== transition.target) return false;
-
-            // Use id for exact match if available
-            if (d.id && transition.id && d.id === transition.id) return true;
-
-            // Otherwise use condition to distinguish between transitions with same source/target
-            // Both must have same condition (or both have no condition)
-            const dCond = d.cond || '';
-            const tCond = transition.cond || '';
-            return dCond === tCond;
-        };
-
-        // Highlight specific transition arrow
-        const highlightedLinks = this.visualizer.linkElements.filter(matchTransition).classed('highlighted', true);
-        console.log('[HIGHLIGHT] Highlighted links count:', highlightedLinks.size());
-
-        // Highlight corresponding label
-        if (this.visualizer.transitionLabels) {
-            const highlightedLabels = this.visualizer.transitionLabels.filter(matchTransition).classed('highlighted', true);
-            console.log('[HIGHLIGHT] Highlighted labels count:', highlightedLabels.size());
-        }
-
-        this.visualizer.scheduleHighlightRemoval();
-        console.log(`[HIGHLIGHT] highlightTransitionByIndex() complete for index ${index}`);
-    }
-
-    cancelPendingHighlights() {
-        if (this.visualizer.transitionHighlightTimeout) {
-            clearTimeout(this.visualizer.transitionHighlightTimeout);
-            this.visualizer.transitionHighlightTimeout = null;
-            console.log('[HIGHLIGHT] Cancelled previous highlight timeout');
-        }
-    }
-
-    highlightLink(transitionId) {
-        console.log(`[HIGHLIGHT] Looking for transition ID: ${transitionId}`);
-        console.log(`[HIGHLIGHT] Available linkElements count: ${this.visualizer.linkElements.size()}`);
-
-        // Use data-transition-id attribute for precise matching
-        const matchingLinks = this.visualizer.linkElements.filter(function() {
-            return d3.select(this).attr('data-transition-id') === transitionId;
-        });
-
-        if (matchingLinks.size() > 0) {
-            matchingLinks.classed('highlighted', true);
-            console.log(`[HIGHLIGHT] Match found! Highlighted ${matchingLinks.size()} link(s)`);
-        } else {
-            console.log(`[HIGHLIGHT] No match - transition ${transitionId} not found in linkElements`);
-            if (this.visualizer.debugMode) {
-                console.log('[HIGHLIGHT] All available transitions:');
-                this.visualizer.linkElements.each(function(d) {
-                    const tid = d3.select(this).attr('data-transition-id');
-                    console.log(`  - ${d.source} → ${d.target} (transitionId: ${tid})`);
-                });
-            }
-        }
-    }
-
-    highlightLabel(transitionId) {
-        if (!this.visualizer.transitionLabels) {
-            return;
-        }
-
-        console.log(`[HIGHLIGHT] Available transitionLabels: ${this.visualizer.transitionLabels.size()}`);
-
-        // Use data-transition-id attribute for precise matching
-        // transitionLabels are foreignObject containers, need to check the inner .transition-label element
-        let foundLabel = false;
-        this.visualizer.transitionLabels.each(function(d) {
-            const labelElement = this.querySelector('.transition-label');
-            if (labelElement && labelElement.getAttribute('data-transition-id') === transitionId) {
-                console.log(`[HIGHLIGHT] Label found for transition: ${transitionId}`);
-                d3.select(labelElement).classed('highlighted', true);
-                foundLabel = true;
-            }
-        });
-
-        if (!foundLabel) {
-            console.log(`[HIGHLIGHT] No label found for transition ${transitionId}`);
-        }
-    }
-
-    scheduleHighlightRemoval() {
-        const self = this;
-        // Auto-remove highlight after 2 seconds (matches FOCUS_HIGHLIGHT_DURATION in execution-controller.js)
-        // Store timeout ID for cancellation (immediate response on step backward)
-        this.visualizer.transitionHighlightTimeout = setTimeout(() => {
-            self.clearTransitionHighlights();
-            self.transitionHighlightTimeout = null;
-            console.log('[HIGHLIGHT] Auto-removed temporary highlight after 2s');
-        }, 2000);
-    }
 
     focusOnTransition(transition) {
-        // Try to find and focus on transition label (text) first
-        if (transition.transitionId) {
-            const labelElement = document.querySelector(`.transition-label[data-transition-id="${transition.transitionId}"]`);
-
-            if (labelElement) {
-                const foreignObject = labelElement.closest('foreignObject');
-                if (foreignObject) {
-                    const x = parseFloat(foreignObject.getAttribute('x'));
-                    const y = parseFloat(foreignObject.getAttribute('y'));
-                    const width = parseFloat(foreignObject.getAttribute('width'));
-                    const height = parseFloat(foreignObject.getAttribute('height'));
-
-                    // Validate label coordinates
-                    if (Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(width) && Number.isFinite(height)) {
-                        // Focus on label center
-                        const centerX = x + width / 2;
-                        const centerY = y + height / 2;
-
-                        console.log('[FOCUS] Focusing on transition label at:', { centerX, centerY });
-
-                        // Apply transform with comfortable zoom level
-                        const transform = d3.zoomIdentity
-                            .translate(this.visualizer.width / 2, this.visualizer.height / 2)
-                            .scale(1.5)  // Comfortable zoom for reading text
-                            .translate(-centerX, -centerY);
-
-                        this.visualizer.svg.transition()
-                            .duration(750)
-                            .call(this.visualizer.zoom.transform, transform);
-                        return;
-                    }
-                }
-            }
-        }
-
-        // Fallback: Focus on midpoint between source and target nodes
-        const sourceNode = this.visualizer.nodes.find(n => n.id === transition.source);
-        const targetNode = this.visualizer.nodes.find(n => n.id === transition.target);
-
-        // Validate nodes exist
-        if (!sourceNode || !targetNode) {
-            console.warn('[FOCUS] Source or target node not found:', transition);
-            return;
-        }
-
-        // Validate coordinates are valid numbers
-        if (!Number.isFinite(sourceNode.x) || !Number.isFinite(sourceNode.y) ||
-            !Number.isFinite(targetNode.x) || !Number.isFinite(targetNode.y)) {
-            console.warn('[FOCUS] Invalid node coordinates:', {
-                source: { id: sourceNode.id, x: sourceNode.x, y: sourceNode.y },
-                target: { id: targetNode.id, x: targetNode.x, y: targetNode.y }
-            });
-            return;
-        }
-
-        // Calculate center point between source and target
-        const centerX = (sourceNode.x + targetNode.x) / 2;
-        const centerY = (sourceNode.y + targetNode.y) / 2;
-
-        // Calculate distance between nodes
-        const dx = targetNode.x - sourceNode.x;
-        const dy = targetNode.y - sourceNode.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-
-        // Handle same-position nodes (prevent division by zero)
-        if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
-            console.log('[FOCUS] Same-position nodes, using default zoom');
-            const transform = d3.zoomIdentity
-                .translate(this.visualizer.width / 2, this.visualizer.height / 2)
-                .scale(1.0)
-                .translate(-centerX, -centerY);
-
-            this.visualizer.svg.transition()
-                .duration(750)
-                .call(this.visualizer.zoom.transform, transform);
-            return;
-        }
-
-        // Calculate zoom level to fit both nodes
-        const padding = 100;
-        const zoomLevel = Math.min(
-            this.visualizer.width / (Math.abs(dx) + padding * 2),
-            this.visualizer.height / (Math.abs(dy) + padding * 2),
-            2.0  // Max zoom
-        );
-
-        // Validate zoom level is finite
-        if (!Number.isFinite(zoomLevel) || zoomLevel <= 0) {
-            console.warn('[FOCUS] Invalid zoom level:', zoomLevel);
-            return;
-        }
-
-        // Apply transform
-        const transform = d3.zoomIdentity
-            .translate(this.visualizer.width / 2, this.visualizer.height / 2)
-            .scale(zoomLevel)
-            .translate(-centerX, -centerY);
-
-        this.visualizer.svg.transition()
-            .duration(750)
-            .call(this.visualizer.zoom.transform, transform);
+        // Delegated to FocusManager for centralized focus management
+        return this.visualizer.focusManager.focusOnTransition(transition);
     }
 
     resize() {

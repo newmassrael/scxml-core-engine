@@ -21,7 +21,8 @@ const LAYOUT_CONSTANTS = {
     STATE_MAX_WIDTH: 800,          // Maximum width to prevent excessive expansion
     STATE_MIN_HEIGHT: 50,          // Minimum height for states without actions
     TEXT_LEFT_MARGIN_PERCENT: 0.10, // Left margin as percentage of state width (10%)
-    TEXT_PADDING: 8                // Additional padding for text positioning
+    TEXT_PADDING: 8,               // Additional padding for text positioning
+    VIEWPORT_PADDING: 40           // Padding for centerDiagram viewport fit
 };
 
 // ELK (Eclipse Layout Kernel) configuration constants
@@ -60,8 +61,8 @@ class SCXMLVisualizer {
         // Debug mode from URL parameter (?debug)
         this.debugMode = DEBUG_MODE;
 
-        // Show snap points from URL parameter (?show-snap)
-        this.showSnapPoints = new URLSearchParams(window.location.search).has('show-snap');
+        // Show snap points from URL parameter (?debug)
+        this.showSnapPoints = new URLSearchParams(window.location.search).has('debug');
 
         // Adaptive algorithm selection for drag optimization
         this.dragOptimizationTimer = null;
@@ -99,6 +100,7 @@ class SCXMLVisualizer {
         this.layoutManager = new LayoutManager(this);
         this.renderer = new Renderer(this);
         this.pathCalculator = new PathCalculator(this);
+        this.focusManager = new TransitionFocusManager(this);
         this.interactionHandler = new InteractionHandler(this);
 
         // Store initialization promise for external waiting
@@ -185,9 +187,9 @@ class SCXMLVisualizer {
 
         // Render
         this.render();
-
-        // Center diagram in viewport
-        this.centerDiagram();
+        
+        // Note: centerDiagram is called in main.js after container is visible
+        // to ensure accurate dimensions (not 0x0)
     }
 
     async computeLayout() {
@@ -205,62 +207,9 @@ class SCXMLVisualizer {
         }
     }
 
-    centerDiagram() {
-        const visibleNodes = this.getVisibleNodes();
-
-        if (visibleNodes.length === 0) {
-            console.log('[CENTER] No visible nodes, skipping center alignment');
-            return;
-        }
-
-        // Calculate bounding box of all visible nodes
-        let minX = Infinity, minY = Infinity;
-        let maxX = -Infinity, maxY = -Infinity;
-
-        visibleNodes.forEach(node => {
-            if (node.x !== undefined && node.y !== undefined &&
-                node.width !== undefined && node.height !== undefined) {
-                const left = node.x - node.width / 2;
-                const right = node.x + node.width / 2;
-                const top = node.y - node.height / 2;
-                const bottom = node.y + node.height / 2;
-
-                minX = Math.min(minX, left);
-                maxX = Math.max(maxX, right);
-                minY = Math.min(minY, top);
-                maxY = Math.max(maxY, bottom);
-            }
-        });
-
-        const diagramWidth = maxX - minX;
-        const diagramHeight = maxY - minY;
-        const diagramCenterX = minX + diagramWidth / 2;
-        const diagramCenterY = minY + diagramHeight / 2;
-
-        // Calculate scale to fit diagram in viewport with padding
-        const padding = 40; // 40px padding on each side
-        const availableWidth = this.width - 2 * padding;
-        const availableHeight = this.height - 2 * padding;
-
-        const scaleX = availableWidth / diagramWidth;
-        const scaleY = availableHeight / diagramHeight;
-        const scale = Math.min(scaleX, scaleY, 1.0); // Don't zoom in beyond 1.0
-
-        // Calculate transform to center the diagram
-        const transform = d3.zoomIdentity
-            .translate(this.width / 2, this.height / 2)
-            .scale(scale)
-            .translate(-diagramCenterX, -diagramCenterY);
-
-        // Apply transform
-        this.svg.transition()
-            .duration(750)
-            .call(this.zoom.transform, transform);
-
-        // Update initialTransform so resetView() returns to centered state
-        this.initialTransform = transform;
-
-        console.log(`[CENTER] Diagram centered: bbox=(${minX.toFixed(1)}, ${minY.toFixed(1)}, ${maxX.toFixed(1)}, ${maxY.toFixed(1)}), scale=${scale.toFixed(2)}`);
+    centerDiagram(targetStates = null) {
+        // Delegated to FocusManager for centralized focus management
+        return this.focusManager.centerDiagram(targetStates);
     }
 
     // Delegate methods to helper modules
@@ -322,10 +271,10 @@ class SCXMLVisualizer {
     clearTransitionHighlights() { return this.interactionHandler.clearTransitionHighlights(); }
     clearActiveTransition() { return this.interactionHandler.clearActiveTransition(); }
     highlightTransition(transitionId, duration) { return this.interactionHandler.highlightTransition(transitionId, duration); }
-    cancelPendingHighlights() { return this.interactionHandler.cancelPendingHighlights(); }
-    highlightLink(linkId, duration) { return this.interactionHandler.highlightLink(linkId, duration); }
-    highlightLabel(linkId, duration) { return this.interactionHandler.highlightLabel(linkId, duration); }
-    scheduleHighlightRemoval(linkId, duration) { return this.interactionHandler.scheduleHighlightRemoval(linkId, duration); }
+    cancelPendingHighlights() { return this.focusManager.cancelPendingHighlights(); }
+    highlightLink(linkId) { return this.focusManager.highlightLink(linkId); }
+    highlightLabel(linkId) { return this.focusManager.highlightLabel(linkId); }
+    scheduleHighlightRemoval(linkId, duration) { return this.focusManager.scheduleHighlightRemoval(linkId, duration); }
     focusOnTransition(transitionId) { return this.interactionHandler.focusOnTransition(transitionId); }
     resize() { return this.interactionHandler.resize(); }
     resetView() { return this.interactionHandler.resetView(); }
