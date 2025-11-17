@@ -232,30 +232,24 @@ class InteractionHandler {
                 detailsHtml += `<div class="transition-list-condition">🔍 [${transition.cond}]</div>`;
             }
 
-            // Actions
+            // Actions (using ActionFormatter for consistent display)
             if (transition.actions && transition.actions.length > 0) {
+                console.log('[InteractionHandler] Processing actions:', transition.actions);
+                console.log('[InteractionHandler] ActionFormatter available:', typeof ActionFormatter);
                 transition.actions.forEach(action => {
-                    const actionType = action.actionType || action.type;
-                    let actionText = '';
+                    console.log('[InteractionHandler] Processing action:', action);
+                    const formatted = ActionFormatter.formatAction(action);
+                    console.log('[InteractionHandler] Formatted result:', formatted);
 
-                    if (actionType === 'send') {
-                        const icon = '📤';
-                        actionText = `${icon} send(${action.event || '?'})`;
-                        if (action.target) {
-                            actionText += ` → ${action.target}`;
-                        }
-                    } else if (actionType === 'raise') {
-                        actionText = `📢 raise(${action.event || '?'})`;
-                    } else if (actionType === 'assign') {
-                        actionText = `= ${action.location || '?'} = ${action.expr || '?'}`;
-                    } else if (actionType === 'log') {
-                        actionText = `📝 log(${action.label || action.expr || '?'})`;
-                    } else if (actionType === 'cancel') {
-                        actionText = `🚫 cancel(${action.sendid || action.sendidexpr || '?'})`;
-                    }
+                    // Main action line
+                    detailsHtml += `<div class="transition-list-action">${formatted.main}</div>`;
 
-                    if (actionText) {
-                        detailsHtml += `<div class="transition-list-action">${actionText}</div>`;
+                    // Detail lines (for send actions with content, params, etc.)
+                    if (formatted.details && formatted.details.length > 0) {
+                        console.log('[InteractionHandler] Adding details:', formatted.details);
+                        formatted.details.forEach(detail => {
+                            detailsHtml += `<div class="action-detail-line">${detail}</div>`;
+                        });
                     }
                 });
             }

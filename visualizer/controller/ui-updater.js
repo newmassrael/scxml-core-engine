@@ -240,22 +240,36 @@ class UIUpdater {
                 }
                 content += `)</div>`;
 
-                // onentry actions
+                // onentry actions (using ActionFormatter for consistent display)
                 if (state.onentry && state.onentry.length > 0) {
                     state.onentry.forEach(action => {
+                        const formatted = ActionFormatter.formatAction(action);
                         content += `<div class="action-item action-onentry">`;
-                        content += `<span class="action-type">↓ ${this.controller.escapeHtml(action.actionType)}</span>`;
-                        content += `<span class="action-details">${this.controller.formatAction(action).substring(2)}</span>`;
+                        content += `<span class="action-type">↓ entry</span>`;
+                        content += `<div class="action-details">${formatted.main}</div>`;
+                        // Add detail lines for send actions with content, params, etc.
+                        if (formatted.details && formatted.details.length > 0) {
+                            formatted.details.forEach(detail => {
+                                content += `<div class="action-detail-line">${detail}</div>`;
+                            });
+                        }
                         content += `</div>`;
                     });
                 }
 
-                // onexit actions
+                // onexit actions (using ActionFormatter for consistent display)
                 if (state.onexit && state.onexit.length > 0) {
                     state.onexit.forEach(action => {
+                        const formatted = ActionFormatter.formatAction(action);
                         content += `<div class="action-item action-onexit">`;
-                        content += `<span class="action-type">↑ ${this.controller.escapeHtml(action.actionType)}</span>`;
-                        content += `<span class="action-details">${this.controller.formatAction(action).substring(2)}</span>`;
+                        content += `<span class="action-type">↑ exit</span>`;
+                        content += `<div class="action-details">${formatted.main}</div>`;
+                        // Add detail lines for send actions with content, params, etc.
+                        if (formatted.details && formatted.details.length > 0) {
+                            formatted.details.forEach(detail => {
+                                content += `<div class="action-detail-line">${detail}</div>`;
+                            });
+                        }
                         content += `</div>`;
                     });
                 }
@@ -346,18 +360,30 @@ class UIUpdater {
                     const actionType = action.actionType || action.type;  // Support both field names
                     if (actionType === 'send') {
                         let sendText = `send(${action.event || '?'})`;
-                        if (action.target) {
+
+                        // Add compact data indicator
+                        if (action.content !== undefined && action.content !== null && action.content !== '') {
+                            const contentStr = String(action.content);
+                            const truncated = contentStr.length > 15 ? contentStr.substring(0, 15) + '...' : contentStr;
+                            sendText += `[${truncated}]`;
+                        } else if (action.params && action.params.length > 0) {
+                            sendText += `[params]`;
+                        } else if (action.namelist) {
+                            sendText += `[vars]`;
+                        }
+
+                        if (action.target && action.target !== '#_internal') {
                             sendText += ` to ${action.target}`;
                         }
                         return sendText;
                     } else if (actionType === 'raise') {
-                        return `raise(${action.event || '?'})`;
+                        return `📢 Raise: ${action.event || '?'}`;
                     } else if (actionType === 'assign') {
-                        return `${action.location || '?'}=${action.expr || '?'}`;
+                        return `💾 Assign: ${action.location || '?'} = ${action.expr || '?'}`;
                     } else if (actionType === 'log') {
-                        return `log(${action.label || action.expr || '?'})`;
+                        return `📝 Log: ${action.label || action.expr || '?'}`;
                     } else if (actionType === 'cancel') {
-                        return `cancel(${action.sendid || action.sendidexpr || '?'})`;
+                        return `🚫 Cancel: ${action.sendid || action.sendidexpr || '?'}`;
                     } else {
                         return actionType || 'unknown';
                     }
