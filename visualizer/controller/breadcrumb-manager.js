@@ -377,12 +377,12 @@ class BreadcrumbManager {
         console.log(`Navigating to child state machine from state: ${stateId}`);
 
         // Save current node positions for layout restoration
+        // Note: Only save x, y positions. Width and height will be recalculated
+        // to ensure text content fits properly (e.g., entry/exit actions)
         const savedNodePositions = this.controller.currentMachine.visualizer?.nodes?.map(node => ({
             id: node.id,
             x: node.x,
-            y: node.y,
-            width: node.width,
-            height: node.height
+            y: node.y
         })) || [];
 
         // Push current machine to stack
@@ -472,8 +472,10 @@ class BreadcrumbManager {
                 if (node) {
                     node.x = savedPos.x;
                     node.y = savedPos.y;
-                    node.width = savedPos.width;
-                    node.height = savedPos.height;
+                    // Do NOT restore width and height - they should be recalculated
+                    // to reflect the current text content (e.g., after action formatting changes)
+                    // node.width = savedPos.width;
+                    // node.height = savedPos.height;
                 }
             });
 
