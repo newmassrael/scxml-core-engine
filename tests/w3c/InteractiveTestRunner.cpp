@@ -659,20 +659,26 @@ void InteractiveTestRunner::restoreEventQueues(const std::vector<EventSnapshot> 
 
     // Time-travel debugging: Clear existing queue before restoration
     // This prevents duplicate events from start()'s onentry execution
+    // W3C SCXML 5.10.1: Restore events with complete metadata for _event object
     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser);
-    if (eventRaiserImpl) {
-        eventRaiserImpl->clearQueue();
-        LOG_DEBUG("InteractiveTestRunner: Cleared existing queue for clean restoration");
+    if (!eventRaiserImpl) {
+        LOG_ERROR("InteractiveTestRunner: EventRaiser is not EventRaiserImpl, cannot restore metadata");
+        return;
     }
+
+    eventRaiserImpl->clearQueue();
+    LOG_DEBUG("InteractiveTestRunner: Cleared existing queue for clean restoration");
 
     // Restore internal queue (higher priority)
     for (const auto &event : internal) {
-        eventRaiser->raiseInternalEvent(event.name, event.data);
+        eventRaiserImpl->raiseEventWithPriority(event.name, event.data, EventRaiserImpl::EventPriority::INTERNAL,
+                                                event.origin, event.sendid, event.invokeid, event.origintype);
     }
 
     // Restore external queue (lower priority)
     for (const auto &event : external) {
-        eventRaiser->raiseExternalEvent(event.name, event.data);
+        eventRaiserImpl->raiseEventWithPriority(event.name, event.data, EventRaiserImpl::EventPriority::EXTERNAL,
+                                                event.origin, event.sendid, event.invokeid, event.origintype);
     }
 
     LOG_DEBUG("InteractiveTestRunner: Restored queues - internal: {}, external: {}", internal.size(), external.size());

@@ -283,7 +283,7 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
         LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data: {}", event.eventName, event.eventData);
 
         // W3C SCXML 6.4 & 5.10: Set thread-local metadata before callback execution
-        currentOriginSessionId_ = event.originSessionId;
+        currentOriginSessionId_ = event.origin;
         currentSendId_ = event.sendId;
         currentInvokeId_ = event.invokeId;
         currentOriginType_ = event.originType;
@@ -424,18 +424,18 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
 
     try {
         LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data '{}' from origin '{}'", event.eventName,
-                  event.eventData, event.originSessionId);
+                  event.eventData, event.origin);
 
-        // W3C SCXML 6.4: Store originSessionId in thread-local for StateMachine to access
-        currentOriginSessionId_ = event.originSessionId;
+        // W3C SCXML 5.10.1: Store originSessionId in thread-local for StateMachine to access (_event.origin)
+        currentOriginSessionId_ = event.origin;
 
-        // W3C SCXML 5.10: Store sendId in thread-local for StateMachine to access (error events)
+        // W3C SCXML 5.10.1: Store sendId in thread-local for StateMachine to access (_event.sendid)
         currentSendId_ = event.sendId;
 
-        // W3C SCXML 5.10: Store invokeId in thread-local for StateMachine to access (test 338)
+        // W3C SCXML 5.10.1: Store invokeId in thread-local for StateMachine to access (_event.invokeid)
         currentInvokeId_ = event.invokeId;
 
-        // W3C SCXML 5.10: Store originType in thread-local for StateMachine to access (test 253, 331, 352, 372)
+        // W3C SCXML 5.10.1: Store originType in thread-local for StateMachine to access (_event.origintype)
         currentOriginType_ = event.originType;
 
         // W3C SCXML 5.10.1: Store event type in thread-local for StateMachine to access (test 331)
@@ -495,8 +495,10 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
     }
 
     // Separate by priority (INTERNAL vs EXTERNAL)
+    // W3C SCXML 5.10.1: Capture complete event metadata for _event object restoration
     for (const auto &event : allEvents) {
-        EventSnapshot snapshot(event.eventName, event.eventData);
+        EventSnapshot snapshot(event.eventName, event.eventData, event.sendId, event.originType, event.origin,
+                               event.invokeId);
 
         if (event.priority == EventPriority::INTERNAL) {
             outInternal.push_back(snapshot);
