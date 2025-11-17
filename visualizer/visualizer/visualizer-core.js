@@ -75,6 +75,11 @@ class SCXMLVisualizer {
         this.transitionHighlightTimeout = null;
         this.transitionPanelHighlightTimeout = null;
 
+        // Custom transition label positions
+        // Map: transitionKey -> { x, y, routingHash }
+        // routingHash tracks when transition coordinates change (for auto-reset)
+        this.customLabelPositions = new Map();
+
         // Container dimensions
         const containerNode = this.container.node();
         const clientWidth = containerNode ? containerNode.clientWidth : 0;
@@ -234,6 +239,86 @@ class SCXMLVisualizer {
     findCompoundParent(nodeId) { return this.layoutManager.findCompoundParent(nodeId); }
     findTopmostCompoundParent(nodeId) { return this.layoutManager.findTopmostCompoundParent(nodeId); }
     getAllDescendantIds(parentId) { return this.layoutManager.getAllDescendantIds(parentId); }
+
+    /**
+     * Custom transition label position management
+     *
+     * Allows users to drag transition labels to custom positions.
+     * Positions are automatically reset when transition coordinates change.
+     * Positions persist across state navigation (collapsed/expanded states).
+     */
+
+    /**
+     * Get unique key for transition label position storage
+     * Uses visualSource/visualTarget to support collapsed states
+     * @param {Object} transition - Transition data
+     * @returns {string} Unique key (e.g., "s1→s2")
+     */
+    getTransitionKey(transition) {
+        const visualSource = transition.visualSource || transition.source;
+        const visualTarget = transition.visualTarget || transition.target;
+        return `${visualSource}→${visualTarget}`;
+    }
+
+    /**
+     * Create hash from transition routing to detect coordinate changes
+     * Includes source/target points and edges for complete change detection
+     * @param {Object} transition - Transition data with routing information
+     * @returns {string|null} Routing hash or null if no routing
+     */
+    getRoutingHash(transition) {
+        if (!transition.routing || !transition.routing.sourcePoint || !transition.routing.targetPoint) {
+            return null;
+        }
+        const sp = transition.routing.sourcePoint;
+        const tp = transition.routing.targetPoint;
+        const se = transition.routing.sourceEdge;
+        const te = transition.routing.targetEdge;
+        return `${sp.x.toFixed(1)},${sp.y.toFixed(1)}[${se}]-${tp.x.toFixed(1)},${tp.y.toFixed(1)}[${te}]`;
+    }
+
+    /**
+     * Save custom position for transition label
+     * Stores position with routing hash for auto-reset on coordinate changes
+     * @param {Object} transition - Transition data
+     * @param {number} x - Center X coordinate
+     * @param {number} y - Center Y coordinate
+     */
+    setCustomLabelPosition(transition, x, y) {
+        const key = this.getTransitionKey(transition);
+        const routingHash = this.getRoutingHash(transition);
+        this.customLabelPositions.set(key, { x, y, routingHash });
+        if (this.debugMode) {
+            console.log(`[CUSTOM LABEL] Set position for ${key}: (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        }
+    }
+
+    /**
+     * Get custom position for transition label if available
+     * Returns null if no custom position or routing has changed
+     * @param {Object} transition - Transition data
+     * @returns {Object|null} Position {x, y} or null
+     */
+    getCustomLabelPosition(transition) {
+        const key = this.getTransitionKey(transition);
+        const stored = this.customLabelPositions.get(key);
+
+        if (!stored) {
+            return null; // No custom position
+        }
+
+        // Check if routing coordinates have changed (auto-reset)
+        const currentRoutingHash = this.getRoutingHash(transition);
+        if (currentRoutingHash && stored.routingHash !== currentRoutingHash) {
+            if (this.debugMode) {
+                console.log(`[CUSTOM LABEL] Routing changed for ${key}, resetting to default`);
+            }
+            this.customLabelPositions.delete(key);
+            return null;
+        }
+
+        return { x: stored.x, y: stored.y };
+    }
 
     render() { return this.renderer.render(); }
     generateSnapPointsData(visibleNodes, visibleLinks = null) { return this.renderer.generateSnapPointsData(visibleNodes, visibleLinks); }
