@@ -1201,6 +1201,8 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
 
 void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, const std::string &childSessionId) {
     // W3C SCXML 3.11: Restore child configuration without side effects
+    // ARCHITECTURE.md: Zero Duplication - delegates to StateMachine::restoreFromSnapshot()
+
     // Find session by child session ID
     for (auto &[invokeid, session] : activeSessions_) {
         if (session.sessionId != childSessionId || !session.smContext) {
@@ -1212,10 +1214,15 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
             continue;
         }
 
-        // Restore active states directly (no onentry execution)
-        childSM->restoreActiveStatesDirectly(childSnapshot.activeStates);
+        // W3C SCXML 3.13: Complete restoration using Template Method pattern
+        // ARCHITECTURE.md: Single Source of Truth - StateMachine handles restoration lifecycle
+        // This automatically handles: JS environment init, state restoration, running flag
+        if (!childSM->restoreFromSnapshot(childSnapshot.activeStates)) {
+            LOG_ERROR("SCXMLInvokeHandler: Failed to restore child state for session {}", childSessionId);
+            return;
+        }
 
-        LOG_DEBUG("SCXMLInvokeHandler: Restored child state - {} active states for session {}",
+        LOG_DEBUG("SCXMLInvokeHandler: Successfully restored child state - {} active states for session {}",
                   childSnapshot.activeStates.size(), childSessionId);
         return;
     }

@@ -1699,9 +1699,35 @@ std::string StateMachine::getLastTransitionTarget() const {
     return lastTransitionTarget_;
 }
 
+bool StateMachine::restoreFromSnapshot(const std::set<std::string> &states) {
+    // W3C SCXML 3.13: Complete state machine restoration for time-travel debugging
+    // ARCHITECTURE.md: Template Method pattern - encapsulates restoration lifecycle
+    // to prevent temporal coupling and maintain Single Source of Truth
+
+    LOG_INFO("StateMachine::restoreFromSnapshot: Starting complete restoration - {} states, session: {}", states.size(),
+             sessionId_);
+
+    // Step 1: Ensure JavaScript environment is initialized
+    // CRITICAL: JS environment must exist BEFORE state restoration for event processing (Test 192)
+    if (!ensureJSEnvironment()) {
+        LOG_ERROR("StateMachine::restoreFromSnapshot: Failed to initialize JS environment for session {}", sessionId_);
+        return false;
+    }
+
+    // Step 2: Restore state configuration (delegates to internal method)
+    // This sets isRunning_ = true internally
+    restoreActiveStatesDirectly(states);
+
+    LOG_INFO("StateMachine::restoreFromSnapshot: Restoration complete - session: {}, running: {}, states: {}",
+             sessionId_, isRunning_.load(), states.size());
+
+    return true;
+}
+
 void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &states) {
     // W3C SCXML 3.13: Time-travel debugging - restore configuration without side effects
     // ARCHITECTURE.md Zero Duplication: Uses StateHierarchyManager's addStateToConfigurationWithoutOnEntry
+    // INTERNAL USE ONLY: Called by restoreFromSnapshot() after JS environment initialization
 
     if (!hierarchyManager_) {
         LOG_ERROR("StateMachine::restoreActiveStatesDirectly: hierarchyManager_ is null");
@@ -1739,7 +1765,13 @@ void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &stat
         LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Restored state '{}' without onentry", stateId);
     }
 
-    LOG_INFO("StateMachine::restoreActiveStatesDirectly: Restored {} states without side effects", states.size());
+    // W3C SCXML 3.13: Set running state after restoration to enable event processing
+    // CRITICAL FIX: Child state machines must be running to receive events from parent
+    // Without this, stepBackward() restoration leaves child in stopped state (Test 192)
+    isRunning_ = true;
+
+    LOG_INFO("StateMachine::restoreActiveStatesDirectly: Restored {} states without side effects (running: true)",
+             states.size());
 }
 
 bool StateMachine::isInitialStateFinal() const {

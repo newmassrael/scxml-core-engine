@@ -430,6 +430,30 @@ public:
         return eventRaiser_;
     }
 
+    /**
+     * @brief Restore state machine from snapshot (complete restoration)
+     *
+     * W3C SCXML 3.13: Time-travel debugging support for InteractiveTestRunner
+     * Handles all restoration requirements internally in correct order:
+     * 1. JavaScript environment initialization
+     * 2. State configuration restoration
+     * 3. Running state activation
+     *
+     * ARCHITECTURE.md: Zero Duplication - encapsulates restoration lifecycle
+     * to prevent temporal coupling and maintain Single Source of Truth
+     *
+     * @param states Set of state IDs to activate
+     * @return true if restoration succeeded, false on failure
+     *
+     * @note Thread Safety: NOT thread-safe. Caller must ensure no concurrent
+     *       state machine operations (start/stop/processEvent) during restoration.
+     * @note State Validity: Invalid state IDs in snapshot are silently skipped
+     *       by StateHierarchyManager. Check logs for restoration warnings.
+     * @note JS Environment: Idempotent - safe to call even if JS environment
+     *       already initialized (e.g., after start()).
+     */
+    bool restoreFromSnapshot(const std::set<std::string> &states);
+
 private:
     /**
      * @brief RAII guard for preventing invalid reentrant state entry calls
@@ -699,6 +723,8 @@ private:
                             bool processEventsAfter = true);
     bool executeEntryActions(const std::string &stateId);
     bool executeExitActions(const std::string &stateId);
+
+    // JavaScript environment lifecycle (internal use only)
     bool ensureJSEnvironment();
     bool setupJSEnvironment();
     void updateStatistics();
