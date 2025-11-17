@@ -273,31 +273,43 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             // ARCHITECTURE.md: Use InvokeHelper for Single Source of Truth (Zero Duplication with AOT)
             std::string doneEvent = InvokeHelper::createDoneInvokeEventName(invokeid);
 
+            // W3C SCXML 3.7/6.4: done.invoke is NOT a <send> element - automatic platform event
+            // ARCHITECTURE.md Zero Duplication: Match AOT raiseExternal() (bypasses EventScheduler)
+            // Prevents W3C SCXML 6.2 cancellation (only <send> delayed messages are cancelled)
+            // Note: EXTERNAL priority auto-detected for done.* events (EventRaiserImpl.cpp:148)
+            auto parentEventRaiser = parentSM->getEventRaiser();
+            if (parentEventRaiser) {
+                std::string eventData = "";  // W3C SCXML 6.4: done.invoke has no data payload
+
+                bool success =
+                    parentEventRaiser->raiseEvent(doneEvent,       // event name (done.invoke.*)
+                                                  eventData,       // event data
+                                                  childSessionId,  // origin session
+                                                  invokeid,        // invoke ID
+                                                  "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"  // origin type
+                    );
+
+                if (success) {
+                    LOG_INFO("SCXMLInvokeHandler: {} sent directly to parent's external queue (session: {}, matches "
+                             "AOT raiseExternal)",
+                             doneEvent, parentSessionId);
+                } else {
+                    LOG_ERROR("SCXMLInvokeHandler: Failed to send {} to parent session: {}", doneEvent,
+                              parentSessionId);
+                }
+            } else {
+                LOG_WARN("SCXMLInvokeHandler: Child reached final state but no parent EventRaiser available for: {}",
+                         doneEvent);
+            }
+
+            // W3C SCXML 6.2: Cancel pending delayed sends when child session terminates
+            // "If the SCXML session terminates before the delay interval has elapsed,
+            // the SCXML Processor MUST discard the message without attempting to deliver it."
+            // This applies only to <send> element messages, not done.invoke (W3C SCXML Test 187)
             if (eventDispatcher) {
-                EventDescriptor event;
-                event.eventName = doneEvent;
-                event.target = "#_parent";
-                event.data = "";
-                event.delay = std::chrono::milliseconds(0);
-                event.sessionId = childSessionId;  // Child session for context
-
-                // W3C SCXML: Use parent session ID directly to avoid lookup issues
-                // Store parent session ID in params for ParentEventTarget routing
-                event.params["_parentSessionId"].push_back(parentSessionId);
-
-                auto resultFuture = eventDispatcher->sendEvent(event);
-                LOG_INFO("SCXMLInvokeHandler: {} sent to parent after child completion (target: {}, parentSession: {})",
-                         doneEvent, event.target, parentSessionId);
-
-                // W3C SCXML 6.2: Cancel pending delayed sends when child session terminates
-                // "If the SCXML session terminates before the delay interval has elapsed,
-                // the SCXML Processor MUST discard the message without attempting to deliver it."
                 size_t cancelledCount = eventDispatcher->cancelEventsForSession(childSessionId);
                 LOG_INFO("SCXMLInvokeHandler: Cancelled {} pending delayed send(s) for terminated child session: {}",
                          cancelledCount, childSessionId);
-            } else {
-                LOG_WARN("SCXMLInvokeHandler: Child reached final state but no EventDispatcher available for: {}",
-                         doneEvent);
             }
         });
         LOG_DEBUG("SCXMLInvokeHandler: Registered completion callback for invoke: {}", invokeid);
