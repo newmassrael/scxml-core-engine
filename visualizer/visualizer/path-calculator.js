@@ -20,8 +20,12 @@ class PathCalculator {
         // Generate hierarchical HTML structure for better readability
         const parts = [];
 
-        // Event name (W3C SCXML 3.12.1)
-        if (transition.event) {
+        // Eventless indicator - always show first if transition is eventless (W3C SCXML 3.12)
+        if (transition.eventless === true) {
+            parts.push(`<div class="label-eventless">⚡ eventless</div>`);
+        }
+        // Event name (W3C SCXML 3.12.1) - only for event-based transitions
+        else if (transition.event) {
             parts.push(`<div class="label-event">${transition.event}</div>`);
         }
 
@@ -48,7 +52,7 @@ class PathCalculator {
                     icon = '📢';
                     text = `raise(${action.event || '?'})`;
                 } else if (actionType === 'assign') {
-                    icon = '=';
+                    icon = '💾';
                     text = `${action.location || '?'} = ${action.expr || '?'}`;
                 } else if (actionType === 'log') {
                     icon = '📝';
@@ -65,13 +69,9 @@ class PathCalculator {
             });
         }
 
-        // Fallback for completely empty transitions
+        // Fallback for completely empty transitions (no event, no eventless flag, no condition, no actions)
         if (parts.length === 0) {
-            if (transition.eventless) {
-                parts.push(`<div class="label-eventless">(eventless)</div>`);
-            } else {
-                parts.push(`<div class="label-always">(always)</div>`);
-            }
+            parts.push(`<div class="label-always">(always)</div>`);
         }
 
         // Build label classes with color variant
