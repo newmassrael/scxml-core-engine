@@ -134,12 +134,13 @@ class NodeBuilder {
         }
 
         // Precise height calculation based on actual content rendering
-        // Matches renderer.js spacing exactly (lines 757-1542)
+        // Matches renderer.js spacing exactly (lines 757-1544)
 
         const STATE_ID_HEIGHT = 26;        // Initial offset + state ID text (renderer.js:757)
         const SEPARATOR_SPACING = 36;      // 14 (before) + 2 (line) + 20 (after) (renderer.js:776-784)
         const MAIN_LINE_HEIGHT = 25;       // 15 (text) + 6 (padding) + 4 (spacing) (renderer.js:1527)
         const DETAIL_LINE_HEIGHT = 16;     // Detail line spacing (renderer.js:1542)
+        const DETAIL_GROUP_SPACING = 8;    // Additional spacing after detail lines (renderer.js:1544)
         const BOTTOM_PADDING = 10;         // Bottom margin
 
         let totalHeight = STATE_ID_HEIGHT;
@@ -147,17 +148,24 @@ class NodeBuilder {
         // Count all action lines (main + details)
         let mainLines = 0;
         let detailLines = 0;
+        let actionsWithDetails = 0;        // Actions that have detail lines
 
         (node.onentry || []).forEach(action => {
             const formatted = ActionFormatter.formatAction(action);
             mainLines += 1;
             detailLines += (formatted.details?.length || 0);
+            if (formatted.details && formatted.details.length > 0) {
+                actionsWithDetails += 1;
+            }
         });
 
         (node.onexit || []).forEach(action => {
             const formatted = ActionFormatter.formatAction(action);
             mainLines += 1;
             detailLines += (formatted.details?.length || 0);
+            if (formatted.details && formatted.details.length > 0) {
+                actionsWithDetails += 1;
+            }
         });
 
         // If has actions, add separator
@@ -168,6 +176,7 @@ class NodeBuilder {
         // Add space for all lines
         totalHeight += (mainLines * MAIN_LINE_HEIGHT);
         totalHeight += (detailLines * DETAIL_LINE_HEIGHT);
+        totalHeight += (actionsWithDetails * DETAIL_GROUP_SPACING);  // Additional spacing after each action with details
         totalHeight += BOTTOM_PADDING;
 
         return Math.max(totalHeight, LAYOUT_CONSTANTS.STATE_MIN_HEIGHT);
