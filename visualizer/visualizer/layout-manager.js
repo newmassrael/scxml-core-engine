@@ -176,9 +176,16 @@ class LayoutManager {
                         console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size preserved), offset=(${offsetX}, ${offsetY})`);
                     }
                 } else {
-                    node.width = elkNode.width;
-                    node.height = elkNode.height;
-                    console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height}, offset=(${offsetX}, ${offsetY})`);
+                    // Get the originally calculated width/height
+                    const originalWidth = this.visualizer.getNodeWidth(node);
+                    const originalHeight = this.visualizer.getNodeHeight(node);
+
+                    // Use original calculated dimensions instead of ELK's adjusted values
+                    // to ensure text content fits properly
+                    node.width = originalWidth;
+                    node.height = originalHeight;
+
+                    console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (original calc, ELK wanted ${elkNode.width}x${elkNode.height}), offset=(${offsetX}, ${offsetY})`);
                 }
             } else {
                 console.warn(`${indent}  ELK node not found in this.visualizer.nodes: ${elkNode.id} (possibly child state or collapsed)`);
