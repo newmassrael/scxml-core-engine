@@ -112,11 +112,11 @@ private:
     std::string sessionId_;
     std::string currentEventName_;
     std::string currentEventData_;
-    std::string currentEventType_;        // W3C SCXML 5.10: event type ("internal", "platform", "external")
-    std::string currentSendId_;           // W3C SCXML 5.10: sendid from failed send element (for error events)
-    std::string currentInvokeId_;         // W3C SCXML 5.10: invokeid from invoked child process (test 338)
-    std::string currentOriginType_;       // W3C SCXML 5.10: origintype from event processor (test 253, 331, 352, 372)
-    std::string currentOriginSessionId_;  // W3C SCXML 5.10: origin session ID for _event.origin (test 336)
+    std::string currentEventType_;        // W3C SCXML 5.10.1: _event.type ("internal", "platform", "external")
+    std::string currentSendId_;           // W3C SCXML 5.10.1: _event.sendid from send element
+    std::string currentInvokeId_;         // W3C SCXML 5.10.1: _event.invokeid from invoked child process
+    std::string currentOriginType_;       // W3C SCXML 5.10.1: _event.origintype from event processor
+    std::string currentOriginSessionId_;  // W3C SCXML 5.10.1: _event.origin session ID
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
 

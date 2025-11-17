@@ -23,9 +23,20 @@ struct EventSnapshot {
     std::string name;
     std::string data;  // Serialized event data
 
+    // W3C SCXML 5.10.1: Event metadata for _event object restoration
+    std::string sendid;      // W3C SCXML 5.10.1: _event.sendid
+    std::string origintype;  // W3C SCXML 5.10.1: _event.origintype
+    std::string origin;      // W3C SCXML 5.10.1: _event.origin (session ID)
+    std::string invokeid;    // W3C SCXML 5.10.1: _event.invokeid
+
     EventSnapshot() = default;
 
-    EventSnapshot(const std::string &n, const std::string &d = "") : name(n), data(d) {}
+    EventSnapshot(const std::string &n, const std::string &d = "")
+        : name(n), data(d), sendid(""), origintype(""), origin(""), invokeid("") {}
+
+    EventSnapshot(const std::string &n, const std::string &d, const std::string &sid, const std::string &otype,
+                  const std::string &orig, const std::string &invId)
+        : name(n), data(d), sendid(sid), origintype(otype), origin(orig), invokeid(invId) {}
 };
 
 /**

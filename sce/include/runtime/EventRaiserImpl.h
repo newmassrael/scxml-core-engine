@@ -53,17 +53,17 @@ public:
     struct QueuedEvent {
         std::string eventName;
         std::string eventData;
-        std::string originSessionId;  // W3C SCXML 6.4: Session that originated this event (for finalize)
-        std::string sendId;           // W3C SCXML 5.10: sendid from failed send element (for error events)
-        std::string invokeId;         // W3C SCXML 5.10: invokeid from invoked child process (test 338)
-        std::string originType;       // W3C SCXML 5.10: origintype from event processor type (test 253, 331, 352, 372)
+        std::string origin;      // W3C SCXML 5.10.1: _event.origin - Session that originated this event
+        std::string sendId;      // W3C SCXML 5.10.1: _event.sendid - sendid from send element
+        std::string invokeId;    // W3C SCXML 5.10.1: _event.invokeid - invokeid from invoked child process
+        std::string originType;  // W3C SCXML 5.10.1: _event.origintype - event processor type
         std::chrono::steady_clock::time_point timestamp;
         EventPriority priority;
 
         QueuedEvent(const std::string &name, const std::string &data, EventPriority prio = EventPriority::INTERNAL,
-                    const std::string &origin = "", const std::string &sid = "", const std::string &iid = "",
+                    const std::string &originSessionId = "", const std::string &sid = "", const std::string &iid = "",
                     const std::string &otype = "")
-            : eventName(name), eventData(data), originSessionId(origin), sendId(sid), invokeId(iid), originType(otype),
+            : eventName(name), eventData(data), origin(originSessionId), sendId(sid), invokeId(iid), originType(otype),
               timestamp(std::chrono::steady_clock::now()), priority(prio) {}
     };
 
