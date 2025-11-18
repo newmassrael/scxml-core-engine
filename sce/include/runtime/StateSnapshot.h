@@ -50,7 +50,8 @@ struct EventSnapshot {
 struct ScheduledEventSnapshot {
     std::string eventName;
     std::string sendId;
-    int64_t originalDelayMs;  // Original delay in milliseconds
+    int64_t originalDelayMs;  // Original delay in milliseconds (W3C SCXML 6.2.4)
+    int64_t remainingTimeMs;  // Remaining time at snapshot capture (for accurate restoration)
     std::string sessionId;
 
     // W3C SCXML 6.2: Complete EventDescriptor fields for restoration
@@ -62,12 +63,12 @@ struct ScheduledEventSnapshot {
 
     ScheduledEventSnapshot() = default;
 
-    ScheduledEventSnapshot(const std::string &name, const std::string &id, int64_t delayMs, const std::string &sessId,
-                           const std::string &target = "", const std::string &type = "scxml",
+    ScheduledEventSnapshot(const std::string &name, const std::string &id, int64_t delayMs, int64_t remainingMs,
+                           const std::string &sessId, const std::string &target = "", const std::string &type = "scxml",
                            const std::string &data = "", const std::string &cnt = "",
                            const std::map<std::string, std::string> &prms = {})
-        : eventName(name), sendId(id), originalDelayMs(delayMs), sessionId(sessId), targetUri(target), eventType(type),
-          eventData(data), content(cnt), params(prms) {}
+        : eventName(name), sendId(id), originalDelayMs(delayMs), remainingTimeMs(remainingMs), sessionId(sessId),
+          targetUri(target), eventType(type), eventData(data), content(cnt), params(prms) {}
 };
 
 // Forward declaration for recursive child state snapshot
@@ -215,6 +216,25 @@ public:
     size_t maxHistory() const {
         return maxHistory_;
     }
+
+    /**
+     * @brief Remove all snapshots after specified step number
+     *
+     * Used for history branching when user modifies execution path
+     * (e.g., removing events from queue, adding new events).
+     * All snapshots with stepNumber > specified step are removed.
+     *
+     * @param stepNumber Step number after which to remove snapshots
+     */
+    void removeSnapshotsAfter(int stepNumber);
+
+    /**
+     * @brief Check if snapshot exists for specified step number
+     *
+     * @param stepNumber Step number to check
+     * @return true if snapshot exists, false otherwise
+     */
+    bool hasSnapshot(int stepNumber) const;
 
 private:
     std::vector<StateSnapshot> snapshots_;

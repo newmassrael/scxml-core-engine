@@ -22,9 +22,21 @@
 namespace SCE::W3C {
 
 /**
+ * @brief Result status for stepForward() operation
+ *
+ * Used to communicate step execution state to UI for button enable/disable control.
+ */
+enum class StepResult {
+    SUCCESS,              ///< Event processed successfully, step completed
+    NO_EVENTS_READY,      ///< No events in queue, but scheduled events are waiting
+    NO_EVENTS_AVAILABLE,  ///< No events and no scheduled events (stuck state)
+    FINAL_STATE           ///< State machine reached final state
+};
+
+/**
  * @brief Information about detected sub-SCXML file from static analysis
  *
- * W3C SCXML 6.3: Invoke elements with static src attributes are analyzed
+ * Invoke elements with static src attributes (W3C SCXML 6.3) are analyzed
  * at loadSCXML() time to enable visualization regardless of child execution timing.
  */
 struct SubSCXMLInfo {
@@ -75,12 +87,12 @@ public:
     /**
      * @brief Execute one microstep (process next event or eventless transition)
      *
-     * W3C SCXML 3.13: A microstep processes one event and executes enabled transitions.
+     * A microstep processes one event and executes enabled transitions (W3C SCXML 3.13).
      * Captures snapshot after execution for backward stepping.
      *
-     * @return true if step executed, false if in final state
+     * @return StepResult indicating success, waiting state, or final state
      */
-    bool stepForward();
+    StepResult stepForward();
 
     /**
      * @brief Restore previous execution state (backward step)
@@ -142,6 +154,27 @@ public:
      * @return Number of events moved from scheduler to queue (WASM), 0 (Native)
      */
     size_t pollScheduler();
+
+    /**
+     * @brief Check if any events are queued for processing
+     *
+     * @return true if internal or external queue has events
+     */
+    bool hasQueuedEvents() const;
+
+    /**
+     * @brief Check if any events are scheduled (waiting for delay)
+     *
+     * @return true if scheduler has pending events
+     */
+    bool hasScheduledEvents() const;
+
+    /**
+     * @brief Get time until next scheduled event becomes ready
+     *
+     * @return Milliseconds until next event, or -1 if no scheduled events
+     */
+    int getNextScheduledEventTime() const;
 
     /**
      * @brief Get current active states
@@ -352,6 +385,54 @@ private:
      */
     bool restoreSnapshot(const StateSnapshot &snapshot);
 
+    // W3C SCXML 3.13: stepForward() helper functions for better maintainability
+
+    /**
+     * @brief Attempt to restore from cached snapshot (REPLAY MODE)
+     *
+     * @return StepResult::SUCCESS if restored from cache, StepResult::NO_EVENTS_AVAILABLE if no cache
+     */
+    StepResult attemptReplayFromCache();
+
+    /**
+     * @brief Poll scheduler for ready events (WASM only)
+     *
+     * W3C SCXML 6.2.4: Manual polling required in WASM builds without timer thread
+     */
+    void pollSchedulerIfNeeded();
+
+    /**
+     * @brief Capture active states before transition execution
+     */
+    void capturePreTransitionStates();
+
+    /**
+     * @brief Process next queued event with INTERNAL → EXTERNAL priority
+     *
+     * W3C SCXML Appendix D: Event priority processing
+     *
+     * @return StepResult::SUCCESS if event processed, StepResult::NO_EVENTS_AVAILABLE otherwise
+     */
+    StepResult processQueuedEventStep();
+
+    /**
+     * @brief Process eventless transitions (null event)
+     *
+     * W3C SCXML 3.13: Eventless transitions triggered by null event
+     *
+     * @return StepResult::SUCCESS if transition executed, StepResult::NO_EVENTS_AVAILABLE otherwise
+     */
+    StepResult processEventlessTransitionStep();
+
+    /**
+     * @brief Check for scheduled events waiting to fire
+     *
+     * W3C SCXML 6.2.4: Detect delayed send operations pending
+     *
+     * @return StepResult status based on scheduled event availability
+     */
+    StepResult checkScheduledEventsStatus();
+
     /**
      * @brief Extract data model from JSEngine
      *
@@ -452,6 +533,11 @@ private:
     // Event execution history for accurate state restoration via replay
     // W3C SCXML 3.13: All processed events stored to enable time-travel debugging
     std::vector<EventSnapshot> executedEvents_;
+
+    // Interactive mode: Suspended scheduled events (not using wall-clock scheduler)
+    // After reset/stepBack, events are suspended here instead of being rescheduled
+    // stepForward() checks this list and fires events with remainingTime <= 0
+    std::vector<ScheduledEventSnapshot> suspendedScheduledEvents_;
 
     // WASM file preloading support (for invoke src="file:..." resolution)
     std::string basePath_;                                         // Base directory for resolving relative paths

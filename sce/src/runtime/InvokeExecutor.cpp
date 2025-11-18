@@ -6,6 +6,8 @@
 #include "common/Logger.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
+#include "events/EventDispatcherImpl.h"
+#include "events/EventTargetFactoryImpl.h"
 #include "model/InvokeNode.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/InvokeExecutor.h"
@@ -78,7 +80,7 @@ std::string SCXMLInvokeHandler::startInvoke(const std::shared_ptr<IInvokeNode> &
               parentSessionId, childSessionId);
 
     // Delegate to internal method with session creation required
-    return startInvokeInternal(invoke, parentSessionId, eventDispatcher, childSessionId, false);
+    return startInvokeInternal(invoke, parentSessionId, eventDispatcher, childSessionId, false, false);
 }
 
 std::string SCXMLInvokeHandler::startInvokeWithSessionId(const std::shared_ptr<IInvokeNode> &invoke,
@@ -244,79 +246,74 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
               childSessionId);
 
     // W3C SCXML 6.5: Register completion callback for done.invoke generation
-    // W3C SCXML 3.11: Skip during restoration to prevent duplicate done.invoke events
     // This callback is invoked AFTER the child's final state onexit handlers complete
     // IMPORTANT: Use weak_ptr to prevent accessing destroyed parent StateMachine (thread-safe)
+    // W3C SCXML 6.5.1: Completion callback registered for both normal execution and snapshot restoration
+    // Child state machines must send done.invoke when reaching final state after being restored
     std::weak_ptr<StateMachine> weakParentSM = parentStateMachine_;
-    if (!isRestoration) {
-        weakChildSM.lock()->setCompletionCallback([weakParentSM, invokeid, childSessionId, parentSessionId,
-                                                   eventDispatcher]() {
-            LOG_INFO("SCXMLInvokeHandler: Child completion callback invoked - invokeid: {}, session: {}", invokeid,
-                     childSessionId);
-            LOG_INFO("SCXMLInvokeHandler: Parent check - weakPtr valid: {}, parentSessionId: {}",
-                     !weakParentSM.expired(), parentSessionId);
+    weakChildSM.lock()->setCompletionCallback([weakParentSM, invokeid, childSessionId, parentSessionId,
+                                               eventDispatcher]() {
+        LOG_INFO("SCXMLInvokeHandler: Child completion callback invoked - invokeid: {}, session: {}", invokeid,
+                 childSessionId);
+        LOG_INFO("SCXMLInvokeHandler: Parent check - weakPtr valid: {}, parentSessionId: {}", !weakParentSM.expired(),
+                 parentSessionId);
 
-            // W3C SCXML Test 192: Check if parent StateMachine is in final state (thread-safe with weak_ptr)
-            // If parent already completed, don't send done.invoke (it would be ignored anyway)
-            auto parentSM = weakParentSM.lock();
-            if (!parentSM) {
-                LOG_DEBUG("SCXMLInvokeHandler: Parent StateMachine destroyed, skipping done.invoke.{}", invokeid);
-                return;
-            }
+        // W3C SCXML Test 192: Check if parent StateMachine is in final state (thread-safe with weak_ptr)
+        // If parent already completed, don't send done.invoke (it would be ignored anyway)
+        auto parentSM = weakParentSM.lock();
+        if (!parentSM) {
+            LOG_DEBUG("SCXMLInvokeHandler: Parent StateMachine destroyed, skipping done.invoke.{}", invokeid);
+            return;
+        }
 
-            if (parentSM->isInFinalState()) {
-                LOG_DEBUG("SCXMLInvokeHandler: Parent already in final state, skipping done.invoke.{}", invokeid);
-                return;
-            }
+        if (parentSM->isInFinalState()) {
+            LOG_DEBUG("SCXMLInvokeHandler: Parent already in final state, skipping done.invoke.{}", invokeid);
+            return;
+        }
 
-            // W3C SCXML 6.5: Generate done.invoke.id event
-            // ARCHITECTURE.md: Use InvokeHelper for Single Source of Truth (Zero Duplication with AOT)
-            std::string doneEvent = InvokeHelper::createDoneInvokeEventName(invokeid);
+        // W3C SCXML 6.5: Generate done.invoke.id event
+        // ARCHITECTURE.md: Use InvokeHelper for Single Source of Truth (Zero Duplication with AOT)
+        std::string doneEvent = InvokeHelper::createDoneInvokeEventName(invokeid);
 
-            // W3C SCXML 3.7/6.4: done.invoke is NOT a <send> element - automatic platform event
-            // ARCHITECTURE.md Zero Duplication: Match AOT raiseExternal() (bypasses EventScheduler)
-            // Prevents W3C SCXML 6.2 cancellation (only <send> delayed messages are cancelled)
-            // Note: EXTERNAL priority auto-detected for done.* events (EventRaiserImpl.cpp:148)
-            auto parentEventRaiser = parentSM->getEventRaiser();
-            if (parentEventRaiser) {
-                std::string eventData = "";  // W3C SCXML 6.4: done.invoke has no data payload
+        // W3C SCXML 3.7/6.4: done.invoke is NOT a <send> element - automatic platform event
+        // ARCHITECTURE.md Zero Duplication: Match AOT raiseExternal() (bypasses EventScheduler)
+        // Prevents W3C SCXML 6.2 cancellation (only <send> delayed messages are cancelled)
+        // Note: EXTERNAL priority auto-detected for done.* events (EventRaiserImpl.cpp:148)
+        auto parentEventRaiser = parentSM->getEventRaiser();
+        if (parentEventRaiser) {
+            std::string eventData = "";  // W3C SCXML 6.4: done.invoke has no data payload
 
-                bool success =
-                    parentEventRaiser->raiseEvent(doneEvent,       // event name (done.invoke.*)
-                                                  eventData,       // event data
-                                                  childSessionId,  // origin session
-                                                  invokeid,        // invoke ID
-                                                  "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"  // origin type
-                    );
+            bool success =
+                parentEventRaiser->raiseEvent(doneEvent,       // event name (done.invoke.*)
+                                              eventData,       // event data
+                                              childSessionId,  // origin session
+                                              invokeid,        // invoke ID
+                                              "http://www.w3.org/TR/scxml/#SCXMLEventProcessor"  // origin type
+                );
 
-                if (success) {
-                    LOG_INFO("SCXMLInvokeHandler: {} sent directly to parent's external queue (session: {}, matches "
-                             "AOT raiseExternal)",
-                             doneEvent, parentSessionId);
-                } else {
-                    LOG_ERROR("SCXMLInvokeHandler: Failed to send {} to parent session: {}", doneEvent,
-                              parentSessionId);
-                }
+            if (success) {
+                LOG_INFO("SCXMLInvokeHandler: {} sent directly to parent's external queue (session: {}, matches "
+                         "AOT raiseExternal)",
+                         doneEvent, parentSessionId);
             } else {
-                LOG_WARN("SCXMLInvokeHandler: Child reached final state but no parent EventRaiser available for: {}",
-                         doneEvent);
+                LOG_ERROR("SCXMLInvokeHandler: Failed to send {} to parent session: {}", doneEvent, parentSessionId);
             }
+        } else {
+            LOG_WARN("SCXMLInvokeHandler: Child reached final state but no parent EventRaiser available for: {}",
+                     doneEvent);
+        }
 
-            // W3C SCXML 6.2: Cancel pending delayed sends when child session terminates
-            // "If the SCXML session terminates before the delay interval has elapsed,
-            // the SCXML Processor MUST discard the message without attempting to deliver it."
-            // This applies only to <send> element messages, not done.invoke (W3C SCXML Test 187)
-            if (eventDispatcher) {
-                size_t cancelledCount = eventDispatcher->cancelEventsForSession(childSessionId);
-                LOG_INFO("SCXMLInvokeHandler: Cancelled {} pending delayed send(s) for terminated child session: {}",
-                         cancelledCount, childSessionId);
-            }
-        });
-        LOG_DEBUG("SCXMLInvokeHandler: Registered completion callback for invoke: {}", invokeid);
-    } else {
-        LOG_DEBUG("SCXMLInvokeHandler: Skipping completion callback registration (restoration mode) for invoke: {}",
-                  invokeid);
-    }
+        // W3C SCXML 6.2: Cancel pending delayed sends when child session terminates
+        // "If the SCXML session terminates before the delay interval has elapsed,
+        // the SCXML Processor MUST discard the message without attempting to deliver it."
+        // This applies only to <send> element messages, not done.invoke (W3C SCXML Test 187)
+        if (eventDispatcher) {
+            size_t cancelledCount = eventDispatcher->cancelEventsForSession(childSessionId);
+            LOG_INFO("SCXMLInvokeHandler: Cancelled {} pending delayed send(s) for terminated child session: {}",
+                     cancelledCount, childSessionId);
+        }
+    });
+    LOG_DEBUG("SCXMLInvokeHandler: Registered completion callback for invoke: {}", invokeid);
 
     // Set up EventRaiser callback to child StateMachine's processEvent
     LOG_DEBUG("SCXMLInvokeHandler: Setting EventRaiser callback for session: {}, EventRaiser: {}", childSessionId,
@@ -473,7 +470,6 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
     // W3C SCXML 3.11: Start child StateMachine or restore state based on mode
     if (!isRestoration) {
-        // Normal mode: Start the child StateMachine (will execute initial transitions)
         LOG_DEBUG("SCXMLInvokeHandler: Starting child StateMachine for invoke: {}", invokeid);
         if (!activeSession.smContext->get()->start()) {
             LOG_ERROR("SCXMLInvokeHandler: Failed to start child StateMachine for invoke: {}", invokeid);
@@ -767,7 +763,8 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
               childSessionId);
 
     // Start invoke with pre-allocated child session ID
-    std::string returnedId = handler->startInvokeWithSessionId(invoke, sessionId, eventDispatcher_, childSessionId);
+    std::string returnedId =
+        handler->startInvokeWithSessionId(invoke, sessionId, eventDispatcher_, childSessionId, false);
     if (returnedId.empty()) {
         LOG_ERROR("InvokeExecutor: Handler failed to start invoke of type: {}", invokeType);
 
@@ -1187,11 +1184,63 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
         auto activeStates = childSM->getActiveStates();
         childSnapshot->activeStates = std::set<std::string>(activeStates.begin(), activeStates.end());
 
+        // W3C SCXML 3.13: Capture event queues from child's EventRaiser
+        auto childEventRaiser = childSM->getEventRaiser();
+        if (childEventRaiser) {
+            childEventRaiser->getEventQueues(childSnapshot->internalQueue, childSnapshot->externalQueue);
+            LOG_DEBUG("SCXMLInvokeHandler: Captured child event queues - internal: {}, external: {}",
+                      childSnapshot->internalQueue.size(), childSnapshot->externalQueue.size());
+        }
+
+        // W3C SCXML 3.11: Capture child's nested invocations recursively
+        auto childInvokeExecutor = childSM->getInvokeExecutor();
+        if (childInvokeExecutor) {
+            childInvokeExecutor->captureInvokeState(childSnapshot->activeInvokes);
+            LOG_DEBUG("SCXMLInvokeHandler: Captured {} child nested invocations", childSnapshot->activeInvokes.size());
+        }
+
         // Capture datamodel (simplified - would need JSEngine integration for full implementation)
-        // For now, return minimal snapshot with active states only
         // Full implementation would extract datamodel via JSEngine
 
-        LOG_DEBUG("SCXMLInvokeHandler: Captured child state - {} active states", childSnapshot->activeStates.size());
+        // W3C SCXML 6.2: Capture child's scheduled events for accurate restoration
+        // Parent and child share the same scheduler (via eventDispatcher)
+        // Filter by child sessionId to get only child's scheduled events
+        if (session.eventDispatcher) {
+            auto eventDispatcherImpl = std::dynamic_pointer_cast<EventDispatcherImpl>(session.eventDispatcher);
+            if (eventDispatcherImpl) {
+                auto scheduler = eventDispatcherImpl->getScheduler();
+                if (scheduler) {
+                    auto allScheduledEvents = scheduler->getScheduledEvents();
+
+                    // Filter events belonging to this child session
+                    for (const auto &event : allScheduledEvents) {
+                        if (event.sessionId == session.sessionId) {
+                            // Convert ScheduledEventInfo to ScheduledEventSnapshot
+                            std::map<std::string, std::string> paramsMap;
+                            for (const auto &[paramName, paramValues] : event.params) {
+                                if (!paramValues.empty()) {
+                                    paramsMap[paramName] = paramValues[0];
+                                }
+                            }
+
+                            childSnapshot->scheduledEvents.emplace_back(
+                                event.eventName, event.sendId, event.originalDelay.count(), event.remainingTime.count(),
+                                event.sessionId, event.targetUri, event.eventType, event.eventData, event.content,
+                                paramsMap);
+                        }
+                    }
+
+                    LOG_DEBUG("SCXMLInvokeHandler: Captured {} child scheduled events for session {}",
+                              childSnapshot->scheduledEvents.size(), session.sessionId);
+                }
+            }
+        }
+
+        LOG_DEBUG("SCXMLInvokeHandler: Captured complete child state - {} active states, {} queued events, {} "
+                  "scheduled events",
+                  childSnapshot->activeStates.size(),
+                  childSnapshot->internalQueue.size() + childSnapshot->externalQueue.size(),
+                  childSnapshot->scheduledEvents.size());
 
         return childSnapshot;
     }
@@ -1222,8 +1271,88 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
             return;
         }
 
-        LOG_DEBUG("SCXMLInvokeHandler: Successfully restored child state - {} active states for session {}",
-                  childSnapshot.activeStates.size(), childSessionId);
+        // W3C SCXML 3.13: Restore child's event queues
+        auto childEventRaiser = childSM->getEventRaiser();
+        if (childEventRaiser) {
+            auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(childEventRaiser);
+            if (eventRaiserImpl) {
+                eventRaiserImpl->clearQueue();
+                for (const auto &eventSnapshot : childSnapshot.internalQueue) {
+                    eventRaiserImpl->raiseInternalEvent(eventSnapshot.name, eventSnapshot.data);
+                }
+                for (const auto &eventSnapshot : childSnapshot.externalQueue) {
+                    eventRaiserImpl->raiseExternalEvent(eventSnapshot.name, eventSnapshot.data);
+                }
+                LOG_DEBUG("SCXMLInvokeHandler: Restored child event queues - internal: {}, external: {}",
+                          childSnapshot.internalQueue.size(), childSnapshot.externalQueue.size());
+            }
+        }
+
+        // W3C SCXML 3.11: Restore child's nested invocations recursively
+        auto childInvokeExecutor = childSM->getInvokeExecutor();
+        if (childInvokeExecutor && !childSnapshot.activeInvokes.empty()) {
+            // Get shared_ptr from StateMachineContext for nested invocation restoration
+            auto childSMShared = session.smContext->getShared();
+            if (childSMShared) {
+                childInvokeExecutor->restoreInvokeState(childSnapshot.activeInvokes, childSMShared);
+                LOG_DEBUG("SCXMLInvokeHandler: Restored {} child nested invocations",
+                          childSnapshot.activeInvokes.size());
+            }
+        }
+
+        // W3C SCXML 6.2: Restore child's scheduled events for accurate time-travel debugging
+        if (session.eventDispatcher && !childSnapshot.scheduledEvents.empty()) {
+            auto eventDispatcherImpl = std::dynamic_pointer_cast<EventDispatcherImpl>(session.eventDispatcher);
+            if (eventDispatcherImpl) {
+                auto scheduler = eventDispatcherImpl->getScheduler();
+                if (scheduler) {
+                    // Cancel all current child scheduled events
+                    auto currentScheduledEvents = scheduler->getScheduledEvents();
+                    for (const auto &event : currentScheduledEvents) {
+                        if (event.sessionId == childSessionId) {
+                            scheduler->cancelEvent(event.sendId);
+                            LOG_DEBUG(
+                                "SCXMLInvokeHandler: Canceled child scheduled event '{}' (sendId: {}) before restore",
+                                event.eventName, event.sendId);
+                        }
+                    }
+
+                    // Recreate scheduled events from snapshot with accurate remainingTime
+                    for (const auto &eventSnapshot : childSnapshot.scheduledEvents) {
+                        // W3C SCXML 6.2.4: Recreate send operation with remaining time
+                        EventDescriptor event;
+                        event.eventName = eventSnapshot.eventName;
+                        event.data = eventSnapshot.eventData;
+                        event.type = eventSnapshot.eventType;
+                        event.target = eventSnapshot.targetUri;
+                        event.sendId = eventSnapshot.sendId;
+                        event.sessionId = childSessionId;  // Preserve child session ID
+
+                        // W3C SCXML 6.2: Restore params for _event.data construction
+                        for (const auto &[paramName, paramValue] : eventSnapshot.params) {
+                            event.params[paramName] = {paramValue};
+                        }
+
+                        // Schedule with remaining time (not original delay)
+                        auto delay = std::chrono::milliseconds(eventSnapshot.remainingTimeMs);
+                        auto future = session.eventDispatcher->sendEventDelayed(event, delay);
+
+                        LOG_DEBUG("SCXMLInvokeHandler: Restored child scheduled event '{}' (sendId: {}, remainingTime: "
+                                  "{}ms, originalDelay: {}ms)",
+                                  eventSnapshot.eventName, eventSnapshot.sendId, eventSnapshot.remainingTimeMs,
+                                  eventSnapshot.originalDelayMs);
+                    }
+
+                    LOG_DEBUG("SCXMLInvokeHandler: Restored {} child scheduled events for session {}",
+                              childSnapshot.scheduledEvents.size(), childSessionId);
+                }
+            }
+        }
+
+        LOG_DEBUG("SCXMLInvokeHandler: Successfully restored complete child state - {} active states, {} queued "
+                  "events for session {}",
+                  childSnapshot.activeStates.size(),
+                  childSnapshot.internalQueue.size() + childSnapshot.externalQueue.size(), childSessionId);
         return;
     }
 

@@ -45,6 +45,18 @@ public:
     void shutdown() override;
     size_t cancelEventsForSession(const std::string &sessionId) override;
 
+    /**
+     * @brief Get the scheduler for accessing scheduled events
+     *
+     * Used for snapshot capture/restore to access child state machine's scheduled events.
+     * Zero Duplication: Provides access to Single Source of Truth for scheduled events.
+     *
+     * @return Shared pointer to the event scheduler
+     */
+    std::shared_ptr<IEventScheduler> getScheduler() const {
+        return scheduler_;
+    }
+
 private:
     /**
      * @brief Execute an event immediately without scheduling

@@ -13,7 +13,7 @@ const PANEL_CONFIG = {
     DEFAULT_HEIGHT: 600,
     STORAGE_KEY: 'scxml-visualizer-panel-height',
     DEBUG_MODE: false,  // Set to true to enable debug logging
-    START_MINIMIZED: true  // Start with panel minimized by default
+    START_MINIMIZED: false  // Start with panel expanded by default
 };
 
 class PanelController {

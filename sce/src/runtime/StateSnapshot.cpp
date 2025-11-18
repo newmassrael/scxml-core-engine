@@ -61,4 +61,17 @@ std::optional<StateSnapshot> SnapshotManager::getLatestSnapshot() const {
     return snapshots_.back();
 }
 
+void SnapshotManager::removeSnapshotsAfter(int stepNumber) {
+    // Remove all snapshots with stepNumber > specified step
+    // This implements history branching for interactive debugging
+    snapshots_.erase(std::remove_if(snapshots_.begin(), snapshots_.end(),
+                                    [stepNumber](const StateSnapshot &s) { return s.stepNumber > stepNumber; }),
+                     snapshots_.end());
+}
+
+bool SnapshotManager::hasSnapshot(int stepNumber) const {
+    return std::any_of(snapshots_.begin(), snapshots_.end(),
+                       [stepNumber](const StateSnapshot &s) { return s.stepNumber == stepNumber; });
+}
+
 }  // namespace SCE
