@@ -138,38 +138,23 @@
 {% endfor %}
 
 {% if model.states.values() | selectattr('datamodel') | list %}
-        // W3C SCXML 5.10: Initialize state-level datamodel variables in global scope
+{% if model.binding == 'early' %}
+        // W3C SCXML 5.3: Early binding - Initialize state-level datamodel variables at startup
         // All datamodel variables are globally accessible regardless of state entry
+        // ARCHITECTURE.md Zero Duplication: Uses datamodel_macros.jinja2 (DRY principle)
+{% import 'datamodel_macros.jinja2' as dm %}
 {% for state_id, state in model.states.items() %}
 {% if state.datamodel %}
         // State {{ state_id }} datamodel variables
-{% for var in state.datamodel %}
-{% if var.expr %}
-        ::SCE::DataModelInitHelper::initializeVariableFromExpr(
-            jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
-            [&engine](const ::std::string& msg) {
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-            });
-        LOG_DEBUG("AOT initializeDataModel: Initialized state {{ state_id }} variable '{{ var.id }}' from expr");
-{% elif var.content %}
-        ::SCE::DataModelInitHelper::initializeVariable(
-            jsEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content }})",
-            [&engine](const ::std::string& msg) {
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-            });
-        LOG_DEBUG("AOT initializeDataModel: Initialized state {{ state_id }} variable '{{ var.id }}' from content");
-{% elif var.src %}
-        ::SCE::DataModelInitHelper::initializeVariableFromSrc(
-            jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
-            ::SCE::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
-            [&engine](const ::std::string& msg) {
-                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-            });
-        LOG_DEBUG("AOT initializeDataModel: Initialized state {{ state_id }} variable '{{ var.id }}' from src");
+{{ dm.initialize_state_datamodel(state, state_id, "AOT initializeDataModel", base_path) }}
 {% endif %}
 {% endfor %}
+{% else %}
+        // W3C SCXML 5.9: Late binding - State datamodel variables initialized on state entry
+        // Variables are NOT initialized here, but in executeEntryActions() for each state
+        // ARCHITECTURE.md Zero Duplication: Uses datamodel_macros.jinja2 (DRY principle)
+        (void)engine;  // Suppress unused parameter warning for late binding
 {% endif %}
-{% endfor %}
 {% endif %}
 
 {% if model.global_scripts %}
