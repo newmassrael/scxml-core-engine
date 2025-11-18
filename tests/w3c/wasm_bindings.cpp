@@ -41,6 +41,13 @@ using namespace SCE::W3C;
  * @endcode
  */
 EMSCRIPTEN_BINDINGS(interactive_test_runner) {
+    // Bind StepResult enum for step control state
+    enum_<StepResult>("StepResult")
+        .value("SUCCESS", StepResult::SUCCESS)
+        .value("NO_EVENTS_READY", StepResult::NO_EVENTS_READY)
+        .value("NO_EVENTS_AVAILABLE", StepResult::NO_EVENTS_AVAILABLE)
+        .value("FINAL_STATE", StepResult::FINAL_STATE);
+
     // Bind std::vector<std::string> for getActiveStates()
     register_vector<std::string>("VectorString");
 
@@ -67,6 +74,12 @@ EMSCRIPTEN_BINDINGS(interactive_test_runner) {
         .function("removeExternalEvent", &InteractiveTestRunner::removeExternalEvent)
 
         .function("pollScheduler", &InteractiveTestRunner::pollScheduler)
+
+        .function("hasQueuedEvents", &InteractiveTestRunner::hasQueuedEvents)
+
+        .function("hasScheduledEvents", &InteractiveTestRunner::hasScheduledEvents)
+
+        .function("getNextScheduledEventTime", &InteractiveTestRunner::getNextScheduledEventTime)
 
         // State introspection
         .function("getActiveStates", &InteractiveTestRunner::getActiveStates)

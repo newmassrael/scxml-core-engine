@@ -217,8 +217,12 @@ private:
 
     /**
      * @brief Execute callback for a queued event (synchronous processing)
+     *
+     * W3C SCXML 3.13: Event processing result indicates whether state transition occurred.
+     * The return value reflects the callback's transition success, not just execution status.
+     *
      * @param event Event to process
-     * @return true if callback was executed successfully, false otherwise
+     * @return true if event caused successful state transition, false otherwise
      */
     bool executeEventCallback(const QueuedEvent &event);
 

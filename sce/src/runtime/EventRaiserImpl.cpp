@@ -459,7 +459,7 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         currentOriginType_.clear();
         currentEventType_.clear();
         LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
-        return true;
+        return result;  // Return actual callback result (transition success/failure)
     } catch (const std::exception &e) {
         LOG_ERROR("EventRaiserImpl: Exception processing event '{}': {}", event.eventName, e.what());
         currentOriginSessionId_.clear();
