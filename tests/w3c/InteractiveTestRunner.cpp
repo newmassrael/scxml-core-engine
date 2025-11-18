@@ -28,6 +28,10 @@
 #include <set>
 #include <unordered_set>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 namespace SCE::W3C {
 
 InteractiveTestRunner::InteractiveTestRunner()
@@ -1580,6 +1584,36 @@ emscripten::val InteractiveTestRunner::getSubSCXMLStructures() const {
 
     LOG_DEBUG("Returning {} sub-SCXML structures to JavaScript", subScxmlStructures_.size());
     return result;
+}
+
+// Standalone function to set log level from JavaScript
+EMSCRIPTEN_KEEPALIVE
+extern "C" void setSpdlogLevel(const char *level) {
+    if (!level) {
+        return;
+    }
+
+    LogLevel logLevel = LogLevel::Off;  // Default: no logs
+
+    std::string levelStr(level);
+    if (levelStr == "trace") {
+        logLevel = LogLevel::Trace;
+    } else if (levelStr == "debug") {
+        logLevel = LogLevel::Debug;
+    } else if (levelStr == "info") {
+        logLevel = LogLevel::Info;
+    } else if (levelStr == "warn") {
+        logLevel = LogLevel::Warn;
+    } else if (levelStr == "error") {
+        logLevel = LogLevel::Error;
+    } else if (levelStr == "critical") {
+        logLevel = LogLevel::Critical;
+    } else if (levelStr == "off") {
+        logLevel = LogLevel::Off;
+    }
+
+    Logger::setLevel(logLevel);
+    LOG_INFO("Log level set to: {}", levelStr);
 }
 #endif
 

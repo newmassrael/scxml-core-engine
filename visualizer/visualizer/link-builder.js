@@ -69,7 +69,7 @@ class LinkBuilder {
 
     getVisibleLinks(allLinks, nodes) {
         if (this.visualizer.debugMode) {
-            console.log(`[GET VISIBLE LINKS] Processing ${allLinks.length} links...`);
+            logger.debug(`[GET VISIBLE LINKS] Processing ${allLinks.length} links...`);
         }
         return allLinks.map(link => {
             // Hide containment/delegation
@@ -99,12 +99,12 @@ class LinkBuilder {
                 // Check if redirect would create self-loop (e.g., p→ps1 becomes p→p)
                 if (link.source === targetHidden.id) {
                     if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${link.source}→${targetHidden.id}, hiding link`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${link.source}→${targetHidden.id}, hiding link`);
                 }
                     return null;
                 }
                 if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: target hidden, redirect to ${targetHidden.id}`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: target hidden, redirect to ${targetHidden.id}`);
                 }
                 modifiedLink.visualTarget = targetHidden.id;
                 modifiedLink.originalTarget = link.target;  // Store for auto-expand
@@ -115,12 +115,12 @@ class LinkBuilder {
                 // Check if redirect would create self-loop (e.g., s2→p becomes s2→s2)
                 if (link.target === sourceHidden.id) {
                     if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${sourceHidden.id}→${link.target}, hiding link`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${sourceHidden.id}→${link.target}, hiding link`);
                 }
                     return null;
                 }
                 if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: source hidden, redirect from ${sourceHidden.id}`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: source hidden, redirect from ${sourceHidden.id}`);
                 }
                 modifiedLink.visualSource = sourceHidden.id;
                 modifiedLink.originalSource = link.source;
@@ -129,7 +129,7 @@ class LinkBuilder {
             // Both hidden in different ancestors - redirect both ends
             if (sourceHidden && targetHidden && sourceHidden.id !== targetHidden.id) {
                 if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: both hidden in different ancestors, redirecting ${sourceHidden.id}→${targetHidden.id}`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: both hidden in different ancestors, redirecting ${sourceHidden.id}→${targetHidden.id}`);
                 }
                 modifiedLink.visualSource = sourceHidden.id;
                 modifiedLink.visualTarget = targetHidden.id;
@@ -142,7 +142,7 @@ class LinkBuilder {
             const visualTargetNode = nodes.find(n => n.id === modifiedLink.visualTarget);
 
             if (!visualSourceNode || !visualTargetNode) {
-                console.warn(`[GET VISIBLE LINKS] Skipping ${link.source}→${link.target}: visual nodes not found (${modifiedLink.visualSource}, ${modifiedLink.visualTarget})`);
+                logger.warn(`[GET VISIBLE LINKS] Skipping ${link.source}→${link.target}: visual nodes not found (${modifiedLink.visualSource}, ${modifiedLink.visualTarget})`);
                 return null;
             }
 

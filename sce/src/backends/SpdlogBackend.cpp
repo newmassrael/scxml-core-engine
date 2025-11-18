@@ -51,7 +51,12 @@ SpdlogBackend::SpdlogBackend(const std::string &logDir, bool logToFile) {
         spdlog::register_logger(logger_);
     }
 
-    logger_->set_level(spdlog::level::debug);
+    // Default log level: off for WASM (JavaScript controls it), debug for native
+#ifdef __EMSCRIPTEN__
+    logger_->set_level(spdlog::level::off);  // WASM: Start silent, JavaScript enables via setSpdlogLevel()
+#else
+    logger_->set_level(spdlog::level::debug);  // Native: Default debug level
+#endif
 
     // Check SPDLOG_LEVEL environment variable
     const char *env_level = std::getenv("SPDLOG_LEVEL");

@@ -100,7 +100,7 @@ class PathCalculator {
      */
     _createLabelPosition(x, y, pathType, transitionId) {
         const pos = { x, y };
-        console.log(`[LABEL POS] ${transitionId}: ${pathType} → position(${x.toFixed(1)}, ${y.toFixed(1)})`);
+        logger.debug(`[LABEL POS] ${transitionId}: ${pathType} → position(${x.toFixed(1)}, ${y.toFixed(1)})`);
         return pos;
     }
 
@@ -121,12 +121,12 @@ class PathCalculator {
 
     getTransitionLabelPosition(transition) {
         const transitionId = `${transition.source}→${transition.target}`;
-        console.log(`[LABEL POS] Calculating position for ${transitionId}`);
+        logger.debug(`[LABEL POS] Calculating position for ${transitionId}`);
 
         // Check for custom position first (user-dragged)
         const customPos = this.visualizer.getCustomLabelPosition(transition);
         if (customPos) {
-            console.log(`[LABEL POS] ${transitionId}: Using custom position (${customPos.x.toFixed(1)}, ${customPos.y.toFixed(1)})`);
+            logger.debug(`[LABEL POS] ${transitionId}: Using custom position (${customPos.x.toFixed(1)}, ${customPos.y.toFixed(1)})`);
             return customPos;
         }
 
@@ -142,7 +142,7 @@ class PathCalculator {
             const tx = end.x;
             const ty = end.y;
 
-            console.log(`[LABEL POS] ${transitionId}: Has routing - source(${sx}, ${sy}) [${sourceEdge}] → target(${tx}, ${ty}) [${targetEdge}]`);
+            logger.debug(`[LABEL POS] ${transitionId}: Has routing - source(${sx}, ${sy}) [${sourceEdge}] → target(${tx}, ${ty}) [${targetEdge}]`);
 
             const MIN_SEGMENT = PATH_CONSTANTS.MIN_SEGMENT_LENGTH;
             const sourceIsVertical = (sourceEdge === 'top' || sourceEdge === 'bottom');
@@ -207,12 +207,12 @@ class PathCalculator {
         }
 
         // Fallback to simple midpoint (no routing information)
-        console.log(`[LABEL POS] ${transitionId}: No routing info - using fallback midpoint`);
+        logger.debug(`[LABEL POS] ${transitionId}: No routing info - using fallback midpoint`);
         const sourceNode = this.visualizer.nodes.find(n => n.id === transition.source);
         const targetNode = this.visualizer.nodes.find(n => n.id === transition.target);
 
         if (!sourceNode || !targetNode) {
-            console.log(`[LABEL POS] ${transitionId}: ERROR - Source or target node not found`);
+            logger.debug(`[LABEL POS] ${transitionId}: ERROR - Source or target node not found`);
             return { x: 0, y: 0 };
         }
 
@@ -420,7 +420,7 @@ class PathCalculator {
 
                 // If blocked by initial transition, try alternative edges
                 if (this.visualizer.layoutOptimizer.hasInitialTransitionOnEdge(node.id, side)) {
-                    console.log(`[FALLBACK] ${node.id} ${side}: blocked, trying alternative edge`);
+                    logger.debug(`[FALLBACK] ${node.id} ${side}: blocked, trying alternative edge`);
 
                     // Try alternative edges based on original direction
                     const alternatives = [];
@@ -433,7 +433,7 @@ class PathCalculator {
                     // Try each alternative
                     for (const altSide of alternatives) {
                         if (!this.visualizer.layoutOptimizer.hasInitialTransitionOnEdge(node.id, altSide)) {
-                            console.log(`[FALLBACK] ${node.id}: using ${altSide} instead of ${side}`);
+                            logger.debug(`[FALLBACK] ${node.id}: using ${altSide} instead of ${side}`);
 
                             // Calculate proper snap position for alternative edge
                             const altDirection = isSource ? `to-${altSide}` : `from-${altSide}`;
@@ -662,7 +662,7 @@ class PathCalculator {
                          targetNode.x !== undefined && targetNode.y !== undefined;
 
         if (link.linkType !== 'containment' && link.linkType !== 'delegation' && hasCoords) {
-            console.warn(`[CALC DIR WARNING] ${link.source}→${link.target}: No routing found! Optimizer should have run first.`);
+            logger.warn(`[CALC DIR WARNING] ${link.source}→${link.target}: No routing found! Optimizer should have run first.`);
         }
     }
 
@@ -681,7 +681,7 @@ class PathCalculator {
 
             // Debug mode: log path coordinates
             if (this.visualizer.debugMode) {
-                console.log(`[PATH DEBUG] ${link.source}→${link.target}: source=(${sx.toFixed(1)}, ${sy.toFixed(1)}), target=(${tx.toFixed(1)}, ${ty.toFixed(1)})`);
+                logger.debug(`[PATH DEBUG] ${link.source}→${link.target}: source=(${sx.toFixed(1)}, ${sy.toFixed(1)}), target=(${tx.toFixed(1)}, ${ty.toFixed(1)})`);
             }
 
             const dx = Math.abs(tx - sx);
@@ -737,7 +737,7 @@ class PathCalculator {
                 // Path: start → horizontal MIN_SEGMENT → vertical to target y → horizontal MIN_SEGMENT → end
                 const path = `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${ty} L ${x2} ${ty} L ${tx} ${ty}`;
                 if (this.visualizer.debugMode) {
-                    console.log(`[PATH GEN] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: M(${sx.toFixed(1)},${sy.toFixed(1)}) →H(${x1.toFixed(1)},${sy.toFixed(1)}) →V(${x1.toFixed(1)},${ty.toFixed(1)}) →H(${x2.toFixed(1)},${ty.toFixed(1)}) →H(${tx.toFixed(1)},${ty.toFixed(1)})`);
+                    logger.debug(`[PATH GEN] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: M(${sx.toFixed(1)},${sy.toFixed(1)}) →H(${x1.toFixed(1)},${sy.toFixed(1)}) →V(${x1.toFixed(1)},${ty.toFixed(1)}) →H(${x2.toFixed(1)},${ty.toFixed(1)}) →H(${tx.toFixed(1)},${ty.toFixed(1)})`);
                 }
                 return path;
             } else if (sourceIsVertical && !targetIsVertical) {
@@ -779,7 +779,7 @@ class PathCalculator {
                 // Path: start → horizontal MIN_SEGMENT → vertical to y2 → vertical MIN_SEGMENT to end
                 const path = `M ${sx} ${sy} L ${x1} ${sy} L ${x1} ${y2} L ${tx} ${y2} L ${tx} ${ty}`;
                 if (this.visualizer.debugMode) {
-                    console.log(`[PATH GEN] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: M(${sx.toFixed(1)},${sy.toFixed(1)}) →H(${x1.toFixed(1)},${sy.toFixed(1)}) →V(${x1.toFixed(1)},${y2.toFixed(1)}) →H(${tx.toFixed(1)},${y2.toFixed(1)}) →V(${tx.toFixed(1)},${ty.toFixed(1)})`);
+                    logger.debug(`[PATH GEN] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: M(${sx.toFixed(1)},${sy.toFixed(1)}) →H(${x1.toFixed(1)},${sy.toFixed(1)}) →V(${x1.toFixed(1)},${y2.toFixed(1)}) →H(${tx.toFixed(1)},${y2.toFixed(1)}) →V(${tx.toFixed(1)},${ty.toFixed(1)})`);
                 }
                 return path;
             }
@@ -793,7 +793,7 @@ class PathCalculator {
                          targetNode.x !== undefined && targetNode.y !== undefined;
 
         if (link.linkType !== 'containment' && link.linkType !== 'delegation' && hasCoords) {
-            console.warn(`[PATH WARNING] ${link.source}→${link.target}: No routing found! Falling back to node centers.`);
+            logger.warn(`[PATH WARNING] ${link.source}→${link.target}: No routing found! Falling back to node centers.`);
         }
 
         // Draw direct line as emergency fallback
@@ -805,7 +805,7 @@ class PathCalculator {
     }
 
     getLinkPath(link) {
-        console.log(`[GET LINK PATH] Called for ${link.source}→${link.target}`);
+        logger.debug(`[GET LINK PATH] Called for ${link.source}→${link.target}`);
         // Get source and target nodes (use visual redirect if available)
         const visualSourceId = link.visualSource || link.source;
         const visualTargetId = link.visualTarget || link.target;
@@ -813,7 +813,7 @@ class PathCalculator {
         const targetNode = this.visualizer.nodes.find(n => n.id === visualTargetId);
 
         if (!sourceNode || !targetNode) {
-            console.log(`[GET LINK PATH] Source or target node not found`);
+            logger.debug(`[GET LINK PATH] Source or target node not found`);
             return 'M 0 0';
         }
 

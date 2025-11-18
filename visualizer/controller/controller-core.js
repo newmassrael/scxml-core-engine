@@ -103,7 +103,7 @@ class ExecutionController {
             const params = new URLSearchParams(window.location.hash.substring(1));
             const testId = params.get('test');
             if (!testId) {
-                console.log('No test ID in URL');
+                logger.debug('No test ID in URL');
                 return;
             }
             // DRY Principle: Use shared path resolution from utils.js
@@ -112,7 +112,7 @@ class ExecutionController {
             const metadataUrl = `${resourcesPrefix}/${testId}/metadata.txt`;
             const response = await fetch(metadataUrl);
             if (!response.ok) {
-                console.warn(`metadata.txt not found for test ${testId}`);
+                logger.warn(`metadata.txt not found for test ${testId}`);
                 return;
             }
             const text = await response.text();
@@ -131,7 +131,7 @@ class ExecutionController {
                 const specLabel = specnum ? ` (W3C SCXML ${specnum})` : '';
                 descElement.textContent = description + specLabel;
             }
-            console.log(`Loaded metadata for test ${testId}: ${description}`);
+            logger.debug(`Loaded metadata for test ${testId}: ${description}`);
         } catch (error) {
             console.error('Error loading test metadata:', error);
         }
@@ -150,7 +150,7 @@ class ExecutionController {
             // Check if already in final state and disable step forward if needed
             this.checkAndHandleFinalState();
 
-            console.log('ExecutionController: Initial state updated');
+            logger.debug('ExecutionController: Initial state updated');
         } catch (error) {
             console.error('Error initializing controller state:', error);
         }
