@@ -1688,7 +1688,24 @@ bool StateMachine::isInFinalState() const {
         return false;
     }
 
-    return isStateInFinalState(getCurrentState());
+    // W3C SCXML: Check only top-level final states, not child final states of compound states
+    // Bug fix: Compound state children (e.g., s02 in test294) should NOT make the machine final
+    auto activeStates = hierarchyManager_->getActiveStates();
+    for (const auto &stateId : activeStates) {
+        auto state = model_->findStateById(stateId);
+        if (!state) {
+            continue;
+        }
+
+        // Only consider top-level final states (states without parent)
+        if (state->isFinalState() && !state->getParent()) {
+            LOG_DEBUG("StateMachine::isInFinalState: Found top-level final state '{}'", stateId);
+            return true;
+        }
+    }
+
+    LOG_DEBUG("StateMachine::isInFinalState: No top-level final states active");
+    return false;
 }
 
 std::string StateMachine::getLastTransitionSource() const {
