@@ -220,8 +220,8 @@ class InteractionHandler {
         let html = '';
 
         this.visualizer.transitions.forEach((transition, index) => {
-            // Always use source_target format (C++ transition.id is just an index)
-            const transitionId = `${transition.source}_${transition.target}`;
+            // Use shared utility function from utils.js (Single Source of Truth)
+            const transitionId = getTransitionId(transition);
             const eventText = transition.event || '(eventless)';
 
             // Add condition and actions for better distinction

@@ -210,7 +210,8 @@ class ControlHandler {
         if (!transition || !transition.source || !transition.target) return;
 
         try {
-            const transitionId = `${transition.source}-${transition.target}`;
+            // Use shared utility function from utils.js (Single Source of Truth)
+            const transitionId = getTransitionId(transition);
             console.log(`[Highlight Panel] Highlighting transition in panel: ${transitionId}`);
 
             const panel = document.getElementById('transition-list-panel');

@@ -271,9 +271,8 @@ class TransitionFocusManager {
      * Get consistent transition ID
      */
     getTransitionId(transition) {
-        if (!transition) return null;
-        // Always use source_target format (C++ transition.id is just an index)
-        return `${transition.source}_${transition.target}`;
+        // Delegate to shared utility function from utils.js (Single Source of Truth)
+        return getTransitionId(transition);
     }
 
     /**
