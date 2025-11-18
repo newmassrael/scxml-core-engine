@@ -45,6 +45,9 @@ const std::regex TXMLConverter::CONF_COMPARE_ID_VAL_ATTR{R"abc(conf:compareIDVal
 const std::regex TXMLConverter::CONF_VAR_EXPR_NUMERIC_ATTR{R"def(conf:varExpr="([0-9]+)")def", std::regex::optimize};
 // conf:varExpr="varname" -> expr="varname" (general)
 const std::regex TXMLConverter::CONF_VAR_EXPR_ATTR{R"def(conf:varExpr="([^"]*)")def", std::regex::optimize};
+// conf:varNonexistentStruct="1" -> expr="Var1.foo" (Test 307: late binding with non-existent substructure)
+const std::regex TXMLConverter::CONF_VAR_NONEXISTENT_STRUCT_ATTR{R"def(conf:varNonexistentStruct="([0-9]+)")def",
+                                                                 std::regex::optimize};
 
 const std::regex TXMLConverter::CONF_ID_VAL_ATTR{R"ghi(conf:idVal="([^"]*)")ghi", std::regex::optimize};
 
@@ -561,6 +564,10 @@ std::string TXMLConverter::convertConfAttributes(const std::string &content) {
     // conf:varExpr - use pre-compiled class members (Tests 153, 186)
     result = std::regex_replace(result, CONF_VAR_EXPR_NUMERIC_ATTR, R"(expr="Var$1")");
     result = std::regex_replace(result, CONF_VAR_EXPR_ATTR, R"(expr="$1")");
+
+    // conf:varNonexistentStruct - Test 307: late binding with non-existent substructure
+    // conf:varNonexistentStruct="1" -> expr="Var1.foo" (accessing non-existent property)
+    result = std::regex_replace(result, CONF_VAR_NONEXISTENT_STRUCT_ATTR, R"(expr="Var$1.foo")");
 
     // Event data field access (Tests: 176, 186, 205, 233, 234)
     // conf:eventDataFieldValue="aParam" -> expr="_event.data.aParam"

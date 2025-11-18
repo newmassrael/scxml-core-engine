@@ -24,7 +24,7 @@ is the same in the two cases -->
  </datamodel>
  
   <onentry>
-   <log label="entering s1, value of non-existent substructure of Var 1 is: "/>
+   <log label="entering s1, value of non-existent substructure of Var 1 is: " expr="Var1.foo"/>
    <raise event="bar"/>
    </onentry>
 

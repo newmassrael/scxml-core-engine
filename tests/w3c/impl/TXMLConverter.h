@@ -132,6 +132,8 @@ private:
     static const std::regex CONF_VAR_EXPR_NUMERIC_ATTR;
     // conf:varExpr="varname" -> expr="varname" (general)
     static const std::regex CONF_VAR_EXPR_ATTR;
+    // conf:varNonexistentStruct="1" -> expr="Var1.foo" (Test 307: late binding with non-existent substructure)
+    static const std::regex CONF_VAR_NONEXISTENT_STRUCT_ATTR;
     static const std::regex CONF_ID_VAL_ATTR;
 
     // Test 155 specific patterns

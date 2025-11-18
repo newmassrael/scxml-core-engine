@@ -1,0 +1,48 @@
+{#
+    Datamodel Initialization Macros (Jinja2)
+
+    Purpose: Eliminate code duplication between early and late binding initialization
+    - DRY Principle: Single definition for datamodel variable initialization
+    - Zero Duplication: Shared logic for both initializeDataModel() and executeEntryActions()
+
+    Usage:
+    - Early binding: Called from jsengine_helpers.jinja2 initializeDataModel()
+    - Late binding: Called from entry_exit_actions.jinja2 executeEntryActions()
+#}
+
+{# Macro: Initialize single datamodel variable (expr/content/src) #}
+{% macro initialize_variable(var, state_id, log_prefix, base_path='') %}
+{% if var.expr %}
+                // State {{ state_id }} variable '{{ var.id }}' from expr
+                ::SCE::DataModelInitHelper::initializeVariableFromExpr(
+                    jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
+                    [&engine](const ::std::string& msg) {
+                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                    });
+                LOG_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from expr");
+{% elif var.content %}
+                // State {{ state_id }} variable '{{ var.id }}' from content
+                ::SCE::DataModelInitHelper::initializeVariable(
+                    jsEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content }})",
+                    [&engine](const ::std::string& msg) {
+                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                    });
+                LOG_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from content");
+{% elif var.src %}
+                // State {{ state_id }} variable '{{ var.id }}' from src
+                ::SCE::DataModelInitHelper::initializeVariableFromSrc(
+                    jsEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
+                    ::SCE::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
+                    [&engine](const ::std::string& msg) {
+                        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                    });
+                LOG_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from src");
+{% endif %}
+{% endmacro %}
+
+{# Macro: Initialize all datamodel variables for a state #}
+{% macro initialize_state_datamodel(state, state_id, log_prefix, base_path='') %}
+{% for var in state.datamodel %}
+{{ initialize_variable(var, state_id, log_prefix, base_path) }}
+{% endfor %}
+{% endmacro %}

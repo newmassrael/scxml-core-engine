@@ -64,8 +64,20 @@
         switch (state) {
 {% for state_id, state in model.states.items() %}
             case State::{{ state_id | capitalize }}:
-{% if state.on_entry or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
+{% if state.datamodel or state.on_entry or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
+{% if state.datamodel and model.binding == 'late' %}
+                // ============================================================
+                // W3C SCXML 5.9: LATE BINDING - Initialize datamodel on state entry
+                // ARCHITECTURE.md Zero Duplication: DataModelInitHelper shared with Interpreter
+                // ARCHITECTURE.md DRY Principle: Uses datamodel_macros.jinja2
+                // ============================================================
+                ensureJSEngine();
+                auto& jsEngine = ::SCE::JSEngine::instance();
+{% import 'datamodel_macros.jinja2' as dm %}
+{{ dm.initialize_state_datamodel(state, state_id, "AOT executeEntryActions: Late binding initialized", base_path) }}
+
+{% endif %}
 {% if state.static_invokes %}
                 // ============================================================
                 // W3C SCXML 6.4: STATIC INVOKE - Pure AOT Strategy
