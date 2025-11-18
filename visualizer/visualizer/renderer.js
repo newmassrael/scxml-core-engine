@@ -1719,8 +1719,8 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
 
             // Assign color index (cycles 0-5)
             link.colorIndex = transitionCounter % colorCount;
-            // Always use source_target format (C++ transition.id is just an index)
-            link.transitionId = `${link.source}_${link.target}`;
+            // Use shared utility function from utils.js (Single Source of Truth)
+            link.transitionId = getTransitionId(link);
             transitionCounter++;
         });
 
