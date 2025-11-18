@@ -70,14 +70,14 @@ class ControlHandler {
         // W3C SCXML 6.3: State navigate event handler for invoke child SCXML
         this.controller.stateNavigateHandler = async (event) => {
             const {stateId, invokeSrc, invokeSrcExpr, invokeId} = event.detail;
-            console.log(`State navigate event received: ${stateId} -> ${invokeSrc || invokeSrcExpr}`);
+            logger.debug(`State navigate event received: ${stateId} -> ${invokeSrc || invokeSrcExpr}`);
             
             // Load child SCXML structure
             await this.controller.handleStateNavigation(stateId, invokeSrc, invokeSrcExpr, invokeId);
         };
         document.addEventListener('state-navigate', this.controller.stateNavigateHandler);
 
-        console.log('Execution controls initialized (Arrow keys: step, R: reset)');
+        logger.debug('Execution controls initialized (Arrow keys: step, R: reset)');
     }
 
     setupEventButtons() {
@@ -100,7 +100,7 @@ class ControlHandler {
             this.controller.elements.eventButtonsContainer.appendChild(button);
         });
 
-        console.log(`Created ${this.controller.availableEvents.length} event buttons`);
+        logger.debug(`Created ${this.controller.availableEvents.length} event buttons`);
     }
 
     checkAndHandleFinalState() {
@@ -108,7 +108,7 @@ class ControlHandler {
             this.controller.disableButton('btn-step-forward');
             const activeStates = this.controller.runner.getActiveStates();
             const stateList = activeStates.length > 0 ? activeStates.join(', ') : 'unknown';
-            console.log(`State machine in final state: ${stateList}`);
+            logger.debug(`State machine in final state: ${stateList}`);
         } else {
             this.controller.enableButton('btn-step-forward');
         }
@@ -118,7 +118,7 @@ class ControlHandler {
         if (!stateId || !this.controller.visualizer) return;
 
         try {
-            console.log(`[Focus State] Focusing on state: ${stateId}`);
+            logger.debug(`[Focus State] Focusing on state: ${stateId}`);
 
             // Single-window navigation: Only check current diagram container
             const container = d3.select('#state-diagram-single');
@@ -126,11 +126,11 @@ class ControlHandler {
             const foundInContainer = foundStateNode && !foundStateNode.empty() ? container : null;
 
             if (!foundStateNode || foundStateNode.empty()) {
-                console.warn(`[Focus State] State not found in any container: ${stateId}`);
+                logger.warn(`[Focus State] State not found in any container: ${stateId}`);
                 return;
             }
 
-            console.log(`[Focus State] Found state element: ${stateId}`);
+            logger.debug(`[Focus State] Found state element: ${stateId}`);
 
             // Visual feedback: add blue border effect (like Transition Info)
             // Select all state elements: g.node.state, compound-collapsed, compound-container
@@ -138,7 +138,7 @@ class ControlHandler {
             stateElements.classed('focused', d => {
                 const isFocused = d && d.id === stateId;
                 if (isFocused) {
-                    console.log(`[Focus State] Adding focused class to: ${stateId}`);
+                    logger.debug(`[Focus State] Adding focused class to: ${stateId}`);
                 }
                 return isFocused;
             });
@@ -151,13 +151,13 @@ class ControlHandler {
                     block: 'center',
                     inline: 'center'
                 });
-                console.log(`[Focus State] Scrolling state into view`);
+                logger.debug(`[Focus State] Scrolling state into view`);
             }
 
             // Remove focus after animation duration
             setTimeout(() => {
                 stateElements.classed('focused', false);
-                console.log(`[Focus State] Removed focused class from all states`);
+                logger.debug(`[Focus State] Removed focused class from all states`);
             }, FOCUS_HIGHLIGHT_DURATION);
         } catch (error) {
             console.error('Error focusing state:', error);
@@ -168,7 +168,7 @@ class ControlHandler {
         if (!stateId) return;
 
         try {
-            console.log(`[Highlight Panel] Highlighting state in panel: ${stateId}`);
+            logger.debug(`[Highlight Panel] Highlighting state in panel: ${stateId}`);
 
             // Find the state info block in the State Actions panel
             const stateInfoBlocks = document.querySelectorAll('.action-info');
@@ -190,7 +190,7 @@ class ControlHandler {
                         block: 'nearest'
                     });
                     
-                    console.log(`[Highlight Panel] Added highlight to: ${stateId}`);
+                    logger.debug(`[Highlight Panel] Added highlight to: ${stateId}`);
                 }
             });
 
@@ -199,7 +199,7 @@ class ControlHandler {
                 stateInfoBlocks.forEach(block => {
                     block.classList.remove('panel-highlighted');
                 });
-                console.log(`[Highlight Panel] Removed highlight from panel`);
+                logger.debug(`[Highlight Panel] Removed highlight from panel`);
             }, PANEL_HIGHLIGHT_DURATION);
         } catch (error) {
             console.error('Error highlighting state in panel:', error);
@@ -212,7 +212,7 @@ class ControlHandler {
         try {
             // Use shared utility function from utils.js (Single Source of Truth)
             const transitionId = getTransitionId(transition);
-            console.log(`[Highlight Panel] Highlighting transition in panel: ${transitionId}`);
+            logger.debug(`[Highlight Panel] Highlighting transition in panel: ${transitionId}`);
 
             const panel = document.getElementById('transition-list-panel');
             if (!panel) return;
@@ -236,7 +236,7 @@ class ControlHandler {
                     block: 'nearest'
                 });
                 
-                console.log(`[Highlight Panel] Added highlight to: ${transitionId}`);
+                logger.debug(`[Highlight Panel] Added highlight to: ${transitionId}`);
             }
 
             // Remove highlight after animation duration
@@ -244,7 +244,7 @@ class ControlHandler {
                 transitionItems.forEach(item => {
                     item.classList.remove('panel-highlighted');
                 });
-                console.log(`[Highlight Panel] Removed highlight from transition panel`);
+                logger.debug(`[Highlight Panel] Removed highlight from transition panel`);
             }, PANEL_HIGHLIGHT_DURATION);
         } catch (error) {
             console.error('Error highlighting transition in panel:', error);
@@ -252,7 +252,7 @@ class ControlHandler {
     }
 
     showMessage(message, type = 'info') {
-        console.log(`[${type.toUpperCase()}] ${message}`);
+        logger.debug(`[${type.toUpperCase()}] ${message}`);
     }
 
     disableButton(buttonId) {
@@ -298,7 +298,7 @@ class ControlHandler {
             // Check if reached final state and disable button if needed
             this.checkAndHandleFinalState();
 
-            console.log(`Step ${this.controller.currentStep} executed`);
+            logger.debug(`Step ${this.controller.currentStep} executed`);
         } catch (error) {
             console.error('Error during stepForward:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
@@ -321,14 +321,14 @@ class ControlHandler {
 
             // C++ StateSnapshot automatically restores transition info
             const restoredTransition = this.controller.runner.getLastTransition();
-            console.log(`[STEP BACK] Restored to step ${this.controller.currentStep}, transition:`, restoredTransition);
+            logger.debug(`[STEP BACK] Restored to step ${this.controller.currentStep}, transition:`, restoredTransition);
 
             if (restoredTransition && restoredTransition.source && restoredTransition.target) {
-                console.log(`[STEP BACK] Setting active transition: ${restoredTransition.source} → ${restoredTransition.target}`);
+                logger.debug(`[STEP BACK] Setting active transition: ${restoredTransition.source} → ${restoredTransition.target}`);
                 this.controller.visualizer.setActiveTransition(restoredTransition);
                 this.controller.visualizer.highlightTransition(restoredTransition);
             } else {
-                console.log(`[STEP BACK] No transition at step ${this.controller.currentStep}, clearing active state`);
+                logger.debug(`[STEP BACK] No transition at step ${this.controller.currentStep}, clearing active state`);
                 this.controller.visualizer.clearActiveTransition();
             }
 
@@ -340,7 +340,7 @@ class ControlHandler {
             // Re-enable forward button
             this.enableButton('btn-step-forward');
 
-            console.log(`Restored to step ${this.controller.currentStep}`);
+            logger.debug(`Restored to step ${this.controller.currentStep}`);
         } catch (error) {
             console.error('Error during stepBackward:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
@@ -365,7 +365,7 @@ class ControlHandler {
                 this.controller.elements.logPanel.innerHTML = '<div class="log-entry">Reset to initial configuration</div>';
             }
 
-            console.log('Reset to initial state');
+            logger.debug('Reset to initial state');
         } catch (error) {
             console.error('Error during reset:', error);
             this.showMessage(`Error: ${error.message}`, 'error');
@@ -377,7 +377,7 @@ class ControlHandler {
             this.controller.runner.raiseEvent(eventName, eventData);
 
             // W3C SCXML 3.13: Event queuing is NOT a step
-            console.log(`📨 Event queued: ${eventName} (press Step Forward to process)`);
+            logger.debug(`📨 Event queued: ${eventName} (press Step Forward to process)`);
 
             // Update UI to show pending event in queue
             this.controller.updateEventQueue();
@@ -397,12 +397,12 @@ class ControlHandler {
             const success = this.controller.runner.removeInternalEvent(index);
 
             if (success) {
-                console.log(`🗑️ Internal event at index ${index} removed`);
+                logger.debug(`🗑️ Internal event at index ${index} removed`);
                 this.controller.updateEventQueue();
                 this.controller.updateState();
                 this.showMessage(`Internal event removed`, 'info');
             } else {
-                console.warn(`⚠️ Failed to remove internal event at index ${index}`);
+                logger.warn(`⚠️ Failed to remove internal event at index ${index}`);
                 this.showMessage(`Invalid event index`, 'warning');
             }
         } catch (error) {
@@ -416,12 +416,12 @@ class ControlHandler {
             const success = this.controller.runner.removeExternalEvent(index);
 
             if (success) {
-                console.log(`🗑️ External event at index ${index} removed`);
+                logger.debug(`🗑️ External event at index ${index} removed`);
                 this.controller.updateEventQueue();
                 this.controller.updateState();
                 this.showMessage(`External event removed`, 'info');
             } else {
-                console.warn(`⚠️ Failed to remove external event at index ${index}`);
+                logger.warn(`⚠️ Failed to remove external event at index ${index}`);
                 this.showMessage(`Invalid event index`, 'warning');
             }
         } catch (error) {

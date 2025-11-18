@@ -80,7 +80,7 @@ class CollisionDetector {
 
         if (this.debugMode) {
             const mode = dragTogether ? 'drag together' : 'push away';
-            console.log(`[CollisionDetector] ${compoundNode.id}: Checking ${externalStates.length} external states (drag direction: ${dragDx.toFixed(1)}, ${dragDy.toFixed(1)}, mode: ${mode})`);
+            logger.debug(`[CollisionDetector] ${compoundNode.id}: Checking ${externalStates.length} external states (drag direction: ${dragDx.toFixed(1)}, ${dragDy.toFixed(1)}, mode: ${mode})`);
         }
 
         let affectedCount = 0;
@@ -97,7 +97,7 @@ class CollisionDetector {
                 if (dragTogether) {
                     // Drag together mode: move state by same delta as compound
                     if (this.debugMode) {
-                        console.log(`[CollisionDetector] Dragging ${state.id} together with ${compoundNode.id} by (${dragDx.toFixed(1)}, ${dragDy.toFixed(1)})`);
+                        logger.debug(`[CollisionDetector] Dragging ${state.id} together with ${compoundNode.id} by (${dragDx.toFixed(1)}, ${dragDy.toFixed(1)})`);
                     }
                     this.applyPush(state, dragDx, dragDy);
                 } else {
@@ -106,10 +106,10 @@ class CollisionDetector {
                     
                     // Debug: log detailed collision info
                     if (this.debugMode) {
-                        console.log(`[COLLISION DEBUG] ${state.id} vs ${compoundNode.id}:`);
-                        console.log(`  State bounds: left=${stateBounds.left.toFixed(1)}, right=${stateBounds.right.toFixed(1)}, top=${stateBounds.top.toFixed(1)}, bottom=${stateBounds.bottom.toFixed(1)}`);
-                        console.log(`  Compound bounds: left=${compoundBounds.left.toFixed(1)}, right=${compoundBounds.right.toFixed(1)}, top=${compoundBounds.top.toFixed(1)}, bottom=${compoundBounds.bottom.toFixed(1)}`);
-                        console.log(`  Push vector: x=${pushVector.x.toFixed(1)}, y=${pushVector.y.toFixed(1)}, direction=${pushVector.direction}`);
+                        logger.debug(`[COLLISION DEBUG] ${state.id} vs ${compoundNode.id}:`);
+                        logger.debug(`  State bounds: left=${stateBounds.left.toFixed(1)}, right=${stateBounds.right.toFixed(1)}, top=${stateBounds.top.toFixed(1)}, bottom=${stateBounds.bottom.toFixed(1)}`);
+                        logger.debug(`  Compound bounds: left=${compoundBounds.left.toFixed(1)}, right=${compoundBounds.right.toFixed(1)}, top=${compoundBounds.top.toFixed(1)}, bottom=${compoundBounds.bottom.toFixed(1)}`);
+                        logger.debug(`  Push vector: x=${pushVector.x.toFixed(1)}, y=${pushVector.y.toFixed(1)}, direction=${pushVector.direction}`);
                     }
                     
                     // For expansion (dampingFactor = 1.0), move directly to boundary - no gradual push
@@ -127,7 +127,7 @@ class CollisionDetector {
                     }
 
                     if (this.debugMode) {
-                        console.log(`[CollisionDetector] Collision: ${state.id} overlaps ${compoundNode.id}, pushing ${pushVector.direction} by (${finalX.toFixed(1)}, ${finalY.toFixed(1)})`);
+                        logger.debug(`[CollisionDetector] Collision: ${state.id} overlaps ${compoundNode.id}, pushing ${pushVector.direction} by (${finalX.toFixed(1)}, ${finalY.toFixed(1)})`);
                     }
 
                     this.applyPush(state, finalX, finalY);
@@ -144,12 +144,12 @@ class CollisionDetector {
 
         if (affectedCount > 0 && this.debugMode) {
             const action = dragTogether ? 'Dragged together' : 'Pushed away';
-            console.log(`[CollisionDetector] ${action} ${affectedCount} states with ${compoundNode.id} (took ${duration.toFixed(2)}ms)`);
+            logger.debug(`[CollisionDetector] ${action} ${affectedCount} states with ${compoundNode.id} (took ${duration.toFixed(2)}ms)`);
         }
 
         // Warn if collision detection is too slow
         if (duration > 5) {
-            console.warn(`[CollisionDetector] SLOW: ${compoundNode.id} collision detection took ${duration.toFixed(2)}ms (${externalStates.length} states checked, ${affectedCount} affected)`);
+            logger.warn(`[CollisionDetector] SLOW: ${compoundNode.id} collision detection took ${duration.toFixed(2)}ms (${externalStates.length} states checked, ${affectedCount} affected)`);
         }
 
         return affectedCount;
@@ -335,7 +335,7 @@ class CollisionDetector {
             });
 
             if (this.debugMode) {
-                console.log(`[CollisionDetector] Also pushed ${descendantCount} descendants of ${state.id}`);
+                logger.debug(`[CollisionDetector] Also pushed ${descendantCount} descendants of ${state.id}`);
             }
         }
     }
@@ -365,7 +365,7 @@ class CollisionDetector {
             }
             
             if (this.debugMode) {
-                console.log(`[CollisionDetector] Updating ${statesToUpdate.size} affected states in DOM`);
+                logger.debug(`[CollisionDetector] Updating ${statesToUpdate.size} affected states in DOM`);
             }
 
             // Update only affected node positions with smooth transition
@@ -414,9 +414,9 @@ class CollisionDetector {
 
             // Warn if DOM update is too slow
             if (duration > 10) {
-                console.warn(`[CollisionDetector] SLOW DOM UPDATE: took ${duration.toFixed(2)}ms (${statesToUpdate.size} states)`);
+                logger.warn(`[CollisionDetector] SLOW DOM UPDATE: took ${duration.toFixed(2)}ms (${statesToUpdate.size} states)`);
             } else if (this.debugMode) {
-                console.log(`[CollisionDetector] DOM update completed in ${duration.toFixed(2)}ms (${statesToUpdate.size} states)`);
+                logger.debug(`[CollisionDetector] DOM update completed in ${duration.toFixed(2)}ms (${statesToUpdate.size} states)`);
             }
         });
     }

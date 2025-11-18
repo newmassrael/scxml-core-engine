@@ -43,7 +43,7 @@ class NodeBuilder {
 
             // Debug: Log children arrays for compound/parallel states
             if (SCXMLVisualizer.isCompoundOrParallel(state) && node.children.length > 0) {
-                console.log(`[buildNodes] ${state.id} (${state.type}) has children: ${node.children.join(', ')}`);
+                logger.debug(`[buildNodes] ${state.id} (${state.type}) has children: ${node.children.join(', ')}`);
             }
 
             nodes.push(node);
@@ -183,7 +183,7 @@ class NodeBuilder {
     }
 
     getVisibleNodes() {
-        console.log('[getVisibleNodes] Checking visibility for all nodes...');
+        logger.debug('[getVisibleNodes] Checking visibility for all nodes...');
         const visibleIds = new Set();
 
         this.visualizer.nodes.forEach(node => {
@@ -191,19 +191,19 @@ class NodeBuilder {
             const collapsedAncestor = this.visualizer.findCollapsedAncestor(node.id, this.visualizer.nodes);
             
             if (collapsedAncestor) {
-                console.log(`  ${node.id}: HIDDEN (ancestor ${collapsedAncestor.id} collapsed)`);
+                logger.debug(`  ${node.id}: HIDDEN (ancestor ${collapsedAncestor.id} collapsed)`);
             } else {
                 visibleIds.add(node.id);
-                console.log(`  ${node.id}: VISIBLE (type=${node.type})`);
+                logger.debug(`  ${node.id}: VISIBLE (type=${node.type})`);
             }
         });
 
         const result = this.visualizer.nodes.filter(n => visibleIds.has(n.id));
-        console.log(`[getVisibleNodes] Result: ${result.map(n => n.id).join(', ')}`);
+        logger.debug(`[getVisibleNodes] Result: ${result.map(n => n.id).join(', ')}`);
         
         // Debug: Show compound/parallel nodes and their children
         this.visualizer.nodes.filter(n => n.type === 'compound' || n.type === 'parallel').forEach(n => {
-            console.log(`  ${n.id} (${n.type}, collapsed=${n.collapsed}): children=${n.children ? n.children.join(', ') : 'none'}`);
+            logger.debug(`  ${n.id} (${n.type}, collapsed=${n.collapsed}): children=${n.children ? n.children.join(', ') : 'none'}`);
         });
         
         return result;

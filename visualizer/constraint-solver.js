@@ -27,11 +27,8 @@
  *    - Console.log disabled: Zero overhead in production (controlled by DEBUG_CSP_SOLVER flag)
  */
 
-// Debug flag - set to true to enable detailed logging (WARNING: extremely slow)
-const DEBUG_CSP_SOLVER = false;
-
-// No-op logging function for production
-const log = DEBUG_CSP_SOLVER ? console.log.bind(console) : () => {};
+// Use logger for debug output (controlled by ?debug URL parameter)
+const log = logger.debug.bind(logger);
 
 /**
  * HardConstraints - Must be satisfied (Boolean: Pass/Fail)
@@ -204,19 +201,19 @@ class HardConstraints {
         const debug = debugLinkIndex >= 0 && debugLinkIndex < 3; // Debug first 3 links
         
         if (!this.validateInitialBlocking(link, sourceEdge, targetEdge, optimizer, sourceNode.id, targetNode.id)) {
-            if (debug) console.log(`  [HC FAIL] ${sourceNode.id}→${targetNode.id} ${sourceEdge}→${targetEdge}: Initial blocking`);
+            if (debug) logger.debug(`  [HC FAIL] ${sourceNode.id}→${targetNode.id} ${sourceEdge}→${targetEdge}: Initial blocking`);
             return false;
         }
         if (!this.validateNodeCollisions(combo, sourceNode, targetNode, allNodes, optimizer, parentChildMap)) {
-            if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Node collision`);
+            if (debug) logger.debug(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Node collision`);
             return false;
         }
         if (!this.validateMinimumDistance(combo)) {
-            if (debug) console.log(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Minimum distance`);
+            if (debug) logger.debug(`  [HC FAIL] ${link.source}→${link.target} ${sourceEdge}→${targetEdge}: Minimum distance`);
             return false;
         }
         if (!this.validateBidirectionalConflict(link, sourceEdge, targetEdge, assignment, reverseLinkMap, sourceNode.id, targetNode.id)) {
-            if (debug) console.log(`  [HC FAIL] ${sourceNode.id}→${targetNode.id} ${sourceEdge}→${targetEdge}: Bidirectional conflict`);
+            if (debug) logger.debug(`  [HC FAIL] ${sourceNode.id}→${targetNode.id} ${sourceEdge}→${targetEdge}: Bidirectional conflict`);
             return false;
         }
         return true;
@@ -717,9 +714,9 @@ class ConstraintSolver {
 
         // Log sorted link order with dragged node context
         if (draggedNodeId) {
-            console.log(`[CSP] Variable ordering (locality-aware, dragged node: ${draggedNodeId}):`);
+            logger.debug(`[CSP] Variable ordering (locality-aware, dragged node: ${draggedNodeId}):`);
         } else {
-            console.log('[CSP] Variable ordering (links to assign):');
+            logger.debug('[CSP] Variable ordering (links to assign):');
         }
         this.sortedLinks.forEach((link, index) => {
             const type = link.linkType === 'initial' ? '(initial)' :
@@ -727,7 +724,7 @@ class ConstraintSolver {
                         '';
             const dist = draggedNodeId ? getDraggedNodeDistance(link) : null;
             const distTag = dist !== null && dist !== Infinity ? ` [dist=${dist.toFixed(0)}px]` : '';
-            console.log(`  ${index}. ${link.source}→${link.target} ${type}${distTag}`);
+            logger.debug(`  ${index}. ${link.source}→${link.target} ${type}${distTag}`);
         });
 
         // Assignment: Map<linkId, {sourceEdge, targetEdge, combo}>
@@ -744,12 +741,12 @@ class ConstraintSolver {
         // Greedy solution warm-start (Strategy 1 + 3: Initial solution + Value ordering)
         this.greedyPreferences = new Map(); // Map<linkId, {sourceEdge, targetEdge}>
         if (greedySolution) {
-            console.log('[CSP WARM-START] Initializing with greedy solution...');
+            logger.debug('[CSP WARM-START] Initializing with greedy solution...');
             this.bestAssignment = greedySolution.assignment;
             this.bestScore = greedySolution.score;
             this.greedyPreferences = greedySolution.preferences;
-            console.log(`[CSP WARM-START] Baseline score=${this.bestScore.toFixed(1)} from greedy algorithm`);
-            console.log(`[CSP WARM-START] Greedy preferences for ${this.greedyPreferences.size} links`);
+            logger.debug(`[CSP WARM-START] Baseline score=${this.bestScore.toFixed(1)} from greedy algorithm`);
+            logger.debug(`[CSP WARM-START] Greedy preferences for ${this.greedyPreferences.size} links`);
         }
 
         // Statistics
@@ -776,7 +773,7 @@ class ConstraintSolver {
      */
     cancel() {
         this.cancelled = true;
-        console.log('[CSP SOLVER] Cancellation requested');
+        logger.debug('[CSP SOLVER] Cancellation requested');
     }
 
     /**
@@ -862,12 +859,12 @@ class ConstraintSolver {
         // Debug p→ps1 link
         const debugLink = link.source === 'p' && link.target === 'ps1';
         if (debugLink) {
-            console.log(`[DEBUG] Validating p→ps1 link (linkIndex=${linkIndex})`);
-            console.log(`  Source node p:`, sourceNode);
-            console.log(`  Target node ps1:`, targetNode);
-            console.log(`  Distance: ${Math.sqrt(Math.pow(targetNode.x - sourceNode.x, 2) + Math.pow(targetNode.y - sourceNode.y, 2)).toFixed(1)}px`);
-            console.log(`  Parent-child map:`, Array.from(this.parentChildMap.entries()));
-            console.log(`  Current assignment:`, Array.from(this.assignment.entries()).map(([id, a]) => {
+            logger.debug(`[DEBUG] Validating p→ps1 link (linkIndex=${linkIndex})`);
+            logger.debug(`  Source node p:`, sourceNode);
+            logger.debug(`  Target node ps1:`, targetNode);
+            logger.debug(`  Distance: ${Math.sqrt(Math.pow(targetNode.x - sourceNode.x, 2) + Math.pow(targetNode.y - sourceNode.y, 2)).toFixed(1)}px`);
+            logger.debug(`  Parent-child map:`, Array.from(this.parentChildMap.entries()));
+            logger.debug(`  Current assignment:`, Array.from(this.assignment.entries()).map(([id, a]) => {
                 const l = this.linkMap.get(id);
                 return `${l.source}→${l.target}: ${a.sourceEdge}→${a.targetEdge}`;
             }));
@@ -918,10 +915,10 @@ class ConstraintSolver {
         }
 
         if (debugLink) {
-            console.log(`[DEBUG] p→ps1 validation results: ${validCombos.length}/16 combos passed`);
-            console.log(`  Rejection reasons:`);
+            logger.debug(`[DEBUG] p→ps1 validation results: ${validCombos.length}/16 combos passed`);
+            logger.debug(`  Rejection reasons:`);
             for (const [combo, reason] of rejectionReasons.entries()) {
-                console.log(`    ${combo}: ${reason}`);
+                logger.debug(`    ${combo}: ${reason}`);
             }
         }
 
@@ -942,13 +939,13 @@ class ConstraintSolver {
 
         // Check time limit (prevent infinite search)
         if (performance.now() - this.startTime > this.TIME_LIMIT_MS) {
-            console.log(`[CSP BACKTRACK] Time limit reached (${this.TIME_LIMIT_MS}ms), stopping with best solution found`);
+            logger.debug(`[CSP BACKTRACK] Time limit reached (${this.TIME_LIMIT_MS}ms), stopping with best solution found`);
             return false; // Stop search
         }
 
         // Check no-improvement limit (prevent infinite search)
         if (this.nodeCount - this.lastImprovementNode > this.NO_IMPROVEMENT_LIMIT) {
-            console.log(`[CSP BACKTRACK] No improvement for ${this.NO_IMPROVEMENT_LIMIT} nodes, stopping with best solution found`);
+            logger.debug(`[CSP BACKTRACK] No improvement for ${this.NO_IMPROVEMENT_LIMIT} nodes, stopping with best solution found`);
             return false; // Stop search
         }
 
@@ -969,13 +966,13 @@ class ConstraintSolver {
                 this.bestScore = totalScore;
                 this.bestAssignment = new Map(this.assignment);
                 this.lastImprovementNode = this.nodeCount; // Reset no-improvement counter
-                console.log(`[CSP SOLUTION] Found solution with score=${totalScore.toFixed(1)} (nodes=${this.nodeCount}, prunes=${this.pruneCount})`);
+                logger.debug(`[CSP SOLUTION] Found solution with score=${totalScore.toFixed(1)} (nodes=${this.nodeCount}, prunes=${this.pruneCount})`);
 
                 // Log assignment details for debugging
                 for (const [linkId, assignment] of this.assignment) {
                     const link = this.linkMap.get(linkId);
                     if (link) {
-                        console.log(`  ${link.source}→${link.target}: ${assignment.sourceEdge}→${assignment.targetEdge} (score=${assignment.score.toFixed(1)})`);
+                        logger.debug(`  ${link.source}→${link.target}: ${assignment.sourceEdge}→${assignment.targetEdge} (score=${assignment.score.toFixed(1)})`);
                     }
                 }
 
@@ -998,7 +995,7 @@ class ConstraintSolver {
 
                 // Early termination: Perfect solution found (no crossings)
                 if (this.bestScore === 0) {
-                    console.log(`[CSP SOLUTION] Perfect solution (score=0), stopping search`);
+                    logger.debug(`[CSP SOLUTION] Perfect solution (score=0), stopping search`);
                     return true; // Stop immediately
                 }
             }
@@ -1019,7 +1016,7 @@ class ConstraintSolver {
                 const visualTarget = this.getVisualTarget(link);
                 const redirectLabel = (visualSource !== link.source || visualTarget !== link.target)
                     ? ` (visual: ${visualSource}→${visualTarget})` : '';
-                console.log(`[CSP] Link #${linkIndex} ${link.source}→${link.target}${redirectLabel} has no valid domain - all combinations rejected by hard constraints`);
+                logger.debug(`[CSP] Link #${linkIndex} ${link.source}→${link.target}${redirectLabel} has no valid domain - all combinations rejected by hard constraints`);
             }
             this.pruneCount++;
             return false; // Backtrack
@@ -1031,7 +1028,7 @@ class ConstraintSolver {
             const visualTarget = this.getVisualTarget(link);
             const redirectLabel = (visualSource !== link.source || visualTarget !== link.target)
                 ? ` (visual: ${visualSource}→${visualTarget})` : '';
-            console.log(`[CSP] Link #${linkIndex} ${link.source}→${link.target}${redirectLabel}: ${validDomain.length} valid combinations`);
+            logger.debug(`[CSP] Link #${linkIndex} ${link.source}→${link.target}${redirectLabel}: ${validDomain.length} valid combinations`);
         }
         log(`[CSP] ${link.source}→${link.target}: ${validDomain.length} valid combinations`);
 
@@ -1074,7 +1071,7 @@ class ConstraintSolver {
         // Always log value ordering for first few links (debugging warm-start)
         if (scoredDomain.length > 0 && linkIndex < 3) {
             const greedyTag = scoredDomain[0].isGreedyPreferred ? ' (greedy)' : '';
-            console.log(`[CSP VALUE ORDER] Link #${linkIndex}: Sorted ${scoredDomain.length} combos, best score=${scoredDomain[0].score.toFixed(1)}${greedyTag}`);
+            logger.debug(`[CSP VALUE ORDER] Link #${linkIndex}: Sorted ${scoredDomain.length} combos, best score=${scoredDomain[0].score.toFixed(1)}${greedyTag}`);
         }
 
         // Try each value in domain (best-first order)
@@ -1115,17 +1112,17 @@ class ConstraintSolver {
         // Clear snap point cache for fresh start
         SoftConstraints.clearCache();
 
-        console.log('[CSP SOLVER] Starting constraint satisfaction solver...');
-        console.log(`[CSP] Variables: ${this.sortedLinks.length} links`);
-        console.log(`[CSP] Domain size per variable: up to 16 combinations`);
-        console.log(`[CSP] Hard constraints: 4 (initial blocking, node collisions, min distance, bidirectional)`);
-        console.log(`[CSP] Soft constraints: 5 (SC1: intersections=50000, SC2: distance=1, SC3: symmetry=-5000, SC4: self-overlap=50000, SC5: sibling-overlap=50000)`);
-        console.log(`[CSP] Variable ordering: MRV (Minimum Remaining Values) heuristic`);
+        logger.debug('[CSP SOLVER] Starting constraint satisfaction solver...');
+        logger.debug(`[CSP] Variables: ${this.sortedLinks.length} links`);
+        logger.debug(`[CSP] Domain size per variable: up to 16 combinations`);
+        logger.debug(`[CSP] Hard constraints: 4 (initial blocking, node collisions, min distance, bidirectional)`);
+        logger.debug(`[CSP] Soft constraints: 5 (SC1: intersections=50000, SC2: distance=1, SC3: symmetry=-5000, SC4: self-overlap=50000, SC5: sibling-overlap=50000)`);
+        logger.debug(`[CSP] Variable ordering: MRV (Minimum Remaining Values) heuristic`);
 
         const startTime = performance.now();
         this.startTime = startTime; // Store for progress reporting
         
-        console.log('[CSP BACKTRACK] Starting backtracking search with value ordering...');
+        logger.debug('[CSP BACKTRACK] Starting backtracking search with value ordering...');
 
         this.backtrack(0);
 
@@ -1134,23 +1131,23 @@ class ConstraintSolver {
 
         // Check if cancelled
         if (this.cancelled) {
-            console.log(`[CSP SOLVER] Cancelled after ${elapsedMs.toFixed(1)}ms (nodes=${this.nodeCount})`);
+            logger.debug(`[CSP SOLVER] Cancelled after ${elapsedMs.toFixed(1)}ms (nodes=${this.nodeCount})`);
             return null; // Return null to indicate cancellation
         }
 
         if (this.bestAssignment) {
             // Log final optimization results
-            console.log(`[CSP SOLVER] Solution found with score=${this.bestScore.toFixed(1)}`);
-            console.log(`[CSP SOLVER] Statistics: nodes=${this.nodeCount}, prunes=${this.pruneCount}, time=${elapsedMs.toFixed(1)}ms`);
+            logger.debug(`[CSP SOLVER] Solution found with score=${this.bestScore.toFixed(1)}`);
+            logger.debug(`[CSP SOLVER] Statistics: nodes=${this.nodeCount}, prunes=${this.pruneCount}, time=${elapsedMs.toFixed(1)}ms`);
             const pruneRate = ((this.pruneCount / Math.max(this.nodeCount, 1)) * 100).toFixed(1);
-            console.log(`[CSP SOLVER] Prune efficiency: ${pruneRate}% (${this.pruneCount} prunes / ${this.nodeCount} nodes)`);
+            logger.debug(`[CSP SOLVER] Prune efficiency: ${pruneRate}% (${this.pruneCount} prunes / ${this.nodeCount} nodes)`);
             return this.bestAssignment;
         } else {
-            console.log('[CSP SOLVER] No solution found - using greedy result');
-            console.log(`[CSP SOLVER] Statistics: nodes=${this.nodeCount}, prunes=${this.pruneCount}, time=${elapsedMs.toFixed(1)}ms`);
-            console.log(`[CSP SOLVER] Explored ${this.nodeCount} nodes, ${this.pruneCount} prunes (${((this.pruneCount/this.nodeCount)*100).toFixed(1)}% prune rate)`);
+            logger.debug('[CSP SOLVER] No solution found - using greedy result');
+            logger.debug(`[CSP SOLVER] Statistics: nodes=${this.nodeCount}, prunes=${this.pruneCount}, time=${elapsedMs.toFixed(1)}ms`);
+            logger.debug(`[CSP SOLVER] Explored ${this.nodeCount} nodes, ${this.pruneCount} prunes (${((this.pruneCount/this.nodeCount)*100).toFixed(1)}% prune rate)`);
             if (this.nodeCount < 100) {
-                console.log(`[CSP SOLVER] Very few nodes explored - likely early constraint failure`);
+                logger.debug(`[CSP SOLVER] Very few nodes explored - likely early constraint failure`);
             }
             return null;
         }

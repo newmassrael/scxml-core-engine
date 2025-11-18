@@ -52,7 +52,7 @@ class LayoutManager {
         // Recursive function to build ELK node with nested children
         const buildELKNode = (node, depth = 0) => {
             const indent = '  '.repeat(depth);
-            console.log(`${indent}[buildELKNode] Building ${node.id} (${node.type}, collapsed=${node.collapsed})`);
+            logger.debug(`${indent}[buildELKNode] Building ${node.id} (${node.type}, collapsed=${node.collapsed})`);
 
             const elkNode = {
                 id: node.id,
@@ -64,7 +64,7 @@ class LayoutManager {
             if (SCXMLVisualizer.isCompoundOrParallel(node) && !node.collapsed) {
                 elkNode.children = [];
 
-                console.log(`${indent}  ${node.id} has ${node.children.length} children: ${node.children.join(', ')}`);
+                logger.debug(`${indent}  ${node.id} has ${node.children.length} children: ${node.children.join(', ')}`);
 
                 elkNode.layoutOptions = {
                     'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
@@ -83,17 +83,17 @@ class LayoutManager {
                     const childNode = this.visualizer.nodes.find(n => n.id === childId);
                     if (childNode) {
                         if (visibleNodeIds.has(childId)) {
-                            console.log(`${indent}    → Adding child ${childId} (visible)`);
+                            logger.debug(`${indent}    → Adding child ${childId} (visible)`);
                             elkNode.children.push(buildELKNode(childNode, depth + 1));
                         } else {
-                            console.log(`${indent}    → Skipping child ${childId} (not visible)`);
+                            logger.debug(`${indent}    → Skipping child ${childId} (not visible)`);
                         }
                     } else {
-                        console.warn(`${indent}    → Child ${childId} not found in this.visualizer.nodes!`);
+                        logger.warn(`${indent}    → Child ${childId} not found in this.visualizer.nodes!`);
                     }
                 });
 
-                console.log(`${indent}  ${node.id} elkNode.children.length = ${elkNode.children.length}`);
+                logger.debug(`${indent}  ${node.id} elkNode.children.length = ${elkNode.children.length}`);
             }
 
             return elkNode;
@@ -112,8 +112,8 @@ class LayoutManager {
             return !hasVisibleParent;
         });
 
-        console.log(`[buildELKGraph] Total visible nodes: ${visibleNodes.length}, Top-level nodes: ${topLevelNodes.length}`);
-        console.log(`  Top-level: ${topLevelNodes.map(n => n.id).join(', ')}`);
+        logger.debug(`[buildELKGraph] Total visible nodes: ${visibleNodes.length}, Top-level nodes: ${topLevelNodes.length}`);
+        logger.debug(`  Top-level: ${topLevelNodes.map(n => n.id).join(', ')}`);
 
         topLevelNodes.forEach(node => {
             graph.children.push(buildELKNode(node));
@@ -139,19 +139,19 @@ class LayoutManager {
     }
 
     applyELKLayout(layouted) {
-        console.log('Applying ELK layout to nodes...');
-        console.log(`  this.visualizer.nodes count: ${this.visualizer.nodes.length}, nodes: ${this.visualizer.nodes.map(n => `${n.id}(${n.type})`).join(', ')}`);
+        logger.debug('Applying ELK layout to nodes...');
+        logger.debug(`  this.visualizer.nodes count: ${this.visualizer.nodes.length}, nodes: ${this.visualizer.nodes.map(n => `${n.id}(${n.type})`).join(', ')}`);
 
         // Debug: Log ELK result structure
-        console.log('ELK result structure:');
+        logger.debug('ELK result structure:');
         layouted.children.forEach(child => {
-            console.log(`  ${child.id}: hasChildren=${!!child.children}, childCount=${child.children ? child.children.length : 0}`);
+            logger.debug(`  ${child.id}: hasChildren=${!!child.children}, childCount=${child.children ? child.children.length : 0}`);
             if (child.children) {
                 child.children.forEach(grandchild => {
-                    console.log(`    └─ ${grandchild.id}: hasChildren=${!!grandchild.children}, childCount=${grandchild.children ? grandchild.children.length : 0}`);
+                    logger.debug(`    └─ ${grandchild.id}: hasChildren=${!!grandchild.children}, childCount=${grandchild.children ? grandchild.children.length : 0}`);
                     if (grandchild.children) {
                         grandchild.children.forEach(ggrandchild => {
-                            console.log(`       └─ ${ggrandchild.id}`);
+                            logger.debug(`       └─ ${ggrandchild.id}`);
                         });
                     }
                 });
@@ -171,9 +171,9 @@ class LayoutManager {
                     if (node.width === undefined || node.height === undefined) {
                         node.width = this.visualizer.getNodeWidth(node);
                         node.height = this.visualizer.getNodeHeight(node);
-                        console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size initialized), offset=(${offsetX}, ${offsetY})`);
+                        logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size initialized), offset=(${offsetX}, ${offsetY})`);
                     } else {
-                        console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size preserved), offset=(${offsetX}, ${offsetY})`);
+                        logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size preserved), offset=(${offsetX}, ${offsetY})`);
                     }
                 } else {
                     // Get the originally calculated width/height
@@ -185,14 +185,14 @@ class LayoutManager {
                     node.width = originalWidth;
                     node.height = originalHeight;
 
-                    console.log(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (original calc, ELK wanted ${elkNode.width}x${elkNode.height}), offset=(${offsetX}, ${offsetY})`);
+                    logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (original calc, ELK wanted ${elkNode.width}x${elkNode.height}), offset=(${offsetX}, ${offsetY})`);
                 }
             } else {
-                console.warn(`${indent}  ELK node not found in this.visualizer.nodes: ${elkNode.id} (possibly child state or collapsed)`);
+                logger.warn(`${indent}  ELK node not found in this.visualizer.nodes: ${elkNode.id} (possibly child state or collapsed)`);
             }
 
             if (elkNode.children) {
-                console.log(`${indent}  ${elkNode.id} has ${elkNode.children.length} children in ELK result`);
+                logger.debug(`${indent}  ${elkNode.id} has ${elkNode.children.length} children in ELK result`);
                 elkNode.children.forEach(child => {
                     applyToNode(child, elkNode.x + offsetX, elkNode.y + offsetY, depth + 1);
                 });
@@ -208,7 +208,7 @@ class LayoutManager {
         };
         const elkNodeIds = [];
         layouted.children.forEach(child => collectELKNodeIds(child, elkNodeIds));
-        console.log(`  ELK layout nodes: ${elkNodeIds.join(', ')}`);
+        logger.debug(`  ELK layout nodes: ${elkNodeIds.join(', ')}`);
 
         layouted.children.forEach(child => {
             applyToNode(child);
@@ -216,18 +216,18 @@ class LayoutManager {
 
         // Calculate bounding boxes for expanded compounds without coordinates
         // (ELK may not provide coordinates for nested hierarchy)
-        console.log('Calculating bounding boxes for expanded compounds...');
-        console.log(`  Total nodes: ${this.visualizer.nodes.length}`);
+        logger.debug('Calculating bounding boxes for expanded compounds...');
+        logger.debug(`  Total nodes: ${this.visualizer.nodes.length}`);
         this.visualizer.nodes.forEach(node => {
             if ((node.type === 'compound' || node.type === 'parallel') && 
                 !node.collapsed && 
                 (node.x === undefined || node.y === undefined)) {
                 
-                console.log(`  Processing ${node.id} (type=${node.type}, collapsed=${node.collapsed}, hasCoords=${node.x !== undefined && node.y !== undefined})`);
+                logger.debug(`  Processing ${node.id} (type=${node.type}, collapsed=${node.collapsed}, hasCoords=${node.x !== undefined && node.y !== undefined})`);
                 
                 // Get children coordinates
                 if (!node.children || node.children.length === 0) {
-                    console.warn(`  ${node.id}: No children array, skipping bounding box calculation`);
+                    logger.warn(`  ${node.id}: No children array, skipping bounding box calculation`);
                     return;
                 }
                 
@@ -238,7 +238,7 @@ class LayoutManager {
                 const childNodesWithCoords = allChildNodes
                     .filter(child => child.x !== undefined && child.y !== undefined);
 
-                console.log(`    Children: ${node.children.join(', ')}, with coords: ${childNodesWithCoords.map(c => c.id).join(', ')}`);
+                logger.debug(`    Children: ${node.children.join(', ')}, with coords: ${childNodesWithCoords.map(c => c.id).join(', ')}`);
 
                 if (childNodesWithCoords.length > 0) {
                     // Calculate bounding box with padding
@@ -253,30 +253,30 @@ class LayoutManager {
                     node.width = maxX - minX;
                     node.height = maxY - minY;
 
-                    console.log(`  ${node.id}: Calculated from children (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width.toFixed(1)}x${node.height.toFixed(1)}`);
+                    logger.debug(`  ${node.id}: Calculated from children (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width.toFixed(1)}x${node.height.toFixed(1)}`);
                 } else if (childNodesWithCoords.length === 0 && allChildNodes.length > 0 && allChildNodes.some(c => c.x === undefined || c.y === undefined)) {
                     // All children exist but none have coordinates - this is expected when ELK doesn't layout nested hierarchies
-                    console.log(`  ${node.id}: Children not yet laid out by ELK, skipping bounding box calculation`);
+                    logger.debug(`  ${node.id}: Children not yet laid out by ELK, skipping bounding box calculation`);
                 } else if (childNodesWithCoords.length < allChildNodes.length) {
                     // Some children have coordinates but not all - this is unexpected
-                    console.warn(`  ${node.id}: Partial child coordinates (${childNodesWithCoords.length}/${allChildNodes.length}), cannot calculate reliable bounding box`);
+                    logger.warn(`  ${node.id}: Partial child coordinates (${childNodesWithCoords.length}/${allChildNodes.length}), cannot calculate reliable bounding box`);
                 }
             }
         });
 
         // Apply ELK edge routing information BEFORE modifying node positions
         if (layouted.edges) {
-            console.log('Applying ELK edge routing...');
+            logger.debug('Applying ELK edge routing...');
             layouted.edges.forEach(elkEdge => {
                 const link = this.visualizer.allLinks.find(l => l.id === elkEdge.id);
                 if (link && elkEdge.sections && elkEdge.sections.length > 0) {
                     link.elkSections = elkEdge.sections;
-                    console.log(`  ${elkEdge.id}: ${elkEdge.sections.length} section(s)`);
+                    logger.debug(`  ${elkEdge.id}: ${elkEdge.sections.length} section(s)`);
                     elkEdge.sections.forEach((section, idx) => {
-                        console.log(`    section ${idx}: start=(${section.startPoint.x.toFixed(1)}, ${section.startPoint.y.toFixed(1)}), end=(${section.endPoint.x.toFixed(1)}, ${section.endPoint.y.toFixed(1)})`);
+                        logger.debug(`    section ${idx}: start=(${section.startPoint.x.toFixed(1)}, ${section.startPoint.y.toFixed(1)}), end=(${section.endPoint.x.toFixed(1)}, ${section.endPoint.y.toFixed(1)})`);
                         if (section.bendPoints && section.bendPoints.length > 0) {
                             section.bendPoints.forEach((bp, bpIdx) => {
-                                console.log(`      bendPoint ${bpIdx}: (${bp.x.toFixed(1)}, ${bp.y.toFixed(1)})`);
+                                logger.debug(`      bendPoint ${bpIdx}: (${bp.x.toFixed(1)}, ${bp.y.toFixed(1)})`);
                             });
                         }
                     });
@@ -288,7 +288,7 @@ class LayoutManager {
         // ELK handles node positioning, overlap prevention, and hierarchical nesting
         // Manual alignment removed as it conflicts with ELK's optimized calculations
         // Reference: https://www.eclipse.org/elk/
-        console.log('[LAYOUT] Using ELK calculated positions (no manual alignment)');
+        logger.debug('[LAYOUT] Using ELK calculated positions (no manual alignment)');
 
         // Invalidate ELK edge routing to use optimizer-calculated snap points
         // ELK routing is only used during initial layout, afterward we use optimizer routing
@@ -297,15 +297,15 @@ class LayoutManager {
                 delete link.elkSections;
             }
         });
-        console.log('[LAYOUT] Invalidated ELK edge routing (will use optimizer routing)');
+        logger.debug('[LAYOUT] Invalidated ELK edge routing (will use optimizer routing)');
 
         // Optimize snap point assignments to minimize intersections
-        console.log('Optimizing snap point assignments...');
+        logger.debug('Optimizing snap point assignments...');
         this.visualizer.layoutOptimizer.optimizeSnapPointAssignments(this.visualizer.allLinks, this.visualizer.nodes);
 
         // Update all compound/parallel bounds to ensure they contain all children
         // Process in bottom-up order: children first, then parents
-        console.log('Updating compound container bounds...');
+        logger.debug('Updating compound container bounds...');
         
         // Find all expanded compounds/parallels and their depths
         const compoundsWithDepth = [];
@@ -334,9 +334,9 @@ class LayoutManager {
         // Sort by depth ascending (deepest children first, shallowest parents last)
         compoundsWithDepth.sort((a, b) => a.depth - b.depth);
         
-        console.log(`  Processing ${compoundsWithDepth.length} compounds in bottom-up order:`);
+        logger.debug(`  Processing ${compoundsWithDepth.length} compounds in bottom-up order:`);
         compoundsWithDepth.forEach(({ node, depth }) => {
-            console.log(`    depth=${depth}: ${node.id}`);
+            logger.debug(`    depth=${depth}: ${node.id}`);
         });
         
         // Update bounds in bottom-up order
@@ -347,17 +347,17 @@ class LayoutManager {
         // Re-optimize snap points after compound bounds update
         // Compound bounds changes affect node positions and sizes
         if (compoundsWithDepth.length > 0) {
-            console.log('Re-optimizing snap points after compound bounds update...');
+            logger.debug('Re-optimizing snap points after compound bounds update...');
             this.visualizer.layoutOptimizer.optimizeSnapPointAssignments(this.visualizer.allLinks, this.visualizer.nodes);
         }
 
-        console.log('Layout application complete');
+        logger.debug('Layout application complete');
     }
 
     updateCompoundBounds(compoundNode) {
         // Skip collapsed nodes - they use fixed minimum size, not child-based bounds
         if (compoundNode.collapsed) {
-            console.log(`[updateCompoundBounds] ${compoundNode.id}: Skipped (collapsed)`);
+            logger.debug(`[updateCompoundBounds] ${compoundNode.id}: Skipped (collapsed)`);
             return;
         }
 
@@ -375,20 +375,20 @@ class LayoutManager {
         if (childNodesWithCoords.length === 0) {
             // All children exist but none have coordinates - expected when ELK doesn't layout nested hierarchies
             if (allChildNodes.length > 0) {
-                console.log(`[updateCompoundBounds] ${compoundNode.id}: Children not yet laid out by ELK, skipping bounds calculation`);
+                logger.debug(`[updateCompoundBounds] ${compoundNode.id}: Children not yet laid out by ELK, skipping bounds calculation`);
             }
             return;
         } else if (childNodesWithCoords.length < allChildNodes.length) {
             // Some children have coordinates but not all - unexpected
-            console.warn(`[updateCompoundBounds] ${compoundNode.id}: Partial child coordinates (${childNodesWithCoords.length}/${allChildNodes.length})`);
+            logger.warn(`[updateCompoundBounds] ${compoundNode.id}: Partial child coordinates (${childNodesWithCoords.length}/${allChildNodes.length})`);
         }
 
         const childNodes = childNodesWithCoords;
 
         // Debug: Log child positions
-        console.log(`[updateCompoundBounds] ${compoundNode.id}: Processing ${childNodes.length} children:`);
+        logger.debug(`[updateCompoundBounds] ${compoundNode.id}: Processing ${childNodes.length} children:`);
         childNodes.forEach(child => {
-            console.log(`  - ${child.id}: x=${child.x.toFixed(1)}, y=${child.y.toFixed(1)}, width=${child.width}, height=${child.height}`);
+            logger.debug(`  - ${child.id}: x=${child.x.toFixed(1)}, y=${child.y.toFixed(1)}, width=${child.width}, height=${child.height}`);
         });
 
         const padding = SCXMLVisualizer.COMPOUND_PADDING;
@@ -404,7 +404,7 @@ class LayoutManager {
         compoundNode.width = maxX - minX;
         compoundNode.height = maxY - minY;
 
-        console.log(`[updateCompoundBounds] ${compoundNode.id}: Updated to (${compoundNode.x.toFixed(1)}, ${compoundNode.y.toFixed(1)}) size=${compoundNode.width.toFixed(1)}x${compoundNode.height.toFixed(1)}`);
+        logger.debug(`[updateCompoundBounds] ${compoundNode.id}: Updated to (${compoundNode.x.toFixed(1)}, ${compoundNode.y.toFixed(1)}) size=${compoundNode.width.toFixed(1)}x${compoundNode.height.toFixed(1)}`);
 
         // Push away overlapping non-child states after bounds update
         // Use stored drag direction if available (from drag handlers) for natural sliding

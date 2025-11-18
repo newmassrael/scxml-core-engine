@@ -44,7 +44,7 @@ class CSPSolver {
         const actualTarget = this.getVisualTarget(link);
 
         if (this.optimizer.visualizer?.debugMode) {
-            console.log(`[GREEDY SIMULATE] ${link.source}→${link.target}: actualSource=${actualSource}, actualTarget=${actualTarget} (visualSource=${link.visualSource || 'unset'})`);
+            logger.debug(`[GREEDY SIMULATE] ${link.source}→${link.target}: actualSource=${actualSource}, actualTarget=${actualTarget} (visualSource=${link.visualSource || 'unset'})`);
         }
 
         const sourceNode = nodes.find(n => n.id === actualSource);
@@ -52,7 +52,7 @@ class CSPSolver {
 
         if (!sourceNode || !targetNode) {
             if (this.optimizer.visualizer?.debugMode) {
-                console.log(`[GREEDY SIMULATE ERROR] Node not found: sourceNode=${!!sourceNode}, targetNode=${!!targetNode}`);
+                logger.debug(`[GREEDY SIMULATE ERROR] Node not found: sourceNode=${!!sourceNode}, targetNode=${!!targetNode}`);
             }
             return combo;
         }
@@ -101,7 +101,7 @@ class CSPSolver {
 
         // Add already assigned links
         if (this.optimizer.visualizer?.debugMode) {
-            console.log(`[GREEDY SIMULATE DEBUG] Checking ${greedyAssignment.size} assigned links for ${node.id}.${edge}`);
+            logger.debug(`[GREEDY SIMULATE DEBUG] Checking ${greedyAssignment.size} assigned links for ${node.id}.${edge}`);
         }
         for (const [linkId, routing] of greedyAssignment.entries()) {
             if (linkId === link.id) continue; // Skip current link
@@ -109,7 +109,7 @@ class CSPSolver {
             const assignedLink = this.optimizer.links.find(l => l.id === linkId);
             if (!assignedLink) {
                 if (this.optimizer.visualizer?.debugMode) {
-                    console.log(`[GREEDY SIMULATE DEBUG] Link ${linkId} not found in optimizer.links`);
+                    logger.debug(`[GREEDY SIMULATE DEBUG] Link ${linkId} not found in optimizer.links`);
                 }
                 continue;
             }
@@ -120,25 +120,25 @@ class CSPSolver {
             // Check if assigned link uses this edge
             if (assignedSource === node.id && routing.sourceEdge === edge) {
                 if (this.optimizer.visualizer?.debugMode) {
-                    console.log(`[GREEDY SIMULATE DEBUG] Found ${assignedSource}→${assignedTarget} using ${node.id}.${edge} as source`);
+                    logger.debug(`[GREEDY SIMULATE DEBUG] Found ${assignedSource}→${assignedTarget} using ${node.id}.${edge} as source`);
                 }
                 edgeLinks.push({ link: assignedLink, isSource: true, isCurrentLink: false });
             } else if (assignedTarget === node.id && routing.targetEdge === edge) {
                 if (this.optimizer.visualizer?.debugMode) {
-                    console.log(`[GREEDY SIMULATE DEBUG] Found ${assignedSource}→${assignedTarget} using ${node.id}.${edge} as target`);
+                    logger.debug(`[GREEDY SIMULATE DEBUG] Found ${assignedSource}→${assignedTarget} using ${node.id}.${edge} as target`);
                 }
                 edgeLinks.push({ link: assignedLink, isSource: false, isCurrentLink: false });
             }
         }
         if (this.optimizer.visualizer?.debugMode) {
-            console.log(`[GREEDY SIMULATE DEBUG] Total edgeLinks for ${node.id}.${edge}: ${edgeLinks.length}`);
+            logger.debug(`[GREEDY SIMULATE DEBUG] Total edgeLinks for ${node.id}.${edge}: ${edgeLinks.length}`);
         }
 
         // Single link on edge: use edge center
         if (edgeLinks.length === 1) {
             const centerPoint = this.optimizer.getEdgeCenterPoint(node, edge);
             if (this.optimizer.visualizer?.debugMode) {
-                console.log(`[GREEDY SIMULATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${isSource ? 'source' : 'target'} on ${node.id}.${edge}: single link, using center=(${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
+                logger.debug(`[GREEDY SIMULATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${isSource ? 'source' : 'target'} on ${node.id}.${edge}: single link, using center=(${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
             }
             return centerPoint;
         }
@@ -199,7 +199,7 @@ class CSPSolver {
         }
 
         if (this.optimizer.visualizer?.debugMode) {
-            console.log(`[GREEDY SIMULATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${isSource ? 'source' : 'target'} on ${node.id}.${edge}: position ${currentIndex + 1}/${totalCount}, simulated=(${x.toFixed(1)}, ${y.toFixed(1)})`);
+            logger.debug(`[GREEDY SIMULATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${isSource ? 'source' : 'target'} on ${node.id}.${edge}: position ${currentIndex + 1}/${totalCount}, simulated=(${x.toFixed(1)}, ${y.toFixed(1)})`);
         }
 
         return { x, y };
@@ -219,7 +219,7 @@ class CSPSolver {
         if (data.data && data.data.type === 'solution_improved') {
             const now = performance.now();
             if (now - lastProgressRender >= TransitionLayoutOptimizer.PROGRESS_RENDER_INTERVAL_MS) {
-                console.log(`[OPTIMIZE PROGRESSIVE] Solution improved: score=${data.data.score.toFixed(1)}, progress=${(data.data.progress * 100).toFixed(1)}%`);
+                logger.debug(`[OPTIMIZE PROGRESSIVE] Solution improved: score=${data.data.score.toFixed(1)}, progress=${(data.data.progress * 100).toFixed(1)}%`);
                 this.optimizer._applySolutionToLinks(data.data.assignment, links, nodes);
                 this._syncRoutingToOriginalLinks(links);  // Sync routing back
                 return now;
@@ -229,25 +229,25 @@ class CSPSolver {
     }
 
     _handleSolutionMessage(solution, score, stats, links, nodes, worker, onComplete) {
-        console.log(`[OPTIMIZE PROGRESSIVE] CSP solution received (score=${score}, nodes=${stats.nodeCount}, prunes=${stats.pruneCount})`);
-        console.log('[OPTIMIZE PROGRESSIVE] Applying CSP solution...');
+        logger.debug(`[OPTIMIZE PROGRESSIVE] CSP solution received (score=${score}, nodes=${stats.nodeCount}, prunes=${stats.pruneCount})`);
+        logger.debug('[OPTIMIZE PROGRESSIVE] Applying CSP solution...');
         this.optimizer._applySolutionToLinks(solution, links, nodes);
         this._syncRoutingToOriginalLinks(links);  // Sync routing back
-        console.log('[OPTIMIZE PROGRESSIVE] Background CSP complete!');
+        logger.debug('[OPTIMIZE PROGRESSIVE] Background CSP complete!');
         worker.terminate();
         if (onComplete) onComplete(true);
         return null;
     }
 
     _handleCancelledMessage(worker, onComplete) {
-        console.log('[OPTIMIZE PROGRESSIVE] CSP cancelled by user');
+        logger.debug('[OPTIMIZE PROGRESSIVE] CSP cancelled by user');
         worker.terminate();
         if (onComplete) onComplete(false);
         return null;
     }
 
     _handleFailedMessage(worker, onComplete) {
-        console.log('[OPTIMIZE PROGRESSIVE] CSP failed, keeping greedy result');
+        logger.debug('[OPTIMIZE PROGRESSIVE] CSP failed, keeping greedy result');
         worker.terminate();
         if (onComplete) onComplete(false);
         return null;
@@ -274,15 +274,15 @@ class CSPSolver {
             link.linkType === 'transition' || link.linkType === 'initial'
         );
 
-        console.log('[OPTIMIZE PROGRESSIVE] Starting progressive optimization...');
+        logger.debug('[OPTIMIZE PROGRESSIVE] Starting progressive optimization...');
 
         // Progressive optimization: greedy step for immediate feedback
-        console.log('[OPTIMIZE PROGRESSIVE] Greedy step: immediate rendering...');
+        logger.debug('[OPTIMIZE PROGRESSIVE] Greedy step: immediate rendering...');
         this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
         this._syncRoutingToOriginalLinks(effectiveLinks);  // Sync routing back
         
         // Return immediately - user sees greedy result
-        console.log('[OPTIMIZE PROGRESSIVE] Greedy step complete, scheduling background CSP refinement...');
+        logger.debug('[OPTIMIZE PROGRESSIVE] Greedy step complete, scheduling background CSP refinement...');
 
         // Progressive optimization: CSP refinement with Web Worker
         let timeoutId = null;
@@ -292,19 +292,19 @@ class CSPSolver {
             if (timeoutId) {
                 clearTimeout(timeoutId);
                 timeoutId = null;
-                console.log('[OPTIMIZE PROGRESSIVE] Cancelled (timeout cleared)');
+                logger.debug('[OPTIMIZE PROGRESSIVE] Cancelled (timeout cleared)');
             }
             if (worker) {
                 worker.postMessage({ type: 'cancel' });
                 worker.terminate();
                 worker = null;
-                console.log('[OPTIMIZE PROGRESSIVE] Cancelled (Worker terminated)');
+                logger.debug('[OPTIMIZE PROGRESSIVE] Cancelled (Worker terminated)');
             }
         };
 
         // Skip CSP for large state machines (threshold)
         if (transitionLinks.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
-            console.log(`[OPTIMIZE PROGRESSIVE] ${transitionLinks.length} transitions exceed threshold, skipping background CSP`);
+            logger.debug(`[OPTIMIZE PROGRESSIVE] ${transitionLinks.length} transitions exceed threshold, skipping background CSP`);
             if (onComplete) onComplete(false);
             return { cancel };
         }
@@ -312,11 +312,11 @@ class CSPSolver {
         // Schedule background CSP with Web Worker
         timeoutId = setTimeout(() => {
             timeoutId = null;
-            console.log('[OPTIMIZE PROGRESSIVE] CSP refinement step: Starting background optimization with Web Worker...');
+            logger.debug('[OPTIMIZE PROGRESSIVE] CSP refinement step: Starting background optimization with Web Worker...');
 
             // Check if Worker is supported
             if (typeof Worker === 'undefined') {
-                console.warn('[OPTIMIZE PROGRESSIVE] Web Workers not supported, falling back to main thread CSP');
+                logger.warn('[OPTIMIZE PROGRESSIVE] Web Workers not supported, falling back to main thread CSP');
                 this.fallbackToMainThreadCSP(transitionLinks, nodes, draggedNodeId, onComplete);
                 return;
             }
@@ -339,7 +339,7 @@ class CSPSolver {
 
                         case 'intermediate_solution':
                             // Progressive refinement: apply intermediate solution without completing
-                            console.log(`[OPTIMIZE PROGRESSIVE] Intermediate solution (iteration ${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
+                            logger.debug(`[OPTIMIZE PROGRESSIVE] Intermediate solution (iteration ${iteration}/${totalIterations}): score=${score.toFixed(1)}`);
                             this.optimizer._applySolutionToLinks(solution, transitionLinks, nodes);
                             this._syncRoutingToOriginalLinks(transitionLinks);  // Sync routing back
 
@@ -392,7 +392,7 @@ class CSPSolver {
                     preferences: Object.fromEntries(greedySolution.preferences)
                 };
 
-                console.log(`[OPTIMIZE PROGRESSIVE] Sending greedy solution to Worker: score=${greedySolution.score.toFixed(1)}`);
+                logger.debug(`[OPTIMIZE PROGRESSIVE] Sending greedy solution to Worker: score=${greedySolution.score.toFixed(1)}`);
 
                 // Send solve request to worker with greedy warm-start and dragged node
                 worker.postMessage({
@@ -406,7 +406,7 @@ class CSPSolver {
 
             } catch (error) {
                 console.error('[OPTIMIZE PROGRESSIVE] Failed to create Worker:', error);
-                console.warn('[OPTIMIZE PROGRESSIVE] Falling back to main thread CSP');
+                logger.warn('[OPTIMIZE PROGRESSIVE] Falling back to main thread CSP');
                 this.fallbackToMainThreadCSP(transitionLinks, nodes, draggedNodeId, onComplete);
             }
         }, debounceMs);
@@ -420,12 +420,12 @@ class CSPSolver {
         try {
             // Check if ConstraintSolver is available
             if (typeof ConstraintSolver === 'undefined') {
-                console.warn('[OPTIMIZE PROGRESSIVE] ConstraintSolver not found, skipping CSP');
+                logger.warn('[OPTIMIZE PROGRESSIVE] ConstraintSolver not found, skipping CSP');
                 if (onComplete) onComplete(false);
                 return;
             }
 
-            console.log('[OPTIMIZE PROGRESSIVE] Starting progressive CSP refinement (8 iterations × 250ms, main thread)...');
+            logger.debug('[OPTIMIZE PROGRESSIVE] Starting progressive CSP refinement (8 iterations × 250ms, main thread)...');
 
             // Build parent-child map
             const parentChildMap = new Map();
@@ -437,7 +437,7 @@ class CSPSolver {
 
             // Convert greedy results to CSP solution format
             let currentBestSolution = this.optimizer.convertGreedyToCSPSolution(links);
-            console.log(`[OPTIMIZE PROGRESSIVE] Initial solution: score=${currentBestSolution.score.toFixed(1)}`);
+            logger.debug(`[OPTIMIZE PROGRESSIVE] Initial solution: score=${currentBestSolution.score.toFixed(1)}`);
 
             // Progressive refinement: 8 iterations × 250ms = 2000ms total
             const MAX_ITERATIONS = 8;
@@ -445,7 +445,7 @@ class CSPSolver {
             let bestSolutionOverall = null;
 
             for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
-                console.log(`[OPTIMIZE PROGRESSIVE] === Iteration ${iteration + 1}/${MAX_ITERATIONS} ===`);
+                logger.debug(`[OPTIMIZE PROGRESSIVE] === Iteration ${iteration + 1}/${MAX_ITERATIONS} ===`);
 
                 // Create CSP solver with current best solution as warm-start
                 const solver = new ConstraintSolver(links, nodes, this.optimizer, parentChildMap, currentBestSolution, draggedNodeId);
@@ -454,7 +454,7 @@ class CSPSolver {
                 const solution = solver.solve();
 
                 if (solver.cancelled) {
-                    console.log(`[OPTIMIZE PROGRESSIVE] CSP cancelled during iteration ${iteration + 1}`);
+                    logger.debug(`[OPTIMIZE PROGRESSIVE] CSP cancelled during iteration ${iteration + 1}`);
                     if (onComplete) onComplete(false);
                     return;
                 }
@@ -464,7 +464,7 @@ class CSPSolver {
                     bestScoreOverall = solver.bestScore;
                     bestSolutionOverall = solution;
 
-                    console.log(`[OPTIMIZE PROGRESSIVE] Iteration ${iteration + 1}: New best score=${bestScoreOverall.toFixed(1)}`);
+                    logger.debug(`[OPTIMIZE PROGRESSIVE] Iteration ${iteration + 1}: New best score=${bestScoreOverall.toFixed(1)}`);
 
                     // Convert solution to warm-start format for next iteration
                     currentBestSolution = {
@@ -481,12 +481,12 @@ class CSPSolver {
                         });
                     });
                 } else {
-                    console.log(`[OPTIMIZE PROGRESSIVE] Iteration ${iteration + 1}: No improvement (current best: ${bestScoreOverall.toFixed(1)})`);
+                    logger.debug(`[OPTIMIZE PROGRESSIVE] Iteration ${iteration + 1}: No improvement (current best: ${bestScoreOverall.toFixed(1)})`);
                 }
 
                 // Apply intermediate solution EVERY iteration (even if no improvement)
                 if (bestSolutionOverall) {
-                    console.log(`[OPTIMIZE PROGRESSIVE] Applying intermediate solution (iteration ${iteration + 1}/${MAX_ITERATIONS})...`);
+                    logger.debug(`[OPTIMIZE PROGRESSIVE] Applying intermediate solution (iteration ${iteration + 1}/${MAX_ITERATIONS})...`);
                     bestSolutionOverall.forEach((assignment, linkId) => {
                         const link = links.find(l => l.id === linkId);
                         if (link) {
@@ -514,11 +514,11 @@ class CSPSolver {
 
             // Apply final best solution
             if (bestSolutionOverall) {
-                console.log(`[OPTIMIZE PROGRESSIVE] All iterations complete. Final solution: score=${bestScoreOverall.toFixed(1)}`);
-                console.log('[OPTIMIZE PROGRESSIVE] Main thread CSP complete!');
+                logger.debug(`[OPTIMIZE PROGRESSIVE] All iterations complete. Final solution: score=${bestScoreOverall.toFixed(1)}`);
+                logger.debug('[OPTIMIZE PROGRESSIVE] Main thread CSP complete!');
                 if (onComplete) onComplete(true);
             } else {
-                console.log('[OPTIMIZE PROGRESSIVE] No solution found after all iterations');
+                logger.debug('[OPTIMIZE PROGRESSIVE] No solution found after all iterations');
                 if (onComplete) onComplete(false);
             }
 
@@ -543,7 +543,7 @@ class CSPSolver {
         // For n > 15, CSP becomes too slow (>1000ms), use greedy instead
 
         if (useGreedy) {
-            console.log('[OPTIMIZE] Using fast greedy algorithm (drag mode)...');
+            logger.debug('[OPTIMIZE] Using fast greedy algorithm (drag mode)...');
             this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
             return;
         }
@@ -553,34 +553,34 @@ class CSPSolver {
         // 2. Then: Run CSP solver in background (slow, optimal)
         // 3. Update layout if CSP finds better solution
 
-        console.log(`[OPTIMIZE] Progressive optimization for ${transitionLinks.length} transitions...`);
-        console.log('[OPTIMIZE GREEDY] Applying Greedy algorithm immediately...');
+        logger.debug(`[OPTIMIZE] Progressive optimization for ${transitionLinks.length} transitions...`);
+        logger.debug('[OPTIMIZE GREEDY] Applying Greedy algorithm immediately...');
 
         // Apply Greedy first for instant feedback
         this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
         
-        console.log('[OPTIMIZE GREEDY] Greedy layout applied');
+        logger.debug('[OPTIMIZE GREEDY] Greedy layout applied');
 
         // Skip CSP if too many transitions
         if (transitionLinks.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
-            console.log(`[OPTIMIZE] ${transitionLinks.length} > ${TransitionLayoutOptimizer.CSP_THRESHOLD}, skipping CSP optimization`);
+            logger.debug(`[OPTIMIZE] ${transitionLinks.length} > ${TransitionLayoutOptimizer.CSP_THRESHOLD}, skipping CSP optimization`);
             return;
         }
 
         // Check if ConstraintSolver is available
         if (typeof ConstraintSolver === 'undefined') {
-            console.warn('[OPTIMIZE] ConstraintSolver not found, skipping CSP optimization');
+            logger.warn('[OPTIMIZE] ConstraintSolver not found, skipping CSP optimization');
             return;
         }
 
         // Run CSP solver asynchronously in background
         // Check if CSP is already running to avoid concurrent executions
         if (this.optimizer.cspRunning) {
-            console.log('[OPTIMIZE CSP] CSP already running, skipping duplicate optimization');
+            logger.debug('[OPTIMIZE CSP] CSP already running, skipping duplicate optimization');
             return;
         }
 
-        console.log('[OPTIMIZE CSP] Starting background CSP optimization...');
+        logger.debug('[OPTIMIZE CSP] Starting background CSP optimization...');
         
         // Set flag IMMEDIATELY to prevent duplicate scheduling
         // (requestIdleCallback has delay between schedule and execution)
@@ -652,7 +652,7 @@ class CSPSolver {
         // Note: cspRunning flag already set in optimizeSnapPointAssignments()
         // to prevent duplicate scheduling before requestIdleCallback executes
         
-        console.log('[CSP BACKGROUND] Starting CSP solver (non-blocking, max 500ms)...');
+        logger.debug('[CSP BACKGROUND] Starting CSP solver (non-blocking, max 500ms)...');
         const startTime = performance.now();
 
         // Build parent-child map from containment links
@@ -663,14 +663,14 @@ class CSPSolver {
             }
         });
         
-        console.log(`[CSP BACKGROUND] Built parent-child map with ${parentChildMap.size} entries`);
+        logger.debug(`[CSP BACKGROUND] Built parent-child map with ${parentChildMap.size} entries`);
         for (const [child, parent] of parentChildMap.entries()) {
-            console.log(`  ${parent} → ${child}`);
+            logger.debug(`  ${parent} → ${child}`);
         }
 
         // Convert greedy results to CSP solution format (Strategy 1 + 3)
         const greedySolution = this.optimizer.convertGreedyToCSPSolution(transitionLinks);
-        console.log(`[CSP BACKGROUND] Converted greedy solution: score=${greedySolution.score.toFixed(1)}, ${greedySolution.preferences.size} link preferences`);
+        logger.debug(`[CSP BACKGROUND] Converted greedy solution: score=${greedySolution.score.toFixed(1)}, ${greedySolution.preferences.size} link preferences`);
 
         // Backup greedy routing for potential restore
         const previousRoutings = new Map();
@@ -693,7 +693,7 @@ class CSPSolver {
         const elapsedMs = performance.now() - startTime;
 
         if (!solution) {
-            console.warn(`[CSP BACKGROUND] No solution found after ${elapsedMs.toFixed(1)}ms, keeping Greedy layout`);
+            logger.warn(`[CSP BACKGROUND] No solution found after ${elapsedMs.toFixed(1)}ms, keeping Greedy layout`);
             // Restore previous routing
             transitionLinks.forEach(link => {
                 if (previousRoutings.has(link.id)) {
@@ -705,7 +705,7 @@ class CSPSolver {
             return;
         }
 
-        console.log(`[CSP BACKGROUND] Solution found after ${elapsedMs.toFixed(1)}ms, updating layout...`);
+        logger.debug(`[CSP BACKGROUND] Solution found after ${elapsedMs.toFixed(1)}ms, updating layout...`);
 
         // Apply solution to links
         solution.forEach((assignment, linkId) => {
@@ -716,7 +716,7 @@ class CSPSolver {
                     assignment.targetEdge
                 );
 
-                console.log(`[CSP BACKGROUND UPDATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: ${assignment.sourceEdge}→${assignment.targetEdge}`);
+                logger.debug(`[CSP BACKGROUND UPDATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: ${assignment.sourceEdge}→${assignment.targetEdge}`);
             }
         });
 
@@ -728,11 +728,11 @@ class CSPSolver {
         });
         this.optimizer.distributeSnapPointsOnEdges(sortedLinks, nodes);
 
-        console.log('[CSP BACKGROUND] Layout updated with CSP solution');
+        logger.debug('[CSP BACKGROUND] Layout updated with CSP solution');
         
         // Trigger re-render if callback exists
         if (this.optimizer.onLayoutUpdated) {
-            console.log('[CSP BACKGROUND] Triggering re-render...');
+            logger.debug('[CSP BACKGROUND] Triggering re-render...');
             this.optimizer.onLayoutUpdated();
         }
 
@@ -741,9 +741,9 @@ class CSPSolver {
     }
 
     optimizeSnapPointAssignmentsGreedy(links, nodes, draggedNodeId = null) {
-        console.log(`[OPTIMIZE GREEDY] Input: ${links.length} links, ${nodes.length} nodes`);
-        console.log(`[OPTIMIZE GREEDY] Node IDs: ${nodes.map(n => n.id).join(', ')}`);
-        console.log('[OPTIMIZE GREEDY] Using greedy algorithm (fallback)...');
+        logger.debug(`[OPTIMIZE GREEDY] Input: ${links.length} links, ${nodes.length} nodes`);
+        logger.debug(`[OPTIMIZE GREEDY] Node IDs: ${nodes.map(n => n.id).join(', ')}`);
+        logger.debug('[OPTIMIZE GREEDY] Using greedy algorithm (fallback)...');
 
         // OPTIMIZATION: Cache CSP routing for links unaffected by drag
         // Distance threshold: links within this distance are affected by drag
@@ -809,7 +809,7 @@ class CSPSolver {
                 if (cachedCombo) {
                     assignedPaths.push(cachedCombo);
                     cachedCount++;
-                    console.log(`[OPTIMIZE GREEDY CACHE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: keeping CSP routing ${link.routing.sourceEdge}→${link.routing.targetEdge}`);
+                    logger.debug(`[OPTIMIZE GREEDY CACHE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: keeping CSP routing ${link.routing.sourceEdge}→${link.routing.targetEdge}`);
                     return; // Skip recalculation
                 }
             }
@@ -823,14 +823,14 @@ class CSPSolver {
             const reverseRouting = (reverseLink && reverseLink.routing) ? reverseLink.routing : null;
 
             if (reverseRouting) {
-                console.log(`[BIDIRECTIONAL DETECT] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} has reverse link with routing: ${reverseRouting.sourceEdge}→${reverseRouting.targetEdge}`);
+                logger.debug(`[BIDIRECTIONAL DETECT] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} has reverse link with routing: ${reverseRouting.sourceEdge}→${reverseRouting.targetEdge}`);
             }
 
             // Get all possible combinations (exclude reverse edge pair if bidirectional)
             const combinations = this.optimizer.getAllPossibleSnapCombinations(link, sourceNode, targetNode, reverseRouting);
 
             if (combinations.length === 0) {
-                console.warn(`No valid snap combinations for ${this.getVisualSource(link)}→${this.getVisualTarget(link)}`);
+                logger.warn(`No valid snap combinations for ${this.getVisualSource(link)}→${this.getVisualTarget(link)}`);
                 return;
             }
 
@@ -954,7 +954,7 @@ class CSPSolver {
                         // x1 must be right of x2 to avoid overlap
                         if (x1 < x2) {
                             if (this.optimizer.visualizer?.debugMode) {
-                                console.log(`[GREEDY SELF-OVERLAP] ${sourceEdge}→${targetEdge}: x1=${x1.toFixed(1)} < x2=${x2.toFixed(1)} (overlap!) sx=${simulatedCombo.sourcePoint.x.toFixed(1)}, tx=${simulatedCombo.targetPoint.x.toFixed(1)}`);
+                                logger.debug(`[GREEDY SELF-OVERLAP] ${sourceEdge}→${targetEdge}: x1=${x1.toFixed(1)} < x2=${x2.toFixed(1)} (overlap!) sx=${simulatedCombo.sourcePoint.x.toFixed(1)}, tx=${simulatedCombo.targetPoint.x.toFixed(1)}`);
                             }
                             selfOverlap = 1;
                         }
@@ -1002,7 +1002,7 @@ class CSPSolver {
 
                 // Debug logging for greedy scoring
                 if (this.optimizer.visualizer?.debugMode) {
-                    console.log(`[GREEDY SCORE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${sourceEdge}→${targetEdge}: tooClose=${tooCloseSnap}, selfOverlap=${selfOverlap}, nodeCol=${nodeCollisions}, intersect=${intersections}, dist=${simulatedCombo.distance.toFixed(1)}, total=${score.toFixed(1)}`);
+                    logger.debug(`[GREEDY SCORE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${sourceEdge}→${targetEdge}: tooClose=${tooCloseSnap}, selfOverlap=${selfOverlap}, nodeCol=${nodeCollisions}, intersect=${intersections}, dist=${simulatedCombo.distance.toFixed(1)}, total=${score.toFixed(1)}`);
                 }
 
                 if (score < bestScore) {
@@ -1020,7 +1020,7 @@ class CSPSolver {
 
                 assignedPaths.push(bestCombination);
 
-                console.log(`[OPTIMIZE GREEDY] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, score=${bestScore.toFixed(1)}`);
+                logger.debug(`[OPTIMIZE GREEDY] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, score=${bestScore.toFixed(1)}`);
             }
         });
 
@@ -1030,7 +1030,7 @@ class CSPSolver {
         // Post-distribution validation: Check for violations that weren't detected during greedy evaluation
         // This detects when edge center evaluation differs from distributed snap point evaluation
         if (this.optimizer.visualizer?.debugMode) {
-            console.log('[GREEDY POST-VALIDATION] Checking for collisions/overlaps after snap distribution...');
+            logger.debug('[GREEDY POST-VALIDATION] Checking for collisions/overlaps after snap distribution...');
         }
         let violationsDetected = 0;
         
@@ -1085,7 +1085,7 @@ class CSPSolver {
 
             if (hasOverlap) {
                 if (this.optimizer.visualizer?.debugMode) {
-                    console.log(`[GREEDY VIOLATION] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${actualCombo.sourceEdge}→${actualCombo.targetEdge}: Self-overlap detected after snap distribution! Source=(${actualCombo.sourcePoint.x.toFixed(1)}, ${actualCombo.sourcePoint.y.toFixed(1)}), Target=(${actualCombo.targetPoint.x.toFixed(1)}, ${actualCombo.targetPoint.y.toFixed(1)})`);
+                    logger.debug(`[GREEDY VIOLATION] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${actualCombo.sourceEdge}→${actualCombo.targetEdge}: Self-overlap detected after snap distribution! Source=(${actualCombo.sourcePoint.x.toFixed(1)}, ${actualCombo.sourcePoint.y.toFixed(1)}), Target=(${actualCombo.targetPoint.x.toFixed(1)}, ${actualCombo.targetPoint.y.toFixed(1)})`);
                 }
                 violationsDetected++;
             }
@@ -1101,7 +1101,7 @@ class CSPSolver {
 
             if (hasCollision) {
                 if (this.optimizer.visualizer?.debugMode) {
-                    console.log(`[GREEDY VIOLATION] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${actualCombo.sourceEdge}→${actualCombo.targetEdge}: Node collision detected after snap distribution!`);
+                    logger.debug(`[GREEDY VIOLATION] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${actualCombo.sourceEdge}→${actualCombo.targetEdge}: Node collision detected after snap distribution!`);
                 }
                 violationsDetected++;
             }
@@ -1109,14 +1109,14 @@ class CSPSolver {
 
         if (violationsDetected > 0) {
             if (this.optimizer.visualizer?.debugMode) {
-                console.log(`[GREEDY POST-VALIDATION] Found ${violationsDetected} violation(s). CSP solver will attempt to fix.`);
+                logger.debug(`[GREEDY POST-VALIDATION] Found ${violationsDetected} violation(s). CSP solver will attempt to fix.`);
             }
         } else {
             if (this.optimizer.visualizer?.debugMode) {
-                console.log('[GREEDY POST-VALIDATION] No violations detected.');
+                logger.debug('[GREEDY POST-VALIDATION] No violations detected.');
             }
         }
 
-        console.log(`[OPTIMIZE GREEDY] Completed: ${links.length} links (cached: ${cachedCount}, recalculated: ${recalculatedCount})`);
+        logger.debug(`[OPTIMIZE GREEDY] Completed: ${links.length} links (cached: ${cachedCount}, recalculated: ${recalculatedCount})`);
     }
 }

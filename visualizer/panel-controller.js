@@ -45,7 +45,7 @@ class PanelController {
      */
     log(...args) {
         if (PANEL_CONFIG.DEBUG_MODE) {
-            console.log('[Panel Controller]', ...args);
+            logger.debug('[Panel Controller]', ...args);
         }
     }
 

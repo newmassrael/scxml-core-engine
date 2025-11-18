@@ -32,15 +32,15 @@ class UIUpdater {
 
     updateEventQueue() {
         if (!this.controller.elements.eventQueuePanel) {
-            console.warn('event-queue-panel not found');
+            logger.warn('event-queue-panel not found');
             return;
         }
 
         try {
             const queue = this.controller.runner.getEventQueue();
-            console.log('[DEBUG] getEventQueue() returned:', queue);
-            console.log('[DEBUG] queue type:', typeof queue);
-            console.log('[DEBUG] queue.external:', queue.external);
+            logger.debug('[DEBUG] getEventQueue() returned:', queue);
+            logger.debug('[DEBUG] queue type:', typeof queue);
+            logger.debug('[DEBUG] queue.external:', queue.external);
 
             let html = '<h4>Internal Queue</h4>';
             if (queue.internal && queue.internal.length > 0) {
@@ -76,13 +76,13 @@ class UIUpdater {
     updateScheduledEvents() {
         const panel = document.getElementById('scheduled-events-panel');
         if (!panel) {
-            console.warn('scheduled-events-panel not found');
+            logger.warn('scheduled-events-panel not found');
             return;
         }
 
         try {
             const scheduledEvents = this.controller.runner.getScheduledEvents();
-            console.log('[DEBUG] getScheduledEvents() returned:', scheduledEvents);
+            logger.debug('[DEBUG] getScheduledEvents() returned:', scheduledEvents);
 
             let html = '';
             if (scheduledEvents && scheduledEvents.length > 0) {
@@ -161,10 +161,10 @@ class UIUpdater {
 
                 // If any events are ready, poll scheduler to move them to queue
                 if (anyEventsReady) {
-                    console.log('[Timer] Events ready, polling scheduler to move to queue');
+                    logger.debug('[Timer] Events ready, polling scheduler to move to queue');
                     const polledCount = this.controller.runner.pollScheduler();
                     if (polledCount > 0) {
-                        console.log(`[Timer] Polled ${polledCount} events, updating UI`);
+                        logger.debug(`[Timer] Polled ${polledCount} events, updating UI`);
                         // Update event queue display to show moved events
                         this.controller.updateEventQueue();
                         // Refresh scheduled events display (events should be removed)
@@ -447,7 +447,7 @@ class UIUpdater {
             // Highlight the first newly activated state (if any)
             if (newlyActivatedStates.length > 0) {
                 const stateToHighlight = newlyActivatedStates[0];
-                console.log(`[Auto Highlight] State activated: ${stateToHighlight}`);
+                logger.debug(`[Auto Highlight] State activated: ${stateToHighlight}`);
                 this.controller.highlightStateInPanel(stateToHighlight);
             }
 
@@ -484,10 +484,10 @@ class UIUpdater {
         try {
             // Get transition from C++ (StateSnapshot restores this correctly)
             const lastTransition = this.controller.runner.getLastTransition();
-            console.log('[UPDATE TRANSITION] getLastTransition() returned:', lastTransition);
+            logger.debug('[UPDATE TRANSITION] getLastTransition() returned:', lastTransition);
 
             if (lastTransition && lastTransition.source && lastTransition.target) {
-                console.log(`[UPDATE TRANSITION] Valid transition: ${lastTransition.source} → ${lastTransition.target}`);
+                logger.debug(`[UPDATE TRANSITION] Valid transition: ${lastTransition.source} → ${lastTransition.target}`);
 
                 // Note: Auto-expansion is handled by InteractionHandler.highlightActiveStates()
 
@@ -495,9 +495,9 @@ class UIUpdater {
                 this.controller.visualizer.setActiveTransition(lastTransition);
                 // Highlight in diagram (temporary)
                 this.controller.visualizer.highlightTransition(lastTransition);
-                console.log('[UPDATE TRANSITION] All transition updates complete');
+                logger.debug('[UPDATE TRANSITION] All transition updates complete');
             } else {
-                console.log('[UPDATE TRANSITION] No transition to display (initial state or no state change)');
+                logger.debug('[UPDATE TRANSITION] No transition to display (initial state or no state change)');
             }
         } catch (error) {
             console.error('Error animating transition:', error);
