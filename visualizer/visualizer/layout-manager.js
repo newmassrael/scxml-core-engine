@@ -405,6 +405,14 @@ class LayoutManager {
         compoundNode.height = maxY - minY;
 
         console.log(`[updateCompoundBounds] ${compoundNode.id}: Updated to (${compoundNode.x.toFixed(1)}, ${compoundNode.y.toFixed(1)}) size=${compoundNode.width.toFixed(1)}x${compoundNode.height.toFixed(1)}`);
+
+        // Push away overlapping non-child states after bounds update
+        // Use stored drag direction if available (from drag handlers) for natural sliding
+        if (this.visualizer.collisionDetector) {
+            const dragDx = compoundNode._dragDx || 0;
+            const dragDy = compoundNode._dragDy || 0;
+            this.visualizer.collisionDetector.pushAwayOverlappingStates(compoundNode, dragDx, dragDy);
+        }
     }
 
     findCompoundParent(nodeId) {

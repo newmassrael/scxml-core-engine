@@ -107,6 +107,7 @@ class SCXMLVisualizer {
         this.pathCalculator = new PathCalculator(this);
         this.focusManager = new TransitionFocusManager(this);
         this.interactionHandler = new InteractionHandler(this);
+        this.collisionDetector = new CollisionDetector(this);
 
         // Store initialization promise for external waiting
         this.initPromise = this.initGraph();

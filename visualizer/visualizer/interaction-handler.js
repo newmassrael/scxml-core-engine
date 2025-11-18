@@ -380,6 +380,32 @@ class InteractionHandler {
             }
             
             this.visualizer.updateCompoundBounds(state);
+            
+            // Push away overlapping states when expanding (direct positioning - one shot)
+            if (this.visualizer.collisionDetector) {
+                // Direct positioning: states moved immediately to boundary, not gradual push
+                // Only need 1-2 iterations (2nd for cascading collisions)
+                let iteration = 0;
+                let affectedCount = 0;
+                const MAX_ITERATIONS = 3; // 1 for main, 1-2 for cascade
+                
+                do {
+                    // Use 100% damping (1.0) for expansion to fully resolve overlaps
+                    // Drag uses 40% damping (default) for smooth following
+                    affectedCount = this.visualizer.collisionDetector.pushAwayOverlappingStates(state, 0, 0, false, 1.0);
+                    iteration++;
+                    if (this.visualizer.debugMode) {
+                        console.log(`  → Collision iteration ${iteration}: pushed ${affectedCount} states`);
+                    }
+                } while (affectedCount > 0 && iteration < MAX_ITERATIONS);
+                
+                if (affectedCount > 0 && this.visualizer.debugMode) {
+                    console.warn(`  ⚠️ Still ${affectedCount} overlapping states after ${MAX_ITERATIONS} iterations`);
+                }
+                
+                // Don't call updatePushedStatesDOM() here - render() will handle it
+                // updatePushedStatesDOM() uses requestAnimationFrame which conflicts with immediate render()
+            }
         }
         
         // Always update parent bounds when child size changes

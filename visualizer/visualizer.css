@@ -1173,13 +1173,13 @@ body {
 
 /* OPTION 2: Compound State Container Boxes (UML Standard) */
 .compound-container {
-    fill: none;
+    fill: transparent;
     stroke: #0969da;
     stroke-width: 2px;
     rx: 10px;
     ry: 10px;
     transition: all 0.2s ease;
-    pointer-events: all;
+    pointer-events: fill;  /* Internal empty space clickable (children have priority) */
     cursor: pointer;
 }
 
