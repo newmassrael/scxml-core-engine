@@ -66,6 +66,90 @@ async function loadSCXMLContent() {
 }
 
 /**
+ * Create a validation error message for <script> element violations
+ * @param {string} violation - Description of the violation
+ * @param {string} details - Specific details about what was found
+ * @param {number} elementIndex - 0-based index of the script element
+ * @returns {Error} Formatted error object
+ */
+function createScriptValidationError(violation, details, elementIndex) {
+    return new Error([
+        'SCXML Document Rejected (W3C SCXML 5.8.2)',
+        '',
+        violation,
+        '',
+        details,
+        `Location: <script> element #${elementIndex + 1}`,
+        '',
+        'The SCXML processor cannot execute this document.'
+    ].join('\n'));
+}
+
+/**
+ * W3C SCXML 5.8.2: Validate <script> elements
+ * @param {Document} xmlDoc - Parsed SCXML document
+ * @throws {Error} If document violates W3C SCXML script requirements
+ */
+function validateScriptElements(xmlDoc) {
+    // W3C SCXML 5.8.2: Validate all <script> elements
+    const scripts = xmlDoc.querySelectorAll('script');
+    
+    for (let i = 0; i < scripts.length; i++) {
+        const script = scripts[i];
+        const hasSrc = script.hasAttribute('src');
+        const hasContent = script.textContent.trim().length > 0;
+        
+        // W3C SCXML 5.8.2: Must specify either src or child content (not both, not neither)
+        if (!hasSrc && !hasContent) {
+            throw createScriptValidationError(
+                '<script> element must specify either \'src\' attribute or child content.',
+                'Found: Empty <script/> element',
+                i
+            );
+        }
+        
+        if (hasSrc && hasContent) {
+            throw createScriptValidationError(
+                '<script> element cannot specify both \'src\' attribute and child content.',
+                `Found: <script src="${script.getAttribute('src')}">...</script>`,
+                i
+            );
+        }
+        
+        // W3C SCXML 5.8.2: If src is specified, download must succeed
+        // Note: Modern browsers deprecated synchronous XHR (blocks main thread)
+        // Browser will automatically handle script loading errors at runtime
+        // and throw appropriate errors if download fails
+        if (hasSrc) {
+            const src = script.getAttribute('src');
+            
+            // Check for empty src attribute
+            if (!src || src.trim().length === 0) {
+                throw createScriptValidationError(
+                    'Script element has empty src attribute.',
+                    'Found: <script src=""/>',
+                    i
+                );
+            }
+            
+            logger.debug(`Script element with src="${src}" will be validated by browser at runtime (W3C SCXML 5.8.2)`);
+            
+            // Optional: Basic URL validation to catch obvious errors early
+            try {
+                new URL(src, window.location.href); // Validates URL format
+                logger.debug(`URL format valid: ${src}`);
+            } catch (urlError) {
+                throw createScriptValidationError(
+                    'Invalid script URL format.',
+                    `URL: ${src}\nError: ${urlError.message}`,
+                    i
+                );
+            }
+        }
+    }
+}
+
+/**
  * Initialize visualizer (simplified - engine handles invoke automatically)
  */
 async function initVisualizer(scxmlContent) {
@@ -77,6 +161,26 @@ async function initVisualizer(scxmlContent) {
         window.Module = await createVisualizer();  // Make Module globally accessible
         const Module = window.Module;  // Local alias for convenience
         logger.debug('WASM module loaded');
+
+        // W3C SCXML 5.8.2: Parse and validate <script> elements before execution
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(scxmlContent, 'text/xml');
+        
+        // Check for XML parse errors
+        const parseError = xmlDoc.querySelector('parsererror');
+        if (parseError) {
+            throw new Error('XML parsing failed: ' + parseError.textContent);
+        }
+        
+        // Validate script elements
+        try {
+            validateScriptElements(xmlDoc);
+        } catch (error) {
+            // Document rejected - display error and stop execution
+            showLoading(false);
+            showFatalError(error.message);
+            return;
+        }
 
         // Setup Emscripten virtual file system for invoke resolution
         const params = parseHashParams();
@@ -109,17 +213,8 @@ async function initVisualizer(scxmlContent) {
                 const childFiles = new Set();  // Use Set to avoid duplicates
 
                 try {
-                    // Use DOMParser for robust XML parsing (avoids regex pitfalls)
-                    const parser = new DOMParser();
-                    const xmlDoc = parser.parseFromString(scxmlContent, 'text/xml');
-
-                    // Check for parse errors
-                    const parseError = xmlDoc.querySelector('parsererror');
-                    if (parseError) {
-                        logger.warn('XML parsing failed, falling back to regex extraction:', parseError.textContent);
-                        throw new Error('XML parse error');
-                    }
-
+                    // Reuse already-parsed xmlDoc (avoid duplicate parsing)
+                    
                     // Extract static src="file:..." from invoke elements
                     const invokeElements = xmlDoc.querySelectorAll('invoke[src]');
                     invokeElements.forEach(invoke => {
