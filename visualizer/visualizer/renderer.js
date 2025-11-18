@@ -66,8 +66,11 @@ class Renderer {
         const containerElements = this.visualizer.zoomContainer.selectAll('rect.compound-container')
             .data(compoundData, d => d.id);
 
-        // Remove old containers (exit)
-        containerElements.exit().remove();
+        // Remove old containers (exit) - cleanup event handlers to prevent memory leaks
+        containerElements.exit()
+            .on('mouseenter', null)
+            .on('mouseleave', null)
+            .remove();
 
         // Add new containers (enter)
         const containerEnter = containerElements.enter().append('rect')
@@ -87,6 +90,18 @@ class Renderer {
             .style('cursor', 'pointer')
             .call(d3.drag()
                 .on('start', function(event, d) {
+                    // Check if the actual clicked element is a child node
+                    const clickedElement = event.sourceEvent.target;
+                    const isChildNode = clickedElement.closest('g.node.state') !== null;
+
+                    if (isChildNode) {
+                        // Child node was clicked, abort compound drag
+                        if (self.debugMode) {
+                            console.log(`[DRAG START COMPOUND] ${d.id} - Aborting: child node clicked`);
+                        }
+                        return;
+                    }
+
                     if (self.debugMode) {
                         console.log(`[DRAG START COMPOUND] ${d.id} at (${d.x}, ${d.y})`);
                     }
@@ -131,96 +146,92 @@ class Renderer {
                 })
 
                 .on('drag', function(event, d) {
+                    const dragStartTime = performance.now();
+
                     // Store delta before updating
                     const dx = event.dx;
                     const dy = event.dy;
 
-                    // If this compound has a parent, move the parent instead (entire hierarchy)
+                    // Store drag direction for collision detection
+                    d._dragDx = dx;
+                    d._dragDy = dy;
+
+                    // Update compound position
+                    d.x += dx;
+                    d.y += dy;
+
+                    // Update all descendants
+                    if (d.children) {
+                        const allDescendantIds = new Set(d._cachedDescendants);
+                        const childrenSet = new Set(d.children);
+
+                        self.nodes.forEach(node => {
+                            // Update direct children
+                            if (childrenSet.has(node.id)) {
+                                node.x += dx;
+                                node.y += dy;
+
+                                // Update collapsed child's DOM elements
+                                if (node.collapsed && self.constructor.isCompoundOrParallel(node)) {
+                                    self.zoomContainer.selectAll('g.collapsed-compound')
+                                        .filter(function(d) { return d.id === node.id; })
+                                        .attr('transform', `translate(${node.x}, ${node.y})`);
+                                }
+                            }
+                            // Update grandchildren and deeper (not direct children)
+                            else if (allDescendantIds.has(node.id)) {
+                                node.x += dx;
+                                node.y += dy;
+
+                                // Update collapsed descendant's DOM elements
+                                if (node.collapsed && self.constructor.isCompoundOrParallel(node)) {
+                                    self.zoomContainer.selectAll('g.collapsed-compound')
+                                        .filter(collapsed => collapsed.id === node.id)
+                                        .attr('transform', `translate(${node.x}, ${node.y})`);
+                                }
+                            }
+                        });
+                    }
+
+                    // Centralized collision detection
+                    if (self.collisionDetector) {
+                        self.collisionDetector.handleDragCollision(d, dx, dy);
+                    }
+
+                    // If this compound has a parent, expand parent to contain it
                     if (d.dragParent) {
                         if (self.debugMode) {
-                            console.log(`[DRAG COMPOUND] ${d.id} has parent ${d.dragParent.id}, moving entire hierarchy`);
+                            console.log(`[DRAG COMPOUND] ${d.id} moving, expanding parent ${d.dragParent.id} if needed`);
                         }
-                        
-                        // Update parent position (data only)
-                        d.dragParent.x += dx;
-                        d.dragParent.y += dy;
-                        
-                        // Update all descendants (including this compound) with single pass
-                        if (d.dragParent.children) {
-                            // Convert to Set for O(1) lookup performance
-                            const allDescendantIds = new Set(d._cachedDescendants);
-                            const parentChildrenSet = new Set(d.dragParent.children);
-                            
-                            // Single pass: update data positions for ALL descendants
-                            self.nodes.forEach(node => {
-                                // Update direct children of parent
-                                if (parentChildrenSet.has(node.id)) {
-                                    node.x += dx;
-                                    node.y += dy;
-                                    
-                                    // Update collapsed child's DOM elements
-                                    if (node.collapsed && self.constructor.isCompoundOrParallel(node)) {
-                                        self.zoomContainer.selectAll('g.collapsed-compound')
-                                            .filter(function(d) { return d.id === node.id; })
-                                            .attr('transform', `translate(${node.x}, ${node.y})`);
-                                    }
-                                }
-                                // Update grandchildren and deeper (not direct children)
-                                else if (allDescendantIds.has(node.id)) {
-                                    node.x += dx;
-                                    node.y += dy;
-                                    
-                                    // Update collapsed descendant's DOM elements
-                                    if (node.collapsed && self.constructor.isCompoundOrParallel(node)) {
-                                        self.zoomContainer.selectAll('g.collapsed-compound')
-                                            .filter(collapsed => collapsed.id === node.id)
-                                            .attr('transform', `translate(${node.x}, ${node.y})`);
-                                    }
-                                }
-                            });
-                    }
-                    } else {
-                        // No parent: move only this compound and its children
-                        // console.log(`[DRAG COMPOUND] ${d.id} at (${d.x.toFixed(1)}, ${d.y.toFixed(1)}) dx=${dx.toFixed(1)} dy=${dy.toFixed(1)}`);
-                        
-                        // Update compound position (data only)
-                        d.x += dx;
-                        d.y += dy;
 
-                        // Update children positions and visuals with single pass
-                        if (d.children) {
-                            // Convert to Set for O(1) lookup performance
-                            const allDescendantIds = new Set(d._cachedDescendants);
-                            const childrenSet = new Set(d.children);
-                            
-                            // Single pass: update data positions for ALL descendants
-                            self.nodes.forEach(node => {
-                                // Update direct children
-                                if (childrenSet.has(node.id)) {
-                                    node.x += dx;
-                                    node.y += dy;
-                                    
-                                    // Update collapsed child's DOM elements
-                                    if (node.collapsed && self.constructor.isCompoundOrParallel(node)) {
-                                        self.zoomContainer.selectAll('g.collapsed-compound')
-                                            .filter(function(d) { return d.id === node.id; })
-                                            .attr('transform', `translate(${node.x}, ${node.y})`);
-                                    }
-                                }
-                                // Update grandchildren and deeper (not direct children)
-                                else if (allDescendantIds.has(node.id)) {
-                                    node.x += dx;
-                                    node.y += dy;
-                                    
-                                    // Update collapsed descendant's DOM elements
-                                    if (node.collapsed && self.constructor.isCompoundOrParallel(node)) {
-                                        self.zoomContainer.selectAll('g.collapsed-compound')
-                                            .filter(collapsed => collapsed.id === node.id)
-                                            .attr('transform', `translate(${node.x}, ${node.y})`);
-                                    }
+                        // Expand parent bounds in real-time to contain all children
+                        self.updateCompoundBounds(d.dragParent);
+
+                        // Update parent container visual in real-time
+                        if (self.compoundContainers) {
+                            self.compoundContainers.each(function(compoundData) {
+                                if (compoundData.id === d.dragParent.id) {
+                                    d3.select(this)
+                                        .attr('x', d.dragParent.x - d.dragParent.width/2)
+                                        .attr('y', d.dragParent.y - d.dragParent.height/2)
+                                        .attr('width', d.dragParent.width)
+                                        .attr('height', d.dragParent.height);
                                 }
                             });
                         }
+
+                        // Update parent label position in real-time
+                        if (self.compoundLabels) {
+                            self.compoundLabels.each(function(labelData) {
+                                if (labelData.id === d.dragParent.id) {
+                                    d3.select(this)
+                                        .attr('x', d.dragParent.x - d.dragParent.width/2 + 10)
+                                        .attr('y', d.dragParent.y - d.dragParent.height/2 + 20);
+                                }
+                            });
+                        }
+
+                        
                     }
 
                     // Time-based throttling: max 20fps for link path updates (50ms interval)
@@ -229,20 +240,33 @@ class Renderer {
                         lastLinkUpdateTime = now;
                         self.updateLinksFast();
                     }
+
+                    const dragEndTime = performance.now();
+                    const totalDragTime = dragEndTime - dragStartTime;
+
+                    // Warn if drag handler is too slow (> 16ms = below 60fps)
+                    if (totalDragTime > 16) {
+                        console.warn(`[DRAG COMPOUND] SLOW: ${d.id} drag handler took ${totalDragTime.toFixed(2)}ms (target: <16ms for 60fps)`);
+                    }
                 })
-                
+
                 .on('end', function(event, d) {
                     if (self.debugMode) {
                         console.log(`[DRAG END COMPOUND] ${d.id}`);
                     }
                     
                     // dragAnimationFrame removed (using time-based throttling instead)
-                    
-                    d.isDragging = false;
-                    self.isDraggingAny = false;
-                    
-                    // Cleanup cached descendants
+
+                    // Add small delay before clearing isDragging to prevent race condition with mouseenter
+                    setTimeout(() => {
+                        d.isDragging = false;
+                        self.isDraggingAny = false;
+                    }, 50);  // 50ms delay prevents immediate mouseenter from raising element
+
+                    // Cleanup cached descendants and drag direction
                     delete d._cachedDescendants;
+                    delete d._dragDx;
+                    delete d._dragDy;
                     
                     // Update bounds based on whether we moved parent or self
                     if (d.dragParent) {
@@ -279,7 +303,13 @@ class Renderer {
                             .attr('width', d.width)
                             .attr('height', d.height);
                     }
-                    
+
+                    // Raise all child nodes to front after compound drag
+                    // This ensures child nodes are always on top of compound containers
+                    if (self.nodeElements) {
+                        self.nodeElements.raise();
+                    }
+
                     // Immediate greedy optimization for instant UI feedback
                     self.updateLinksFast();
 
@@ -376,6 +406,23 @@ class Renderer {
         // Merge enter + update selections
         this.visualizer.compoundContainers = containerEnter.merge(containerElements);
 
+        // Add mouseenter/mouseleave handlers to all containers (enter + update)
+        this.visualizer.compoundContainers
+            .on('mouseenter', function(event, d) {
+                console.log(`[MOUSEENTER COMPOUND] ${d.id}`);
+                // Don't raise during drag to prevent z-order conflicts
+                if (d.isDragging || self.isDraggingAny) {
+                    console.log(`[MOUSEENTER COMPOUND] ${d.id} - skipping raise (dragging)`);
+                    return;
+                }
+                // Compounds should always stay behind child nodes
+                // Do NOT raise to prevent blocking child node events
+            })
+            .on('mouseleave', function(event, d) {
+                console.log(`[MOUSELEAVE COMPOUND] ${d.id}`);
+                // Compounds always behind, no z-order restoration needed
+            });
+
         // Update existing containers (positions may have changed)
         this.visualizer.compoundContainers
             .attr('x', d => d.x - d.width/2)
@@ -395,11 +442,18 @@ class Renderer {
             n.type !== 'compound' && n.type !== 'parallel'
         );
 
-        this.visualizer.nodeElements = this.visualizer.zoomContainer.append('g')
-            .attr('class', 'nodes')
-            .selectAll('g')
-            .data(regularNodes)
-            .enter().append('g')
+        // D3 data join pattern for nodes: select existing nodes, bind data, handle enter/update/exit
+        const nodeElements = this.visualizer.zoomContainer.selectAll('g.node.state')
+            .data(regularNodes, d => d.id);
+
+        // Remove old nodes (exit) - cleanup event handlers to prevent memory leaks
+        nodeElements.exit()
+            .on('mouseenter', null)
+            .on('mouseleave', null)
+            .remove();
+
+        // Add new nodes (enter)
+        const nodeEnter = nodeElements.enter().append('g')
             .attr('class', d => {
                 let classes = 'node state';
                 if (d.type === 'atomic') classes += ' state-atomic';
@@ -420,6 +474,15 @@ class Renderer {
                 .on('start', function(event, d) {
                     if (self.debugMode) {
                         console.log(`[DRAG START] ${d.id} at (${d.x}, ${d.y})`);
+                    }
+
+                    // Prevent event from bubbling to parent compound container
+                    if (event.sourceEvent) {
+                        event.sourceEvent.stopPropagation();
+                    }
+                    // Also try direct stopPropagation
+                    if (event.stopPropagation) {
+                        event.stopPropagation();
                     }
 
                     // Store initial position for click vs drag detection
@@ -466,61 +529,67 @@ class Renderer {
                     const dx = event.dx;
                     const dy = event.dy;
 
-                    // If node has a compound/parallel parent, move the parent instead
+                    // Update node position
+                    d.x += dx;
+                    d.y += dy;
+                    
+                    // Centralized collision detection
+                    if (self.collisionDetector) {
+                        self.collisionDetector.handleDragCollision(d, dx, dy);
+                    }
+
+                    // If node has a compound/parallel parent, expand parent to contain child
                     if (d.dragParent) {
                         if (self.debugMode) {
-                            console.log(`[DRAG] Moving parent ${d.dragParent.id} instead of child ${d.id}`);
-                        }
-                        
-                        // Update parent position
-                        d.dragParent.x += dx;
-                        d.dragParent.y += dy;
-                        
-                        // Update parent's DOM element if collapsed
-                        if (d.dragParent.collapsed) {
-                            self.zoomContainer.selectAll('g.collapsed-compound')
-                                .filter(function(collapsed) { return collapsed.id === d.dragParent.id; })
-                                .attr('transform', `translate(${d.dragParent.x}, ${d.dragParent.y})`);
+                            console.log(`[DRAG] Moving child ${d.id}, expanding parent ${d.dragParent.id} if needed`);
                         }
 
-                        // Update all children positions (including this node) with single pass
-                        if (d.dragParent.children) {
-                            // Convert to Set for O(1) lookup performance
-                            const allDescendantIds = new Set(d._cachedDescendants);
-                            const parentChildrenSet = new Set(d.dragParent.children);
-                            
-                            // Single pass: update data positions for ALL descendants
+                        // Update child's descendants if it has any
+                        if (d.children) {
+                            const childrenSet = new Set(d.children);
                             self.nodes.forEach(node => {
-                                // Update direct children
-                                if (parentChildrenSet.has(node.id)) {
+                                if (childrenSet.has(node.id)) {
                                     node.x += dx;
                                     node.y += dy;
-                                    
+
                                     // Update collapsed child's DOM elements
                                     if (node.collapsed && self.constructor.isCompoundOrParallel(node)) {
                                         self.zoomContainer.selectAll('g.collapsed-compound')
-                                            .filter(function(d) { return d.id === node.id; })
-                                            .attr('transform', `translate(${node.x}, ${node.y})`);
-                                    }
-                                }
-                                // Update grandchildren and deeper (not direct children)
-                                else if (allDescendantIds.has(node.id)) {
-                                    node.x += dx;
-                                    node.y += dy;
-                                    
-                                    // Update collapsed descendant's DOM elements
-                                    if (node.collapsed && self.constructor.isCompoundOrParallel(node)) {
-                                        self.zoomContainer.selectAll('g.collapsed-compound')
-                                            .filter(collapsed => collapsed.id === node.id)
+                                            .filter(function(collapsed) { return collapsed.id === node.id; })
                                             .attr('transform', `translate(${node.x}, ${node.y})`);
                                     }
                                 }
                             });
                         }
-                    } else {
-                        // No parent: move only this node (data only)
-                        d.x += dx;
-                        d.y += dy;
+
+                        // Expand parent bounds in real-time to contain all children
+                        self.updateCompoundBounds(d.dragParent);
+
+                        // Update parent container visual in real-time
+                        if (self.compoundContainers) {
+                            self.compoundContainers.each(function(compoundData) {
+                                if (compoundData.id === d.dragParent.id) {
+                                    d3.select(this)
+                                        .attr('x', d.dragParent.x - d.dragParent.width/2)
+                                        .attr('y', d.dragParent.y - d.dragParent.height/2)
+                                        .attr('width', d.dragParent.width)
+                                        .attr('height', d.dragParent.height);
+                                }
+                            });
+                        }
+
+                        // Update parent label position in real-time
+                        if (self.compoundLabels) {
+                            self.compoundLabels.each(function(labelData) {
+                                if (labelData.id === d.dragParent.id) {
+                                    d3.select(this)
+                                        .attr('x', d.dragParent.x - d.dragParent.width/2 + 10)
+                                        .attr('y', d.dragParent.y - d.dragParent.height/2 + 20);
+                                }
+                            });
+                        }
+
+                        
                     }
 
                     // Throttle link updates with RAF (for both cases)
@@ -540,8 +609,16 @@ class Renderer {
                     if (self.debugMode) {
                         console.log(`[DRAG END] ${d.id} at (${d.x}, ${d.y})`);
                     }
-                    d.isDragging = false;
-                    self.isDraggingAny = false;
+
+                    // Add small delay before clearing isDragging to prevent race condition with mouseenter
+                    setTimeout(() => {
+                        d.isDragging = false;
+                        self.isDraggingAny = false;
+                    }, 50);  // 50ms delay prevents immediate mouseenter from raising element
+
+                    // Cleanup drag direction
+                    delete d._dragDx;
+                    delete d._dragDy;
 
                     // Cancel any pending animation frame
                     // dragAnimationFrame removed (using time-based throttling instead)
@@ -689,6 +766,48 @@ class Renderer {
                     }
                 }));
 
+        // Merge enter + update selections
+        this.visualizer.nodeElements = nodeEnter.merge(nodeElements);
+
+        // Add mouseenter/mouseleave handlers to all nodes (enter + update)
+        this.visualizer.nodeElements
+            .on('mouseenter', function(event, d) {
+                console.log(`[MOUSEENTER NODE] ${d.id} - stopPropagation()`);
+                // Stop event from bubbling to parent compound
+                event.stopPropagation();
+                // Don't raise during drag to prevent z-order conflicts
+                if (d.isDragging || self.isDraggingAny) {
+                    console.log(`[MOUSEENTER NODE] ${d.id} - skipping raise (dragging)`);
+                    return;
+                }
+                // Raise node to front when mouse enters
+                d3.select(this).raise();
+            })
+            .on('mouseleave', function(event, d) {
+                console.log(`[MOUSELEAVE NODE] ${d.id} - restoring z-order`);
+                // Stop event from bubbling to parent compound
+                event.stopPropagation();
+                // Restore z-order: compounds to back, nodes in data order
+                try {
+                    self.compoundContainers.lower();
+                    if (self.nodeElements && self.nodeElements.size() > 0) {
+                        self.nodeElements.order();  // Reorder nodes by data order
+                    }
+                } catch (error) {
+                    console.error(`[MOUSELEAVE NODE] Error restoring z-order:`, error);
+                }
+            });
+
+        // Update existing nodes (positions may have changed)
+        this.visualizer.nodeElements
+            .attr('transform', d => `translate(${d.x},${d.y})`);
+
+        // Move compound containers to back so child nodes are always on top
+        // This must be done AFTER nodes are created, otherwise compounds may be added after nodes
+        console.log('[RENDER] Calling compounds.lower() - moving compounds to back');
+        this.visualizer.compoundContainers.lower();
+        console.log('[RENDER] After lower(), compound count:', this.visualizer.compoundContainers.size());
+
         // Shapes
         this.visualizer.nodeElements.filter(d => d.type === 'initial-pseudo')
             .append('circle')
@@ -818,14 +937,26 @@ class Renderer {
             .text('H');
 
 this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
-            .attr('class', 'compound-labels')
-            .selectAll('text')
-            .data(compoundData)
-            .enter().append('text')
-            .attr('x', d => d.x - d.width/2 + 10)
-            .attr('y', d => d.y - d.height/2 + 20)
-            .attr('text-anchor', 'start')
-            .text(d => d.id);
+    .attr('class', 'compound-labels')
+    .selectAll('text')
+    .data(compoundData)
+    .enter().append('text')
+    .attr('x', d => d.x - d.width/2 + 10)
+    .attr('y', d => d.y - d.height/2 + 20)
+    .attr('text-anchor', 'start')
+    .style('pointer-events', 'auto')  // Make labels clickable
+    .style('cursor', 'pointer')       // Show pointer cursor
+    .text(d => d.id)
+    .on('click', (event, d) => {
+        event.stopPropagation();
+        this.visualizer.toggleCompoundState(d.id);
+
+        // Design System: Panel + Diagram interaction
+        if (window.executionController) {
+            window.executionController.highlightStateInPanel(d.id);
+            window.executionController.focusState(d.id);
+        }
+    });
 
         // TWO-PASS ALGORITHM FOR ACCURATE SNAP POSITIONING
         // Pass 1: Calculate actual directions for all links (with collision avoidance)
@@ -1125,14 +1256,19 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
             .on('drag', function(event, d) {
                 const dx = event.dx;
                 const dy = event.dy;
+
+                // Store drag direction for collision detection
+                d._dragDx = dx;
+                d._dragDy = dy;
+
                 d.x += dx;
                 d.y += dy;
-                
+
                 // Update children positions (hidden but data must be synced for link calculations)
                 if (d.children) {
                     const allDescendantIds = new Set(d._cachedDescendants);
                     const childrenSet = new Set(d.children);
-                    
+
                     self.nodes.forEach(node => {
                         if (childrenSet.has(node.id) || allDescendantIds.has(node.id)) {
                             node.x += dx;
@@ -1147,7 +1283,12 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                         }
                     });
                 }
-                
+
+                // Centralized collision detection
+                if (self.collisionDetector) {
+                    self.collisionDetector.handleDragCollision(d, dx, dy);
+                }
+
                 d3.select(this).attr('transform', `translate(${d.x}, ${d.y})`);
 
                 // Throttle link updates to 20fps for smooth drag performance
@@ -1158,18 +1299,24 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 }
             })
             .on('end', function(event, d) {
-                // Update isDragging on actual node in self.nodes array
-                const node = self.nodes.find(n => n.id === d.id);
-                if (node) {
-                    node.isDragging = false;
-                }
-                
                 d3.select(this).classed('dragging', false);
-                d.isDragging = false;
-                self.isDraggingAny = false;
-                
-                // Cleanup cached descendants
+
+                // Add small delay before clearing isDragging to prevent race condition with mouseenter
+                setTimeout(() => {
+                    // Update isDragging on actual node in self.nodes array
+                    const node = self.nodes.find(n => n.id === d.id);
+                    if (node) {
+                        node.isDragging = false;
+                    }
+
+                    d.isDragging = false;
+                    self.isDraggingAny = false;
+                }, 50);  // 50ms delay prevents immediate mouseenter from raising element
+
+                // Cleanup cached descendants and drag direction
                 delete d._cachedDescendants;
+                delete d._dragDx;
+                delete d._dragDy;
                 
                 // Calculate drag distance to distinguish click vs drag
                 const dragDistance = Math.hypot(d.x - d.dragStartX, d.y - d.dragStartY);
