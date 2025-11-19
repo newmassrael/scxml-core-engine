@@ -140,42 +140,20 @@ class NodeBuilder {
             return node.collapsed ? LAYOUT_CONSTANTS.STATE_MIN_WIDTH : 300;
         }
 
-        // Initial estimate based on state ID and action content
+        // Dynamic width calculation strategy:
+        // 1. Start with minimum width for initial layout
+        // 2. renderer.js measures actual SVG text with getBBox() (line 1854)
+        // 3. Overflow detection triggers resize if needed (line 1869)
+        // 4. requestIdleCallback ensures non-blocking re-render (line 972)
+        // Trade-off: One-time re-render for 100% accurate sizing
         let maxWidth = LAYOUT_CONSTANTS.STATE_MIN_WIDTH;
 
-        // State ID length
-        const idWidth = (node.id || '').length * 10 + 60;
+        // State ID length consideration
+        const idWidth = (node.id || '').length * LAYOUT_CONSTANTS.STATE_ID_CHAR_WIDTH + LAYOUT_CONSTANTS.STATE_ID_BASE_PADDING;
         if (idWidth > maxWidth) maxWidth = idWidth;
 
-        // Estimate based on action content (simple heuristic to reduce re-render frequency)
-        const actions = [...(node.onentry || []), ...(node.onexit || [])];
-        if (actions.length > 0) {
-            // Estimate action text length (rough approximation)
-            actions.forEach(action => {
-                let estimatedLength = 0;
-
-                // Estimate main action text length
-                if (action.type === 'send') {
-                    estimatedLength = 60 + (action.event || '').length + (action.target || '').length;
-                } else if (action.type === 'assign') {
-                    estimatedLength = 50 + (action.location || '').length + (action.expr || '').length;
-                } else if (action.type === 'log') {
-                    estimatedLength = 40 + (action.label || action.expr || '').length;
-                } else if (action.type === 'script') {
-                    estimatedLength = 50 + ((action.content || '').length / 2); // Scripts often have newlines
-                } else if (action.type === 'if') {
-                    estimatedLength = 60 + (action.cond || '').length;
-                } else {
-                    estimatedLength = 50; // Default for other action types
-                }
-
-                // Character width approximation using LAYOUT_CONSTANTS
-                const estimatedWidth = estimatedLength * LAYOUT_CONSTANTS.CHARACTER_WIDTH_ESTIMATE + LAYOUT_CONSTANTS.WIDTH_ESTIMATE_MARGIN;
-                if (estimatedWidth > maxWidth) maxWidth = estimatedWidth;
-            });
-        }
-
-        // Return initial estimate - actual width will be adjusted in renderer.js if overflow occurs
+        // Return minimal estimate - renderer.js will measure actual content
+        // and adjust width dynamically for perfect fit
         return Math.min(maxWidth, LAYOUT_CONSTANTS.STATE_MAX_WIDTH);
     }
 
