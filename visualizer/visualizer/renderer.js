@@ -884,7 +884,8 @@ class Renderer {
                                 color: '#0969da',  // Blue to match invoke badge
                                 actions: [{
                                     actionType: 'invoke',
-                                    _formatted: formatted  // Pre-formatted data
+                                    _formatted: formatted,  // Pre-formatted data
+                                    _invokeData: invoke     // Store invoke data for navigation
                                 }],
                                 yOffset: yOffset,
                                 stateData: d,
@@ -1689,6 +1690,41 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 const actionGroup = group.append('g');
                 const fullText = `${prefix} / ${formatted.main}`;
 
+                // Color constants for action backgrounds
+                const ACTION_COLORS = {
+                    ENTRY: '#f0fdf4',      // Light green for entry actions
+                    EXIT: '#fef2f2',       // Light red for exit actions
+                    INVOKE_HOVER: '#dbeafe', // Light blue for invoke hover
+                    DEFAULT_OPACITY: 0.6,
+                    HOVER_OPACITY: 0.9
+                };
+
+                // Determine original color based on prefix
+                const originalColor = prefix.includes('entry') ? ACTION_COLORS.ENTRY : ACTION_COLORS.EXIT;
+
+                // W3C SCXML 6.3: Setup invoke click handler (if applicable)
+                const isInvoke = action.actionType === 'invoke' && action._invokeData;
+                if (isInvoke) {
+                    actionGroup
+                        .style('cursor', 'pointer')
+                        .on('click', function(event) {
+                            event.stopPropagation();  // Prevent state click
+
+                            const invoke = action._invokeData;
+                            logger.debug(`[CLICK INVOKE] Navigating to child state machine`, invoke);
+
+                            const navEvent = new CustomEvent('state-navigate', {
+                                detail: {
+                                    stateId: stateData.id,
+                                    invokeSrc: invoke.invokeSrc,
+                                    invokeSrcExpr: invoke.invokeSrcExpr,
+                                    invokeId: invoke.invokeId
+                                }
+                            });
+                            document.dispatchEvent(navEvent);
+                        });
+                }
+
                 // Create background layer first (will be drawn behind)
                 const bgLayer = actionGroup.append('g').attr('class', 'bg-layer');
 
@@ -1732,14 +1768,29 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     const boxY = currentYOffset - boxHeight / 2;
 
                     // Add background box to bg layer (behind text)
-                    bgLayer.append('rect')
+                    const bgRect = bgLayer.append('rect')
                         .attr('x', boxX)
                         .attr('y', boxY)
                         .attr('width', boxWidth)
                         .attr('height', boxHeight)
-                        .attr('fill', prefix.includes('entry') ? '#f0fdf4' : '#fef2f2')
+                        .attr('fill', originalColor)
                         .attr('rx', 4)
-                        .attr('opacity', 0.6);
+                        .attr('opacity', ACTION_COLORS.DEFAULT_OPACITY);
+
+                    // W3C SCXML 6.3: Add hover effect for invoke (after rect creation)
+                    if (isInvoke) {
+                        actionGroup
+                            .on('mouseenter', function() {
+                                bgRect
+                                    .attr('fill', ACTION_COLORS.INVOKE_HOVER)
+                                    .attr('opacity', ACTION_COLORS.HOVER_OPACITY);
+                            })
+                            .on('mouseleave', function() {
+                                bgRect
+                                    .attr('fill', originalColor)
+                                    .attr('opacity', ACTION_COLORS.DEFAULT_OPACITY);
+                            });
+                    }
                 });
 
                 yOffset += defaultHeight + boxPaddingV + 4; // Move to next action (reduced spacing)
