@@ -22,7 +22,19 @@ const LAYOUT_CONSTANTS = {
     STATE_MIN_HEIGHT: 50,          // Minimum height for states without actions
     TEXT_LEFT_MARGIN_PERCENT: 0.10, // Left margin as percentage of state width (10%)
     TEXT_PADDING: 8,               // Additional padding for text positioning
-    VIEWPORT_PADDING: 40           // Padding for centerDiagram viewport fit
+    VIEWPORT_PADDING: 40,          // Padding for centerDiagram viewport fit
+
+    // Action box rendering constants (must match renderer.js)
+    ACTION_BOX_PADDING_LEFT: 6,    // Left padding for action background box
+    ACTION_BOX_PADDING_RIGHT: 6,   // Right padding for action background box
+    ACTION_BOX_PADDING_VERTICAL: 6, // Vertical padding for action background box
+    ACTION_DEFAULT_HEIGHT: 15,     // Default height for action text spacing
+    ACTION_DETAIL_INDENT_LEVEL1: 10, // First level detail line indent (e.g., "   ↳ ")
+    ACTION_DETAIL_INDENT_LEVEL2: 30, // Second level detail line indent (e.g., "      ↳ ")
+
+    // Width estimation constants for node-builder.js
+    CHARACTER_WIDTH_ESTIMATE: 8,   // Approximate pixel width per character
+    WIDTH_ESTIMATE_MARGIN: 100     // Additional margin for width estimates
 };
 
 // ELK (Eclipse Layout Kernel) configuration constants
