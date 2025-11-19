@@ -177,6 +177,205 @@ const ActionFormatter = (function() {
     }
 
     /**
+     * Format script action
+     * W3C SCXML 5.9: Execute ECMAScript code
+     * @param {Object} action - Script action object
+     * @returns {string} Formatted action text
+     */
+    function formatScriptAction(action) {
+        const icon = '📜';
+        const content = action.content || action.src || '';
+
+        if (!content) {
+            return `${icon} Script: (empty)`;
+        }
+
+        // Show preview of script content
+        const preview = content.trim().substring(0, TRUNCATION.EXPRESSION);
+        const truncated = content.trim().length > TRUNCATION.EXPRESSION
+            ? preview + '...'
+            : preview;
+
+        // If it's a source file reference
+        if (action.src) {
+            return `${icon} Script: src="${truncated}"`;
+        }
+
+        return `${icon} Script: ${truncated}`;
+    }
+
+    /**
+     * Format foreach action main line
+     * W3C SCXML 3.12.2: Iteration over arrays
+     * @param {Object} action - Foreach action object
+     * @returns {string} Formatted main line (e.g., "🔁 foreach: item in array")
+     */
+    function formatForeachAction(action) {
+        const icon = '🔁';
+        const item = action.item || '?';
+        const array = action.array || '?';
+        const index = action.index;
+
+        let text = `${icon} foreach: ${item} in ${array}`;
+        if (index) {
+            text += ` (index: ${index})`;
+        }
+
+        return text;
+    }
+
+    /**
+     * Format foreach action detail lines
+     * Shows nested actions if present
+     * @param {Object} action - Foreach action object
+     * @returns {Array<string>} Array of detail lines for nested actions
+     */
+    function formatForeachDetails(action) {
+        const details = [];
+        const actions = action.actions || [];
+
+        // If foreach has nested actions, show them
+        if (actions.length > 0) {
+            const nestedPrefix = '      ↳ ';  // Same as if/elseif nested actions
+
+            actions.forEach(a => {
+                const type = a.actionType || a.type || '?';
+                let actionText = '';
+
+                if (type === 'raise') {
+                    actionText = `raise ${a.event || '?'}`;
+                } else if (type === 'assign') {
+                    const location = a.location || '?';
+                    const expr = a.expr || '?';
+                    actionText = `assign ${location} = ${expr}`;
+                } else if (type === 'send') {
+                    actionText = `send ${a.event || a.eventexpr || '?'}`;
+                } else if (type === 'log') {
+                    actionText = `log ${a.label || a.expr || ''}`;
+                } else if (type === 'cancel') {
+                    actionText = 'cancel';
+                } else {
+                    actionText = type;
+                }
+
+                details.push(`${nestedPrefix}${actionText}`);
+            });
+        }
+
+        return details;
+    }
+
+    /**
+     * Format if action main line
+     * W3C SCXML 3.12.1: Conditional execution with if/elseif/else structure
+     * @param {Object} action - If action object
+     * @returns {string} Formatted main line (e.g., "🔀 if/elseif/else [3 branches]")
+     */
+    function formatIfAction(action) {
+        const icon = '🔀';
+        const branches = action.branches || [];
+        const branchCount = branches.length;
+
+        // No branches case (shouldn't happen, but handle gracefully)
+        if (branchCount === 0) {
+            const cond = action.cond || '?';
+            const truncatedCond = cond.length > TRUNCATION.EXPRESSION
+                ? cond.substring(0, TRUNCATION.EXPRESSION) + '...'
+                : cond;
+            return `${icon} if [${truncatedCond}]`;
+        }
+
+        // Build branch type summary (if/elseif/else)
+        const branchTypes = branches.map((b, i) => {
+            if (b.isElse) return 'else';
+            if (i === 0) return 'if';
+            return 'elseif';
+        }).join('/');
+
+        return `${icon} ${branchTypes} [${branchCount} branch${branchCount > 1 ? 'es' : ''}]`;
+    }
+
+    /**
+     * Format if action detail lines
+     * Shows each branch with its condition and nested actions summary
+     * @param {Object} action - If action object
+     * @returns {Array<string>} Array of detail lines for each branch
+     */
+    function formatIfDetails(action) {
+        const details = [];
+        const branches = action.branches || [];
+
+        // Debug: Log action structure to help diagnose
+        if (branches.length > 0 && console && console.log) {
+            console.log('[ActionFormatter] if action structure:', {
+                actionCond: action.cond,
+                branchCount: branches.length,
+                branches: branches.map((b, i) => ({
+                    index: i,
+                    cond: b.cond,
+                    isElse: b.isElse,
+                    actionCount: (b.actions || []).length
+                }))
+            });
+        }
+
+        branches.forEach((branch, idx) => {
+            // Build branch header
+            let branchType;
+            if (branch.isElse) {
+                branchType = 'else:';
+            } else {
+                // Get condition from branch (C++ uses branch.condition for ALL branches including if)
+                // Try both field names (cond/condition) for compatibility
+                const cond = branch.cond || branch.condition || '?';
+                const truncatedCond = cond.length > TRUNCATION.EXPRESSION
+                    ? cond.substring(0, TRUNCATION.EXPRESSION) + '...'
+                    : cond;
+                
+                // Determine branch type by index
+                if (idx === 0) {
+                    branchType = `if: [${truncatedCond}]`;
+                } else {
+                    branchType = `elseif: [${truncatedCond}]`;
+                }
+            }
+
+            // Add branch header line
+            details.push(`${DETAIL_PREFIX}${branchType}`);
+
+            // Add each nested action on separate line with deeper indent
+            const actions = branch.actions || [];
+            // Use non-breaking spaces to preserve indent in SVG rendering
+            const nestedPrefix = '      ↳ ';  // 6 non-breaking spaces + arrow
+            
+            actions.forEach(a => {
+                const type = a.actionType || a.type || '?';
+                let actionText = '';
+                
+                if (type === 'raise') {
+                    actionText = `raise ${a.event || '?'}`;
+                } else if (type === 'assign') {
+                    const location = a.location || '?';
+                    const expr = a.expr || '?';
+                    actionText = `assign ${location} = ${expr}`;
+                } else if (type === 'send') {
+                    actionText = `send ${a.event || a.eventexpr || '?'}`;
+                } else if (type === 'log') {
+                    actionText = 'log';
+                } else if (type === 'cancel') {
+                    actionText = 'cancel';
+                } else {
+                    actionText = type;
+                }
+                
+                details.push(`${nestedPrefix}${actionText}`);
+            });
+        });
+
+        return details;
+    }
+
+    /**
      * Format any action type
      * @param {Object} action - Action object
      * @returns {Object} {main: string, details: Array<string>}
@@ -215,6 +414,17 @@ const ActionFormatter = (function() {
                 case 'cancel':
                     main = formatCancelAction(action);
                     break;
+                case 'script':
+                    main = formatScriptAction(action);
+                    break;
+                case 'foreach':
+                    main = formatForeachAction(action);
+                    details = formatForeachDetails(action);
+                    break;
+                case 'if':
+                    main = formatIfAction(action);
+                    details = formatIfDetails(action);
+                    break;
                 default:
                     main = `⚙️ ${actionType}`;
             }
@@ -236,6 +446,11 @@ const ActionFormatter = (function() {
         formatRaiseAction: formatRaiseAction,
         formatAssignAction: formatAssignAction,
         formatLogAction: formatLogAction,
-        formatCancelAction: formatCancelAction
+        formatCancelAction: formatCancelAction,
+        formatScriptAction: formatScriptAction,
+        formatForeachAction: formatForeachAction,
+        formatForeachDetails: formatForeachDetails,
+        formatIfAction: formatIfAction,
+        formatIfDetails: formatIfDetails
     };
 })();

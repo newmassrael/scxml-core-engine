@@ -95,44 +95,49 @@ class BreadcrumbManager {
         const findInvokeStates = (states, parentPath = '') => {
             for (const state of states) {
                 const statePath = parentPath ? `${parentPath}.${state.id}` : state.id;
-                
-                if (state.hasInvoke && (state.invokeSrc || state.invokeSrcExpr)) {
-                    logger.debug(`[extractSubSCXMLInfo] Found invoke state: ${state.id}, src: ${state.invokeSrc}, srcexpr: ${state.invokeSrcExpr}`);
 
-                    // W3C SCXML 6.4: Handle both static src and dynamic srcexpr
-                    const srcPath = state.invokeSrc || state.invokeSrcExpr;
+                // W3C SCXML 6.4: States can have multiple invoke elements
+                if (state.hasInvoke && state.invokes && state.invokes.length > 0) {
+                    state.invokes.forEach(invoke => {
+                        if (invoke.invokeSrc || invoke.invokeSrcExpr) {
+                            logger.debug(`[extractSubSCXMLInfo] Found invoke in state: ${state.id}, src: ${invoke.invokeSrc}, srcexpr: ${invoke.invokeSrcExpr}`);
 
-                    // Find matching sub-SCXML from runner's list
-                    // Helper: Extract filename from path for comparison
-                    const getFilename = (path) => path?.replace(/^file:/, '').split('/').pop() || '';
+                            // W3C SCXML 6.4: Handle both static src and dynamic srcexpr
+                            const srcPath = invoke.invokeSrc || invoke.invokeSrcExpr;
 
-                    const matchingSubSCXML = allSubSCXMLs.find(sub => {
-                        if (sub.parentStateId === state.id) return true;
-                        if (sub.srcPath === srcPath) return true;
+                            // Find matching sub-SCXML from runner's list
+                            // Helper: Extract filename from path for comparison
+                            const getFilename = (path) => path?.replace(/^file:/, '').split('/').pop() || '';
 
-                        // For srcexpr, compare filenames (not substring match to avoid false positives)
-                        if (state.invokeSrcExpr && sub.srcPath) {
-                            const subFilename = getFilename(sub.srcPath);
-                            const exprFilename = getFilename(state.invokeSrcExpr);
-                            return subFilename === exprFilename;
+                            const matchingSubSCXML = allSubSCXMLs.find(sub => {
+                                if (sub.parentStateId === state.id) return true;
+                                if (sub.srcPath === srcPath) return true;
+
+                                // For srcexpr, compare filenames (not substring match to avoid false positives)
+                                if (invoke.invokeSrcExpr && sub.srcPath) {
+                                    const subFilename = getFilename(sub.srcPath);
+                                    const exprFilename = getFilename(invoke.invokeSrcExpr);
+                                    return subFilename === exprFilename;
+                                }
+
+                                return false;
+                            });
+
+                            if (matchingSubSCXML) {
+                                subSCXMLs.push(matchingSubSCXML);
+                            } else {
+                                // Store metadata even if structure not available
+                                // For srcexpr, we'll need to evaluate at navigation time
+                                subSCXMLs.push({
+                                    parentStateId: state.id,
+                                    srcPath: invoke.invokeSrc,
+                                    srcExpr: invoke.invokeSrcExpr,  // Store srcexpr for later evaluation
+                                    invokeId: invoke.invokeId || srcPath,
+                                    structure: null  // Structure not available (will be resolved dynamically)
+                                });
+                            }
                         }
-
-                        return false;
                     });
-
-                    if (matchingSubSCXML) {
-                        subSCXMLs.push(matchingSubSCXML);
-                    } else {
-                        // Store metadata even if structure not available
-                        // For srcexpr, we'll need to evaluate at navigation time
-                        subSCXMLs.push({
-                            parentStateId: state.id,
-                            srcPath: state.invokeSrc,
-                            srcExpr: state.invokeSrcExpr,  // Store srcexpr for later evaluation
-                            invokeId: state.invokeId || srcPath,
-                            structure: null  // Structure not available (will be resolved dynamically)
-                        });
-                    }
                 }
                 
                 // Recursively check children

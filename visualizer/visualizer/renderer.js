@@ -867,6 +867,34 @@ class Renderer {
                     yOffset += 20; // Space below separator
                 }
 
+                // Invoke information (W3C SCXML 6.4)
+                // States can have multiple invoke elements
+                if (d.invokes && d.invokes.length > 0) {
+                    d.invokes.forEach((invoke, index) => {
+                        const formatted = InvokeFormatter.formatInvokeInfo(invoke);
+
+                        if (formatted.main) {
+                            // Add index for multiple invokes (e.g., "↓ invoke [1]", "↓ invoke [2]")
+                            const prefix = d.invokes.length > 1
+                                ? `↓ invoke [${index + 1}]`
+                                : '↓ invoke';
+
+                            yOffset = self.renderActionTexts({
+                                prefix: prefix,
+                                color: '#0969da',  // Blue to match invoke badge
+                                actions: [{
+                                    actionType: 'invoke',
+                                    _formatted: formatted  // Pre-formatted data
+                                }],
+                                yOffset: yOffset,
+                                stateData: d,
+                                group: group,
+                                leftMargin: leftMargin
+                            });
+                        }
+                    });
+                }
+
                 // Entry actions with precise background boxes (layered approach)
                 if (d.onentry && d.onentry.length > 0) {
                     yOffset = self.renderActionTexts({
@@ -1647,8 +1675,15 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         const self = this;
 
         actions.forEach(action => {
-            // Use ActionFormatter for consistent multi-line display
-            const formatted = ActionFormatter.formatAction(action);
+            // Check if pre-formatted (for invoke) or use ActionFormatter
+            let formatted;
+            if (action._formatted) {
+                // Pre-formatted data (e.g., invoke)
+                formatted = action._formatted;
+            } else {
+                // Use ActionFormatter for regular actions
+                formatted = ActionFormatter.formatAction(action);
+            }
 
             if (formatted.main) {
                 const actionGroup = group.append('g');
@@ -1712,15 +1747,27 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 // Render detail lines (for send actions with content, params, etc.)
                 if (formatted.details && formatted.details.length > 0) {
                     formatted.details.forEach(detail => {
+                        // Detect nested indent level by counting leading spaces/non-breaking spaces
+                        // First level: '   ↳ ' (3 spaces) → indent 10px
+                        // Second level: '      ↳ ' (6 spaces) → indent 30px
+                        let indentX = textX + 10;
+                        let displayText = detail;
+
+                        // Count leading whitespace (regular spaces or non-breaking spaces U+00A0)
+                        const leadingSpaces = detail.match(/^[\s\u00a0]*/)[0].length;
+                        if (leadingSpaces >= 6) {
+                            indentX = textX + 30; // Deeper indent for nested actions
+                        }
+
                         const detailElement = textLayer.append('text')
-                            .attr('x', textX + 10) // Indent detail lines
+                            .attr('x', indentX)
                             .attr('y', yOffset)
                             .attr('text-anchor', 'start')
                             .attr('dominant-baseline', 'middle')
                             .attr('font-size', '11px')
                             .attr('fill', '#6b7280') // Gray color for details
                             .style('pointer-events', 'none')
-                            .text(detail);
+                            .text(displayText);
 
                         yOffset += 16; // Spacing between detail lines
                     });
@@ -1906,15 +1953,17 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         }
         
         // W3C SCXML 6.3: Invoke navigation - if state has invoke, navigate to child
-        if (d.hasInvoke) {
+        if (d.hasInvoke && d.invokes && d.invokes.length > 0) {
             logger.debug(`State ${d.id} has invoke - dispatching state-navigate event`);
-            
+
+            // Use first invoke for navigation (multiple invokes require UI to select)
+            const firstInvoke = d.invokes[0];
             const navEvent = new CustomEvent('state-navigate', {
                 detail: {
                     stateId: d.id,
-                    invokeSrc: d.invokeSrc,
-                    invokeSrcExpr: d.invokeSrcExpr,
-                    invokeId: d.invokeId
+                    invokeSrc: firstInvoke.invokeSrc,
+                    invokeSrcExpr: firstInvoke.invokeSrcExpr,
+                    invokeId: firstInvoke.invokeId
                 }
             });
             document.dispatchEvent(navEvent);

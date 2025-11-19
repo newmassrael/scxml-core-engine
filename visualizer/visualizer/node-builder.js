@@ -36,11 +36,23 @@ class NodeBuilder {
                 collapsed: (state.type === 'compound'),  // Only compound states collapsed, parallel expanded
                 onentry: state.onentry || [],
                 onexit: state.onexit || [],
-                // W3C SCXML 6.3: Invoke metadata for child SCXML navigation
-                hasInvoke: state.hasInvoke || false,
-                invokeSrc: state.invokeSrc || null,
-                invokeSrcExpr: state.invokeSrcExpr || null,
-                invokeId: state.invokeId || null
+                // W3C SCXML 6.4: Invoke metadata for child SCXML/service invocation
+                // States can have multiple invoke elements (array)
+                invokes: state.hasInvoke && state.invokes ? state.invokes.map(invoke => ({
+                    hasInvoke: true,
+                    invokeType: invoke.invokeType || null,
+                    invokeTypeExpr: invoke.invokeTypeExpr || null,
+                    invokeSrc: invoke.invokeSrc || null,
+                    invokeSrcExpr: invoke.invokeSrcExpr || null,
+                    invokeId: invoke.invokeId || null,
+                    invokeIdLocation: invoke.invokeIdLocation || null,
+                    invokeNamelist: invoke.invokeNamelist || null,
+                    invokeAutoForward: invoke.invokeAutoForward || false,
+                    invokeParams: invoke.invokeParams || [],
+                    invokeContent: invoke.invokeContent || null,
+                    invokeContentExpr: invoke.invokeContentExpr || null,
+                    invokeFinalize: invoke.invokeFinalize || null
+                })) : []
             };
 
             // Debug: Log children arrays for compound/parallel states
@@ -219,6 +231,21 @@ class NodeBuilder {
         let mainLines = 0;
         let detailLines = 0;
         let actionsWithDetails = 0;        // Actions that have detail lines
+
+        // Count invoke lines if present (W3C SCXML 6.4)
+        // States can have multiple invoke elements
+        if (node.invokes && node.invokes.length > 0) {
+            node.invokes.forEach(invoke => {
+                const formatted = InvokeFormatter.formatInvokeInfo(invoke);
+                if (formatted.main) {
+                    mainLines += 1;
+                    detailLines += (formatted.details?.length || 0);
+                    if (formatted.details && formatted.details.length > 0) {
+                        actionsWithDetails += 1;
+                    }
+                }
+            });
+        }
 
         (node.onentry || []).forEach(action => {
             const formatted = ActionFormatter.formatAction(action);
