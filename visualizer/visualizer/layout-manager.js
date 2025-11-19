@@ -76,6 +76,11 @@ class LayoutManager {
                 if (node.type === 'parallel') {
                     elkNode.layoutOptions['elk.direction'] = 'RIGHT';
                     elkNode.layoutOptions['elk.spacing.nodeNode'] = ELK_LAYOUT_CONFIG.PARALLEL_CHILD_SPACING;
+                } else {
+                    // Compound states: arrange children vertically with sufficient spacing
+                    // Prevents overlap like s111/s11p1 in test 364
+                    elkNode.layoutOptions['elk.spacing.nodeNode'] = '80';
+                    elkNode.layoutOptions['elk.layered.spacing.nodeNodeBetweenLayers'] = '100';
                 }
 
                 // Recursively build children
@@ -175,17 +180,20 @@ class LayoutManager {
                     } else {
                         logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (collapsed, size preserved), offset=(${offsetX}, ${offsetY})`);
                     }
+                } else if (SCXMLVisualizer.isCompoundOrParallel(node)) {
+                    // **FIX: Trust ELK's calculated size for expanded compounds**
+                    // ELK hierarchical layout calculates optimal size to contain all children
+                    // Do NOT overwrite with getNodeWidth/Height (breaks nesting, causes s111 to escape s11)
+                    node.width = elkNode.width;
+                    node.height = elkNode.height;
+                    logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (ELK hierarchical calc), offset=(${offsetX}, ${offsetY})`);
                 } else {
-                    // Get the originally calculated width/height
+                    // Atomic/final nodes: use original calculated dimensions for text content
                     const originalWidth = this.visualizer.getNodeWidth(node);
                     const originalHeight = this.visualizer.getNodeHeight(node);
-
-                    // Use original calculated dimensions instead of ELK's adjusted values
-                    // to ensure text content fits properly
                     node.width = originalWidth;
                     node.height = originalHeight;
-
-                    logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (original calc, ELK wanted ${elkNode.width}x${elkNode.height}), offset=(${offsetX}, ${offsetY})`);
+                    logger.debug(`${indent}  ${node.id}: (${node.x.toFixed(1)}, ${node.y.toFixed(1)}) size=${node.width}x${node.height} (atomic, original calc), offset=(${offsetX}, ${offsetY})`);
                 }
             } else {
                 logger.warn(`${indent}  ELK node not found in this.visualizer.nodes: ${elkNode.id} (possibly child state or collapsed)`);
@@ -385,12 +393,6 @@ class LayoutManager {
 
         const childNodes = childNodesWithCoords;
 
-        // Debug: Log child positions
-        logger.debug(`[updateCompoundBounds] ${compoundNode.id}: Processing ${childNodes.length} children:`);
-        childNodes.forEach(child => {
-            logger.debug(`  - ${child.id}: x=${child.x.toFixed(1)}, y=${child.y.toFixed(1)}, width=${child.width}, height=${child.height}`);
-        });
-
         const padding = SCXMLVisualizer.COMPOUND_PADDING;
         const topPadding = SCXMLVisualizer.COMPOUND_TOP_PADDING;
 
@@ -399,19 +401,32 @@ class LayoutManager {
         const minY = Math.min(...childNodes.map(c => c.y - (c.height || 0)/2)) - topPadding;
         const maxY = Math.max(...childNodes.map(c => c.y + (c.height || 0)/2)) + padding;
 
-        compoundNode.x = (minX + maxX) / 2;
-        compoundNode.y = (minY + maxY) / 2;
+        // **DRAG FIX: Preserve position ONLY for nodes being actively dragged**
+        // _isBeingDragged: Node is currently being dragged by user (preserve position)
+        // _dragDx/_dragDy without _isBeingDragged: Parent bounds update (recalculate position)
+        const isBeingDragged = compoundNode._isBeingDragged === true;
+        
+        if (!isBeingDragged) {
+            // Normal operation OR parent bounds update: recalculate position from children
+            compoundNode.x = (minX + maxX) / 2;
+            compoundNode.y = (minY + maxY) / 2;
+        }
+        
+        // Always update size to fit children
         compoundNode.width = maxX - minX;
         compoundNode.height = maxY - minY;
 
-        logger.debug(`[updateCompoundBounds] ${compoundNode.id}: Updated to (${compoundNode.x.toFixed(1)}, ${compoundNode.y.toFixed(1)}) size=${compoundNode.width.toFixed(1)}x${compoundNode.height.toFixed(1)}`);
-
         // Push away overlapping non-child states after bounds update
-        // Use stored drag direction if available (from drag handlers) for natural sliding
         if (this.visualizer.collisionDetector) {
             const dragDx = compoundNode._dragDx || 0;
             const dragDy = compoundNode._dragDy || 0;
             this.visualizer.collisionDetector.pushAwayOverlappingStates(compoundNode, dragDx, dragDy);
+        }
+
+        // **RECURSIVE UPDATE: Update parent compound bounds bottom-up**
+        const parent = this.visualizer.findCompoundParent(compoundNode.id);
+        if (parent) {
+            this.updateCompoundBounds(parent);
         }
     }
 

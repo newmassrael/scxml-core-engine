@@ -67,19 +67,24 @@ class LinkBuilder {
         return links;
     }
 
-    getVisibleLinks(allLinks, nodes) {
+    getVisibleLinks(allLinks, visibleNodes) {
         if (this.visualizer.debugMode) {
             logger.debug(`[GET VISIBLE LINKS] Processing ${allLinks.length} links...`);
         }
+
+        // **FIX: Use all nodes for findCollapsedAncestor to find collapsed parents**
+        // visibleNodes doesn't include collapsed states, so we can't find their parents
+        const allNodes = this.visualizer.nodes;
+
         return allLinks.map(link => {
             // Hide containment/delegation
             if (link.linkType === 'containment' || link.linkType === 'delegation') {
                 return null;
             }
 
-            // Check hidden states
-            const sourceHidden = this.findCollapsedAncestor(link.source, nodes);
-            const targetHidden = this.findCollapsedAncestor(link.target, nodes);
+            // Check hidden states - use ALL nodes to find collapsed ancestors
+            const sourceHidden = SCXMLVisualizer.findCollapsedAncestor(link.source, allNodes);
+            const targetHidden = SCXMLVisualizer.findCollapsedAncestor(link.target, allNodes);
 
             // Both hidden in same compound - completely hide
             if (sourceHidden && targetHidden && sourceHidden.id === targetHidden.id) {
@@ -138,8 +143,8 @@ class LinkBuilder {
             }
 
             // **FINAL VALIDATION: Check if visual nodes exist in visible nodes**
-            const visualSourceNode = nodes.find(n => n.id === modifiedLink.visualSource);
-            const visualTargetNode = nodes.find(n => n.id === modifiedLink.visualTarget);
+            const visualSourceNode = visibleNodes.find(n => n.id === modifiedLink.visualSource);
+            const visualTargetNode = visibleNodes.find(n => n.id === modifiedLink.visualTarget);
 
             if (!visualSourceNode || !visualTargetNode) {
                 logger.warn(`[GET VISIBLE LINKS] Skipping ${link.source}→${link.target}: visual nodes not found (${modifiedLink.visualSource}, ${modifiedLink.visualTarget})`);
@@ -150,31 +155,5 @@ class LinkBuilder {
         }).filter(link => link !== null);
     }
 
-    findCollapsedAncestor(nodeId, nodes) {
-        let outermostCollapsed = null;
-        
-        // Find direct parent first
-        const parent = nodes.find(n => 
-            SCXMLVisualizer.isCompoundOrParallel(n) &&
-            n.children &&
-            n.children.includes(nodeId)
-        );
-        
-        if (!parent) {
-            return null;
-        }
-        
-        // If parent is collapsed, remember it
-        if (parent.collapsed) {
-            outermostCollapsed = parent;
-        }
-        
-        // Recursively check if parent has collapsed ancestors
-        const grandparent = this.findCollapsedAncestor(parent.id, nodes);
-        if (grandparent) {
-            outermostCollapsed = grandparent;  // Prefer outermost
-        }
-        
-        return outermostCollapsed;
-    }
+
 }

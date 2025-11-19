@@ -161,19 +161,25 @@ class CollisionDetector {
      * @returns {Array} External states
      */
     getExternalStates(compoundNode) {
-        const childrenSet = new Set(compoundNode.children || []);
+        // Exclude descendants (children, grandchildren, etc.)
+        const descendantIds = new Set(this.visualizer.getAllDescendantIds(compoundNode.id));
+        descendantIds.add(compoundNode.id);
+
+        // **CRITICAL: Exclude ancestors (parent, grandparent, etc.)**
+        // Without this, s11 would push s1 (its parent) causing erratic position jumps
+        const ancestorIds = new Set();
+        let current = compoundNode.id;
+        while (true) {
+            const parent = this.visualizer.findCompoundParent(current);
+            if (!parent) break;
+            ancestorIds.add(parent.id);
+            current = parent.id;
+        }
 
         return this.visualizer.nodes.filter(node => {
-            // Skip compound itself
-            if (node.id === compoundNode.id) return false;
-
-            // Skip children of this compound
-            if (childrenSet.has(node.id)) return false;
-
-            // Skip collapsed compounds (they handle their own collision)
+            if (descendantIds.has(node.id)) return false;
+            if (ancestorIds.has(node.id)) return false;  // Don't push ancestors
             if (node.collapsed && SCXMLVisualizer.isCompoundOrParallel(node)) return false;
-
-            // Include all other visible states with coordinates
             return node.x !== undefined && node.y !== undefined;
         });
     }
