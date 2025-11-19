@@ -923,6 +923,63 @@ class Renderer {
                 }
             });
 
+        // Check if any states need resizing due to overflow
+        // Use requestIdleCallback for better timing (falls back to setTimeout if unavailable)
+        const resizeCallback = () => {
+            const statesToResize = this.visualizer.nodes.filter(n =>
+                n._requiredWidth && n._requiredWidth > n.width
+            );
+
+            if (statesToResize.length > 0) {
+                if (this.visualizer.debugMode) {
+                    logger.debug(`[STATE RESIZE] Resizing ${statesToResize.length} states due to overflow:`);
+                    statesToResize.forEach(n => {
+                        logger.debug(`  ${n.id}: ${n.width.toFixed(1)} → ${n._requiredWidth.toFixed(1)}`);
+                    });
+                }
+
+                // Update state widths and x positions to center the action box
+                const rendererInstance = self.renderer;  // Get renderer instance from visualizer
+                statesToResize.forEach(node => {
+                    const oldWidth = node.width;
+                    const newWidth = node._requiredWidth;
+                    const widthDelta = newWidth - oldWidth;
+                    const marginPercent = LAYOUT_CONSTANTS.TEXT_LEFT_MARGIN_PERCENT;
+
+                    // Calculate new box center after width change using utility method
+                    const newBoxCenter = rendererInstance.calculateBoxCenterAfterResize(
+                        node._boxCenterOffset,
+                        widthDelta,
+                        marginPercent
+                    );
+
+                    // Adjust state position to center the box (shift in opposite direction)
+                    node.x -= newBoxCenter;
+                    node.width = newWidth;
+
+                    // Clean up temporary data
+                    delete node._requiredWidth;
+                    delete node._boxCenterOffset;
+                });
+
+                // Trigger re-render to update all positions correctly
+                // This ensures text, snap points, and links are all recalculated
+                if (this.visualizer.debugMode) {
+                    logger.debug(`[STATE RESIZE] Triggering re-render with updated widths`);
+                }
+
+                this.visualizer.render();
+            }
+        };
+
+        // W3C recommendation: Use requestIdleCallback for non-critical updates
+        // Fallback to setTimeout for browsers that don't support it
+        if (typeof requestIdleCallback !== 'undefined') {
+            requestIdleCallback(resizeCallback, { timeout: 200 });
+        } else {
+            setTimeout(resizeCallback, 100);
+        }
+
         this.visualizer.nodeElements.filter(d => d.type === 'history')
             .append('text')
             .attr('dy', 5)
@@ -1670,6 +1727,45 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
         return -width/2 + (width * LAYOUT_CONSTANTS.TEXT_LEFT_MARGIN_PERCENT);
     }
 
+    /**
+     * Calculate required state width for centered action box with equal margins
+     * @param {number} boxSpan - Total width of action box (boxRight - boxX)
+     * @param {number} marginPercent - Margin percentage (e.g., 0.1 for 10%)
+     * @returns {number} Required state width
+     */
+    calculateRequiredWidthForCenteredBox(boxSpan, marginPercent) {
+        // For equal margins on both sides: leftMargin + boxSpan + rightMargin = width
+        // Where leftMargin = rightMargin = width * marginPercent
+        // So: width * marginPercent + boxSpan + width * marginPercent = width
+        // boxSpan = width - 2 * width * marginPercent = width * (1 - 2 * marginPercent)
+        // Therefore: width = boxSpan / (1 - 2 * marginPercent)
+        return boxSpan / (1 - 2 * marginPercent);
+    }
+
+    /**
+     * Calculate how much text position shifts when state width changes
+     * @param {number} widthDelta - Change in width (newWidth - oldWidth)
+     * @param {number} marginPercent - Text left margin percentage
+     * @returns {number} Text position shift (negative = moves left)
+     */
+    calculateTextPositionShift(widthDelta, marginPercent) {
+        // Text is positioned at: leftMargin = -width/2 + width * marginPercent = -width * (0.5 - marginPercent)
+        // When width changes: newLeftMargin - oldLeftMargin = -widthDelta * (0.5 - marginPercent)
+        return -widthDelta * (0.5 - marginPercent);
+    }
+
+    /**
+     * Calculate new box center position after width change
+     * @param {number} originalBoxCenter - Box center offset before resize
+     * @param {number} widthDelta - Change in width
+     * @param {number} marginPercent - Text left margin percentage
+     * @returns {number} New box center offset from state center
+     */
+    calculateBoxCenterAfterResize(originalBoxCenter, widthDelta, marginPercent) {
+        const textShift = this.calculateTextPositionShift(widthDelta, marginPercent);
+        return originalBoxCenter + textShift;
+    }
+
     renderActionTexts(config) {
         const { prefix, color, actions, stateData, group, leftMargin } = config;
         let yOffset = config.yOffset;
@@ -1748,10 +1844,10 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     .text(fullText);
 
                 // Use requestAnimationFrame to ensure layout is complete before measuring
-                const paddingLeft = 6;
-                const paddingRight = 6;
-                const boxPaddingV = 6;
-                const defaultHeight = 15; // Default height for spacing calculation
+                const paddingLeft = LAYOUT_CONSTANTS.ACTION_BOX_PADDING_LEFT;
+                const paddingRight = LAYOUT_CONSTANTS.ACTION_BOX_PADDING_RIGHT;
+                const boxPaddingV = LAYOUT_CONSTANTS.ACTION_BOX_PADDING_VERTICAL;
+                const defaultHeight = LAYOUT_CONSTANTS.ACTION_DEFAULT_HEIGHT;
 
                 requestAnimationFrame(() => {
                     const textNode = textElement.node();
@@ -1766,6 +1862,29 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                     const boxWidth = (textRight - textLeft) + paddingLeft + paddingRight;
                     const boxHeight = bbox.height + boxPaddingV;
                     const boxY = currentYOffset - boxHeight / 2;
+
+                    // Overflow detection: Check if action box extends beyond state boundary
+                    const stateHalfWidth = stateData.width / 2;
+                    const boxRight = boxX + boxWidth;
+                    const overflow = boxRight - stateHalfWidth;
+                    
+                    if (overflow > 0) {
+                        // Calculate required state width for centered box with equal margins
+                        const boxSpan = boxRight - boxX;
+                        const marginPercent = LAYOUT_CONSTANTS.TEXT_LEFT_MARGIN_PERCENT;
+                        const requiredWidth = self.calculateRequiredWidthForCenteredBox(boxSpan, marginPercent);
+                        
+                        // Track maximum required width and box center offset on state data
+                        if (!stateData._requiredWidth || requiredWidth > stateData._requiredWidth) {
+                            stateData._requiredWidth = requiredWidth;
+                            // Store box center offset for x position adjustment
+                            stateData._boxCenterOffset = (boxX + boxRight) / 2;
+                            
+                            if (self.visualizer.debugMode) {
+                                logger.debug(`[OVERFLOW DETECTED] ${stateData.id}: boxRight=${boxRight.toFixed(1)}, stateRight=${stateHalfWidth.toFixed(1)}, overflow=${overflow.toFixed(1)}px, requiredWidth=${requiredWidth.toFixed(1)}`);
+                            }
+                        }
+                    }
 
                     // Add background box to bg layer (behind text)
                     const bgRect = bgLayer.append('rect')
@@ -1799,16 +1918,14 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 if (formatted.details && formatted.details.length > 0) {
                     formatted.details.forEach(detail => {
                         // Detect nested indent level by counting leading spaces/non-breaking spaces
-                        // First level: '   ↳ ' (3 spaces) → indent 10px
-                        // Second level: '      ↳ ' (6 spaces) → indent 30px
-                        let indentX = textX + 10;
-                        let displayText = detail;
-
-                        // Count leading whitespace (regular spaces or non-breaking spaces U+00A0)
+                        // First level: '   ↳ ' (3 spaces) → LAYOUT_CONSTANTS.ACTION_DETAIL_INDENT_LEVEL1
+                        // Second level: '      ↳ ' (6 spaces) → LAYOUT_CONSTANTS.ACTION_DETAIL_INDENT_LEVEL2
                         const leadingSpaces = detail.match(/^[\s\u00a0]*/)[0].length;
-                        if (leadingSpaces >= 6) {
-                            indentX = textX + 30; // Deeper indent for nested actions
-                        }
+                        const indentOffset = leadingSpaces >= 6
+                            ? LAYOUT_CONSTANTS.ACTION_DETAIL_INDENT_LEVEL2
+                            : LAYOUT_CONSTANTS.ACTION_DETAIL_INDENT_LEVEL1;
+                        let indentX = textX + indentOffset;
+                        let displayText = detail;
 
                         const detailElement = textLayer.append('text')
                             .attr('x', indentX)

@@ -62,10 +62,7 @@ const ActionFormatter = (function() {
         // W3C SCXML 6.2.3: <send> content attribute for message payload
         if (!isEmpty(action.content)) {
             const contentStr = String(action.content);
-            const truncated = contentStr.length > TRUNCATION.CONTENT
-                ? contentStr.substring(0, TRUNCATION.CONTENT) + '...'
-                : contentStr;
-            details.push(`${DETAIL_PREFIX}content: ${truncated}`);
+            details.push(`${DETAIL_PREFIX}content: ${contentStr}`);
         } else if (!isEmpty(action.contentexpr)) {
             details.push(`${DETAIL_PREFIX}contentexpr: ${action.contentexpr}`);
         }
@@ -78,11 +75,8 @@ const ActionFormatter = (function() {
         if (hasItems(action.params)) {
             const paramStrs = action.params.map(p => `${p.name}=${p.expr || '?'}`);
             const paramsStr = paramStrs.join(', ');
-            const truncated = paramsStr.length > TRUNCATION.PARAMS
-                ? paramsStr.substring(0, TRUNCATION.PARAMS) + '...'
-                : paramsStr;
-            details.push(`${DETAIL_PREFIX}params: ${truncated}`);
-    }
+            details.push(`${DETAIL_PREFIX}params: ${paramsStr}`);
+        }
 
         // W3C SCXML 6.2.5: namelist attribute for variable names to send
         if (!isEmpty(action.namelist)) {
@@ -145,10 +139,7 @@ const ActionFormatter = (function() {
         const icon = '💾';
         const location = action.location || '?';
         const expr = action.expr || '?';
-        const truncatedExpr = expr.length > TRUNCATION.EXPRESSION
-            ? expr.substring(0, TRUNCATION.EXPRESSION) + '...'
-            : expr;
-        return `${icon} Assign: ${location} = ${truncatedExpr}`;
+        return `${icon} Assign: ${location} = ${expr}`;
     }
 
     /**
@@ -158,10 +149,7 @@ const ActionFormatter = (function() {
      */
     function formatLogAction(action) {
         const text = action.label || action.expr || '?';
-        const truncated = text.length > TRUNCATION.LOG_TEXT
-            ? text.substring(0, TRUNCATION.LOG_TEXT) + '...'
-            : text;
-        return `📝 Log: ${truncated}`;
+        return `📝 Log: ${text}`;
     }
 
     /**
@@ -190,18 +178,15 @@ const ActionFormatter = (function() {
             return `${icon} Script: (empty)`;
         }
 
-        // Show preview of script content
-        const preview = content.trim().substring(0, TRUNCATION.EXPRESSION);
-        const truncated = content.trim().length > TRUNCATION.EXPRESSION
-            ? preview + '...'
-            : preview;
+        // Show script content (no truncation)
+        const scriptContent = content.trim();
 
         // If it's a source file reference
         if (action.src) {
-            return `${icon} Script: src="${truncated}"`;
+            return `${icon} Script: src="${scriptContent}"`;
         }
 
-        return `${icon} Script: ${truncated}`;
+        return `${icon} Script: ${scriptContent}`;
     }
 
     /**
@@ -279,10 +264,7 @@ const ActionFormatter = (function() {
         // No branches case (shouldn't happen, but handle gracefully)
         if (branchCount === 0) {
             const cond = action.cond || '?';
-            const truncatedCond = cond.length > TRUNCATION.EXPRESSION
-                ? cond.substring(0, TRUNCATION.EXPRESSION) + '...'
-                : cond;
-            return `${icon} if [${truncatedCond}]`;
+            return `${icon} if [${cond}]`;
         }
 
         // Build branch type summary (if/elseif/else)
@@ -328,15 +310,12 @@ const ActionFormatter = (function() {
                 // Get condition from branch (C++ uses branch.condition for ALL branches including if)
                 // Try both field names (cond/condition) for compatibility
                 const cond = branch.cond || branch.condition || '?';
-                const truncatedCond = cond.length > TRUNCATION.EXPRESSION
-                    ? cond.substring(0, TRUNCATION.EXPRESSION) + '...'
-                    : cond;
-                
+
                 // Determine branch type by index
                 if (idx === 0) {
-                    branchType = `if: [${truncatedCond}]`;
+                    branchType = `if: [${cond}]`;
                 } else {
-                    branchType = `elseif: [${truncatedCond}]`;
+                    branchType = `elseif: [${cond}]`;
                 }
             }
 

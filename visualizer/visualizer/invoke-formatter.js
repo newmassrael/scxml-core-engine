@@ -56,9 +56,7 @@ const InvokeFormatter = (function() {
         const isDynamicType = isEmpty(invokeData.invokeType) && !isEmpty(invokeData.invokeTypeExpr);
 
         // Simplify common SCXML type for display
-        const typeDisplay = type === 'http://www.w3.org/TR/scxml/'
-            ? 'SCXML'
-            : (type.length > TRUNCATION.TYPE ? type.substring(0, TRUNCATION.TYPE) + '...' : type);
+        const typeDisplay = type === 'http://www.w3.org/TR/scxml/' ? 'SCXML' : type;
 
         // Build main line
         const main = isDynamicType
@@ -85,23 +83,15 @@ const InvokeFormatter = (function() {
         if (!isEmpty(src)) {
             const isDynamicSrc = isEmpty(invokeData.invokeSrc) && !isEmpty(invokeData.invokeSrcExpr);
             const suffix = isDynamicSrc ? ' (dynamic)' : '';
-            const truncated = src.length > TRUNCATION.SRC
-                ? src.substring(0, TRUNCATION.SRC) + '...'
-                : src;
-            details.push(`${DETAIL_PREFIX}src: ${truncated}${suffix}`);
+            details.push(`${DETAIL_PREFIX}src: ${src}${suffix}`);
         }
 
         // W3C SCXML 6.4.4: Content (inline SCXML or dynamic expression)
         if (!isEmpty(invokeData.invokeContent)) {
-            // Show preview of inline content
-            const contentPreview = invokeData.invokeContent.trim().substring(0, TRUNCATION.CONTENT);
-            const hasMore = invokeData.invokeContent.trim().length > TRUNCATION.CONTENT;
+            // Show inline content (no truncation)
             details.push(`${DETAIL_PREFIX}content: <scxml...> (inline)`);
         } else if (!isEmpty(invokeData.invokeContentExpr)) {
-            const truncated = invokeData.invokeContentExpr.length > TRUNCATION.CONTENT
-                ? invokeData.invokeContentExpr.substring(0, TRUNCATION.CONTENT) + '...'
-                : invokeData.invokeContentExpr;
-            details.push(`${DETAIL_PREFIX}contentexpr: ${truncated}`);
+            details.push(`${DETAIL_PREFIX}contentexpr: ${invokeData.invokeContentExpr}`);
         }
 
         // W3C SCXML 6.4.5: Params (name-value pairs to pass to child)
@@ -112,18 +102,12 @@ const InvokeFormatter = (function() {
                 return `${name}=${expr}`;
             });
             const paramsStr = paramStrs.join(', ');
-            const truncated = paramsStr.length > TRUNCATION.PARAMS
-                ? paramsStr.substring(0, TRUNCATION.PARAMS) + '...'
-                : paramsStr;
-            details.push(`${DETAIL_PREFIX}params: ${truncated}`);
+            details.push(`${DETAIL_PREFIX}params: ${paramsStr}`);
         }
 
         // W3C SCXML 6.4.6: Namelist (variable names to pass)
         if (!isEmpty(invokeData.invokeNamelist)) {
-            const truncated = invokeData.invokeNamelist.length > TRUNCATION.NAMELIST
-                ? invokeData.invokeNamelist.substring(0, TRUNCATION.NAMELIST) + '...'
-                : invokeData.invokeNamelist;
-            details.push(`${DETAIL_PREFIX}namelist: ${truncated}`);
+            details.push(`${DETAIL_PREFIX}namelist: ${invokeData.invokeNamelist}`);
         }
 
         // W3C SCXML 6.4.7: AutoForward (automatic event forwarding)
@@ -133,11 +117,8 @@ const InvokeFormatter = (function() {
 
         // W3C SCXML 6.5: Finalize (script to execute when child sends events)
         if (!isEmpty(invokeData.invokeFinalize)) {
-            const preview = invokeData.invokeFinalize.trim().substring(0, TRUNCATION.FINALIZE);
-            const truncated = invokeData.invokeFinalize.trim().length > TRUNCATION.FINALIZE
-                ? preview + '...'
-                : preview;
-            details.push(`${DETAIL_PREFIX}finalize: ${truncated}`);
+            const finalizeContent = invokeData.invokeFinalize.trim();
+            details.push(`${DETAIL_PREFIX}finalize: ${finalizeContent}`);
         }
 
         return { main, details };
