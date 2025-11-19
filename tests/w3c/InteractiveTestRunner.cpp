@@ -1461,28 +1461,95 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
         if (!invokes.empty()) {
             stateObj.set("hasInvoke", true);
 
-            // Serialize first invoke (multiple invokes in single state are rare)
-            const auto &firstInvoke = invokes[0];
-            if (firstInvoke) {
-                const std::string &src = firstInvoke->getSrc();
-                const std::string &srcExpr = firstInvoke->getSrcExpr();
-                const std::string &id = firstInvoke->getId();
+            // W3C SCXML 6.4: Serialize all invokes (states can have multiple invoke elements)
+            auto invokesArray = emscripten::val::array();
 
-                // Set invoke source (prefer src over srcexpr)
-                if (!src.empty()) {
-                    stateObj.set("invokeSrc", src);
-                } else if (!srcExpr.empty()) {
-                    stateObj.set("invokeSrcExpr", srcExpr);
+            for (const auto &invoke : invokes) {
+                if (!invoke) {
+                    continue;
                 }
 
-                // Set invoke ID
+                auto invokeObj = emscripten::val::object();
+
+                // W3C SCXML 6.4.1: Type (static or dynamic)
+                const std::string &type = invoke->getType();
+                const std::string &typeExpr = invoke->getTypeExpr();
+                if (!type.empty()) {
+                    invokeObj.set("invokeType", type);
+                } else if (!typeExpr.empty()) {
+                    invokeObj.set("invokeTypeExpr", typeExpr);
+                }
+
+                // W3C SCXML 6.4.2: ID or idlocation
+                const std::string &id = invoke->getId();
+                const std::string &idLocation = invoke->getIdLocation();
                 if (!id.empty()) {
-                    stateObj.set("invokeId", id);
+                    invokeObj.set("invokeId", id);
+                }
+                if (!idLocation.empty()) {
+                    invokeObj.set("invokeIdLocation", idLocation);
                 }
 
-                LOG_DEBUG("buildStructureFromModel: State '{}' has invoke (src='{}', id='{}')", stateId,
-                          src.empty() ? srcExpr : src, id);
+                // W3C SCXML 6.4.3: Source (static or dynamic)
+                const std::string &src = invoke->getSrc();
+                const std::string &srcExpr = invoke->getSrcExpr();
+                if (!src.empty()) {
+                    invokeObj.set("invokeSrc", src);
+                } else if (!srcExpr.empty()) {
+                    invokeObj.set("invokeSrcExpr", srcExpr);
+                }
+
+                // W3C SCXML 6.4.4: Content (inline SCXML or dynamic expression)
+                const std::string &content = invoke->getContent();
+                const std::string &contentExpr = invoke->getContentExpr();
+                if (!content.empty()) {
+                    invokeObj.set("invokeContent", content);
+                } else if (!contentExpr.empty()) {
+                    invokeObj.set("invokeContentExpr", contentExpr);
+                }
+
+                // W3C SCXML 6.4.5: Params (name-value pairs)
+                const auto &params = invoke->getParams();
+                if (!params.empty()) {
+                    auto paramsArray = emscripten::val::array();
+                    for (const auto &param : params) {
+                        auto paramObj = emscripten::val::object();
+                        paramObj.set("name", std::get<0>(param));
+                        paramObj.set("expr", std::get<1>(param));
+                        const std::string &location = std::get<2>(param);
+                        if (!location.empty()) {
+                            paramObj.set("location", location);
+                        }
+                        paramsArray.call<void>("push", paramObj);
+                    }
+                    invokeObj.set("invokeParams", paramsArray);
+                }
+
+                // W3C SCXML 6.4.6: Namelist (variable names to pass)
+                const std::string &namelist = invoke->getNamelist();
+                if (!namelist.empty()) {
+                    invokeObj.set("invokeNamelist", namelist);
+                }
+
+                // W3C SCXML 6.4.7: AutoForward (automatic event forwarding)
+                bool autoForward = invoke->isAutoForward();
+                if (autoForward) {
+                    invokeObj.set("invokeAutoForward", true);
+                }
+
+                // W3C SCXML 6.5: Finalize (script to execute when child sends events)
+                const std::string &finalize = invoke->getFinalize();
+                if (!finalize.empty()) {
+                    invokeObj.set("invokeFinalize", finalize);
+                }
+
+                invokesArray.call<void>("push", invokeObj);
+
+                LOG_DEBUG("buildStructureFromModel: State '{}' has invoke (type='{}', src='{}', id='{}')", stateId,
+                          type.empty() ? typeExpr : type, src.empty() ? srcExpr : src, id);
             }
+
+            stateObj.set("invokes", invokesArray);
         }
 
         statesArray.call<void>("push", stateObj);
