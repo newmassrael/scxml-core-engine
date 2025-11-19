@@ -140,72 +140,42 @@ class NodeBuilder {
             return node.collapsed ? LAYOUT_CONSTANTS.STATE_MIN_WIDTH : 300;
         }
 
-        // Calculate width based on text content (generous estimates for ELK layout)
+        // Initial estimate based on state ID and action content
         let maxWidth = LAYOUT_CONSTANTS.STATE_MIN_WIDTH;
 
         // State ID length
         const idWidth = (node.id || '').length * 10 + 60;
         if (idWidth > maxWidth) maxWidth = idWidth;
 
-        // Check onentry/onexit actions for text length (use canvas measurement for accuracy)
+        // Estimate based on action content (simple heuristic to reduce re-render frequency)
         const actions = [...(node.onentry || []), ...(node.onexit || [])];
         if (actions.length > 0) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            ctx.font = '13px sans-serif';
-
+            // Estimate action text length (rough approximation)
             actions.forEach(action => {
-                // Use ActionFormatter to get both main and detail lines
-                const formatted = ActionFormatter.formatAction(action);
+                let estimatedLength = 0;
 
-                // Measure main line
-                if (formatted.main) {
-                    const fullText = `↓ entry / ${formatted.main}`;
-                    const metrics = ctx.measureText(fullText);
-
-                    // Calculate required state width to fit this text
-                    // Text rendering position calculation:
-                    // - textX = -width/2 + (width * TEXT_LEFT_MARGIN_PERCENT) + TEXT_PADDING
-                    // - textX = -width/2 + (width * 0.10) + 8 = -0.4*width + 8
-                    // - Right boundary = width/2 - (width * 0.05) = 0.45*width (5% right margin)
-                    // - Available text space = 0.45*width - (-0.4*width + 8) = 0.85*width - 8
-                    // - Therefore: textWidth = 0.85*width - 8
-                    // - Solving for width: width = (textWidth + 8) / 0.85
-
-                    const textWidth = metrics.width;
-                    const paddingLeft = 6;  // Background box padding
-                    const paddingRight = 6;
-                    const requiredWidth = (textWidth + paddingLeft + paddingRight + 20) / 0.85;
-
-                    if (requiredWidth > maxWidth) {
-                        maxWidth = requiredWidth;
-                    }
+                // Estimate main action text length
+                if (action.type === 'send') {
+                    estimatedLength = 60 + (action.event || '').length + (action.target || '').length;
+                } else if (action.type === 'assign') {
+                    estimatedLength = 50 + (action.location || '').length + (action.expr || '').length;
+                } else if (action.type === 'log') {
+                    estimatedLength = 40 + (action.label || action.expr || '').length;
+                } else if (action.type === 'script') {
+                    estimatedLength = 50 + ((action.content || '').length / 2); // Scripts often have newlines
+                } else if (action.type === 'if') {
+                    estimatedLength = 60 + (action.cond || '').length;
+                } else {
+                    estimatedLength = 50; // Default for other action types
                 }
 
-                // Measure detail lines (indented)
-                if (formatted.details && formatted.details.length > 0) {
-                    const detailCtx = canvas.getContext('2d');
-                    detailCtx.font = '11px sans-serif'; // Detail lines use 11px font
-
-                    formatted.details.forEach(detail => {
-                        const detailText = detail; // Detail already includes "↳ " prefix
-                        const detailMetrics = detailCtx.measureText(detailText);
-
-                        // Detail lines are indented by 10px from main text position
-                        // So effective text width is detail width + 10px indent
-                        const textWidth = detailMetrics.width + 10;
-                        const paddingLeft = 6;
-                        const paddingRight = 6;
-                        const requiredWidth = (textWidth + paddingLeft + paddingRight + 20) / 0.85;
-
-                        if (requiredWidth > maxWidth) {
-                            maxWidth = requiredWidth;
-                        }
-                    });
-                }
+                // Character width approximation using LAYOUT_CONSTANTS
+                const estimatedWidth = estimatedLength * LAYOUT_CONSTANTS.CHARACTER_WIDTH_ESTIMATE + LAYOUT_CONSTANTS.WIDTH_ESTIMATE_MARGIN;
+                if (estimatedWidth > maxWidth) maxWidth = estimatedWidth;
             });
         }
 
+        // Return initial estimate - actual width will be adjusted in renderer.js if overflow occurs
         return Math.min(maxWidth, LAYOUT_CONSTANTS.STATE_MAX_WIDTH);
     }
 
