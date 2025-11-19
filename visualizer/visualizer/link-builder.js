@@ -67,19 +67,24 @@ class LinkBuilder {
         return links;
     }
 
-    getVisibleLinks(allLinks, nodes) {
+    getVisibleLinks(allLinks, visibleNodes) {
         if (this.visualizer.debugMode) {
-            console.log(`[GET VISIBLE LINKS] Processing ${allLinks.length} links...`);
+            logger.debug(`[GET VISIBLE LINKS] Processing ${allLinks.length} links...`);
         }
+
+        // **FIX: Use all nodes for findCollapsedAncestor to find collapsed parents**
+        // visibleNodes doesn't include collapsed states, so we can't find their parents
+        const allNodes = this.visualizer.nodes;
+
         return allLinks.map(link => {
             // Hide containment/delegation
             if (link.linkType === 'containment' || link.linkType === 'delegation') {
                 return null;
             }
 
-            // Check hidden states
-            const sourceHidden = this.findCollapsedAncestor(link.source, nodes);
-            const targetHidden = this.findCollapsedAncestor(link.target, nodes);
+            // Check hidden states - use ALL nodes to find collapsed ancestors
+            const sourceHidden = SCXMLVisualizer.findCollapsedAncestor(link.source, allNodes);
+            const targetHidden = SCXMLVisualizer.findCollapsedAncestor(link.target, allNodes);
 
             // Both hidden in same compound - completely hide
             if (sourceHidden && targetHidden && sourceHidden.id === targetHidden.id) {
@@ -99,12 +104,12 @@ class LinkBuilder {
                 // Check if redirect would create self-loop (e.g., p→ps1 becomes p→p)
                 if (link.source === targetHidden.id) {
                     if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${link.source}→${targetHidden.id}, hiding link`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${link.source}→${targetHidden.id}, hiding link`);
                 }
                     return null;
                 }
                 if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: target hidden, redirect to ${targetHidden.id}`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: target hidden, redirect to ${targetHidden.id}`);
                 }
                 modifiedLink.visualTarget = targetHidden.id;
                 modifiedLink.originalTarget = link.target;  // Store for auto-expand
@@ -115,12 +120,12 @@ class LinkBuilder {
                 // Check if redirect would create self-loop (e.g., s2→p becomes s2→s2)
                 if (link.target === sourceHidden.id) {
                     if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${sourceHidden.id}→${link.target}, hiding link`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: would create self-loop ${sourceHidden.id}→${link.target}, hiding link`);
                 }
                     return null;
                 }
                 if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: source hidden, redirect from ${sourceHidden.id}`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: source hidden, redirect from ${sourceHidden.id}`);
                 }
                 modifiedLink.visualSource = sourceHidden.id;
                 modifiedLink.originalSource = link.source;
@@ -129,7 +134,7 @@ class LinkBuilder {
             // Both hidden in different ancestors - redirect both ends
             if (sourceHidden && targetHidden && sourceHidden.id !== targetHidden.id) {
                 if (this.visualizer.debugMode) {
-                    console.log(`[VISUAL REDIRECT] ${link.source}→${link.target}: both hidden in different ancestors, redirecting ${sourceHidden.id}→${targetHidden.id}`);
+                    logger.debug(`[VISUAL REDIRECT] ${link.source}→${link.target}: both hidden in different ancestors, redirecting ${sourceHidden.id}→${targetHidden.id}`);
                 }
                 modifiedLink.visualSource = sourceHidden.id;
                 modifiedLink.visualTarget = targetHidden.id;
@@ -138,11 +143,11 @@ class LinkBuilder {
             }
 
             // **FINAL VALIDATION: Check if visual nodes exist in visible nodes**
-            const visualSourceNode = nodes.find(n => n.id === modifiedLink.visualSource);
-            const visualTargetNode = nodes.find(n => n.id === modifiedLink.visualTarget);
+            const visualSourceNode = visibleNodes.find(n => n.id === modifiedLink.visualSource);
+            const visualTargetNode = visibleNodes.find(n => n.id === modifiedLink.visualTarget);
 
             if (!visualSourceNode || !visualTargetNode) {
-                console.warn(`[GET VISIBLE LINKS] Skipping ${link.source}→${link.target}: visual nodes not found (${modifiedLink.visualSource}, ${modifiedLink.visualTarget})`);
+                logger.warn(`[GET VISIBLE LINKS] Skipping ${link.source}→${link.target}: visual nodes not found (${modifiedLink.visualSource}, ${modifiedLink.visualTarget})`);
                 return null;
             }
 
@@ -150,31 +155,5 @@ class LinkBuilder {
         }).filter(link => link !== null);
     }
 
-    findCollapsedAncestor(nodeId, nodes) {
-        let outermostCollapsed = null;
-        
-        // Find direct parent first
-        const parent = nodes.find(n => 
-            SCXMLVisualizer.isCompoundOrParallel(n) &&
-            n.children &&
-            n.children.includes(nodeId)
-        );
-        
-        if (!parent) {
-            return null;
-        }
-        
-        // If parent is collapsed, remember it
-        if (parent.collapsed) {
-            outermostCollapsed = parent;
-        }
-        
-        // Recursively check if parent has collapsed ancestors
-        const grandparent = this.findCollapsedAncestor(parent.id, nodes);
-        if (grandparent) {
-            outermostCollapsed = grandparent;  // Prefer outermost
-        }
-        
-        return outermostCollapsed;
-    }
+
 }

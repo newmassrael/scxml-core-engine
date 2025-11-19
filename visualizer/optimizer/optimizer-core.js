@@ -8,13 +8,10 @@
  * Handles connection analysis, snap point calculation, and crossing minimization.
  */
 
-// Debug flag - set to true to enable detailed logging
-const DEBUG_LAYOUT_OPTIMIZER = false;
-
-// No-op logging function for production (reuse if already defined by constraint-solver.js)
-// Use global assignment to avoid const/var declaration conflicts
+// Use logger for debug output (controlled by ?debug URL parameter)
+// Reuse log if already defined by constraint-solver.js
 if (typeof log === 'undefined') {
-    log = DEBUG_LAYOUT_OPTIMIZER ? console.log.bind(console) : () => {};
+    log = logger.debug.bind(logger);
 }
 
 class TransitionLayoutOptimizer {

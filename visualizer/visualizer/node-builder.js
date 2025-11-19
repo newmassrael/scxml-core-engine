@@ -30,6 +30,8 @@ class NodeBuilder {
                 type: state.type,
                 label: state.id,
                 children: state.children || [],
+                // W3C SCXML 3.6: Initial attribute for compound/parallel states
+                initial: state.initial || '',
                 // W3C SCXML 3.4: Parallel states expanded by default to show concurrent regions
                 collapsed: (state.type === 'compound'),  // Only compound states collapsed, parallel expanded
                 onentry: state.onentry || [],
@@ -43,13 +45,81 @@ class NodeBuilder {
 
             // Debug: Log children arrays for compound/parallel states
             if (SCXMLVisualizer.isCompoundOrParallel(state) && node.children.length > 0) {
-                console.log(`[buildNodes] ${state.id} (${state.type}) has children: ${node.children.join(', ')}`);
+                logger.debug(`[buildNodes] ${state.id} (${state.type}) has children: ${node.children.join(', ')}`);
             }
 
             nodes.push(node);
         });
 
         return nodes;
+    }
+
+    /**
+     * W3C SCXML 3.6: Auto-expand ancestors of initial targets
+     * 
+     * When a compound state has an initial attribute targeting deeply nested states,
+     * all ancestors on the path must be expanded to show the initial configuration.
+     * 
+     * Example: <state id="s2"><initial><transition target="s21p112 s21p122"/></initial></state>
+     * - s2.initial = "s21p112 s21p122"
+     * - Must expand: s21, s21p1, s21p11, s21p12 to show the initial targets
+     * 
+     * @param {Array} nodes - All nodes from buildNodes()
+     */
+    expandInitialPaths(nodes) {
+        const nodeMap = new Map(nodes.map(n => [n.id, n]));
+
+        // Performance optimization: Build parent map once (O(n) instead of O(n²))
+        // Maps each child ID to its parent ID for fast ancestor lookup
+        const parentMap = new Map();
+        nodes.forEach(node => {
+            if (node.children) {
+                node.children.forEach(childId => {
+                    parentMap.set(childId, node.id);
+                });
+            }
+        });
+
+        // Helper: Find all ancestors of a node (O(depth) instead of O(n²))
+        // Walks up the parent chain from child to root
+        const findAncestors = (nodeId) => {
+            const ancestors = [];
+            let currentId = nodeId;
+
+            while (parentMap.has(currentId)) {
+                const parentId = parentMap.get(currentId);
+                ancestors.push(parentId);
+                currentId = parentId;
+            }
+
+            return ancestors;
+        };
+
+        // Process each node with initial attribute
+        nodes.forEach(node => {
+            if (node.initial && node.initial.trim()) {
+                // W3C SCXML 3.6: Parse space-separated initial targets
+                const initialTargets = node.initial.trim().split(/\s+/);
+
+                if (this.visualizer.debugMode) {
+                    logger.debug(`[EXPAND INITIAL] ${node.id} has initial targets: ${initialTargets.join(', ')}`);
+                }
+
+                // Expand all ancestors of each initial target
+                initialTargets.forEach(targetId => {
+                    const ancestors = findAncestors(targetId);
+                    ancestors.forEach(ancestorId => {
+                        const ancestorNode = nodeMap.get(ancestorId);
+                        if (ancestorNode && ancestorNode.collapsed) {
+                            if (this.visualizer.debugMode) {
+                                logger.debug(`  Expanding ancestor ${ancestorId} for initial target ${targetId}`);
+                            }
+                            ancestorNode.collapsed = false;
+                        }
+                    });
+                });
+            }
+        });
     }
 
     getNodeWidth(node) {
@@ -183,7 +253,7 @@ class NodeBuilder {
     }
 
     getVisibleNodes() {
-        console.log('[getVisibleNodes] Checking visibility for all nodes...');
+        logger.debug('[getVisibleNodes] Checking visibility for all nodes...');
         const visibleIds = new Set();
 
         this.visualizer.nodes.forEach(node => {
@@ -191,19 +261,19 @@ class NodeBuilder {
             const collapsedAncestor = this.visualizer.findCollapsedAncestor(node.id, this.visualizer.nodes);
             
             if (collapsedAncestor) {
-                console.log(`  ${node.id}: HIDDEN (ancestor ${collapsedAncestor.id} collapsed)`);
+                logger.debug(`  ${node.id}: HIDDEN (ancestor ${collapsedAncestor.id} collapsed)`);
             } else {
                 visibleIds.add(node.id);
-                console.log(`  ${node.id}: VISIBLE (type=${node.type})`);
+                logger.debug(`  ${node.id}: VISIBLE (type=${node.type})`);
             }
         });
 
         const result = this.visualizer.nodes.filter(n => visibleIds.has(n.id));
-        console.log(`[getVisibleNodes] Result: ${result.map(n => n.id).join(', ')}`);
+        logger.debug(`[getVisibleNodes] Result: ${result.map(n => n.id).join(', ')}`);
         
         // Debug: Show compound/parallel nodes and their children
         this.visualizer.nodes.filter(n => n.type === 'compound' || n.type === 'parallel').forEach(n => {
-            console.log(`  ${n.id} (${n.type}, collapsed=${n.collapsed}): children=${n.children ? n.children.join(', ') : 'none'}`);
+            logger.debug(`  ${n.id} (${n.type}, collapsed=${n.collapsed}): children=${n.children ? n.children.join(', ') : 'none'}`);
         });
         
         return result;

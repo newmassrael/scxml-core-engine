@@ -13,6 +13,7 @@
 
 // Import the constraint solver and optimizer modules (dependency order)
 importScripts(
+    'logger.js',
     'routing-state.js',
     'optimizer/snap-calculator.js',
     'optimizer/path-utils.js',
@@ -64,7 +65,7 @@ self.onmessage = function(e) {
     switch (type) {
         case 'solve':
             try {
-                console.log('[WORKER] Starting progressive CSP refinement (8 iterations × 250ms)...');
+                logger.debug('[WORKER] Starting progressive CSP refinement (8 iterations × 250ms)...');
 
                 // Create optimizer instance
                 const optimizer = new TransitionLayoutOptimizer(nodes, links);
@@ -85,7 +86,7 @@ self.onmessage = function(e) {
                         score: greedySolution.score,
                         preferences: new Map(Object.entries(greedySolution.preferences || {}))
                     };
-                    console.log(`[WORKER] Initial solution: score=${currentBestSolution.score.toFixed(1)}, ${currentBestSolution.preferences.size} preferences`);
+                    logger.debug(`[WORKER] Initial solution: score=${currentBestSolution.score.toFixed(1)}, ${currentBestSolution.preferences.size} preferences`);
                 }
 
                 // Progressive refinement: 8 iterations × 250ms = 2000ms total
@@ -95,7 +96,7 @@ self.onmessage = function(e) {
 
                 for (let iteration = 0; iteration < MAX_ITERATIONS; iteration++) {
                     try {
-                        console.log(`[WORKER] === Iteration ${iteration + 1}/${MAX_ITERATIONS} ===`);
+                        logger.debug(`[WORKER] === Iteration ${iteration + 1}/${MAX_ITERATIONS} ===`);
 
                         // Create CSP solver with current best solution as warm-start
                         currentSolver = new ConstraintSolver(links, nodes, optimizer, parentChildMapObj, currentBestSolution, draggedNodeId);
@@ -107,7 +108,7 @@ self.onmessage = function(e) {
                             // Critical update: solution improved
                             // Send immediately for instant visual feedback
                             if (progressData.type === 'solution_improved') {
-                                console.log(`[WORKER] Iteration ${iteration + 1}: Solution improved: score=${progressData.score.toFixed(1)}`);
+                                logger.debug(`[WORKER] Iteration ${iteration + 1}: Solution improved: score=${progressData.score.toFixed(1)}`);
 
                                 // Flush any buffered updates first
                                 flushProgressBuffer();
@@ -139,7 +140,7 @@ self.onmessage = function(e) {
 
                         // Check if cancelled
                         if (currentSolver.cancelled) {
-                            console.log('[WORKER] Solver was cancelled during iteration', iteration + 1);
+                            logger.debug('[WORKER] Solver was cancelled during iteration', iteration + 1);
                             self.postMessage({ type: 'cancelled' });
                             currentSolver = null;
                             return;
@@ -150,7 +151,7 @@ self.onmessage = function(e) {
                             bestScoreOverall = currentSolver.bestScore;
                             bestSolutionOverall = solution;
 
-                            console.log(`[WORKER] Iteration ${iteration + 1}: New best score=${bestScoreOverall.toFixed(1)}`);
+                            logger.debug(`[WORKER] Iteration ${iteration + 1}: New best score=${bestScoreOverall.toFixed(1)}`);
 
                             // Convert solution to warm-start format for next iteration
                             currentBestSolution = {
@@ -167,7 +168,7 @@ self.onmessage = function(e) {
                                 });
                             });
                         } else {
-                            console.log(`[WORKER] Iteration ${iteration + 1}: No improvement (current best: ${bestScoreOverall.toFixed(1)})`);
+                            logger.debug(`[WORKER] Iteration ${iteration + 1}: No improvement (current best: ${bestScoreOverall.toFixed(1)})`);
                         }
 
                         // Send intermediate progress update EVERY iteration (even if no improvement)
@@ -210,7 +211,7 @@ self.onmessage = function(e) {
 
                         // Continue with next iteration if we have a best solution
                         if (bestSolutionOverall) {
-                            console.log(`[WORKER] Continuing with best solution from previous iterations`);
+                            logger.debug(`[WORKER] Continuing with best solution from previous iterations`);
                             continue;
                         } else {
                             // No best solution yet, abort
@@ -229,7 +230,7 @@ self.onmessage = function(e) {
                         targetEdge: assignment.targetEdge
                     }));
 
-                    console.log(`[WORKER] All iterations complete. Final solution: score=${bestScoreOverall.toFixed(1)}, ${solutionArray.length} links`);
+                    logger.debug(`[WORKER] All iterations complete. Final solution: score=${bestScoreOverall.toFixed(1)}, ${solutionArray.length} links`);
 
                     self.postMessage({
                         type: 'solution',
@@ -240,7 +241,7 @@ self.onmessage = function(e) {
                         }
                     });
                 } else {
-                    console.log('[WORKER] No solution found after all iterations');
+                    logger.debug('[WORKER] No solution found after all iterations');
                     self.postMessage({ type: 'failed' });
                 }
 
@@ -256,7 +257,7 @@ self.onmessage = function(e) {
             break;
 
         case 'cancel':
-            console.log('[WORKER] Cancel requested');
+            logger.debug('[WORKER] Cancel requested');
             if (currentSolver) {
                 currentSolver.cancel();
                 currentSolver = null;

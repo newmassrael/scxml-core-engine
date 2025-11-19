@@ -12,11 +12,11 @@ class InteractionHandler {
 
     updateLinks(useGreedy = false) {
         if (this.visualizer.debugMode) {
-            console.log(`[UPDATE LINKS] Called with useGreedy=${useGreedy}`);
+            logger.debug(`[UPDATE LINKS] Called with useGreedy=${useGreedy}`);
         }
         if (!this.visualizer.linkElements || !this.visualizer.allLinks) {
             if (this.visualizer.debugMode) {
-                console.log('[UPDATE LINKS] Early return: linkElements or allLinks missing');
+                logger.debug('[UPDATE LINKS] Early return: linkElements or allLinks missing');
             }
             return;
         }
@@ -29,7 +29,7 @@ class InteractionHandler {
 
         if (anyNodeDragging || useGreedy) {
             // const mode = useGreedy ? 'GREEDY (fast)' : 'CSP (optimal)';
-            // console.log(`[DRAG UPDATE] Re-running optimizer (${mode})...`);
+            // logger.debug(`[DRAG UPDATE] Re-running optimizer (${mode})...`);
 
             // Clear all routing
             this.visualizer.allLinks.forEach(link => {
@@ -58,7 +58,7 @@ class InteractionHandler {
                 }
             });
 
-            // console.log('[DRAG UPDATE] Re-optimization complete');
+            // logger.debug('[DRAG UPDATE] Re-optimization complete');
         }
 
         // Pass 2: Rebind linkElements with updated visibleLinks data
@@ -69,7 +69,7 @@ class InteractionHandler {
 
         // Pass 3: Render with updated directions
         if (this.visualizer.debugMode) {
-            console.log(`[UPDATE LINKS] Updating ${this.visualizer.linkElements.size()} link paths`);
+            logger.debug(`[UPDATE LINKS] Updating ${this.visualizer.linkElements.size()} link paths`);
         }
         this.visualizer.linkElements.attr('d', d => this.visualizer.getLinkPath(d));
 
@@ -91,7 +91,7 @@ class InteractionHandler {
         if (this.visualizer.nodeElements) {
             if (this.visualizer.debugMode) {
                 const nodeCount = this.visualizer.nodeElements.size();
-                console.log(`[UPDATE LINKS] Updating ${nodeCount} node DOM positions`);
+                logger.debug(`[UPDATE LINKS] Updating ${nodeCount} node DOM positions`);
             }
             this.visualizer.nodeElements.each(function(nodeData) {
                 const latestNode = nodeMap.get(nodeData.id);
@@ -101,7 +101,7 @@ class InteractionHandler {
             });
         } else {
             if (this.visualizer.debugMode) {
-                console.log('[UPDATE LINKS] nodeElements not found!');
+                logger.debug('[UPDATE LINKS] nodeElements not found!');
             }
         }
 
@@ -145,7 +145,7 @@ class InteractionHandler {
     }
 
     highlightActiveStates(activeStateIds) {
-        console.log(`[highlightActiveStates] Called with:`, activeStateIds);
+        logger.debug(`[highlightActiveStates] Called with:`, activeStateIds);
         this.visualizer.activeStates = new Set(activeStateIds);
 
         // Auto-expand compound/parallel states that are active or have active children
@@ -157,7 +157,7 @@ class InteractionHandler {
                 const hasActiveChildren = node.children && node.children.some(childId => this.visualizer.activeStates.has(childId));
 
                 if (isActive || hasActiveChildren) {
-                    console.log(`  → Auto-expanding ${node.id} (${node.type}): isActive=${isActive}, hasActiveChildren=${hasActiveChildren}`);
+                    logger.debug(`  → Auto-expanding ${node.id} (${node.type}): isActive=${isActive}, hasActiveChildren=${hasActiveChildren}`);
                     node.collapsed = false;
                     needsReLayout = true;
                 }
@@ -166,7 +166,7 @@ class InteractionHandler {
 
         // Re-layout if any compound/parallel was expanded
         if (needsReLayout) {
-            console.log(`  → Triggering re-layout due to auto-expansion`);
+            logger.debug(`  → Triggering re-layout due to auto-expansion`);
             this.visualizer.computeLayout().then(() => {
                 this.visualizer.render();
                 // Re-highlight after re-render
@@ -205,7 +205,7 @@ class InteractionHandler {
     animateTransition(transition) {
         // No-op: CSS handles animation via .highlighted class
         // See visualizer.css: .transition.highlighted { animation: transitionPulse ... }
-        console.log('[DEPRECATED] animateTransition() called - CSS handles animation now');
+        logger.debug('[DEPRECATED] animateTransition() called - CSS handles animation now');
     }
 
     renderTransitionList() {
@@ -234,19 +234,19 @@ class InteractionHandler {
 
             // Actions (using ActionFormatter for consistent display)
             if (transition.actions && transition.actions.length > 0) {
-                console.log('[InteractionHandler] Processing actions:', transition.actions);
-                console.log('[InteractionHandler] ActionFormatter available:', typeof ActionFormatter);
+                logger.debug('[InteractionHandler] Processing actions:', transition.actions);
+                logger.debug('[InteractionHandler] ActionFormatter available:', typeof ActionFormatter);
                 transition.actions.forEach(action => {
-                    console.log('[InteractionHandler] Processing action:', action);
+                    logger.debug('[InteractionHandler] Processing action:', action);
                     const formatted = ActionFormatter.formatAction(action);
-                    console.log('[InteractionHandler] Formatted result:', formatted);
+                    logger.debug('[InteractionHandler] Formatted result:', formatted);
 
                     // Main action line
                     detailsHtml += `<div class="transition-list-action">${formatted.main}</div>`;
 
                     // Detail lines (for send actions with content, params, etc.)
                     if (formatted.details && formatted.details.length > 0) {
-                        console.log('[InteractionHandler] Adding details:', formatted.details);
+                        logger.debug('[InteractionHandler] Adding details:', formatted.details);
                         formatted.details.forEach(detail => {
                             detailsHtml += `<div class="action-detail-line">${detail}</div>`;
                         });
@@ -328,7 +328,7 @@ class InteractionHandler {
 
             this.visualizer.svg.attr('viewBox', `0 0 ${this.visualizer.width} ${this.visualizer.height}`);
 
-            console.log(`Resized to ${this.visualizer.width}x${this.visualizer.height}`);
+            logger.debug(`Resized to ${this.visualizer.width}x${this.visualizer.height}`);
         }
     }
 
@@ -343,16 +343,16 @@ class InteractionHandler {
         if (!state) return;
 
         state.collapsed = !state.collapsed;
-        console.log(`Toggled ${stateId}: ${state.collapsed ? 'collapsed' : 'expanded'}`);
+        logger.debug(`Toggled ${stateId}: ${state.collapsed ? 'collapsed' : 'expanded'}`);
 
         // Update size based on collapsed state (preserve position)
         state.width = this.visualizer.getNodeWidth(state);
         state.height = this.visualizer.getNodeHeight(state);
-        console.log(`Updated ${stateId} size: ${state.width}x${state.height}`);
+        logger.debug(`Updated ${stateId} size: ${state.width}x${state.height}`);
 
         // Update compound bounds (both expand/collapse) and propagate to parent
         if (!state.collapsed) {
-            console.log(`  → Expanded: updating compound bounds to fit children`);
+            logger.debug(`  → Expanded: updating compound bounds to fit children`);
             
             // Check if children have positions
             const children = state.children
@@ -364,7 +364,7 @@ class InteractionHandler {
             );
             
             if (children && children.length > 0 && (!childrenWithCoords || childrenWithCoords.length === 0)) {
-                console.log(`  → Children missing coordinates, assigning default positions`);
+                logger.debug(`  → Children missing coordinates, assigning default positions`);
                 // Assign default positions relative to parent
                 const padding = this.visualizer.constructor.COMPOUND_PADDING;
                 const topPadding = this.visualizer.constructor.COMPOUND_TOP_PADDING;
@@ -375,24 +375,50 @@ class InteractionHandler {
                     child.x = state.x;
                     child.y = yOffset;
                     yOffset += (child.height || LAYOUT_CONSTANTS.STATE_MIN_HEIGHT) + childSpacing;
-                    console.log(`    → Assigned ${child.id}: (${child.x}, ${child.y})`);
+                    logger.debug(`    → Assigned ${child.id}: (${child.x}, ${child.y})`);
                 });
             }
             
             this.visualizer.updateCompoundBounds(state);
+            
+            // Push away overlapping states when expanding (direct positioning - one shot)
+            if (this.visualizer.collisionDetector) {
+                // Direct positioning: states moved immediately to boundary, not gradual push
+                // Only need 1-2 iterations (2nd for cascading collisions)
+                let iteration = 0;
+                let affectedCount = 0;
+                const MAX_ITERATIONS = 3; // 1 for main, 1-2 for cascade
+                
+                do {
+                    // Use 100% damping (1.0) for expansion to fully resolve overlaps
+                    // Drag uses 40% damping (default) for smooth following
+                    affectedCount = this.visualizer.collisionDetector.pushAwayOverlappingStates(state, 0, 0, false, 1.0);
+                    iteration++;
+                    if (this.visualizer.debugMode) {
+                        logger.debug(`  → Collision iteration ${iteration}: pushed ${affectedCount} states`);
+                    }
+                } while (affectedCount > 0 && iteration < MAX_ITERATIONS);
+                
+                if (affectedCount > 0 && this.visualizer.debugMode) {
+                    logger.warn(`  ⚠️ Still ${affectedCount} overlapping states after ${MAX_ITERATIONS} iterations`);
+                }
+                
+                // Don't call updatePushedStatesDOM() here - render() will handle it
+                // updatePushedStatesDOM() uses requestAnimationFrame which conflicts with immediate render()
+            }
         }
         
         // Always update parent bounds when child size changes
-        console.log(`  → Updating parent compound bounds after size change`);
+        logger.debug(`  → Updating parent compound bounds after size change`);
         const parent = this.visualizer.nodes.find(p =>
             this.visualizer.constructor.isCompoundOrParallel(p) &&
             p.children &&
             p.children.includes(stateId)
         );
         if (parent) {
-            console.log(`  → Found parent: ${parent.id}, updating bounds`);
+            logger.debug(`  → Found parent: ${parent.id}, updating bounds`);
             this.visualizer.updateCompoundBounds(parent);
-            console.log(`  → Parent ${parent.id} updated to size: ${parent.width}x${parent.height}`);
+            logger.debug(`  → Parent ${parent.id} updated to size: ${parent.width}x${parent.height}`);
         }
 
         // Re-render to show/hide children with new size
@@ -406,16 +432,16 @@ class InteractionHandler {
 
         // Get visible nodes (collapsed ancestors hide their children)
         const visibleNodes = this.visualizer.getVisibleNodes();
-        console.log(`[TOGGLE] Visible nodes after toggle: ${visibleNodes.map(n => n.id).join(', ')}`);
+        logger.debug(`[TOGGLE] Visible nodes after toggle: ${visibleNodes.map(n => n.id).join(', ')}`);
 
         // Get visible links with visual redirect applied
         const visibleLinks = this.visualizer.getVisibleLinks(this.visualizer.allLinks, visibleNodes);
-        console.log(`[TOGGLE] Visible links after filter: ${visibleLinks.length} links`);
+        logger.debug(`[TOGGLE] Visible links after filter: ${visibleLinks.length} links`);
         visibleLinks.forEach(link => {
             const vs = link.visualSource || link.source;
             const vt = link.visualTarget || link.target;
             if (vs !== link.source || vt !== link.target) {
-                console.log(`[TOGGLE] Visual redirect: ${link.source}→${link.target} becomes ${vs}→${vt}`);
+                logger.debug(`[TOGGLE] Visual redirect: ${link.source}→${link.target} becomes ${vs}→${vt}`);
             }
         });
 
@@ -431,7 +457,7 @@ class InteractionHandler {
 
         // Re-render snap points with updated routing info
         this.visualizer.renderSnapPoints(visibleNodes, visibleLinks);
-        console.log(`[TOGGLE] Re-rendered snap points after optimization`);
+        logger.debug(`[TOGGLE] Re-rendered snap points after optimization`);
 
         // Recalculate directions for visible links only
         visibleLinks.forEach(link => {
@@ -452,7 +478,7 @@ class InteractionHandler {
         
         this.visualizer.linkElements.attr('d', d => this.visualizer.getLinkPath(d));
 
-        console.log(`[TOGGLE] Updated ${this.visualizer.linkElements.size()} link paths`);
+        logger.debug(`[TOGGLE] Updated ${this.visualizer.linkElements.size()} link paths`);
 
         // Update transition labels if they exist
         if (this.visualizer.transitionLabels) {
@@ -464,7 +490,7 @@ class InteractionHandler {
                 .attr('x', d => this.visualizer.getTransitionLabelPosition(d).x)
                 .attr('y', d => this.visualizer.getTransitionLabelPosition(d).y);
 
-            console.log(`[TOGGLE] Updated ${this.visualizer.transitionLabels.size()} transition label positions`);
+            logger.debug(`[TOGGLE] Updated ${this.visualizer.transitionLabels.size()} transition label positions`);
         }
     }
 }
