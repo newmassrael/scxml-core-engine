@@ -51,6 +51,41 @@ class SCXMLVisualizer {
         return node && (node.type === 'compound' || node.type === 'parallel');
     }
     
+    /**
+     * Find the outermost collapsed compound/parallel ancestor of a node
+     * Used for snap point calculation and visual redirect when states are collapsed
+     * @param {string} nodeId - Node ID to find ancestor for
+     * @param {Array} nodes - All nodes in the graph
+     * @returns {Object|null} Collapsed ancestor node or null
+     */
+    static findCollapsedAncestor(nodeId, nodes) {
+        let outermostCollapsed = null;
+        
+        // Find direct parent first
+        const parent = nodes.find(n => 
+            SCXMLVisualizer.isCompoundOrParallel(n) &&  // Only compound/parallel can have children
+            n.children &&
+            n.children.includes(nodeId)
+        );
+        
+        if (!parent) {
+            return null;
+        }
+        
+        // If parent is collapsed, remember it
+        if (parent.collapsed) {
+            outermostCollapsed = parent;
+        }
+        
+        // Recursively check if parent has collapsed ancestors
+        const grandparent = SCXMLVisualizer.findCollapsedAncestor(parent.id, nodes);
+        if (grandparent) {
+            outermostCollapsed = grandparent;  // Prefer outermost
+        }
+        
+        return outermostCollapsed;
+    }
+    
     constructor(containerId, scxmlStructure) {
         this.container = d3.select(`#${containerId}`);
         this.states = scxmlStructure.states || [];
@@ -183,6 +218,10 @@ class SCXMLVisualizer {
 
         // Build data
         this.nodes = this.buildNodes();
+        
+        // W3C SCXML 3.6: Auto-expand ancestors of initial targets
+        this.nodeBuilder.expandInitialPaths(this.nodes);
+        
         this.allLinks = this.buildLinks();
 
         // Initialize layout optimizer
@@ -232,7 +271,7 @@ class SCXMLVisualizer {
         // Always recalculate - link visibility depends on node states
         return this.linkBuilder.getVisibleLinks(allLinks, nodes);
     }
-    findCollapsedAncestor(nodeId, nodes) { return this.linkBuilder.findCollapsedAncestor(nodeId, nodes); }
+    findCollapsedAncestor(nodeId, nodes) { return SCXMLVisualizer.findCollapsedAncestor(nodeId, nodes); }
 
     buildELKGraph() { return this.layoutManager.buildELKGraph(); }
     applyELKLayout(layouted) { return this.layoutManager.applyELKLayout(layouted); }

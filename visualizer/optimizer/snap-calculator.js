@@ -216,7 +216,7 @@ class SnapCalculator {
         if (!node) return null;
 
         // If this node is a child of a collapsed parent, use the parent's coordinates instead
-        const collapsedParent = this.optimizer.nodes.find(p => p.collapsed && p.children && p.children.includes(nodeId));
+        const collapsedParent = SCXMLVisualizer.findCollapsedAncestor(nodeId, this.optimizer.nodes);
         if (collapsedParent) {
             logger.debug(`[SNAP] ${nodeId} is child of collapsed ${collapsedParent.id}, using parent coordinates`);
             node = collapsedParent;
@@ -559,7 +559,7 @@ class SnapCalculator {
 
             // If this node is a child of a collapsed parent, use the parent's coordinates instead
             // This handles visual redirect where hidden nodes (p) should use their collapsed parent (s2)
-            const collapsedParent = nodes.find(p => p.collapsed && p.children && p.children.includes(nodeId));
+            const collapsedParent = SCXMLVisualizer.findCollapsedAncestor(nodeId, nodes);
             if (collapsedParent) {
                 logger.debug(`[CSP] ${nodeId} is child of collapsed ${collapsedParent.id}, using parent coordinates`);
                 node = collapsedParent;

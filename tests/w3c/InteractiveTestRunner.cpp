@@ -1428,6 +1428,13 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
             stateObj.set("children", childrenArray);
         }
 
+        // W3C SCXML 3.6: Extract initial attribute for compound/parallel states
+        // Used for auto-expanding ancestor states to show initial configuration
+        const auto &initialState = state->getInitialState();
+        if (!initialState.empty()) {
+            stateObj.set("initial", initialState);
+        }
+
         // W3C SCXML 3.7: Extract onentry action blocks (Priority 1: assign, raise, foreach, log)
         const auto &entryBlocks = state->getEntryActionBlocks();
         std::vector<std::shared_ptr<IActionNode>> flatEntryActions;
