@@ -212,8 +212,8 @@ const ActionFormatter = (function() {
      */
     function formatForeachAction(action) {
         const icon = '🔁';
-        const item = action.item || '?';
-        const array = action.array || '?';
+        const item = action.item || '<missing>';
+        const array = action.array || '<missing>';
         const index = action.index;
 
         let text = `${icon} foreach: ${item} in ${array}`;
