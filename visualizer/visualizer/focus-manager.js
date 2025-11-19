@@ -25,7 +25,7 @@ class TransitionFocusManager {
         this.svgHighlightTimeout = null;
         this.panelHighlightTimeout = null;
 
-        if (this.debugMode) console.log('[FocusManager] Initialized');
+        if (this.debugMode) logger.debug('[FocusManager] Initialized');
     }
 
     /**
@@ -43,7 +43,7 @@ class TransitionFocusManager {
             scroll = true
         } = options;
 
-        if (this.debugMode) console.log('[FocusManager] focusTransition():', { transition, options });
+        if (this.debugMode) logger.debug('[FocusManager] focusTransition():', { transition, options });
 
         if (permanent) {
             this.setActive(transition);
@@ -60,7 +60,7 @@ class TransitionFocusManager {
      * Set transition as permanently active
      */
     setActive(transition) {
-        if (this.debugMode) console.log('[FocusManager] setActive():', transition);
+        if (this.debugMode) logger.debug('[FocusManager] setActive():', transition);
 
         // Store active transition
         this.activeTransition = transition;
@@ -83,7 +83,7 @@ class TransitionFocusManager {
      * Clear active transition state
      */
     clearActive() {
-        if (this.debugMode) console.log('[FocusManager] clearActive()');
+        if (this.debugMode) logger.debug('[FocusManager] clearActive()');
 
         this.activeTransition = null;
         this.visualizer.activeTransition = null;
@@ -95,7 +95,7 @@ class TransitionFocusManager {
             panel.querySelectorAll('.transition-list-item').forEach(item => {
                 item.classList.remove('active');
             });
-            if (this.debugMode) console.log('[FocusManager] Panel active transition cleared');
+            if (this.debugMode) logger.debug('[FocusManager] Panel active transition cleared');
         }
 
         // Clear SVG active state
@@ -105,17 +105,17 @@ class TransitionFocusManager {
         if (this.visualizer.transitionLabels) {
             this.visualizer.transitionLabels.classed('active', false);
         }
-        if (this.debugMode) console.log('[FocusManager] SVG active transition cleared');
+        if (this.debugMode) logger.debug('[FocusManager] SVG active transition cleared');
     }
 
     /**
      * Temporarily highlight transition (auto-remove after duration)
      */
     highlightTemporary(transition, duration = 2000) {
-        if (this.debugMode) console.log('[FocusManager] highlightTemporary():', { transition, duration });
+        if (this.debugMode) logger.debug('[FocusManager] highlightTemporary():', { transition, duration });
 
         if (!this.visualizer.linkElements) {
-            if (this.debugMode) console.log('[FocusManager] No linkElements - aborting');
+            if (this.debugMode) logger.debug('[FocusManager] No linkElements - aborting');
             return;
         }
 
@@ -127,14 +127,14 @@ class TransitionFocusManager {
         this.highlightPanel(transitionId);
         this.scheduleHighlightRemoval(transitionId, duration);
 
-        if (this.debugMode) console.log('[FocusManager] Temporary highlight complete');
+        if (this.debugMode) logger.debug('[FocusManager] Temporary highlight complete');
     }
 
     /**
      * Clear all temporary highlights
      */
     clearHighlights() {
-        if (this.debugMode) console.log('[FocusManager] clearHighlights()');
+        if (this.debugMode) logger.debug('[FocusManager] clearHighlights()');
 
         this.cancelPendingHighlights();
 
@@ -157,10 +157,10 @@ class TransitionFocusManager {
             panel.querySelectorAll('.transition-list-item').forEach(item => {
                 item.classList.remove('panel-highlighted');
             });
-            if (this.debugMode) console.log('[FocusManager] Panel highlights cleared');
+            if (this.debugMode) logger.debug('[FocusManager] Panel highlights cleared');
         }
 
-        if (this.debugMode) console.log('[FocusManager] All highlights cleared (active state preserved)');
+        if (this.debugMode) logger.debug('[FocusManager] All highlights cleared (active state preserved)');
     }
 
     /**
@@ -174,7 +174,7 @@ class TransitionFocusManager {
         const visibleNodes = this.visualizer.getVisibleNodes();
 
         if (visibleNodes.length === 0) {
-            if (this.debugMode) console.log('[FocusManager] No visible nodes, skipping center alignment');
+            if (this.debugMode) logger.debug('[FocusManager] No visible nodes, skipping center alignment');
             return;
         }
 
@@ -187,18 +187,18 @@ class TransitionFocusManager {
 
             if (nodesToFocus.length === 0) {
                 nodesToFocus = visibleNodes;
-                if (this.debugMode) console.log('[FocusManager] Target states not visible, using all nodes');
+                if (this.debugMode) logger.debug('[FocusManager] Target states not visible, using all nodes');
             } else {
-                if (this.debugMode) console.log(`[FocusManager] Focusing on ${nodesToFocus.length} target state(s)`);
+                if (this.debugMode) logger.debug(`[FocusManager] Focusing on ${nodesToFocus.length} target state(s)`);
             }
         } else if (this.visualizer.activeStates && this.visualizer.activeStates.size > 0) {
             nodesToFocus = visibleNodes.filter(node => this.visualizer.activeStates.has(node.id));
 
             if (nodesToFocus.length === 0) {
                 nodesToFocus = visibleNodes;
-                if (this.debugMode) console.log('[FocusManager] Active states not visible, using all nodes');
+                if (this.debugMode) logger.debug('[FocusManager] Active states not visible, using all nodes');
             } else {
-                if (this.debugMode) console.log(`[FocusManager] Focusing on ${nodesToFocus.length} active state(s)`);
+                if (this.debugMode) logger.debug(`[FocusManager] Focusing on ${nodesToFocus.length} active state(s)`);
             }
         }
 
@@ -256,11 +256,11 @@ class TransitionFocusManager {
         // Update initialTransform so resetView() returns to centered state
         this.visualizer.initialTransform = transform;
 
-        if (this.debugMode) console.log(`[FocusManager] Diagram centered: bbox=(${minX.toFixed(1)}, ${minY.toFixed(1)}, ${maxX.toFixed(1)}, ${maxY.toFixed(1)}), scale=${scale.toFixed(2)}, bottomPanelHeight=${bottomPanelHeight}px`);
-        if (this.debugMode) console.log(`[FocusManager] Container (cached): ${this.visualizer.width}x${this.visualizer.height}, Container (actual): ${currentWidth}x${currentHeight}`);
-        if (this.debugMode) console.log(`[FocusManager] Diagram: ${diagramWidth.toFixed(1)}x${diagramHeight.toFixed(1)}, DiagramCenter: (${diagramCenterX.toFixed(1)}, ${diagramCenterY.toFixed(1)})`);
-        if (this.debugMode) console.log(`[FocusManager] ViewportCenter: (${viewportCenterX.toFixed(1)}, ${viewportCenterY.toFixed(1)}), Available: ${availableWidth.toFixed(1)}x${availableHeight.toFixed(1)}`);
-        if (this.debugMode) console.log(`[FocusManager] ScaleX: ${scaleX.toFixed(3)}, ScaleY: ${scaleY.toFixed(3)}, Final: ${scale.toFixed(3)}`);
+        if (this.debugMode) logger.debug(`[FocusManager] Diagram centered: bbox=(${minX.toFixed(1)}, ${minY.toFixed(1)}, ${maxX.toFixed(1)}, ${maxY.toFixed(1)}), scale=${scale.toFixed(2)}, bottomPanelHeight=${bottomPanelHeight}px`);
+        if (this.debugMode) logger.debug(`[FocusManager] Container (cached): ${this.visualizer.width}x${this.visualizer.height}, Container (actual): ${currentWidth}x${currentHeight}`);
+        if (this.debugMode) logger.debug(`[FocusManager] Diagram: ${diagramWidth.toFixed(1)}x${diagramHeight.toFixed(1)}, DiagramCenter: (${diagramCenterX.toFixed(1)}, ${diagramCenterY.toFixed(1)})`);
+        if (this.debugMode) logger.debug(`[FocusManager] ViewportCenter: (${viewportCenterX.toFixed(1)}, ${viewportCenterY.toFixed(1)}), Available: ${availableWidth.toFixed(1)}x${availableHeight.toFixed(1)}`);
+        if (this.debugMode) logger.debug(`[FocusManager] ScaleX: ${scaleX.toFixed(3)}, ScaleY: ${scaleY.toFixed(3)}, Final: ${scale.toFixed(3)}`);
     }
 
     // ========================================
@@ -338,7 +338,7 @@ class TransitionFocusManager {
                         const centerX = x + width / 2;
                         const centerY = y + height / 2;
 
-                        if (this.debugMode) console.log('[FocusManager] Focusing on transition label at:', { centerX, centerY });
+                        if (this.debugMode) logger.debug('[FocusManager] Focusing on transition label at:', { centerX, centerY });
 
                         // Use shared viewport center (accounts for bottom panel)
                         const viewportCenter = this.getViewportCenter();
@@ -363,14 +363,14 @@ class TransitionFocusManager {
 
         // Validate nodes exist
         if (!sourceNode || !targetNode) {
-            console.warn('[FocusManager] Source or target node not found:', transition);
+            logger.warn('[FocusManager] Source or target node not found:', transition);
             return;
         }
 
         // Validate coordinates are valid numbers
         if (!Number.isFinite(sourceNode.x) || !Number.isFinite(sourceNode.y) ||
             !Number.isFinite(targetNode.x) || !Number.isFinite(targetNode.y)) {
-            console.warn('[FocusManager] Invalid node coordinates:', {
+            logger.warn('[FocusManager] Invalid node coordinates:', {
                 source: { id: sourceNode.id, x: sourceNode.x, y: sourceNode.y },
                 target: { id: targetNode.id, x: targetNode.x, y: targetNode.y }
             });
@@ -390,7 +390,7 @@ class TransitionFocusManager {
 
         // Handle same-position nodes (prevent division by zero)
         if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
-            if (this.debugMode) console.log('[FocusManager] Same-position nodes, using default zoom');
+            if (this.debugMode) logger.debug('[FocusManager] Same-position nodes, using default zoom');
             const transform = d3.zoomIdentity
                 .translate(viewportCenter.x, viewportCenter.y)
                 .scale(1.0)
@@ -416,7 +416,7 @@ class TransitionFocusManager {
 
         // Validate zoom level is finite
         if (!Number.isFinite(zoomLevel) || zoomLevel <= 0) {
-            console.warn('[FocusManager] Invalid zoom level:', zoomLevel);
+            logger.warn('[FocusManager] Invalid zoom level:', zoomLevel);
             return;
         }
 
@@ -430,7 +430,7 @@ class TransitionFocusManager {
             .duration(750)
             .call(this.visualizer.zoom.transform, transform);
 
-        if (this.debugMode) console.log(`[FocusManager] Focused on transition ${transition.source} → ${transition.target}, zoom: ${zoomLevel.toFixed(2)}`);
+        if (this.debugMode) logger.debug(`[FocusManager] Focused on transition ${transition.source} → ${transition.target}, zoom: ${zoomLevel.toFixed(2)}`);
     }
 
     /**
@@ -469,7 +469,7 @@ class TransitionFocusManager {
                 block: 'nearest'
             });
 
-            if (this.debugMode) console.log(`[FocusManager] Panel active state set on: ${transitionId}`);
+            if (this.debugMode) logger.debug(`[FocusManager] Panel active state set on: ${transitionId}`);
         }
     }
 
@@ -485,7 +485,7 @@ class TransitionFocusManager {
                     d3.select(this).classed('active', true);
                 }
             });
-            if (this.debugMode) console.log(`[FocusManager] SVG active state set on: ${transitionId}`);
+            if (this.debugMode) logger.debug(`[FocusManager] SVG active state set on: ${transitionId}`);
         }
 
         // Set active on labels
@@ -496,7 +496,7 @@ class TransitionFocusManager {
                     d3.select(labelElement).classed('active', true);
                 }
             });
-            if (this.debugMode) console.log(`[FocusManager] Label active state set on: ${transitionId}`);
+            if (this.debugMode) logger.debug(`[FocusManager] Label active state set on: ${transitionId}`);
         }
     }
 
@@ -518,7 +518,7 @@ class TransitionFocusManager {
      * Highlight SVG elements
      */
     highlightSVG(transitionId) {
-        if (this.debugMode) console.log(`[FocusManager] highlightSVG(): ${transitionId}`);
+        if (this.debugMode) logger.debug(`[FocusManager] highlightSVG(): ${transitionId}`);
 
         // Highlight links
         const matchingLinks = this.visualizer.linkElements.filter(function() {
@@ -527,9 +527,9 @@ class TransitionFocusManager {
 
         if (matchingLinks.size() > 0) {
             matchingLinks.classed('highlighted', true);
-            if (this.debugMode) console.log(`[FocusManager] SVG highlighted ${matchingLinks.size()} link(s)`);
+            if (this.debugMode) logger.debug(`[FocusManager] SVG highlighted ${matchingLinks.size()} link(s)`);
         } else {
-            if (this.debugMode) console.log(`[FocusManager] No SVG match for: ${transitionId}`);
+            if (this.debugMode) logger.debug(`[FocusManager] No SVG match for: ${transitionId}`);
         }
 
         // Highlight labels
@@ -543,9 +543,9 @@ class TransitionFocusManager {
         });
 
         if (foundLabel) {
-            if (this.debugMode) console.log(`[FocusManager] Label highlighted: ${transitionId}`);
+            if (this.debugMode) logger.debug(`[FocusManager] Label highlighted: ${transitionId}`);
         } else {
-            if (this.debugMode) console.log(`[FocusManager] No label match for: ${transitionId}`);
+            if (this.debugMode) logger.debug(`[FocusManager] No label match for: ${transitionId}`);
         }
     }
 
@@ -559,7 +559,7 @@ class TransitionFocusManager {
         const item = panel.querySelector(`[data-transition-id="${transitionId}"]`);
         if (item) {
             item.classList.add('panel-highlighted');
-            if (this.debugMode) console.log(`[FocusManager] Panel highlighted: ${transitionId}`);
+            if (this.debugMode) logger.debug(`[FocusManager] Panel highlighted: ${transitionId}`);
         }
     }
 
@@ -599,7 +599,7 @@ class TransitionFocusManager {
                     }
                 });
             }
-            if (this.debugMode) console.log(`[FocusManager] Auto-removed SVG highlight after ${duration}ms`);
+            if (this.debugMode) logger.debug(`[FocusManager] Auto-removed SVG highlight after ${duration}ms`);
         }, duration);
 
         this.panelHighlightTimeout = setTimeout(() => {
@@ -610,7 +610,7 @@ class TransitionFocusManager {
                     item.classList.remove('panel-highlighted');
                 });
             }
-            if (this.debugMode) console.log(`[FocusManager] Auto-removed panel highlight after ${duration}ms`);
+            if (this.debugMode) logger.debug(`[FocusManager] Auto-removed panel highlight after ${duration}ms`);
         }, duration);
     }
 
@@ -621,12 +621,12 @@ class TransitionFocusManager {
         if (this.svgHighlightTimeout) {
             clearTimeout(this.svgHighlightTimeout);
             this.svgHighlightTimeout = null;
-            if (this.debugMode) console.log('[FocusManager] Cancelled pending SVG highlight timeout');
+            if (this.debugMode) logger.debug('[FocusManager] Cancelled pending SVG highlight timeout');
         }
         if (this.panelHighlightTimeout) {
             clearTimeout(this.panelHighlightTimeout);
             this.panelHighlightTimeout = null;
-            if (this.debugMode) console.log('[FocusManager] Cancelled pending panel highlight timeout');
+            if (this.debugMode) logger.debug('[FocusManager] Cancelled pending panel highlight timeout');
         }
     }
 }

@@ -60,7 +60,7 @@ class BreadcrumbManager {
         if (visualizer.initPromise) {
             await visualizer.initPromise;
         } else {
-            console.warn('Visualizer has no initPromise, assuming synchronous initialization');
+            logger.warn('Visualizer has no initPromise, assuming synchronous initialization');
         }
         
         return visualizer;
@@ -85,11 +85,11 @@ class BreadcrumbManager {
     extractSubSCXMLInfo(structure) {
         const subSCXMLs = [];
         
-        console.log('[extractSubSCXMLInfo] Analyzing structure:', structure);
+        logger.debug('[extractSubSCXMLInfo] Analyzing structure:', structure);
         
         // Get all sub-SCXMLs from runner (includes nested children)
         const allSubSCXMLs = this.controller.runner.getSubSCXMLStructures ? this.controller.runner.getSubSCXMLStructures() : [];
-        console.log('[extractSubSCXMLInfo] All sub-SCXMLs from runner:', allSubSCXMLs);
+        logger.debug('[extractSubSCXMLInfo] All sub-SCXMLs from runner:', allSubSCXMLs);
         
         // Recursively find states with invoke in current structure
         const findInvokeStates = (states, parentPath = '') => {
@@ -97,7 +97,7 @@ class BreadcrumbManager {
                 const statePath = parentPath ? `${parentPath}.${state.id}` : state.id;
                 
                 if (state.hasInvoke && (state.invokeSrc || state.invokeSrcExpr)) {
-                    console.log(`[extractSubSCXMLInfo] Found invoke state: ${state.id}, src: ${state.invokeSrc}, srcexpr: ${state.invokeSrcExpr}`);
+                    logger.debug(`[extractSubSCXMLInfo] Found invoke state: ${state.id}, src: ${state.invokeSrc}, srcexpr: ${state.invokeSrcExpr}`);
 
                     // W3C SCXML 6.4: Handle both static src and dynamic srcexpr
                     const srcPath = state.invokeSrc || state.invokeSrcExpr;
@@ -146,14 +146,14 @@ class BreadcrumbManager {
             findInvokeStates(structure.states);
         }
         
-        console.log(`Extracted ${subSCXMLs.length} sub-SCXML(s) from structure`);
+        logger.debug(`Extracted ${subSCXMLs.length} sub-SCXML(s) from structure`);
         return subSCXMLs;
     }
 
     updateBreadcrumb() {
         const breadcrumbContainer = document.getElementById(DOM_IDS.BREADCRUMB_CONTAINER);
         if (!breadcrumbContainer) {
-            console.warn(`${DOM_IDS.BREADCRUMB_CONTAINER} not found`);
+            logger.warn(`${DOM_IDS.BREADCRUMB_CONTAINER} not found`);
             return;
         }
 
@@ -186,25 +186,25 @@ class BreadcrumbManager {
             });
         });
 
-        console.log(`Breadcrumb updated: ${path.join(' > ')}`);
+        logger.debug(`Breadcrumb updated: ${path.join(' > ')}`);
     }
 
     async handleStateNavigation(stateId, invokeSrc, invokeSrcExpr, invokeId) {
-        console.log(`[handleStateNavigation] Handling navigation from state: ${stateId}`);
-        console.log(`[handleStateNavigation] Current machine:`, this.controller.currentMachine);
+        logger.debug(`[handleStateNavigation] Handling navigation from state: ${stateId}`);
+        logger.debug(`[handleStateNavigation] Current machine:`, this.controller.currentMachine);
 
         const subSCXMLs = this.controller.currentMachine.subSCXMLs || [];
-        console.log(`[handleStateNavigation] Available subSCXMLs:`, subSCXMLs);
+        logger.debug(`[handleStateNavigation] Available subSCXMLs:`, subSCXMLs);
 
         subSCXMLs.forEach((sub, idx) => {
-            console.log(`  [${idx}] parentStateId: "${sub.parentStateId}", srcPath: "${sub.srcPath}"`);
+            logger.debug(`  [${idx}] parentStateId: "${sub.parentStateId}", srcPath: "${sub.srcPath}"`);
         });
 
-        console.log(`[handleStateNavigation] Looking for parentStateId: "${stateId}"`);
+        logger.debug(`[handleStateNavigation] Looking for parentStateId: "${stateId}"`);
         const childInfo = subSCXMLs.find(info => info.parentStateId === stateId);
 
         if (childInfo) {
-            console.log(`Found static child SCXML: ${childInfo.srcPath}`);
+            logger.debug(`Found static child SCXML: ${childInfo.srcPath}`);
             const childStructure = childInfo.structure;
 
             if (childStructure) {
@@ -214,7 +214,7 @@ class BreadcrumbManager {
                 alert(`Cannot navigate to child SCXML: ${childInfo.srcPath}\n\nThe child SCXML structure was not loaded.`);
             }
         } else {
-            console.warn(`No child SCXML found for state ${stateId}`);
+            logger.warn(`No child SCXML found for state ${stateId}`);
 
             const stateHasInvoke = invokeSrc || invokeSrcExpr ||
                 this.controller.currentMachine.structure?.states?.find(s => s.id === stateId && s.hasInvoke);
@@ -222,29 +222,29 @@ class BreadcrumbManager {
             if (invokeSrcExpr) {
                 // W3C SCXML 6.4: Evaluate srcexpr using native JSEngine
                 try {
-                    console.log(`[handleStateNavigation] Dynamic invoke detected: ${invokeSrcExpr}`);
+                    logger.debug(`[handleStateNavigation] Dynamic invoke detected: ${invokeSrcExpr}`);
 
                     // Zero Duplication: Use native JSEngine::evaluateExpression() as Single Source of Truth
                     // Supports full ECMAScript expressions: "pathVar", "'file:' + pathVar", etc.
                     const evaluatedSrc = this.controller.runner.evaluateExpression(invokeSrcExpr);
 
                     if (!evaluatedSrc) {
-                        console.warn(`Dynamic invoke: Expression evaluation returned empty result`);
+                        logger.warn(`Dynamic invoke: Expression evaluation returned empty result`);
                         alert(`Dynamic invoke failed\n\nExpression: ${invokeSrcExpr}\nEvaluation returned empty result`);
                         return;
                     }
 
-                    console.log(`[handleStateNavigation] Expression "${invokeSrcExpr}" evaluated to: ${evaluatedSrc}`);
+                    logger.debug(`[handleStateNavigation] Expression "${invokeSrcExpr}" evaluated to: ${evaluatedSrc}`);
 
                     // Remove 'file:' prefix if present
                     const cleanPath = evaluatedSrc.replace(/^file:/, '');
-                    console.log(`[handleStateNavigation] Clean path: ${cleanPath}`);
+                    logger.debug(`[handleStateNavigation] Clean path: ${cleanPath}`);
 
                     // Refresh child structures from runner (invoke may have loaded child at runtime)
-                    console.log(`[handleStateNavigation] Refreshing child structures from runner...`);
+                    logger.debug(`[handleStateNavigation] Refreshing child structures from runner...`);
                     const runtimeSubSCXMLs = this.controller.runner.getSubSCXMLStructures ?
                         this.controller.runner.getSubSCXMLStructures() : [];
-                    console.log(`[handleStateNavigation] Runtime subSCXMLs:`, runtimeSubSCXMLs);
+                    logger.debug(`[handleStateNavigation] Runtime subSCXMLs:`, runtimeSubSCXMLs);
 
                     // Merge with existing subSCXMLs
                     const allSubSCXMLs = [...subSCXMLs, ...runtimeSubSCXMLs];
@@ -258,13 +258,13 @@ class BreadcrumbManager {
                     });
 
                     if (dynamicChildInfo && dynamicChildInfo.structure) {
-                        console.log(`[handleStateNavigation] Found dynamic child SCXML: ${dynamicChildInfo.srcPath}`);
+                        logger.debug(`[handleStateNavigation] Found dynamic child SCXML: ${dynamicChildInfo.srcPath}`);
                         await this.navigateToChild(stateId, dynamicChildInfo.structure, dynamicChildInfo);
                         return;
                     }
 
                     // W3C SCXML 6.4: Child not found in cached structures, try to parse it directly
-                    console.log(`[handleStateNavigation] Attempting to parse child SCXML directly from file: ${cleanPath}`);
+                    logger.debug(`[handleStateNavigation] Attempting to parse child SCXML directly from file: ${cleanPath}`);
 
                     try {
                         // Get Module (WASM) from global scope
@@ -280,7 +280,7 @@ class BreadcrumbManager {
                         if (this.controller.runner.getBasePath) {
                             const basePath = this.controller.runner.getBasePath();
                             virtualPath = `${basePath}${cleanPath}`;
-                            console.log(`[handleStateNavigation] Using runner base path: ${virtualPath}`);
+                            logger.debug(`[handleStateNavigation] Using runner base path: ${virtualPath}`);
                         } else {
                             // Fallback: Search Emscripten FS for the file
                             const searchPaths = [
@@ -295,13 +295,13 @@ class BreadcrumbManager {
                                 searchPaths.unshift(`/resources/${testId}/${cleanPath}`);
                             }
 
-                            console.log(`[handleStateNavigation] Searching for file in paths:`, searchPaths);
+                            logger.debug(`[handleStateNavigation] Searching for file in paths:`, searchPaths);
 
                             for (const path of searchPaths) {
                                 try {
                                     Module.FS.stat(path);
                                     virtualPath = path;
-                                    console.log(`[handleStateNavigation] File found at: ${virtualPath}`);
+                                    logger.debug(`[handleStateNavigation] File found at: ${virtualPath}`);
                                     break;
                                 } catch (e) {
                                     // File doesn't exist at this path, try next
@@ -313,11 +313,11 @@ class BreadcrumbManager {
                             }
                         }
 
-                        console.log(`[handleStateNavigation] Reading virtual file: ${virtualPath}`);
+                        logger.debug(`[handleStateNavigation] Reading virtual file: ${virtualPath}`);
                         const fileContent = Module.FS.readFile(virtualPath, { encoding: 'utf8' });
 
                         // Create temporary runner to parse child structure
-                        console.log(`[handleStateNavigation] Creating temporary parser for child SCXML`);
+                        logger.debug(`[handleStateNavigation] Creating temporary parser for child SCXML`);
                         const tempRunner = new Module.InteractiveTestRunner();
 
                         try {
@@ -333,12 +333,12 @@ class BreadcrumbManager {
                                 }
                             }
 
-                            console.log(`[handleStateNavigation] Setting child base path: ${childBasePath}`);
+                            logger.debug(`[handleStateNavigation] Setting child base path: ${childBasePath}`);
                             tempRunner.setBasePath(childBasePath);
 
                             if (tempRunner.loadSCXML(fileContent, false)) {
                                 const childStructure = tempRunner.getSCXMLStructure();
-                                console.log(`[handleStateNavigation] Successfully parsed child SCXML structure`);
+                                logger.debug(`[handleStateNavigation] Successfully parsed child SCXML structure`);
 
                                 // Navigate to child
                                 const childInfo = {
@@ -358,7 +358,7 @@ class BreadcrumbManager {
                         }
                     } catch (parseError) {
                         console.error(`[handleStateNavigation] Failed to parse child SCXML:`, parseError);
-                        console.warn(`[handleStateNavigation] Available children:`, allSubSCXMLs);
+                        logger.warn(`[handleStateNavigation] Available children:`, allSubSCXMLs);
                         alert(`Dynamic invoke failed\n\nChild SCXML could not be loaded: ${evaluatedSrc}\n\nError: ${parseError.message}\n\nCheck console for details.`);
                     }
                 } catch (e) {
@@ -374,7 +374,7 @@ class BreadcrumbManager {
     }
 
     async navigateToChild(stateId, childStructure, childInfo = null) {
-        console.log(`Navigating to child state machine from state: ${stateId}`);
+        logger.debug(`Navigating to child state machine from state: ${stateId}`);
 
         // Save current node positions for layout restoration
         // Note: Only save x, y positions. Width and height will be recalculated
@@ -439,16 +439,16 @@ class BreadcrumbManager {
         }
 
         await this.controller.updateState();
-        console.log(`Navigation complete. Stack depth: ${this.controller.navigationStack.length}`);
+        logger.debug(`Navigation complete. Stack depth: ${this.controller.navigationStack.length}`);
     }
 
     async navigateBack() {
         if (this.controller.navigationStack.length === 0) {
-            console.log('Already at root level');
+            logger.debug('Already at root level');
             return;
         }
 
-        console.log('Navigating back to parent');
+        logger.debug('Navigating back to parent');
         const parent = this.controller.navigationStack.pop();
 
         // Cleanup current visualizer to prevent memory leaks
@@ -465,7 +465,7 @@ class BreadcrumbManager {
 
         // Restore saved node positions to preserve layout
         if (parent.nodePositions && parent.nodePositions.length > 0) {
-            console.log(`Restoring ${parent.nodePositions.length} node positions from saved state`);
+            logger.debug(`Restoring ${parent.nodePositions.length} node positions from saved state`);
 
             parent.nodePositions.forEach(savedPos => {
                 const node = parentVisualizer.nodes.find(n => n.id === savedPos.id);
@@ -479,8 +479,16 @@ class BreadcrumbManager {
                 }
             });
 
+            // Recalculate compound bounds based on restored child positions
+            logger.debug('Recalculating compound bounds to fit restored child positions...');
+            parentVisualizer.nodes.forEach(node => {
+                if (SCXMLVisualizer.isCompoundOrParallel(node)) {
+                    parentVisualizer.updateCompoundBounds(node);
+                }
+            });
+
             // Re-optimize transition snap points with restored node positions
-            console.log('Re-optimizing transition layout with restored positions...');
+            logger.debug('Re-optimizing transition layout with restored positions...');
             parentVisualizer.layoutOptimizer.optimizeSnapPointAssignments(
                 parentVisualizer.allLinks,
                 parentVisualizer.nodes
@@ -512,7 +520,7 @@ class BreadcrumbManager {
         }
 
         await this.controller.updateState();
-        console.log(`Navigation back complete. Stack depth: ${this.controller.navigationStack.length}`);
+        logger.debug(`Navigation back complete. Stack depth: ${this.controller.navigationStack.length}`);
     }
 
     async navigateToDepth(depth) {

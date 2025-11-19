@@ -216,9 +216,9 @@ class SnapCalculator {
         if (!node) return null;
 
         // If this node is a child of a collapsed parent, use the parent's coordinates instead
-        const collapsedParent = this.optimizer.nodes.find(p => p.collapsed && p.children && p.children.includes(nodeId));
+        const collapsedParent = SCXMLVisualizer.findCollapsedAncestor(nodeId, this.optimizer.nodes);
         if (collapsedParent) {
-            console.log(`[SNAP] ${nodeId} is child of collapsed ${collapsedParent.id}, using parent coordinates`);
+            logger.debug(`[SNAP] ${nodeId} is child of collapsed ${collapsedParent.id}, using parent coordinates`);
             node = collapsedParent;
             nodeId = collapsedParent.id;
         }
@@ -234,7 +234,7 @@ class SnapCalculator {
             // Get size from node object (uses actual dimensions if available)
             const { halfWidth, halfHeight } = TransitionLayoutOptimizer.getNodeSize(node);
 
-            console.log(`[SNAP INITIAL] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} (INITIAL) type=${node.type}, collapsed=${node.collapsed}, size=${halfWidth}x${halfHeight}`);
+            logger.debug(`[SNAP INITIAL] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} (INITIAL) type=${node.type}, collapsed=${node.collapsed}, size=${halfWidth}x${halfHeight}`);
 
             if (edge === 'top') {
                 return { x: cx, y: cy - halfHeight, index: 0, count: 1 };
@@ -249,7 +249,7 @@ class SnapCalculator {
 
         // Block other transitions from using an edge that has an initial transition
         if (this.optimizer.hasInitialTransitionOnEdge(nodeId, edge)) {
-            console.log(`[SNAP BLOCKED] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} blocked - initial transition owns this edge`);
+            logger.debug(`[SNAP BLOCKED] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} blocked - initial transition owns this edge`);
             return null;  // Force fallback to different edge or center
         }
 
@@ -262,7 +262,7 @@ class SnapCalculator {
         const incomingConns = allConnections.filter(c => !c.isSource);
         const outgoingConns = allConnections.filter(c => c.isSource);
 
-        console.log(`[SNAP SEPARATE] ${nodeId} ${edge}: ${incomingConns.length} incoming, ${outgoingConns.length} outgoing`);
+        logger.debug(`[SNAP SEPARATE] ${nodeId} ${edge}: ${incomingConns.length} incoming, ${outgoingConns.length} outgoing`);
 
         // Sort each group independently
         const sortByPosition = (a, b, isHorizontal) => {
@@ -318,7 +318,7 @@ class SnapCalculator {
 
         const position = (absoluteIndex + 1) / (totalCount + 1);
 
-        console.log(`[SNAP] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} (${isIncoming ? 'IN' : 'OUT'}) at ${groupIndex + 1}/${group.length} in group, absolute ${absoluteIndex + 1}/${totalCount}, position ${position.toFixed(3)}`);
+        logger.debug(`[SNAP] ${nodeId} ${edge}: ${this.getVisualSource(link)}→${this.getVisualTarget(link)} (${isIncoming ? 'IN' : 'OUT'}) at ${groupIndex + 1}/${group.length} in group, absolute ${absoluteIndex + 1}/${totalCount}, position ${position.toFixed(3)}`);
 
         // Calculate actual coordinates
         const cx = node.x || 0;
@@ -368,7 +368,7 @@ class SnapCalculator {
                     // Example: if reverse is "on.bottom → off.right", skip "off.right → on.bottom"
                     if (sourceEdge === reverseRouting.targetEdge &&
                         targetEdge === reverseRouting.sourceEdge) {
-                        console.log(`[BIDIRECTIONAL SKIP] ${link.source}.${sourceEdge}→${link.target}.${targetEdge} (reverse already uses this edge pair)`);
+                        logger.debug(`[BIDIRECTIONAL SKIP] ${link.source}.${sourceEdge}→${link.target}.${targetEdge} (reverse already uses this edge pair)`);
                         return;
                     }
                 }
@@ -499,8 +499,8 @@ class SnapCalculator {
     }
 
     distributeSnapPointsOnEdges(links, nodes) {
-        console.log(`[DISTRIBUTE SNAP] Processing ${links.length} links, ${nodes.length} nodes`);
-        console.log(`[DISTRIBUTE SNAP] Node IDs: ${nodes.map(n => n.id).join(', ')}`);
+        logger.debug(`[DISTRIBUTE SNAP] Processing ${links.length} links, ${nodes.length} nodes`);
+        logger.debug(`[DISTRIBUTE SNAP] Node IDs: ${nodes.map(n => n.id).join(', ')}`);
         // Group links by node and edge (combine incoming and outgoing)
         // Note: Expects already filtered links (transition and initial only)
         const edgeGroups = new Map(); // Key: "nodeId:edge", Value: [links]
@@ -522,7 +522,7 @@ class SnapCalculator {
                     if (link.routing) {
                         link.routing.sourcePoint = centerPoint;
                     }
-                    console.log(`[OPTIMIZE CSP] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} source at initial center: (${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
+                    logger.debug(`[OPTIMIZE CSP] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} source at initial center: (${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
                 }
 
                 // Still need to add target to edge group
@@ -559,9 +559,9 @@ class SnapCalculator {
 
             // If this node is a child of a collapsed parent, use the parent's coordinates instead
             // This handles visual redirect where hidden nodes (p) should use their collapsed parent (s2)
-            const collapsedParent = nodes.find(p => p.collapsed && p.children && p.children.includes(nodeId));
+            const collapsedParent = SCXMLVisualizer.findCollapsedAncestor(nodeId, nodes);
             if (collapsedParent) {
-                console.log(`[CSP] ${nodeId} is child of collapsed ${collapsedParent.id}, using parent coordinates`);
+                logger.debug(`[CSP] ${nodeId} is child of collapsed ${collapsedParent.id}, using parent coordinates`);
                 node = collapsedParent;
                 nodeId = collapsedParent.id;
             }
@@ -647,7 +647,7 @@ class SnapCalculator {
                 }
 
                 const direction = item.isSource ? 'source' : 'target';
-                console.log(`[OPTIMIZE CSP] ${this.getVisualSource(item.link)}→${this.getVisualTarget(item.link)} ${direction} on ${nodeId}.${edge}: position ${index + 1}/${count} at (${x.toFixed(1)}, ${y.toFixed(1)})`);
+                logger.debug(`[OPTIMIZE CSP] ${this.getVisualSource(item.link)}→${this.getVisualTarget(item.link)} ${direction} on ${nodeId}.${edge}: position ${index + 1}/${count} at (${x.toFixed(1)}, ${y.toFixed(1)})`);
             });
         });
     }

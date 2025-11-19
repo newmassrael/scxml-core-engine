@@ -37,7 +37,7 @@ async function loadSCXMLContent() {
         const environment = getEnvironmentName();
 
         const url = `${resourcesPrefix}/${testId}/test${testId}.scxml`;
-        console.log(`Loading W3C test ${testId} from ${url} (${environment})`);
+        logger.debug(`Loading W3C test ${testId} from ${url} (${environment})`);
 
         const response = await fetch(url);
         if (!response.ok) {
@@ -48,13 +48,13 @@ async function loadSCXMLContent() {
 
     // Source 2: Base64 encoded SCXML (#scxml=<base64>)
     if (params.scxml) {
-        console.log('Loading SCXML from base64');
+        logger.debug('Loading SCXML from base64');
         return atob(params.scxml);
     }
 
     // Source 3: External URL (#url=<url>)
     if (params.url) {
-        console.log(`Loading SCXML from URL: ${params.url}`);
+        logger.debug(`Loading SCXML from URL: ${params.url}`);
         const response = await fetch(params.url);
         if (!response.ok) {
             throw new Error(`Failed to fetch ${params.url}: ${response.statusText}`);
@@ -66,6 +66,90 @@ async function loadSCXMLContent() {
 }
 
 /**
+ * Create a validation error message for <script> element violations
+ * @param {string} violation - Description of the violation
+ * @param {string} details - Specific details about what was found
+ * @param {number} elementIndex - 0-based index of the script element
+ * @returns {Error} Formatted error object
+ */
+function createScriptValidationError(violation, details, elementIndex) {
+    return new Error([
+        'SCXML Document Rejected (W3C SCXML 5.8.2)',
+        '',
+        violation,
+        '',
+        details,
+        `Location: <script> element #${elementIndex + 1}`,
+        '',
+        'The SCXML processor cannot execute this document.'
+    ].join('\n'));
+}
+
+/**
+ * W3C SCXML 5.8.2: Validate <script> elements
+ * @param {Document} xmlDoc - Parsed SCXML document
+ * @throws {Error} If document violates W3C SCXML script requirements
+ */
+function validateScriptElements(xmlDoc) {
+    // W3C SCXML 5.8.2: Validate all <script> elements
+    const scripts = xmlDoc.querySelectorAll('script');
+    
+    for (let i = 0; i < scripts.length; i++) {
+        const script = scripts[i];
+        const hasSrc = script.hasAttribute('src');
+        const hasContent = script.textContent.trim().length > 0;
+        
+        // W3C SCXML 5.8.2: Must specify either src or child content (not both, not neither)
+        if (!hasSrc && !hasContent) {
+            throw createScriptValidationError(
+                '<script> element must specify either \'src\' attribute or child content.',
+                'Found: Empty <script/> element',
+                i
+            );
+        }
+        
+        if (hasSrc && hasContent) {
+            throw createScriptValidationError(
+                '<script> element cannot specify both \'src\' attribute and child content.',
+                `Found: <script src="${script.getAttribute('src')}">...</script>`,
+                i
+            );
+        }
+        
+        // W3C SCXML 5.8.2: If src is specified, download must succeed
+        // Note: Modern browsers deprecated synchronous XHR (blocks main thread)
+        // Browser will automatically handle script loading errors at runtime
+        // and throw appropriate errors if download fails
+        if (hasSrc) {
+            const src = script.getAttribute('src');
+            
+            // Check for empty src attribute
+            if (!src || src.trim().length === 0) {
+                throw createScriptValidationError(
+                    'Script element has empty src attribute.',
+                    'Found: <script src=""/>',
+                    i
+                );
+            }
+            
+            logger.debug(`Script element with src="${src}" will be validated by browser at runtime (W3C SCXML 5.8.2)`);
+            
+            // Optional: Basic URL validation to catch obvious errors early
+            try {
+                new URL(src, window.location.href); // Validates URL format
+                logger.debug(`URL format valid: ${src}`);
+            } catch (urlError) {
+                throw createScriptValidationError(
+                    'Invalid script URL format.',
+                    `URL: ${src}\nError: ${urlError.message}`,
+                    i
+                );
+            }
+        }
+    }
+}
+
+/**
  * Initialize visualizer (simplified - engine handles invoke automatically)
  */
 async function initVisualizer(scxmlContent) {
@@ -73,10 +157,30 @@ async function initVisualizer(scxmlContent) {
 
     try {
         // Load WASM module
-        console.log('Loading WASM module...');
+        logger.debug('Loading WASM module...');
         window.Module = await createVisualizer();  // Make Module globally accessible
         const Module = window.Module;  // Local alias for convenience
-        console.log('WASM module loaded');
+        logger.debug('WASM module loaded');
+
+        // W3C SCXML 5.8.2: Parse and validate <script> elements before execution
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(scxmlContent, 'text/xml');
+        
+        // Check for XML parse errors
+        const parseError = xmlDoc.querySelector('parsererror');
+        if (parseError) {
+            throw new Error('XML parsing failed: ' + parseError.textContent);
+        }
+        
+        // Validate script elements
+        try {
+            validateScriptElements(xmlDoc);
+        } catch (error) {
+            // Document rejected - display error and stop execution
+            showLoading(false);
+            showFatalError(error.message);
+            return;
+        }
 
         // Setup Emscripten virtual file system for invoke resolution
         const params = parseHashParams();
@@ -102,24 +206,15 @@ async function initVisualizer(scxmlContent) {
             
             // Write parent SCXML to virtual FS
             Module.FS.writeFile(`/resources/${testId}/test${testId}.scxml`, scxmlContent);
-            console.log(`Created virtual FS: /resources/${testId}/test${testId}.scxml`);
+            logger.debug(`Created virtual FS: /resources/${testId}/test${testId}.scxml`);
 
             // W3C SCXML 6.3/6.4: Extract child SCXML files from invoke src/srcexpr attributes
             if (scxmlContent.includes('<invoke')) {
                 const childFiles = new Set();  // Use Set to avoid duplicates
 
                 try {
-                    // Use DOMParser for robust XML parsing (avoids regex pitfalls)
-                    const parser = new DOMParser();
-                    const xmlDoc = parser.parseFromString(scxmlContent, 'text/xml');
-
-                    // Check for parse errors
-                    const parseError = xmlDoc.querySelector('parsererror');
-                    if (parseError) {
-                        console.warn('XML parsing failed, falling back to regex extraction:', parseError.textContent);
-                        throw new Error('XML parse error');
-                    }
-
+                    // Reuse already-parsed xmlDoc (avoid duplicate parsing)
+                    
                     // Extract static src="file:..." from invoke elements
                     const invokeElements = xmlDoc.querySelectorAll('invoke[src]');
                     invokeElements.forEach(invoke => {
@@ -133,7 +228,7 @@ async function initVisualizer(scxmlContent) {
                     // W3C SCXML 6.4: Extract file references from data/assign expressions
                     // Look for 'file:...' string literals in expr attributes
                     if (scxmlContent.includes('srcexpr')) {
-                        console.log(`Dynamic invoke (srcexpr) detected - extracting file references from XML`);
+                        logger.debug(`Dynamic invoke (srcexpr) detected - extracting file references from XML`);
 
                         const exprElements = xmlDoc.querySelectorAll('[expr]');
                         exprElements.forEach(elem => {
@@ -144,18 +239,18 @@ async function initVisualizer(scxmlContent) {
                                 fileMatches.forEach(match => {
                                     const filename = match.replace(/^['"]file:/, '').replace(/['"]$/, '');
                                     childFiles.add(filename);
-                                    console.log(`Extracted file reference from expr: ${filename}`);
+                                    logger.debug(`Extracted file reference from expr: ${filename}`);
                                 });
                             }
                         });
 
                         if (childFiles.size > 0) {
-                            console.log(`XML parsing extracted ${childFiles.size} file reference(s)`);
+                            logger.debug(`XML parsing extracted ${childFiles.size} file reference(s)`);
                         }
                     }
                 } catch (e) {
                     // Fallback to regex if XML parsing fails
-                    console.warn('XML parsing failed, using regex fallback:', e.message);
+                    logger.warn('XML parsing failed, using regex fallback:', e.message);
 
                     // Extract static src="file:..." references
                     const invokePattern = /<invoke[^>]*\ssrc=["']file:([^"']+)["']/g;
@@ -177,7 +272,7 @@ async function initVisualizer(scxmlContent) {
                 }
 
                 if (childFiles.size > 0) {
-                    console.log(`Loading ${childFiles.size} potential child SCXML file(s)`);
+                    logger.debug(`Loading ${childFiles.size} potential child SCXML file(s)`);
 
                     // Load detected/potential child files
                     let loadedCount = 0;
@@ -187,7 +282,7 @@ async function initVisualizer(scxmlContent) {
                             if (childResponse.ok) {
                                 const childContent = await childResponse.text();
                                 Module.FS.writeFile(`/resources/${testId}/${childFile}`, childContent);
-                                console.log(`Created virtual FS: /resources/${testId}/${childFile}`);
+                                logger.debug(`Created virtual FS: /resources/${testId}/${childFile}`);
                                 loadedCount++;
                             } else {
                                 // Log failed HTTP responses at debug level
@@ -199,23 +294,23 @@ async function initVisualizer(scxmlContent) {
                         }
                     }
 
-                    console.log(`Child SCXML loading complete: ${loadedCount}/${childFiles.size} files loaded`);
+                    logger.debug(`Child SCXML loading complete: ${loadedCount}/${childFiles.size} files loaded`);
                 } else {
-                    console.log(`No file-based invokes detected (content-based invokes may be used)`);
+                    logger.debug(`No file-based invokes detected (content-based invokes may be used)`);
                 }
             } else {
-                console.log(`No <invoke> elements - skipping child SCXML fetch`);
+                logger.debug(`No <invoke> elements - skipping child SCXML fetch`);
             }
         }
 
         // Create single InteractiveTestRunner (engine handles children automatically)
-        console.log('Initializing state machine...');
+        logger.debug('Initializing state machine...');
         const runner = new Module.InteractiveTestRunner();
 
         // Set base path BEFORE loadSCXML for static sub-SCXML analysis
         if (params.test) {
             runner.setBasePath(`/resources/${params.test}/`);
-            console.log(`Base path set for invoke resolution: /resources/${params.test}/`);
+            logger.debug(`Base path set for invoke resolution: /resources/${params.test}/`);
         }
 
         if (!runner.loadSCXML(scxmlContent, false)) {
@@ -227,25 +322,25 @@ async function initVisualizer(scxmlContent) {
         }
 
         const structure = runner.getSCXMLStructure();
-        console.log(`  State machine initialized: ${structure.states.length} states, ${structure.transitions ? structure.transitions.length : 0} transitions`);
-        console.log('[DEBUG] Structure object:', structure);
+        logger.debug(`  State machine initialized: ${structure.states.length} states, ${structure.transitions ? structure.transitions.length : 0} transitions`);
+        logger.debug('[DEBUG] Structure object:', structure);
 
         // W3C SCXML 6.3: Get statically detected sub-SCXML structures
         const subSCXMLStructures = runner.getSubSCXMLStructures();
         const hasChildren = subSCXMLStructures.length > 0;
 
-        console.log(`Sub-SCXML detection: ${hasChildren ? subSCXMLStructures.length + ' file(s) found' : 'none'}`);
+        logger.debug(`Sub-SCXML detection: ${hasChildren ? subSCXMLStructures.length + ' file(s) found' : 'none'}`);
         if (hasChildren) {
             for (let i = 0; i < subSCXMLStructures.length; i++) {
                 const subInfo = subSCXMLStructures[i];
-                console.log(`  Child ${i}: ${subInfo.srcPath} (invoked from '${subInfo.parentStateId}')`);
+                logger.debug(`  Child ${i}: ${subInfo.srcPath} (invoked from '${subInfo.parentStateId}')`);
             }
         }
 
         // Single-window navigation for all visualizations
         // Child SCXML navigation is handled via breadcrumb + state click
         const containerIdToUse = 'state-diagram-single';
-        console.log(`Container ID: ${containerIdToUse} (single-window navigation mode)`);
+        logger.debug(`Container ID: ${containerIdToUse} (single-window navigation mode)`);
 
         // Extract available events for UI buttons
         const availableEvents = new Set();
@@ -261,9 +356,9 @@ async function initVisualizer(scxmlContent) {
         const visualizer = new SCXMLVisualizer(containerIdToUse, structure);
 
         // Wait for visualizer to render (initGraph is async)
-        console.log('[INIT] Waiting for visualizer to render...');
+        logger.debug('[INIT] Waiting for visualizer to render...');
         await visualizer.initPromise;
-        console.log('[INIT] Visualizer render complete');
+        logger.debug('[INIT] Visualizer render complete');
 
         const controller = new ExecutionController(runner, visualizer, Array.from(availableEvents).sort(), visualizerManager);
 
@@ -276,7 +371,7 @@ async function initVisualizer(scxmlContent) {
         // Single-window navigation: Child visualizers are created on-demand when navigating
         // No need to pre-create child visualizers - they will be created in navigateToChild()
         if (hasChildren) {
-            console.log(`✓ ${subSCXMLStructures.length} child SCXML(s) detected - available for navigation`);
+            logger.debug(`✓ ${subSCXMLStructures.length} child SCXML(s) detected - available for navigation`);
             // Store sub-SCXML info in currentMachine for navigation
             controller.currentMachine.subSCXMLs = subSCXMLStructures;
         }
@@ -284,15 +379,15 @@ async function initVisualizer(scxmlContent) {
         // W3C SCXML 3.13: ExecutionController.initializeState() already called in constructor
         // No need to manually update state here - controller handles initial state display
         // (may already be in final state due to eventless transitions)
-        console.log('[INIT] ExecutionController initialized with actual state');
-        console.log('Visualizer ready!');
+        logger.debug('[INIT] ExecutionController initialized with actual state');
+        logger.debug('Visualizer ready!');
 
         showLoading(false);
 
         // Recenter diagram after container is visible (accurate dimensions)
         requestAnimationFrame(() => {
             visualizer.centerDiagram();
-            console.log('[INIT] Diagram recentered with actual container dimensions');
+            logger.debug('[INIT] Diagram recentered with actual container dimensions');
         });
 
         // Update test ID in header (reuse params from above)
@@ -377,14 +472,14 @@ function switchChildTab(index) {
         diagram.classList.toggle('active', i === index);
     });
     
-    console.log(`Switched to child ${index}`);
+    logger.debug(`Switched to child ${index}`);
 }
 
 /**
  * Main entry point
  */
 window.addEventListener('DOMContentLoaded', async () => {
-    console.log('SCXML Interactive Visualizer Starting...');
+    logger.debug('SCXML Interactive Visualizer Starting...');
 
     try {
         const scxmlContent = await loadSCXMLContent();

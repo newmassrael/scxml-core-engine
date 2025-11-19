@@ -219,7 +219,7 @@ class PathUtils {
 
         // Only orthogonal segments are supported (W3C SCXML transitions are always orthogonal)
         if (!isVertical && !isHorizontal) {
-            console.warn('[PATH-UTILS] Non-orthogonal segment detected, using full segment for collision check');
+            logger.warn('[PATH-UTILS] Non-orthogonal segment detected, using full segment for collision check');
             return this.optimizer.segmentIntersectsRect(segment, left, top, right, bottom);
         }
 
@@ -228,7 +228,7 @@ class PathUtils {
         
         // If segment is too short to exclude both ends, check full segment
         if (excludeStart && excludeEnd && segmentLength <= 2 * MIN_SEGMENT) {
-            console.warn(`[PATH-UTILS] Segment too short (${segmentLength.toFixed(1)}px) to exclude both endpoints, using full segment`);
+            logger.warn(`[PATH-UTILS] Segment too short (${segmentLength.toFixed(1)}px) to exclude both endpoints, using full segment`);
             return this.optimizer.segmentIntersectsRect(segment, left, top, right, bottom);
         }
 

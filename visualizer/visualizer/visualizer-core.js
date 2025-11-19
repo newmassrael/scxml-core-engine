@@ -51,6 +51,41 @@ class SCXMLVisualizer {
         return node && (node.type === 'compound' || node.type === 'parallel');
     }
     
+    /**
+     * Find the outermost collapsed compound/parallel ancestor of a node
+     * Used for snap point calculation and visual redirect when states are collapsed
+     * @param {string} nodeId - Node ID to find ancestor for
+     * @param {Array} nodes - All nodes in the graph
+     * @returns {Object|null} Collapsed ancestor node or null
+     */
+    static findCollapsedAncestor(nodeId, nodes) {
+        let outermostCollapsed = null;
+        
+        // Find direct parent first
+        const parent = nodes.find(n => 
+            SCXMLVisualizer.isCompoundOrParallel(n) &&  // Only compound/parallel can have children
+            n.children &&
+            n.children.includes(nodeId)
+        );
+        
+        if (!parent) {
+            return null;
+        }
+        
+        // If parent is collapsed, remember it
+        if (parent.collapsed) {
+            outermostCollapsed = parent;
+        }
+        
+        // Recursively check if parent has collapsed ancestors
+        const grandparent = SCXMLVisualizer.findCollapsedAncestor(parent.id, nodes);
+        if (grandparent) {
+            outermostCollapsed = grandparent;  // Prefer outermost
+        }
+        
+        return outermostCollapsed;
+    }
+    
     constructor(containerId, scxmlStructure) {
         this.container = d3.select(`#${containerId}`);
         this.states = scxmlStructure.states || [];
@@ -88,12 +123,12 @@ class SCXMLVisualizer {
         this.width = clientWidth > 0 ? clientWidth : 800;
         this.height = clientHeight > 0 ? clientHeight : 500;
 
-        console.log(`Initializing ELK-based visualizer: ${this.width}x${this.height}`);
-        console.log(`Initial state: ${this.initialState}`);
-        console.log(`States: ${this.states.length}, Transitions: ${this.transitions.length}`);
+        logger.debug(`Initializing ELK-based visualizer: ${this.width}x${this.height}`);
+        logger.debug(`Initial state: ${this.initialState}`);
+        logger.debug(`States: ${this.states.length}, Transitions: ${this.transitions.length}`);
 
         if (this.debugMode) {
-            console.log('[DEBUG] Transition details:', this.transitions);
+            logger.debug('[DEBUG] Transition details:', this.transitions);
         }
 
         // Initialize ELK
@@ -107,6 +142,7 @@ class SCXMLVisualizer {
         this.pathCalculator = new PathCalculator(this);
         this.focusManager = new TransitionFocusManager(this);
         this.interactionHandler = new InteractionHandler(this);
+        this.collisionDetector = new CollisionDetector(this);
 
         // Store initialization promise for external waiting
         this.initPromise = this.initGraph();
@@ -182,6 +218,10 @@ class SCXMLVisualizer {
 
         // Build data
         this.nodes = this.buildNodes();
+        
+        // W3C SCXML 3.6: Auto-expand ancestors of initial targets
+        this.nodeBuilder.expandInitialPaths(this.nodes);
+        
         this.allLinks = this.buildLinks();
 
         // Initialize layout optimizer
@@ -199,7 +239,7 @@ class SCXMLVisualizer {
 
     async computeLayout() {
         if (this.debugMode) {
-            console.log('Computing ELK layout...');
+            logger.debug('Computing ELK layout...');
         }
 
         const elkGraph = this.buildELKGraph();
@@ -208,7 +248,7 @@ class SCXMLVisualizer {
         this.applyELKLayout(layouted);
 
         if (this.debugMode) {
-            console.log('ELK layout computed');
+            logger.debug('ELK layout computed');
         }
     }
 
@@ -231,7 +271,7 @@ class SCXMLVisualizer {
         // Always recalculate - link visibility depends on node states
         return this.linkBuilder.getVisibleLinks(allLinks, nodes);
     }
-    findCollapsedAncestor(nodeId, nodes) { return this.linkBuilder.findCollapsedAncestor(nodeId, nodes); }
+    findCollapsedAncestor(nodeId, nodes) { return SCXMLVisualizer.findCollapsedAncestor(nodeId, nodes); }
 
     buildELKGraph() { return this.layoutManager.buildELKGraph(); }
     applyELKLayout(layouted) { return this.layoutManager.applyELKLayout(layouted); }
@@ -289,7 +329,7 @@ class SCXMLVisualizer {
         const routingHash = this.getRoutingHash(transition);
         this.customLabelPositions.set(key, { x, y, routingHash });
         if (this.debugMode) {
-            console.log(`[CUSTOM LABEL] Set position for ${key}: (${x.toFixed(1)}, ${y.toFixed(1)})`);
+            logger.debug(`[CUSTOM LABEL] Set position for ${key}: (${x.toFixed(1)}, ${y.toFixed(1)})`);
         }
     }
 
@@ -311,7 +351,7 @@ class SCXMLVisualizer {
         const currentRoutingHash = this.getRoutingHash(transition);
         if (currentRoutingHash && stored.routingHash !== currentRoutingHash) {
             if (this.debugMode) {
-                console.log(`[CUSTOM LABEL] Routing changed for ${key}, resetting to default`);
+                logger.debug(`[CUSTOM LABEL] Routing changed for ${key}, resetting to default`);
             }
             this.customLabelPositions.delete(key);
             return null;
