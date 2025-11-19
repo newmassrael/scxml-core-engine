@@ -33,8 +33,10 @@ const LAYOUT_CONSTANTS = {
     ACTION_DETAIL_INDENT_LEVEL2: 30, // Second level detail line indent (e.g., "      ↳ ")
 
     // Width estimation constants for node-builder.js
-    CHARACTER_WIDTH_ESTIMATE: 8,   // Approximate pixel width per character
-    WIDTH_ESTIMATE_MARGIN: 100     // Additional margin for width estimates
+    // Note: Dynamic width calculation now uses getBBox() measurement in renderer.js
+    // These constants are only used for state ID initial sizing
+    STATE_ID_CHAR_WIDTH: 10,       // Pixel width per character for state ID
+    STATE_ID_BASE_PADDING: 60      // Base padding for state ID width calculation
 };
 
 // ELK (Eclipse Layout Kernel) configuration constants
