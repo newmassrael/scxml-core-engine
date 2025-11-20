@@ -136,6 +136,8 @@ class NodeBuilder {
 
     getNodeWidth(node) {
         if (node.type === 'initial-pseudo') return 20;
+        // W3C SCXML 3.11: History pseudo-state rendered as circle (r=20)
+        if (node.type === 'history') return 40;
         if (SCXMLVisualizer.isCompoundOrParallel(node)) {
             return node.collapsed ? LAYOUT_CONSTANTS.STATE_MIN_WIDTH : 300;
         }
@@ -159,6 +161,8 @@ class NodeBuilder {
 
     getNodeHeight(node) {
         if (node.type === 'initial-pseudo') return 20;
+        // W3C SCXML 3.11: History pseudo-state rendered as circle (r=20)
+        if (node.type === 'history') return 40;
         if (SCXMLVisualizer.isCompoundOrParallel(node)) {
             return node.collapsed ? 50 : 200;
         }
