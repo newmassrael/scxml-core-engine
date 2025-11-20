@@ -940,6 +940,8 @@ class Renderer {
 
                 // Update state widths and x positions to center the action box
                 const rendererInstance = self.renderer;  // Get renderer instance from visualizer
+                const affectedParents = new Set();  // Track parent compounds that need bounds update
+                
                 statesToResize.forEach(node => {
                     const oldWidth = node.width;
                     const newWidth = node._requiredWidth;
@@ -960,7 +962,28 @@ class Renderer {
                     // Clean up temporary data
                     delete node._requiredWidth;
                     delete node._boxCenterOffset;
+                    
+                    // Track parent compound for bounds update
+                    // Child state expansion should trigger recursive parent resize
+                    const parent = self.layoutManager.findCompoundParent(node.id);
+                    if (parent) {
+                        affectedParents.add(parent.id);
+                    }
                 });
+
+                // Update compound bounds for all affected parents (bottom-up recursive)
+                // updateCompoundBounds already handles recursive parent updates
+                if (affectedParents.size > 0) {
+                    if (this.visualizer.debugMode) {
+                        logger.debug(`[STATE RESIZE] Updating ${affectedParents.size} parent compound bounds`);
+                    }
+                    affectedParents.forEach(parentId => {
+                        const parent = self.nodes.find(n => n.id === parentId);
+                        if (parent) {
+                            self.layoutManager.updateCompoundBounds(parent);
+                        }
+                    });
+                }
 
                 // Trigger re-render to update all positions correctly
                 // This ensures text, snap points, and links are all recalculated
