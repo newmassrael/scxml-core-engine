@@ -310,12 +310,36 @@ class ControlHandler {
             // Immediately cancel ongoing animations for instant UI response
             this.controller.visualizer.clearTransitionHighlights();
 
+            // DEBUG: Check states BEFORE stepBackward
+            const statesBeforeRestore = this.controller.runner.getActiveStates();
+            const statesBeforeArray = [];
+            for (let i = 0; i < statesBeforeRestore.size(); i++) {
+                statesBeforeArray.push(statesBeforeRestore.get(i));
+            }
+            const stepBeforeRestore = this.controller.runner.getCurrentStep();
+            logger.debug(`[STEP BACK] currentStep BEFORE stepBackward(): ${stepBeforeRestore}`);
+            logger.debug(`[STEP BACK] States BEFORE stepBackward(): [${statesBeforeArray.join(', ')}]`);
+
+            // DEBUG: Get current step BEFORE calling stepBackward
+            const stepBefore = this.controller.runner.getCurrentStep();
+            logger.debug(`[STEP BACK] About to call stepBackward() from step ${stepBefore}`);
+
             const success = this.controller.runner.stepBackward();
 
             if (!success) {
                 this.showMessage('Already at initial state', 'info');
                 return;
             }
+
+            // DEBUG: Get states IMMEDIATELY after stepBackward returns
+            const statesAfterRestore = this.controller.runner.getActiveStates();
+            const statesAfterArray = [];
+            for (let i = 0; i < statesAfterRestore.size(); i++) {
+                statesAfterArray.push(statesAfterRestore.get(i));
+            }
+            const isInFinalState = this.controller.runner.isInFinalState();
+            logger.debug(`[STEP BACK] States AFTER stepBackward(): [${statesAfterArray.join(', ')}]`);
+            logger.debug(`[STEP BACK] isInFinalState AFTER stepBackward(): ${isInFinalState}`);
 
             this.controller.currentStep = this.controller.runner.getCurrentStep();
 

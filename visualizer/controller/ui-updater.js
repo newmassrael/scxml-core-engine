@@ -466,6 +466,8 @@ class UIUpdater {
                 activeStates.push(activeStatesVector.get(i));
             }
 
+            logger.debug(`[updateStateDiagram] getActiveStates() returned: [${activeStates.join(', ')}]`);
+
             // Store previous active states for transition detection
             if (!this.controller.previousActiveStates) {
                 this.controller.previousActiveStates = [];

@@ -162,6 +162,23 @@ async function initVisualizer(scxmlContent) {
         const Module = window.Module;  // Local alias for convenience
         logger.debug('WASM module loaded');
 
+        // Sync C++ log level with JavaScript log level
+        const jsLogConfig = logger.getConfig();
+        const jsLogLevel = jsLogConfig.logLevel || 'DEBUG';
+        
+        // Map JavaScript log level to C++ log level string
+        const cppLogLevel = jsLogLevel.toLowerCase(); // debug -> debug, info -> info, etc.
+        
+        // Set C++ logger level via WASM binding (use ccall for automatic string conversion)
+        if (Module.ccall) {
+            try {
+                Module.ccall('setSpdlogLevel', null, ['string'], [cppLogLevel]);
+                logger.debug(`C++ log level set to: ${cppLogLevel} (synced from JS)`);
+            } catch (e) {
+                logger.warn('Failed to set C++ log level:', e.message);
+            }
+        }
+
         // W3C SCXML 5.8.2: Parse and validate <script> elements before execution
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(scxmlContent, 'text/xml');

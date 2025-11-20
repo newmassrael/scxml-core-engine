@@ -1169,6 +1169,9 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode *stateNode,
                                                                      const std::string &eventName,
                                                                      const std::string &eventData) {
+    LOG_DEBUG("[PROCESS STATE TRANSITIONS CALLED] stateNode: {}, event: '{}', isRunning: {}",
+              (stateNode ? stateNode->getId() : "null"), eventName, isRunning_.load());
+
     // eventData available for future SCXML features (e.g., event.data access in guards/actions)
     (void)eventData;
 
@@ -1644,10 +1647,20 @@ std::vector<std::string> StateMachine::getActiveStates() const {
     std::lock_guard<std::mutex> lock(hierarchyManagerMutex_);
 
     if (!hierarchyManager_) {
+        LOG_WARN("StateMachine::getActiveStates: hierarchyManager is null!");
         return {};
     }
 
-    return hierarchyManager_->getActiveStates();
+    auto states = hierarchyManager_->getActiveStates();
+    std::string statesStr;
+    for (const auto &s : states) {
+        if (!statesStr.empty()) {
+            statesStr += ", ";
+        }
+        statesStr += s;
+    }
+    LOG_DEBUG("[GET ACTIVE STATES] Returning {} states from hierarchyManager: [{}]", states.size(), statesStr);
+    return states;
 }
 
 bool StateMachine::isRunning() const {
@@ -1721,8 +1734,14 @@ bool StateMachine::restoreFromSnapshot(const std::set<std::string> &states) {
     // ARCHITECTURE.md: Template Method pattern - encapsulates restoration lifecycle
     // to prevent temporal coupling and maintain Single Source of Truth
 
-    LOG_INFO("StateMachine::restoreFromSnapshot: Starting complete restoration - {} states, session: {}", states.size(),
-             sessionId_);
+    std::string statesStr;
+    for (const auto &s : states) {
+        if (!statesStr.empty()) {
+            statesStr += ", ";
+        }
+        statesStr += s;
+    }
+    LOG_DEBUG("StateMachine::restoreFromSnapshot: Starting - states: [{}], session: {}", statesStr, sessionId_);
 
     // Step 1: Ensure JavaScript environment is initialized
     // CRITICAL: JS environment must exist BEFORE state restoration for event processing (Test 192)
@@ -1735,8 +1754,17 @@ bool StateMachine::restoreFromSnapshot(const std::set<std::string> &states) {
     // This sets isRunning_ = true internally
     restoreActiveStatesDirectly(states);
 
-    LOG_INFO("StateMachine::restoreFromSnapshot: Restoration complete - session: {}, running: {}, states: {}",
-             sessionId_, isRunning_.load(), states.size());
+    // Verify restoration
+    auto restoredStates = getActiveStates();
+    std::string restoredStr;
+    for (const auto &s : restoredStates) {
+        if (!restoredStr.empty()) {
+            restoredStr += ", ";
+        }
+        restoredStr += s;
+    }
+    LOG_DEBUG("StateMachine::restoreFromSnapshot: Complete - restored: [{}], running: {}", restoredStr,
+              isRunning_.load());
 
     return true;
 }
@@ -1746,12 +1774,18 @@ void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &stat
     // ARCHITECTURE.md Zero Duplication: Uses StateHierarchyManager's addStateToConfigurationWithoutOnEntry
     // INTERNAL USE ONLY: Called by restoreFromSnapshot() after JS environment initialization
 
+    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Called with {} states", states.size());
+
+    // Thread safety: Lock mutex for hierarchyManager access
+    std::lock_guard<std::mutex> lock(hierarchyManagerMutex_);
+
     if (!hierarchyManager_) {
         LOG_ERROR("StateMachine::restoreActiveStatesDirectly: hierarchyManager_ is null");
         return;
     }
 
     // Clear current configuration first
+    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Calling hierarchyManager_->reset()");
     hierarchyManager_->reset();
 
     // Restore each state without triggering onentry actions
@@ -1779,16 +1813,30 @@ void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &stat
 
     for (const auto &stateId : orderedStates) {
         hierarchyManager_->addStateToConfigurationWithoutOnEntry(stateId);
-        LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Restored state '{}' without onentry", stateId);
+        LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Added state '{}' to configuration", stateId);
     }
 
     // W3C SCXML 3.13: Set running state after restoration to enable event processing
     // CRITICAL FIX: Child state machines must be running to receive events from parent
     // Without this, stepBackward() restoration leaves child in stopped state (Test 192)
+    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [BEFORE isRunning_=true] About to set isRunning_ = true");
     isRunning_ = true;
+    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [AFTER isRunning_=true] Set to true, about to call "
+              "getActiveStates()");
 
-    LOG_INFO("StateMachine::restoreActiveStatesDirectly: Restored {} states without side effects (running: true)",
-             states.size());
+    // Verify final state
+    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [BEFORE getActiveStates()] Calling getActiveStates()");
+    auto finalStates = getActiveStates();
+    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [AFTER getActiveStates()] Returned {} states",
+              finalStates.size());
+    std::string finalStr;
+    for (const auto &s : finalStates) {
+        if (!finalStr.empty()) {
+            finalStr += ", ";
+        }
+        finalStr += s;
+    }
+    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Complete - final states: [{}], running: true", finalStr);
 }
 
 bool StateMachine::isInitialStateFinal() const {
@@ -2174,6 +2222,7 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
 }
 
 bool StateMachine::enterState(const std::string &stateId) {
+    LOG_DEBUG("[ENTER STATE CALLED] State: {}, isRunning: {}", stateId, isRunning_.load());
     LOG_DEBUG("Entering state: {}", stateId);
 
     // RAII guard against invalid reentrant calls
@@ -2549,6 +2598,10 @@ bool StateMachine::executeTransitionDirect(IStateNode *sourceState, std::shared_
 bool StateMachine::checkEventlessTransitions() {
     // Track recursion depth for visualizer transition tracking
     ++eventlessRecursionDepth_;
+
+    // DEBUG: Log WHO is calling this function
+    LOG_DEBUG("[CHECK EVENTLESS] checkEventlessTransitions() called, recursionDepth={}, isRunning_={}",
+              eventlessRecursionDepth_, isRunning_.load());
 
     // W3C SCXML 3.13: Eventless Transition Selection Algorithm
     //
