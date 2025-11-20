@@ -59,6 +59,15 @@ class TransitionLayoutOptimizer {
                 };
             }
 
+            // History states: Use actual circle radius (20 from renderer.js), not bbox
+            // W3C SCXML 3.11: History pseudo-state rendered as circle with "H"
+            if (node.type === 'history') {
+                return {
+                    halfWidth: 20,
+                    halfHeight: 20
+                };
+            }
+
             if (node.width !== undefined && node.height !== undefined) {
                 return {
                     halfWidth: node.width / 2,
