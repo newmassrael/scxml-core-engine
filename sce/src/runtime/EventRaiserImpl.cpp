@@ -154,7 +154,7 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
 bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const std::string &eventData,
                                              EventPriority priority, const std::string &originSessionId,
                                              const std::string &sendId, const std::string &invokeId,
-                                             const std::string &originType) {
+                                             const std::string &originType, int64_t timestampNs) {
     LOG_DEBUG("EventRaiserImpl::raiseEventWithPriority called - event: '{}', data: '{}', priority: {}, EventRaiser "
               "instance: {}",
               eventName, eventData, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), (void *)this);
@@ -221,7 +221,19 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     // SCXML compliance: Use synchronous queue when immediate mode is disabled
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
-        synchronousQueue_.emplace(eventName, eventData, priority, originSessionId, sendId, invokeId, originType);
+
+        // W3C SCXML 3.13: Restore original timestamp for snapshot restoration (FIFO order preservation)
+        std::chrono::steady_clock::time_point timestamp;
+        if (timestampNs > 0) {
+            // Restore from snapshot: use original timestamp
+            timestamp = std::chrono::steady_clock::time_point(std::chrono::nanoseconds(timestampNs));
+        } else {
+            // New event: use current time
+            timestamp = std::chrono::steady_clock::time_point();  // Will be set to now() in constructor
+        }
+
+        synchronousQueue_.emplace(eventName, eventData, priority, originSessionId, sendId, invokeId, originType,
+                                  timestamp);
         LOG_DEBUG("EventRaiserImpl: [W3C193 DEBUG] Event '{}' queued with priority {} - queue size now: {}", eventName,
                   (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), synchronousQueue_.size());
         LOG_DEBUG("EventRaiserImpl: Event '{}' queued for synchronous processing (SCXML compliance) with {} priority",
@@ -496,9 +508,14 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
 
     // Separate by priority (INTERNAL vs EXTERNAL)
     // W3C SCXML 5.10.1: Capture complete event metadata for _event object restoration
+    // W3C SCXML 3.13: Preserve timestamps for FIFO ordering during snapshot restore
     for (const auto &event : allEvents) {
+        // Convert timestamp to nanoseconds since epoch for serialization
+        int64_t timestampNs =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(event.timestamp.time_since_epoch()).count();
+
         EventSnapshot snapshot(event.eventName, event.eventData, event.sendId, event.originType, event.origin,
-                               event.invokeId);
+                               event.invokeId, timestampNs);
 
         if (event.priority == EventPriority::INTERNAL) {
             outInternal.push_back(snapshot);

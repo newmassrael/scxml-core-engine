@@ -112,6 +112,17 @@ struct ScheduledEventInfo {
  * Handles delayed event delivery with cancellation support.
  * Separated from IEventDispatcher for better testability.
  */
+/**
+ * @brief Scheduler execution mode for Interactive vs Normal operation
+ *
+ * W3C SCXML 3.13: Interactive mode requires manual control of event processing
+ * for time-travel debugging, while normal mode uses automatic timer-based execution.
+ */
+enum class SchedulerMode {
+    AUTOMATIC,  ///< Normal mode: scheduled events automatically poll when ready (timer-based)
+    MANUAL      ///< Interactive mode: scheduled events poll only when explicitly requested
+};
+
 class IEventScheduler {
 public:
     virtual ~IEventScheduler() = default;
@@ -179,6 +190,33 @@ public:
      * @return Vector of ScheduledEventInfo structures
      */
     virtual std::vector<ScheduledEventInfo> getScheduledEvents() const = 0;
+
+    /**
+     * @brief Set scheduler execution mode
+     *
+     * W3C SCXML 3.13: Interactive mode disables automatic polling to support
+     * time-travel debugging. Normal mode enables automatic timer-based polling.
+     *
+     * @param mode AUTOMATIC for normal execution, MANUAL for interactive debugging
+     */
+    virtual void setMode(SchedulerMode mode) = 0;
+
+    /**
+     * @brief Get current scheduler execution mode
+     *
+     * @return Current SchedulerMode
+     */
+    virtual SchedulerMode getMode() const = 0;
+
+    /**
+     * @brief Force poll scheduled events regardless of mode (for interactive debugging)
+     *
+     * W3C SCXML 3.13: In MANUAL mode, automatic polling is disabled via poll().
+     * Interactive debugger uses forcePoll() to explicitly step through scheduled events.
+     *
+     * @return Number of events processed
+     */
+    virtual size_t forcePoll() = 0;
 };
 
 ;

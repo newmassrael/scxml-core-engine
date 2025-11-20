@@ -29,14 +29,18 @@ struct EventSnapshot {
     std::string origin;      // W3C SCXML 5.10.1: _event.origin (session ID)
     std::string invokeid;    // W3C SCXML 5.10.1: _event.invokeid
 
-    EventSnapshot() = default;
+    // W3C SCXML 3.13: Timestamp for FIFO ordering preservation during snapshot restore
+    // Stores nanoseconds since epoch for precise queue order restoration
+    int64_t timestampNs;
+
+    EventSnapshot() : timestampNs(0) {}
 
     EventSnapshot(const std::string &n, const std::string &d = "")
-        : name(n), data(d), sendid(""), origintype(""), origin(""), invokeid("") {}
+        : name(n), data(d), sendid(""), origintype(""), origin(""), invokeid(""), timestampNs(0) {}
 
     EventSnapshot(const std::string &n, const std::string &d, const std::string &sid, const std::string &otype,
-                  const std::string &orig, const std::string &invId)
-        : name(n), data(d), sendid(sid), origintype(otype), origin(orig), invokeid(invId) {}
+                  const std::string &orig, const std::string &invId, int64_t ts = 0)
+        : name(n), data(d), sendid(sid), origintype(otype), origin(orig), invokeid(invId), timestampNs(ts) {}
 };
 
 /**

@@ -59,12 +59,20 @@ InteractiveTestRunner::InteractiveTestRunner()
     // Create event scheduler
     scheduler_ = std::make_shared<EventSchedulerImpl>(eventCallback);
 
+    // W3C SCXML 3.13: Scheduler always polls automatically (timeout → queue)
+    // Queue processing is controlled by EventRaiser immediate mode (disabled below)
+
     // Create event raiser (concrete type for setScheduler access)
     auto eventRaiser = std::make_shared<EventRaiserImpl>();
     eventRaiser_ = eventRaiser;
 
     // Connect EventRaiser to EventScheduler for delayed event polling
     eventRaiser->setScheduler(scheduler_);
+
+    // W3C SCXML 3.13: Disable immediate mode for interactive debugging
+    // Events must be queued and only processed when stepForward() is called
+    // This prevents automatic event processing when scheduler moves events to queue
+    eventRaiser->setImmediateMode(false);
 
     // W3C SCXML: Inject EventRaiser to StateMachine BEFORE setupJSEnvironment()
     // This prevents StateMachine from auto-creating a duplicate EventRaiser
@@ -205,10 +213,10 @@ StepResult InteractiveTestRunner::attemptReplayFromCache() {
 
 void InteractiveTestRunner::pollSchedulerIfNeeded() {
 #ifdef __EMSCRIPTEN__
-    // Poll scheduled events from delayed <send> operations (W3C SCXML 6.2.4)
+    // W3C SCXML 6.2: Poll scheduled events from delayed <send> operations
+    // W3C SCXML 3.13: Scheduler always polls (timeout → queue)
     // WASM only: Manual polling required (no timer thread)
     // Native: Timer thread handles scheduled events automatically
-    // Note: After reset/stepBack, this polling won't find events (they're suspended)
     if (scheduler_) {
         auto schedulerImpl = std::dynamic_pointer_cast<EventSchedulerImpl>(scheduler_);
         if (schedulerImpl) {
@@ -359,6 +367,16 @@ void InteractiveTestRunner::reset() {
         return;
     }
 
+    // Log scheduler state before reset
+    if (scheduler_) {
+        auto currentScheduledEvents = scheduler_->getScheduledEvents();
+        LOG_DEBUG("[RESET] Current scheduler has {} scheduled events before restore", currentScheduledEvents.size());
+        for (const auto &event : currentScheduledEvents) {
+            LOG_DEBUG("[RESET] Current scheduled event: '{}' (sendId: {}, remainingTime: {}ms)", event.eventName,
+                      event.sendId, event.remainingTime.count());
+        }
+    }
+
     if (restoreSnapshot(*initialSnapshot_)) {
         // W3C SCXML 3.13: Reset to initial configuration for time-travel debugging
         currentStep_ = 0;
@@ -462,6 +480,8 @@ bool InteractiveTestRunner::removeExternalEvent(int index) {
 
 size_t InteractiveTestRunner::pollScheduler() {
     // W3C SCXML 6.2: Poll event scheduler to move ready delayed send events to queue
+    // W3C SCXML 3.13: Scheduler always polls automatically (timeout → queue)
+    //                 Queue processing is controlled by immediate mode (queue → state machine)
 #ifdef __EMSCRIPTEN__
     if (!scheduler_) {
         return 0;
@@ -554,6 +574,9 @@ void InteractiveTestRunner::captureSnapshot() {
     if (scheduler_) {
         auto scheduledEvents = scheduler_->getScheduledEvents();
         scheduledEventsSnapshots.reserve(scheduledEvents.size());
+
+        LOG_DEBUG("[SNAPSHOT CAPTURE] Found {} scheduled events in scheduler", scheduledEvents.size());
+
         for (const auto &event : scheduledEvents) {
             // W3C SCXML 6.2: Extract params (convert vector<string> to single string - first value only)
             std::map<std::string, std::string> paramsMap;
@@ -566,6 +589,9 @@ void InteractiveTestRunner::captureSnapshot() {
             scheduledEventsSnapshots.emplace_back(event.eventName, event.sendId, event.originalDelay.count(),
                                                   event.remainingTime.count(), event.sessionId, event.targetUri,
                                                   event.eventType, event.eventData, event.content, paramsMap);
+
+            LOG_DEBUG("[SNAPSHOT CAPTURE] Scheduled event: '{}' (sendId: {}, originalDelay: {}ms, remainingTime: {}ms)",
+                      event.eventName, event.sendId, event.originalDelay.count(), event.remainingTime.count());
         }
     }
 
@@ -665,6 +691,10 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
         }
 
         const std::string &currentSessionId = stateMachine_->getSessionId();
+
+        LOG_DEBUG("[SNAPSHOT RESTORE] Restoring {} scheduled events from snapshot (step: {})",
+                  snapshot.scheduledEvents.size(), snapshot.stepNumber);
+
         for (const auto &eventSnapshot : snapshot.scheduledEvents) {
             // Skip events that belong to child (child will restore them)
             if (childEventSendIds.count(eventSnapshot.sendId) > 0) {
@@ -672,6 +702,11 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
                           eventSnapshot.eventName, eventSnapshot.sendId);
                 continue;
             }
+
+            LOG_DEBUG("[SNAPSHOT RESTORE] Restoring event '{}' (sendId: {}, originalDelay: {}ms, remainingTime: {}ms, "
+                      "step: {})",
+                      eventSnapshot.eventName, eventSnapshot.sendId, eventSnapshot.originalDelayMs,
+                      eventSnapshot.remainingTimeMs, snapshot.stepNumber);
 
             // W3C SCXML 6.2.4: Recreate send operation with remaining time
             EventDescriptor event;
@@ -687,14 +722,18 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
                 event.params[paramName] = {paramValue};
             }
 
-            // Schedule with remaining time (not original delay)
-            auto delay = std::chrono::milliseconds(eventSnapshot.remainingTimeMs);
+            // W3C SCXML 3.13: Time-travel debugging - use different delay based on snapshot type
+            // Step 0 (initial snapshot): Use originalDelay for reset (fresh start)
+            // Other steps: Use remainingTime for accurate time-travel restoration
+            auto delay = (snapshot.stepNumber == 0) ? std::chrono::milliseconds(eventSnapshot.originalDelayMs)
+                                                    : std::chrono::milliseconds(eventSnapshot.remainingTimeMs);
+
             auto future = eventDispatcher_->sendEventDelayed(event, delay);
 
-            LOG_DEBUG("InteractiveTestRunner: Restored parent scheduled event '{}' (sendId: {}, remainingTime: {}ms, "
-                      "originalDelay: {}ms)",
-                      eventSnapshot.eventName, eventSnapshot.sendId, eventSnapshot.remainingTimeMs,
-                      eventSnapshot.originalDelayMs);
+            LOG_DEBUG("InteractiveTestRunner: Restored parent scheduled event '{}' (sendId: {}, delay: {}ms, "
+                      "remainingTime: {}ms, originalDelay: {}ms, step: {})",
+                      eventSnapshot.eventName, eventSnapshot.sendId, delay.count(), eventSnapshot.remainingTimeMs,
+                      eventSnapshot.originalDelayMs, snapshot.stepNumber);
         }
 
         LOG_DEBUG("InteractiveTestRunner: Restored {} scheduled events to scheduler with exact remainingTime",
@@ -857,33 +896,31 @@ void InteractiveTestRunner::restoreEventQueues(const std::vector<EventSnapshot> 
     LOG_DEBUG("InteractiveTestRunner: Cleared existing queue for clean restoration");
 
     // W3C SCXML 3.13: Disable immediate mode during queue restoration
+    // Interactive debugging requires events to stay in queue until stepForward()
     // Without this, events are processed immediately instead of being queued
-    // This causes unwanted transitions during state restoration (bug: test 377 step back)
-    bool wasImmediateMode = eventRaiserImpl->isImmediateModeEnabled();
-    if (wasImmediateMode) {
-        eventRaiserImpl->setImmediateMode(false);
-        LOG_DEBUG("InteractiveTestRunner: Temporarily disabled immediate mode for queue restoration");
-    }
+    eventRaiserImpl->setImmediateMode(false);
+    LOG_DEBUG("InteractiveTestRunner: Disabled immediate mode for queue restoration (will remain disabled)");
 
     // Restore internal queue (higher priority)
+    // W3C SCXML 3.13: Preserve original timestamps for FIFO ordering
     for (const auto &event : internal) {
         eventRaiserImpl->raiseEventWithPriority(event.name, event.data, EventRaiserImpl::EventPriority::INTERNAL,
-                                                event.origin, event.sendid, event.invokeid, event.origintype);
+                                                event.origin, event.sendid, event.invokeid, event.origintype,
+                                                event.timestampNs);
     }
 
     // Restore external queue (lower priority)
+    // W3C SCXML 3.13: Preserve original timestamps for FIFO ordering
     for (const auto &event : external) {
         eventRaiserImpl->raiseEventWithPriority(event.name, event.data, EventRaiserImpl::EventPriority::EXTERNAL,
-                                                event.origin, event.sendid, event.invokeid, event.origintype);
+                                                event.origin, event.sendid, event.invokeid, event.origintype,
+                                                event.timestampNs);
     }
 
-    // Restore immediate mode to original state
-    if (wasImmediateMode) {
-        eventRaiserImpl->setImmediateMode(true);
-        LOG_DEBUG("InteractiveTestRunner: Restored immediate mode after queue restoration");
-    }
-
-    LOG_DEBUG("InteractiveTestRunner: Restored queues - internal: {}, external: {}", internal.size(), external.size());
+    // W3C SCXML 3.13: Keep immediate mode disabled for interactive debugging
+    // Events must be processed only via explicit stepForward() calls
+    LOG_DEBUG("InteractiveTestRunner: Restored queues - internal: {}, external: {} (immediate mode remains disabled)",
+              internal.size(), external.size());
 }
 
 #ifdef __EMSCRIPTEN__
