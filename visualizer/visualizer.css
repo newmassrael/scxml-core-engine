@@ -11,6 +11,7 @@
     --color-green: #1a7f37;
     --color-red: #cf222e;
     --color-yellow: #9a6700;
+    --color-purple: #8250df;
     --color-gray-light: #f6f8fa;
     --color-gray-medium: #d0d7de;
     --color-gray-dark: #57606a;
@@ -285,13 +286,13 @@ body {
 
 .history-circle {
     fill: #ffffff;
-    stroke: var(--color-purple);
-    stroke-width: 2.5px;
+    stroke: var(--color-border);
+    stroke-width: 2px;
     transition: all 0.2s ease;
 }
 
 .history-label {
-    fill: var(--color-purple);
+    fill: #1f2328;
     font-size: 18px;
     font-weight: 700;
     text-anchor: middle;
@@ -307,25 +308,26 @@ body {
 }
 
 .state-history.active .history-circle {
-    fill: #fbefff;
-    stroke: var(--color-purple);
-    stroke-width: 3.5px;
+    fill: #ddf4ff;
+    stroke: var(--color-blue);
+    stroke-width: 3px;
+    box-shadow: 0 0 10px rgba(9, 105, 218, 0.3);
 }
 
 .state-history.active .history-label {
-    fill: var(--color-purple);
-    font-weight: 800;
+    fill: var(--color-blue);
+    font-weight: 600;
 }
 
 .state-history.active .history-id-label {
-    fill: var(--color-purple);
+    fill: var(--color-blue);
     font-weight: 600;
 }
 
 .state-history:hover .history-circle {
     fill: var(--color-gray-light);
-    stroke: var(--color-purple);
-    stroke-width: 3px;
+    stroke: var(--color-gray-dark);
+    stroke-width: 2px;
 }
 
 /* Transition animation (DEPRECATED - merged into .highlighted) */
