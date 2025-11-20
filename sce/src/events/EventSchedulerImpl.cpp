@@ -535,6 +535,7 @@ void EventSchedulerImpl::timerThreadMain() {
 
         // Process ready events (releases lock temporarily)
         queueLock.unlock();
+
         size_t processedCount = processReadyEvents();
         if (processedCount > 0) {
             LOG_DEBUG("EventSchedulerImpl: Processed {} ready events", processedCount);
@@ -672,6 +673,26 @@ std::vector<ScheduledEventInfo> EventSchedulerImpl::getScheduledEvents() const {
     });
 
     return result;
+}
+
+void EventSchedulerImpl::setMode(SchedulerMode mode) {
+    mode_.store(mode, std::memory_order_release);
+    LOG_INFO("EventSchedulerImpl: Scheduler mode set to {}", mode == SchedulerMode::AUTOMATIC ? "AUTOMATIC" : "MANUAL");
+}
+
+SchedulerMode EventSchedulerImpl::getMode() const {
+    return mode_.load(std::memory_order_acquire);
+}
+
+size_t EventSchedulerImpl::forcePoll() {
+    if (!isRunning()) {
+        return 0;
+    }
+
+    // W3C SCXML 3.13: Force poll regardless of mode for explicit stepping in interactive debugger
+    // This bypasses the MANUAL mode check to allow user-controlled event processing
+    LOG_DEBUG("EventSchedulerImpl: forcePoll() called - processing ready events regardless of mode");
+    return processReadyEvents();
 }
 
 }  // namespace SCE

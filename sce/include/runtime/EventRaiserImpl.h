@@ -62,9 +62,10 @@ public:
 
         QueuedEvent(const std::string &name, const std::string &data, EventPriority prio = EventPriority::INTERNAL,
                     const std::string &originSessionId = "", const std::string &sid = "", const std::string &iid = "",
-                    const std::string &otype = "")
+                    const std::string &otype = "",
+                    std::chrono::steady_clock::time_point ts = std::chrono::steady_clock::time_point())
             : eventName(name), eventData(data), origin(originSessionId), sendId(sid), invokeId(iid), originType(otype),
-              timestamp(std::chrono::steady_clock::now()), priority(prio) {}
+              timestamp(ts.time_since_epoch().count() > 0 ? ts : std::chrono::steady_clock::now()), priority(prio) {}
     };
 
     /**
@@ -202,7 +203,8 @@ public:
      */
     bool raiseEventWithPriority(const std::string &eventName, const std::string &eventData, EventPriority priority,
                                 const std::string &originSessionId = "", const std::string &sendId = "",
-                                const std::string &invokeId = "", const std::string &originType = "");
+                                const std::string &invokeId = "", const std::string &originType = "",
+                                int64_t timestampNs = 0);
 
 private:
     /**

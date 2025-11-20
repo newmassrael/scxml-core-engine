@@ -58,6 +58,9 @@ public:
     void shutdown(bool waitForCompletion = true) override;
     bool isRunning() const override;
     std::vector<ScheduledEventInfo> getScheduledEvents() const override;
+    void setMode(SchedulerMode mode) override;
+    SchedulerMode getMode() const override;
+    size_t forcePoll() override;
 
 #ifdef __EMSCRIPTEN__
     /**
@@ -231,6 +234,9 @@ private:
 
     // Event execution
     EventExecutionCallback executionCallback_;
+
+    // W3C SCXML 3.13: Scheduler mode for interactive vs normal execution
+    std::atomic<SchedulerMode> mode_{SchedulerMode::AUTOMATIC};
 };
 
 }  // namespace SCE
