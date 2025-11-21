@@ -456,12 +456,11 @@ void InteractiveTestRunner::reset() {
         previousActiveStates_.clear();
         executedEvents_.clear();
 
-        // Keep snapshot 0 (initial snapshot) and remove all forward snapshots
-        // This ensures stepForward() can replay from cached initial state
-        snapshotManager_.removeSnapshotsAfter(0);
+        // W3C SCXML 3.13: Preserve all forward snapshots for replay functionality
+        // Time-travel debugging: Snapshots are the "recording" of first execution
+        // stepForward() after reset will replay from cached snapshots (deterministic)
 
-        LOG_INFO(
-            "InteractiveTestRunner: Reset complete - returned to step 0 (forward snapshots cleared, step 0 preserved)");
+        LOG_INFO("InteractiveTestRunner: Reset complete - returned to step 0 (forward snapshots preserved for replay)");
     } else {
         LOG_ERROR("InteractiveTestRunner: Failed to restore initial snapshot");
     }
