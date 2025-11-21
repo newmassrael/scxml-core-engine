@@ -93,6 +93,7 @@ struct InvokeSnapshot {
     std::string childSessionId;  // Child state machine session ID
     std::string type;            // Invoke type (e.g., "http://www.w3.org/TR/scxml")
     std::string scxmlContent;    // Child SCXML content (from src/srcexpr evaluation)
+    std::string finalizeScript;  // W3C SCXML 6.4.6: Finalize script for time-travel debugging
     bool autoForward = false;    // W3C SCXML 6.4: Autoforward flag for event forwarding to child
 
     // W3C SCXML 3.11: Recursive child state machine configuration
@@ -102,9 +103,10 @@ struct InvokeSnapshot {
     InvokeSnapshot() = default;
 
     InvokeSnapshot(const std::string &invId, const std::string &parentId, const std::string &childSessId,
-                   const std::string &invType, const std::string &content = "", bool autoFwd = false)
+                   const std::string &invType, const std::string &content = "", const std::string &finalize = "",
+                   bool autoFwd = false)
         : invokeId(invId), parentStateId(parentId), childSessionId(childSessId), type(invType), scxmlContent(content),
-          autoForward(autoFwd), childState(nullptr) {}
+          finalizeScript(finalize), autoForward(autoFwd), childState(nullptr) {}
 };
 
 /**
