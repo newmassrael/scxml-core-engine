@@ -121,6 +121,18 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
     // Store original delay for step backward restoration
     auto scheduledEvent =
         std::make_shared<ScheduledEvent>(event, executeAt, delay, target, actualSendId, sessionId, sequenceNum);
+
+    // W3C SCXML 3.13: Calculate logical execution time for MANUAL mode
+    // In MANUAL mode, events are scheduled based on logical time, not real-time
+    // This enables deterministic stepping: step backward → forward produces identical results
+    if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
+        auto currentLogicalTime = std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
+        scheduledEvent->logicalExecuteTime = currentLogicalTime + delay;
+        LOG_DEBUG("EventSchedulerImpl: Scheduled event '{}' at logical time {}ms (current: {}ms, delay: {}ms)",
+                  event.eventName, scheduledEvent->logicalExecuteTime.count(), currentLogicalTime.count(),
+                  delay.count());
+    }
+
     auto future = scheduledEvent->sendIdPromise.get_future();
 
     // Set the send ID promise immediately
@@ -375,9 +387,25 @@ size_t EventSchedulerImpl::processReadyEvents() {
             continue;
         }
 
-        // If event is not ready yet, break (all remaining events are later)
-        if (topEvent->executeAt > now) {
-            break;
+        // W3C SCXML 3.13: Check event readiness based on scheduler mode
+        // AUTOMATIC mode: Use real-time (prevents timeout race in normal execution)
+        // MANUAL mode: Use logical time (enables deterministic stepping for time-travel debugging)
+        if (mode_.load(std::memory_order_acquire) == SchedulerMode::AUTOMATIC) {
+            // AUTOMATIC mode: Check if event is ready based on real-time
+            if (topEvent->executeAt > now) {
+                break;  // Event not ready yet, all remaining events are later
+            }
+        } else {
+            // MANUAL mode: Check if event is ready based on logical time
+            // This fixes ForwardBackwardDeterminism: step backward → forward produces identical results
+            auto currentLogicalTime = std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
+            if (topEvent->logicalExecuteTime > currentLogicalTime) {
+                LOG_DEBUG("EventSchedulerImpl: Event '{}' not ready - logical time {}ms < scheduled {}ms",
+                          topEvent->event.eventName, currentLogicalTime.count(), topEvent->logicalExecuteTime.count());
+                break;  // Event not ready yet in logical time
+            }
+            LOG_DEBUG("EventSchedulerImpl: Event '{}' ready - logical time {}ms >= scheduled {}ms",
+                      topEvent->event.eventName, currentLogicalTime.count(), topEvent->logicalExecuteTime.count());
         }
 
         // Event is ready - remove from both structures atomically
@@ -689,9 +717,33 @@ size_t EventSchedulerImpl::forcePoll() {
         return 0;
     }
 
-    // W3C SCXML 3.13: Force poll regardless of mode for explicit stepping in interactive debugger
-    // This bypasses the MANUAL mode check to allow user-controlled event processing
-    LOG_DEBUG("EventSchedulerImpl: forcePoll() called - processing ready events regardless of mode");
+    // W3C SCXML 3.13: In MANUAL mode, advance logical time to next scheduled event
+    // This enables deterministic stepping: each forcePoll() advances to the next event's logical time
+    // In AUTOMATIC mode, this is a no-op (logical time is unused)
+    //
+    // Design Pattern: "Jump to Event" instead of "Increment by Fixed Step"
+    // - Advantages: Handles variable delays naturally, skips empty time periods
+    // - Trade-offs: Cannot step "between" events, always jumps to next event boundary
+    // - Determinism: Same event sequence produces same logical time progression
+    if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
+        std::shared_lock<std::shared_mutex> queueLock(queueMutex_);
+
+        if (!executionQueue_.empty()) {
+            // Advance logical time to the next scheduled event's logical time
+            // This allows processReadyEvents() to process all events at this logical time
+            auto nextEvent = executionQueue_.top();
+            auto newLogicalTime = nextEvent->logicalExecuteTime.count();
+            auto oldLogicalTime = logicalTime_.exchange(newLogicalTime, std::memory_order_release);
+
+            LOG_DEBUG("EventSchedulerImpl: MANUAL mode - advanced logical time from {}ms to {}ms (next event: '{}')",
+                      oldLogicalTime, newLogicalTime, nextEvent->event.eventName);
+        } else {
+            LOG_DEBUG("EventSchedulerImpl: MANUAL mode - no scheduled events, logical time unchanged at {}ms",
+                      logicalTime_.load(std::memory_order_acquire));
+        }
+    }
+
+    LOG_DEBUG("EventSchedulerImpl: forcePoll() called - processing ready events");
     return processReadyEvents();
 }
 

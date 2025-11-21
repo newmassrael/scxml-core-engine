@@ -2,6 +2,7 @@
 #include "common/EventTypeHelper.h"
 #include "common/Logger.h"
 #include "common/StringUtils.h"
+#include "events/IEventDispatcher.h"
 #include "events/PlatformEventRaiserHelper.h"
 #include "runtime/StateSnapshot.h"
 #include <mutex>
@@ -53,6 +54,10 @@ void EventRaiserImpl::setScheduler(std::shared_ptr<IEventScheduler> scheduler) {
     platformHelper_->start();
 
     LOG_DEBUG("EventRaiserImpl: EventScheduler set and platform helper reinitialized");
+}
+
+std::shared_ptr<IEventScheduler> EventRaiserImpl::getScheduler() const {
+    return scheduler_;
 }
 
 void EventRaiserImpl::shutdown() {
@@ -116,6 +121,9 @@ bool EventRaiserImpl::raiseInternalEvent(const std::string &eventName, const std
 }
 
 bool EventRaiserImpl::raiseExternalEvent(const std::string &eventName, const std::string &eventData) {
+    // [EVENT ROUTING] Log when external event is raised (child receives event from parent)
+    LOG_INFO("[EVENT ROUTING] EventRaiser receiving EXTERNAL event '{}' with data '{}'", eventName, eventData);
+
     // W3C SCXML 5.10: External events have lower priority than internal events (test 510)
     return raiseEventWithPriority(eventName, eventData, EventPriority::EXTERNAL, "", "", "");
 }
@@ -141,6 +149,11 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData,
                                  const std::string &originSessionId, const std::string &invokeId,
                                  const std::string &originType) {
+    // [EVENT ROUTING] Entry point logging - track calls from InvokeEventTarget
+    LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() ENTRY - event='{}', origin='{}', invokeId='{}', "
+             "originType='{}', EventRaiser instance={}",
+             eventName, originSessionId, invokeId, originType, (void *)this);
+
     // W3C SCXML 5.10: Raise event with full metadata (origin, invoke ID, and origintype)
     // W3C SCXML Test 230: Platform events (done.*, error.*) must be queued, not processed immediately
     // This prevents nested processing issues when child completes during parent transition
@@ -148,6 +161,10 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
     if (isPlatformEvent(eventName)) {
         priority = EventPriority::EXTERNAL;  // Force queueing for platform events
     }
+
+    LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() calling raiseEventWithPriority() - priority={}",
+             (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
+
     return raiseEventWithPriority(eventName, eventData, priority, originSessionId, "", invokeId, originType);
 }
 
@@ -155,21 +172,32 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                                              EventPriority priority, const std::string &originSessionId,
                                              const std::string &sendId, const std::string &invokeId,
                                              const std::string &originType, int64_t timestampNs) {
+    LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
+             "immediateMode={}, EventRaiser instance={}",
+             eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), isRunning_.load(),
+             immediateMode_.load(), (void *)this);
+
     LOG_DEBUG("EventRaiserImpl::raiseEventWithPriority called - event: '{}', data: '{}', priority: {}, EventRaiser "
               "instance: {}",
               eventName, eventData, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), (void *)this);
 
     if (!isRunning_.load()) {
+        LOG_ERROR("[EVENT ROUTING] FAILED: EventRaiser is NOT RUNNING - cannot raise event '{}'", eventName);
         LOG_WARN("EventRaiserImpl: Cannot raise event '{}' - processor is shut down", eventName);
         return false;
     }
 
+    LOG_INFO("[EVENT ROUTING] EventRaiser IS RUNNING - proceeding with event routing");
+
     // W3C SCXML compliance: Check if immediate mode is enabled
     // W3C SCXML Test 230: Platform events (done.*, error.*) must ALWAYS be queued
     // to prevent nested processing issues when child completes during parent transition
+    // W3C SCXML 3.13: In interactive debugging, scheduler MANUAL mode overrides immediate mode
+    // All events must be queued for step-by-step execution, even if immediate mode is enabled
+    bool isSchedulerManual = scheduler_ && (scheduler_->getMode() == SchedulerMode::MANUAL);
     bool isPlatform = isPlatformEvent(eventName);
-    if (immediateMode_.load() && !isPlatform) {
-        // Immediate processing for SCXML executable content (except platform events)
+    if (immediateMode_.load() && !isPlatform && !isSchedulerManual) {
+        // Immediate processing for SCXML executable content (except platform events and interactive mode)
         LOG_DEBUG("EventRaiserImpl: Processing event '{}' immediately (SCXML mode)", eventName);
 
         // Get callback under lock

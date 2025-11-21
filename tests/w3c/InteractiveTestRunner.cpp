@@ -59,8 +59,9 @@ InteractiveTestRunner::InteractiveTestRunner()
     // Create event scheduler
     scheduler_ = std::make_shared<EventSchedulerImpl>(eventCallback);
 
-    // W3C SCXML 3.13: Scheduler always polls automatically (timeout → queue)
-    // Queue processing is controlled by EventRaiser immediate mode (disabled below)
+    // W3C SCXML 3.13: Set scheduler to MANUAL mode for interactive debugging
+    // MANUAL mode prevents automatic event execution - events only execute on explicit stepForward()
+    scheduler_->setMode(SchedulerMode::MANUAL);
 
     // Create event raiser (concrete type for setScheduler access)
     auto eventRaiser = std::make_shared<EventRaiserImpl>();
@@ -165,6 +166,21 @@ StepResult InteractiveTestRunner::stepForward() {
         return StepResult::FINAL_STATE;
     }
 
+    // W3C SCXML 3.13: Defensive programming - auto-capture snapshot 0 if initialize() was not called
+    // This ensures step backward works even if frontend forgets to call initialize()
+    // Post-transition snapshots require snapshot 0 = initial state (before any steps)
+    if (currentStep_ == 0 && !snapshotManager_.hasSnapshot(0)) {
+        LOG_WARN("InteractiveTestRunner: stepForward() called without initialize() - auto-capturing snapshot 0");
+        captureSnapshot();
+
+        // Save as initial snapshot for reset functionality
+        auto initialSnapshotOpt = snapshotManager_.getSnapshot(0);
+        if (initialSnapshotOpt) {
+            initialSnapshot_ = *initialSnapshotOpt;
+            LOG_DEBUG("InteractiveTestRunner: Emergency snapshot 0 captured and saved as initial snapshot");
+        }
+    }
+
     // REPLAY MODE: Cache-first strategy for deterministic stepping
     auto replayResult = attemptReplayFromCache();
     if (replayResult != StepResult::NO_EVENTS_AVAILABLE) {
@@ -239,17 +255,10 @@ void InteractiveTestRunner::capturePreTransitionStates() {
 }
 
 StepResult InteractiveTestRunner::processQueuedEventStep() {
-    // W3C SCXML 3.13: Increment step FIRST, then capture snapshot (pre-transition state)
-    // This ensures snapshot is indexed with the correct step number for stepBackward() retrieval
-    currentStep_++;
-    captureSnapshot();
-
     // Process next queued event with priority: INTERNAL → EXTERNAL (W3C SCXML Appendix D)
     // Zero Duplication: Single priority queue with QueuedEventComparator
     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
     if (!eventRaiserImpl || !eventRaiserImpl->processNextQueuedEvent()) {
-        // Rollback snapshot if no event was processed
-        currentStep_--;
         return StepResult::NO_EVENTS_AVAILABLE;
     }
 
@@ -275,23 +284,32 @@ StepResult InteractiveTestRunner::processQueuedEventStep() {
     lastTransitionTarget_ = stateMachine_->getLastTransitionTarget();
     LOG_DEBUG("Interactive visualizer read transition: {} -> {}", lastTransitionSource_, lastTransitionTarget_);
 
+    // W3C SCXML 3.13: Increment step and capture POST-transition snapshot
+    // This ensures step backward returns to exact previous state (not pre-transition)
+    currentStep_++;
+    captureSnapshot();
+
+    // W3C SCXML 3.13: Update previous snapshot's outgoing transition
+    // This enables step backward to display "cancelled transition"
+    // Post-transition model: After step N, we're at snapshot N, update snapshot N-1's outgoing
+    if (currentStep_ > 0) {
+        snapshotManager_.updateSnapshotOutgoing(currentStep_ - 1, lastTransitionSource_, lastTransitionTarget_,
+                                                lastEventName_);
+        LOG_DEBUG("InteractiveTestRunner: Updated snapshot {} outgoing transition: {} -> {}", currentStep_ - 1,
+                  lastTransitionSource_, lastTransitionTarget_);
+    }
+
     LOG_DEBUG("InteractiveTestRunner: Step {} - event '{}' processed (transition: {} -> {})", currentStep_,
               lastEventName_, lastTransitionSource_, lastTransitionTarget_);
     return StepResult::SUCCESS;
 }
 
 StepResult InteractiveTestRunner::processEventlessTransitionStep() {
-    // W3C SCXML 3.13: Increment step FIRST, then capture snapshot (pre-transition state)
-    currentStep_++;
-    captureSnapshot();
-
     // Check for eventless transitions (W3C SCXML 3.13)
     auto result = stateMachine_->processEvent("");  // Null event triggers eventless transitions
     lastEventName_ = "";
 
     if (!result.success) {
-        // Rollback snapshot if no transition occurred
-        currentStep_--;
         return StepResult::NO_EVENTS_AVAILABLE;
     }
 
@@ -300,6 +318,20 @@ StepResult InteractiveTestRunner::processEventlessTransitionStep() {
 
     lastTransitionSource_ = result.fromState;
     lastTransitionTarget_ = result.toState;
+
+    // W3C SCXML 3.13: Increment step and capture POST-transition snapshot
+    currentStep_++;
+    captureSnapshot();
+
+    // W3C SCXML 3.13: Update previous snapshot's outgoing transition
+    // This enables step backward to display "cancelled transition"
+    // Post-transition model: After step N, we're at snapshot N, update snapshot N-1's outgoing
+    if (currentStep_ > 0) {
+        snapshotManager_.updateSnapshotOutgoing(currentStep_ - 1, lastTransitionSource_, lastTransitionTarget_,
+                                                lastEventName_);
+        LOG_DEBUG("InteractiveTestRunner: Updated snapshot {} outgoing transition: {} -> {}", currentStep_ - 1,
+                  lastTransitionSource_, lastTransitionTarget_);
+    }
 
     LOG_DEBUG("InteractiveTestRunner: Step {} - eventless transition: {} -> {}", currentStep_, lastTransitionSource_,
               lastTransitionTarget_);
@@ -326,10 +358,10 @@ bool InteractiveTestRunner::stepBackward() {
     }
 
     // Get previous snapshot
-    // W3C SCXML 3.13: Snapshots are captured BEFORE transitions
-    // Snapshot N = state BEFORE step N's transition
-    // If currentStep=2 (just executed step 2), go back to state before step 2 = snapshot[2]
-    int requestedStep = currentStep_;
+    // W3C SCXML 3.13: Snapshots are captured AFTER transitions (post-transition state)
+    // Snapshot N = state AFTER step N completes
+    // If currentStep=2 (just completed step 2), go back to state after step 1 = snapshot[1]
+    int requestedStep = currentStep_ - 1;
     LOG_DEBUG("[SNAPSHOT RETRIEVAL] Requesting snapshot at index {} (currentStep={})", requestedStep, currentStep_);
 
     auto prevSnapshot = snapshotManager_.getSnapshot(requestedStep);
@@ -353,6 +385,14 @@ bool InteractiveTestRunner::stepBackward() {
     if (!restoreSnapshot(*prevSnapshot)) {
         LOG_ERROR("InteractiveTestRunner: Failed to restore snapshot for step {}", currentStep_ - 1);
         return false;
+    }
+
+    // Note: lastEventName_ is restored by restoreSnapshot() to the incoming transition event
+    // This maintains snapshot semantics: lastEventName represents the event that got us to current state
+    // UI can display outgoing transition separately if needed via getSnapshot()->outgoingTransitionEvent
+    if (!prevSnapshot->outgoingTransitionSource.empty()) {
+        LOG_DEBUG("InteractiveTestRunner: Step backward - cancelled transition: {} -> {}",
+                  prevSnapshot->outgoingTransitionSource, prevSnapshot->outgoingTransitionTarget);
     }
 
     currentStep_--;
@@ -383,14 +423,12 @@ void InteractiveTestRunner::reset() {
         previousActiveStates_.clear();
         executedEvents_.clear();
 
-        // Clear snapshot history to force re-execution on step forward
-        // Reset means starting fresh - step forward should re-execute, not replay cache
-        snapshotManager_.clear();
+        // Keep snapshot 0 (initial snapshot) and remove all forward snapshots
+        // This ensures stepForward() can replay from cached initial state
+        snapshotManager_.removeSnapshotsAfter(0);
 
-        LOG_INFO("InteractiveTestRunner: Reset complete - returned to step 0 (snapshot history cleared)");
-
-        // Note: No need to re-capture or update initialSnapshot_
-        // Step 0 snapshot already exists and will be reused by stepForward() REPLAY MODE
+        LOG_INFO(
+            "InteractiveTestRunner: Reset complete - returned to step 0 (forward snapshots cleared, step 0 preserved)");
     } else {
         LOG_ERROR("InteractiveTestRunner: Failed to restore initial snapshot");
     }
@@ -751,8 +789,11 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
 
     // Restore metadata
     lastEventName_ = snapshot.lastEventName;
-    lastTransitionSource_ = snapshot.lastTransitionSource;
-    lastTransitionTarget_ = snapshot.lastTransitionTarget;
+
+    // W3C SCXML 3.13: Restore incoming transition (how we arrived at this state)
+    // This is displayed in normal state visualization
+    lastTransitionSource_ = snapshot.incomingTransitionSource;
+    lastTransitionTarget_ = snapshot.incomingTransitionTarget;
 
     // Restore execution history (for UI display, NOT for replay)
     executedEvents_ = snapshot.executedEvents;
@@ -935,6 +976,10 @@ emscripten::val InteractiveTestRunner::getLastTransition() const {
     }
 
     return obj;
+}
+
+std::string InteractiveTestRunner::getLastEventName() const {
+    return lastEventName_;
 }
 
 emscripten::val InteractiveTestRunner::getEventQueue() const {
@@ -1131,6 +1176,10 @@ std::string InteractiveTestRunner::getLastTransition() const {
     // JSON string for non-WASM testing
     return "{\"source\":\"" + lastTransitionSource_ + "\",\"target\":\"" + lastTransitionTarget_ + "\",\"event\":\"" +
            lastEventName_ + "\"}";
+}
+
+std::string InteractiveTestRunner::getLastEventName() const {
+    return lastEventName_;
 }
 
 std::string InteractiveTestRunner::getScheduledEvents() const {

@@ -49,6 +49,8 @@ public:
     void getEventQueues(std::vector<EventSnapshot> &outInternal,
                         std::vector<EventSnapshot> &outExternal) const override;
 
+    std::shared_ptr<class IEventScheduler> getScheduler() const override;
+
     // Test inspection methods
     const std::vector<std::pair<std::string, std::string>> &getRaisedEvents() const;
     void clearEvents();

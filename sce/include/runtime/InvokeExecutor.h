@@ -161,6 +161,15 @@ public:
      */
     std::string getSCXMLContent() const;
 
+    /**
+     * @brief Get autoForward flag for active invoke
+     *
+     * W3C SCXML 6.4: Autoforward determines if parent forwards events to child
+     *
+     * @return true if autoForward enabled, false otherwise
+     */
+    bool getAutoForward() const;
+
 private:
     struct InvokeSession {
         std::string invokeid;

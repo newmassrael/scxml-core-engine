@@ -94,6 +94,7 @@ add_library(sce_unified
     src/runtime/HistoryManager.cpp
     src/runtime/HistoryStateAutoRegistrar.cpp
     src/runtime/HistoryValidator.cpp
+    src/runtime/StateSnapshot.cpp
 
     # Actions implementation
     src/actions/BaseAction.cpp

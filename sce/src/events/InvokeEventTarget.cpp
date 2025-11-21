@@ -30,26 +30,31 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
     auto resultFuture = resultPromise.get_future();
 
     try {
-        // Find child session ID using JSEngine invoke mapping
+        // [EVENT ROUTING] Step 1: Find child session ID using JSEngine invoke mapping
+        LOG_INFO("[EVENT ROUTING] InvokeEventTarget looking up child session: parent='{}', invokeId='{}'",
+                 parentSessionId_, invokeId_);
         std::string childSessionId = JSEngine::instance().getInvokeSessionId(parentSessionId_, invokeId_);
         if (childSessionId.empty()) {
-            LOG_ERROR("InvokeEventTarget: No child session found for invoke ID '{}' in parent '{}'", invokeId_,
+            LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No child session found for invoke ID '{}' in parent '{}'", invokeId_,
                       parentSessionId_);
             resultPromise.set_value(SendResult::error("No child session found for invoke ID: " + invokeId_,
                                                       SendResult::ErrorType::TARGET_NOT_FOUND));
             return resultFuture;
         }
 
-        LOG_DEBUG("InvokeEventTarget: Found child session '{}' for invoke ID '{}'", childSessionId, invokeId_);
+        LOG_INFO("[EVENT ROUTING] ✅ Found child session '{}' for invoke ID '{}'", childSessionId, invokeId_);
 
-        // Get EventRaiser for child session from centralized service
+        // [EVENT ROUTING] Step 2: Get EventRaiser for child session from centralized service
+        LOG_INFO("[EVENT ROUTING] Looking up EventRaiser for child session '{}'", childSessionId);
         auto eventRaiser = EventRaiserService::getInstance().getEventRaiser(childSessionId);
         if (!eventRaiser) {
-            LOG_ERROR("InvokeEventTarget: No EventRaiser found for child session '{}'", childSessionId);
+            LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No EventRaiser found for child session '{}'", childSessionId);
             resultPromise.set_value(SendResult::error("No EventRaiser found for child session: " + childSessionId,
                                                       SendResult::ErrorType::TARGET_NOT_FOUND));
             return resultFuture;
         }
+
+        LOG_INFO("[EVENT ROUTING] ✅ Found EventRaiser for child session '{}'", childSessionId);
 
         LOG_DEBUG("InvokeEventTarget: Routing event '{}' to child session '{}' via invoke ID '{}'", event.eventName,
                   childSessionId, invokeId_);

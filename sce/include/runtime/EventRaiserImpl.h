@@ -122,6 +122,16 @@ public:
      */
     void setScheduler(std::shared_ptr<IEventScheduler> scheduler);
 
+    /**
+     * @brief Get EventScheduler for scheduler mode access
+     *
+     * W3C SCXML 3.13: Enable parent-child scheduler mode inheritance for interactive debugging.
+     * Allows parent state machine to propagate MANUAL mode to child invoke sessions.
+     *
+     * @return Shared pointer to EventScheduler instance, or nullptr if not set
+     */
+    std::shared_ptr<IEventScheduler> getScheduler() const override;
+
     // IEventRaiser interface
     bool raiseEvent(const std::string &eventName, const std::string &eventData) override;
     bool raiseEvent(const std::string &eventName, const std::string &eventData,

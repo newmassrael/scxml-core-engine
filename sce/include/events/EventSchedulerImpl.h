@@ -92,6 +92,10 @@ private:
         uint64_t sequenceNumber = 0;  // FIFO ordering for events with same executeAt
         bool cancelled = false;
 
+        // W3C SCXML 3.13: Logical time for MANUAL mode deterministic stepping
+        // In MANUAL mode, events are processed based on logical step sequence, not real-time
+        std::chrono::milliseconds logicalExecuteTime{0};
+
         ScheduledEvent(const EventDescriptor &evt, std::chrono::steady_clock::time_point execTime,
                        std::chrono::milliseconds origDelay, std::shared_ptr<IEventTarget> tgt, const std::string &id,
                        const std::string &sessId, uint64_t seqNum)
@@ -237,6 +241,18 @@ private:
 
     // W3C SCXML 3.13: Scheduler mode for interactive vs normal execution
     std::atomic<SchedulerMode> mode_{SchedulerMode::AUTOMATIC};
+
+    // W3C SCXML 3.13: Logical time counter for MANUAL mode deterministic stepping
+    // In MANUAL mode, events are scheduled and processed based on logical time, not real-time
+    // Each forcePoll() advances logical time, enabling deterministic step forward/backward
+    //
+    // Architecture: Logical time is session-wide, shared by parent-child state machine hierarchy
+    // via scheduler sharing (InvokeExecutor.cpp:217-232). This enables consistent MANUAL mode
+    // behavior across entire invoke tree without mode propagation logic.
+    //
+    // Design: Single atomic counter provides single source of truth for logical time progression.
+    // Zero duplication ensures deterministic behavior without complex synchronization.
+    std::atomic<std::chrono::milliseconds::rep> logicalTime_{0};
 };
 
 }  // namespace SCE

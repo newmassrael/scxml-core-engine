@@ -897,6 +897,12 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // W3C SCXML 5.10: Set event type for origintype field (test 253, 331, 352, 372)
             event.type = sendType.empty() ? Constants::SCXML_EVENT_PROCESSOR_TYPE : sendType;
 
+            // [EVENT ROUTING] Log parent→child and child→parent event sending
+            if (target.find("#_invoked") != std::string::npos || target.find("#_parent") != std::string::npos) {
+                LOG_INFO("[EVENT ROUTING] Session '{}' sending event '{}' to target '{}' with data '{}'", sessionId_,
+                         eventName, target, eventData);
+            }
+
             // Send via dispatcher (handles both immediate and delayed events)
             auto resultFuture = eventDispatcher_->sendEvent(event);
 
