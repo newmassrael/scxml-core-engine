@@ -127,7 +127,7 @@ function initializeTestNavigation() {
         }
     }
 
-    logger.debug(`[Test Navigation] Current: ${getCurrentTestNumber()}, Prev: ${getPreviousTest()}, Next: ${getNextTest()}`);
+    console.log(`[Test Navigation] Current: ${getCurrentTestNumber()}, Prev: ${getPreviousTest()}, Next: ${getNextTest()}`);
 }
 
 // Initialize on DOMContentLoaded
