@@ -108,9 +108,9 @@ public:
 
 private:
     /**
-     * @brief Compare active states sets
+     * @brief Compare active states vectors (W3C SCXML 3.13: document order preserved)
      */
-    static bool compareActiveStates(const std::set<std::string> &expected, const std::set<std::string> &actual,
+    static bool compareActiveStates(const std::vector<std::string> &expected, const std::vector<std::string> &actual,
                                     std::vector<std::string> &diffs);
 
     /**

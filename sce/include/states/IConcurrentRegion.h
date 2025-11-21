@@ -168,6 +168,17 @@ public:
      * @param stateId The state ID to set as current
      */
     virtual void setCurrentState(const std::string &stateId) = 0;
+
+    /**
+     * @brief Enable/disable restoration mode for snapshot restoration (W3C SCXML 3.13)
+     *
+     * When enabled, prevents side effects like doneStateCallback from being triggered
+     * during snapshot restoration. This ensures time-travel debugging doesn't generate
+     * spurious events.
+     *
+     * @param restoring true to enable restoration mode, false to disable
+     */
+    virtual void setRestoringSnapshot(bool restoring) = 0;
 };
 
 }  // namespace SCE

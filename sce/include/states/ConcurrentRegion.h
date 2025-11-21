@@ -7,6 +7,7 @@
 #include "model/IStateNode.h"
 #include "runtime/IExecutionContext.h"
 #include "states/IStateExitHandler.h"
+#include <atomic>
 #include <cassert>
 #include <memory>
 #include <string>
@@ -147,6 +148,17 @@ public:
     void setCurrentState(const std::string &stateId) override;
 
     /**
+     * @brief W3C SCXML 3.13: Mark region as active for time-travel debugging restoration
+     *
+     * Used during snapshot restoration to mark the region as active without executing
+     * entry actions. This is part of W3C SCXML 3.13 "Selecting and Executing Transitions"
+     * requirement that state restoration must not trigger side effects.
+     *
+     * @note This should ONLY be called during snapshot restoration, not during normal operation
+     */
+    void setActiveForRestore();
+
+    /**
      * @brief Check if region is in error state
      * @return true if region has encountered an error
      */
@@ -225,6 +237,17 @@ public:
      */
     void setDesiredInitialChild(const std::string &childStateId) override;
 
+    /**
+     * @brief Enable/disable restoration mode for snapshot restoration (W3C SCXML 3.13)
+     *
+     * When enabled, prevents side effects like doneStateCallback from being triggered
+     * during snapshot restoration. This ensures time-travel debugging doesn't generate
+     * spurious events.
+     *
+     * @param restoring true to enable restoration mode, false to disable
+     */
+    void setRestoringSnapshot(bool restoring);
+
 private:
     // Core state
     std::string id_;
@@ -254,6 +277,11 @@ private:
     // Used when parent compound state specifies deep initial targets (e.g., initial="s11p112 s11p122")
     // This overrides the region's own default initial state
     std::string desiredInitialChild_;
+
+    // W3C SCXML 3.13: Restoration mode flag for time-travel debugging
+    // When true, prevents side effects (callbacks, event generation) during snapshot restoration
+    // Thread-safe atomic flag for future multi-threaded support
+    std::atomic<bool> isRestoringSnapshot_{false};
 
     // Private methods for internal state management
 

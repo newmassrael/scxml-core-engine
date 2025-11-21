@@ -408,6 +408,9 @@ bool ConcurrentStateNode::areAllRegionsComplete() const {
 
     // SCXML W3C specification section 3.4: ALL regions must be in final state for completion
     // No configuration options - this is mandated by specification
+    LOG_DEBUG("[TEST 570 DEBUG] areAllRegionsComplete called for parallel state '{}', regions.size()={}", id_,
+              regions_.size());
+
     bool isComplete =
         std::all_of(regions_.begin(), regions_.end(), [this](const std::shared_ptr<IConcurrentRegion> &region) {
             if (!region) {
@@ -415,8 +418,13 @@ bool ConcurrentStateNode::areAllRegionsComplete() const {
                 assert(false && "SCXML violation: parallel state cannot have null regions");
                 return false;
             }
-            return region->isInFinalState();
+            bool isFinal = region->isInFinalState();
+            LOG_DEBUG("[TEST 570 DEBUG] Region '{}' isInFinalState={}", region->getId(), isFinal);
+            return isFinal;
         });
+
+    LOG_DEBUG("[TEST 570 DEBUG] areAllRegionsComplete for '{}' returning {}, hasNotifiedCompletion_={}, hasCallback={}",
+              id_, isComplete, hasNotifiedCompletion_, (completionCallback_ ? "yes" : "no"));
 
     // Trigger completion callback if state transitions from incomplete to complete
     // This implements SCXML W3C specification section 3.4 for done.state event generation

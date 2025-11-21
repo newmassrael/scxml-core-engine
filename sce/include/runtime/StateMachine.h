@@ -297,9 +297,9 @@ public:
      * ARCHITECTURE.md: Zero Duplication - Uses StateHierarchyManager infrastructure
      * Only for debugging/visualization - NOT for production state machine execution
      *
-     * @param states Set of state IDs to activate
+     * @param states Vector of state IDs to activate (document order preserved)
      */
-    void restoreActiveStatesDirectly(const std::set<std::string> &states);
+    void restoreActiveStatesDirectly(const std::vector<std::string> &states);
 
     /**
      * @brief Check if the initial state of the SCXML model is a final state
@@ -442,7 +442,7 @@ public:
      * ARCHITECTURE.md: Zero Duplication - encapsulates restoration lifecycle
      * to prevent temporal coupling and maintain Single Source of Truth
      *
-     * @param states Set of state IDs to activate
+     * @param states Vector of state IDs to activate (document order preserved)
      * @return true if restoration succeeded, false on failure
      *
      * @note Thread Safety: NOT thread-safe. Caller must ensure no concurrent
@@ -452,7 +452,18 @@ public:
      * @note JS Environment: Idempotent - safe to call even if JS environment
      *       already initialized (e.g., after start()).
      */
-    bool restoreFromSnapshot(const std::set<std::string> &states);
+    bool restoreFromSnapshot(const std::vector<std::string> &states);
+
+    /**
+     * @brief Set restoration mode on all parallel regions (W3C SCXML 3.13)
+     *
+     * When enabled, prevents side effects (callbacks, event generation) during
+     * snapshot restoration. This ensures time-travel debugging maintains strict
+     * snapshot semantics without spurious events.
+     *
+     * @param restoring true to enable restoration mode, false to disable
+     */
+    void setRestoringSnapshotOnAllRegions(bool restoring);
 
 private:
     /**

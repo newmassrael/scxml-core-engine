@@ -706,6 +706,13 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
         LOG_DEBUG("Processing event '{}' for parallel state: {}", eventName, currentState);
 
+        // W3C SCXML 3.4: Check parallel state completion BEFORE processing transitions
+        // This ensures done.state.{id} is generated before any external transition exits the parallel state
+        bool isComplete = parallelState->areAllRegionsComplete();
+        if (isComplete) {
+            LOG_DEBUG("SCXML W3C: Parallel state '{}' completion detected before transition processing", currentState);
+        }
+
         // SCXML W3C specification 3.13: Check transitions on the parallel state itself
         // Internal transitions (no target) execute actions but DON'T prevent region processing
         // External transitions (with target) exit the parallel state and return immediately
@@ -868,8 +875,30 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 // Exit states in document order
                 for (const auto &stateId : statesToExit) {
                     LOG_DEBUG("StateMachine: Microstep exit state: {}", stateId);
-                    // Find region containing this state and exit it
+
+                    // W3C SCXML 3.4: Check parallel state completion BEFORE exiting
+                    // If all regions are complete, this triggers done.state.{id} event generation
                     auto stateNode = model_->findStateById(stateId);
+                    if (stateNode && stateNode->getType() == Type::PARALLEL) {
+                        auto parallelNode = dynamic_cast<ConcurrentStateNode *>(stateNode);
+                        if (parallelNode) {
+                            // Calling areAllRegionsComplete() triggers completion callback if all regions are final
+                            // This generates the required done.state.{id} event BEFORE we exit the parallel state
+                            bool isComplete = parallelNode->areAllRegionsComplete();
+                            LOG_DEBUG("StateMachine: Parallel state '{}' completion check before exit: {}", stateId,
+                                      isComplete);
+                        }
+                    }
+
+                    // W3C SCXML 3.13: Update hierarchy manager for parallel region transitions (Test 570 fix)
+                    // Must keep hierarchy manager in sync with region's internal state
+                    if (hierarchyManager_) {
+                        hierarchyManager_->exitState(stateId);
+                        LOG_DEBUG("StateMachine: Updated hierarchyManager - exited state: {}", stateId);
+                    }
+
+                    // Find region containing this state and exit it
+                    // Note: stateNode already retrieved above for parallel completion check
                     if (stateNode && stateNode->getParent()) {
                         const auto &regions = parallelState->getRegions();
                         for (const auto &region : regions) {
@@ -987,6 +1016,15 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                                             concreteRegion->setCurrentState(desc.target);
                                             LOG_DEBUG("StateMachine: Region {} entered state {}", region->getId(),
                                                       desc.target);
+
+                                            // W3C SCXML 3.13: Update hierarchy manager for parallel region transitions
+                                            // (Test 570 fix) Must keep hierarchy manager in sync with region's internal
+                                            // state
+                                            if (hierarchyManager_) {
+                                                hierarchyManager_->enterState(desc.target);
+                                                LOG_DEBUG("StateMachine: Updated hierarchyManager - entered state: {}",
+                                                          desc.target);
+                                            }
 
                                             // Execute entry actions
                                             const auto &entryBlocks = targetStateNode->getEntryActionBlocks();
@@ -1729,7 +1767,7 @@ std::string StateMachine::getLastTransitionTarget() const {
     return lastTransitionTarget_;
 }
 
-bool StateMachine::restoreFromSnapshot(const std::set<std::string> &states) {
+bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states) {
     // W3C SCXML 3.13: Complete state machine restoration for time-travel debugging
     // ARCHITECTURE.md: Template Method pattern - encapsulates restoration lifecycle
     // to prevent temporal coupling and maintain Single Source of Truth
@@ -1769,7 +1807,38 @@ bool StateMachine::restoreFromSnapshot(const std::set<std::string> &states) {
     return true;
 }
 
-void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &states) {
+void StateMachine::setRestoringSnapshotOnAllRegions(bool restoring) {
+    // W3C SCXML 3.13: Enable/disable restoration mode on all parallel regions
+    // Prevents side effects (callbacks, event generation) during snapshot restoration
+
+    if (!model_) {
+        LOG_WARN("StateMachine::setRestoringSnapshotOnAllRegions: model_ is null");
+        return;
+    }
+
+    int regionCount = 0;
+
+    // Iterate through all states in the model to find parallel states
+    const auto &allStates = model_->getAllStates();
+    for (const auto &stateNode : allStates) {
+        // Check if this is a parallel state
+        if (stateNode && stateNode->getType() == Type::PARALLEL) {
+            auto parallelState = dynamic_cast<ConcurrentStateNode *>(stateNode.get());
+            if (parallelState) {
+                // Get all regions and set restoration mode
+                const auto &regions = parallelState->getRegions();
+                for (const auto &region : regions) {
+                    region->setRestoringSnapshot(restoring);
+                    regionCount++;
+                }
+            }
+        }
+    }
+
+    LOG_DEBUG("StateMachine: Set restoration mode {} on {} regions", restoring ? "ENABLED" : "DISABLED", regionCount);
+}
+
+void StateMachine::restoreActiveStatesDirectly(const std::vector<std::string> &states) {
     // W3C SCXML 3.13: Time-travel debugging - restore configuration without side effects
     // ARCHITECTURE.md Zero Duplication: Uses StateHierarchyManager's addStateToConfigurationWithoutOnEntry
     // INTERNAL USE ONLY: Called by restoreFromSnapshot() after JS environment initialization
@@ -1790,30 +1859,9 @@ void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &stat
         LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Calling hierarchyManager_->reset()");
         hierarchyManager_->reset();
 
-        // Restore each state without triggering onentry actions
-        // States must be added in hierarchical order (parent -> child)
-        std::vector<std::string> orderedStates(states.begin(), states.end());
-        std::sort(orderedStates.begin(), orderedStates.end(), [this](const std::string &a, const std::string &b) {
-            // Parent states come before children (shorter path = higher in hierarchy)
-            auto aNode = model_->findStateById(a);
-            auto bNode = model_->findStateById(b);
-            if (!aNode || !bNode) {
-                return a < b;  // Fallback to lexicographic
-            }
-
-            // Count ancestors to determine depth
-            int depthA = 0, depthB = 0;
-            for (auto *p = aNode->getParent(); p; p = p->getParent()) {
-                depthA++;
-            }
-            for (auto *p = bNode->getParent(); p; p = p->getParent()) {
-                depthB++;
-            }
-
-            return depthA < depthB;  // Lower depth (closer to root) comes first
-        });
-
-        for (const auto &stateId : orderedStates) {
+        // W3C SCXML 3.13: Restore states in document order (already provided by vector)
+        // No sorting needed - vector from snapshot preserves correct document order (Test 570 fix)
+        for (const auto &stateId : states) {
             hierarchyManager_->addStateToConfigurationWithoutOnEntry(stateId);
             LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Added state '{}' to configuration", stateId);
         }
@@ -1824,6 +1872,87 @@ void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &stat
         LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [BEFORE isRunning_=true] About to set isRunning_ = true");
         isRunning_ = true;
         LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [AFTER isRunning_=true] Set to true, mutex will release");
+
+        // W3C SCXML 3.13: Synchronize parallel region states with restored configuration (Test 570 fix)
+        // After hierarchyManager restoration, parallel regions need their currentState_ updated
+        // Without this, regions have stale state causing recursive event processing failures
+        LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Syncing parallel region states");
+        if (model_) {
+            // Iterate through restored active states and find parallel regions
+            for (const auto &stateId : states) {
+                auto stateNode = model_->findStateById(stateId);
+                if (!stateNode) {
+                    continue;
+                }
+
+                // Check if this is a parallel state
+                auto parallelNode = dynamic_cast<ConcurrentStateNode *>(stateNode);
+                if (parallelNode) {
+                    const std::string &parallelId = parallelNode->getId();
+                    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Found parallel state '{}' in active states",
+                              parallelId);
+
+                    // Get all regions of this parallel state
+                    const auto &regions = parallelNode->getRegions();
+                    for (const auto &region : regions) {
+                        const std::string &regionId = region->getId();
+
+                        // Find which child state of this region is active in the restored configuration
+                        // A region's active state is the deepest descendant state within the region
+                        std::string regionActiveState;
+                        int maxDepth = -1;
+
+                        for (const auto &candidateStateId : states) {
+                            if (candidateStateId == regionId) {
+                                continue;  // Skip the region itself
+                            }
+
+                            auto candidateNode = model_->findStateById(candidateStateId);
+                            if (!candidateNode) {
+                                continue;
+                            }
+
+                            // Check if this state belongs to this region (is descendant of regionId)
+                            // and calculate its depth
+                            int depth = 0;
+                            auto parent = candidateNode->getParent();
+                            bool belongsToRegion = false;
+
+                            while (parent) {
+                                depth++;
+                                if (parent->getId() == regionId) {
+                                    belongsToRegion = true;
+                                    break;
+                                }
+                                parent = parent->getParent();
+                            }
+
+                            // Select the deepest state (leaf state) within the region
+                            if (belongsToRegion && depth > maxDepth) {
+                                maxDepth = depth;
+                                regionActiveState = candidateStateId;
+                            }
+                        }
+
+                        // Update region's current state and mark as active
+                        if (!regionActiveState.empty()) {
+                            auto concreteRegion = std::dynamic_pointer_cast<ConcurrentRegion>(region);
+                            if (concreteRegion) {
+                                concreteRegion->setCurrentState(regionActiveState);
+                                concreteRegion->setActiveForRestore();  // W3C SCXML 3.13: Mark region as active for
+                                                                        // event processing
+                                LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Synced region '{}' to state '{}' "
+                                          "and marked ACTIVE",
+                                          regionId, regionActiveState);
+                            }
+                        } else {
+                            LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Region '{}' has no active state",
+                                      regionId);
+                        }
+                    }
+                }
+            }
+        }
     }  // Mutex released here
 
     // Verify final state (outside mutex scope to prevent deadlock with getActiveStates())
@@ -2333,7 +2462,10 @@ bool StateMachine::enterState(const std::string &stateId) {
         }
     }
 
+    LOG_DEBUG("[ENTER STATE DEBUG] About to call hierarchyManager_->enterState('{}') (Test 570 debug)", stateId);
     bool hierarchyResult = hierarchyManager_->enterState(stateId);
+    LOG_DEBUG("[ENTER STATE DEBUG] hierarchyManager_->enterState('{}') returned {} (Test 570 debug)", stateId,
+              hierarchyResult);
     assert(hierarchyResult && "SCXML violation: state entry must succeed");
     (void)hierarchyResult;  // Suppress unused variable warning in release builds
 
