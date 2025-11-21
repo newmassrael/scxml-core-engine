@@ -246,7 +246,7 @@ public:
      *
      * @param restoring true to enable restoration mode, false to disable
      */
-    void setRestoringSnapshot(bool restoring);
+    void setRestoringSnapshot(bool restoring) override;
 
 private:
     // Core state

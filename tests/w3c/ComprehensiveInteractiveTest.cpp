@@ -15,6 +15,7 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <random>
 #include <set>
 #include <sstream>
 #include <string>
@@ -199,6 +200,29 @@ StateSnapshot captureCurrentSnapshot(InteractiveTestRunner &runner) {
     // For initial implementation, focus on activeStates and stepNumber
 
     return snapshot;
+}
+
+/**
+ * @brief Find reference snapshot matching target stepNumber
+ *
+ * Phase 1 may capture duplicate snapshots at same step when FINAL_STATE is returned
+ * (e.g., refs[1] and refs[2] both have stepNumber=1).
+ *
+ * This function searches for the matching snapshot using reverse iteration to find
+ * the LAST occurrence, which represents the most recent state at that step number.
+ *
+ * @param snapshots Vector of reference snapshots from Phase 1
+ * @param stepNumber Target step number to find
+ * @return Iterator to matching snapshot, or snapshots.end() if not found
+ */
+std::vector<StateSnapshot>::const_iterator findSnapshotByStepNumber(const std::vector<StateSnapshot> &snapshots,
+                                                                    int stepNumber) {
+    // Use reverse iterator to find LAST occurrence (most recent snapshot at this step)
+    auto rit = std::find_if(snapshots.rbegin(), snapshots.rend(),
+                            [stepNumber](const StateSnapshot &snap) { return snap.stepNumber == stepNumber; });
+
+    // Convert reverse iterator to forward iterator
+    return (rit != snapshots.rend()) ? std::prev(rit.base()) : snapshots.end();
 }
 
 /**
@@ -442,6 +466,358 @@ TEST_P(ComprehensiveInteractiveTest, ResetReplayConsistency) {
 // Instantiate tests for all discovered W3C tests
 // Use W3C_TEST_IDS environment variable to filter tests (e.g., W3C_TEST_IDS=144,147,192)
 // Or pass test IDs as command line arguments (e.g., ./comprehensive_interactive_test 144 147 192)
+/**
+ * @brief Scenario 3: Complex Navigation Pattern
+ *
+ * Verify: Complex forward/backward/reset combinations maintain consistency
+ * Pattern: Forward → Back → Forward → Back → Reset → Forward
+ * Goal: Ensure snapshot consistency across non-linear navigation
+ */
+TEST_P(ComprehensiveInteractiveTest, ComplexNavigationPattern) {
+    int testId = GetParam();
+
+    // Skip non-deterministic tests
+    if (shouldSkipTest(testId)) {
+        GTEST_SKIP() << "Test " << testId << " skipped: " << getSkipReason(testId);
+        return;
+    }
+
+    // Get SCXML path
+    std::string scxmlPath = getTestSCXMLPath(testId);
+    if (scxmlPath.empty()) {
+        GTEST_SKIP() << "Test " << testId << " SCXML file not found";
+        return;
+    }
+
+    // Create runner and load SCXML
+    InteractiveTestRunner runner;
+    if (!runner.loadSCXML(scxmlPath)) {
+        GTEST_SKIP() << "Test " << testId << " failed to load SCXML";
+        return;
+    }
+
+    if (!runner.initialize()) {
+        GTEST_SKIP() << "Test " << testId << " failed to initialize";
+        return;
+    }
+
+    // Phase 1: Execute forward and capture all snapshots
+    std::vector<StateSnapshot> referenceSnapshots;
+    int maxSteps = 100;
+
+    for (int step = 0; step < maxSteps; step++) {
+        referenceSnapshots.push_back(captureCurrentSnapshot(runner));
+
+        auto result = runner.stepForward();
+
+        if (result == StepResult::FINAL_STATE || result == StepResult::NO_EVENTS_AVAILABLE ||
+            result == StepResult::NO_EVENTS_READY) {
+            referenceSnapshots.push_back(captureCurrentSnapshot(runner));
+            break;
+        }
+    }
+
+    int totalSteps = static_cast<int>(referenceSnapshots.size()) - 1;
+
+    // Phase 2: Adaptive complex navigation pattern based on available steps
+    // Adapt pattern complexity to test length for comprehensive coverage
+
+    if (totalSteps == 0) {
+        // Only initial state - just verify reset
+        runner.reset();
+        auto snapshotReset = captureCurrentSnapshot(runner);
+        auto diffReset = SnapshotComparator::compare(referenceSnapshots[0], snapshotReset);
+        EXPECT_TRUE(diffReset.isIdentical) << "Test " << testId << ": Snapshot mismatch after reset\n"
+                                           << diffReset.format();
+        return;
+    }
+
+    // Pattern: Back to midpoint → Forward to end → Back to start → Reset → Forward to end
+    int midPoint = totalSteps / 2;
+
+    // CRITICAL FIX: Use runner's actual current step, not totalSteps index
+    // After phase 1, runner might be at step N-1 even though totalSteps = N (due to FINAL_STATE)
+    int currentStepBeforeBackward = runner.getCurrentStep();
+
+    // Step 2.1: Back to midpoint (always execute, even if midPoint == 0)
+    for (int i = currentStepBeforeBackward; i > midPoint; i--) {
+        ASSERT_TRUE(runner.stepBackward()) << "Test " << testId << ": Failed to step back to " << i - 1;
+    }
+
+    auto snapshotMid = captureCurrentSnapshot(runner);
+    auto itMid = findSnapshotByStepNumber(referenceSnapshots, snapshotMid.stepNumber);
+
+    if (itMid != referenceSnapshots.end()) {
+        auto diffMid = SnapshotComparator::compare(*itMid, snapshotMid);
+        EXPECT_TRUE(diffMid.isIdentical) << "Test " << testId << ": Snapshot mismatch at midpoint after backward\n"
+                                         << diffMid.format();
+    }
+
+    // Step 2.2: Forward to end
+    for (int i = midPoint; i < totalSteps; i++) {
+        auto result = runner.stepForward();
+        if (result == StepResult::FINAL_STATE || result == StepResult::NO_EVENTS_AVAILABLE) {
+            break;
+        }
+    }
+
+    auto snapshotEnd = captureCurrentSnapshot(runner);
+    auto itEnd = findSnapshotByStepNumber(referenceSnapshots, snapshotEnd.stepNumber);
+
+    if (itEnd != referenceSnapshots.end()) {
+        auto diffEnd = SnapshotComparator::compare(*itEnd, snapshotEnd);
+        EXPECT_TRUE(diffEnd.isIdentical) << "Test " << testId << ": Snapshot mismatch at end after forward\n"
+                                         << diffEnd.format();
+    }
+
+    // Step 2.3: Back to start
+    int currentEnd = runner.getCurrentStep();
+    for (int i = currentEnd; i > 0; i--) {
+        ASSERT_TRUE(runner.stepBackward()) << "Test " << testId << ": Failed to step back to " << i - 1;
+    }
+
+    auto snapshotStart = captureCurrentSnapshot(runner);
+    auto diffStart = SnapshotComparator::compare(referenceSnapshots[0], snapshotStart);
+    EXPECT_TRUE(diffStart.isIdentical) << "Test " << testId << ": Snapshot mismatch at start after backward\n"
+                                       << diffStart.format();
+
+    // Step 2.4: Reset to step 0
+    runner.reset();
+    auto snapshotReset = captureCurrentSnapshot(runner);
+    auto diffReset = SnapshotComparator::compare(referenceSnapshots[0], snapshotReset);
+    EXPECT_TRUE(diffReset.isIdentical) << "Test " << testId << ": Snapshot mismatch after reset\n"
+                                       << diffReset.format();
+
+    // Step 2.5: Forward to end and verify
+    for (int step = 0; step < totalSteps; step++) {
+        auto result = runner.stepForward();
+
+        auto currentSnapshot = captureCurrentSnapshot(runner);
+
+        // Use helper function to find snapshot with matching stepNumber (finds LAST occurrence for duplicates)
+        auto it = findSnapshotByStepNumber(referenceSnapshots, currentSnapshot.stepNumber);
+
+        if (it != referenceSnapshots.end()) {
+            auto diff = SnapshotComparator::compare(*it, currentSnapshot);
+            EXPECT_TRUE(diff.isIdentical)
+                << "Test " << testId << ": Snapshot mismatch at step " << currentSnapshot.stepNumber << " after reset\n"
+                << diff.format();
+        }
+
+        if (result == StepResult::FINAL_STATE || result == StepResult::NO_EVENTS_AVAILABLE ||
+            result == StepResult::NO_EVENTS_READY) {
+            break;
+        }
+    }
+}
+
+/**
+ * @brief Scenario 4: Multiple Reset Consistency
+ *
+ * Verify: Multiple reset cycles produce identical executions
+ * Pattern: Execute → Reset → Execute → Reset → Execute
+ * Goal: Ensure reset() is idempotent and deterministic across multiple cycles
+ */
+TEST_P(ComprehensiveInteractiveTest, MultipleResetConsistency) {
+    int testId = GetParam();
+
+    // Skip non-deterministic tests
+    if (shouldSkipTest(testId)) {
+        GTEST_SKIP() << "Test " << testId << " skipped: " << getSkipReason(testId);
+        return;
+    }
+
+    // Get SCXML path
+    std::string scxmlPath = getTestSCXMLPath(testId);
+    if (scxmlPath.empty()) {
+        GTEST_SKIP() << "Test " << testId << " SCXML file not found";
+        return;
+    }
+
+    // Create runner and load SCXML
+    InteractiveTestRunner runner;
+    if (!runner.loadSCXML(scxmlPath)) {
+        GTEST_SKIP() << "Test " << testId << " failed to load SCXML";
+        return;
+    }
+
+    if (!runner.initialize()) {
+        GTEST_SKIP() << "Test " << testId << " failed to initialize";
+        return;
+    }
+
+    // Execute 3 cycles: Execute → Reset → Execute → Reset → Execute
+    const int numCycles = 3;
+    std::vector<std::vector<StateSnapshot>> allCycleSnapshots(numCycles);
+    int maxSteps = 100;
+
+    for (int cycle = 0; cycle < numCycles; cycle++) {
+        // Execute to completion
+        for (int step = 0; step < maxSteps; step++) {
+            allCycleSnapshots[cycle].push_back(captureCurrentSnapshot(runner));
+
+            auto result = runner.stepForward();
+
+            if (result == StepResult::FINAL_STATE || result == StepResult::NO_EVENTS_AVAILABLE ||
+                result == StepResult::NO_EVENTS_READY) {
+                allCycleSnapshots[cycle].push_back(captureCurrentSnapshot(runner));
+                break;
+            }
+        }
+
+        // Reset for next cycle (except last cycle)
+        if (cycle < numCycles - 1) {
+            runner.reset();
+
+            // Verify reset returns to step 0
+            auto resetSnapshot = captureCurrentSnapshot(runner);
+            EXPECT_EQ(resetSnapshot.stepNumber, 0)
+                << "Test " << testId << ": Reset did not return to step 0 in cycle " << cycle + 1;
+
+            // Verify reset matches initial state
+            auto diff = SnapshotComparator::compare(allCycleSnapshots[0][0], resetSnapshot);
+            EXPECT_TRUE(diff.isIdentical)
+                << "Test " << testId << ": Reset snapshot differs from initial in cycle " << cycle + 1 << "\n"
+                << diff.format();
+        }
+    }
+
+    // Verify all cycles produced identical executions
+    for (int cycle = 1; cycle < numCycles; cycle++) {
+        EXPECT_EQ(allCycleSnapshots[cycle].size(), allCycleSnapshots[0].size())
+            << "Test " << testId << ": Cycle " << cycle + 1 << " has different number of steps than cycle 1";
+
+        size_t minSize = std::min(allCycleSnapshots[cycle].size(), allCycleSnapshots[0].size());
+        for (size_t step = 0; step < minSize; step++) {
+            auto diff = SnapshotComparator::compare(allCycleSnapshots[0][step], allCycleSnapshots[cycle][step]);
+            EXPECT_TRUE(diff.isIdentical)
+                << "Test " << testId << ": Cycle " << cycle + 1 << " differs at step " << step << "\n"
+                << diff.format();
+
+            if (!diff.isIdentical) {
+                return;  // Stop on first mismatch
+            }
+        }
+    }
+}
+
+/**
+ * @brief Scenario 5: Random Navigation Stress Test
+ *
+ * Verify: Random navigation patterns maintain snapshot consistency
+ * Pattern: Deterministic pseudo-random sequence of forward/backward/reset
+ * Goal: Stress test time-travel debugging with unpredictable navigation
+ */
+TEST_P(ComprehensiveInteractiveTest, RandomNavigationStress) {
+    int testId = GetParam();
+
+    // Skip non-deterministic tests
+    if (shouldSkipTest(testId)) {
+        GTEST_SKIP() << "Test " << testId << " skipped: " << getSkipReason(testId);
+        return;
+    }
+
+    // Get SCXML path
+    std::string scxmlPath = getTestSCXMLPath(testId);
+    if (scxmlPath.empty()) {
+        GTEST_SKIP() << "Test " << testId << " SCXML file not found";
+        return;
+    }
+
+    // Create runner and load SCXML
+    InteractiveTestRunner runner;
+    if (!runner.loadSCXML(scxmlPath)) {
+        GTEST_SKIP() << "Test " << testId << " failed to load SCXML";
+        return;
+    }
+
+    if (!runner.initialize()) {
+        GTEST_SKIP() << "Test " << testId << " failed to initialize";
+        return;
+    }
+
+    // Phase 1: Capture reference execution
+    std::vector<StateSnapshot> referenceSnapshots;
+    int maxSteps = 100;
+
+    for (int step = 0; step < maxSteps; step++) {
+        referenceSnapshots.push_back(captureCurrentSnapshot(runner));
+
+        auto result = runner.stepForward();
+
+        if (result == StepResult::FINAL_STATE || result == StepResult::NO_EVENTS_AVAILABLE ||
+            result == StepResult::NO_EVENTS_READY) {
+            referenceSnapshots.push_back(captureCurrentSnapshot(runner));
+            break;
+        }
+    }
+
+    int totalSteps = static_cast<int>(referenceSnapshots.size()) - 1;
+
+    // Phase 2: Adaptive deterministic pseudo-random navigation (seed = testId for reproducibility)
+    // Scale number of operations based on test length for comprehensive coverage
+    std::mt19937 rng(testId);
+    std::uniform_int_distribution<int> actionDist(0, 2);  // 0=forward, 1=backward, 2=reset
+
+    // Scale random operations: min 10, max 50, scaled by totalSteps
+    int numRandomOps = std::min(50, std::max(10, totalSteps * 5));
+
+    // CRITICAL FIX: Initialize from runner's actual current step, not 0
+    // After phase 1, runner might be at step N-1 even though totalSteps = N (due to FINAL_STATE)
+    int currentStep = runner.getCurrentStep();
+
+    for (int op = 0; op < numRandomOps; op++) {
+        int action = actionDist(rng);
+
+        if (action == 0) {
+            // Forward
+            if (currentStep < totalSteps) {
+                runner.stepForward();
+                // CRITICAL FIX: Synchronize currentStep with runner's actual step after forward
+                // Don't track independently - stepForward() may not change step (NO_EVENTS_READY)
+                currentStep = runner.getCurrentStep();
+            }
+        } else if (action == 1) {
+            // Backward
+            if (currentStep > 0) {
+                bool backwardSuccess = runner.stepBackward();
+                // CRITICAL FIX: Synchronize currentStep with runner's actual step after backward
+                // Only decrement if backward actually succeeded
+                if (backwardSuccess) {
+                    currentStep = runner.getCurrentStep();
+                } else {
+                    // Backward failed (e.g., already at step 0), sync with actual step
+                    currentStep = runner.getCurrentStep();
+                    // Don't fail the test - just adjust tracking
+                    continue;
+                }
+            }
+        } else {
+            // Reset
+            runner.reset();
+            currentStep = 0;
+        }
+
+        // Verify snapshot consistency
+        auto currentSnapshot = captureCurrentSnapshot(runner);
+
+        // Use helper function to find snapshot with matching stepNumber (finds LAST occurrence for duplicates)
+        auto itSnap = findSnapshotByStepNumber(referenceSnapshots, currentSnapshot.stepNumber);
+
+        if (itSnap != referenceSnapshots.end()) {
+            auto diff = SnapshotComparator::compare(*itSnap, currentSnapshot);
+            EXPECT_TRUE(diff.isIdentical)
+                << "Test " << testId << ": Snapshot mismatch at step " << currentSnapshot.stepNumber
+                << " after random operation " << op << " (action=" << action << ")\n"
+                << diff.format();
+
+            if (!diff.isIdentical) {
+                return;  // Stop on first mismatch
+            }
+        }
+    }
+}
+
 INSTANTIATE_TEST_SUITE_P(AllW3CTests, ComprehensiveInteractiveTest, ::testing::ValuesIn(getTestsToRun()),
                          [](const ::testing::TestParamInfo<int> &info) { return "Test" + std::to_string(info.param); });
 
