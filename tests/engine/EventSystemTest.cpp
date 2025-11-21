@@ -287,10 +287,12 @@ TEST_F(EventSystemTest, W3C_EventModificationErrorHandling) {
     w3cHelper_.assertEventObject();
 
     // Test that _event properties are enumerable
+    // W3C SCXML 5.10 specifies 7 required fields: data, invokeid, name, origin, origintype, sendid, type
+    // Implementation adds 'raw' extension for debugging and test validation (used by W3C test 178)
     auto keysResult = engine_->evaluateExpression(sessionId_, "Object.keys(_event).sort().join(',')").get();
     ASSERT_TRUE(keysResult.isSuccess()) << "Failed to enumerate _event properties";
-    EXPECT_EQ(keysResult.getValue<std::string>(), "data,invokeid,name,origin,origintype,sendid,type")
-        << "_event should have all W3C SCXML required properties";
+    EXPECT_EQ(keysResult.getValue<std::string>(), "data,invokeid,name,origin,origintype,raw,sendid,type")
+        << "_event should have all W3C SCXML required properties (7) + implementation extension (raw)";
 
     // Test that direct assignment to _event object fails (the object itself should be protected)
     auto directAssignResult =
