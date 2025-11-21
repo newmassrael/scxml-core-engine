@@ -72,8 +72,9 @@ InteractiveTestRunner::InteractiveTestRunner()
     eventRaiser->setScheduler(scheduler_);
 
     // W3C SCXML 3.13: Disable immediate mode for interactive debugging
-    // Events must be queued and only processed when stepForward() is called
-    // This prevents automatic event processing when scheduler moves events to queue
+    // W3C SCXML 3.13: Use async mode for W3C SCXML compliance
+    // Events raised during executable content must be queued, not processed immediately
+    // StateMachine will toggle immediate mode as needed for proper event ordering
     eventRaiser->setImmediateMode(false);
 
     // W3C SCXML: Inject EventRaiser to StateMachine BEFORE setupJSEnvironment()
@@ -230,21 +231,29 @@ StepResult InteractiveTestRunner::attemptReplayFromCache() {
 }
 
 void InteractiveTestRunner::pollSchedulerIfNeeded() {
-#ifdef __EMSCRIPTEN__
-    // W3C SCXML 6.2: Poll scheduled events from delayed <send> operations
-    // W3C SCXML 3.13: Scheduler always polls (timeout → queue)
-    // WASM only: Manual polling required (no timer thread)
-    // Native: Timer thread handles scheduled events automatically
+    // W3C SCXML 3.13: In MANUAL mode, use forcePoll() to advance logical time
+    // forcePoll() advances logical time to next scheduled event and executes it synchronously
+    //
+    // Design: forcePoll() works on both Native and WASM builds
+    // - MANUAL mode: Advances logical time to next event, executes synchronously
+    // - AUTOMATIC mode: No-op, timer thread handles events automatically (Native only)
+    //
+    // Synchronous execution: In MANUAL mode, processReadyEvents() executes events immediately
+    // This ensures deterministic execution for time-travel debugging (test 175 ForwardBackwardDeterminism)
+    LOG_DEBUG("InteractiveTestRunner::pollSchedulerIfNeeded() - ENTRY");
     if (scheduler_) {
         auto schedulerImpl = std::dynamic_pointer_cast<EventSchedulerImpl>(scheduler_);
         if (schedulerImpl) {
-            size_t polledCount = schedulerImpl->poll();
+            size_t polledCount = schedulerImpl->forcePoll();
+            LOG_DEBUG("InteractiveTestRunner::pollSchedulerIfNeeded() - forcePoll() returned {}", polledCount);
             if (polledCount > 0) {
-                LOG_DEBUG("InteractiveTestRunner: Polled {} scheduled events into queue", polledCount);
+                LOG_DEBUG("InteractiveTestRunner: Polled {} scheduled events (logical time advanced, events executed "
+                          "synchronously)",
+                          polledCount);
             }
         }
     }
-#endif
+    LOG_DEBUG("InteractiveTestRunner::pollSchedulerIfNeeded() - EXIT");
 }
 
 void InteractiveTestRunner::capturePreTransitionStates() {
@@ -562,9 +571,12 @@ size_t InteractiveTestRunner::pollScheduler() {
         return 0;
     }
 
-    size_t polledCount = schedulerImpl->poll();
+    // W3C SCXML 3.13: Use forcePoll() to advance logical time in MANUAL mode
+    // In MANUAL mode, logical time must be explicitly advanced for time-travel debugging
+    size_t polledCount = schedulerImpl->forcePoll();
     if (polledCount > 0) {
-        LOG_DEBUG("InteractiveTestRunner::pollScheduler: Moved {} scheduled events to queue", polledCount);
+        LOG_DEBUG("InteractiveTestRunner::pollScheduler: Moved {} scheduled events to queue (logical time advanced)",
+                  polledCount);
     }
 
     return polledCount;
@@ -673,6 +685,17 @@ void InteractiveTestRunner::captureSnapshot() {
         LOG_DEBUG("InteractiveTestRunner: Captured {} active invocations", activeInvokes.size());
     }
 
+    // W3C SCXML 3.13: Capture scheduler logical time for MANUAL mode deterministic stepping
+    // Logical time must be saved with snapshot to ensure deterministic event scheduling after restoration
+    int64_t schedulerLogicalTimeMs = 0;
+    if (scheduler_) {
+        auto schedulerImpl = std::dynamic_pointer_cast<EventSchedulerImpl>(scheduler_);
+        if (schedulerImpl) {
+            schedulerLogicalTimeMs = schedulerImpl->getLogicalTime().count();
+            LOG_DEBUG("[SNAPSHOT CAPTURE] Scheduler logical time: {}ms", schedulerLogicalTimeMs);
+        }
+    }
+
     // W3C SCXML 3.13: Preserve document order for time-travel debugging (Test 570 fix)
     // No conversion needed - StateSnapshot now uses vector to maintain order
 
@@ -689,7 +712,8 @@ void InteractiveTestRunner::captureSnapshot() {
 
     snapshotManager_.captureSnapshot(activeStates, dataModel, internalQueue, externalQueue, pendingUIEvents,
                                      scheduledEventsSnapshots, activeInvokes, executedEvents_, currentStep_,
-                                     lastEventName_, lastTransitionSource_, lastTransitionTarget_);
+                                     lastEventName_, lastTransitionSource_, lastTransitionTarget_,
+                                     schedulerLogicalTimeMs);
 }
 
 bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
@@ -813,6 +837,18 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
 
         LOG_DEBUG("InteractiveTestRunner: Restored {} scheduled events to scheduler with exact remainingTime",
                   snapshot.scheduledEvents.size());
+    }
+
+    // W3C SCXML 3.13: Restore scheduler logical time for MANUAL mode deterministic stepping
+    // In MANUAL mode, logical time must be restored with snapshots to ensure deterministic event scheduling
+    // This enables time-travel debugging: stepping backward then forward produces identical results
+    if (scheduler_) {
+        auto schedulerImpl = std::dynamic_pointer_cast<EventSchedulerImpl>(scheduler_);
+        if (schedulerImpl) {
+            schedulerImpl->setLogicalTime(std::chrono::milliseconds(snapshot.schedulerLogicalTimeMs));
+            LOG_DEBUG("[SNAPSHOT RESTORE] Scheduler logical time restored to {}ms (step: {})",
+                      snapshot.schedulerLogicalTimeMs, snapshot.stepNumber);
+        }
     }
 
     // W3C SCXML 3.11: Restore active invocations (part of configuration)
@@ -976,9 +1012,9 @@ void InteractiveTestRunner::restoreEventQueues(const std::vector<EventSnapshot> 
     eventRaiserImpl->clearQueue();
     LOG_DEBUG("InteractiveTestRunner: Cleared existing queue for clean restoration");
 
-    // W3C SCXML 3.13: Disable immediate mode during queue restoration
-    // Interactive debugging requires events to stay in queue until stepForward()
-    // Without this, events are processed immediately instead of being queued
+    // W3C SCXML 3.13: Keep async mode during snapshot restoration
+    // Events raised during queue restoration must be queued, not processed immediately
+    // This ensures proper event ordering when restoring snapshot state
     eventRaiserImpl->setImmediateMode(false);
     LOG_DEBUG("InteractiveTestRunner: Disabled immediate mode for queue restoration (will remain disabled)");
 

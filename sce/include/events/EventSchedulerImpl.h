@@ -62,6 +62,27 @@ public:
     SchedulerMode getMode() const override;
     size_t forcePoll() override;
 
+    /**
+     * @brief Get current logical time for MANUAL mode snapshot restoration
+     *
+     * W3C SCXML 3.13: Logical time state is part of scheduler configuration
+     * and must be saved/restored during time-travel debugging snapshots.
+     *
+     * @return Current logical time in milliseconds
+     */
+    std::chrono::milliseconds getLogicalTime() const;
+
+    /**
+     * @brief Set logical time for MANUAL mode snapshot restoration
+     *
+     * W3C SCXML 3.13: When restoring snapshots during time-travel debugging,
+     * the scheduler's logical time must be restored to match the snapshot.
+     * This ensures deterministic event scheduling after restoration.
+     *
+     * @param timeMs Logical time to set in milliseconds
+     */
+    void setLogicalTime(std::chrono::milliseconds timeMs);
+
 #ifdef __EMSCRIPTEN__
     /**
      * @brief Poll for ready events and execute them (WASM only)
@@ -153,6 +174,22 @@ private:
      * @return Time point of the next event to execute, or max time if no events
      */
     std::chrono::steady_clock::time_point getNextExecutionTimeUnlocked() const;
+
+    /**
+     * @brief Execute session events synchronously (shared by WASM and Native MANUAL mode)
+     *
+     * W3C SCXML 3.13: Helper function to eliminate code duplication between WASM
+     * and Native MANUAL mode synchronous execution paths (Zero Duplication principle).
+     *
+     * Both WASM (always) and Native MANUAL mode require synchronous sequential
+     * execution within sessions for deterministic time-travel debugging.
+     *
+     * @param sessionEventGroups Map of session IDs to their event lists
+     * @param context Logging context string (e.g., "WASM", "MANUAL mode")
+     */
+    void executeSessionEventsSync(
+        const std::unordered_map<std::string, std::vector<std::shared_ptr<ScheduledEvent>>> &sessionEventGroups,
+        const std::string &context);
 
 #ifndef __EMSCRIPTEN__
     /**

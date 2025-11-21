@@ -281,7 +281,9 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
 
     for (int step = 0; step < maxSteps; step++) {
         // Capture snapshot at current state
-        forwardSnapshots.push_back(captureCurrentSnapshot(runner));
+        auto snapshot = captureCurrentSnapshot(runner);
+        LOG_DEBUG("Phase 1: step={}, captured snapshot with stepNumber={}", step, snapshot.stepNumber);
+        forwardSnapshots.push_back(snapshot);
 
         // Step forward
         auto result = runner.stepForward();
@@ -290,14 +292,19 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
         if (result == StepResult::FINAL_STATE || result == StepResult::NO_EVENTS_AVAILABLE) {
             totalSteps = step + 1;
             // Capture final snapshot
-            forwardSnapshots.push_back(captureCurrentSnapshot(runner));
+            auto finalSnapshot = captureCurrentSnapshot(runner);
+            LOG_DEBUG("Phase 1: FINAL_STATE/NO_EVENTS_AVAILABLE, captured final snapshot with stepNumber={}",
+                      finalSnapshot.stepNumber);
+            forwardSnapshots.push_back(finalSnapshot);
             break;
         }
 
         if (result == StepResult::NO_EVENTS_READY) {
             // Scheduled events waiting - consider this end of execution
             totalSteps = step + 1;
-            forwardSnapshots.push_back(captureCurrentSnapshot(runner));
+            auto finalSnapshot = captureCurrentSnapshot(runner);
+            LOG_DEBUG("Phase 1: NO_EVENTS_READY, captured final snapshot with stepNumber={}", finalSnapshot.stepNumber);
+            forwardSnapshots.push_back(finalSnapshot);
             break;
         }
     }
@@ -325,7 +332,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
         auto diff = SnapshotComparator::compare(forwardSnapshots[step - 1], currentSnapshot);
 
         EXPECT_TRUE(diff.isIdentical) << "Test " << testId << ": Snapshot mismatch at step " << step - 1
-                                      << " after stepping backward\n"
+                                      << " after stepping backward\\n"
                                       << diff.format();
 
         if (!diff.isIdentical) {
@@ -333,6 +340,13 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
             return;
         }
     }
+
+    // W3C SCXML 3.13: Always reset before Phase 3 for deterministic replay
+    // When totalSteps=1, Phase 2 skips all backward steps, leaving scheduler logical time advanced
+    // Reset ensures both currentStep_ and scheduler logical time are restored to initial state
+    LOG_DEBUG("Before reset, getCurrentStep()={}", runner.getCurrentStep());
+    runner.reset();
+    LOG_DEBUG("After reset, getCurrentStep()={}", runner.getCurrentStep());
 
     // Phase 3: Step forward again and verify determinism (replay)
     for (int step = 0; step < totalSteps; step++) {
