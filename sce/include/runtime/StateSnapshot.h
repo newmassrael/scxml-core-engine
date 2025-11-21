@@ -117,7 +117,8 @@ struct InvokeSnapshot {
  */
 struct StateSnapshot {
     // Active configuration (W3C SCXML 3.11)
-    std::set<std::string> activeStates;
+    // W3C SCXML 3.13: Use vector to preserve document order for time-travel debugging (Test 570)
+    std::vector<std::string> activeStates;
 
     // Data model state (W3C SCXML 5.0)
     std::map<std::string, std::string> dataModel;  // Serialized JS values
@@ -173,7 +174,7 @@ public:
     /**
      * @brief Capture current state machine state as snapshot
      *
-     * @param activeStates Current active configuration
+     * @param activeStates Current active configuration (document order preserved)
      * @param dataModel Current data model state (serialized)
      * @param internalQueue Current internal event queue
      * @param externalQueue Current external event queue
@@ -186,15 +187,14 @@ public:
      * @param transitionSource Source state of last transition
      * @param transitionTarget Target state of last transition
      */
-    void captureSnapshot(const std::set<std::string> &activeStates, const std::map<std::string, std::string> &dataModel,
-                         const std::vector<EventSnapshot> &internalQueue,
-                         const std::vector<EventSnapshot> &externalQueue,
-                         const std::vector<EventSnapshot> &pendingUIEvents,
-                         const std::vector<ScheduledEventSnapshot> &scheduledEvents,
-                         const std::vector<InvokeSnapshot> &activeInvokes,
-                         const std::vector<EventSnapshot> &executedEvents, int stepNumber,
-                         const std::string &lastEvent = "", const std::string &transitionSource = "",
-                         const std::string &transitionTarget = "");
+    void
+    captureSnapshot(const std::vector<std::string> &activeStates, const std::map<std::string, std::string> &dataModel,
+                    const std::vector<EventSnapshot> &internalQueue, const std::vector<EventSnapshot> &externalQueue,
+                    const std::vector<EventSnapshot> &pendingUIEvents,
+                    const std::vector<ScheduledEventSnapshot> &scheduledEvents,
+                    const std::vector<InvokeSnapshot> &activeInvokes, const std::vector<EventSnapshot> &executedEvents,
+                    int stepNumber, const std::string &lastEvent = "", const std::string &transitionSource = "",
+                    const std::string &transitionTarget = "");
 
     /**
      * @brief Get snapshot at specific step number

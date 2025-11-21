@@ -1199,9 +1199,8 @@ std::shared_ptr<StateSnapshot> SCXMLInvokeHandler::captureChildState() const {
         // Create child snapshot
         auto childSnapshot = std::make_shared<StateSnapshot>();
 
-        // Capture active states
-        auto activeStates = childSM->getActiveStates();
-        childSnapshot->activeStates = std::set<std::string>(activeStates.begin(), activeStates.end());
+        // Capture active states (W3C SCXML 3.13: preserve document order for time-travel debugging)
+        childSnapshot->activeStates = childSM->getActiveStates();
 
         // W3C SCXML 3.13: Capture event queues from child's EventRaiser
         auto childEventRaiser = childSM->getEventRaiser();

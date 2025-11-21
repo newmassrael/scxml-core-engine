@@ -3,6 +3,7 @@
 
 #include "InteractiveTestRunner.h"
 
+#include "RestorationModeScope.h"
 #include "common/Logger.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -204,7 +205,8 @@ StepResult InteractiveTestRunner::stepForward() {
         return eventlessResult;
     }
 
-    return checkScheduledEventsStatus();
+    auto scheduledResult = checkScheduledEventsStatus();
+    return scheduledResult;
 }
 
 StepResult InteractiveTestRunner::attemptReplayFromCache() {
@@ -255,11 +257,38 @@ void InteractiveTestRunner::capturePreTransitionStates() {
 }
 
 StepResult InteractiveTestRunner::processQueuedEventStep() {
+    // W3C SCXML 3.13: Log states BEFORE event processing (Test 570 debug)
+    auto preStates = stateMachine_->getActiveStates();
+    std::string preStatesStr;
+    for (const auto &state : preStates) {
+        if (!preStatesStr.empty()) {
+            preStatesStr += ", ";
+        }
+        preStatesStr += state;
+    }
+
     // Process next queued event with priority: INTERNAL → EXTERNAL (W3C SCXML Appendix D)
     // Zero Duplication: Single priority queue with QueuedEventComparator
     auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-    if (!eventRaiserImpl || !eventRaiserImpl->processNextQueuedEvent()) {
+    if (!eventRaiserImpl) {
+        LOG_ERROR("[PROCESS QUEUED EVENT DEBUG] eventRaiserImpl is null!");
         return StepResult::NO_EVENTS_AVAILABLE;
+    }
+
+    bool processResult = eventRaiserImpl->processNextQueuedEvent();
+
+    if (!processResult) {
+        return StepResult::NO_EVENTS_AVAILABLE;
+    }
+
+    // W3C SCXML 3.13: Log states AFTER event processing (Test 570 debug)
+    auto postStates = stateMachine_->getActiveStates();
+    std::string postStatesStr;
+    for (const auto &state : postStates) {
+        if (!postStatesStr.empty()) {
+            postStatesStr += ", ";
+        }
+        postStatesStr += state;
     }
 
     // W3C SCXML 3.13: Event processed, record to execution history for snapshot restoration
@@ -307,11 +336,15 @@ StepResult InteractiveTestRunner::processQueuedEventStep() {
 StepResult InteractiveTestRunner::processEventlessTransitionStep() {
     // Check for eventless transitions (W3C SCXML 3.13)
     auto result = stateMachine_->processEvent("");  // Null event triggers eventless transitions
-    lastEventName_ = "";
 
     if (!result.success) {
+        // W3C SCXML 3.13: No eventless transition occurred - preserve lastEventName_
+        // CRITICAL FIX: Don't clear lastEventName_ when no transition happens
         return StepResult::NO_EVENTS_AVAILABLE;
     }
+
+    // W3C SCXML 3.13: Eventless transition succeeded - update lastEventName_
+    lastEventName_ = "";
 
     // W3C SCXML 3.13: Record eventless transition to execution history
     executedEvents_.push_back(EventSnapshot("", ""));
@@ -641,20 +674,21 @@ void InteractiveTestRunner::captureSnapshot() {
         LOG_DEBUG("InteractiveTestRunner: Captured {} active invocations", activeInvokes.size());
     }
 
-    // Convert std::vector<std::string> to std::set<std::string> for StateSnapshot
-    std::set<std::string> activeStatesSet(activeStates.begin(), activeStates.end());
+    // W3C SCXML 3.13: Preserve document order for time-travel debugging (Test 570 fix)
+    // No conversion needed - StateSnapshot now uses vector to maintain order
 
     // Log snapshot capture for verification
     std::string statesStr;
-    for (const auto &state : activeStatesSet) {
+    for (const auto &state : activeStates) {
         if (!statesStr.empty()) {
             statesStr += ", ";
         }
         statesStr += state;
     }
-    LOG_DEBUG("[SNAPSHOT CAPTURE] Storing snapshot at index {} with states: [{}]", currentStep_, statesStr);
+    LOG_DEBUG("[SNAPSHOT CAPTURE] Storing snapshot at index {} with states: [{}], lastEventName: '{}'", currentStep_,
+              statesStr, lastEventName_);
 
-    snapshotManager_.captureSnapshot(activeStatesSet, dataModel, internalQueue, externalQueue, pendingUIEvents,
+    snapshotManager_.captureSnapshot(activeStates, dataModel, internalQueue, externalQueue, pendingUIEvents,
                                      scheduledEventsSnapshots, activeInvokes, executedEvents_, currentStep_,
                                      lastEventName_, lastTransitionSource_, lastTransitionTarget_);
 }
@@ -663,6 +697,10 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
     // W3C SCXML 3.13: Complete reset-restore using Option B (long-term solution)
     // ARCHITECTURE.md: Maintains instance identity, proper reset-restore lifecycle
     // No instance recreation, no start() side effects, no temporal coupling
+
+    // W3C SCXML 3.13: RAII guard for restoration mode - prevents side effects during snapshot restoration
+    // Automatically disables restoration mode when scope exits (even on exception)
+    RestorationModeScope restorationGuard(stateMachine_.get());
 
     // Clear EventRaiser queues BEFORE reset to ensure clean state
     // EventRaiser is reused across restoreSnapshot() calls, so old events may persist
@@ -690,7 +728,7 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
     // No instance recreation, no start() call - direct restoration only
     if (!stateMachine_->restoreFromSnapshot(snapshot.activeStates)) {
         LOG_ERROR("InteractiveTestRunner: Failed to restore snapshot states");
-        return false;
+        return false;  // RAII guard automatically disables restoration mode
     }
     LOG_DEBUG("InteractiveTestRunner: Restored {} active states from snapshot", snapshot.activeStates.size());
 
@@ -802,9 +840,7 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
              snapshot.stepNumber);
 
     // Verify restoration by checking actual active states
-    LOG_DEBUG("[SNAPSHOT RESTORE DEBUG] About to call getActiveStates() for verification...");
     auto actualStates = stateMachine_->getActiveStates();
-    LOG_DEBUG("[SNAPSHOT RESTORE DEBUG] getActiveStates() returned {} states", actualStates.size());
     std::string actualStatesStr;
     for (const auto &s : actualStates) {
         if (!actualStatesStr.empty()) {
@@ -813,6 +849,11 @@ bool InteractiveTestRunner::restoreSnapshot(const StateSnapshot &snapshot) {
         actualStatesStr += s;
     }
     LOG_DEBUG("[SNAPSHOT RESTORE] Verification - actual active states after restore: [{}]", actualStatesStr);
+
+    // W3C SCXML 3.13: No longer needed - restoration mode prevents callbacks from triggering
+    // The lastEventName_ restoration is maintained by the restoration mode flag
+
+    // W3C SCXML 3.13: Disable restoration mode after successful restoration
 
     return true;
 }
@@ -979,6 +1020,7 @@ emscripten::val InteractiveTestRunner::getLastTransition() const {
 }
 
 std::string InteractiveTestRunner::getLastEventName() const {
+    LOG_DEBUG("[GET LAST EVENT NAME] Returning lastEventName_ = '{}'", lastEventName_);
     return lastEventName_;
 }
 
@@ -1179,6 +1221,7 @@ std::string InteractiveTestRunner::getLastTransition() const {
 }
 
 std::string InteractiveTestRunner::getLastEventName() const {
+    LOG_DEBUG("[GET LAST EVENT NAME] Returning lastEventName_ = '{}'", lastEventName_);
     return lastEventName_;
 }
 

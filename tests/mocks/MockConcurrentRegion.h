@@ -94,6 +94,11 @@ public:
         currentState_ = stateId;
     }
 
+    void setRestoringSnapshot(bool) override {
+        // W3C SCXML 3.13: Mock implementation for restoration mode flag
+        // No-op for test mock - restoration semantics handled by real ConcurrentRegion
+    }
+
     size_t getEventCount() const {
         return eventCount_.load();
     }

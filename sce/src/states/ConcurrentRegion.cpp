@@ -126,7 +126,8 @@ bool ConcurrentRegion::isActive() const {
 }
 
 bool ConcurrentRegion::isInFinalState() const {
-    return isInFinalState_ && status_ == ConcurrentRegionStatus::FINAL;
+    bool result = isInFinalState_ && status_ == ConcurrentRegionStatus::FINAL;
+    return result;
 }
 
 ConcurrentRegionStatus ConcurrentRegion::getStatus() const {
@@ -420,6 +421,11 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
     }
 
     LOG_DEBUG("ConcurrentRegion: Setting currentState for region {} to: {}", id_, stateId);
+
+    // W3C SCXML 3.13: Detect if this is a state change or just a refresh (e.g., during snapshot restore)
+    // Only trigger callbacks on actual state transitions, not on redundant setCurrentState calls
+    bool isStateChange = (currentState_ != stateId);
+
     currentState_ = stateId;
 
     // W3C SCXML 3.4: Update isInFinalState_ flag when currentState changes
@@ -427,7 +433,9 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
     isInFinalState_ = determineIfInFinalState();
 
     // Update region status to FINAL if we entered a final state
-    if (isInFinalState_ && status_ != ConcurrentRegionStatus::FINAL) {
+    // W3C SCXML 3.13: Only trigger callback on actual state transitions (not during snapshot restore)
+    // Skip callback during restoration to prevent spurious event generation
+    if (isInFinalState_ && status_ != ConcurrentRegionStatus::FINAL && isStateChange && !isRestoringSnapshot_) {
         status_ = ConcurrentRegionStatus::FINAL;
         LOG_DEBUG("ConcurrentRegion: Region {} entered final state '{}', updating status to FINAL", id_, stateId);
 
@@ -438,6 +446,31 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
             doneStateCallback_(id_);
         }
     }
+}
+
+void ConcurrentRegion::setActiveForRestore() {
+    // W3C SCXML 3.13: Set region to ACTIVE status without executing entry actions
+    // This is used during time-travel debugging snapshot restoration
+    status_ = ConcurrentRegionStatus::ACTIVE;
+
+    // W3C SCXML 3.13: Synchronize activeStates_ with currentState_
+    // activeStates_ tracks which states within the region are active
+    // Without this, the region thinks it has no active states, causing incorrect exit behavior
+    activeStates_.clear();
+    if (!currentState_.empty()) {
+        activeStates_.push_back(currentState_);
+    }
+
+    LOG_DEBUG("Region '{}' marked as ACTIVE for restoration (current state: {}, activeStates: {})", id_, currentState_,
+              activeStates_.size());
+}
+
+void ConcurrentRegion::setRestoringSnapshot(bool restoring) {
+    // W3C SCXML 3.13: Enable/disable restoration mode for time-travel debugging
+    // When enabled, prevents side effects (callbacks, event generation) during snapshot restoration
+    isRestoringSnapshot_ = restoring;
+    LOG_DEBUG("Region '{}' restoration mode: {} [isRestoringSnapshot_={}]", id_, restoring ? "ENABLED" : "DISABLED",
+              isRestoringSnapshot_.load());
 }
 
 bool ConcurrentRegion::isInErrorState() const {
@@ -692,10 +725,15 @@ bool ConcurrentRegion::determineIfInFinalState() const {
         "ConcurrentRegion::determineIfInFinalState - Region {} checking final state. Status: {}, currentState: '{}'",
         id_, static_cast<int>(status_), currentState_);
 
-    if (!rootState_ || status_ != ConcurrentRegionStatus::ACTIVE) {
-        LOG_DEBUG("Region {} not active or no root state", id_);
+    // W3C SCXML 3.4: Check final state even if status is already FINAL
+    // This handles cases where setCurrentState() is called multiple times (e.g., during hierarchyManager sync)
+    if (!rootState_) {
+        LOG_DEBUG("Region {} has no root state", id_);
         return false;
     }
+
+    // Allow checking final state even when status is FINAL (status check removed)
+    // Previously: if (status_ != ACTIVE) return false; ← This was causing the bug!
 
     // SCXML W3C specification section 3.4: Check if current state is a final state
     if (currentState_.empty()) {

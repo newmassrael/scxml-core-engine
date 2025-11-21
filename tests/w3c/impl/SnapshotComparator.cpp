@@ -217,19 +217,28 @@ bool SnapshotComparator::compareInvokes(const InvokeSnapshot &expected, const In
     return childDiff.isIdentical;
 }
 
-bool SnapshotComparator::compareActiveStates(const std::set<std::string> &expected, const std::set<std::string> &actual,
-                                             std::vector<std::string> &diffs) {
+bool SnapshotComparator::compareActiveStates(const std::vector<std::string> &expected,
+                                             const std::vector<std::string> &actual, std::vector<std::string> &diffs) {
     if (expected == actual) {
         return true;
     }
 
-    // Find missing states
+    // W3C SCXML 3.13: Compare vectors (document order preserved for time-travel debugging)
+    // Find missing states (in expected but not in actual)
     std::vector<std::string> missing;
-    std::set_difference(expected.begin(), expected.end(), actual.begin(), actual.end(), std::back_inserter(missing));
+    for (const auto &state : expected) {
+        if (std::find(actual.begin(), actual.end(), state) == actual.end()) {
+            missing.push_back(state);
+        }
+    }
 
-    // Find extra states
+    // Find extra states (in actual but not in expected)
     std::vector<std::string> extra;
-    std::set_difference(actual.begin(), actual.end(), expected.begin(), expected.end(), std::back_inserter(extra));
+    for (const auto &state : actual) {
+        if (std::find(expected.begin(), expected.end(), state) == expected.end()) {
+            extra.push_back(state);
+        }
+    }
 
     // Format diff message
     std::ostringstream oss;

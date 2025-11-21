@@ -186,9 +186,8 @@ std::string getSkipReason(int testId) {
 StateSnapshot captureCurrentSnapshot(InteractiveTestRunner &runner) {
     StateSnapshot snapshot;
 
-    // Capture activeStates
-    auto activeStates = runner.getActiveStates();
-    snapshot.activeStates = std::set<std::string>(activeStates.begin(), activeStates.end());
+    // Capture activeStates (W3C SCXML 3.13: preserve document order for time-travel debugging)
+    snapshot.activeStates = runner.getActiveStates();
 
     // Capture stepNumber
     snapshot.stepNumber = runner.getCurrentStep();
