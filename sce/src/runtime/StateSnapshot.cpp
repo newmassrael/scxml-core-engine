@@ -12,7 +12,8 @@ void SnapshotManager::captureSnapshot(
     const std::vector<EventSnapshot> &internalQueue, const std::vector<EventSnapshot> &externalQueue,
     const std::vector<EventSnapshot> &pendingUIEvents, const std::vector<ScheduledEventSnapshot> &scheduledEvents,
     const std::vector<InvokeSnapshot> &activeInvokes, const std::vector<EventSnapshot> &executedEvents, int stepNumber,
-    const std::string &lastEvent, const std::string &transitionSource, const std::string &transitionTarget) {
+    const std::string &lastEvent, const std::string &transitionSource, const std::string &transitionTarget,
+    int64_t schedulerLogicalTimeMs) {
     StateSnapshot snapshot;
     snapshot.activeStates = activeStates;
     snapshot.dataModel = dataModel;
@@ -24,6 +25,7 @@ void SnapshotManager::captureSnapshot(
     snapshot.executedEvents = executedEvents;
     snapshot.stepNumber = stepNumber;
     snapshot.lastEventName = lastEvent;
+    snapshot.schedulerLogicalTimeMs = schedulerLogicalTimeMs;
 
     // W3C SCXML 3.13: Set incoming transition (how we arrived at this state)
     snapshot.incomingTransitionSource = transitionSource;

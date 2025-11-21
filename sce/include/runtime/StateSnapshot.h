@@ -148,6 +148,11 @@ struct StateSnapshot {
     int stepNumber;
     std::string lastEventName;
 
+    // W3C SCXML 3.13: Scheduler logical time for MANUAL mode deterministic stepping
+    // In MANUAL mode, logical time must be saved/restored with snapshots to ensure
+    // deterministic event scheduling after snapshot restoration (time-travel debugging)
+    int64_t schedulerLogicalTimeMs;
+
     // W3C SCXML 3.13: Dual transition tracking for time-travel debugging
     // Incoming transition: How we arrived at this state (previous step's transition)
     std::string incomingTransitionSource;
@@ -160,7 +165,7 @@ struct StateSnapshot {
     std::string outgoingTransitionTarget;
     std::string outgoingTransitionEvent;
 
-    StateSnapshot() : stepNumber(0) {}
+    StateSnapshot() : stepNumber(0), schedulerLogicalTimeMs(0) {}
 };
 
 /**
@@ -196,7 +201,7 @@ public:
                     const std::vector<ScheduledEventSnapshot> &scheduledEvents,
                     const std::vector<InvokeSnapshot> &activeInvokes, const std::vector<EventSnapshot> &executedEvents,
                     int stepNumber, const std::string &lastEvent = "", const std::string &transitionSource = "",
-                    const std::string &transitionTarget = "");
+                    const std::string &transitionTarget = "", int64_t schedulerLogicalTimeMs = 0);
 
     /**
      * @brief Get snapshot at specific step number

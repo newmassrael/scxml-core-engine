@@ -365,6 +365,41 @@ bool EventSchedulerImpl::isRunning() const {
 
 // === Common: Event processing logic (used by both Native and WASM) ===
 
+void EventSchedulerImpl::executeSessionEventsSync(
+    const std::unordered_map<std::string, std::vector<std::shared_ptr<ScheduledEvent>>> &sessionEventGroups,
+    const std::string &context) {
+    // W3C SCXML 3.13: Synchronous sequential execution within sessions
+    // This helper eliminates code duplication between WASM and Native MANUAL mode
+    for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
+        LOG_DEBUG("EventSchedulerImpl: {} processing {} events for session '{}'", context, sessionEvents.size(),
+                  sessionId);
+
+        // Execute events within this session SEQUENTIALLY
+        for (auto &eventPtr : sessionEvents) {
+            if (!eventPtr) {
+                LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
+                continue;
+            }
+            try {
+                LOG_DEBUG("EventSchedulerImpl: {} executing event '{}' in session '{}'", context,
+                          eventPtr->event.eventName, sessionId);
+
+                // Execute the callback synchronously
+                bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
+
+                if (success) {
+                    LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
+                } else {
+                    LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
+                }
+
+            } catch (const std::exception &e) {
+                LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName, e.what());
+            }
+        }
+    }
+}
+
 size_t EventSchedulerImpl::processReadyEvents() {
     std::vector<std::shared_ptr<ScheduledEvent>> readyEvents;
     auto now = std::chrono::steady_clock::now();
@@ -436,78 +471,61 @@ size_t EventSchedulerImpl::processReadyEvents() {
 
 #ifdef __EMSCRIPTEN__
     // WASM: Execute events synchronously on main thread (no callback queue)
-    for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
-        LOG_DEBUG("EventSchedulerImpl: WASM processing {} events for session '{}'", sessionEvents.size(), sessionId);
-
-        // Execute events within this session SEQUENTIALLY
-        for (auto &eventPtr : sessionEvents) {
-            if (!eventPtr) {
-                LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
+    executeSessionEventsSync(sessionEventGroups, "WASM");
+#else
+    // W3C SCXML 3.13: Native mode execution strategy
+    // MANUAL mode: Synchronous execution for deterministic time-travel debugging
+    // AUTOMATIC mode: Asynchronous execution for non-blocking performance
+    if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
+        // MANUAL mode: Execute synchronously for deterministic stepping
+        executeSessionEventsSync(sessionEventGroups, "MANUAL mode");
+    } else {
+        // AUTOMATIC mode: Execute asynchronously via callback queue
+        for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
+            if (sessionEvents.empty()) {
                 continue;
             }
-            try {
-                LOG_DEBUG("EventSchedulerImpl: WASM executing event '{}' in session '{}'", eventPtr->event.eventName,
-                          sessionId);
 
-                // Execute the callback synchronously
-                bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
+            // Create async task for this session's sequential execution
+            auto sessionTask = [this, sessionId, sessionEvents]() {
+                LOG_DEBUG("EventSchedulerImpl: Processing {} events for session '{}'", sessionEvents.size(), sessionId);
 
-                if (success) {
-                    LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
-                } else {
-                    LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
-                }
-
-            } catch (const std::exception &e) {
-                LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName, e.what());
-            }
-        }
-    }
-#else
-    // Native: Execute each session's events asynchronously via callback queue
-    for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
-        if (sessionEvents.empty()) {
-            continue;
-        }
-
-        // Create async task for this session's sequential execution
-        auto sessionTask = [this, sessionId, sessionEvents]() {
-            LOG_DEBUG("EventSchedulerImpl: Processing {} events for session '{}'", sessionEvents.size(), sessionId);
-
-            // Execute events within this session SEQUENTIALLY
-            for (auto &eventPtr : sessionEvents) {
-                if (!eventPtr) {
-                    LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
-                    continue;
-                }
-                try {
-                    LOG_DEBUG("EventSchedulerImpl: Executing event '{}' sequentially in session '{}'",
-                              eventPtr->event.eventName, sessionId);
-
-                    // Execute the callback
-                    bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
-
-                    if (success) {
-                        LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
-                    } else {
-                        LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
+                // Execute events within this session SEQUENTIALLY
+                for (auto &eventPtr : sessionEvents) {
+                    if (!eventPtr) {
+                        LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
+                        continue;
                     }
+                    try {
+                        LOG_DEBUG("EventSchedulerImpl: Executing event '{}' sequentially in session '{}'",
+                                  eventPtr->event.eventName, sessionId);
 
-                } catch (const std::exception &e) {
-                    LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName,
-                              e.what());
+                        // Execute the callback
+                        bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
+
+                        if (success) {
+                            LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully",
+                                      eventPtr->event.eventName);
+                        } else {
+                            LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
+                        }
+
+                    } catch (const std::exception &e) {
+                        LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName,
+                                  e.what());
+                    }
                 }
+            };
+
+            // Add to callback queue for asynchronous execution
+            {
+                std::lock_guard<std::mutex> callbackLock(callbackQueueMutex_);
+                callbackQueue_.push(std::move(sessionTask));
             }
-        };
 
-        // Add to callback queue for asynchronous execution
-        {
-            std::lock_guard<std::mutex> callbackLock(callbackQueueMutex_);
-            callbackQueue_.push(std::move(sessionTask));
+            // Notify callback workers
+            callbackCondition_.notify_one();
         }
-
-        // Notify callback workers
-        callbackCondition_.notify_one();
     }
 #endif
 
@@ -745,6 +763,15 @@ size_t EventSchedulerImpl::forcePoll() {
 
     LOG_DEBUG("EventSchedulerImpl: forcePoll() called - processing ready events");
     return processReadyEvents();
+}
+
+std::chrono::milliseconds EventSchedulerImpl::getLogicalTime() const {
+    return std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
+}
+
+void EventSchedulerImpl::setLogicalTime(std::chrono::milliseconds timeMs) {
+    auto oldTime = logicalTime_.exchange(timeMs.count(), std::memory_order_release);
+    LOG_DEBUG("EventSchedulerImpl: Logical time set from {}ms to {}ms (snapshot restoration)", oldTime, timeMs.count());
 }
 
 }  // namespace SCE
