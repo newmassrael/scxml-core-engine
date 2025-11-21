@@ -502,14 +502,15 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
             }
 
             // W3C SCXML testing extension: _event.raw for manual inspection
-            // Used by W3C tests 178, 509, 519, 520, 534 for visual verification
-            // Contains raw event data string for debugging and test validation
+            // Used by W3C test 178 (manual visual verification of duplicate param keys)
+            // Contains raw event data string (pre-parsing) for debugging and test validation
+            // Not part of W3C SCXML 5.10 specification - implementation-specific extension
             JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, dataStr.c_str()));
             LOG_DEBUG("JSEngine: Set _event.raw = '{}'", dataStr);
         } else {
             LOG_DEBUG("JSEngine: Event has no data, setting _event.data to undefined");
             JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
-            // W3C SCXML testing extension: _event.raw as empty string when no data
+            // W3C SCXML testing extension: Set _event.raw as empty string when no data
             JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, ""));
         }
     } else {
@@ -519,7 +520,7 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
             JS_SetPropertyStr(ctx, eventDataProperty, props[i], JS_NewString(ctx, ""));
         }
         JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
-        // W3C SCXML testing extension: Clear _event.raw on event reset
+        // W3C SCXML testing extension: Reset _event.raw to empty string on event clear
         JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, ""));
     }
 
