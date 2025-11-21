@@ -7,6 +7,7 @@
 #include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
 #include "events/EventDispatcherImpl.h"
+#include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "model/InvokeNode.h"
 #include "runtime/EventRaiserImpl.h"
@@ -215,6 +216,20 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
     // W3C SCXML: Create EventRaiser for #_parent target support
     auto childEventRaiser = std::make_shared<EventRaiserImpl>();
+
+    // W3C SCXML 3.13: Share parent's EventScheduler with child for consistent scheduler mode
+    // Parent and child must use the same scheduler so child inherits MANUAL mode for interactive debugging
+    if (auto parentSM = parentStateMachine_.lock()) {
+        if (auto parentEventRaiser = parentSM->getEventRaiser()) {
+            if (auto parentScheduler = parentEventRaiser->getScheduler()) {
+                childEventRaiser->setScheduler(parentScheduler);
+                LOG_DEBUG("InvokeExecutor: Set child EventRaiser scheduler from parent for session: {}",
+                          childSessionId);
+            } else {
+                LOG_WARN("InvokeExecutor: Parent EventRaiser has no scheduler for session: {}", childSessionId);
+            }
+        }
+    }
 
     // Store session information for tracking
     InvokeSession session;
@@ -453,11 +468,15 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // W3C SCXML 5.10 test 338: Register invoke mapping BEFORE starting child
     // This ensures mapping is available when child's final state onentry sends events
     // For pre-allocated sessions (sessionAlreadyExists=true), mapping may already be registered by InvokeExecutor
+    LOG_INFO("[INVOKE MAPPING] sessionAlreadyExists={}, isRestoration={}, parent={}, invoke={}, child={}",
+             sessionAlreadyExists, isRestoration, parentSessionId, invokeid, childSessionId);
+
     if (!sessionAlreadyExists) {
         JSEngine::instance().registerInvokeMapping(parentSessionId, invokeid, childSessionId);
-        LOG_DEBUG(
-            "SCXMLInvokeHandler: Registered invoke mapping before child start - parent: {}, invoke: {}, child: {}",
-            parentSessionId, invokeid, childSessionId);
+        LOG_INFO("[INVOKE MAPPING REGISTERED] parent={}, invoke={} -> child={}", parentSessionId, invokeid,
+                 childSessionId);
+    } else {
+        LOG_WARN("[INVOKE MAPPING SKIPPED] sessionAlreadyExists=true - mapping should exist already");
     }
 
     // W3C SCXML Test 233, 234: Register finalize script BEFORE starting child
@@ -1285,6 +1304,16 @@ void SCXMLInvokeHandler::restoreChildState(const StateSnapshot &childSnapshot, c
                 }
                 LOG_DEBUG("SCXMLInvokeHandler: Restored child event queues - internal: {}, external: {}",
                           childSnapshot.internalQueue.size(), childSnapshot.externalQueue.size());
+
+                // CRITICAL FIX: Enable immediate mode for child EventRaiser after restoration
+                // W3C SCXML 6.4: Child state machines must process parent events immediately (Test 192)
+                // Without this, events from parent get queued but never processed in interactive mode
+                // Root cause: EventRaiserImpl defaults to immediateMode=false in constructor
+                // During normal invoke, child processes events immediately via callback
+                // After reset(), new EventRaiser instance needs immediateMode=true to match normal behavior
+                eventRaiserImpl->setImmediateMode(true);
+                LOG_INFO("SCXMLInvokeHandler: Enabled immediate mode for restored child EventRaiser (session: {})",
+                         childSessionId);
             }
         }
 
@@ -1379,6 +1408,17 @@ std::string SCXMLInvokeHandler::getSCXMLContent() const {
     return "";
 }
 
+bool SCXMLInvokeHandler::getAutoForward() const {
+    // W3C SCXML 6.4: Return autoForward flag from first active session
+    // Matches getSCXMLContent() pattern - assumes single active invoke per handler
+    for (const auto &[invokeid, session] : activeSessions_) {
+        if (session.isActive) {
+            return session.autoForward;
+        }
+    }
+    return false;
+}
+
 void InvokeExecutor::captureInvokeState(std::vector<InvokeSnapshot> &out) const {
     // W3C SCXML 3.11: Capture all active invocations
     // Zero Duplication: Iterate through handlers and delegate to them
@@ -1402,6 +1442,7 @@ void InvokeExecutor::captureInvokeState(std::vector<InvokeSnapshot> &out) const 
         snapshot.childSessionId = scxmlHandler->getChildSessionId();
         snapshot.type = scxmlHandler->getType();
         snapshot.scxmlContent = scxmlHandler->getSCXMLContent();
+        snapshot.autoForward = scxmlHandler->getAutoForward();  // W3C SCXML 6.4: Capture autoforward flag (Test 229)
 
         // Capture child state recursively
         snapshot.childState = scxmlHandler->captureChildState();
@@ -1420,6 +1461,30 @@ void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invok
     // W3C SCXML 3.11: Restore invoke configuration without side effects
     // Zero Duplication: Use captured SCXML content directly (no src/srcexpr re-evaluation)
 
+    // CRITICAL FIX: Cancel ALL existing invokes before restoration (Test 192 reset bug)
+    // Without this, old invoke sessions remain active in JSEngine with stale invoke mappings
+    // causing event routing to fail when parent sends events to child after reset()
+    LOG_INFO("InvokeExecutor: Cancelling {} existing invocations before restoration", invokeHandlers_.size());
+
+    // Create a copy of invoke IDs to avoid iterator invalidation during cancellation
+    std::vector<std::string> existingInvokeIds;
+    for (const auto &[invokeid, handler] : invokeHandlers_) {
+        existingInvokeIds.push_back(invokeid);
+    }
+
+    // Cancel each existing invoke
+    for (const auto &invokeid : existingInvokeIds) {
+        auto it = invokeHandlers_.find(invokeid);
+        if (it != invokeHandlers_.end() && it->second) {
+            it->second->cancelInvoke(invokeid);
+            LOG_DEBUG("InvokeExecutor: Cancelled existing invoke: {}", invokeid);
+        }
+    }
+
+    // Clear handlers map (handlers were already cancelled above)
+    invokeHandlers_.clear();
+    LOG_INFO("InvokeExecutor: Cleared all existing invoke handlers before restoration");
+
     LOG_INFO("InvokeExecutor: Restoring {} invocations", invokes.size());
 
     for (const auto &snapshot : invokes) {
@@ -1433,6 +1498,7 @@ void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invok
         invokeNode->setContent(snapshot.scxmlContent);  // Use captured content directly
         invokeNode->setStateId(parentStateId);
         invokeNode->setType(snapshot.type);
+        invokeNode->setAutoForward(snapshot.autoForward);  // W3C SCXML 6.4: Restore autoforward flag (Test 229)
         // Leave src/srcexpr/contentexpr empty - startInvokeInternal will use content field
 
         // Create SCXML invoke handler
@@ -1452,11 +1518,14 @@ void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invok
 
         // Restore child state if available
         if (snapshot.childState) {
+            LOG_INFO("[CHILD STATE RESTORE] Starting restoration for child session: {}", snapshot.childSessionId);
             handler->restoreChildState(*snapshot.childState, snapshot.childSessionId);
+            LOG_INFO("[CHILD STATE RESTORE] Completed for child session: {}", snapshot.childSessionId);
+        } else {
+            LOG_WARN("[CHILD STATE RESTORE] No child state snapshot available for: {}", snapshot.childSessionId);
         }
 
-        LOG_DEBUG("InvokeExecutor: Restored invoke - invokeId: {}, childSession: {}", snapshot.invokeId,
-                  snapshot.childSessionId);
+        LOG_INFO("[INVOKE RESTORED] invokeId: {}, childSession: {}", snapshot.invokeId, snapshot.childSessionId);
     }
 }
 

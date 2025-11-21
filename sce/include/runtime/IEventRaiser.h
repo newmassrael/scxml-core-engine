@@ -160,6 +160,16 @@ public:
      * @return true if the event was successfully queued, false if the raiser is not ready
      */
     virtual bool raiseExternalEvent(const std::string &eventName, const std::string &eventData) = 0;
+
+    /**
+     * @brief Get EventScheduler for scheduler mode access
+     *
+     * W3C SCXML 3.13: Enable parent-child scheduler mode inheritance for interactive debugging.
+     * Allows parent state machine to propagate MANUAL mode to child invoke sessions.
+     *
+     * @return Shared pointer to EventScheduler instance, or nullptr if not set
+     */
+    virtual std::shared_ptr<class IEventScheduler> getScheduler() const = 0;
 };
 
 }  // namespace SCE

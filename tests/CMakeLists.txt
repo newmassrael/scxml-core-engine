@@ -998,6 +998,72 @@ target_include_directories(w3c_test_cli
 
 add_dependencies(w3c_test_cli sce_unified)
 
+# ============================================================================
+# Comprehensive Interactive Debugging Verification Test
+# ============================================================================
+# Automated time-travel debugging verification for ALL W3C SCXML tests
+# Verifies step forward, step back, and reset operations maintain perfect
+# state consistency across all W3C SCXML 3.13 microstep semantics
+add_executable(comprehensive_interactive_test
+    w3c/ComprehensiveInteractiveTest.cpp
+    w3c/InteractiveTestRunner.cpp
+    w3c/impl/SnapshotComparator.cpp
+    w3c/impl/TXMLConverter.cpp
+    w3c/impl/TestMetadataParser.cpp
+)
+
+target_link_libraries(comprehensive_interactive_test
+    PRIVATE
+        sce_unified
+        GTest::gtest
+        spdlog::spdlog
+)
+
+target_include_directories(comprehensive_interactive_test
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+        ${CMAKE_SOURCE_DIR}/tests/w3c
+)
+
+# Set project root path for resource discovery
+target_compile_definitions(comprehensive_interactive_test
+    PRIVATE
+        SCE_PROJECT_ROOT="${CMAKE_SOURCE_DIR}"
+)
+
+# Native: Explicitly link pthread
+if(NOT EMSCRIPTEN)
+    target_link_libraries(comprehensive_interactive_test PRIVATE pthread)
+endif()
+
+# WASM: Add Emscripten embind support for JavaScript interop
+if(EMSCRIPTEN)
+    # Reuse the same polyfill as w3c_test_cli for NODEFS mounting
+    set(POLYFILL_PRE_JS "${CMAKE_CURRENT_SOURCE_DIR}/w3c/wasm_polyfill.js")
+
+    target_link_options(comprehensive_interactive_test PRIVATE
+        --bind                          # Enable Emscripten embind for val objects
+        -sFETCH                         # Enable Fetch API for HTTP operations
+        -sEXIT_RUNTIME=0                # Allow async operations after main() returns
+        -sENVIRONMENT=node              # Node.js environment for tests
+        -sASYNCIFY                      # Enable async/await support
+        -sASSERTIONS=2
+        -sINITIAL_MEMORY=${WASM_INITIAL_MEMORY}
+        -sSTACK_SIZE=33554432
+        -sDISABLE_EXCEPTION_CATCHING=0
+        -g1
+        --profiling-funcs
+        --pre-js ${POLYFILL_PRE_JS}     # Inject XMLHttpRequest polyfill and NODEFS for Node.js
+        -lnodefs.js                     # Enable NODEFS for Node.js filesystem access
+    )
+endif()
+
+apply_sce_test_policies(comprehensive_interactive_test)
+
+add_dependencies(comprehensive_interactive_test sce_unified)
+
 
 # ============================================================================
 # Note: C++ StaticCodeGenerator replaced by Python + Jinja2 (codegen.py)
@@ -1021,6 +1087,7 @@ add_test(NAME JSEngineTests COMMAND js_engine_tests)
 add_test(NAME ActionTests COMMAND action_tests)
 add_test(NAME SCESCXMLTests COMMAND sce_scxml_tests)
 add_test(NAME ReadySCXMLEngineTests COMMAND ready_scxml_engine_tests)
+add_test(NAME ComprehensiveInteractiveTests COMMAND comprehensive_interactive_test)
 
 # Priority Level 3: Integration and concurrency tests (system-level validation, ~5-15s)
 add_test(NAME TXMLConverterTests COMMAND txml_converter_tests)
@@ -1052,6 +1119,7 @@ set_tests_properties(StateMachineTests PROPERTIES COST 4000)
 set_tests_properties(JSEngineTests PROPERTIES COST 4000)
 set_tests_properties(ActionTests PROPERTIES COST 4000)
 set_tests_properties(SCESCXMLTests PROPERTIES COST 4000)
+set_tests_properties(ComprehensiveInteractiveTests PROPERTIES COST 4000)
 
 # Priority Level 3: COST 3000
 set_tests_properties(TXMLConverterTests PROPERTIES COST 3000)
@@ -1095,6 +1163,7 @@ set_tests_properties(ActionTests HistoryTests StatesTests PROPERTIES TIMEOUT 90)
 set_tests_properties(IntegrationTests ConcurrencyTests PROPERTIES TIMEOUT 180)
 set_tests_properties(TXMLConverterTests PROPERTIES TIMEOUT 120)
 set_tests_properties(W3CFullComplianceTests PROPERTIES TIMEOUT 300)
+set_tests_properties(ComprehensiveInteractiveTests PROPERTIES TIMEOUT 600)
 
 # Limit parallel execution (resource-intensive tests)
 set_tests_properties(W3CFullComplianceTests PROPERTIES RUN_SERIAL TRUE)

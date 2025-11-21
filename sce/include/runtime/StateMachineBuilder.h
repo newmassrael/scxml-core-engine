@@ -20,6 +20,7 @@ private:
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
     std::string sessionId_;
+    SchedulerMode schedulerMode_ = SchedulerMode::AUTOMATIC;  // W3C SCXML 3.13: Default to normal mode
 
 public:
     StateMachineBuilder() = default;
@@ -55,6 +56,20 @@ public:
     }
 
     /**
+     * @brief Set scheduler mode for parent-child inheritance (W3C SCXML 3.13)
+     *
+     * Enables parent state machine to propagate MANUAL mode to child invoke sessions
+     * for interactive debugging with time-travel support.
+     *
+     * @param schedulerMode AUTOMATIC for normal execution, MANUAL for interactive debugging
+     * @return Reference to builder for method chaining
+     */
+    StateMachineBuilder &withSchedulerMode(SchedulerMode schedulerMode) {
+        schedulerMode_ = schedulerMode;
+        return *this;
+    }
+
+    /**
      * @brief Build StateMachine with dependency injection
      *
      * Returns StateMachine shared_ptr for callback safety.
@@ -81,6 +96,13 @@ public:
 
         if (eventRaiser_) {
             stateMachine->setEventRaiser(eventRaiser_);
+
+            // W3C SCXML 3.13: Apply scheduler mode for parent-child inheritance
+            // Get scheduler from EventRaiser and set mode (MANUAL for interactive debugging)
+            auto scheduler = eventRaiser_->getScheduler();
+            if (scheduler) {
+                scheduler->setMode(schedulerMode_);
+            }
         }
 
         return stateMachine;

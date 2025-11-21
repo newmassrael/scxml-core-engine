@@ -93,6 +93,7 @@ struct InvokeSnapshot {
     std::string childSessionId;  // Child state machine session ID
     std::string type;            // Invoke type (e.g., "http://www.w3.org/TR/scxml")
     std::string scxmlContent;    // Child SCXML content (from src/srcexpr evaluation)
+    bool autoForward = false;    // W3C SCXML 6.4: Autoforward flag for event forwarding to child
 
     // W3C SCXML 3.11: Recursive child state machine configuration
     // Captures complete child state (active states, datamodel, queues, etc.)
@@ -101,9 +102,9 @@ struct InvokeSnapshot {
     InvokeSnapshot() = default;
 
     InvokeSnapshot(const std::string &invId, const std::string &parentId, const std::string &childSessId,
-                   const std::string &invType, const std::string &content = "")
+                   const std::string &invType, const std::string &content = "", bool autoFwd = false)
         : invokeId(invId), parentStateId(parentId), childSessionId(childSessId), type(invType), scxmlContent(content),
-          childState(nullptr) {}
+          autoForward(autoFwd), childState(nullptr) {}
 };
 
 /**
@@ -143,8 +144,18 @@ struct StateSnapshot {
     // Execution metadata
     int stepNumber;
     std::string lastEventName;
-    std::string lastTransitionSource;
-    std::string lastTransitionTarget;
+
+    // W3C SCXML 3.13: Dual transition tracking for time-travel debugging
+    // Incoming transition: How we arrived at this state (previous step's transition)
+    std::string incomingTransitionSource;
+    std::string incomingTransitionTarget;
+    std::string incomingTransitionEvent;
+
+    // Outgoing transition: Next transition from this state (current step's transition)
+    // Enables step backward to display "cancelled transition"
+    std::string outgoingTransitionSource;
+    std::string outgoingTransitionTarget;
+    std::string outgoingTransitionEvent;
 
     StateSnapshot() : stepNumber(0) {}
 };
@@ -231,6 +242,23 @@ public:
      * @param stepNumber Step number after which to remove snapshots
      */
     void removeSnapshotsAfter(int stepNumber);
+
+    /**
+     * @brief Update outgoing transition for a specific snapshot
+     *
+     * W3C SCXML 3.13: After executing a transition, update the previous snapshot's
+     * outgoing transition to enable accurate step backward visualization.
+     *
+     * This allows UI to display "cancelled transition" when stepping backward.
+     *
+     * @param stepNumber Step number of snapshot to update
+     * @param source Source state of transition
+     * @param target Target state of transition
+     * @param event Event that triggered transition
+     * @return true if snapshot was found and updated, false otherwise
+     */
+    bool updateSnapshotOutgoing(int stepNumber, const std::string &source, const std::string &target,
+                                const std::string &event);
 
     /**
      * @brief Check if snapshot exists for specified step number

@@ -10,6 +10,7 @@ cmake-build-*/
 # Visualizer WASM build outputs only (source files are tracked)
 visualizer/visualizer.wasm
 visualizer/visualizer.js
+visualizer/comprehensive_interactive_test.js
 
 # CMake generated files
 CMakeCache.txt

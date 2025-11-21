@@ -24,8 +24,13 @@ void SnapshotManager::captureSnapshot(
     snapshot.executedEvents = executedEvents;
     snapshot.stepNumber = stepNumber;
     snapshot.lastEventName = lastEvent;
-    snapshot.lastTransitionSource = transitionSource;
-    snapshot.lastTransitionTarget = transitionTarget;
+
+    // W3C SCXML 3.13: Set incoming transition (how we arrived at this state)
+    snapshot.incomingTransitionSource = transitionSource;
+    snapshot.incomingTransitionTarget = transitionTarget;
+    snapshot.incomingTransitionEvent = lastEvent;
+
+    // Outgoing transition will be set later by updateSnapshotOutgoing()
 
     // Check if snapshot with same stepNumber already exists
     auto it = std::find_if(snapshots_.begin(), snapshots_.end(),
@@ -72,6 +77,21 @@ void SnapshotManager::removeSnapshotsAfter(int stepNumber) {
 bool SnapshotManager::hasSnapshot(int stepNumber) const {
     return std::any_of(snapshots_.begin(), snapshots_.end(),
                        [stepNumber](const StateSnapshot &s) { return s.stepNumber == stepNumber; });
+}
+
+bool SnapshotManager::updateSnapshotOutgoing(int stepNumber, const std::string &source, const std::string &target,
+                                             const std::string &event) {
+    // W3C SCXML 3.13: Update outgoing transition for step backward visualization
+    // This enables UI to show "cancelled transition" when stepping back
+    for (auto &snapshot : snapshots_) {
+        if (snapshot.stepNumber == stepNumber) {
+            snapshot.outgoingTransitionSource = source;
+            snapshot.outgoingTransitionTarget = target;
+            snapshot.outgoingTransitionEvent = event;
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace SCE

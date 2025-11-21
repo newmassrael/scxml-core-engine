@@ -1776,55 +1776,57 @@ void StateMachine::restoreActiveStatesDirectly(const std::set<std::string> &stat
 
     LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Called with {} states", states.size());
 
-    // Thread safety: Lock mutex for hierarchyManager access
-    std::lock_guard<std::mutex> lock(hierarchyManagerMutex_);
+    // Mutex scope: Release before getActiveStates() verification to prevent deadlock
+    {
+        // Thread safety: Lock mutex for hierarchyManager access
+        std::lock_guard<std::mutex> lock(hierarchyManagerMutex_);
 
-    if (!hierarchyManager_) {
-        LOG_ERROR("StateMachine::restoreActiveStatesDirectly: hierarchyManager_ is null");
-        return;
-    }
-
-    // Clear current configuration first
-    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Calling hierarchyManager_->reset()");
-    hierarchyManager_->reset();
-
-    // Restore each state without triggering onentry actions
-    // States must be added in hierarchical order (parent -> child)
-    std::vector<std::string> orderedStates(states.begin(), states.end());
-    std::sort(orderedStates.begin(), orderedStates.end(), [this](const std::string &a, const std::string &b) {
-        // Parent states come before children (shorter path = higher in hierarchy)
-        auto aNode = model_->findStateById(a);
-        auto bNode = model_->findStateById(b);
-        if (!aNode || !bNode) {
-            return a < b;  // Fallback to lexicographic
+        if (!hierarchyManager_) {
+            LOG_ERROR("StateMachine::restoreActiveStatesDirectly: hierarchyManager_ is null");
+            return;
         }
 
-        // Count ancestors to determine depth
-        int depthA = 0, depthB = 0;
-        for (auto *p = aNode->getParent(); p; p = p->getParent()) {
-            depthA++;
+        // Clear current configuration first
+        LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Calling hierarchyManager_->reset()");
+        hierarchyManager_->reset();
+
+        // Restore each state without triggering onentry actions
+        // States must be added in hierarchical order (parent -> child)
+        std::vector<std::string> orderedStates(states.begin(), states.end());
+        std::sort(orderedStates.begin(), orderedStates.end(), [this](const std::string &a, const std::string &b) {
+            // Parent states come before children (shorter path = higher in hierarchy)
+            auto aNode = model_->findStateById(a);
+            auto bNode = model_->findStateById(b);
+            if (!aNode || !bNode) {
+                return a < b;  // Fallback to lexicographic
+            }
+
+            // Count ancestors to determine depth
+            int depthA = 0, depthB = 0;
+            for (auto *p = aNode->getParent(); p; p = p->getParent()) {
+                depthA++;
+            }
+            for (auto *p = bNode->getParent(); p; p = p->getParent()) {
+                depthB++;
+            }
+
+            return depthA < depthB;  // Lower depth (closer to root) comes first
+        });
+
+        for (const auto &stateId : orderedStates) {
+            hierarchyManager_->addStateToConfigurationWithoutOnEntry(stateId);
+            LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Added state '{}' to configuration", stateId);
         }
-        for (auto *p = bNode->getParent(); p; p = p->getParent()) {
-            depthB++;
-        }
 
-        return depthA < depthB;  // Lower depth (closer to root) comes first
-    });
+        // W3C SCXML 3.13: Set running state after restoration to enable event processing
+        // CRITICAL FIX: Child state machines must be running to receive events from parent
+        // Without this, stepBackward() restoration leaves child in stopped state (Test 192)
+        LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [BEFORE isRunning_=true] About to set isRunning_ = true");
+        isRunning_ = true;
+        LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [AFTER isRunning_=true] Set to true, mutex will release");
+    }  // Mutex released here
 
-    for (const auto &stateId : orderedStates) {
-        hierarchyManager_->addStateToConfigurationWithoutOnEntry(stateId);
-        LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: Added state '{}' to configuration", stateId);
-    }
-
-    // W3C SCXML 3.13: Set running state after restoration to enable event processing
-    // CRITICAL FIX: Child state machines must be running to receive events from parent
-    // Without this, stepBackward() restoration leaves child in stopped state (Test 192)
-    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [BEFORE isRunning_=true] About to set isRunning_ = true");
-    isRunning_ = true;
-    LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [AFTER isRunning_=true] Set to true, about to call "
-              "getActiveStates()");
-
-    // Verify final state
+    // Verify final state (outside mutex scope to prevent deadlock with getActiveStates())
     LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [BEFORE getActiveStates()] Calling getActiveStates()");
     auto finalStates = getActiveStates();
     LOG_DEBUG("StateMachine::restoreActiveStatesDirectly: [AFTER getActiveStates()] Returned {} states",

@@ -215,6 +215,16 @@ public:
 #endif
 
     /**
+     * @brief Get last event name only
+     *
+     * Returns just the event name from the last transition, without source/target information.
+     * Used for snapshot comparison in time-travel debugging verification.
+     *
+     * @return Event name string
+     */
+    std::string getLastEventName() const;
+
+    /**
      * @brief Get event queue state
      *
      * Returns JavaScript object with:
@@ -223,7 +233,9 @@ public:
      *
      * @return JavaScript object with queue contents
      */
+#ifdef __EMSCRIPTEN__
     emscripten::val getEventQueue() const;
+#endif
 
     /**
      * @brief Get scheduled events (delayed <send> operations)

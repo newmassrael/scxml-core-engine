@@ -106,5 +106,10 @@ void MockEventRaiser::getEventQueues(std::vector<EventSnapshot> &outInternal,
     outExternal.clear();
 }
 
+std::shared_ptr<class IEventScheduler> MockEventRaiser::getScheduler() const {
+    // Mock implementation - no scheduler in mock
+    return nullptr;
+}
+
 }  // namespace Test
 }  // namespace SCE
