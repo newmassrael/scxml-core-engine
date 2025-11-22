@@ -23,6 +23,7 @@ const LAYOUT_CONSTANTS = {
     TEXT_LEFT_MARGIN_PERCENT: 0.10, // Left margin as percentage of state width (10%)
     TEXT_PADDING: 8,               // Additional padding for text positioning
     VIEWPORT_PADDING: 40,          // Padding for centerDiagram viewport fit
+    MIN_ZOOM_SCALE: 0.85,          // Minimum zoom scale to prevent excessive zoom out (nested states)
 
     // Action box rendering constants (must match renderer.js)
     ACTION_BOX_PADDING_LEFT: 6,    // Left padding for action background box
