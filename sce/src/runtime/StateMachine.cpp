@@ -3198,6 +3198,53 @@ bool StateMachine::exitState(const std::string &stateId) {
         (void)exitResult;  // Suppress unused variable warning in release builds
     }
 
+    // W3C SCXML 3.8.1: Cancel pending delayed sends from this state BEFORE invoke cancellation
+    // "When a state is exited, the SCXML processor MUST cancel all <send> events that are pending from that state"
+    auto pendingSendsIter = statePendingSends_.find(stateId);
+    if (pendingSendsIter != statePendingSends_.end() && !pendingSendsIter->second.empty()) {
+        LOG_DEBUG("StateMachine::exitState - State '{}' has {} pending send(s) to cancel", stateId,
+                  pendingSendsIter->second.size());
+
+        for (const auto &sendId : pendingSendsIter->second) {
+            bool cancelled = false;
+
+            // W3C SCXML 3.8.1: Try canceling from EventScheduler first
+            if (eventDispatcher_) {
+                cancelled = eventDispatcher_->cancelEvent(sendId, sessionId_);
+                if (cancelled) {
+                    LOG_DEBUG("StateMachine::exitState - Cancelled pending send '{}' from scheduler (state: '{}')",
+                              sendId, stateId);
+                }
+            }
+
+            // If not found in scheduler, try canceling from EventRaiser queue
+            // (event may have already been moved from scheduler to queue by pollSchedulerIfNeeded)
+            if (!cancelled && eventRaiser_) {
+                cancelled = eventRaiser_->cancelQueuedEvent(sendId);
+                if (cancelled) {
+                    LOG_DEBUG("StateMachine::exitState - Cancelled pending send '{}' from event queue (state: '{}')",
+                              sendId, stateId);
+                }
+            }
+
+            // W3C SCXML 3.8.1: Compliance validation
+            if (!cancelled) {
+                if (!eventDispatcher_ && !eventRaiser_) {
+                    LOG_WARN("StateMachine::exitState - Cannot cancel pending send '{}': Both EventDispatcher and "
+                             "EventRaiser are null (W3C SCXML 3.8.1 violation)",
+                             sendId);
+                } else {
+                    LOG_DEBUG("StateMachine::exitState - Pending send '{}' from state '{}' not found (may have already "
+                              "fired)",
+                              sendId, stateId);
+                }
+            }
+        }
+
+        // Remove the state's pending sends from tracking map
+        statePendingSends_.erase(pendingSendsIter);
+    }
+
     // Get state node for invoke cancellation and history recording
     auto stateNodeForCleanup = model_->findStateById(stateId);
 
@@ -3454,6 +3501,18 @@ bool StateMachine::initializeActionExecutor() {
             actionExecutor_->setEventRaiser(eventRaiser_);
             LOG_DEBUG("StateMachine: EventRaiser injected to ActionExecutor during initialization for session: {}",
                       sessionId_);
+        }
+
+        // W3C SCXML 3.8.1: Set callback for tracking delayed sends (state exit cancellation)
+        if (cachedExecutorImpl_) {
+            cachedExecutorImpl_->setSendCallback([this](const std::string &sendId) {
+                // Track sendId for current state's pending sends
+                if (!currentEntryState_.empty()) {
+                    statePendingSends_[currentEntryState_].push_back(sendId);
+                    LOG_DEBUG("StateMachine: Tracked delayed send '{}' for state '{}'", sendId, currentEntryState_);
+                }
+            });
+            LOG_DEBUG("StateMachine: Send callback configured for pending send tracking");
         }
 
         // Create ExecutionContext with shared_ptr and sessionId
@@ -3996,6 +4055,10 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
 
     LOG_DEBUG("W3C SCXML 3.8: Executing {} onentry action blocks for state: {}", entryBlocks.size(), stateId);
 
+    // W3C SCXML 3.8.1: Set current state context for delayed send tracking
+    // This allows ActionExecutor callback to associate sendIds with the originating state
+    currentEntryState_ = stateId;
+
     // W3C SCXML compliance: Set immediate mode to false during executable content execution
     // This ensures events raised during execution are queued and processed after completion
     if (eventRaiser_) {
@@ -4077,6 +4140,9 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
     } else {
         LOG_DEBUG("StateMachine: No invokes to defer for state: {}", stateId);
     }
+
+    // W3C SCXML 3.8.1: Clear current state context after onentry execution
+    currentEntryState_.clear();
 }
 
 // EventDispatcher management

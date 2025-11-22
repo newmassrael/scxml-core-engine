@@ -575,6 +575,48 @@ void EventRaiserImpl::clearQueue() {
     LOG_DEBUG("EventRaiserImpl: Cleared {} queued events for state restoration", clearedCount);
 }
 
+bool EventRaiserImpl::cancelQueuedEvent(const std::string &sendId) {
+    // W3C SCXML 3.8.1: Cancel event from synchronousQueue_ (already moved from scheduler)
+    std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+
+    if (sendId.empty()) {
+        LOG_DEBUG("EventRaiserImpl: cancelQueuedEvent called with empty sendId");
+        return false;
+    }
+
+    // std::priority_queue doesn't support direct removal, so we rebuild the queue
+    // W3C SCXML 3.8.1: Performance tradeoff - state exit is infrequent (seconds), queue size typically small (5-10)
+    std::vector<QueuedEvent> remainingEvents;
+    remainingEvents.reserve(synchronousQueue_.size());  // Prevent memory reallocation
+    bool foundEvent = false;
+
+    // Copy all events except the one to cancel
+    while (!synchronousQueue_.empty()) {
+        QueuedEvent event = synchronousQueue_.top();
+        synchronousQueue_.pop();
+
+        if (event.sendId == sendId && !foundEvent) {
+            // Found the event to cancel - skip it
+            foundEvent = true;
+            LOG_DEBUG("EventRaiserImpl: Cancelled queued event '{}' with sendId '{}'", event.eventName, sendId);
+        } else {
+            // Keep this event (use move semantics to avoid unnecessary copies)
+            remainingEvents.push_back(std::move(event));
+        }
+    }
+
+    // Rebuild the queue with remaining events
+    for (auto &event : remainingEvents) {
+        synchronousQueue_.push(std::move(event));
+    }
+
+    if (!foundEvent) {
+        LOG_DEBUG("EventRaiserImpl: Event with sendId '{}' not found in queue", sendId);
+    }
+
+    return foundEvent;
+}
+
 bool EventRaiserImpl::getLastProcessedEvent(std::string &outEventName, std::string &outEventData) const {
     // W3C SCXML 3.13: Retrieve last processed event for time-travel debugging
     std::lock_guard<std::mutex> lock(lastProcessedEventMutex_);

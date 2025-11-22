@@ -49,6 +49,8 @@ public:
     void getEventQueues(std::vector<EventSnapshot> &outInternal,
                         std::vector<EventSnapshot> &outExternal) const override;
 
+    bool cancelQueuedEvent(const std::string &sendId) override;
+
     std::shared_ptr<class IEventScheduler> getScheduler() const override;
 
     // Test inspection methods
@@ -56,12 +58,24 @@ public:
     void clearEvents();
     int getEventCount() const;
 
+    /**
+     * @brief Get list of cancelled sendIds for test verification
+     * @return Vector of sendIds that were cancelled via cancelQueuedEvent()
+     */
+    const std::vector<std::string> &getCancelledSendIds() const;
+
+    /**
+     * @brief Clear cancelled sendIds tracking
+     */
+    void clearCancelledSendIds();
+
     // Test configuration
     void setCallback(std::function<bool(const std::string &, const std::string &)> callback);
     void setReady(bool ready);
 
 private:
     std::vector<std::pair<std::string, std::string>> raisedEvents_;
+    std::vector<std::string> cancelledSendIds_;  // W3C SCXML 3.8.1: Track cancelled sends for test verification
     std::function<bool(const std::string &, const std::string &)> callback_;
     bool ready_ = true;
 };
