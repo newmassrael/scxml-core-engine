@@ -14,6 +14,7 @@
 #include "runtime/StateHierarchyManager.h"
 #include "runtime/StateMachineEventRaiser.h"
 #include "scripting/JSEngine.h"
+#include "states/ConcurrentStateTypes.h"  // W3C SCXML Appendix D.2: TransitionDescriptorString
 #include <atomic>
 #include <functional>
 #include <map>
@@ -287,6 +288,28 @@ public:
      * @return Target state ID (empty if no transition executed yet)
      */
     std::string getLastTransitionTarget() const;
+
+    /**
+     * @brief Get enabled transitions from last event processing
+     *
+     * W3C SCXML Appendix D.2: Returns all transitions that were enabled before conflict resolution.
+     * For parallel states, this includes transitions from all regions that could fire for the event.
+     * Interactive visualizer support for showing transition conflict resolution process.
+     *
+     * @return Vector of enabled transition descriptors (empty if no parallel state processing occurred)
+     */
+    std::vector<TransitionDescriptorString> getLastEnabledTransitions() const;
+
+    /**
+     * @brief Get optimal transition set after conflict resolution
+     *
+     * W3C SCXML Appendix D.2: Returns transitions selected after applying conflict resolution algorithm.
+     * These are the transitions that were actually executed in the last microstep.
+     * Interactive visualizer support for showing which transitions were chosen.
+     *
+     * @return Vector of optimal transition descriptors (empty if no conflict resolution occurred)
+     */
+    std::vector<TransitionDescriptorString> getLastOptimalTransitions() const;
 
     /**
      * @brief Restore active states directly without executing onentry actions
@@ -581,6 +604,12 @@ private:
     // W3C SCXML 3.13: Last executed transition tracking (for interactive visualizer)
     std::string lastTransitionSource_{};
     std::string lastTransitionTarget_{};
+
+    // W3C SCXML Appendix D.2: Conflict resolution transition tracking (for interactive visualizer)
+    std::vector<TransitionDescriptorString>
+        lastEnabledTransitions_{};  // All enabled transitions before conflict resolution
+    std::vector<TransitionDescriptorString> lastOptimalTransitions_{};  // Optimal set after conflict resolution
+
     size_t eventlessRecursionDepth_ = 0;  // Track recursion depth for eventless transitions
     size_t lastTransitionDepth_ = 0;      // Track depth where lastTransition was set
 

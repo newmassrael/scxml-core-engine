@@ -269,6 +269,11 @@ body {
     stroke-width: 3px;
 }
 
+/* W3C SCXML 3.13: Internal transitions - dashed style only, use existing color system */
+.transition.transition-internal {
+    stroke-dasharray: 5, 5;  /* Dashed line to distinguish from external transitions */
+}
+
 /* Initial pseudo-node */
 .state-initial-pseudo {
     cursor: default;
@@ -554,10 +559,10 @@ body {
 .transition-label {
     font-family: var(--font-mono);
     font-size: 11px;
-    line-height: 1.5;
+    line-height: 1.3;
     background: rgba(255, 255, 255, 1);  /* Fully opaque - prevent arrows from showing through */
-    padding: 6px 10px;
-    border-radius: 6px;
+    padding: 3px 5px;
+    border-radius: 4px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     border: 1px solid rgba(0, 0, 0, 0.1);
     transition: all 0.2s ease;
@@ -633,24 +638,24 @@ body {
 .label-event {
     font-weight: 700;
     color: #1f2937;
-    margin-bottom: 3px;
+    margin-bottom: 1px;
     font-size: 12px;
     white-space: nowrap;  /* Prevent line breaks within event name */
 }
 
 .label-condition {
     color: #2563eb;  /* Blue for conditions */
-    margin-bottom: 3px;
-    padding: 2px 0;
+    margin-bottom: 1px;
+    padding: 1px 0;
     white-space: nowrap;  /* Prevent line breaks within condition text */
 }
 
 .label-action {
     color: #059669;  /* Green for actions */
-    padding-left: 14px;
-    margin-bottom: 2px;
-    padding-top: 1px;
-    padding-bottom: 1px;
+    padding-left: 10px;
+    margin-bottom: 1px;
+    padding-top: 0px;
+    padding-bottom: 0px;
     white-space: nowrap;  /* Prevent line breaks within action text */
 }
 
@@ -664,12 +669,43 @@ body {
     color: #d97706;           /* Amber-600 orange for visibility */
     font-weight: 600;         /* Semi-bold for emphasis */
     font-style: italic;       /* Keep italic style */
-    margin-bottom: 3px;       /* Match event spacing */
-    padding: 2px 4px;         /* Compact padding */
+    margin-bottom: 1px;       /* Match event spacing */
+    padding: 1px 3px;         /* Compact padding */
     background: #fef3c7;      /* Amber-100 light yellow background */
     border-radius: 3px;       /* Rounded corners */
     width: fit-content;       /* Fit to content width */
     white-space: nowrap;      /* Prevent line breaks within eventless text */
+}
+
+/* W3C SCXML 5.9.1: Wildcard event indicator */
+.label-wildcard {
+    color: #9a6700;           /* Dark yellow for wildcard */
+    font-weight: 700;         /* Bold for emphasis */
+    background: #fff8c5;      /* Light yellow background */
+    border: 1px dashed #9a6700; /* Dashed border to show "matches all" */
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-bottom: 1px;
+    width: fit-content;
+    white-space: nowrap;
+}
+
+.wildcard-hint {
+    font-size: 0.85em;        /* Slightly smaller hint text */
+    font-weight: 400;         /* Normal weight for hint */
+    opacity: 0.8;             /* Subtle hint */
+}
+
+/* W3C SCXML 3.13: Internal transition indicator */
+.label-internal {
+    color: #8250df;           /* Purple for internal transitions */
+    font-weight: 600;
+    background: #f3f0ff;      /* Light purple background */
+    padding: 1px 4px;
+    border-radius: 3px;
+    margin-bottom: 1px;
+    width: fit-content;
+    white-space: nowrap;
 }
 
 .label-always {
@@ -1465,6 +1501,39 @@ body {
     margin-left: 16px;
     font-family: var(--font-mono);
     line-height: 1.4;
+}
+
+/* ============================================
+ * W3C SCXML Appendix D.2: Conflict Resolution Badges
+ * ============================================ */
+
+.badge {
+    display: inline-block;
+    padding: 2px 6px;
+    margin-left: 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1.2;
+    vertical-align: middle;
+}
+
+/* Selected (Optimal Set) - Blue */
+.badge-selected {
+    background: #ddf4ff;  /* Light blue (from Primer) */
+    color: #0969da;       /* Dark blue */
+}
+
+/* Preempted (Blocked by Conflict Resolution) - Yellow */
+.badge-preempted {
+    background: #fff8c5;  /* Light yellow (from Primer) */
+    color: #9a6700;       /* Dark yellow */
+}
+
+/* Enabled (Before Conflict Resolution) - Green */
+.badge-enabled {
+    background: #dafbe1;  /* Light green (from Primer) */
+    color: #1a7f37;       /* Dark green */
 }
 
 /* ============================================

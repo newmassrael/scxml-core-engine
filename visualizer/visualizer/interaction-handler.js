@@ -219,10 +219,33 @@ class InteractionHandler {
 
         let html = '';
 
+        // W3C SCXML Appendix D.2: Get conflict resolution data for badge display
+        const enabledTransitions = this.visualizer.enabledTransitions || [];
+        const optimalTransitions = this.visualizer.optimalTransitions || [];
+
         this.visualizer.transitions.forEach((transition, index) => {
             // Use shared utility function from utils.js (Single Source of Truth)
             const transitionId = getTransitionId(transition);
             const eventText = transition.event || '(eventless)';
+
+            // W3C SCXML Appendix D.2: Check if this transition is in enabled/optimal sets
+            const isEnabled = enabledTransitions.some(et =>
+                et.source === transition.source && et.target === transition.target);
+            const isOptimal = optimalTransitions.some(ot =>
+                ot.source === transition.source && ot.target === transition.target);
+            const isPreempted = isEnabled && !isOptimal;
+
+            // Build badge HTML
+            let badgesHtml = '';
+            if (isOptimal) {
+                badgesHtml += '<span class="badge badge-selected">Selected</span>';
+            }
+            if (isPreempted) {
+                badgesHtml += '<span class="badge badge-preempted">Preempted</span>';
+            }
+            if (isEnabled && !isOptimal && !isPreempted) {
+                badgesHtml += '<span class="badge badge-enabled">Enabled</span>';
+            }
 
             // Add condition and actions for better distinction
             let detailsHtml = '';
@@ -258,6 +281,7 @@ class InteractionHandler {
                 <div class="transition-list-item" data-transition-id="${transitionId}" data-transition-index="${index}">
                     <div class="transition-list-source-target">
                         <strong>${transition.source}</strong> → <strong>${transition.target}</strong>
+                        ${badgesHtml}
                     </div>
                     <div class="transition-list-event">${eventText}</div>
                     ${detailsHtml}
