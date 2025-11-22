@@ -468,6 +468,44 @@ class UIUpdater {
 
             logger.debug(`[updateStateDiagram] getActiveStates() returned: [${activeStates.join(', ')}]`);
 
+            // W3C SCXML Appendix D.2: Get conflict resolution data for visualization
+            try {
+                const enabledTransitionsData = this.controller.runner.getEnabledTransitions();
+                const optimalTransitionsData = this.controller.runner.getOptimalTransitions();
+
+                // Convert to JavaScript arrays (handles both Emscripten val::array and native arrays)
+                const enabledTransitions = [];
+                const enabledLen = enabledTransitionsData.length ?? enabledTransitionsData.size?.();
+                for (let i = 0; i < enabledLen; i++) {
+                    const trans = enabledTransitionsData[i] ?? enabledTransitionsData.get?.(i);
+                    enabledTransitions.push({
+                        source: trans.source,
+                        target: trans.target,
+                        event: trans.event,
+                        isInternal: trans.isInternal,
+                        isExternal: trans.isExternal
+                    });
+                }
+
+                const optimalTransitions = [];
+                const optimalLen = optimalTransitionsData.length ?? optimalTransitionsData.size?.();
+                for (let i = 0; i < optimalLen; i++) {
+                    const trans = optimalTransitionsData[i] ?? optimalTransitionsData.get?.(i);
+                    optimalTransitions.push({
+                        source: trans.source,
+                        target: trans.target,
+                        isInternal: trans.isInternal,
+                        isExternal: trans.isExternal
+                    });
+                }
+
+                logger.debug(`[Conflict Resolution] Enabled: ${enabledTransitions.length}, Optimal: ${optimalTransitions.length}`);
+                this.controller.visualizer.updateConflictResolutionData(enabledTransitions, optimalTransitions);
+            } catch (error) {
+                // Silently fail if methods not available (backwards compatibility)
+                logger.debug('[Conflict Resolution] Methods not available:', error.message);
+            }
+
             // Store previous active states for transition detection
             if (!this.controller.previousActiveStates) {
                 this.controller.previousActiveStates = [];

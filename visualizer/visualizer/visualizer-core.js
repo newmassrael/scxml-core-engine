@@ -23,6 +23,7 @@ const LAYOUT_CONSTANTS = {
     TEXT_LEFT_MARGIN_PERCENT: 0.10, // Left margin as percentage of state width (10%)
     TEXT_PADDING: 8,               // Additional padding for text positioning
     VIEWPORT_PADDING: 40,          // Padding for centerDiagram viewport fit
+    MIN_ZOOM_SCALE: 0.85,          // Minimum zoom scale to prevent excessive zoom out (nested states)
 
     // Action box rendering constants (must match renderer.js)
     ACTION_BOX_PADDING_LEFT: 6,    // Left padding for action background box
@@ -106,6 +107,10 @@ class SCXMLVisualizer {
         this.transitions = scxmlStructure.transitions || [];
         this.initialState = scxmlStructure.initial || '';
         this.activeStates = new Set();
+
+        // W3C SCXML Appendix D.2: Conflict resolution visualization data
+        this.enabledTransitions = [];   // All transitions enabled before conflict resolution
+        this.optimalTransitions = [];   // Transitions selected after conflict resolution
 
         // Debug mode from URL parameter (?debug)
         this.debugMode = DEBUG_MODE;
@@ -418,4 +423,24 @@ class SCXMLVisualizer {
     resize() { return this.interactionHandler.resize(); }
     resetView() { return this.interactionHandler.resetView(); }
     toggleCompoundState(stateId) { return this.interactionHandler.toggleCompoundState(stateId); }
+
+    /**
+     * @brief Update conflict resolution visualization data
+     *
+     * W3C SCXML Appendix D.2: Stores enabled and optimal transitions for badge display
+     *
+     * @param enabled Array of enabled transitions before conflict resolution
+     * @param optimal Array of optimal transitions after conflict resolution
+     */
+    updateConflictResolutionData(enabled, optimal) {
+        this.enabledTransitions = enabled || [];
+        this.optimalTransitions = optimal || [];
+
+        if (this.debugMode) {
+            logger.debug(`[Conflict Resolution] Enabled: ${this.enabledTransitions.length}, Optimal: ${this.optimalTransitions.length}`);
+        }
+
+        // Trigger transition list re-render to show badges
+        this.renderTransitionList();
+    }
 }

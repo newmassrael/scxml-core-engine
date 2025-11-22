@@ -60,7 +60,14 @@ class LinkBuilder {
                 cond: transition.cond,
                 linkType: 'transition',
                 actions: transition.actions || [],
-                guards: transition.guards || []
+                guards: transition.guards || [],
+                // W3C SCXML 5.9.2: Targetless transitions (no target attribute)
+                isTargetless: !transition.target || transition.target === '',
+                // W3C SCXML 3.13: Internal transitions
+                // - Explicit: type="internal"
+                // - Implicit: transitions without target default to internal
+                type: transition.type || ((!transition.target || transition.target === '') ? 'internal' : 'external'),
+                isInternal: transition.type === 'internal' || (!transition.target || transition.target === '')
             });
         });
 
@@ -82,9 +89,13 @@ class LinkBuilder {
                 return null;
             }
 
-            // Check hidden states - use ALL nodes to find collapsed ancestors
-            const sourceHidden = SCXMLVisualizer.findCollapsedAncestor(link.source, allNodes);
-            const targetHidden = SCXMLVisualizer.findCollapsedAncestor(link.target, allNodes);
+            // W3C SCXML 5.9.2: Targetless transitions → determine visual endpoints first
+            const visualSource = link.source;
+            const visualTarget = link.target || link.source;  // Empty target → use source for self-loop
+
+            // Check hidden states - use visual endpoints for collapsed ancestor detection
+            const sourceHidden = SCXMLVisualizer.findCollapsedAncestor(visualSource, allNodes);
+            const targetHidden = SCXMLVisualizer.findCollapsedAncestor(visualTarget, allNodes);
 
             // Both hidden in same compound - completely hide
             if (sourceHidden && targetHidden && sourceHidden.id === targetHidden.id) {
@@ -95,8 +106,8 @@ class LinkBuilder {
             let modifiedLink = {
                 ...link,
                 originalLink: link,         // Store reference to original for routing sync
-                visualSource: link.source,  // Default to original
-                visualTarget: link.target   // Default to original
+                visualSource: visualSource,
+                visualTarget: visualTarget
             };
 
             // Target hidden - visual redirect to collapsed ancestor (e.g., s1→p visually becomes s1→s2)
