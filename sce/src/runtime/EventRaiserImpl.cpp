@@ -194,59 +194,79 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
     // to prevent nested processing issues when child completes during parent transition
     // W3C SCXML 3.13: In interactive debugging, scheduler MANUAL mode overrides immediate mode
     // All events must be queued for step-by-step execution, even if immediate mode is enabled
+    // W3C SCXML 5.9.2: EXTERNAL events must NOT bypass INTERNAL events in the queue
+    // EXTERNAL events can use immediate mode only if no INTERNAL events are queued (Test 422)
     bool isSchedulerManual = scheduler_ && (scheduler_->getMode() == SchedulerMode::MANUAL);
     bool isPlatform = isPlatformEvent(eventName);
+    bool isInternal = (priority == EventPriority::INTERNAL);
+    bool hasInternalEvents = hasQueuedInternalEvents();
+
     if (immediateMode_.load() && !isPlatform && !isSchedulerManual) {
-        // Immediate processing for SCXML executable content (except platform events and interactive mode)
-        LOG_DEBUG("EventRaiserImpl: Processing event '{}' immediately (SCXML mode)", eventName);
+        // W3C SCXML 5.9.2: INTERNAL events always use immediate mode
+        // EXTERNAL events use immediate mode only when INTERNAL queue is empty
+        bool canProcessImmediately = isInternal || !hasInternalEvents;
 
-        // Get callback under lock
-        EventCallback callback;
-        {
-            std::lock_guard<std::mutex> lock(callbackMutex_);
-            callback = eventCallback_;
-        }
+        if (canProcessImmediately) {
+            // Immediate processing allowed
+            size_t queueSize = 0;
+            {
+                std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+                queueSize = synchronousQueue_.size();
+            }
+            LOG_DEBUG("EventRaiserImpl: Processing {} event '{}' immediately (SCXML mode, hasInternalEvents={}, "
+                      "queueSize={})",
+                      (isInternal ? "INTERNAL" : "EXTERNAL"), eventName, hasInternalEvents, queueSize);
 
-        if (callback) {
-            try {
-                // W3C SCXML 6.4: Set thread-local originSessionId before immediate callback execution
-                currentOriginSessionId_ = originSessionId;
+            // Get callback under lock
+            EventCallback callback;
+            {
+                std::lock_guard<std::mutex> lock(callbackMutex_);
+                callback = eventCallback_;
+            }
 
-                // W3C SCXML 5.10: Set thread-local sendId before immediate callback execution
-                currentSendId_ = sendId;
+            if (callback) {
+                try {
+                    // W3C SCXML 6.4: Set thread-local originSessionId before immediate callback execution
+                    currentOriginSessionId_ = originSessionId;
 
-                // W3C SCXML 5.10: Set thread-local invokeId before immediate callback execution (test 338)
-                currentInvokeId_ = invokeId;
+                    // W3C SCXML 5.10: Set thread-local sendId before immediate callback execution
+                    currentSendId_ = sendId;
 
-                // W3C SCXML 5.10: Set thread-local originType before immediate callback execution (test 253, 331, 352,
-                // 372)
-                currentOriginType_ = originType;
+                    // W3C SCXML 5.10: Set thread-local invokeId before immediate callback execution (test 338)
+                    currentInvokeId_ = invokeId;
 
-                bool result = callback(eventName, eventData);
+                    // W3C SCXML 5.10: Set thread-local originType before immediate callback execution (test 253, 331,
+                    // 352, 372)
+                    currentOriginType_ = originType;
 
-                // Clear after callback
-                currentOriginSessionId_.clear();
-                currentSendId_.clear();
-                currentInvokeId_.clear();
-                currentOriginType_.clear();
+                    bool result = callback(eventName, eventData);
 
-                return result;
-            } catch (const std::exception &e) {
-                LOG_ERROR("EventRaiserImpl: Exception in immediate processing: {}", e.what());
-                currentOriginSessionId_.clear();  // Ensure cleanup on exception
-                currentSendId_.clear();
-                currentInvokeId_.clear();
-                currentOriginType_.clear();
+                    // Clear after callback
+                    currentOriginSessionId_.clear();
+                    currentSendId_.clear();
+                    currentInvokeId_.clear();
+                    currentOriginType_.clear();
+
+                    return result;
+                } catch (const std::exception &e) {
+                    LOG_ERROR("EventRaiserImpl: Exception in immediate processing: {}", e.what());
+                    currentOriginSessionId_.clear();  // Ensure cleanup on exception
+                    currentSendId_.clear();
+                    currentInvokeId_.clear();
+                    currentOriginType_.clear();
+                    return false;
+                }
+            } else {
+                LOG_WARN(
+                    "EventRaiserImpl: No callback set for immediate event: {} - EventRaiser: {}, immediateMode: {}",
+                    eventName, (void *)this, immediateMode_.load());
                 return false;
             }
-        } else {
-            LOG_WARN("EventRaiserImpl: No callback set for immediate event: {} - EventRaiser: {}, immediateMode: {}",
-                     eventName, (void *)this, immediateMode_.load());
-            return false;
-        }
-    }
+        }  // end if (canProcessImmediately)
+    }  // end if (immediateMode_.load() && !isPlatform && !isSchedulerManual)
 
     // SCXML compliance: Use synchronous queue when immediate mode is disabled
+    // W3C SCXML 5.9.2: EXTERNAL events queued when INTERNAL events are pending
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
@@ -262,8 +282,21 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
 
         synchronousQueue_.emplace(eventName, eventData, priority, originSessionId, sendId, invokeId, originType,
                                   timestamp);
-        LOG_DEBUG("EventRaiserImpl: [W3C193 DEBUG] Event '{}' queued with priority {} - queue size now: {}", eventName,
-                  (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), synchronousQueue_.size());
+
+        // Enhanced logging: explain why event was queued instead of processed immediately
+        std::string reason = "immediateMode disabled";
+        if (immediateMode_.load()) {
+            if (isPlatform) {
+                reason = "platform event (done.*/error.*)";
+            } else if (isSchedulerManual) {
+                reason = "scheduler in MANUAL mode";
+            } else if (!isInternal && hasInternalEvents) {
+                reason = "EXTERNAL event blocked by INTERNAL events (W3C 5.9.2)";
+            }
+        }
+
+        LOG_DEBUG("EventRaiserImpl: Event '{}' queued with priority {} (reason: {}) - queue size now: {}", eventName,
+                  (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), reason, synchronousQueue_.size());
         LOG_DEBUG("EventRaiserImpl: Event '{}' queued for synchronous processing (SCXML compliance) with {} priority",
                   eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
         LOG_DEBUG("EventRaiserImpl: Synchronous queue size after queueing: {}", synchronousQueue_.size());
@@ -514,6 +547,23 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
 bool EventRaiserImpl::hasQueuedEvents() const {
     std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
     return !synchronousQueue_.empty();
+}
+
+bool EventRaiserImpl::hasQueuedInternalEvents() const {
+    // W3C SCXML 5.9.2: Check if INTERNAL priority events are in the queue
+    // This is used to enforce event priority - EXTERNAL events should not bypass
+    // INTERNAL events that are already queued
+    std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+
+    // Performance optimization: QueuedEventComparator ensures INTERNAL (priority 0)
+    // events are always at the top of the queue before EXTERNAL (priority 1) events.
+    // Therefore, we only need to check the top element instead of copying entire queue.
+    // O(1) time complexity vs O(n) for full queue copy.
+    if (synchronousQueue_.empty()) {
+        return false;
+    }
+
+    return synchronousQueue_.top().priority == EventPriority::INTERNAL;
 }
 
 void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
