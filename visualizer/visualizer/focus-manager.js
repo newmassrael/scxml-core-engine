@@ -192,13 +192,46 @@ class TransitionFocusManager {
                 if (this.debugMode) logger.debug(`[FocusManager] Focusing on ${nodesToFocus.length} target state(s)`);
             }
         } else if (this.visualizer.activeStates && this.visualizer.activeStates.size > 0) {
-            nodesToFocus = visibleNodes.filter(node => this.visualizer.activeStates.has(node.id));
+            // W3C SCXML: Filter to atomic active states (no descendants at all)
+            // This prevents centering on compound states - we only center on actual executing states
+            const activeArray = Array.from(this.visualizer.activeStates);
+
+            // First try: atomic states only (no descendants)
+            let leafActiveStates = activeArray.filter(stateId => {
+                const descendants = this.visualizer.getAllDescendantIds(stateId) || [];
+                return descendants.length === 0; // Atomic state - no children
+            });
+
+            // Fallback: if no atomic states, use states with no active descendants
+            if (leafActiveStates.length === 0) {
+                leafActiveStates = activeArray.filter(stateId => {
+                    const descendants = this.visualizer.getAllDescendantIds(stateId) || [];
+                    const descendantSet = new Set(descendants);
+                    const hasActiveDescendant = activeArray.some(activeStateId =>
+                        activeStateId !== stateId && descendantSet.has(activeStateId)
+                    );
+                    return !hasActiveDescendant;
+                });
+            }
+
+            nodesToFocus = visibleNodes.filter(node =>
+                leafActiveStates.includes(node.id)
+            );
 
             if (nodesToFocus.length === 0) {
                 nodesToFocus = visibleNodes;
-                if (this.debugMode) logger.debug('[FocusManager] Active states not visible, using all nodes');
+                if (this.debugMode) logger.debug('[FocusManager] Leaf active states not visible, using all nodes');
             } else {
-                if (this.debugMode) logger.debug(`[FocusManager] Focusing on ${nodesToFocus.length} active state(s)`);
+                if (this.debugMode) {
+                    logger.debug(`[FocusManager] Active states: [${activeArray.join(', ')}]`);
+
+                    const filteredCompounds = activeArray.filter(id => !leafActiveStates.includes(id));
+                    if (filteredCompounds.length > 0) {
+                        logger.debug(`[FocusManager] Filtered out ${filteredCompounds.length} compound state(s): [${filteredCompounds.join(', ')}]`);
+                    }
+
+                    logger.debug(`[FocusManager] Focusing on ${nodesToFocus.length} atomic state(s): [${leafActiveStates.join(', ')}]`);
+                }
             }
         }
 
@@ -236,7 +269,12 @@ class TransitionFocusManager {
 
         const scaleX = availableWidth / diagramWidth;
         const scaleY = availableHeight / diagramHeight;
-        const scale = Math.min(scaleX, scaleY, 1.0); // Don't zoom in beyond 1.0
+        
+        // Prevent excessive zoom out for deeply nested states
+        // Use consistent zoom level to match regular state viewing experience
+        const MIN_SCALE = LAYOUT_CONSTANTS.MIN_ZOOM_SCALE;  // Don't zoom out beyond configured minimum
+        const calculatedScale = Math.min(scaleX, scaleY, 1.0);
+        const scale = Math.max(calculatedScale, MIN_SCALE);
 
         // Get viewport center (using shared helper)
         const viewportCenter = this.getViewportCenter();
@@ -260,7 +298,7 @@ class TransitionFocusManager {
         if (this.debugMode) logger.debug(`[FocusManager] Container (cached): ${this.visualizer.width}x${this.visualizer.height}, Container (actual): ${currentWidth}x${currentHeight}`);
         if (this.debugMode) logger.debug(`[FocusManager] Diagram: ${diagramWidth.toFixed(1)}x${diagramHeight.toFixed(1)}, DiagramCenter: (${diagramCenterX.toFixed(1)}, ${diagramCenterY.toFixed(1)})`);
         if (this.debugMode) logger.debug(`[FocusManager] ViewportCenter: (${viewportCenterX.toFixed(1)}, ${viewportCenterY.toFixed(1)}), Available: ${availableWidth.toFixed(1)}x${availableHeight.toFixed(1)}`);
-        if (this.debugMode) logger.debug(`[FocusManager] ScaleX: ${scaleX.toFixed(3)}, ScaleY: ${scaleY.toFixed(3)}, Final: ${scale.toFixed(3)}`);
+        if (this.debugMode) logger.debug(`[FocusManager] ScaleX: ${scaleX.toFixed(3)}, ScaleY: ${scaleY.toFixed(3)}, Calculated: ${calculatedScale.toFixed(3)}, Final: ${scale.toFixed(3)} (min: 0.85)`);
     }
 
     // ========================================

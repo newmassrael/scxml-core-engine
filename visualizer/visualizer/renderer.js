@@ -1065,6 +1065,10 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 if (d.colorIndex !== null && d.colorIndex !== undefined) {
                     classes += ` transition-color-${d.colorIndex}`;
                 }
+                // W3C SCXML 3.13: Internal transition styling
+                if (d.isInternal || d.type === 'internal') {
+                    classes += ' transition-internal';
+                }
                 return classes;
             })
             .attr('data-transition-id', d => d.transitionId || null)
@@ -1219,7 +1223,7 @@ this.visualizer.compoundLabels = this.visualizer.zoomContainer.append('g')
                 labelElement.getBoundingClientRect();  // Force reflow
                 const labelRect = labelElement.getBoundingClientRect();
 
-                const padding = 8;  // Padding for visual comfort and click area
+                const padding = 0;  // No extra padding - use CSS padding only
 
                 // Update dimensions to fit content exactly
                 const finalWidth = labelRect.width + padding;
