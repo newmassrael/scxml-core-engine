@@ -182,6 +182,17 @@ public:
     bool hasQueuedEvents() const override;
 
     /**
+     * @brief Check if there are INTERNAL priority events in the queue
+     *
+     * W3C SCXML 5.9.2: Used to enforce event priority - EXTERNAL events should not
+     * use immediate mode when INTERNAL events are queued, ensuring INTERNAL events
+     * are processed first.
+     *
+     * @return true if queue has INTERNAL priority events, false otherwise
+     */
+    bool hasQueuedInternalEvents() const;
+
+    /**
      * @brief Get snapshot of current event queues for visualization/debugging
      *
      * W3C SCXML 3.13: Retrieves current contents of internal and external event queues
