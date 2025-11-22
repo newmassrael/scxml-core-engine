@@ -211,18 +211,6 @@ public:
      * @param invokeId Invoke ID from invoked child process (test 338)
      * @return true if the event was successfully queued, false if the raiser is not ready
      */
-
-    /**
-     * @brief Cancel a queued event by sendId (W3C SCXML 3.8.1 state exit cancellation)
-     *
-     * Removes events from synchronousQueue_ that match the given sendId.
-     * This handles events that were already moved from EventScheduler to EventRaiser queue.
-     *
-     * @param sendId Send ID of the event to cancel
-     * @return true if an event was found and cancelled, false otherwise
-     */
-    bool cancelQueuedEvent(const std::string &sendId) override;
-
     bool raiseEventWithPriority(const std::string &eventName, const std::string &eventData, EventPriority priority,
                                 const std::string &originSessionId = "", const std::string &sendId = "",
                                 const std::string &invokeId = "", const std::string &originType = "",

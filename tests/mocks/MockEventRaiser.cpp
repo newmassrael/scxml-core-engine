@@ -106,27 +106,6 @@ void MockEventRaiser::getEventQueues(std::vector<EventSnapshot> &outInternal,
     outExternal.clear();
 }
 
-bool MockEventRaiser::cancelQueuedEvent(const std::string &sendId) {
-    // W3C SCXML 3.8.1: Mock implementation - track cancelled sendIds for test verification
-    if (sendId.empty()) {
-        return false;
-    }
-
-    // Record cancellation for test inspection
-    cancelledSendIds_.push_back(sendId);
-
-    // Simulate successful cancellation (mock always succeeds)
-    return true;
-}
-
-const std::vector<std::string> &MockEventRaiser::getCancelledSendIds() const {
-    return cancelledSendIds_;
-}
-
-void MockEventRaiser::clearCancelledSendIds() {
-    cancelledSendIds_.clear();
-}
-
 std::shared_ptr<class IEventScheduler> MockEventRaiser::getScheduler() const {
     // Mock implementation - no scheduler in mock
     return nullptr;

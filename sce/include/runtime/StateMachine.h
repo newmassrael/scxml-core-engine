@@ -642,11 +642,6 @@ private:
     // EventRaiser for SCXML compliance mode control
     std::shared_ptr<IEventRaiser> eventRaiser_;
 
-    // W3C SCXML 3.8.1: Pending send tracking for state exit cancellation
-    // Maps stateId -> list of sendIds that were sent from that state's onentry
-    std::map<std::string, std::vector<std::string>> statePendingSends_;
-    std::string currentEntryState_;  // Track current state during onentry execution
-
     // W3C SCXML 6.5: Completion callback for invoke done.invoke event
     CompletionCallback completionCallback_;
 
