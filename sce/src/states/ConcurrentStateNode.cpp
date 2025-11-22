@@ -426,25 +426,38 @@ bool ConcurrentStateNode::areAllRegionsComplete() const {
     LOG_DEBUG("[TEST 570 DEBUG] areAllRegionsComplete for '{}' returning {}, hasNotifiedCompletion_={}, hasCallback={}",
               id_, isComplete, hasNotifiedCompletion_, (completionCallback_ ? "yes" : "no"));
 
-    // Trigger completion callback if state transitions from incomplete to complete
-    // This implements SCXML W3C specification section 3.4 for done.state event generation
+    return isComplete;
+}
+
+bool ConcurrentStateNode::hasNotifiedCompletion() const {
+    return hasNotifiedCompletion_;
+}
+
+bool ConcurrentStateNode::generateDoneStateEventIfComplete() {
+    // W3C SCXML 3.4/3.7: Single Source of Truth for done.state event generation
+    // ARCHITECTURE.md Zero Duplication: Encapsulates completion detection and callback invocation
+
+    // Check if all regions are in final states
+    bool isComplete = areAllRegionsComplete();
+
+    // W3C SCXML 3.4: Generate done.state event exactly once when completion is detected
     if (isComplete && !hasNotifiedCompletion_ && completionCallback_) {
         hasNotifiedCompletion_ = true;
-        LOG_DEBUG("All regions complete, triggering done.state event for {}", id_);
+        LOG_DEBUG("W3C SCXML 3.4: All regions complete for '{}', generating done.state event", id_);
 
-        // Call the completion callback to notify the runtime system
-        // The runtime system will generate the done.state.{id} event
+        // Invoke completion callback to generate done.state.{id} event
         completionCallback_(id_);
+        return true;  // Event generated
     }
 
-    // Reset notification state if we're no longer complete
-    // This allows for re-notification if the state completes again
+    // Reset notification flag if state is no longer complete
+    // W3C SCXML 3.4: Allows re-notification if state completes again after leaving final configuration
     if (!isComplete && hasNotifiedCompletion_) {
         hasNotifiedCompletion_ = false;
-        LOG_DEBUG("Reset completion notification state for {}", id_);
+        LOG_DEBUG("W3C SCXML 3.4: Reset completion notification for '{}' (no longer complete)", id_);
     }
 
-    return isComplete;
+    return false;  // No event generated (already notified or not complete)
 }
 
 std::vector<ConcurrentRegionInfo> ConcurrentStateNode::getConfiguration() const {
@@ -482,10 +495,11 @@ std::vector<ConcurrentOperationResult> ConcurrentStateNode::processEventInAllReg
         }
     }
 
-    // SCXML W3C specification section 3.4: Check for parallel state completion
+    // W3C SCXML 3.4: Check for parallel state completion and generate done.state event if needed
     // "When all of the children reach final states, the <parallel> element itself is considered to be in a final state"
+    // ARCHITECTURE.md Zero Duplication: Single Source of Truth for done.state generation
     if (areAllRegionsInFinalState()) {
-        areAllRegionsComplete();  // This will handle completion callback if appropriate
+        generateDoneStateEventIfComplete();
     }
 
     return results;
@@ -571,32 +585,6 @@ bool ConcurrentStateNode::areAllRegionsInFinalState() const {
 
     LOG_DEBUG("All {} regions in parallel state {} have reached final states", regions_.size(), id_);
     return true;
-}
-
-void ConcurrentStateNode::generateDoneStateEvent() {
-    // SCXML W3C specification section 3.4: Generate done.state.{stateId} event
-    // "When all of the children reach final states, the <parallel> element itself is considered to be in a final state"
-
-    if (hasNotifiedCompletion_) {
-        LOG_DEBUG("Already notified completion for {}", id_);
-        return;
-    }
-
-    std::string doneEventName = std::format("done.state.{}", id_);
-    LOG_DEBUG("Generating done.state event: {} for completed parallel state: {}", doneEventName, id_);
-
-    // Use completion callback to notify StateMachine
-    if (completionCallback_) {
-        try {
-            completionCallback_(id_);
-            hasNotifiedCompletion_ = true;
-            LOG_DEBUG("Successfully notified completion via callback for {}", id_);
-        } catch (const std::exception &e) {
-            LOG_ERROR("Exception in completion callback: {} for {}", e.what(), id_);
-        }
-    } else {
-        LOG_WARN("No completion callback set for parallel state: {}", id_);
-    }
 }
 
 }  // namespace SCE
