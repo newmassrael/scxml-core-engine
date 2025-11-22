@@ -108,6 +108,10 @@ class SCXMLVisualizer {
         this.initialState = scxmlStructure.initial || '';
         this.activeStates = new Set();
 
+        // W3C SCXML Appendix D.2: Conflict resolution visualization data
+        this.enabledTransitions = [];   // All transitions enabled before conflict resolution
+        this.optimalTransitions = [];   // Transitions selected after conflict resolution
+
         // Debug mode from URL parameter (?debug)
         this.debugMode = DEBUG_MODE;
 
@@ -419,4 +423,24 @@ class SCXMLVisualizer {
     resize() { return this.interactionHandler.resize(); }
     resetView() { return this.interactionHandler.resetView(); }
     toggleCompoundState(stateId) { return this.interactionHandler.toggleCompoundState(stateId); }
+
+    /**
+     * @brief Update conflict resolution visualization data
+     *
+     * W3C SCXML Appendix D.2: Stores enabled and optimal transitions for badge display
+     *
+     * @param enabled Array of enabled transitions before conflict resolution
+     * @param optimal Array of optimal transitions after conflict resolution
+     */
+    updateConflictResolutionData(enabled, optimal) {
+        this.enabledTransitions = enabled || [];
+        this.optimalTransitions = optimal || [];
+
+        if (this.debugMode) {
+            logger.debug(`[Conflict Resolution] Enabled: ${this.enabledTransitions.length}, Optimal: ${this.optimalTransitions.length}`);
+        }
+
+        // Trigger transition list re-render to show badges
+        this.renderTransitionList();
+    }
 }

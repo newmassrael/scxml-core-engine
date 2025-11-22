@@ -1059,6 +1059,59 @@ std::string InteractiveTestRunner::getLastEventName() const {
     return lastEventName_;
 }
 
+emscripten::val InteractiveTestRunner::getEnabledTransitions() const {
+    auto transitionsArray = emscripten::val::array();
+
+    if (!stateMachine_) {
+        return transitionsArray;  // Empty array if no state machine
+    }
+
+    // W3C SCXML Appendix D.2: Get enabled transitions from StateMachine
+    auto enabledTransitions = stateMachine_->getLastEnabledTransitions();
+
+    LOG_DEBUG("[GET ENABLED TRANSITIONS] Found {} enabled transitions", enabledTransitions.size());
+
+    for (const auto &trans : enabledTransitions) {
+        auto transObj = emscripten::val::object();
+        transObj.set("source", trans.source);
+        transObj.set("target", trans.target);
+        transObj.set("event", trans.event);
+        transObj.set("isInternal", trans.isInternal);
+        transObj.set("isExternal", trans.isExternal);
+        transObj.set("hasActions", trans.hasActions);
+        transObj.set("transitionIndex", trans.transitionIndex);
+        transitionsArray.call<void>("push", transObj);
+    }
+
+    return transitionsArray;
+}
+
+emscripten::val InteractiveTestRunner::getOptimalTransitions() const {
+    auto transitionsArray = emscripten::val::array();
+
+    if (!stateMachine_) {
+        return transitionsArray;  // Empty array if no state machine
+    }
+
+    // W3C SCXML Appendix D.2: Get optimal transitions after conflict resolution
+    auto optimalTransitions = stateMachine_->getLastOptimalTransitions();
+
+    LOG_DEBUG("[GET OPTIMAL TRANSITIONS] Found {} optimal transitions", optimalTransitions.size());
+
+    for (const auto &trans : optimalTransitions) {
+        auto transObj = emscripten::val::object();
+        transObj.set("source", trans.source);
+        transObj.set("target", trans.target);
+        transObj.set("isInternal", trans.isInternal);
+        transObj.set("isExternal", trans.isExternal);
+        transObj.set("hasActions", trans.hasActions);
+        transObj.set("transitionIndex", trans.transitionIndex);
+        transitionsArray.call<void>("push", transObj);
+    }
+
+    return transitionsArray;
+}
+
 emscripten::val InteractiveTestRunner::getEventQueue() const {
     auto obj = emscripten::val::object();
 
@@ -1804,13 +1857,17 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
 
             // W3C SCXML 3.13: Handle eventless transitions
             if (events.empty()) {
-                for (const auto &target : targets) {
+                // W3C SCXML 5.9.2: Handle targetless eventless transitions
+                if (targets.empty()) {
                     auto transObj = emscripten::val::object();
                     transObj.set("id", std::to_string(transitionId++));
                     transObj.set("source", stateId);
-                    transObj.set("target", target);
+                    transObj.set("target", "");       // Empty string for targetless transitions
                     transObj.set("event", "");        // Empty string for eventless transitions
                     transObj.set("eventless", true);  // W3C SCXML 3.13: Flag for eventless transition
+                    // W3C SCXML 3.13: Internal transition flag
+                    transObj.set("isInternal", transition->isInternal());
+                    transObj.set("type", transition->isInternal() ? "internal" : "external");
                     if (!guard.empty()) {
                         transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
                     }
@@ -1818,19 +1875,20 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                         transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
                     }
 
-                    LOG_DEBUG("  → Adding eventless transition: {} → {} (id={})", stateId, target, transitionId - 1);
+                    LOG_DEBUG("  → Adding targetless eventless transition: {} (self) (id={})", stateId,
+                              transitionId - 1);
                     transitionsArray.call<void>("push", transObj);
-                }
-            } else {
-                // Create one transition object per event-target combination
-                for (const auto &event : events) {
+                } else {
                     for (const auto &target : targets) {
                         auto transObj = emscripten::val::object();
                         transObj.set("id", std::to_string(transitionId++));
                         transObj.set("source", stateId);
                         transObj.set("target", target);
-                        transObj.set("event", event);
-                        transObj.set("eventless", false);  // W3C SCXML 3.13: Not eventless
+                        transObj.set("event", "");        // Empty string for eventless transitions
+                        transObj.set("eventless", true);  // W3C SCXML 3.13: Flag for eventless transition
+                        // W3C SCXML 3.13: Internal transition flag
+                        transObj.set("isInternal", transition->isInternal());
+                        transObj.set("type", transition->isInternal() ? "internal" : "external");
                         if (!guard.empty()) {
                             transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
                         }
@@ -1838,9 +1896,57 @@ emscripten::val InteractiveTestRunner::buildStructureFromModel(std::shared_ptr<S
                             transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
                         }
 
-                        LOG_DEBUG("  → Adding event transition: {} → {} event='{}' (id={})", stateId, target, event,
+                        LOG_DEBUG("  → Adding eventless transition: {} → {} (id={})", stateId, target,
                                   transitionId - 1);
                         transitionsArray.call<void>("push", transObj);
+                    }
+                }
+            } else {
+                // Create one transition object per event-target combination
+                for (const auto &event : events) {
+                    // W3C SCXML 5.9.2: Handle targetless transitions (no target attribute)
+                    if (targets.empty()) {
+                        auto transObj = emscripten::val::object();
+                        transObj.set("id", std::to_string(transitionId++));
+                        transObj.set("source", stateId);
+                        transObj.set("target", "");  // Empty string for targetless transitions
+                        transObj.set("event", event);
+                        transObj.set("eventless", false);  // W3C SCXML 3.13: Not eventless
+                        // W3C SCXML 3.13: Internal transition flag
+                        transObj.set("isInternal", transition->isInternal());
+                        transObj.set("type", transition->isInternal() ? "internal" : "external");
+                        if (!guard.empty()) {
+                            transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
+                        }
+                        if (actionsArray["length"].as<int>() > 0) {
+                            transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
+                        }
+
+                        LOG_DEBUG("  → Adding targetless transition: {} (self) event='{}' (id={})", stateId, event,
+                                  transitionId - 1);
+                        transitionsArray.call<void>("push", transObj);
+                    } else {
+                        for (const auto &target : targets) {
+                            auto transObj = emscripten::val::object();
+                            transObj.set("id", std::to_string(transitionId++));
+                            transObj.set("source", stateId);
+                            transObj.set("target", target);
+                            transObj.set("event", event);
+                            transObj.set("eventless", false);  // W3C SCXML 3.13: Not eventless
+                            // W3C SCXML 3.13: Internal transition flag
+                            transObj.set("isInternal", transition->isInternal());
+                            transObj.set("type", transition->isInternal() ? "internal" : "external");
+                            if (!guard.empty()) {
+                                transObj.set("cond", guard);  // W3C SCXML 3.12.1: Guard condition for visualization
+                            }
+                            if (actionsArray["length"].as<int>() > 0) {
+                                transObj.set("actions", actionsArray);  // W3C SCXML 3.7: Transition actions
+                            }
+
+                            LOG_DEBUG("  → Adding event transition: {} → {} event='{}' (id={})", stateId, target, event,
+                                      transitionId - 1);
+                            transitionsArray.call<void>("push", transObj);
+                        }
                     }
                 }
             }

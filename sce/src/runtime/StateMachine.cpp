@@ -483,6 +483,10 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
     LOG_DEBUG("StateMachine: Processing event: '{}' with data: '{}' in session: '{}', originSessionId: '{}'", eventName,
               eventData, sessionId_, originSessionId);
 
+    // W3C SCXML Appendix D.2: Clear previous transition data for new event
+    lastEnabledTransitions_.clear();
+    lastOptimalTransitions_.clear();
+
     // CRITICAL: Thread-local depth tracking for nested processEvent calls (ASAN heap-use-after-free fix)
     // Top-level call (depth==0): acquire mutex to synchronize with destructor
     // Nested call (depth>0): same thread, no mutex needed (prevents deadlock)
@@ -839,6 +843,23 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
                 ConflictResolutionHelperString::removeConflictingTransitions(descriptors, getParent, isParallelState);
 
             LOG_DEBUG("StateMachine: After conflict resolution: {} transitions in optimal set", descriptors.size());
+
+            // W3C SCXML Appendix D.2: Store transition data for interactive visualizer
+            lastEnabledTransitions_ = allEnabledTransitions;  // All transitions before conflict resolution
+            // Convert descriptors back to TransitionDescriptorString for storage
+            lastOptimalTransitions_.clear();
+            for (const auto &desc : descriptors) {
+                TransitionDescriptorString optimalTrans;
+                optimalTrans.source = desc.source;
+                optimalTrans.target = desc.target;
+                optimalTrans.event = "";  // Event already processed, not stored in descriptor
+                optimalTrans.exitSet = desc.exitSet;
+                optimalTrans.transitionIndex = desc.transitionIndex;
+                optimalTrans.hasActions = desc.hasActions;
+                optimalTrans.isInternal = desc.isInternal;
+                optimalTrans.isExternal = desc.isExternal;
+                lastOptimalTransitions_.push_back(optimalTrans);
+            }
 
             // W3C SCXML Appendix D.2: Execute optimal transition set as microstep
             if (!descriptors.empty()) {
@@ -1765,6 +1786,14 @@ std::string StateMachine::getLastTransitionSource() const {
 
 std::string StateMachine::getLastTransitionTarget() const {
     return lastTransitionTarget_;
+}
+
+std::vector<TransitionDescriptorString> StateMachine::getLastEnabledTransitions() const {
+    return lastEnabledTransitions_;
+}
+
+std::vector<TransitionDescriptorString> StateMachine::getLastOptimalTransitions() const {
+    return lastOptimalTransitions_;
 }
 
 bool StateMachine::restoreFromSnapshot(const std::vector<std::string> &states) {

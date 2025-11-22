@@ -25,10 +25,10 @@ if(NOT GTest_FOUND)
 
     # GoogleTest: Disable warnings-as-errors for external library builds
     # This prevents GoogleTest internal warnings (e.g., char8_t conversion) from failing the build
-    target_compile_options(gtest PRIVATE -Wno-error)
-    target_compile_options(gtest_main PRIVATE -Wno-error)
-    target_compile_options(gmock PRIVATE -Wno-error)
-    target_compile_options(gmock_main PRIVATE -Wno-error)
+    target_compile_options(gtest PRIVATE -Wno-error -Wno-character-conversion)
+    target_compile_options(gtest_main PRIVATE -Wno-error -Wno-character-conversion)
+    target_compile_options(gmock PRIVATE -Wno-error -Wno-character-conversion)
+    target_compile_options(gmock_main PRIVATE -Wno-error -Wno-character-conversion)
 
     # Treat GoogleTest as system library for downstream consumers
     get_target_property(GTEST_INCLUDE_DIRS gtest INTERFACE_INCLUDE_DIRECTORIES)

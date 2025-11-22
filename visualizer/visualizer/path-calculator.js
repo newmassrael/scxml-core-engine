@@ -14,6 +14,9 @@ class PathCalculator {
         this.LABEL_OFFSET_VERTICAL = 8;       // Vertical offset for bent paths
         this.LABEL_OFFSET_HORIZONTAL = 10;    // Horizontal offset for bent paths
         this.MIN_LABEL_DISTANCE = 20;         // Minimum distance from state edges
+
+        // Self-loop path constants
+        this.BOUNDARY_DIRECTION_OFFSET = 100; // Offset for boundary point direction calculation
     }
 
     getTransitionLabelText(transition) {
@@ -26,7 +29,12 @@ class PathCalculator {
         }
         // Event name (W3C SCXML 3.12.1) - only for event-based transitions
         else if (transition.event) {
-            parts.push(`<div class="label-event">${transition.event}</div>`);
+            // W3C SCXML 5.9.1: Wildcard event detection
+            if (transition.event === '*') {
+                parts.push(`<div class="label-event label-wildcard">★ * <span class="wildcard-hint">(wildcard)</span></div>`);
+            } else {
+                parts.push(`<div class="label-event">${transition.event}</div>`);
+            }
         }
 
         // Condition (guard) - W3C SCXML 3.12.1
@@ -667,6 +675,44 @@ class PathCalculator {
     }
 
     createOrthogonalPath(sourceNode, targetNode, link, connections) {
+        // **W3C SCXML 5.9.2: Self-loop transitions (targetless/internal)**
+        // When source === target, create fake routing to use existing orthogonal path logic
+        if (sourceNode.id === targetNode.id && !link.routing) {
+            const cx = sourceNode.x || 0;
+            const cy = sourceNode.y || 0;
+
+            // Use getNodeBoundaryPoint to get accurate snap point coordinates
+            // Self-loop: right edge → bottom edge
+            const sourcePoint = this.getNodeBoundaryPoint(
+                sourceNode,
+                cx + this.BOUNDARY_DIRECTION_OFFSET,  // Right direction
+                cy,                                    // Same y level
+                link,
+                true,                                  // isSource
+                connections
+            );
+
+            const targetPoint = this.getNodeBoundaryPoint(
+                sourceNode,                            // Same node (self-loop)
+                cx,                                    // Center x
+                cy + this.BOUNDARY_DIRECTION_OFFSET,  // Bottom direction
+                link,
+                false,                                 // isTarget
+                connections
+            );
+
+            // Create fake routing for self-loop
+            // This makes the self-loop compatible with existing orthogonal path logic
+            link.routing = {
+                sourcePoint: sourcePoint,
+                targetPoint: targetPoint,
+                sourceEdge: 'right',
+                targetEdge: 'bottom'
+            };
+
+            // Fall through to use existing orthogonal path logic below
+        }
+
         // **OPTIMIZED SNAP POINTS: Use routing if available**
         if (link.routing) {
             const start = link.routing.sourcePoint;
@@ -809,11 +855,12 @@ class PathCalculator {
         // Get source and target nodes (use visual redirect if available)
         const visualSourceId = link.visualSource || link.source;
         const visualTargetId = link.visualTarget || link.target;
+
         const sourceNode = this.visualizer.nodes.find(n => n.id === visualSourceId);
         const targetNode = this.visualizer.nodes.find(n => n.id === visualTargetId);
 
         if (!sourceNode || !targetNode) {
-            logger.debug(`[GET LINK PATH] Source or target node not found`);
+            logger.debug(`[GET LINK PATH] Source or target node not found (visualSource='${visualSourceId}', visualTarget='${visualTargetId}')`);
             return 'M 0 0';
         }
 

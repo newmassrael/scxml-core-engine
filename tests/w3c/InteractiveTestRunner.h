@@ -225,6 +225,48 @@ public:
     std::string getLastEventName() const;
 
     /**
+     * @brief Get enabled transitions from last event processing
+     *
+     * W3C SCXML Appendix D.2: Returns all transitions that were enabled before conflict resolution.
+     * For parallel states, includes transitions from all regions that could fire for the event.
+     *
+     * Returns JavaScript array of transition objects:
+     * [
+     *   {source: "p0s1", target: "p0s1", event: "event1", isInternal: true},
+     *   {source: "p0s2", target: "p0s1", event: "event1", isInternal: false},
+     *   {source: "p0s3", target: "fail", event: "event1", isExternal: true},
+     *   {source: "p0s4", target: "p0s4", event: "*", isInternal: true}
+     * ]
+     *
+     * @return JavaScript array of enabled transitions (empty if no parallel state processing)
+     */
+#ifdef __EMSCRIPTEN__
+    emscripten::val getEnabledTransitions() const;
+#else
+    std::string getEnabledTransitions() const;
+#endif
+
+    /**
+     * @brief Get optimal transition set after conflict resolution
+     *
+     * W3C SCXML Appendix D.2: Returns transitions selected after applying conflict resolution.
+     * These are the transitions actually executed in the last microstep.
+     *
+     * Returns JavaScript array of transition objects:
+     * [
+     *   {source: "p0s2", target: "p0s1", isInternal: false},
+     *   {source: "p0s4", target: "p0s4", isInternal: true}
+     * ]
+     *
+     * @return JavaScript array of optimal transitions (empty if no conflict resolution occurred)
+     */
+#ifdef __EMSCRIPTEN__
+    emscripten::val getOptimalTransitions() const;
+#else
+    std::string getOptimalTransitions() const;
+#endif
+
+    /**
      * @brief Get event queue state
      *
      * Returns JavaScript object with:
