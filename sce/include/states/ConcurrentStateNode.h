@@ -174,6 +174,35 @@ public:
     bool areAllRegionsComplete() const;
 
     /**
+     * @brief Check if completion notification has been sent
+     *
+     * W3C SCXML 3.4/3.7: Prevents duplicate done.state event generation
+     * when parallel state completion is detected multiple times.
+     *
+     * @return true if done.state event has already been generated for current completion
+     */
+    bool hasNotifiedCompletion() const;
+
+    /**
+     * @brief Generate done.state event if all regions complete and not yet notified
+     *
+     * W3C SCXML 3.4/3.7: Single Source of Truth for done.state.{id} event generation.
+     * Encapsulates completion detection, duplicate prevention, and callback invocation.
+     *
+     * ARCHITECTURE.md Zero Duplication: Eliminates duplicate done.state generation logic
+     * previously spread across ConcurrentStateNode and StateMachine.
+     *
+     * Algorithm:
+     * 1. Check if all regions are in final states (areAllRegionsComplete)
+     * 2. Check if already notified (hasNotifiedCompletion_)
+     * 3. If both conditions met, invoke completion callback
+     * 4. Set hasNotifiedCompletion_ flag to prevent future duplicates
+     *
+     * @return true if done.state event was generated, false if already notified or not complete
+     */
+    bool generateDoneStateEventIfComplete();
+
+    /**
      * @brief Get the current configuration (active regions and their states)
      * @return Vector of region information
      */
@@ -265,12 +294,6 @@ private:
      * @return true if all regions have reached final states
      */
     bool areAllRegionsInFinalState() const;
-
-    /**
-     * @brief Generate done.state event when parallel state completes
-     * According to SCXML W3C specification section 3.4
-     */
-    void generateDoneStateEvent();
 };
 
 }  // namespace SCE

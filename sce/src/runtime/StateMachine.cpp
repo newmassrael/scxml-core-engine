@@ -3037,22 +3037,14 @@ bool StateMachine::checkEventlessTransitions() {
                 LOG_DEBUG("W3C SCXML 3.4: dynamic_cast result = {}", concurrentState ? "success" : "failed");
 
                 if (concurrentState) {
-                    bool allComplete = concurrentState->areAllRegionsComplete();
-                    LOG_DEBUG("W3C SCXML 3.4: areAllRegionsComplete() = {}", allComplete);
+                    // W3C SCXML 3.4/3.7: Generate done.state event if parallel state completed
+                    // ARCHITECTURE.md Zero Duplication: ConcurrentStateNode owns done.state generation logic
+                    bool eventGenerated = concurrentState->generateDoneStateEventIfComplete();
 
-                    if (allComplete) {
-                        std::string parallelId = parallelAncestor->getId();
-                        std::string doneEventName = "done.state." + parallelId;
-
-                        LOG_DEBUG("W3C SCXML 3.4: All parallel regions completed for state '{}' after eventless "
-                                  "transitions, generating done.state event: {}",
-                                  parallelId, doneEventName);
-
-                        // W3C SCXML: Queue the done.state event (not immediate processing)
-                        if (isRunning_ && eventRaiser_) {
-                            eventRaiser_->raiseEvent(doneEventName, "");
-                            LOG_DEBUG("W3C SCXML: Queued done.state event: {}", doneEventName);
-                        }
+                    if (eventGenerated) {
+                        LOG_DEBUG("W3C SCXML 3.4: done.state event generated for parallel state '{}' after eventless "
+                                  "transitions",
+                                  parallelAncestor->getId());
                     }
                 }
             }

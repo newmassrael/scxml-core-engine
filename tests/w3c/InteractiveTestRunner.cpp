@@ -480,6 +480,14 @@ void InteractiveTestRunner::raiseEvent(const std::string &eventName, const std::
     // Zero Duplication: EventRaiser owns all event queue management
     eventRaiser_->raiseExternalEvent(eventName, eventData);
 
+    // History branching: Invalidate all future snapshots (NEW TIMELINE)
+    // User manually injected event → execution path diverges from cached history
+    // This prevents REPLAY MODE from using stale snapshots that don't account for injected event
+    snapshotManager_.removeSnapshotsAfter(currentStep_);
+    LOG_INFO("InteractiveTestRunner: HISTORY BRANCHING - Removed {} future snapshot(s) after step {} (event '{}' "
+             "injected by user)",
+             snapshotManager_.size(), currentStep_, eventName);
+
     // W3C SCXML 3.13: Event queuing is NOT a microstep
     // Step only increments when event is actually processed in stepForward()
     // However, we must capture snapshot to preserve queue state for time-travel debugging
