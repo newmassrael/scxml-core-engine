@@ -108,14 +108,6 @@ public:
      */
     void setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher);
 
-    /**
-     * @brief Set callback for send action execution (W3C SCXML 3.8.1 compliance)
-     * @param callback Function called with sendId after each send execution
-     *
-     * Used by StateMachine to track pending sends for state exit cancellation.
-     */
-    void setSendCallback(std::function<void(const std::string &)> callback);
-
 private:
     std::string sessionId_;
     std::string currentEventName_;
@@ -127,9 +119,6 @@ private:
     std::string currentOriginSessionId_;  // W3C SCXML 5.10.1: _event.origin session ID
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
-
-    // W3C SCXML 3.8.1: Callback for send tracking (state exit cancellation)
-    std::function<void(const std::string &)> sendCallback_;
 
     // Assignment context tracking to prevent _event updates during assign actions
 

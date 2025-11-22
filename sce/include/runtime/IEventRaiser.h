@@ -169,18 +169,6 @@ public:
      *
      * @return Shared pointer to EventScheduler instance, or nullptr if not set
      */
-
-    /**
-     * @brief Cancel a queued event by sendId (W3C SCXML 3.8.1 state exit cancellation)
-     *
-     * Removes events from the internal/external event queues that match the given sendId.
-     * This is required when a state exits to cancel pending sends from that state's onentry.
-     *
-     * @param sendId Send ID of the event to cancel
-     * @return true if an event was found and cancelled, false otherwise
-     */
-    virtual bool cancelQueuedEvent(const std::string &sendId) = 0;
-
     virtual std::shared_ptr<class IEventScheduler> getScheduler() const = 0;
 };
 
