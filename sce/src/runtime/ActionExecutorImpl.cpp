@@ -426,6 +426,11 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     LOG_DEBUG("ActionExecutorImpl: Event dispatcher set for session: {}", sessionId_);
 }
 
+void ActionExecutorImpl::setSendCallback(std::function<void(const std::string &)> callback) {
+    sendCallback_ = std::move(callback);
+    LOG_DEBUG("ActionExecutorImpl: Send callback set for session: {}", sessionId_);
+}
+
 bool ActionExecutorImpl::isValidLocation(const std::string &location) const {
     if (location.empty()) {
         return false;
@@ -920,6 +925,16 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 if (result.isSuccess) {
                     LOG_DEBUG("ActionExecutorImpl: Send action queued successfully for event: {} (sendId: {})",
                               eventName, result.sendId);
+
+                    // W3C SCXML 3.8.1: Track delayed sends for state exit cancellation
+                    // Only delayed sends (delay > 0) need to be tracked and cancelled
+                    // Immediate sends (delay = 0) are already in queue and don't need cancellation
+                    if (delay.count() > 0 && sendCallback_) {
+                        sendCallback_(sendId);
+                        LOG_DEBUG(
+                            "ActionExecutorImpl: Tracked delayed send '{}' (delay: {}ms) for state exit cancellation",
+                            sendId, delay.count());
+                    }
                 } else {
                     LOG_WARN("ActionExecutorImpl: Send action failed: {}", result.errorMessage);
                 }
