@@ -66,7 +66,7 @@
     // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution if failed
     // Called during StaticExecutionEngine::initialize() to ensure proper error event timing
     template<typename Engine>
-    void initializeDataModel(Engine& engine) {
+    void initializeDataModel([[maybe_unused]] Engine& engine) {
         if (jsEngineInitialized_) return;
         ensureSessionId();
         if (!sessionId_.has_value()) return;
@@ -81,7 +81,7 @@
             LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
 {% if not model.variables and not (model.states.values() | selectattr('datamodel') | list) and not model.global_scripts %}
-        (void)engine;  // No variables or scripts to initialize
+        // No variables or scripts to initialize
 {% endif %}
 
 {% for var in model.variables %}
@@ -153,7 +153,6 @@
         // W3C SCXML 5.9: Late binding - State datamodel variables initialized on state entry
         // Variables are NOT initialized here, but in executeEntryActions() for each state
         // ARCHITECTURE.md Zero Duplication: Uses datamodel_macros.jinja2 (DRY principle)
-        (void)engine;  // Suppress unused parameter warning for late binding
 {% endif %}
 {% endif %}
 

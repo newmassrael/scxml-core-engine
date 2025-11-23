@@ -36,10 +36,9 @@
 #}
 
     template<typename Engine>
-{% if not model.needs_jsengine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states %}    static void executeEntryActions(State state, Engine& engine) {
-{% else %}    void executeEntryActions(State state, Engine& engine) {
+{% if not model.needs_jsengine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states %}    static void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
+{% else %}    void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
 {% endif %}
-        (void)engine;
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
         // Check for duplicates before adding (parallel region re-entry may call this multiple times)
@@ -340,11 +339,9 @@
     }
 
     template<typename Engine>
-{% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_parallel_states %}    static void executeExitActions(State state, Engine& engine, const std::vector<State>& activeStatesBeforeTransition) {
-{% else %}    void executeExitActions(State state, Engine& engine, const std::vector<State>& activeStatesBeforeTransition) {
+{% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_parallel_states %}    static void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% else %}    void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
-        (void)engine;
-        (void)activeStatesBeforeTransition;  // May be unused if no history states
 
 {% if model.has_parallel_states %}
         // W3C SCXML 3.4 + 3.13: Parallel state exit order
@@ -724,8 +721,7 @@
     // W3C SCXML 6.4: Tick all active child state machines to process their events
     // Child state machines need to run independently during parent's event loop
     template<typename Engine>
-    void tickChildren(Engine& engine) {
-        (void)engine;
+    void tickChildren([[maybe_unused]] Engine& engine) {
         {% for state_id, state in model.states.items() %}
         {% if state.static_invokes %}
         {% for invoke_info in state.static_invokes %}
@@ -742,8 +738,7 @@
     // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
     // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent
     template<typename Engine>
-    void forwardToAutoforwardChildren(const std::string& eventName, Engine& engine) {
-        (void)engine;
+    void forwardToAutoforwardChildren(const std::string& eventName, [[maybe_unused]] Engine& engine) {
         
         {% for state_id, state in model.states.items() %}
         {% if state.static_invokes %}

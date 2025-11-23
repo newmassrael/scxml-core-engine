@@ -56,8 +56,7 @@
     // W3C SCXML 6.5: Execute finalize for events from invoked children
     // Finalize runs BEFORE the event is processed, with _event set to child's event
     template<typename Engine>
-    void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, Engine& engine) {
-        (void)engine;  // Unused in this implementation
+    void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, [[maybe_unused]] Engine& engine) {
         
         // W3C SCXML 6.5: Only execute finalize for events from child invokes
         // origin field contains child's session ID
@@ -160,7 +159,6 @@ public:
                                                     actualType, sendId, origin, originType, invokeId).get();
 {% else %}
         // No-op: This state machine doesn't use JSEngine
-        (void)eventName; (void)eventData; (void)eventType; (void)sendId; (void)origin; (void)originType; (void)invokeId;
 {% endif %}
     }
 
