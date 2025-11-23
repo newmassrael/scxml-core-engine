@@ -1,0 +1,538 @@
+{% include 'license_header.jinja2' %}
+
+#pragma once
+#include <chrono>
+#include <cstdint>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <unordered_map>
+#include "static/StaticExecutionEngine.h"
+{% if model.static_invokes %}
+
+// Child SCXML headers (static invokes)
+{% for invoke_info in model.static_invokes %}
+{% if invoke_info.child_name %}
+#include "{{ invoke_info.child_name }}_sm.h"
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if model.static_invokes %}
+#include "common/InvokeHelper.h"
+{% endif %}
+{% if model.hybrid_invokes %}
+// W3C SCXML 6.4: Hybrid invoke support (AOT parent + Interpreter child)
+#include "runtime/StateMachine.h"
+#include "common/InvokeHelper.h"
+#include "common/FileLoadingHelper.h"
+{% endif %}
+{% if model.needs_send_helper %}
+#include "common/SendHelper.h"
+#include "common/NamelistHelper.h"
+#include "common/DatamodelValidationHelper.h"
+{% endif %}
+{% if model.needs_jsengine %}
+#include "common/FinalizeHelper.h"
+{% endif %}
+{% if model.needs_event_scheduler %}
+#include "common/SendSchedulingHelper.h"
+{% endif %}
+#include "common/TransitionHelper.h"
+#include "common/HistoryHelper.h"
+#include "common/StateEntryHelper.h"
+#include "common/EntryExitHelper.h"
+#include "common/EventMatchingHelper.h"
+{% if model.has_parallel_states %}
+#include "common/ParallelStateHelper.h"
+#include "common/ParallelExitEntryHelper.h"
+#include "common/ParallelTransitionHelper.h"
+#include "common/HierarchicalStateHelper.h"
+#include "common/ConflictResolutionHelper.h"
+#include "common/ParallelCompletionHelper.h"
+{% endif %}
+#include "common/EventDataHelper.h"
+{% if model.needs_donedata_helper %}
+#include "common/DoneDataHelper.h"
+{% endif %}
+#include "common/InPredicateHelper.h"
+{% if model.needs_jsengine %}
+#include "common/DataModelInitHelper.h"
+#include "common/EventTypeHelper.h"
+#include "common/SystemVariableHelper.h"
+#include <optional>
+#include "common/Logger.h"
+#include "scripting/JSEngine.h"
+#include "common/AssignHelper.h"
+#include "common/AssignmentExecutionHelper.h"
+#include "common/ForeachValidator.h"
+#include "common/ForeachHelper.h"
+#include "common/GuardHelper.h"
+{% endif %}
+
+namespace SCE::Generated::{{ model.name }} {
+
+{% if model.has_parent_communication %}
+template<typename ParentStateMachine>
+{% endif %}
+class {{ model.name }};
+
+{# State enum #}
+enum class State : uint8_t {
+    {% for state_name in model.states | sort %}
+    {{ state_name | capitalize }}{{ "," if not loop.last }}
+    {% endfor %}
+};
+
+{# Event enum #}
+enum class Event : uint8_t {
+    NONE,  // W3C SCXML 6.2: Default event for scheduler polling (no semantic meaning)
+    {% for event_name in model.events | sort %}
+    {{ event_name | replace('.', '_') | replace('-', '_') | capitalize }}{{ "," if not loop.last }}
+    {% endfor %}
+};
+
+{# Transition descriptor for W3C SCXML Appendix D optimal transition set #}
+/**
+ * @brief Transition information for microstep execution
+ *
+ * W3C SCXML Appendix D: Optimal enabled transition set execution requires
+ * collecting all enabled transitions before executing any (atomic microstep).
+ */
+struct TransitionInfo {
+    State source;              // W3C SCXML 3.13: Source state of transition
+    State target;              // Target state of transition
+    int transitionIndex;       // Index of transition in source state (for executeTransitionActions)
+    bool hasActions;           // Whether transition has executable content
+    bool isInternal;           // W3C SCXML 3.13: Whether transition is type="internal"
+    bool isTargetless;         // W3C SCXML 5.9.2: Whether transition has no target (consumes event only)
+
+    TransitionInfo(State src, State tgt, int idx, bool actions, bool internal = false, bool targetless = false)
+        : source(src), target(tgt), transitionIndex(idx), hasActions(actions), isInternal(internal), isTargetless(targetless) {}
+};
+
+{# Policy class #}
+// State policy for {{ model.name }}
+{% if model.has_parent_communication %}
+template<typename ParentStateMachine>
+{% elif model.static_invokes %}
+template<typename SelfType>
+{% elif model.hybrid_invokes %}
+{# Hybrid invokes don't need SelfType template parameter because:
+   - Interpreter children (StateMachine instances) don't use CRTP (Curiously Recurring Template Pattern)
+   - No parent pointer needed - children are isolated Interpreter instances
+   - AOT parent communicates via done.invoke events, not direct pointers to parent
+   - See ARCHITECTURE.md "Hybrid Strategy" for memory efficiency details
+   - Parent stays AOT (~300 bytes), child is Interpreter (~100KB) #}
+{% endif %}
+struct {{ model.name }}Policy {
+    using State = ::SCE::Generated::{{ model.name }}::State;
+    using Event = ::SCE::Generated::{{ model.name }}::Event;
+
+    // W3C SCXML Appendix D: Flag indicating parallel state support
+    static constexpr bool HAS_PARALLEL_STATES = {{ 'true' if model.has_parallel_states else 'false' }};
+
+    // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
+    static constexpr bool NEEDS_JSENGINE = {{ 'true' if model.needs_jsengine else 'false' }};
+
+    {% if model.variables %}
+    // Datamodel variables
+    {% for var in model.variables %}
+    {% if var.type == 'int' %}
+    int {{ var.id }} = {{ var.expr if var.expr else '0' }};
+    {% elif var.type == 'string' %}
+    ::std::string {{ var.id }}{{ ' = ' + var.expr if var.expr else '' }};
+    {% elif var.type == 'bool' %}
+    bool {{ var.id }} = {{ var.expr if var.expr else 'false' }};
+    {% elif var.type == 'runtime' %}
+    // Runtime-evaluated variable (handled by JSEngine): {{ var.id }}
+    {% endif %}
+    {% endfor %}
+    {% endif %}
+    {% if model.has_parent_communication %}
+
+    // W3C SCXML 6.2: Parent state machine pointer for #_parent support
+    ParentStateMachine* parent_ = nullptr;
+
+    // W3C SCXML 6.4.1: Invokeid for child-to-parent communication (test338)
+    ::std::string invokeId_;
+
+    // W3C SCXML 6.5: Child session ID for finalize origin matching (test233)
+    ::std::string childSessionId_;
+
+    // W3C SCXML 6.4.5: Delayed sends to parent scheduler (using SendSchedulingHelper)
+    // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
+    mutable ::SCE::SendSchedulingHelper::SimpleScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
+    {% endif %}
+
+    {% if model.needs_jsengine or model.static_invokes %}
+    // Session ID for JSEngine/Invoke (lazy-initialized)
+    mutable ::std::optional<::std::string> sessionId_;
+    {% endif %}
+    {% if model.needs_jsengine %}
+    mutable bool jsEngineInitialized_ = false;
+    {% endif %}
+    {% if model.has_hybrid_invoke or model.static_invokes %}
+    // W3C SCXML 6.4: Source SCXML file path for child invoke resolution
+    // Required for resolving relative child SCXML paths (e.g., "subflow.scxml")
+    mutable ::std::string scxmlSourcePath_ = "{{ model.scxml_source_path | replace('\\', '\\\\') }}";
+    {% endif %}
+    {% if model.needs_event_name %}
+    // W3C SCXML 5.10: Event name storage for _event.name access (test318)
+    mutable ::std::string pendingEventName_;
+    {% endif %}
+    {% if model.needs_event_data %}
+    // W3C SCXML 5.10: Event data storage for _event.data access
+    // Required for: <send> params, error.execution event data (W3C SCXML 5.3)
+    mutable ::std::string pendingEventData_;
+    {% endif %}
+    {% if model.needs_event_type %}
+    // W3C SCXML 5.10.1: Event type storage for _event.type access (test331)
+    mutable ::std::string pendingEventType_;
+    {% endif %}
+    {% if model.needs_event_sendid %}
+    // W3C SCXML 5.10.1: Event sendid storage for _event.sendid access (test332)
+    mutable ::std::string pendingEventSendId_;
+    {% endif %}
+    {% if model.needs_event_origin %}
+    // W3C SCXML 5.10.1: Event origin storage for _event.origin access (test336)
+    mutable ::std::string pendingEventOrigin_;
+    {% endif %}
+    {% if model.needs_event_origintype %}
+    // W3C SCXML 5.10.1: Event origintype storage for _event.origintype access
+    mutable ::std::string pendingEventOriginType_;
+    {% endif %}
+    {% if model.needs_event_invokeid %}
+    // W3C SCXML 5.10.1: Event invokeid storage for _event.invokeid access (test338)
+    mutable ::std::string pendingEventInvokeId_;
+    {% endif %}
+    {% if model.needs_external_flag %}
+    // W3C SCXML 6.2: Flag to mark next event as external (from send)
+    mutable bool nextEventIsExternal_ = false;
+    {% endif %}
+    {% if model.static_invokes %}
+    // W3C SCXML 6.4: Self-pointer for child state machine creation (defer/cancel/execute pattern)
+    mutable SelfType* self_ = nullptr;
+    
+    // W3C SCXML 5.10: Current event metadata (originSessionId for finalize)
+    mutable ::SCE::Core::EventMetadata currentEventMetadata_;
+    // W3C SCXML 6.4: Static invoke child state machines
+    {% for invoke_info in model.static_invokes %}
+    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.invoke_id }}_;
+    {% endfor %}
+
+    // W3C SCXML 6.4: Pending done.invoke flags for child completion
+    {% for invoke_info in model.static_invokes %}
+    mutable bool pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
+    {% endfor %}
+    {% endif %}
+    {% if model.hybrid_invokes %}
+
+    // W3C SCXML 6.4: Hybrid invoke child state machines (Interpreter instances)
+    // ARCHITECTURE.md: Hybrid Strategy - AOT parent + Interpreter child
+    {% for invoke_info in model.hybrid_invokes %}
+    mutable std::shared_ptr<::SCE::StateMachine> hybridChild_{{ invoke_info.invoke_id }}_;
+    {% endfor %}
+    {% endif %}
+    {% if model.static_invokes %}
+
+    // W3C SCXML 6.4: Child session tracking (static invokes only)
+    struct ChildSession {
+        std::string sessionId;           // Child's session ID
+        std::string invokeId;            // Invoke element ID
+        std::string parentSessionId;     // Parent's session ID
+        bool autoforward = false;        // W3C 6.4.1: Autoforward events to child
+        std::string finalizeScript;      // W3C 6.5: Finalize handler script
+    };
+
+    {% endif %}
+    {% if model.static_invokes or model.hybrid_invokes %}
+
+    // W3C SCXML 6.4: Pending invoke structure for defer/cancel/execute pattern
+    // ARCHITECTURE.md Zero Duplication: Used with InvokeHelper (Single Source of Truth)
+    // Pattern: defer (onentry) → cancel (onexit) → execute (macrostep end)
+    struct PendingInvoke {
+        std::string invokeId;  // W3C SCXML 6.4.1: Unique invoke identifier
+        State state;           // State containing the invoke element
+    };
+
+    {% if model.static_invokes %}
+    // Active child sessions indexed by invokeId (static invokes only)
+    mutable std::unordered_map<std::string, ChildSession> activeInvokes_;
+    {% endif %}
+    // W3C SCXML 6.4: Pending invokes (deferred until macrostep end)
+    mutable std::vector<PendingInvoke> pendingInvokes_;
+    {% endif %}
+    {% if model.needs_event_scheduler %}
+    // W3C SCXML 6.2: Event scheduler for delayed send (lazy-init)
+    mutable ::SCE::SendSchedulingHelper::SimpleScheduler<Event> eventScheduler_;
+    {% if model.needs_event_data_helper or model.needs_jsengine %}
+    // W3C SCXML 5.10: Event data map for scheduled events with params (test186)
+    mutable ::std::map<Event, ::std::string> scheduledEventData_;
+    {% endif %}
+    {% endif %}
+    {% if model.history_states %}
+    // W3C SCXML 3.11: Runtime history tracking variables (matches Interpreter HistoryEntry)
+    {% for history_id, history_info in model.history_states.items() %}
+    mutable ::std::optional<::std::vector<State>> history_{{ history_id }};  // {{ history_info.type }} history for {{ history_info.parent }}
+    {% endfor %}
+    {% endif %}
+    {% if model.has_parallel_states or model.uses_in_predicate %}
+    // W3C SCXML 3.4/3.12.1: Configuration - active states for parallel states and In() predicate
+    // Tracks all currently active states (parallel regions can have multiple active states)
+    // Also required for In() predicate to check state membership
+    // Thread-safe: mutex protects access from JSEngine worker thread
+    mutable ::std::vector<State> activeStates_;
+    mutable ::std::mutex activeStatesMutex_;
+    {% endif %}
+
+    // W3C SCXML 3.13: Track last transition for deferred action execution
+    // W3C SCXML 3.4: Also needed for parallel states to track actual transition source
+    mutable State lastTransitionSourceState_{};
+{% if model.has_transition_actions %}
+    mutable size_t lastTransitionIndex_ = 0;
+    mutable bool hasTransitionActions_ = false;
+{% endif %}
+    mutable bool lastTransitionIsInternal_ = false;  // W3C SCXML 3.13: Track internal transition type
+    mutable bool lastTransitionIsTargetless_ = false;  // W3C SCXML 5.9.2: Track targetless transition (consumes event only)
+    // Default constructor (lazy initialization, no immediate resource allocation)
+    {{ model.name }}Policy() = default;
+
+    {% if model.has_parallel_states %}
+    // W3C SCXML 3.4/3.12.1: Get active states for parallel state configurations
+    // Thread-safe: Uses mutex to protect activeStates_ from concurrent access
+    std::vector<State> getActiveStates() const {
+        std::lock_guard<std::mutex> lock(activeStatesMutex_);
+        return activeStates_;
+    }
+    {% endif %}
+
+    {% if model.needs_jsengine or model.has_parent_communication %}
+    // Destructor: Clean up resources (RAII pattern)
+    ~{{ model.name }}Policy() {
+        {% if model.has_parent_communication %}
+        // W3C SCXML 6.4.5: Cancel all pending delayed sends to parent on child termination
+        // SimpleScheduler destructor automatically cleans up pending events
+        {% endif %}
+        {% if model.needs_jsengine or model.static_invokes %}
+        if (sessionId_.has_value()) {
+            auto& jsEngine = ::SCE::JSEngine::instance();
+            jsEngine.destroySession(sessionId_.value());
+        }
+        {% endif %}
+    }
+
+    // Prevent copy/move to maintain resource ownership
+    {{ model.name }}Policy(const {{ model.name }}Policy&) = delete;
+    {{ model.name }}Policy& operator=(const {{ model.name }}Policy&) = delete;
+    {{ model.name }}Policy({{ model.name }}Policy&&) = delete;
+    {{ model.name }}Policy& operator=({{ model.name }}Policy&&) = delete;
+    {% endif %}
+
+    static State initialState() {
+        return State::{{ (model.initial_leaf if model.initial_leaf else model.initial) | capitalize }};
+    }
+
+    static bool isFinalState(State state) {
+        switch (state) {
+            {% for state_id, state in model.states.items() %}
+            {% if state.is_final %}
+            case State::{{ state_id | capitalize }}:
+                return true;
+            {% endif %}
+            {% endfor %}
+            default:
+                return false;
+        }
+    }
+
+    // W3C SCXML 3.3: Parent state mapping (for HierarchicalStateHelper)
+    static std::optional<State> getParent(State state) {
+        switch (state) {
+            {% for state_id, state in model.states.items() %}
+            {% if state.parent %}
+            case State::{{ state_id | capitalize }}:
+                return State::{{ state.parent | capitalize }};
+            {% endif %}
+            {% endfor %}
+            default:
+                return std::nullopt;  // Root state
+        }
+    }
+
+    // W3C SCXML 3.3: Check if state is compound (has initial child)
+    static bool isCompoundState(State state) {
+        switch (state) {
+            {% for state_id, state in model.states.items() %}
+            {% if state.initial %}
+            case State::{{ state_id | capitalize }}:
+                return true;
+            {% endif %}
+            {% endfor %}
+            default:
+                return false;
+        }
+    }
+
+    // W3C SCXML 3.6: Get initial children of compound state (supports space-separated descendant targets)
+    static std::vector<State> getInitialChildren(State state) {
+        switch (state) {
+            {% for state_id, state in model.states.items() %}
+            {% if state.initial_children %}
+            case State::{{ state_id | capitalize }}:
+                return {
+                    {%- for child in state.initial_children -%}
+                    State::{{ child | capitalize }}{{ ", " if not loop.last else "" }}
+                    {%- endfor -%}
+                };
+            {% endif %}
+            {% endfor %}
+            default:
+                return {};  // Not compound or no initial child
+        }
+    }
+
+    // W3C SCXML 3.3: Get single initial child (backward compatibility - returns first child)
+    static State getInitialChild(State state) {
+        auto children = getInitialChildren(state);
+        return children.empty() ? state : children[0];
+    }
+
+    // W3C SCXML 3.11: Get initial or history-restored child of compound state
+    // Non-static version that checks history before returning initial child
+    State getInitialOrHistoryChild(State state) const {
+        switch (state) {
+            {% for state_id, state in model.states.items() %}
+            {% if state.initial_history_id %}
+            case State::{{ state_id | capitalize }}:
+                // W3C SCXML 3.11: Check history for {{ state.initial_history_id }}
+                if (history_{{ state.initial_history_id }}.has_value() && !history_{{ state.initial_history_id }}->empty()) {
+                    return history_{{ state.initial_history_id }}->front();  // Restore to first state in history
+                }
+                return getInitialChild(State::{{ state_id | capitalize }});  // No history, use default
+            {% elif state.initial_children %}
+            case State::{{ state_id | capitalize }}:
+                return getInitialChild(State::{{ state_id | capitalize }});
+            {% endif %}
+            {% endfor %}
+            default:
+                return state;  // Not compound or no initial child
+        }
+    }
+
+    // W3C SCXML 3.6: Enter deep initial targets (delegate to StateEntryHelper)
+    {% for state_id, state in model.states.items() %}
+    {% if state.initial_children and state.initial_children|length > 0 %}
+    template<typename Engine>
+    void enterDeepInitialTargets_{{ state_id | capitalize }}(Engine& engine) {
+        // W3C SCXML 3.6: Deep initial targets for {{ state_id }}: initial="{{ state.initial }}"
+        // Delegate to StateEntryHelper (ARCHITECTURE.md Zero Duplication Principle)
+        auto targets = getInitialChildren(State::{{ state_id | capitalize }});
+        
+        // W3C SCXML 3.6: Use StateEntryHelper as Single Source of Truth
+        ::SCE::StateEntryHelper::enterDeepTargets<State>(
+            State::{{ state_id | capitalize }},
+            targets,
+            [](State s) -> std::optional<State> { return {{ model.name }}Policy::getParent(s); },
+            [this, &engine](State s) { this->executeEntryActions(s, engine); }
+        );
+    }
+    {% endif %}
+    {% endfor %}
+
+{% if model.has_parallel_states %}
+    // W3C SCXML 3.4: Check if state is a parallel state
+    static bool isParallelState(State state) {
+        switch (state) {
+            {% for state_id, state in model.states.items() %}
+            {% if state.is_parallel %}
+            case State::{{ state_id | capitalize }}:
+                return true;
+            {% endif %}
+            {% endfor %}
+            default:
+                return false;
+        }
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state
+    static ::std::vector<State> getParallelRegions(State state) {
+        switch (state) {
+            {% for parallel_id, regions in model.parallel_regions.items() %}
+            case State::{{ parallel_id | capitalize }}:
+                return { {% for region in regions %}State::{{ region | capitalize }}{{ ", " if not loop.last }}{% endfor %} };
+            {% endfor %}
+            default:
+                return {};
+        }
+    }
+
+    // W3C SCXML 3.4: Check if descendant is a descendant of ancestor
+    // ARCHITECTURE.MD: Zero Duplication - delegates to HierarchicalStateHelper
+    static bool isDescendantOf(State descendant, State ancestor) {
+        return ::SCE::Common::HierarchicalStateHelper<{{ model.name }}Policy>::isDescendantOf(descendant, ancestor);
+    }
+
+    // W3C SCXML 3.13: Get document order for exit order tie-breaking
+    static int getDocumentOrder(State state) {
+        switch (state) {
+            {% for state_id, state in model.states.items() %}
+            case State::{{ state_id | capitalize }}:
+                return {{ state.document_order }};
+            {% endfor %}
+            default:
+                return 0;
+        }
+    }
+{% endif %}
+
+{% include 'entry_exit_actions.jinja2' %}
+
+    {% include 'process_transition.jinja2' %}
+
+public:
+    {% if model.needs_jsengine or model.static_invokes %}
+    {% include 'jsengine_helpers.jinja2' %}
+    {% endif %}
+
+    {% include 'utility_methods.jinja2' %}
+
+private:
+};
+
+// User-facing state machine class
+{% if model.has_parent_communication %}
+template<typename ParentStateMachine>
+{% endif %}
+class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{% if model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %}> {
+public:
+    // W3C SCXML: Policy type alias for test infrastructure
+    using PolicyType = {% if model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %};
+
+{% if model.has_parent_communication %}
+    // W3C SCXML 6.2: Parent state machine pointer for #_parent support (Zero Overhead)
+    // W3C SCXML 6.5: childSessionId for finalize origin matching (test233)
+    explicit {{ model.name }}(ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = "") {
+        this->policy_.parent_ = parent;
+        this->policy_.invokeId_ = invokeId;
+        this->policy_.childSessionId_ = childSessionId;
+        {% if model.static_invokes %}
+        this->policy_.self_ = this;
+        {% endif %}
+    }
+{% elif model.static_invokes %}
+    {{ model.name }}() {
+        this->policy_.self_ = this;
+    }
+{% else %}
+    {{ model.name }}() = default;
+{% endif %}
+
+{% if model.needs_jsengine %}
+    // W3C SCXML 6.4.1: Wrapper for setting invoke params (delegates to policy)
+    void setParamInJSEngine(const std::string& paramName, const std::string& paramExpr) {
+        this->policy_.setParamInJSEngine(paramName, paramExpr);
+    }
+{% endif %}
+};
+
+} // namespace SCE::Generated::{{ model.name }}

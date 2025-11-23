@@ -1,0 +1,663 @@
+{
+{% if action.id %}
+std::string sendId = "{{ action.id }}";
+{% else %}
+std::string sendId = ::SCE::SendHelper::generateSendId();
+{% endif %}
+{% if model.needs_jsengine or model.needs_event_origin %}
+// W3C SCXML 5.10.1: Ensure sessionId for origin tracking
+if (!sessionId_.has_value()) {
+    sessionId_ = "session_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+}
+{% endif %}
+{% if action.send_type and not action.typeexpr %}
+// W3C SCXML 6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
+if (!::SCE::SendHelper::isSupportedSendType("{{ action.send_type }}")) {
+    // W3C SCXML 6.2: Unsupported send type raises error.execution on internal queue
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+{% if in_entry_exit is defined and in_entry_exit %}
+    return;  // W3C SCXML 5.10: Stop execution of subsequent actions in entry/exit/transition
+{% endif %}
+}
+{% endif %}
+{% if action.idlocation %}
+// W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332)
+{% if model.needs_jsengine or model.needs_event_origin %}
+this->ensureJSEngine();
+auto& jsEngine = ::SCE::JSEngine::instance();
+::SCE::SendHelper::storeInIdLocation(jsEngine, sessionId_.value(), "{{ action.idlocation }}", sendId);
+{% else %}
+{{ action.idlocation }} = sendId;
+{% endif %}
+{% endif %}
+
+{% if action.typeexpr %}
+// W3C SCXML 6.2: Dynamic type evaluation (test174)
+std::string dynamicType;
+{
+{% if model.needs_jsengine or model.needs_event_origin %}
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto typeResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.typeexpr | escape_cpp }}").get();
+    if (!::SCE::JSEngine::isSuccess(typeResult)) {
+        LOG_ERROR("Failed to evaluate typeexpr: {{ action.typeexpr }}");
+        // W3C SCXML 6.2: Invalid typeexpr → use default SCXMLEventProcessor
+        dynamicType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
+    } else {
+        dynamicType = ::SCE::JSEngine::resultToString(typeResult, sessionId_.value(), "{{ action.typeexpr | escape_cpp }}");
+        LOG_DEBUG("Evaluated typeexpr='{{ action.typeexpr }}' → type='{}'", dynamicType);
+    }
+{% else %}
+    dynamicType = {{ action.typeexpr }};
+{% endif %}
+}
+
+// W3C SCXML 6.2: Validate send type using SendHelper (Zero Duplication)
+if (!::SCE::SendHelper::isSupportedSendType(dynamicType)) {
+    // W3C SCXML 6.2: Unsupported send type raises error.execution on internal queue
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+{% if in_entry_exit is defined and in_entry_exit %}
+    return;  // W3C SCXML 5.10: Stop execution of subsequent actions in entry/exit/transition
+{% endif %}
+}
+{% endif %}
+
+{% set has_targetexpr = True %}
+{% if action.targetexpr %}
+// W3C SCXML 6.2: Dynamic target evaluation (test173)
+std::string dynamicTarget;
+{% if model.needs_jsengine or model.needs_event_origin %}
+this->ensureJSEngine();
+auto& jsEngine = ::SCE::JSEngine::instance();
+auto targetResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.targetexpr | escape_cpp }}").get();
+if (!::SCE::JSEngine::isSuccess(targetResult)) {
+    LOG_ERROR("Failed to evaluate targetexpr: {{ action.targetexpr }}");
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+}
+dynamicTarget = ::SCE::JSEngine::resultToString(targetResult, sessionId_.value(), "{{ action.targetexpr | escape_cpp }}");
+{% else %}
+{% if action.targetexpr == '_event.origin' %}
+dynamicTarget = pendingEventOrigin_;
+{% else %}
+dynamicTarget = {{ action.targetexpr }};
+{% endif %}
+{% endif %}
+// W3C SCXML 6.2 (test 159, 194): Invalid target raises error.execution and stops subsequent content
+if (::SCE::SendHelper::isInvalidTarget(dynamicTarget)) {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    pendingEventSendId_ = sendId;
+{% endif %}
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "", "", sendId));
+    return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
+}
+
+// W3C SCXML C.1 (test 496): Check for unreachable target using SendHelper (ARCHITECTURE.md Zero Duplication)
+if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
+    LOG_ERROR("Send target evaluation resulted in invalid target: '{}'", dynamicTarget);
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
+    return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
+}
+{% elif action.target %}
+{% if action.target == '#_parent' %}
+{% if action.delay or action.delayexpr %}
+// W3C SCXML 6.2/6.4.5: Delayed send to parent (stored in child, cancelled on termination)
+{
+{% if action.delayexpr %}
+    std::string delayStr;
+{% if model.needs_jsengine or model.needs_event_origin %}
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto delayResult = jsEngine.getVariable(sessionId_.value(), "{{ action.delayexpr }}").get();
+    if (::SCE::JSEngine::isSuccess(delayResult)) {
+        delayStr = ::SCE::JSEngine::resultToString(delayResult);
+    }
+{% else %}
+    delayStr = {{ action.delayexpr }};
+{% endif %}
+    auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString(delayStr);
+{% else %}
+    auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString("{{ action.delay }}");
+{% endif %}
+
+    // W3C SCXML 6.4.5: Schedule delayed send using SendSchedulingHelper
+    // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
+    // When child terminates, SimpleScheduler destructor automatically cleans up pending events
+    if (parent_) {
+        parentSendScheduler_.scheduleEvent(
+            ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
+            delayMs,
+            sendId
+        );
+        LOG_DEBUG("Scheduled delayed send to parent: event={{ action.event }}, delay={{ action.delay if action.delay else action.delayexpr }}, sendId={}", sendId);
+    } else {
+        LOG_ERROR("Cannot send to parent: parent pointer is null");
+    }
+}
+{% else %}
+// W3C SCXML 6.2: Immediate send to parent state machine with invokeid (test338)
+// W3C SCXML 6.5: Send with child session ID in origin for finalize support (test233)
+{% if action.params %}
+// W3C SCXML 5.10: Build event data from params for finalize access (test233)
+{
+    std::map<std::string, std::vector<std::string>> params;
+{% set needs_jsengine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
+{% if needs_jsengine %}
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+{% endif %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+    // W3C SCXML Appendix B.2: Static string literal (Pure Static optimization)
+    params["{{ param.name }}"].push_back("{{ param.static_value }}");
+{% else %}
+    // W3C SCXML 5.10: Dynamic param expr evaluation
+    {
+        auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        if (::SCE::JSEngine::isSuccess(paramResult)) {
+            params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
+        } else {
+            LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+            params["{{ param.name }}"].push_back("");
+        }
+    }
+{% endif %}
+{% endfor %}
+    std::string eventData = ::SCE::EventDataHelper::buildJsonFromParams(params);
+    ::SCE::SendHelper::sendToParentWithOrigin(
+        engine.getPolicy().parent_,
+        ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
+        engine.getPolicy().invokeId_,
+        engine.getPolicy().childSessionId_,
+        eventData
+    );
+}
+{% else %}
+::SCE::SendHelper::sendToParentWithOrigin(
+    engine.getPolicy().parent_,
+    ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
+    engine.getPolicy().invokeId_,
+    engine.getPolicy().childSessionId_
+);
+{% endif %}
+{% endif %}
+{% elif action.target == '#_child' %}
+// W3C SCXML 6.4.1: Send to invoked child state machine (test347)
+{% if model.static_invokes %}
+{% set invoke_id = model.static_invokes[0].invoke_id %}
+{% set child_name = model.static_invokes[0].child_name %}
+if (child_{{ invoke_id }}_) {
+    // W3C SCXML 6.4.1: Send event to child using child's Event enum
+    using ChildEvent = ::SCE::Generated::{{ child_name }}::Event;
+    LOG_DEBUG("Sending event {{ action.event }} to child {{ invoke_id }}");
+    child_{{ invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+    LOG_DEBUG("Processing child {{ invoke_id }} event queues");
+    // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
+    child_{{ invoke_id }}_->step();
+    LOG_DEBUG("Child {{ invoke_id }} processing complete, isInFinalState={}", child_{{ invoke_id }}_->isInFinalState());
+} else {
+    LOG_WARN("Child {{ invoke_id }} not initialized, cannot send event");
+}
+{% else %}
+// No static invokes found - this should not happen for #_child target
+LOG_ERROR("Cannot send to #_child: no static invokes in model");
+{% endif %}
+{% elif action.target.startswith('#_') and action.target not in ['#_parent', '#_internal', '#_child'] %}
+// W3C SCXML 6.4: Send to child invoke via #_<invokeid> target (test192)
+// ARCHITECTURE.md Zero Duplication: Uses SendHelper::isChildInvokeTarget() (Single Source of Truth)
+if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
+    std::string invokeId = ::SCE::SendHelper::extractInvokeId("{{ action.target }}");
+{% if model.static_invokes %}
+{% for invoke in model.static_invokes %}
+{% if loop.first %}
+    if (invokeId == "{{ invoke.invoke_id }}") {
+        if (child_{{ invoke.invoke_id }}_) {
+            // W3C SCXML 6.4: Send event to child using child's Event enum
+            using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
+            LOG_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
+            child_{{ invoke.invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+            LOG_DEBUG("Processing child {} event queues", invokeId);
+            // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
+            child_{{ invoke.invoke_id }}_->step();
+            LOG_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
+        } else {
+            LOG_WARN("Child {} not initialized, cannot send event", invokeId);
+        }
+{% else %}
+    } else if (invokeId == "{{ invoke.invoke_id }}") {
+        if (child_{{ invoke.invoke_id }}_) {
+            using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
+            LOG_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
+            child_{{ invoke.invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+            child_{{ invoke.invoke_id }}_->step();
+            LOG_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
+        } else {
+            LOG_WARN("Child {} not initialized, cannot send event", invokeId);
+        }
+{% endif %}
+{% endfor %}
+    } else {
+        LOG_ERROR("Child invoke target #{} not found in static invokes", invokeId);
+    }
+{% else %}
+    LOG_ERROR("Cannot send to child invoke: no static invokes in model");
+{% endif %}
+} else {
+    LOG_ERROR("Invalid child invoke target: {{ action.target }}");
+}
+{% else %}
+// W3C SCXML 6.2 (tests 159, 194): Validate send target using SendHelper
+if (::SCE::SendHelper::isInvalidTarget("{{ action.target }}")) {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    // W3C SCXML 5.10.1: Store sendid for error.execution event (test332)
+    pendingEventSendId_ = sendId;
+{% endif %}
+    // W3C SCXML 5.10: Invalid target raises error.execution and stops subsequent executable content
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "", "", sendId));
+{% if in_entry_exit is defined and in_entry_exit %}
+    return;  // Stop execution of subsequent actions in this entry/exit/transition
+{% endif %}
+}
+{% endif %}
+{% else %}
+// W3C SCXML 6.2.4: No target attribute → external queue (to self)
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and action.event %}
+// W3C SCXML C.2 (test 577): Validate BasicHTTP target requirement using SendHelper (Zero Duplication)
+if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
+    return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
+}
+{% endif %}
+{% endif %}
+
+{# W3C SCXML 6.4: Skip fallback queue routing for child invoke targets (already handled above) #}
+{% if action.target != '#_parent' and action.target != '#_child' and not (action.target.startswith('#_') and action.target not in ['#_parent', '#_internal', '#_child']) %}
+{% if action.eventexpr %}
+// W3C SCXML 6.2: Dynamic event evaluation (test172)
+{
+{% if model.needs_jsengine or model.needs_event_origin %}
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto eventResult = jsEngine.getVariable(sessionId_.value(), "{{ action.eventexpr }}").get();
+    if (!::SCE::JSEngine::isSuccess(eventResult)) {
+        LOG_ERROR("Failed to get variable for eventexpr: {{ action.eventexpr }}");
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+    } else {
+    std::string eventName = ::SCE::JSEngine::resultToString(eventResult);
+{% else %}
+    std::string eventName = {{ action.eventexpr }};
+{% endif %}
+    // Map event name to enum
+    {% for event_name in model.events | sort %}
+    {% if loop.first %}
+    if (eventName == "{{ event_name }}") {
+        engine.raise(typename Engine::EventWithMetadata(Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }}));
+    {% else %}
+    } else if (eventName == "{{ event_name }}") {
+        engine.raise(typename Engine::EventWithMetadata(Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }}));
+    {% endif %}
+    {% endfor %}
+    }
+{% if model.needs_jsengine or model.needs_event_origin %}
+    }
+{% endif %}
+}
+{% elif action.content and not action.event and not action.contentexpr %}
+// W3C SCXML C.2: BasicHTTP content-only send (test 520)
+// Event name is empty - content will be sent as HTTP POST body
+{% if model.needs_jsengine or model.needs_event_origin %}
+engine.raiseExternal(typename Engine::EventWithMetadata(Event::Empty, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", "{{ action.target }}"));
+{% else %}
+// W3C SCXML C.2: HTTP send requires EventWithMetadata with target/type
+engine.raiseExternal(typename Engine::EventWithMetadata(Event::Empty, "{{ action.content | escape_cpp }}", "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", "{{ action.target }}"));
+{% endif %}
+{% elif action.params and not action.event %}
+// W3C SCXML C.2: _scxmleventname parameter event name override (test 531)
+// When no event attribute, _scxmleventname param value becomes event name
+std::map<std::string, std::vector<std::string>> params;
+{% set needs_jsengine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
+{% if needs_jsengine %}
+// W3C SCXML C.2: Dynamic param expr requires JSEngine evaluation (Static Hybrid)
+this->ensureJSEngine();
+auto& jsEngine = ::SCE::JSEngine::instance();
+{% endif %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+// W3C SCXML Appendix B.2: Static string literal (Pure Static optimization)
+params["{{ param.name }}"].push_back("{{ param.static_value }}");
+{% else %}
+// W3C SCXML C.2: Dynamic param expr evaluation
+{
+    auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+    if (::SCE::JSEngine::isSuccess(paramResult)) {
+        params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
+    } else {
+        LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+        params["{{ param.name }}"].push_back("");
+    }
+}
+{% endif %}
+{% endfor %}
+std::string eventData = ::SCE::EventDataHelper::buildJsonFromParams(params);
+// W3C SCXML C.2: HTTP send with param-based event data
+{% if needs_jsengine %}
+engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", "{{ action.target }}"));
+{% else %}
+engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", "{{ action.target }}"));
+{% endif %}
+{% elif action.event %}
+{% if action.delay or action.delayexpr %}
+// W3C SCXML 6.2: Delayed send with event scheduling
+{
+{% if action.namelist or action.params %}
+    // W3C SCXML 5.10: Build event data from namelist and params (test354)
+    std::map<std::string, std::vector<std::string>> params;
+{% if action.namelist %}
+    // W3C SCXML C.1: Evaluate namelist variables using NamelistHelper (Zero Duplication)
+{% if model.needs_jsengine or model.needs_event_origin %}
+    {
+        this->ensureJSEngine();
+        auto& jsEngine = ::SCE::JSEngine::instance();
+        bool success = ::SCE::NamelistHelper::evaluateNamelist(
+            jsEngine, sessionId_.value(), "{{ action.namelist }}",
+            params,
+            [&engine](const std::string& msg) {
+                LOG_ERROR("Namelist evaluation failed: {}", msg);
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+            }
+        );
+        if (!success) return;
+    }
+{% endif %}
+{% endif %}
+{% if action.params %}
+    // W3C SCXML 5.10: Evaluate params at send time (test186, test354)
+{% for param in action.params %}
+{% if model.needs_jsengine or model.needs_event_origin %}
+    {
+        this->ensureJSEngine();
+        auto& jsEngine = ::SCE::JSEngine::instance();
+        auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        if (::SCE::JSEngine::isSuccess(paramResult)) {
+            params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
+        } else {
+            LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+            params["{{ param.name }}"].push_back("");
+        }
+    }
+{% else %}
+    params["{{ param.name }}"].push_back(std::to_string({{ param.expr }}));
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if action.delayexpr %}
+    std::string delayStr;
+{% if model.needs_jsengine or model.needs_event_origin %}
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto delayResult = jsEngine.getVariable(sessionId_.value(), "{{ action.delayexpr }}").get();
+    if (::SCE::JSEngine::isSuccess(delayResult)) {
+        delayStr = ::SCE::JSEngine::resultToString(delayResult);
+    }
+{% else %}
+    delayStr = {{ action.delayexpr }};
+{% endif %}
+    auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString(delayStr);
+{% else %}
+    auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString("{{ action.delay }}");
+{% endif %}
+{% if action.params %}
+    std::string eventData = ::SCE::EventDataHelper::buildJsonFromParams(params);
+    engine.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId, eventData);
+{% else %}
+    engine.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId);
+{% endif %}
+}
+{% else %}
+// W3C SCXML 6.2: Immediate send
+{% if action.namelist or action.params %}
+// W3C SCXML 5.10: Build event data from namelist and params (test354)
+std::map<std::string, std::vector<std::string>> params;
+{% if action.namelist %}
+// W3C SCXML C.1: Evaluate namelist variables using NamelistHelper (Zero Duplication)
+{% if model.needs_jsengine or model.needs_event_origin %}
+{
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    bool success = ::SCE::NamelistHelper::evaluateNamelist(
+        jsEngine, sessionId_.value(), "{{ action.namelist }}",
+        params,
+        [&engine](const std::string& msg) {
+            LOG_ERROR("Namelist evaluation failed: {}", msg);
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+        }
+    );
+    if (!success) return;
+}
+{% endif %}
+{% endif %}
+{% if action.params %}
+// W3C SCXML 5.10: Evaluate params at send time (test186, test354)
+{% for param in action.params %}
+{% if model.needs_jsengine or model.needs_event_origin %}
+{
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+    if (::SCE::JSEngine::isSuccess(paramResult)) {
+        params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
+    } else {
+        LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+        params["{{ param.name }}"].push_back("");
+    }
+}
+{% else %}
+params["{{ param.name }}"].push_back(std::to_string({{ param.expr }}));
+{% endif %}
+{% endfor %}
+{% endif %}
+std::string eventData = ::SCE::EventDataHelper::buildJsonFromParams(params);
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' %}
+{% if action.targetexpr %}
+if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+{% endif %}
+}
+{% else %}
+if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+{% endif %}
+}
+{% endif %}
+{% else %}
+{% if action.targetexpr %}
+if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+{% endif %}
+}
+{% else %}
+if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+{% endif %}
+}
+{% endif %}
+{% endif %}
+{% elif action.content %}
+// W3C SCXML 5.10: Set event data from <content>
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' %}
+{% if action.targetexpr %}
+if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}"));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}");
+{% endif %}
+}
+{% else %}
+if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}"));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}");
+{% endif %}
+}
+{% endif %}
+{% else %}
+{% if action.targetexpr %}
+if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}"));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}");
+{% endif %}
+}
+{% else %}
+if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}"));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "{{ action.content | escape_cpp }}");
+{% endif %}
+}
+{% endif %}
+{% endif %}
+{% elif action.contentexpr %}
+// W3C SCXML 5.10: Evaluate content expression
+{
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto contentResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.contentexpr | escape_cpp }}").get();
+    std::string eventData;
+    if (::SCE::JSEngine::isSuccess(contentResult)) {
+        eventData = ::SCE::JSEngine::resultToString(contentResult);
+    } else {
+        LOG_ERROR("Failed to evaluate content expr: {{ action.contentexpr }}");
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+        eventData = "";
+    }
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' %}
+{% if action.targetexpr %}
+    if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+        engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+    } else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+{% endif %}
+    }
+{% else %}
+    if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
+        engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+    } else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+{% endif %}
+    }
+{% endif %}
+{% else %}
+{% if action.targetexpr %}
+    if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+        engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+    } else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+{% endif %}
+    }
+{% else %}
+    if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
+        engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+    } else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+        engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+        engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+{% endif %}
+    }
+{% endif %}
+{% endif %}
+}
+{% else %}
+// W3C SCXML 6.2: Send without data
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor' %}
+{% if action.targetexpr %}
+if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+{% endif %}
+}
+{% else %}
+if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+{% endif %}
+}
+{% endif %}
+{% else %}
+{% if action.targetexpr %}
+if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+{% endif %}
+}
+{% else %}
+if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
+    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}));
+} else {
+{% if model.needs_jsengine or model.needs_event_origin %}
+    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, "", sessionId_.has_value() ? sessionId_.value() : "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+{% else %}
+    engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
+{% endif %}
+}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+}

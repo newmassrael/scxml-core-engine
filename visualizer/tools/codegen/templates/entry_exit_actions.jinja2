@@ -1,0 +1,771 @@
+{#
+    Entry/Exit Actions Template (Jinja2)
+
+    Last Modified: 2025-10-26
+    ARCHITECTURE.md Version: 2025-10-23
+
+    ARCHITECTURE.md Compliance (Lines 311-491):
+    - Zero Duplication: Uses shared Helper classes for all W3C SCXML semantics
+    - Single Source of Truth: All logic delegated to Helper classes shared with Interpreter
+    - Long-Term Correctness: No workarounds, complete W3C SCXML implementation
+
+    Helper Classes Used:
+    - ForeachHelper: W3C SCXML 5.6 (ARCHITECTURE.md lines 738-748)
+    - SendHelper: W3C SCXML 6.2 (ARCHITECTURE.md lines 750-764)
+    - AssignHelper: W3C SCXML 5.3/5.4 (ARCHITECTURE.md lines 766-779)
+    - DoneDataHelper: W3C SCXML 5.5/5.7 (ARCHITECTURE.md lines 781-797)
+    - NamelistHelper: W3C SCXML C.1/6.2 (ARCHITECTURE.md lines 799-812)
+    - InvokeHelper: W3C SCXML 6.4 (ARCHITECTURE.md lines 814-840)
+    - HierarchicalStateHelper: W3C SCXML 3.12/3.7/3.8 (ARCHITECTURE.md lines 842-871)
+    - SendSchedulingHelper: W3C SCXML 6.2 (ARCHITECTURE.md lines 873-884)
+
+    Features Implemented:
+    - W3C SCXML 3.4: Parallel state auto-entry (enter all child regions)
+    - W3C SCXML 3.7.1: Parallel state done.state event generation
+    - W3C SCXML 3.8: Onexit handlers with datamodel updates
+    - W3C SCXML 3.9: Entry/exit action execution
+    - W3C SCXML 6.4: Static invoke lifecycle management
+
+    Bug Fixes:
+    - 2025-10-26: eventData propagation to done.state events (W3C SCXML test 527)
+      Issue: DoneDataHelper evaluated eventData but EventWithMetadata was created without it
+      Root Cause: Template generated done.state event without passing evaluated eventData parameter
+      Fix: Conditional {% if state.donedata %} to pass eventData to EventWithMetadata constructor
+      Impact: W3C SCXML 5.5 _event.data now correctly populated for all donedata content/param tests
+      Verification: Test 527 (donedata content expr) passes with _event.data == 'foo' guard evaluation
+#}
+
+    template<typename Engine>
+{% if not model.needs_jsengine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states %}    static void executeEntryActions(State state, Engine& engine) {
+{% else %}    void executeEntryActions(State state, Engine& engine) {
+{% endif %}
+        (void)engine;
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
+        // Check for duplicates before adding (parallel region re-entry may call this multiple times)
+        {
+            ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
+            bool alreadyActive = false;
+            for (State s : activeStates_) {
+                if (s == state) {
+                    alreadyActive = true;
+                    break;
+                }
+            }
+            if (!alreadyActive) {
+                LOG_DEBUG("AOT executeEntryActions: Adding state {} to activeStates", static_cast<int>(state));
+                activeStates_.push_back(state);
+            } else {
+                LOG_DEBUG("AOT executeEntryActions: State {} already in activeStates, skipping duplicate", static_cast<int>(state));
+                return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
+            }
+        }
+{% endif %}
+        switch (state) {
+{% for state_id, state in model.states.items() %}
+            case State::{{ state_id | capitalize }}:
+{% if state.datamodel or state.on_entry or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
+                {
+{% if state.datamodel and model.binding == 'late' %}
+                // ============================================================
+                // W3C SCXML 5.9: LATE BINDING - Initialize datamodel on state entry
+                // ARCHITECTURE.md Zero Duplication: DataModelInitHelper shared with Interpreter
+                // ARCHITECTURE.md DRY Principle: Uses datamodel_macros.jinja2
+                // ============================================================
+                ensureJSEngine();
+                auto& jsEngine = ::SCE::JSEngine::instance();
+{% import 'datamodel_macros.jinja2' as dm %}
+{{ dm.initialize_state_datamodel(state, state_id, "AOT executeEntryActions: Late binding initialized", base_path) }}
+
+{% endif %}
+{% if state.static_invokes %}
+                // ============================================================
+                // W3C SCXML 6.4: STATIC INVOKE - Pure AOT Strategy
+                // ARCHITECTURE.md All-or-Nothing: Parent and child both use statically generated code
+                // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
+                // ============================================================
+{% for invoke_info in state.static_invokes %}
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                // Include invoke index to ensure uniqueness for multiple invokes in same state
+                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+
+                {% if invoke_info.idlocation %}
+                // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
+                {
+                    ensureJSEngine();
+                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
+                    LOG_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                }
+                {% endif %}
+
+                // Defer invoke: {{ invoke_info.invoke_id }} ({{ invoke_info.src }})
+                ::SCE::InvokeHelper::deferInvoke(pendingInvokes_,
+                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
+                LOG_DEBUG("Deferred invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+{% endfor %}
+{% endif %}
+{% if state.hybrid_invokes %}
+                // ============================================================
+                // W3C SCXML 6.4: HYBRID INVOKE - Static Hybrid Strategy
+                // ARCHITECTURE.md Hybrid Strategy: AOT parent evaluates expr + creates Interpreter child
+                // Defer invoke execution until macrostep end (ARCHITECTURE.md Zero Duplication)
+                // ============================================================
+                {% for invoke_info in state.hybrid_invokes %}
+                // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                // Include invoke index to ensure uniqueness for multiple invokes in same state
+                std::string generatedInvokeId_{{ invoke_info.invoke_id }} = "{{ state_id }}." + std::to_string(reinterpret_cast<uintptr_t>(this)) + ".{{ invoke_info.invoke_id }}";
+
+                {% if invoke_info.idlocation %}
+                // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
+                {
+                    ensureJSEngine();
+                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
+                    LOG_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
+                }
+                {% endif %}
+
+                // Defer hybrid invoke: {{ invoke_info.invoke_id }} {% if invoke_info.srcexpr %}(srcexpr: {{ invoke_info.srcexpr }}){% elif invoke_info.contentexpr %}(contentexpr: {{ invoke_info.contentexpr }}){% endif %}
+
+                ::SCE::InvokeHelper::deferInvoke(pendingInvokes_,
+                    PendingInvoke{generatedInvokeId_{{ invoke_info.invoke_id }}, State::{{ state_id | capitalize }}});
+                LOG_DEBUG("Deferred hybrid invoke: {} in state {{ state_id }}", generatedInvokeId_{{ invoke_info.invoke_id }});
+{% endfor %}
+{% endif %}
+{% if state.on_entry_blocks %}
+                {
+                    // W3C SCXML 3.8: Build onentry block lambdas for EntryExitHelper
+                    // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
+                    std::vector<std::function<void()>> entryBlocks;
+{% for block in state.on_entry_blocks %}
+                    entryBlocks.push_back([&]() {
+                        // Onentry block {{ loop.index }}/{{ state.on_entry_blocks|length }}
+{% for action in block %}
+                        {% set in_entry_exit = true %}
+                        {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+                    });
+{% endfor %}
+                    // W3C SCXML 3.8: Delegate to EntryExitHelper (Single Source of Truth)
+                    // This achieves ARCHITECTURE.md Zero Duplication between Interpreter and AOT engines
+                    ::SCE::EntryExitHelper<{{ model.name }}Policy, Engine>::executeEntryBlocks(
+                        entryBlocks, engine, "{{ state_id }}"
+                    );
+                }
+{% elif state.on_entry %}
+                // Backward compatibility: flat on_entry list (deprecated - use on_entry_blocks)
+{% for action in state.on_entry %}
+                {% set in_entry_exit = true %}
+                {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+{% endif %}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute <initial> transition executable content
+                // This content executes AFTER parent onentry and BEFORE child state entry
+{% for action in state.initial_transition_actions %}
+                {% set in_entry_exit = true %}
+                {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+{% endif %}
+{% if state.initial_history_id %}
+                // W3C SCXML 3.11: Initial transition targets history state {{ state.initial_history_id }}
+                // Execute history default transition executable content if no history is stored
+                if (!history_{{ state.initial_history_id }}.has_value() || history_{{ state.initial_history_id }}->empty()) {
+                    LOG_DEBUG("AOT history: No stored history for {{ state.initial_history_id }}, executing default transition actions");
+{% for action in state.initial_history_default_actions %}
+                    {% set in_entry_exit = true %}
+                    {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+                } else {
+                    LOG_DEBUG("AOT history: Found stored history for {{ state.initial_history_id }}, skipping default transition actions");
+                }
+{% endif %}
+{% if state.is_final and state.donedata %}
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                {
+                    std::string eventData;
+{% if state.donedata.params %}
+                    // W3C SCXML 5.5: Evaluate <param> elements
+                    this->ensureJSEngine();
+                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    std::vector<std::pair<std::string, std::string>> params = {
+{% for param in state.donedata.params %}
+                        {"{{ param.name }}", "{{ param.location if param.location else param.expr }}"}{{ "," if not loop.last }}
+{% endfor %}
+                    };
+
+                    // W3C SCXML 5.7: "If the location expression does not denote a valid location in the data model..."
+                    // Empty param location raises error.execution and prevents done.state event generation
+                    bool success = ::SCE::DoneDataHelper::evaluateParams(
+                        jsEngine,
+                        sessionId_.value(),
+                        params,
+                        eventData,
+                        [&engine](const std::string& msg) {
+                            LOG_WARN("Donedata param evaluation failed: {}", msg);
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                        }
+                    );
+
+                    // W3C SCXML 5.7: If structural error (empty location), skip done.state event
+                    if (!success) {
+                        LOG_DEBUG("Skipping done.state event due to structural donedata error");
+                        break;
+                    }
+{% elif state.donedata.contentexpr %}
+                    // W3C SCXML 5.5: Evaluate <content expr="..."/>
+                    this->ensureJSEngine();
+                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    ::SCE::DoneDataHelper::evaluateContent(
+                        jsEngine,
+                        sessionId_.value(),
+                        "{{ state.donedata.contentexpr }}",
+                        eventData,
+                        [&engine](const std::string& msg) {
+                            LOG_WARN("Donedata content evaluation failed: {}", msg);
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                        }
+                    );
+{% elif state.donedata.content %}
+                    // W3C SCXML 5.5: Evaluate <content> expression
+                    this->ensureJSEngine();
+                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    ::SCE::DoneDataHelper::evaluateContent(
+                        jsEngine,
+                        sessionId_.value(),
+                        "{{ state.donedata.content | escape_cpp }}",
+                        eventData,
+                        [&engine](const std::string& msg) {
+                            LOG_WARN("Donedata content evaluation failed: {}", msg);
+                            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+                        }
+                    );
+{% endif %}
+
+                    LOG_DEBUG("Final state {{ state_id }} reached with event data: {}", eventData);
+{% endif %}
+{% if state.is_final and state.parent %}
+                // W3C SCXML 3.7: Generate done.state.{parentId} event for compound state completion
+                {
+                    LOG_DEBUG("Final state {{ state_id }} entered, generating done.state.{{ state.parent }}");
+{% if state.donedata %}
+                    engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}, eventData));
+{% else %}
+                    engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}));
+{% endif %}
+                }
+{% if state.donedata %}
+                }
+{% endif %}
+{% if model.states[state.parent].parent and model.states[model.states[state.parent].parent].is_parallel %}
+                // W3C SCXML 3.4: Check if parent's parent (parallel state) is complete
+                // W3C SCXML 3.7.1: Generate done.state event when all regions reach final states
+                // Uses ParallelCompletionHelper (Zero Duplication - shared with Interpreter)
+                {
+                    const auto parallelState = State::{{ model.states[state.parent].parent | capitalize }};
+                    LOG_DEBUG("Checking parallel state {} completion after region {} final",
+                             static_cast<int>(parallelState), "{{ state.parent }}");
+
+                    // W3C SCXML 3.4: Use shared Helper (ARCHITECTURE.md Zero Duplication Principle)
+                    if (::SCE::ParallelCompletionHelper::areAllRegionsInFinal<State, {{ model.name }}Policy>(
+                            parallelState, activeStates_)) {
+                        LOG_DEBUG("All regions of parallel state {} are complete, generating done.state event",
+                                 static_cast<int>(parallelState));
+                        engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ model.states[state.parent].parent }}));
+                    }
+                }
+{% endif %}
+{% endif %}
+                }
+{% endif %}
+                break;
+{% endfor %}
+            default:
+                break;
+        }
+{% if model.has_parallel_states %}
+
+        // W3C SCXML 3.4: If entering parallel state, enter all child regions and their initial children
+        // This ensures parallel states behave like Interpreter (auto-enter all regions)
+        if (isParallelState(state)) {
+            LOG_DEBUG("AOT executeEntryActions: State {} is parallel, entering child regions", static_cast<int>(state));
+            auto regions = getParallelRegions(state);
+            for (const auto& region : regions) {
+                LOG_DEBUG("AOT executeEntryActions: Entering parallel region {}", static_cast<int>(region));
+                executeEntryActions(region, engine);
+
+                // W3C SCXML 3.3: If region is compound, enter initial child
+                if (isCompoundState(region)) {
+                    State initialChild = getInitialChild(region);
+                    if (initialChild != region) {
+                        LOG_DEBUG("AOT executeEntryActions: Entering initial child {} of region {}",
+                                 static_cast<int>(initialChild), static_cast<int>(region));
+                        executeEntryActions(initialChild, engine);
+                    }
+                }
+            }
+        }
+
+        // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
+        // W3C SCXML 3.6: Support deep initial targets (space-separated descendant state IDs)
+        if (isCompoundState(state) && !isParallelState(state)) {
+            // W3C SCXML 3.6: Check if state has multiple or deep initial targets
+            switch (state) {
+                {% for state_id, state in model.states.items() %}
+                {% if state.initial_children and state.initial_children|length > 0 %}
+                case State::{{ state_id | capitalize }}:
+                    LOG_DEBUG("AOT executeEntryActions: State {} has initial children, delegating to StateEntryHelper",
+                             static_cast<int>(state));
+                    enterDeepInitialTargets_{{ state_id | capitalize }}(engine);
+                    break;
+                {% endif %}
+                {% endfor %}
+                default:
+                    // No explicit initial children - use single initial child
+                    State initialChild = getInitialChild(state);
+                    if (initialChild != state) {
+                        LOG_DEBUG("AOT executeEntryActions: State {} is compound, entering initial child {}",
+                                 static_cast<int>(state), static_cast<int>(initialChild));
+                        executeEntryActions(initialChild, engine);
+                    }
+                    break;
+            }
+        }
+{% endif %}
+    }
+
+    template<typename Engine>
+{% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_parallel_states %}    static void executeExitActions(State state, Engine& engine, const std::vector<State>& activeStatesBeforeTransition) {
+{% else %}    void executeExitActions(State state, Engine& engine, const std::vector<State>& activeStatesBeforeTransition) {
+{% endif %}
+        (void)engine;
+        (void)activeStatesBeforeTransition;  // May be unused if no history states
+
+{% if model.has_parallel_states %}
+        // W3C SCXML 3.4 + 3.13: Parallel state exit order
+        // Matches Interpreter's exitParallelStateAndDescendants() logic
+        LOG_DEBUG("AOT executeExitActions: Checking if state {} is parallel", static_cast<int>(state));
+        if (isParallelState(state)) {
+            LOG_DEBUG("AOT executeExitActions: State {} IS parallel, collecting active descendants", static_cast<int>(state));
+
+            // W3C SCXML 3.4: Collect all active descendants of this parallel state
+            // Matches Interpreter's collectDescendantStates() - exit ALL active descendants, not just direct regions
+            ::std::vector<State> descendantsToExit;
+            for (State activeState : activeStates_) {
+                if (activeState != state && isDescendantOf(activeState, state)) {
+                    descendantsToExit.push_back(activeState);
+                    LOG_DEBUG("AOT executeExitActions: Found active descendant {} of parallel state {}",
+                             static_cast<int>(activeState), static_cast<int>(state));
+                }
+            }
+
+            LOG_DEBUG("AOT executeExitActions: Found {} active descendants to exit", descendantsToExit.size());
+
+            // W3C SCXML 3.13: Sort descendants by reverse document order (deepest states exit first)
+            ::std::sort(descendantsToExit.begin(), descendantsToExit.end(),
+                       [](State a, State b) {
+                           return getDocumentOrder(a) > getDocumentOrder(b);
+                       });
+
+            // Exit each active descendant (deepest first)
+            for (State descendant : descendantsToExit) {
+                LOG_DEBUG("AOT executeExitActions: Exiting active descendant {}", static_cast<int>(descendant));
+                executeExitActions(descendant, engine, activeStatesBeforeTransition);
+            }
+
+            LOG_DEBUG("AOT executeExitActions: All active descendants exited, now exiting parallel state {} itself", static_cast<int>(state));
+            // After exiting all descendants, fall through to exit parallel state itself
+        } else {
+            LOG_DEBUG("AOT executeExitActions: State {} is NOT parallel, proceeding to switch", static_cast<int>(state));
+        }
+{% endif %}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 3.4/3.12.1: Remove state from active configuration (parallel states and In() predicate)
+        LOG_DEBUG("AOT executeExitActions: Removing state {} from activeStates", static_cast<int>(state));
+        {
+            ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
+            activeStates_.erase(
+                std::remove(activeStates_.begin(), activeStates_.end(), state),
+                activeStates_.end()
+            );
+        }
+{% endif %}
+        {% if model.history_states %}
+        // W3C SCXML 3.11: Record history before exiting compound states (matches Interpreter logic)
+        // Use pre-transition active states (captured before processTransition modified currentState_)
+        const std::vector<State>& activeStates = activeStatesBeforeTransition;
+        
+        {% for history_id, history_info in model.history_states.items() %}
+        if (state == State::{{ history_info.parent | capitalize }}) {
+            // W3C SCXML 3.11: Filter states using HistoryHelper (shared with Interpreter)
+            auto filteredStates = ::SCE::HistoryHelper::recordHistory(
+                activeStates,
+                State::{{ history_info.parent | capitalize }},
+                HistoryType::{{ history_info.type.upper() }},
+                [](State s) { return {{ model.name }}Policy::getParent(s); }
+            );
+            
+            // W3C SCXML 3.11: Record even if empty (valid scenario - state was active with no children)
+            history_{{ history_id }} = filteredStates;
+            LOG_DEBUG("Recorded {{ history_info.type }} history for {{ history_id }}: {} states", filteredStates.size());
+        }
+        {% endfor %}
+        {% endif %}
+        LOG_DEBUG("AOT executeExitActions: Entering switch for state {}", static_cast<int>(state));
+        switch (state) {
+{% for state_id, state in model.states.items() %}
+            case State::{{ state_id | capitalize }}:
+                LOG_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
+                LOG_DEBUG("AOT executeExitActions: About to execute exit action block for state {}", static_cast<int>(state));
+{% if state.on_exit or state.static_invokes or state.hybrid_invokes %}
+                {
+{% if state.static_invokes %}
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (ARCHITECTURE.md Zero Duplication)
+                ::SCE::InvokeHelper::cancelInvokesForState(pendingInvokes_, state);
+                {% for invoke_info in state.static_invokes %}
+
+                // W3C SCXML 6.4: Cleanup already-running static invoke child (if started in previous macrostep)
+                if (child_{{ invoke_info.invoke_id }}_) {
+                    LOG_DEBUG("Stopping static invoke: id={{ invoke_info.invoke_id }}");
+                    // W3C SCXML 6.4: Only send cancel.invoke if child hasn't completed yet
+                    // Matches Interpreter logic: don't cancel completed invokes (test 236)
+                    if (!pendingDoneInvoke_{{ invoke_info.invoke_id }}_) {
+                        LOG_DEBUG("Sending cancel.invoke for active child {{ invoke_info.invoke_id }}");
+                        engine.raise(typename Engine::EventWithMetadata(Event::Cancel_invoke));
+                    } else {
+                        LOG_DEBUG("Skipping cancel.invoke - child {{ invoke_info.invoke_id }} already completed");
+                    }
+                    child_{{ invoke_info.invoke_id }}_.reset();  // Destroy child state machine
+                }
+                activeInvokes_.erase("{{ invoke_info.invoke_id }}");
+{% endfor %}
+{% endif %}
+{% if state.hybrid_invokes %}
+                // W3C SCXML 6.4: Cancel pending hybrid invokes for exited state
+                ::SCE::InvokeHelper::cancelInvokesForState(pendingInvokes_, state);
+                {% for invoke_info in state.hybrid_invokes %}
+
+                // W3C SCXML 6.4: Cleanup already-running hybrid invoke child (Interpreter instance)
+                if (hybridChild_{{ invoke_info.invoke_id }}_) {
+                    LOG_DEBUG("Stopping hybrid invoke: id={{ invoke_info.invoke_id }}");
+                    // W3C SCXML 6.4: Destroy Interpreter child (no cancel.invoke event needed)
+                    hybridChild_{{ invoke_info.invoke_id }}_.reset();  // Destroy child state machine
+                }
+{% endfor %}
+{% endif %}
+{% if state.on_exit_blocks %}
+                {
+                    // W3C SCXML 3.9: Build onexit block lambdas for EntryExitHelper
+                    // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
+                    std::vector<std::function<void()>> exitBlocks;
+{% for block in state.on_exit_blocks %}
+                    exitBlocks.push_back([&]() {
+                        // Onexit block {{ loop.index }}/{{ state.on_exit_blocks|length }}
+{% for action in block %}
+                        {% set in_entry_exit = true %}
+                        {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+                    });
+{% endfor %}
+                    // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
+                    // This achieves ARCHITECTURE.md Zero Duplication between Interpreter and AOT engines
+                    ::SCE::EntryExitHelper<{{ model.name }}Policy, Engine>::executeExitBlocks(
+                        exitBlocks, engine, "{{ state_id }}"
+                    );
+                }
+{% elif state.on_exit %}
+                // Backward compatibility: flat on_exit list (deprecated - use on_exit_blocks)
+{% for action in state.on_exit %}
+                {% set in_entry_exit = true %}
+                {% include 'actions/' + action.type + '.jinja2' %}
+
+{% endfor %}
+{% endif %}
+                }
+{% endif %}
+                break;
+{% endfor %}
+            default:
+                break;
+        }
+    }
+
+{% if model.static_invokes or model.hybrid_invokes %}
+
+    // W3C SCXML 6.4: Execute pending invokes at macrostep end
+    // Uses InvokeHelper defer/cancel/execute pattern (ARCHITECTURE.md Zero Duplication)
+    template<typename Engine>
+    void executePendingInvokes(Engine& engine) {
+        
+        if (pendingInvokes_.empty()) {
+            return;
+        }
+        
+        LOG_DEBUG("Executing {} pending invokes at macrostep end", pendingInvokes_.size());
+        
+        // W3C SCXML 6.4: Use InvokeHelper as Single Source of Truth
+        ::SCE::InvokeHelper::executePendingInvokes(
+            pendingInvokes_,
+            [this, &engine](const PendingInvoke& pending) {
+                LOG_DEBUG("Executing pending invoke: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
+                
+                // Switch on state to find which invoke to execute
+                {% for state_id, state in model.states.items() %}
+                {% if state.static_invokes %}
+                if (pending.state == State::{{ state_id | capitalize }}) {
+                    {% for invoke_info in state.static_invokes %}
+                    // W3C SCXML 3.12.1: Match runtime-generated invoke ID (stateid.platformid.index format)
+                    // Full ID example: "s0.123456789._invoke_0" where 123456789 is runtime platformid (pointer address)
+                    // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
+                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                        {% if invoke_info.namelist %}
+                        // W3C SCXML 6.4.1: Namelist handling - validate and pass values to child
+                        std::map<std::string, std::vector<std::string>> namelistParams;
+
+                        // Step 1: Validate namelist variables before creating child
+                        {
+                            ensureJSEngine();
+                            auto& jsEngine = ::SCE::JSEngine::instance();
+
+                            bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
+                                jsEngine,
+                                sessionId_.value(),
+                                "{{ invoke_info.namelist }}",
+                                namelistParams,
+                                [&engine](const std::string& errorMsg) {
+                                    LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
+                                    // W3C SCXML 6.4.1: Raise error.execution on namelist error
+                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+                                }
+                            );
+
+                            if (!namelistValid) {
+                                // W3C SCXML 6.4.1: Invoke cancelled due to namelist validation failure
+                                LOG_DEBUG("Skipping invoke {{ invoke_info.invoke_id }} due to namelist validation failure");
+                                return;  // Skip this invoke - don't create child
+                            }
+
+                            LOG_DEBUG("Namelist validation passed for invoke {{ invoke_info.invoke_id }}");
+                        }
+                        {% endif %}
+
+                        // W3C SCXML 6.4: Instantiate and initialize child state machine
+                        LOG_DEBUG("Creating child state machine: {{ invoke_info.child_name }} for invoke {{ invoke_info.invoke_id }}");
+
+                        // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                        // Format: "parentSessionId.invokeId" (e.g., "session123._invoke_0")
+                        std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
+                        
+                        // Create child instance with parent pointer, invokeId, and childSessionId
+                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+
+                        {% if invoke_info.namelist %}
+                        // W3C SCXML 6.4.1: Pass namelist values to child datamodel (Step 2)
+                        {% if invoke_info.child_needs_jsengine %}
+                        // W3C SCXML 6.3.2: Child datamodel variables for validation
+                        // ARCHITECTURE.md Zero Duplication: Matches InvokeExecutor.cpp:322-359 logic
+                        static const std::set<std::string> childDatamodelVars_{{ invoke_info.invoke_id }} = DatamodelValidationHelper::buildChildDatamodelSet({{ '{' }}{% for var in invoke_info.child_datamodel_vars %}"{{ var }}"{{ ", " if not loop.last }}{% endfor %}{{ '}' }});
+                        
+                        for (const auto& [varName, values] : namelistParams) {
+                            // W3C SCXML 6.3.2: Only set variable if it exists in child's datamodel
+                            if (!DatamodelValidationHelper::isVariableDeclaredInChild(varName, childDatamodelVars_{{ invoke_info.invoke_id }})) {
+                                LOG_DEBUG("Skipping namelist variable '{}' - not defined in child's datamodel", varName);
+                                continue;
+                            }
+                            
+                            if (!values.empty()) {
+                                LOG_DEBUG("Setting namelist variable '{}' = '{}' in child {{ invoke_info.invoke_id }}", varName, values[0]);
+                                child_{{ invoke_info.invoke_id }}_->setParamInJSEngine(varName, values[0]);
+                            }
+                        }
+                        {% else %}
+                        // Child does not use JSEngine - namelist handled via static datamodel
+                        LOG_DEBUG("Namelist variables - child uses static datamodel");
+                        {% endif %}
+                        {% endif %}
+
+                        {% if invoke_info.params %}
+                        // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
+                        {% for param in invoke_info.params %}
+                        {% if invoke_info.child_needs_jsengine %}
+                        child_{{ invoke_info.invoke_id }}_->setParamInJSEngine("{{ param.name }}", "{{ param.expr }}");
+                        {% else %}
+                        // Child does not use JSEngine - params handled via static datamodel
+                        LOG_DEBUG("Param {{ param.name }}={{ param.expr }} - child uses static datamodel");
+                        {% endif %}
+                        {% endfor %}
+                        {% endif %}
+
+                        // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+                        // Child may send events during initialize() that need autoforward
+                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                            childSessionId,  // W3C SCXML 6.5: Child session ID for finalize origin matching
+                            "{{ invoke_info.invoke_id }}",
+                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
+                            {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.6: autoforward
+                            "{{ invoke_info.finalize_content | replace('"', '\"') }}"  // W3C SCXML 6.5: finalize
+                        };
+
+                        // W3C SCXML 6.4: Register completion callback BEFORE initialize
+                        // Child may reach final state during initialize() and needs callback ready
+                        child_{{ invoke_info.invoke_id }}_->setCompletionCallback([this]() {
+                            // W3C SCXML 6.4: Send done.invoke immediately (matches Interpreter logic - test 236)
+                            // Interpreter sends done.invoke in completion callback, not deferred
+                            LOG_DEBUG("Child state machine {{ invoke_info.invoke_id }} completed, sending done.invoke");
+
+                            // Mark as completed (for Cancel_invoke logic - test 236)
+                            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
+
+                            // W3C SCXML 6.3.1: Create done.invoke event with invokeId via EventMetadataHelper
+                            // ARCHITECTURE.md Zero Duplication: Single Source of Truth for event metadata
+                            // Send done.invoke to external queue (matches Interpreter event ordering)
+                            self_->raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
+                                typename SelfType::Event, typename SelfType::EventWithMetadata>(
+                                {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
+                                "{{ invoke_info.invoke_id }}"
+                            ));
+                        });
+
+                        // W3C SCXML 6.4: Initialize child state machine
+                        child_{{ invoke_info.invoke_id }}_->initialize();
+                        
+                        // activeInvokes_ already registered above BEFORE initialize()
+                        // This ensures child events during initialize() can use autoforward
+                        
+                        LOG_DEBUG("Child state machine {{ invoke_info.invoke_id }} initialized and running");
+                        return;  // Found and executed the invoke
+                    }
+                    {% endfor %}
+                }
+                {% endif %}
+                {% if state.hybrid_invokes %}
+                if (pending.state == State::{{ state_id | capitalize }}) {
+                    {% for invoke_info in state.hybrid_invokes %}
+                    // W3C SCXML 3.12.1: Match runtime-generated invoke ID (stateid.platformid.index format)
+                    // Full ID example: "s0.123456789._invoke_0" where 123456789 is runtime platformid (pointer address)
+                    // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
+                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                        // W3C SCXML 6.4: Hybrid invoke (srcexpr or contentexpr) - AOT parent + Interpreter child
+                        // ARCHITECTURE.md: Hybrid Strategy
+                        {% if invoke_info.srcexpr %}
+                        LOG_DEBUG("Executing hybrid invoke: {{ invoke_info.invoke_id }} (srcexpr: {{ invoke_info.srcexpr }})");
+
+                        // Evaluate srcexpr via JSEngine to get file path
+                        ensureJSEngine();
+                        auto& jsEngine = ::SCE::JSEngine::instance();
+                        auto pathResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.srcexpr }}").get();
+                        std::string filePath = pathResult.getValue<std::string>();
+
+                        // W3C SCXML 6.4.3: Load SCXML file via FileLoadingHelper (ARCHITECTURE.md Zero Duplication)
+                        // W3C SCXML Standard: Resolve child relative to parent SCXML location
+                        std::string scxmlContent = ::SCE::FileLoadingHelper::loadScxmlFile(filePath, this->scxmlSourcePath_);
+
+                        // Create Interpreter child from SCXML string (use runtime-generated invoke ID)
+                        auto child = ::SCE::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
+                        {% elif invoke_info.contentexpr %}
+                        LOG_DEBUG("Executing hybrid invoke: {{ invoke_info.invoke_id }} (contentexpr: {{ invoke_info.contentexpr }})");
+
+                        // Evaluate contentexpr via JSEngine
+                        ensureJSEngine();
+                        auto& jsEngine = ::SCE::JSEngine::instance();
+                        auto contentResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.contentexpr }}").get();
+                        std::string scxmlContent = contentResult.getValue<std::string>();
+
+                        LOG_DEBUG("Hybrid invoke contentexpr evaluated to {} bytes SCXML", scxmlContent.size());
+
+                        // Create Interpreter child from SCXML string (use runtime-generated invoke ID)
+                        auto child = ::SCE::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
+                        {% endif %}
+                        if (!child) {
+                            LOG_ERROR("Failed to create child state machine from contentexpr for invoke {{ invoke_info.invoke_id }}");
+                            return;
+                        }
+
+                        // Store child instance
+                        hybridChild_{{ invoke_info.invoke_id }}_ = child;
+
+                        // W3C SCXML 6.4: Set completion callback for done.invoke event
+                        child->setCompletionCallback([this, &engine]() {
+                            LOG_DEBUG("Hybrid child {{ invoke_info.invoke_id }} completed, raising done.invoke");
+                            // W3C SCXML 6.3.1: Create done.invoke event with invokeId via EventMetadataHelper
+                            // ARCHITECTURE.md Zero Duplication: Single Source of Truth for event metadata
+                            engine.raise(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
+                                Event, typename Engine::EventWithMetadata>(
+                                {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
+                                "{{ invoke_info.invoke_id }}"
+                            ));
+                        });
+
+                        // W3C SCXML 6.4: Start child state machine
+                        child->start();
+
+                        LOG_DEBUG("Hybrid child state machine {{ invoke_info.invoke_id }} started");
+                        return;  // Found and executed the hybrid invoke
+                    }
+                    {% endfor %}
+                }
+                {% endif %}
+                {% endfor %}
+
+                // No matching static or hybrid invoke found
+                LOG_ERROR("Pending invoke not found: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
+            }
+        );
+        
+        LOG_DEBUG("All pending invokes executed");
+    }
+
+    // W3C SCXML 6.4: Tick all active child state machines to process their events
+    // Child state machines need to run independently during parent's event loop
+    template<typename Engine>
+    void tickChildren(Engine& engine) {
+        (void)engine;
+        {% for state_id, state in model.states.items() %}
+        {% if state.static_invokes %}
+        {% for invoke_info in state.static_invokes %}
+        // Tick child {{ invoke_info.invoke_id }} if active
+        if (child_{{ invoke_info.invoke_id }}_) {
+            LOG_DEBUG("Ticking child {{ invoke_info.invoke_id }}");
+            child_{{ invoke_info.invoke_id }}_->tick();
+        }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+    }
+
+    // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
+    // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent
+    template<typename Engine>
+    void forwardToAutoforwardChildren(const std::string& eventName, Engine& engine) {
+        (void)engine;
+        
+        {% for state_id, state in model.states.items() %}
+        {% if state.static_invokes %}
+        {% for invoke_info in state.static_invokes %}
+        // Check if child {{ invoke_info.invoke_id }} has autoforward enabled
+        {
+            auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+            LOG_DEBUG("AOT autoforward check: invokeId='{{ invoke_info.invoke_id }}', found={}, autoforward={}, childPtr={}", 
+                      (it != activeInvokes_.end()), 
+                      (it != activeInvokes_.end() ? it->second.autoforward : false),
+                      (child_{{ invoke_info.invoke_id }}_ != nullptr));
+            
+            if (it != activeInvokes_.end() && it->second.autoforward && child_{{ invoke_info.invoke_id }}_) {
+                LOG_DEBUG("AOT autoforward: Forwarding event '{}' to child {{ invoke_info.invoke_id }}", eventName);
+
+                // W3C SCXML 6.4.6: Forward by event name string to child
+                // Child's raiseExternal(string) will convert to its Event enum and handle gracefully if not found
+                child_{{ invoke_info.invoke_id }}_->raiseExternal(eventName);
+            }
+        }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+    }
+{% endif %}

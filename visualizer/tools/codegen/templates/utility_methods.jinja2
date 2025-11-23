@@ -1,0 +1,184 @@
+{% if model.needs_jsengine %}
+    // W3C SCXML 5.9: Safe guard evaluation with error.execution on failure
+    // ARCHITECTURE.md: Zero Duplication - Wraps shared GuardHelper with AOT-specific error handling
+    template<typename Engine>
+    bool safeEvaluateGuard(::SCE::JSEngine& jsEngine, const std::string& sessionId,
+                           const std::string& guardExpr, Engine& engine) const {
+        LOG_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);
+        auto result = ::SCE::GuardHelper::evaluateGuard(jsEngine, sessionId, guardExpr);
+
+        if (!result.has_value()) {
+            // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
+            LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", guardExpr);
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Guard evaluation failed"));
+            return false;
+        }
+
+        LOG_DEBUG("AOT safeEvaluateGuard: Guard '{}' evaluated to: {}", guardExpr, *result);
+        return *result;
+    }
+
+    // Helper: Set param in JSEngine for static invoke (W3C SCXML 6.4)
+    void setParamInJSEngine(const std::string& paramName, const std::string& paramExpr) {
+        ensureJSEngine();
+        auto& jsEngine = ::SCE::JSEngine::instance();
+        auto valueResult = jsEngine.evaluateExpression(sessionId_.value(), paramExpr).get();
+        if (::SCE::JSEngine::isSuccess(valueResult)) {
+            jsEngine.setVariable(sessionId_.value(), paramName, valueResult.getInternalValue());
+        } else {
+            LOG_ERROR("Failed to evaluate param expression for {}: {}", paramName, paramExpr);
+        }
+    }
+{% endif %}
+
+    // Helper: Convert Event enum to string for _event.name (W3C SCXML 5.10)
+    static std::string getEventName(Event event) {
+        switch (event) {
+            case Event::NONE: return "";
+{% for event_name in model.events | sort %}
+            case Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }}: return "{{ event_name }}";
+{% endfor %}
+            default: return "";
+        }
+    }
+
+    // Helper: Convert event name string to Event enum (W3C SCXML 6.4.6 autoforward)
+    // Used for forwarding events by name to child state machines
+    static std::optional<Event> getEventFromName(const std::string& eventName) {
+        if (eventName.empty()) return std::nullopt;
+{% for event_name in model.events | sort %}
+        if (eventName == "{{ event_name }}") return Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }};
+{% endfor %}
+        return std::nullopt;
+    }
+
+{% if model.static_invokes %}
+    // W3C SCXML 6.5: Execute finalize for events from invoked children
+    // Finalize runs BEFORE the event is processed, with _event set to child's event
+    template<typename Engine>
+    void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, Engine& engine) {
+        (void)engine;  // Unused in this implementation
+        
+        // W3C SCXML 6.5: Only execute finalize for events from child invokes
+        // origin field contains child's session ID
+        if (eventWithMeta.origin.empty()) {
+            return;  // Not from a child
+        }
+
+        // Find which invoke sent this event by matching child session ID
+        for (const auto& [invokeId, childSession] : activeInvokes_) {
+            if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
+                LOG_DEBUG("AOT finalize: Executing finalize for invoke '{}' before processing event", invokeId);
+                
+{% if model.needs_jsengine %}
+                // W3C SCXML 6.5: Use FinalizeHelper (ARCHITECTURE.md Zero Duplication)
+                // Single Source of Truth for finalize execution shared with Interpreter
+                std::string eventName = this->getEventName(eventWithMeta.event);
+                
+                this->ensureJSEngine();
+                auto& jsEngine = ::SCE::JSEngine::instance();
+                
+                ::SCE::FinalizeHelper::executeFinalizeWithEvent(
+                    jsEngine,
+                    sessionId_.value(),
+                    childSession.finalizeScript,
+                    eventName,
+                    eventWithMeta.data,
+                    eventWithMeta.sendId,
+                    eventWithMeta.origin,
+                    eventWithMeta.originType,
+                    eventWithMeta.invokeId
+                );
+{% else %}
+                // Pure Static: finalize script should be empty (no ECMAScript expressions)
+                LOG_WARN("AOT finalize: Finalize script present but JSEngine not available for invoke '{}'", invokeId);
+{% endif %}
+                
+                return;  // Found and executed
+            }
+        }
+    }
+{% endif %}
+
+{% if model.has_parallel_states or model.uses_in_predicate %}
+    // Helper: Convert State enum to string for In() predicate (W3C SCXML 5.9.2)
+    static std::string getStateName(State state) {
+        switch (state) {
+{% for state_id in model.states.keys() | sort %}
+            case State::{{ state_id | capitalize }}: return "{{ state_id }}";
+{% endfor %}
+            default: return "";
+        }
+    }
+
+    // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
+    // ARCHITECTURE.md Zero Duplication: Use InPredicateHelper (Single Source of Truth)
+    // Thread-safe: called from JSEngine worker thread
+    bool isStateActive(const std::string& stateId) const {
+        ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
+        
+        // ARCHITECTURE.md: Delegate to InPredicateHelper for shared In() predicate logic
+        bool result = ::SCE::InPredicateHelper::isStateActive(
+            activeStates_,
+            [](State s) { return getStateName(s); },
+            stateId
+        );
+        
+        LOG_TRACE("AOT isStateActive: '{}' {} in activeStates_ (size={})", 
+                  stateId, result ? "found" : "not found", activeStates_.size());
+        return result;
+    }
+{% endif %}
+
+private:
+{% if model.needs_event_type %}
+    // Helper: Determine event type using shared EventTypeHelper (W3C SCXML 5.10.1)
+    std::string getEventType(const std::string& eventName) {
+        bool isExternal = nextEventIsExternal_;
+        if (nextEventIsExternal_) {
+            nextEventIsExternal_ = false;
+        }
+        return ::SCE::EventTypeHelper::classifyEventType(eventName, isExternal);
+    }
+{% endif %}
+
+public:
+    // Helper: Set _event variable in JSEngine (W3C SCXML 5.10)
+    // Always generated for compile-time compatibility, but no-op if JSEngine not needed
+    void setCurrentEventInJSEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
+                                [[maybe_unused]] const std::string& eventType = "", [[maybe_unused]] const std::string& sendId = "",
+                                [[maybe_unused]] const std::string& origin = "", [[maybe_unused]] const std::string& originType = "", 
+                                [[maybe_unused]] const std::string& invokeId = "") {
+{% if model.needs_jsengine and (model.needs_event_name or model.needs_event_data) %}
+        if (eventName.empty()) return;
+        ensureJSEngine();
+        std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
+        LOG_DEBUG("AOT setCurrentEventInJSEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
+                  eventName, eventData, actualType, sendId, origin, originType, invokeId);
+        // W3C SCXML 5.10: Wait for setCurrentEvent to complete before proceeding (synchronous)
+        ::SCE::JSEngine::instance().setCurrentEvent(sessionId_.value(), eventName, eventData,
+                                                    actualType, sendId, origin, originType, invokeId).get();
+{% else %}
+        // No-op: This state machine doesn't use JSEngine
+        (void)eventName; (void)eventData; (void)eventType; (void)sendId; (void)origin; (void)originType; (void)invokeId;
+{% endif %}
+    }
+
+    // Helper: Ensure JSEngine session is destroyed before stack unwinding
+    // This prevents stack-use-after-return when JSEngine background thread
+    // tries to call In() predicate callbacks after the state machine is destroyed
+    void ensureJSEngineSessionDestroyed() const {
+{% if model.needs_jsengine %}
+        if (!jsEngineInitialized_) return;
+        if (!sessionId_.has_value()) return;
+        auto& jsEngine = ::SCE::JSEngine::instance();
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML: Unregister state query callback before destroying session
+        // This prevents stack-use-after-return when JSEngine tries to call callback
+        // after state machine is destroyed
+        jsEngine.setStateQueryCallback(nullptr, sessionId_.value());
+{% endif %}
+        jsEngine.destroySession(sessionId_.value());
+        jsEngineInitialized_ = false;
+{% endif %}
+    }

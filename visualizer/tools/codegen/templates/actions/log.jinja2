@@ -1,0 +1,22 @@
+// W3C SCXML 3.8.8: <log>
+{% if action.expr %}
+{% if '_event.raw' in action.expr or '_event.invokeid' in action.expr %}
+// TODO: log {{ action.expr }}
+{% elif model.needs_jsengine %}
+{
+    this->ensureJSEngine();
+    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto logResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.expr | escape_cpp }}").get();
+    if (::SCE::JSEngine::isSuccess(logResult)) {
+        LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::SCE::JSEngine::resultToString(logResult));
+    } else {
+        LOG_ERROR("Failed to evaluate log expression: {{ action.expr | escape_cpp }}");
+    }
+}
+{% else %}
+// Convert JavaScript single quotes to C++ double quotes for string literals
+LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", {{ action.expr | replace("'", '"') }});
+{% endif %}
+{% else %}
+LOG_INFO("{{ action.label }}");
+{% endif %}

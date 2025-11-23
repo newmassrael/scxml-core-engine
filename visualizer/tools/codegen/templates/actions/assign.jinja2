@@ -1,0 +1,72 @@
+{#
+    Assign Action Template (Jinja2)
+
+    Last Modified: 2025-10-30
+    ARCHITECTURE.md Version: 2025-10-23
+
+    ARCHITECTURE.md Compliance (Lines 311-491):
+    - Zero Duplication: Uses shared AssignHelper for validation
+    - Zero Duplication: Uses shared AssignmentExecutionHelper for execution
+    - Single Source of Truth: Assignment strategy matches Interpreter engine exactly
+    - W3C SCXML 5.3: Data model assignment semantics
+    - W3C SCXML 5.10: System variable reference preservation (_event, _sessionid, etc.)
+    - W3C SCXML B.2: System variable immutability enforcement
+
+    Helper Classes Used:
+    - AssignHelper: W3C SCXML 5.3/5.4/B.2 location validation
+    - AssignmentExecutionHelper: W3C SCXML 5.3/5.10 assignment execution strategy
+
+    Critical Fixes:
+    - 2025-10-28: Refactored to use shared AssignmentExecutionHelper
+    - 2025-10-30: Conditional block scope based on context (foreach vs standalone)
+#}
+{% if not in_foreach %}{{ '{' }}{% endif %}
+// W3C SCXML 5.3, 5.4: Validate assignment location using shared AssignHelper
+{% if not in_foreach %}bool success = false;
+{% else %}success = false;  // Use foreach-scope variable
+{% endif %}
+if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
+    // Location is valid, proceed with assignment
+    LOG_DEBUG("AOT assign: Before ensureJSEngine for {{ action.location }}");
+    this->ensureJSEngine();
+    LOG_DEBUG("AOT assign: After ensureJSEngine, sessionId={}", sessionId_.value_or("NONE"));
+    auto& jsEngine = ::SCE::JSEngine::instance();
+
+    // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
+    // W3C SCXML 5.3/5.10: Assignment execution with proper system variable handling
+    {% if action.content %}
+    // W3C SCXML 5.4: XML content assignments use string literal expression
+    std::string expr = "'{{ action.content | replace('"', '\\"') | replace("'", "\\'") }}'";
+    {% else %}
+    std::string expr = "{{ action.expr.rstrip(';') }}";
+    {% endif %}
+
+    success = ::SCE::AssignmentExecutionHelper::executeAssignment(
+        jsEngine, sessionId_.value(), "{{ action.location }}", expr,
+        [&engine](const std::string& error) {
+            LOG_ERROR("AOT assign: {}", error);
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
+        }
+    );
+
+    if (!success) {
+        // Assignment failed, error.execution already raised by callback
+        {% if action.content %}
+        LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = content");
+        {% else %}
+        LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = {{ action.expr.rstrip(';') }}");
+        {% endif %}
+    } else {
+        {% if action.content %}
+        LOG_DEBUG("AOT assign: Successfully assigned {{ action.location }} = content");
+        {% else %}
+        LOG_DEBUG("AOT assign: Successfully assigned {{ action.location }} = {{ action.expr.rstrip(';') }}");
+        {% endif %}
+    }
+} else {
+    // W3C SCXML 5.3/5.4/B.2: Invalid or read-only location
+    std::string errorMsg = ::SCE::AssignHelper::getInvalidLocationErrorMessage("{{ action.location }}");
+    LOG_ERROR("W3C SCXML 5.3: {}", errorMsg);
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+}
+{% if not in_foreach %}{{ '}' }}{% endif %}

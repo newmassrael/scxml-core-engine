@@ -1,0 +1,35 @@
+// W3C SCXML 3.8.5: <if>
+{% if action.is_pure_in_predicate %}
+// W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
+if ({{ action.cond_cpp }}) {
+{% elif model.needs_jsengine %}
+// W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
+// Use safeEvaluateGuard for std::optional<bool> handling and error.execution support
+this->ensureJSEngine();
+auto& jsEngine = ::SCE::JSEngine::instance();
+if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}", engine)) {
+{% else %}
+if ({{ action.cond }}) {
+{% endif %}
+    {% for then_action in action.then_actions %}
+    {% with action=then_action %}
+    {% include 'actions/' + then_action.type + '.jinja2' %}
+    {% endwith %}
+    {% endfor %}
+{% for elseif in action.elseif_branches %}
+} else if ({% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_jsengine %}this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ elseif.cond | escape_cpp }}", engine){% else %}{{ elseif.cond }}{% endif %}) {
+    {% for elseif_action in elseif.actions %}
+    {% with action=elseif_action %}
+    {% include 'actions/' + elseif_action.type + '.jinja2' %}
+    {% endwith %}
+    {% endfor %}
+{% endfor %}
+{% if action.else_actions %}
+} else {
+    {% for else_action in action.else_actions %}
+    {% with action=else_action %}
+    {% include 'actions/' + else_action.type + '.jinja2' %}
+    {% endwith %}
+    {% endfor %}
+{% endif %}
+}

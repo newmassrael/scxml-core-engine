@@ -1,0 +1,24 @@
+{
+  "templates": [
+    "state_machine.jinja2",
+    "process_transition.jinja2",
+    "entry_exit_actions.jinja2",
+    "jsengine_helpers.jinja2",
+    "utility_methods.jinja2",
+    "license_header.jinja2",
+    "datamodel_macros.jinja2",
+    "conflict_resolution.jinja2",
+    "actions/assign.jinja2",
+    "actions/cancel.jinja2",
+    "actions/else.jinja2",
+    "actions/elseif.jinja2",
+    "actions/foreach.jinja2",
+    "actions/if.jinja2",
+    "actions/log.jinja2",
+    "actions/raise.jinja2",
+    "actions/script.jinja2",
+    "actions/send.jinja2"
+  ],
+  "version": "1.0",
+  "description": "Jinja2 template manifest for SCXML code generator"
+}
