@@ -9,6 +9,10 @@
 const PYODIDE_VERSION = 'v0.25.0';
 const PYODIDE_CDN_URL = `https://cdn.jsdelivr.net/pyodide/${PYODIDE_VERSION}/full/`;
 
+// Detect environment: GitHub Pages vs local development
+const isGitHubPages = window.location.hostname.includes('github.io');
+const BASE_PATH = isGitHubPages ? '' : '../';
+
 class PyodideCodegen {
     constructor() {
         this.pyodide = null;
@@ -54,7 +58,8 @@ class PyodideCodegen {
             ];
 
             for (const modulePath of modules) {
-                const response = await fetch(`../${modulePath}`);
+                // Adapt path based on environment (local uses ../, GitHub Pages uses current dir)
+                const response = await fetch(`${BASE_PATH}${modulePath}`);
                 const code = await response.text();
                 const filename = modulePath.split('/').pop();
                 this.pyodide.FS.writeFile(`/${filename}`, code);
@@ -93,8 +98,8 @@ from scxml_parser import SCXMLParser
      * Load Jinja2 templates into Pyodide filesystem
      */
     async _loadTemplates() {
-        // Load template manifest
-        const manifestResponse = await fetch('../tools/codegen/templates/manifest.json');
+        // Load template manifest (adapt path based on environment)
+        const manifestResponse = await fetch(`${BASE_PATH}tools/codegen/templates/manifest.json`);
         if (!manifestResponse.ok) {
             throw new Error(`Failed to load template manifest: ${manifestResponse.statusText}`);
         }
@@ -112,7 +117,7 @@ from scxml_parser import SCXMLParser
 
         // Load each template (fail fast on errors)
         for (const template of templates) {
-            const response = await fetch(`../tools/codegen/templates/${template}`);
+            const response = await fetch(`${BASE_PATH}tools/codegen/templates/${template}`);
 
             if (!response.ok) {
                 throw new Error(`Failed to load critical template '${template}': ${response.statusText}`);

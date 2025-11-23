@@ -111,14 +111,8 @@
         </div>
     </div>
 
-    <!-- Pyodide (version managed in pyodide-codegen.js) -->
-    <script>
-        // Load Pyodide from same version as pyodide-codegen.js
-        const PYODIDE_VERSION = 'v0.25.0';
-        const script = document.createElement('script');
-        script.src = `https://cdn.jsdelivr.net/pyodide/${PYODIDE_VERSION}/full/pyodide.js`;
-        document.head.appendChild(script);
-    </script>
+    <!-- Pyodide (version: v0.25.0, managed in pyodide-codegen.js) -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
     <script src="pyodide-codegen.js"></script>
 
     <script>
