@@ -538,14 +538,11 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
 
     LOG_DEBUG("SCXMLInvokeHandler: Cancelling invoke: {} with session: {}", invokeid, session.sessionId);
 
-    // Cancel pending events
-    if (session.eventDispatcher) {
-        size_t cancelledEvents = session.eventDispatcher->cancelEventsForSession(session.sessionId);
-        LOG_DEBUG("SCXMLInvokeHandler: Cancelled {} pending events for session: {}", cancelledEvents,
-                  session.sessionId);
-    }
-
-    // W3C SCXML Test 252: Track cancelled child session BEFORE destroying to filter onexit events
+    // W3C SCXML Test 252: Track cancelled child session FIRST to enable filtering
+    // This must happen BEFORE cancelEventsForSession() to prevent race condition:
+    // 1. Add to cancelledChildSessions_ first
+    // 2. Any processEvent() calls will be filtered by shouldFilterCancelledInvokeEvent()
+    // 3. Then cancelEventsForSession() removes queued events
     // Use bounded FIFO cache to prevent memory leak
     size_t cacheSize;
     {
@@ -568,6 +565,26 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
     }
     LOG_DEBUG("SCXMLInvokeHandler: Added cancelled child session to filter list: {} (cache size: {})",
               session.sessionId, cacheSize);
+
+    // Cancel pending events in child's EventDispatcher
+    if (session.eventDispatcher) {
+        size_t cancelledEvents = session.eventDispatcher->cancelEventsForSession(session.sessionId);
+        LOG_DEBUG("SCXMLInvokeHandler: Cancelled {} pending events for session: {}", cancelledEvents,
+                  session.sessionId);
+    }
+
+    // W3C SCXML Test 252: Cancel queued events in parent's EventRaiser
+    // This prevents processing events that child sent before invoke was cancelled
+    // Must happen AFTER adding to cancelledChildSessions_ to enable filtering
+    if (auto parentSM = parentStateMachine_.lock()) {
+        if (auto parentEventRaiser = parentSM->getEventRaiser()) {
+            size_t cancelledQueued = parentEventRaiser->cancelEventsForSession(session.sessionId);
+            if (cancelledQueued > 0) {
+                LOG_INFO("SCXMLInvokeHandler: Cancelled {} queued event(s) in parent EventRaiser for session: {}",
+                         cancelledQueued, session.sessionId);
+            }
+        }
+    }
 
     // With weak_ptr callbacks, no synchronization needed - callbacks safely check weak_ptr::lock()
     // Unregister invoke mapping from JSEngine

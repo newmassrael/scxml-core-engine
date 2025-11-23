@@ -51,6 +51,8 @@ public:
 
     std::shared_ptr<class IEventScheduler> getScheduler() const override;
 
+    size_t cancelEventsForSession(const std::string &originSessionId) override;
+
     // Test inspection methods
     const std::vector<std::pair<std::string, std::string>> &getRaisedEvents() const;
     void clearEvents();

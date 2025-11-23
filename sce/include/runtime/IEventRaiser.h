@@ -170,6 +170,20 @@ public:
      * @return Shared pointer to EventScheduler instance, or nullptr if not set
      */
     virtual std::shared_ptr<class IEventScheduler> getScheduler() const = 0;
+
+    /**
+     * @brief Cancel all queued events from a specific session (W3C SCXML 6.4.4 compliance)
+     *
+     * W3C SCXML 6.4.4: "Once it cancels an invoked session, the Processor MUST NOT insert
+     * any events it receives from the invoked session into the external event queue"
+     *
+     * This method removes all queued events that originated from the specified session.
+     * Used when cancelling invokes to prevent processing events from cancelled child sessions.
+     *
+     * @param originSessionId Session ID whose events should be cancelled
+     * @return Number of events that were cancelled
+     */
+    virtual size_t cancelEventsForSession(const std::string &originSessionId) = 0;
 };
 
 }  // namespace SCE

@@ -111,5 +111,11 @@ std::shared_ptr<class IEventScheduler> MockEventRaiser::getScheduler() const {
     return nullptr;
 }
 
+size_t MockEventRaiser::cancelEventsForSession(const std::string & /*originSessionId*/) {
+    // Mock implementation - no actual queue to cancel events from
+    // Return 0 to indicate no events were cancelled
+    return 0;
+}
+
 }  // namespace Test
 }  // namespace SCE

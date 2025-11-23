@@ -60,6 +60,47 @@ std::shared_ptr<IEventScheduler> EventRaiserImpl::getScheduler() const {
     return scheduler_;
 }
 
+size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionId) {
+    if (originSessionId.empty()) {
+        LOG_WARN("EventRaiserImpl: Cannot cancel events for empty originSessionId");
+        return 0;
+    }
+
+    std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
+
+    // W3C SCXML 6.4.4: Remove all queued events from the specified session
+    // priority_queue doesn't support direct removal, so we need to rebuild it
+    std::vector<QueuedEvent> remaining;
+    size_t cancelledCount = 0;
+
+    // Extract all events from the queue
+    while (!synchronousQueue_.empty()) {
+        QueuedEvent event = synchronousQueue_.top();
+        synchronousQueue_.pop();
+
+        // Check if this event originated from the cancelled session
+        if (event.origin == originSessionId) {
+            cancelledCount++;
+            LOG_DEBUG("EventRaiserImpl: Cancelled queued event '{}' from session: {}", event.eventName,
+                      originSessionId);
+        } else {
+            // Keep events from other sessions
+            remaining.push_back(event);
+        }
+    }
+
+    // Rebuild the queue with remaining events
+    for (const auto &event : remaining) {
+        synchronousQueue_.push(event);
+    }
+
+    if (cancelledCount > 0) {
+        LOG_INFO("EventRaiserImpl: Cancelled {} queued event(s) from session: {}", cancelledCount, originSessionId);
+    }
+
+    return cancelledCount;
+}
+
 void EventRaiserImpl::shutdown() {
     if (!isRunning_.load()) {
         return;  // Already shut down
@@ -157,9 +198,14 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
     // W3C SCXML 5.10: Raise event with full metadata (origin, invoke ID, and origintype)
     // W3C SCXML Test 230: Platform events (done.*, error.*) must be queued, not processed immediately
     // This prevents nested processing issues when child completes during parent transition
+    // W3C SCXML Test 252: Events from other sessions (e.g., child->parent) must use EXTERNAL priority
     EventPriority priority = EventPriority::INTERNAL;
     if (isPlatformEvent(eventName)) {
         priority = EventPriority::EXTERNAL;  // Force queueing for platform events
+    } else if (!originSessionId.empty()) {
+        // W3C SCXML 5.10.1: Events from other SCXML sessions are EXTERNAL
+        // This ensures correct event priority ordering (FIFO within same priority)
+        priority = EventPriority::EXTERNAL;
     }
 
     LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() calling raiseEventWithPriority() - priority={}",

@@ -619,6 +619,7 @@ private:
     // JavaScript integration
     std::string sessionId_;
     std::string currentEventData_;
+    std::string currentOriginSessionId_;  // W3C SCXML Test 252: Track origin for cancelled invoke filtering
     bool jsEnvironmentReady_ = false;
 
     // Action execution infrastructure

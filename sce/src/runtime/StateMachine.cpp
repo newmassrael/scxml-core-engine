@@ -582,6 +582,10 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
     // Store event data for access in guards/actions
     currentEventData_ = eventData;
+    currentOriginSessionId_ =
+        originSessionId;  // W3C SCXML Test 252: Store for cancelled invoke filtering in processStateTransitions
+    LOG_DEBUG("StateMachine: [ORIGIN TRACKING] Set currentOriginSessionId_ = '{}' for event '{}'",
+              currentOriginSessionId_, eventName);
 
     if (!sendId.empty() || !invokeId.empty() || !originType.empty() || !eventType.empty() || !originSessionId.empty()) {
         LOG_DEBUG("StateMachine: Set current event in ActionExecutor - event: '{}', data: '{}', sendid: '{}', "
@@ -1156,11 +1160,36 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             }
             checkedStates.insert(nodeId);
 
+            // W3C SCXML Test 252: Re-check cancelled session DURING hierarchical processing
+            // Race condition: invoke cancel may happen between initial check and state processing
+            // This catch-all ensures events from cancelled children are filtered even if cancel happens mid-processing
+            if (invokeExecutor_ && !originSessionId.empty()) {
+                if (invokeExecutor_->shouldFilterCancelledInvokeEvent(originSessionId)) {
+                    LOG_DEBUG("StateMachine: [HIERARCHICAL CHECK] Filtering event '{}' from cancelled invoke child "
+                              "session: {}",
+                              eventName, originSessionId);
+                    return TransitionResult(false, getCurrentState(), getCurrentState(), eventName);
+                }
+            }
+
             LOG_DEBUG("SCXML hierarchical processing: Checking state '{}' for transitions", nodeId);
             auto transitionResult = processStateTransitions(currentNode, eventName, eventData);
             if (transitionResult.success) {
                 LOG_DEBUG("SCXML hierarchical processing: Transition found in state '{}': {} -> {}", nodeId,
                           transitionResult.fromState, transitionResult.toState);
+
+                // W3C SCXML Test 252: CRITICAL re-check AFTER transition execution
+                // Transition execution may trigger invoke cancellation (exitState → cancelInvoke)
+                // This catches self-referential race: event from child triggers transition that cancels that child
+                if (invokeExecutor_ && !originSessionId.empty()) {
+                    if (invokeExecutor_->shouldFilterCancelledInvokeEvent(originSessionId)) {
+                        LOG_DEBUG("StateMachine: [POST-TRANSITION CHECK] Filtering event '{}' from cancelled invoke "
+                                  "child session: {} (transition was: {} -> {})",
+                                  eventName, originSessionId, transitionResult.fromState, transitionResult.toState);
+                        // Transition already executed, but we must return false to indicate event should be ignored
+                        return TransitionResult(false, getCurrentState(), getCurrentState(), eventName);
+                    }
+                }
 
                 // W3C SCXML 3.3: Process all internal events before returning
                 // Only process if this is the top-level event (not nested/recursive call)
@@ -1456,6 +1485,23 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
                     result.success = true;
                     result.fromState = fromState;
                     result.toState = targetState;  // Target state entered
+                    result.eventName = eventName;
+                    return result;
+                }
+            }
+
+            // W3C SCXML Test 252: CRITICAL check before transition execution
+            // Self-referential race: This event might trigger transition that cancels its own source invoke
+            // Check cancelled status RIGHT BEFORE executing transition to catch mid-processing cancellations
+            if (invokeExecutor_ && !currentOriginSessionId_.empty()) {
+                if (invokeExecutor_->shouldFilterCancelledInvokeEvent(currentOriginSessionId_)) {
+                    LOG_DEBUG("StateMachine: [PRE-TRANSITION CHECK] Filtering event '{}' from cancelled invoke child "
+                              "session: {} (would have executed: {} -> {})",
+                              eventName, currentOriginSessionId_, fromState, targetState);
+                    TransitionResult result;
+                    result.success = false;
+                    result.fromState = fromState;
+                    result.toState = fromState;  // Stay in current state
                     result.eventName = eventName;
                     return result;
                 }
