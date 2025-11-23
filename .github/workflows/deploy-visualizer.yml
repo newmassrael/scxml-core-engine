@@ -6,6 +6,7 @@ on:
     paths:
       - 'visualizer/**'
       - 'rsm/**'
+      - 'tools/codegen/**'
       - 'tests/w3c/InteractiveTestRunner.cpp'
       - '.github/workflows/deploy-visualizer.yml'
   workflow_dispatch:
@@ -71,6 +72,11 @@ jobs:
         # Copy SCXML resources for visualizer
         echo "Copying SCXML test resources..."
         cp -r resources gh-pages/
+
+        # Copy Python codegen files for Pyodide
+        echo "Copying Python codegen files for Pyodide..."
+        mkdir -p gh-pages/tools/codegen
+        cp -r tools/codegen/* gh-pages/tools/codegen/
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3

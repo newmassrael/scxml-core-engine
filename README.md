@@ -5,7 +5,7 @@ A high-performance W3C SCXML 1.0 implementation in C++ with dual-engine architec
 [![W3C Tests](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml/badge.svg)](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml)
 
 **Online Tools**:
-- [Code Generator](https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html) - Generate C++ code from SCXML online
+- [Code Generator](https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html) - Full W3C SCXML code generation in browser (Pyodide)
 - [Test Results](https://newmassrael.github.io/scxml-core-engine/test-results/test-results.html) - W3C SCXML compliance report
 
 ---
@@ -61,8 +61,8 @@ Full specification compliance with intelligent code generation strategy:
 
 ### Try Online (No Installation)
 
-Experiment with SCXML code generation in your browser:
-- [Online Code Generator](https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html)
+Experiment with SCXML code generation in your browser with full W3C SCXML support:
+- [Online Code Generator](https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html) - Powered by Pyodide (Python in WebAssembly)
 
 ### Installation
 
