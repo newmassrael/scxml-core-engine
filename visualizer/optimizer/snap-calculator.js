@@ -448,6 +448,11 @@ class SnapCalculator {
         const sourceAncestors = getAncestors(this.getVisualSource(link));
         const targetAncestors = getAncestors(this.getVisualTarget(link));
 
+        // W3C SCXML 3.13: Detect parent→child internal transitions
+        // For parent→child transitions, prefer detour paths that route around child node
+        const isParentToChild = targetAncestors.has(this.getVisualSource(link));
+
+
         this.optimizer.nodes.forEach(node => {
             if (node.id === this.getVisualSource(link) || node.id === this.getVisualTarget(link)) return;
             
@@ -495,7 +500,27 @@ class SnapCalculator {
             if (combo.targetEdge === 'bottom' && y1 < y2) selfOverlap = 1;
         }
 
-        return tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + combo.distance;
+        // W3C SCXML 3.13: Parent→child detour path bonus
+        // Prefer paths that route around child node (avoid straight L-shaped paths through child)
+        let detourBonus = 0;
+        if (isParentToChild) {
+            // Detour paths: parent edge → child perpendicular edge
+            // - Parent bottom → Child left/right (routes around horizontally)
+            // - Parent left/right → Child top (routes around from side to top)
+            const isDetourPath =
+                (combo.sourceEdge === 'bottom' && (combo.targetEdge === 'left' || combo.targetEdge === 'right')) ||
+                ((combo.sourceEdge === 'left' || combo.sourceEdge === 'right') && combo.targetEdge === 'top');
+
+            if (isDetourPath) {
+                detourBonus = -5000; // Reward detour paths with lower score
+            }
+        }
+
+        // Self-loop optimization: Prefer different edge combinations over same-edge loops
+        // W3C SCXML visualizer: Use helper function for consistent penalty calculation
+        const selfLoopPenalty = this.optimizer.calculateSelfLoopPenalty(link, combo.sourceEdge, combo.targetEdge);
+
+        return tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + detourBonus + selfLoopPenalty + combo.distance;
     }
 
     distributeSnapPointsOnEdges(links, nodes) {

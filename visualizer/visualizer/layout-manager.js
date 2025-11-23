@@ -38,9 +38,10 @@ class LayoutManager {
                 'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
 
                 // Hierarchical crossing minimization
-                'elk.layered.crossingMinimization.hierarchicalSweepiness': '0.1'
+                'elk.layered.crossingMinimization.hierarchicalSweepiness': '0.1',
 
-                // Use default bottom-up layout: children computed first, then parents sized to fit
+                // W3C SCXML 3.13: Enable hierarchy handling for internal transitions (parent→child edges)
+                'elk.hierarchyHandling': 'INCLUDE_CHILDREN'
             },
             children: [],
             edges: []
@@ -48,6 +49,17 @@ class LayoutManager {
 
         const visibleNodes = this.visualizer.getVisibleNodes();
         const visibleNodeIds = new Set(visibleNodes.map(n => n.id));
+
+        // Helper: Find parent node that contains given child
+        const findParentNode = (childId) => {
+            return this.visualizer.nodes.find(parent =>
+                (parent.type === 'compound' || parent.type === 'parallel') &&
+                !parent.collapsed &&
+                parent.children &&
+                parent.children.includes(childId) &&
+                visibleNodeIds.has(parent.id)
+            );
+        };
 
         // Recursive function to build ELK node with nested children
         const buildELKNode = (node, depth = 0) => {
@@ -63,6 +75,7 @@ class LayoutManager {
             // Add children for expanded compounds
             if (SCXMLVisualizer.isCompoundOrParallel(node) && !node.collapsed) {
                 elkNode.children = [];
+                elkNode.edges = [];  // W3C SCXML 3.13: Container for internal edges (parent→child)
 
                 logger.debug(`${indent}  ${node.id} has ${node.children.length} children: ${node.children.join(', ')}`);
 
@@ -107,35 +120,82 @@ class LayoutManager {
         // Only add top-level visible nodes (nodes without visible parents)
         const topLevelNodes = visibleNodes.filter(node => {
             // Check if this node has a visible parent
-            const hasVisibleParent = this.visualizer.nodes.some(parent =>
-                (parent.type === 'compound' || parent.type === 'parallel') &&
-                !parent.collapsed &&
-                parent.children &&
-                parent.children.includes(node.id) &&
-                visibleNodeIds.has(parent.id)
-            );
+            const hasVisibleParent = findParentNode(node.id) !== undefined;
             return !hasVisibleParent;
         });
 
         logger.debug(`[buildELKGraph] Total visible nodes: ${visibleNodes.length}, Top-level nodes: ${topLevelNodes.length}`);
         logger.debug(`  Top-level: ${topLevelNodes.map(n => n.id).join(', ')}`);
 
+        // Build node hierarchy
+        const elkNodeMap = new Map();  // Map<nodeId, elkNode> for edge placement lookup
+
+        const registerElkNode = (elkNode) => {
+            elkNodeMap.set(elkNode.id, elkNode);
+            if (elkNode.children) {
+                elkNode.children.forEach(child => registerElkNode(child));
+            }
+        };
+
         topLevelNodes.forEach(node => {
-            graph.children.push(buildELKNode(node));
+            const elkNode = buildELKNode(node);
+            graph.children.push(elkNode);
+            registerElkNode(elkNode);
         });
 
-        // Add edges (only if both source and target are visible)
+        // Add edges with hierarchy-aware placement
+        // W3C SCXML 3.13: Internal transitions (parent→child) must be placed in parent's edges array
         const visibleLinks = this.visualizer.getVisibleLinks(this.visualizer.allLinks, this.visualizer.nodes);
 
         visibleLinks.forEach(link => {
             if (link.linkType === 'transition' || link.linkType === 'initial') {
                 // Only add edge if both endpoints exist in visible nodes
                 if (visibleNodeIds.has(link.source) && visibleNodeIds.has(link.target)) {
-                    graph.edges.push({
+                    const edge = {
                         id: link.id,
                         sources: [link.source],
                         targets: [link.target]
-                    });
+                    };
+
+                    // Check if target is a direct child of source (parent→child edge)
+                    const sourceNode = this.visualizer.nodes.find(n => n.id === link.source);
+                    const isParentToChild = sourceNode &&
+                                          (sourceNode.type === 'compound' || sourceNode.type === 'parallel') &&
+                                          sourceNode.children &&
+                                          sourceNode.children.includes(link.target);
+
+                    if (isParentToChild) {
+                        // W3C SCXML 3.13: Internal transition from parent to child
+                        // Place edge in parent's edges array (hierarchy-local)
+                        const parentElkNode = elkNodeMap.get(link.source);
+                        if (parentElkNode && parentElkNode.edges) {
+                            parentElkNode.edges.push(edge);
+                            logger.debug(`  [EDGE] ${link.source} → ${link.target}: Added to parent's edges (internal transition)`);
+                        } else {
+                            logger.warn(`  [EDGE] ${link.source} → ${link.target}: Parent ELK node missing edges array`);
+                        }
+                    } else {
+                        // Regular edge between sibling nodes or cross-hierarchy
+                        // Determine proper container: lowest common ancestor or root
+                        const targetParent = findParentNode(link.target);
+                        const sourceParent = findParentNode(link.source);
+
+                        if (sourceParent && sourceParent.id === targetParent?.id) {
+                            // Both nodes share same parent → add to parent's edges
+                            const parentElkNode = elkNodeMap.get(sourceParent.id);
+                            if (parentElkNode && parentElkNode.edges) {
+                                parentElkNode.edges.push(edge);
+                                logger.debug(`  [EDGE] ${link.source} → ${link.target}: Added to common parent ${sourceParent.id}`);
+                            } else {
+                                graph.edges.push(edge);
+                                logger.debug(`  [EDGE] ${link.source} → ${link.target}: Parent missing edges array, added to root`);
+                            }
+                        } else {
+                            // Cross-hierarchy or top-level edge → add to root
+                            graph.edges.push(edge);
+                            logger.debug(`  [EDGE] ${link.source} → ${link.target}: Added to root (cross-hierarchy)`);
+                        }
+                    }
                 }
             }
         });

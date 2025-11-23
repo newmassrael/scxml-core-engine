@@ -29,6 +29,62 @@ class CSPSolver {
     }
 
     /**
+     * Update visualization after Greedy optimization completes
+     * Provides instant visual feedback without waiting for background CSP optimization
+     * CRITICAL: Only updates DOM, does NOT re-run optimization (prevents infinite recursion)
+     * @private
+     */
+    _updateVisualizationAfterGreedy() {
+        // Check if DOM elements exist before attempting update
+        // During initial layout, render() hasn't been called yet, so skip update
+        if (!this.optimizer.visualizer?.linkElements ||
+            !this.optimizer.visualizer?.allLinks) {
+            logger.debug('[OPTIMIZE] Skipping visualization update (DOM not ready yet)');
+            return;
+        }
+
+        try {
+            // Recalculate link directions based on new routing
+            this.optimizer.visualizer.renderer._updateVisibleLinkDirections();
+
+            // Update DOM to reflect distributed snap points (WITHOUT re-running optimization)
+            // CRITICAL: Direct DOM update instead of updateLinksOptimal() to prevent recursion
+            const visibleLinks = this.optimizer.visualizer.getVisibleLinks(
+                this.optimizer.visualizer.allLinks,
+                this.optimizer.visualizer.nodes
+            );
+
+            // Rebind linkElements with updated visibleLinks data
+            this.optimizer.visualizer.linkElements = this.optimizer.visualizer.linkElements
+                .data(visibleLinks, d => d.id);
+
+            // Update link paths
+            this.optimizer.visualizer.linkElements.attr('d', d => this.optimizer.visualizer.getLinkPath(d));
+
+            // Update transition labels if they exist
+            if (this.optimizer.visualizer.transitionLabels) {
+                this.optimizer.visualizer.transitionLabels = this.optimizer.visualizer.transitionLabels
+                    .data(visibleLinks, d => d.id);
+
+                this.optimizer.visualizer.transitionLabels
+                    .attr('x', d => this.optimizer.visualizer.getTransitionLabelPosition(d).x)
+                    .attr('y', d => this.optimizer.visualizer.getTransitionLabelPosition(d).y);
+            }
+
+            // Update snap points visualization if enabled
+            // CRITICAL: Snap points were redistributed by distributeSnapPointsOnEdges() in Greedy
+            // Must update visualization to match new positions (prevents visual mismatch)
+            if (this.optimizer.visualizer.showSnapPoints) {
+                this.optimizer.visualizer.updateSnapPointPositions();
+            }
+
+            logger.debug('[OPTIMIZE] Visualization updated after Greedy completion (DOM only, no re-optimization)');
+        } catch (error) {
+            logger.warn('[OPTIMIZE] Visualization update failed:', error);
+        }
+    }
+
+    /**
      * Simulate snap point distribution for greedy algorithm
      * Adapts ConstraintSolver.simulateSnapPoints() for greedy's sequential assignment
      *
@@ -43,7 +99,7 @@ class CSPSolver {
         const actualSource = this.getVisualSource(link);
         const actualTarget = this.getVisualTarget(link);
 
-        if (this.optimizer.visualizer?.debugMode) {
+        if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
             logger.debug(`[GREEDY SIMULATE] ${link.source}→${link.target}: actualSource=${actualSource}, actualTarget=${actualTarget} (visualSource=${link.visualSource || 'unset'})`);
         }
 
@@ -51,7 +107,7 @@ class CSPSolver {
         const targetNode = nodes.find(n => n.id === actualTarget);
 
         if (!sourceNode || !targetNode) {
-            if (this.optimizer.visualizer?.debugMode) {
+            if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                 logger.debug(`[GREEDY SIMULATE ERROR] Node not found: sourceNode=${!!sourceNode}, targetNode=${!!targetNode}`);
             }
             return combo;
@@ -100,7 +156,7 @@ class CSPSolver {
         edgeLinks.push({ link, isSource, isCurrentLink: true });
 
         // Add already assigned links
-        if (this.optimizer.visualizer?.debugMode) {
+        if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
             logger.debug(`[GREEDY SIMULATE DEBUG] Checking ${greedyAssignment.size} assigned links for ${node.id}.${edge}`);
         }
         for (const [linkId, routing] of greedyAssignment.entries()) {
@@ -108,7 +164,7 @@ class CSPSolver {
 
             const assignedLink = this.optimizer.links.find(l => l.id === linkId);
             if (!assignedLink) {
-                if (this.optimizer.visualizer?.debugMode) {
+                if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                     logger.debug(`[GREEDY SIMULATE DEBUG] Link ${linkId} not found in optimizer.links`);
                 }
                 continue;
@@ -119,25 +175,25 @@ class CSPSolver {
 
             // Check if assigned link uses this edge
             if (assignedSource === node.id && routing.sourceEdge === edge) {
-                if (this.optimizer.visualizer?.debugMode) {
+                if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                     logger.debug(`[GREEDY SIMULATE DEBUG] Found ${assignedSource}→${assignedTarget} using ${node.id}.${edge} as source`);
                 }
                 edgeLinks.push({ link: assignedLink, isSource: true, isCurrentLink: false });
             } else if (assignedTarget === node.id && routing.targetEdge === edge) {
-                if (this.optimizer.visualizer?.debugMode) {
+                if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                     logger.debug(`[GREEDY SIMULATE DEBUG] Found ${assignedSource}→${assignedTarget} using ${node.id}.${edge} as target`);
                 }
                 edgeLinks.push({ link: assignedLink, isSource: false, isCurrentLink: false });
             }
         }
-        if (this.optimizer.visualizer?.debugMode) {
+        if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
             logger.debug(`[GREEDY SIMULATE DEBUG] Total edgeLinks for ${node.id}.${edge}: ${edgeLinks.length}`);
         }
 
         // Single link on edge: use edge center
         if (edgeLinks.length === 1) {
             const centerPoint = this.optimizer.getEdgeCenterPoint(node, edge);
-            if (this.optimizer.visualizer?.debugMode) {
+            if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                 logger.debug(`[GREEDY SIMULATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${isSource ? 'source' : 'target'} on ${node.id}.${edge}: single link, using center=(${centerPoint.x.toFixed(1)}, ${centerPoint.y.toFixed(1)})`);
             }
             return centerPoint;
@@ -198,7 +254,7 @@ class CSPSolver {
             y = cy - halfHeight + (halfHeight * 2 * position);
         }
 
-        if (this.optimizer.visualizer?.debugMode) {
+        if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
             logger.debug(`[GREEDY SIMULATE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${isSource ? 'source' : 'target'} on ${node.id}.${edge}: position ${currentIndex + 1}/${totalCount}, simulated=(${x.toFixed(1)}, ${y.toFixed(1)})`);
         }
 
@@ -264,13 +320,13 @@ class CSPSolver {
     optimizeSnapPointAssignmentsProgressive(links, nodes, draggedNodeId, onComplete, onProgress = null, debounceMs = 500) {
         // Apply visual redirect if visualizer is available (handles collapsed states)
         // Otherwise use links as-is (fallback for standalone optimizer usage)
-        const effectiveLinks = this.optimizer.visualizer 
+        const effectiveLinks = this.optimizer.visualizer
             ? this.optimizer.visualizer.getVisibleLinks(links, nodes)
             : links;
 
         // Filter out containment and delegation links (only optimize transition and initial links)
         // Visualizer layout: containment is hierarchical structure, not routing path
-        const transitionLinks = effectiveLinks.filter(link => 
+        const transitionLinks = effectiveLinks.filter(link =>
             link.linkType === 'transition' || link.linkType === 'initial'
         );
 
@@ -278,10 +334,14 @@ class CSPSolver {
 
         // Progressive optimization: greedy step for immediate feedback
         logger.debug('[OPTIMIZE PROGRESSIVE] Greedy step: immediate rendering...');
-        this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
+        // Use quiet mode to reduce log spam during post-drag optimization
+        this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId, true /* quietMode */);
         this._syncRoutingToOriginalLinks(effectiveLinks);  // Sync routing back
-        
-        // Return immediately - user sees greedy result
+
+        // UX Optimization: Update visualization immediately after Greedy completes
+        // Provides instant visual feedback without waiting for background CSP optimization
+        this._updateVisualizationAfterGreedy();
+
         logger.debug('[OPTIMIZE PROGRESSIVE] Greedy step complete, scheduling background CSP refinement...');
 
         // Progressive optimization: CSP refinement with Web Worker
@@ -544,7 +604,7 @@ class CSPSolver {
 
         if (useGreedy) {
             logger.debug('[OPTIMIZE] Using fast greedy algorithm (drag mode)...');
-            this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
+            this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId, true /* quietMode */);
             return;
         }
 
@@ -560,6 +620,10 @@ class CSPSolver {
         this.optimizer.optimizeSnapPointAssignmentsGreedy(transitionLinks, nodes, draggedNodeId);
         
         logger.debug('[OPTIMIZE GREEDY] Greedy layout applied');
+
+        // UX Optimization: Update visualization immediately after Greedy completes
+        // Provides instant visual feedback without waiting for background CSP optimization
+        this._updateVisualizationAfterGreedy();
 
         // Skip CSP if too many transitions
         if (transitionLinks.length > TransitionLayoutOptimizer.CSP_THRESHOLD) {
@@ -740,10 +804,17 @@ class CSPSolver {
         this.optimizer.cspRunning = false;
     }
 
-    optimizeSnapPointAssignmentsGreedy(links, nodes, draggedNodeId = null) {
-        logger.debug(`[OPTIMIZE GREEDY] Input: ${links.length} links, ${nodes.length} nodes`);
-        logger.debug(`[OPTIMIZE GREEDY] Node IDs: ${nodes.map(n => n.id).join(', ')}`);
-        logger.debug('[OPTIMIZE GREEDY] Using greedy algorithm (fallback)...');
+    optimizeSnapPointAssignmentsGreedy(links, nodes, draggedNodeId = null, quietMode = false) {
+        // Quiet mode: Reduce logging during drag operations for better performance
+        // Only log summary, skip verbose GREEDY SIMULATE DEBUG logs
+        const previousQuietMode = this.quietMode;
+        this.quietMode = quietMode; // Store for use in helper methods
+
+        if (!quietMode && this.optimizer.visualizer?.debugMode) {
+            logger.debug(`[OPTIMIZE GREEDY] Input: ${links.length} links, ${nodes.length} nodes`);
+            logger.debug(`[OPTIMIZE GREEDY] Node IDs: ${nodes.map(n => n.id).join(', ')}`);
+            logger.debug('[OPTIMIZE GREEDY] Using greedy algorithm (fallback)...');
+        }
 
         // OPTIMIZATION: Cache CSP routing for links unaffected by drag
         // Distance threshold: links within this distance are affected by drag
@@ -953,7 +1024,7 @@ class CSPSolver {
                         // Target MIN_SEGMENT: tx → x2
                         // x1 must be right of x2 to avoid overlap
                         if (x1 < x2) {
-                            if (this.optimizer.visualizer?.debugMode) {
+                            if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                                 logger.debug(`[GREEDY SELF-OVERLAP] ${sourceEdge}→${targetEdge}: x1=${x1.toFixed(1)} < x2=${x2.toFixed(1)} (overlap!) sx=${simulatedCombo.sourcePoint.x.toFixed(1)}, tx=${simulatedCombo.targetPoint.x.toFixed(1)}`);
                             }
                             selfOverlap = 1;
@@ -997,11 +1068,32 @@ class CSPSolver {
                 // Case 3: Mixed edges (V-H or H-V)
                 // No self-overlap possible: MIN_SEGMENTs operate on orthogonal axes
 
-                // Score with penalty weights (selfOverlap weight: 50000, same as CSP solver)
-                const score = tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + simulatedCombo.distance;
+                // W3C SCXML 3.13: Parent→child detour path bonus
+                let detourBonus = 0;
+                const parentChildMap = this.optimizer.parentChildMap || new Map();
+                const targetParent = parentChildMap.get(this.getVisualTarget(link));
+                const isParentToChild = (targetParent === this.getVisualSource(link));
+
+                if (isParentToChild) {
+                    // Prefer detour paths: parent edge → child perpendicular edge
+                    const isDetourPath =
+                        (sourceEdge === 'bottom' && (targetEdge === 'left' || targetEdge === 'right')) ||
+                        ((sourceEdge === 'left' || sourceEdge === 'right') && targetEdge === 'top');
+
+                    if (isDetourPath) {
+                        detourBonus = -5000;
+                    }
+                }
+
+                // Self-loop optimization: Prefer different edge combinations over same-edge loops
+                // W3C SCXML visualizer: Use helper function for consistent penalty calculation
+                const selfLoopPenalty = this.optimizer.calculateSelfLoopPenalty(link, sourceEdge, targetEdge);
+
+                // Score with penalty weights + detour bonus + self-loop penalty
+                const score = tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + detourBonus + selfLoopPenalty + simulatedCombo.distance;
 
                 // Debug logging for greedy scoring
-                if (this.optimizer.visualizer?.debugMode) {
+                if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                     logger.debug(`[GREEDY SCORE] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${sourceEdge}→${targetEdge}: tooClose=${tooCloseSnap}, selfOverlap=${selfOverlap}, nodeCol=${nodeCollisions}, intersect=${intersections}, dist=${simulatedCombo.distance.toFixed(1)}, total=${score.toFixed(1)}`);
                 }
 
@@ -1020,7 +1112,9 @@ class CSPSolver {
 
                 assignedPaths.push(bestCombination);
 
-                logger.debug(`[OPTIMIZE GREEDY] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, score=${bestScore.toFixed(1)}`);
+                if (!this.quietMode) {
+                    logger.debug(`[OPTIMIZE GREEDY] ${this.getVisualSource(link)}→${this.getVisualTarget(link)}: ${bestCombination.sourceEdge}→${bestCombination.targetEdge}, score=${bestScore.toFixed(1)}`);
+                }
             }
         });
 
@@ -1084,7 +1178,7 @@ class CSPSolver {
             }
 
             if (hasOverlap) {
-                if (this.optimizer.visualizer?.debugMode) {
+                if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                     logger.debug(`[GREEDY VIOLATION] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${actualCombo.sourceEdge}→${actualCombo.targetEdge}: Self-overlap detected after snap distribution! Source=(${actualCombo.sourcePoint.x.toFixed(1)}, ${actualCombo.sourcePoint.y.toFixed(1)}), Target=(${actualCombo.targetPoint.x.toFixed(1)}, ${actualCombo.targetPoint.y.toFixed(1)})`);
                 }
                 violationsDetected++;
@@ -1100,7 +1194,7 @@ class CSPSolver {
             });
 
             if (hasCollision) {
-                if (this.optimizer.visualizer?.debugMode) {
+                if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                     logger.debug(`[GREEDY VIOLATION] ${this.getVisualSource(link)}→${this.getVisualTarget(link)} ${actualCombo.sourceEdge}→${actualCombo.targetEdge}: Node collision detected after snap distribution!`);
                 }
                 violationsDetected++;
@@ -1108,15 +1202,20 @@ class CSPSolver {
         });
 
         if (violationsDetected > 0) {
-            if (this.optimizer.visualizer?.debugMode) {
+            if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                 logger.debug(`[GREEDY POST-VALIDATION] Found ${violationsDetected} violation(s). CSP solver will attempt to fix.`);
             }
         } else {
-            if (this.optimizer.visualizer?.debugMode) {
+            if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
                 logger.debug('[GREEDY POST-VALIDATION] No violations detected.');
             }
         }
 
-        logger.debug(`[OPTIMIZE GREEDY] Completed: ${links.length} links (cached: ${cachedCount}, recalculated: ${recalculatedCount})`);
+        if (!this.quietMode) {
+            logger.debug(`[OPTIMIZE GREEDY] Completed: ${links.length} links (cached: ${cachedCount}, recalculated: ${recalculatedCount})`);
+        }
+
+        // Restore previous quietMode state to prevent pollution
+        this.quietMode = previousQuietMode;
     }
 }

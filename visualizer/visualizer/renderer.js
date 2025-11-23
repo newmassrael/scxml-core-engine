@@ -411,7 +411,7 @@ class Renderer {
                             // Update visualization with intermediate solution
                             self.updateLinksOptimal();
                         },
-                        500
+                        TransitionLayoutOptimizer.CSP_DEBOUNCE_MS
                     );
                 }))
             .on('click', (event, d) => this.handleCompoundClick(event, d));
@@ -741,7 +741,7 @@ class Renderer {
                             // Update visualization with intermediate solution
                             self.updateLinksOptimal();
                         },
-                        500 // 500ms debounce
+                        TransitionLayoutOptimizer.CSP_DEBOUNCE_MS
                     );
 
                     // Calculate midY for immediate greedy routing
@@ -992,6 +992,51 @@ class Renderer {
                 }
 
                 this.visualizer.render();
+
+                // W3C SCXML: Re-optimize snap points after resize
+                // Significant size changes may require different routing
+                if (statesToResize.length > 0 && self.layoutOptimizer) {
+                    if (this.visualizer.debugMode) {
+                        logger.debug(`[STATE RESIZE] Triggering CSP re-optimization for ${statesToResize.length} resized states`);
+                    }
+
+                    // Cancel any ongoing optimization
+                    if (self.backgroundOptimization) {
+                        self.backgroundOptimization.cancel();
+                        self.backgroundOptimization = null;
+                    }
+
+                    // Start progressive optimization with first resized state as focus
+                    const focusNodeId = statesToResize[0].id;
+                    self.backgroundOptimization = self.layoutOptimizer.optimizeSnapPointAssignmentsProgressive(
+                        self.allLinks,
+                        self.nodes,
+                        focusNodeId,
+                        (success) => {
+                            if (success) {
+                                if (self.debugMode) {
+                                    logger.debug(`[STATE RESIZE] CSP re-optimization complete - applying new snap points`);
+                                }
+                                // Update link directions for all visible links
+                                self.renderer._updateVisibleLinkDirections();
+
+                                // Apply optimized snap points to visualization
+                                self.updateLinksOptimal();
+
+                                if (self.debugMode) {
+                                    logger.debug(`[STATE RESIZE] Visualization update complete`);
+                                }
+                            } else {
+                                if (self.debugMode) {
+                                    logger.debug(`[STATE RESIZE] CSP cancelled or failed, keeping current result`);
+                                }
+                            }
+                            self.backgroundOptimization = null;
+                        },
+                        null, // onProgress
+                        100   // debounceMs
+                    );
+                }
             }
         };
 

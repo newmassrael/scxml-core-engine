@@ -32,6 +32,11 @@ class TransitionLayoutOptimizer {
     // Progressive optimization configuration
     static PROGRESS_RENDER_INTERVAL_MS = 50;  // Minimum interval between progressive renders
     static CSP_THRESHOLD = 15;  // Maximum links for CSP optimization
+    static CSP_DEBOUNCE_MS = 1500;  // Delay before CSP after drag (1.5s, non-blocking via Web Worker)
+
+    // Self-loop optimization penalties
+    static SELF_LOOP_SAME_EDGE_PENALTY = 15000;  // Penalty for U-shaped paths (e.g., top→top)
+    static SELF_LOOP_DIFF_EDGE_BONUS = -8000;    // Bonus for natural side-loops (e.g., top→right)
 
     /**
      * Get node size by type or from node object
@@ -87,6 +92,14 @@ class TransitionLayoutOptimizer {
         this.visualizer = visualizer;  // Optional visualizer reference for getVisibleLinks
         this.cspRunning = false; // Flag to prevent concurrent CSP executions
 
+        // Build parent-child map from containment links (for hierarchy-aware greedy scoring)
+        this.parentChildMap = new Map(); // Map<childId, parentId>
+        links.forEach(link => {
+            if (link.linkType === 'containment') {
+                this.parentChildMap.set(link.target, link.source);
+            }
+        });
+
         // Initialize helper modules
         this.snapCalculator = new SnapCalculator(this);
         this.cspSolver = new CSPSolver(this);
@@ -99,6 +112,28 @@ class TransitionLayoutOptimizer {
             if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
             return 0;
         });
+    }
+
+    /**
+     * Calculate self-loop penalty/bonus for edge combination
+     * Encourages natural side-loops (different edges) over awkward U-shapes (same edge)
+     * @param {Object} link - Link object
+     * @param {string} sourceEdge - Source edge (top/bottom/left/right)
+     * @param {string} targetEdge - Target edge (top/bottom/left/right)
+     * @returns {number} Penalty (positive) or bonus (negative)
+     */
+    calculateSelfLoopPenalty(link, sourceEdge, targetEdge) {
+        const visualSource = link.visualSource || link.source;
+        const visualTarget = link.visualTarget || link.target;
+        const isSelfLoop = visualSource === visualTarget;
+
+        if (!isSelfLoop) return 0;
+
+        // Same-edge self-loop: U-shaped awkward path (penalty)
+        // Different-edge self-loop: Natural side-loop (bonus)
+        return (sourceEdge === targetEdge)
+            ? TransitionLayoutOptimizer.SELF_LOOP_SAME_EDGE_PENALTY
+            : TransitionLayoutOptimizer.SELF_LOOP_DIFF_EDGE_BONUS;
     }
 
     _applySolutionToLinks(assignment, links, nodes) {
