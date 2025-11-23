@@ -516,7 +516,11 @@ class SnapCalculator {
             }
         }
 
-        return tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + detourBonus + combo.distance;
+        // Self-loop optimization: Prefer different edge combinations over same-edge loops
+        // W3C SCXML visualizer: Use helper function for consistent penalty calculation
+        const selfLoopPenalty = this.optimizer.calculateSelfLoopPenalty(link, combo.sourceEdge, combo.targetEdge);
+
+        return tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + detourBonus + selfLoopPenalty + combo.distance;
     }
 
     distributeSnapPointsOnEdges(links, nodes) {

@@ -71,6 +71,13 @@ class CSPSolver {
                     .attr('y', d => this.optimizer.visualizer.getTransitionLabelPosition(d).y);
             }
 
+            // Update snap points visualization if enabled
+            // CRITICAL: Snap points were redistributed by distributeSnapPointsOnEdges() in Greedy
+            // Must update visualization to match new positions (prevents visual mismatch)
+            if (this.optimizer.visualizer.showSnapPoints) {
+                this.optimizer.visualizer.updateSnapPointPositions();
+            }
+
             logger.debug('[OPTIMIZE] Visualization updated after Greedy completion (DOM only, no re-optimization)');
         } catch (error) {
             logger.warn('[OPTIMIZE] Visualization update failed:', error);
@@ -1078,8 +1085,12 @@ class CSPSolver {
                     }
                 }
 
-                // Score with penalty weights + detour bonus
-                const score = tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + detourBonus + simulatedCombo.distance;
+                // Self-loop optimization: Prefer different edge combinations over same-edge loops
+                // W3C SCXML visualizer: Use helper function for consistent penalty calculation
+                const selfLoopPenalty = this.optimizer.calculateSelfLoopPenalty(link, sourceEdge, targetEdge);
+
+                // Score with penalty weights + detour bonus + self-loop penalty
+                const score = tooCloseSnap * 100000 + selfOverlap * 50000 + nodeCollisions * 10000 + intersections * 1000 + detourBonus + selfLoopPenalty + simulatedCombo.distance;
 
                 // Debug logging for greedy scoring
                 if (!this.quietMode && this.optimizer.visualizer?.debugMode) {
