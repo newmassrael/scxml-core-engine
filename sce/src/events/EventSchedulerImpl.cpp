@@ -381,11 +381,15 @@ void EventSchedulerImpl::executeSessionEventsSync(
                 continue;
             }
             try {
-                LOG_DEBUG("EventSchedulerImpl: {} executing event '{}' in session '{}'", context,
-                          eventPtr->event.eventName, sessionId);
+                LOG_DEBUG("EventSchedulerImpl: {} executing event '{}' in session '{}' at logical time {}ms", context,
+                          eventPtr->event.eventName, sessionId, eventPtr->logicalExecuteTime.count());
 
-                // Execute the callback synchronously
-                bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
+                // W3C SCXML 3.13: Set logicalExecuteTime in EventDescriptor to preserve FIFO ordering in MANUAL mode
+                // Use move semantics to avoid unnecessary copy of strings/maps in EventDescriptor
+                EventDescriptor eventWithTimestamp = std::move(eventPtr->event);
+                eventWithTimestamp.logicalExecuteTime = eventPtr->logicalExecuteTime;
+
+                bool success = executionCallback_(eventWithTimestamp, eventPtr->target, eventPtr->sendId);
 
                 if (success) {
                     LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
@@ -497,11 +501,16 @@ size_t EventSchedulerImpl::processReadyEvents() {
                         continue;
                     }
                     try {
-                        LOG_DEBUG("EventSchedulerImpl: Executing event '{}' sequentially in session '{}'",
-                                  eventPtr->event.eventName, sessionId);
+                        LOG_DEBUG("EventSchedulerImpl: Executing event '{}' sequentially in session '{}' at logical "
+                                  "time {}ms",
+                                  eventPtr->event.eventName, sessionId, eventPtr->logicalExecuteTime.count());
 
-                        // Execute the callback
-                        bool success = executionCallback_(eventPtr->event, eventPtr->target, eventPtr->sendId);
+                        // W3C SCXML 3.13: Set logicalExecuteTime in EventDescriptor to preserve FIFO ordering in MANUAL
+                        // mode Use move semantics to avoid unnecessary copy of strings/maps in EventDescriptor
+                        EventDescriptor eventWithTimestamp = std::move(eventPtr->event);
+                        eventWithTimestamp.logicalExecuteTime = eventPtr->logicalExecuteTime;
+
+                        bool success = executionCallback_(eventWithTimestamp, eventPtr->target, eventPtr->sendId);
 
                         if (success) {
                             LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully",

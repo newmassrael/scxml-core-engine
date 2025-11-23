@@ -24,6 +24,9 @@ struct EventDescriptor {
     std::map<std::string, std::vector<std::string>> params;  // Additional parameters (W3C: supports duplicate names)
     std::string content;                                     // W3C SCXML C.2: Content for HTTP body
 
+    // W3C SCXML 3.13: Logical execution time for MANUAL mode FIFO preservation (visualizer stepping)
+    std::chrono::milliseconds logicalExecuteTime{0};  // Scheduled logical time (0 = not set, use current time)
+
     // Evaluation expressions (for dynamic values)
     std::string eventExpr;   // Dynamic event name expression
     std::string targetExpr;  // Dynamic target expression

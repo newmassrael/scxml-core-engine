@@ -17,7 +17,7 @@ class IEventTarget;
  * @brief Callback type for event execution
  *
  * Called when scheduled events are ready for execution.
- * Parameters: EventDescriptor, IEventTarget, sendId
+ * Parameters: EventDescriptor (includes logicalExecuteTime for FIFO), IEventTarget, sendId
  * Returns: true if execution succeeded
  */
 using EventExecutionCallback =

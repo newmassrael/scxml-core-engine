@@ -59,13 +59,19 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
             // Use priority-aware method with sendid and origintype for W3C SCXML compliance (test 351)
             auto priority =
                 isExternal_ ? EventRaiserImpl::EventPriority::EXTERNAL : EventRaiserImpl::EventPriority::INTERNAL;
+
+            // W3C SCXML 3.13: Convert logicalExecuteTime to nanoseconds for FIFO preservation in MANUAL mode
+            int64_t timestampNs = 0;
+            if (event.logicalExecuteTime.count() > 0) {
+                timestampNs = std::chrono::duration_cast<std::chrono::nanoseconds>(event.logicalExecuteTime).count();
+            }
+
             LOG_DEBUG("InternalEventTarget::send() - Calling raiseEventWithPriority('{}', '{}', {}, "
-                      "originSessionId='{}', sendid='{}', "
-                      "origintype='{}')",
+                      "originSessionId='{}', sendid='{}', origintype='{}', logicalTime={}ms, timestampNs={})",
                       eventName, eventData, (isExternal_ ? "EXTERNAL" : "INTERNAL"), sessionId_, event.sendId,
-                      originType);
+                      originType, event.logicalExecuteTime.count(), timestampNs);
             queueSuccess = eventRaiserImpl->raiseEventWithPriority(eventName, eventData, priority, sessionId_,
-                                                                   event.sendId, "", originType);
+                                                                   event.sendId, "", originType, timestampNs);
         } else {
             // Fallback: Use new 5-parameter raiseEvent with origintype
             LOG_DEBUG("InternalEventTarget::send() - Calling eventRaiser_->raiseEvent('{}', '{}', sendid='{}', "
