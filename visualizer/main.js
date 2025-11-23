@@ -226,19 +226,32 @@ async function initVisualizer(scxmlContent) {
             logger.debug(`Created virtual FS: /resources/${testId}/test${testId}.scxml`);
 
             // W3C SCXML 6.3/6.4: Extract child SCXML files from invoke src/srcexpr attributes
-            if (scxmlContent.includes('<invoke')) {
+            // W3C SCXML 5.2: Extract external data files from data src attributes
+            if (scxmlContent.includes('<invoke') || scxmlContent.includes('<data ') || scxmlContent.includes('<data>')) {
                 const childFiles = new Set();  // Use Set to avoid duplicates
 
                 try {
                     // Reuse already-parsed xmlDoc (avoid duplicate parsing)
-                    
-                    // Extract static src="file:..." from invoke elements
+
+                    // W3C SCXML 6.3: Extract static src="file:..." from invoke elements
                     const invokeElements = xmlDoc.querySelectorAll('invoke[src]');
                     invokeElements.forEach(invoke => {
                         const src = invoke.getAttribute('src');
                         if (src && src.startsWith('file:')) {
                             const filename = src.replace(/^file:/, '');
                             childFiles.add(filename);
+                            logger.debug(`Detected child SCXML file: ${filename}`);
+                        }
+                    });
+
+                    // W3C SCXML 5.2.2: Extract static src="file:..." from data elements
+                    const dataElements = xmlDoc.querySelectorAll('data[src]');
+                    dataElements.forEach(data => {
+                        const src = data.getAttribute('src');
+                        if (src && src.startsWith('file:')) {
+                            const filename = src.replace(/^file:/, '');
+                            childFiles.add(filename);
+                            logger.debug(`Detected external data file: ${filename}`);
                         }
                     });
 
@@ -269,13 +282,22 @@ async function initVisualizer(scxmlContent) {
                     // Fallback to regex if XML parsing fails
                     logger.warn('XML parsing failed, using regex fallback:', e.message);
 
-                    // Extract static src="file:..." references
+                    // Extract static src="file:..." from invoke elements
                     const invokePattern = /<invoke[^>]*\ssrc=["']file:([^"']+)["']/g;
                     let match;
 
                     while ((match = invokePattern.exec(scxmlContent)) !== null) {
                         const filename = match[1];
                         childFiles.add(filename);
+                        logger.debug(`Detected child SCXML file (regex): ${filename}`);
+                    }
+
+                    // Extract static src="file:..." from data elements
+                    const dataPattern = /<data[^>]*\ssrc=["']file:([^"']+)["']/g;
+                    while ((match = dataPattern.exec(scxmlContent)) !== null) {
+                        const filename = match[1];
+                        childFiles.add(filename);
+                        logger.debug(`Detected external data file (regex): ${filename}`);
                     }
 
                     // Extract file references from expressions
@@ -289,7 +311,7 @@ async function initVisualizer(scxmlContent) {
                 }
 
                 if (childFiles.size > 0) {
-                    logger.debug(`Loading ${childFiles.size} potential child SCXML file(s)`);
+                    logger.debug(`Loading ${childFiles.size} external file(s) (child SCXML and data files)`);
 
                     // Load detected/potential child files
                     let loadedCount = 0;
@@ -311,12 +333,12 @@ async function initVisualizer(scxmlContent) {
                         }
                     }
 
-                    logger.debug(`Child SCXML loading complete: ${loadedCount}/${childFiles.size} files loaded`);
+                    logger.debug(`External file loading complete: ${loadedCount}/${childFiles.size} files loaded`);
                 } else {
-                    logger.debug(`No file-based invokes detected (content-based invokes may be used)`);
+                    logger.debug(`No file-based references detected (content-based invokes or inline data may be used)`);
                 }
             } else {
-                logger.debug(`No <invoke> elements - skipping child SCXML fetch`);
+                logger.debug(`No <invoke> or <data src> elements - skipping external file fetch`);
             }
         }
 
