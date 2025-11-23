@@ -59,16 +59,25 @@ class HardConstraints {
      * **Exception: Compound hierarchy (parent-child) paths are allowed to intersect parent nodes**
      */
     static validateNodeCollisions(combo, sourceNode, targetNode, allNodes, optimizer, parentChildMap = new Map()) {
-        // Source node collision (skip first segment)
-        if (optimizer.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
-            return false; // FAIL
-        }
+        // W3C SCXML 3.13: Skip collision checks for parent→child internal transitions
+        // Parent→child transitions naturally intersect the parent node (source)
+        const isParentToChild = targetNode && sourceNode &&
+                              (sourceNode.type === 'compound' || sourceNode.type === 'parallel') &&
+                              sourceNode.children &&
+                              sourceNode.children.includes(targetNode.id);
 
-        // Target node collision (skip last segment)
-        const targetCollision = optimizer.pathIntersectsNode(combo, targetNode, { skipLastSegment: true });
-        if (targetCollision) {
-            log(`[HC2-TARGET] ${combo.sourceEdge}→${combo.targetEdge}: Path penetrates target node ${targetNode.id}`);
-            return false; // FAIL
+        if (!isParentToChild) {
+            // Source node collision (skip first segment)
+            if (optimizer.pathIntersectsNode(combo, sourceNode, { skipFirstSegment: true })) {
+                return false; // FAIL
+            }
+
+            // Target node collision (skip last segment)
+            const targetCollision = optimizer.pathIntersectsNode(combo, targetNode, { skipLastSegment: true });
+            if (targetCollision) {
+                log(`[HC2-TARGET] ${combo.sourceEdge}→${combo.targetEdge}: Path penetrates target node ${targetNode.id}`);
+                return false; // FAIL
+            }
         }
 
         // Helper: Get all ancestors of a node

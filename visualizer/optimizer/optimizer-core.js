@@ -32,6 +32,7 @@ class TransitionLayoutOptimizer {
     // Progressive optimization configuration
     static PROGRESS_RENDER_INTERVAL_MS = 50;  // Minimum interval between progressive renders
     static CSP_THRESHOLD = 15;  // Maximum links for CSP optimization
+    static CSP_DEBOUNCE_MS = 1500;  // Delay before CSP after drag (1.5s, non-blocking via Web Worker)
 
     /**
      * Get node size by type or from node object
@@ -86,6 +87,14 @@ class TransitionLayoutOptimizer {
         this.links = links;
         this.visualizer = visualizer;  // Optional visualizer reference for getVisibleLinks
         this.cspRunning = false; // Flag to prevent concurrent CSP executions
+
+        // Build parent-child map from containment links (for hierarchy-aware greedy scoring)
+        this.parentChildMap = new Map(); // Map<childId, parentId>
+        links.forEach(link => {
+            if (link.linkType === 'containment') {
+                this.parentChildMap.set(link.target, link.source);
+            }
+        });
 
         // Initialize helper modules
         this.snapCalculator = new SnapCalculator(this);
