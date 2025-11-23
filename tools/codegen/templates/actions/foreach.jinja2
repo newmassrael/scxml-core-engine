@@ -45,8 +45,7 @@
     bool foreachSuccess = ::SCE::Common::ForeachHelper::executeForeachWithActions(
         jsEngine, sessionId_.value(),
         "{{ action.array }}", "{{ action.item }}", "{{ action.index }}",
-        [&](size_t i) -> bool {
-            (void)i;  // Iteration index available if needed
+        [&]([[maybe_unused]] size_t i) -> bool {
             // W3C SCXML 4.6: Track overall success of all actions in this iteration
             bool iterationSuccess = true;
 {% set has_assign = namespace(value=False) %}\

@@ -130,7 +130,7 @@
 
     template<typename Engine>
     // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ via tryTransitionInState)
-    bool processTransition(State& currentState, Event event, Engine& engine) {
+    bool processTransition(State& currentState, [[maybe_unused]] Event event, [[maybe_unused]] Engine& engine) {
 {%- if model.needs_jsengine %}
         // W3C SCXML 5.3: Ensure JSEngine initialized (lazy init for runtime operations)
         // Note: Datamodel initialization happens in StaticExecutionEngine::initialize()
@@ -174,9 +174,7 @@
         }
 {%- endif %}
 
-        (void)engine;
         LOG_DEBUG("AOT processTransition: Called with event={}, currentState={}", static_cast<int>(event), static_cast<int>(currentState));
-        (void)event;
         bool transitionTaken = false;
 
 {% if model.has_parallel_states %}
@@ -792,7 +790,6 @@ public:
         hasTransitionActions_ = false;
 {% else %}
         // W3C SCXML 3.13: No transition actions (Zero Overhead - empty method)
-        (void)engine;
         LOG_DEBUG("AOT executeTransitionActions: No transition actions in this state machine");
 {% endif %}
     }

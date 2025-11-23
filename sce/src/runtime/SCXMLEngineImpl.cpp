@@ -424,8 +424,7 @@ std::string SCXMLEngineImpl::getLastStateMachineError(const std::string &session
     return it != sessionErrors_.end() ? it->second : "";
 }
 
-SCXMLEngine::Statistics SCXMLEngineImpl::getStatisticsSync(const std::string &sessionId) const {
-    (void)sessionId;  // Single session currently, parameter reserved for future multi-session support
+SCXMLEngine::Statistics SCXMLEngineImpl::getStatisticsSync([[maybe_unused]] const std::string &sessionId) const {
     Statistics stats;
 
     if (!stateMachine_) {

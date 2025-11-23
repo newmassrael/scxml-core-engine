@@ -1256,12 +1256,9 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
 StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode *stateNode,
                                                                      const std::string &eventName,
-                                                                     const std::string &eventData) {
+                                                                     [[maybe_unused]] const std::string &eventData) {
     LOG_DEBUG("[PROCESS STATE TRANSITIONS CALLED] stateNode: {}, event: '{}', isRunning: {}",
               (stateNode ? stateNode->getId() : "null"), eventName, isRunning_.load());
-
-    // eventData available for future SCXML features (e.g., event.data access in guards/actions)
-    (void)eventData;
 
     if (!stateNode) {
         TransitionResult result;

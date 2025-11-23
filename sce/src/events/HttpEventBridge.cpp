@@ -341,14 +341,12 @@ std::string HttpEventBridge::parseDataSafely(const std::string &dataStr) const {
     return dataStr;
 }
 
-bool HttpEventBridge::isContentTypeAllowed(const std::string &contentType) const {
-    (void)contentType;  // Suppress unused parameter warning
-    return true;        // Allow all content types for simplicity
+bool HttpEventBridge::isContentTypeAllowed([[maybe_unused]] const std::string &contentType) const {
+    return true;  // Allow all content types for simplicity
 }
 
 EventDescriptor HttpEventBridge::createErrorEvent(const std::string &errorType, const std::string &errorMessage,
-                                                  const HttpRequest *originalRequest) const {
-    (void)originalRequest;  // Suppress unused parameter warning
+                                                  [[maybe_unused]] const HttpRequest *originalRequest) const {
     EventDescriptor errorEvent;
     errorEvent.eventName = "error." + errorType;
     errorEvent.sendId = UniqueIdGenerator::generateEventId();

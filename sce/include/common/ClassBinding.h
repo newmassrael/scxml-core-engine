@@ -249,10 +249,8 @@ private:
      * Retrieves C++ instance from this_val, looks up method by name in registry,
      * and invokes the corresponding wrapper function.
      */
-    static JSValue methodWrapper(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv, int magic,
-                                 JSValue *func_data) {
-        (void)magic;
-
+    static JSValue methodWrapper(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv,
+                                 [[maybe_unused]] int magic, JSValue *func_data) {
         // Get C++ instance from this_val
         T *instance = static_cast<T *>(JS_GetOpaque(this_val, getClassID()));
         if (!instance) {

@@ -161,14 +161,13 @@ public:
 #endif  // !__EMSCRIPTEN__
 
 // Factory function implementation
-std::unique_ptr<PlatformEventRaiserHelper> createPlatformEventRaiserHelper(EventRaiserImpl *raiser,
-                                                                           std::shared_ptr<IEventScheduler> scheduler) {
+std::unique_ptr<PlatformEventRaiserHelper>
+createPlatformEventRaiserHelper(EventRaiserImpl *raiser, [[maybe_unused]] std::shared_ptr<IEventScheduler> scheduler) {
 #ifdef __EMSCRIPTEN__
     LOG_DEBUG("PlatformEventRaiserHelper: Creating synchronous helper (WASM) with scheduler polling");
     return std::make_unique<SynchronousEventRaiserHelper>(raiser, scheduler);
 #else
     // Native: scheduler not used (background timer thread handles scheduling)
-    (void)scheduler;
 
     LOG_DEBUG("PlatformEventRaiserHelper: Creating queued helper (Native pthread)");
 

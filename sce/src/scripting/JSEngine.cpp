@@ -784,11 +784,8 @@ void JSEngine::setupSystemVariables(JSContext *ctx) {
     return JS_UNDEFINED;
 }
 
-::JSValue JSEngine::globalFunctionWrapper(JSContext *ctx, JSValue this_val, int argc, JSValue *argv, int magic,
-                                          JSValue *func_data) {
-    (void)this_val;  // Unused parameter
-    (void)magic;     // Unused parameter
-
+::JSValue JSEngine::globalFunctionWrapper(JSContext *ctx, [[maybe_unused]] JSValue this_val, int argc, JSValue *argv,
+                                          [[maybe_unused]] int magic, JSValue *func_data) {
     // 1. Extract function name from func_data[0]
     const char *funcName = JS_ToCString(ctx, func_data[0]);
     if (!funcName) {
@@ -1296,16 +1293,14 @@ void JSEngine::clearEventRaiserRegistry() {
 
 // === Observer Pattern Support (Temporary implementation until Facade refactoring) ===
 
-void JSEngine::addObserver(ISessionObserver *observer) {
+void JSEngine::addObserver([[maybe_unused]] ISessionObserver *observer) {
     // Temporary implementation - will be delegated to SessionManager after refactoring
-    (void)observer;  // Suppress unused parameter warning
     LOG_DEBUG("JSEngine: Observer support not yet implemented in current architecture");
     // TODO: Delegate to internal SessionManager after Facade pattern implementation
 }
 
-void JSEngine::removeObserver(ISessionObserver *observer) {
+void JSEngine::removeObserver([[maybe_unused]] ISessionObserver *observer) {
     // Temporary implementation - will be delegated to SessionManager after refactoring
-    (void)observer;  // Suppress unused parameter warning
     LOG_DEBUG("JSEngine: Observer support not yet implemented in current architecture");
     // TODO: Delegate to internal SessionManager after Facade pattern implementation
 }

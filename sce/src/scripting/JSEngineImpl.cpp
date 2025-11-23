@@ -311,10 +311,9 @@ JSResult JSEngine::getVariableInternal(const std::string &sessionId, const std::
 
     // First check if the property exists before getting it
     JSAtom atom = JS_NewAtom(ctx, name.c_str());
-    int hasProperty = JS_HasProperty(ctx, global, atom);
+    [[maybe_unused]] int hasProperty = JS_HasProperty(ctx, global, atom);
     LOG_DEBUG("JSEngine::getVariableInternal - JS_HasProperty('{}') returned: {}", name, hasProperty);
     JS_FreeAtom(ctx, atom);
-    (void)hasProperty;  // Suppress unused variable warning
 
     ::JSValue qjsValue = JS_GetPropertyStr(ctx, global, name.c_str());
 

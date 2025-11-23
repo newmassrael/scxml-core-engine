@@ -365,8 +365,8 @@ EventBroadcastResult ConcurrentEventBroadcaster::broadcastToRegionsSequential(
 
 std::future<ConcurrentOperationResult>
 ConcurrentEventBroadcaster::processEventInRegion(std::shared_ptr<IConcurrentRegion> region,
-                                                 const EventDescriptor &event, std::chrono::milliseconds timeout) {
-    (void)timeout;  // Parameter used for future timeout implementation
+                                                 const EventDescriptor &event,
+                                                 [[maybe_unused]] std::chrono::milliseconds timeout) {
     return std::async(std::launch::async, [region, event]() -> ConcurrentOperationResult {
         try {
             // Simple implementation without timeout for now

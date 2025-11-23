@@ -72,12 +72,10 @@ namespace SCE {
 namespace SafeOutput {
 
 // Safe output that only works in debug builds (ignored in release)
-template <typename... Args> inline void debugPrint(const std::string &format, Args &&...args) {
+template <typename... Args>
+inline void debugPrint([[maybe_unused]] const std::string &format, [[maybe_unused]] Args &&...args) {
 #ifndef NDEBUG
     LOG_DEBUG(format, std::forward<Args>(args)...);
-#else
-    (void)format;       // Prevent compiler warnings
-    ((void)args, ...);  // Ignore all args with fold expression
 #endif
 }
 
