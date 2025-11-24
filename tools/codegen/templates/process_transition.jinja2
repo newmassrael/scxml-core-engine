@@ -224,11 +224,13 @@
 
             ::std::vector<TransitionInfo> enabledTransitions;
 
+#ifndef NDEBUG
             // Debug: Check activeStates_ for duplicates
             AOT_DEBUG("AOT processTransition: activeStates_ contains {} states", activeStates_.size());
             for (State s : activeStates_) {
                 AOT_DEBUG("AOT processTransition: activeStates_ entry: {}", static_cast<int>(s));
             }
+#endif
 
             // W3C SCXML 3.13: Collect transitions from ALL active states (optimal transition set)
             // IMPORTANT: Only check atomic states for normal events (W3C SCXML 3.13: "optimally enabled by E in an atomic state in C")
