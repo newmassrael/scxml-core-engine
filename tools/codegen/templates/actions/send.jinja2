@@ -45,7 +45,7 @@ std::string dynamicType;
         dynamicType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
     } else {
         dynamicType = ::SCE::JSEngine::resultToString(typeResult, sessionId_.value(), "{{ action.typeexpr | escape_cpp }}");
-        LOG_DEBUG("Evaluated typeexpr='{{ action.typeexpr }}' → type='{}'", dynamicType);
+        AOT_DEBUG("Evaluated typeexpr='{{ action.typeexpr }}' → type='{}'", dynamicType);
     }
 {% else %}
     dynamicType = {{ action.typeexpr }};
@@ -128,7 +128,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
             delayMs,
             sendId
         );
-        LOG_DEBUG("Scheduled delayed send to parent: event={{ action.event }}, delay={{ action.delay if action.delay else action.delayexpr }}, sendId={}", sendId);
+        AOT_DEBUG("Scheduled delayed send to parent: event={{ action.event }}, delay={{ action.delay if action.delay else action.delayexpr }}, sendId={}", sendId);
     } else {
         LOG_ERROR("Cannot send to parent: parent pointer is null");
     }
@@ -188,12 +188,12 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 if (child_{{ invoke_id }}_) {
     // W3C SCXML 6.4.1: Send event to child using child's Event enum
     using ChildEvent = ::SCE::Generated::{{ child_name }}::Event;
-    LOG_DEBUG("Sending event {{ action.event }} to child {{ invoke_id }}");
+    AOT_DEBUG("Sending event {{ action.event }} to child {{ invoke_id }}");
     child_{{ invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
-    LOG_DEBUG("Processing child {{ invoke_id }} event queues");
+    AOT_DEBUG("Processing child {{ invoke_id }} event queues");
     // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
     child_{{ invoke_id }}_->step();
-    LOG_DEBUG("Child {{ invoke_id }} processing complete, isInFinalState={}", child_{{ invoke_id }}_->isInFinalState());
+    AOT_DEBUG("Child {{ invoke_id }} processing complete, isInFinalState={}", child_{{ invoke_id }}_->isInFinalState());
 } else {
     LOG_WARN("Child {{ invoke_id }} not initialized, cannot send event");
 }
@@ -213,12 +213,12 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
         if (child_{{ invoke.invoke_id }}_) {
             // W3C SCXML 6.4: Send event to child using child's Event enum
             using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
-            LOG_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
+            AOT_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
             child_{{ invoke.invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
-            LOG_DEBUG("Processing child {} event queues", invokeId);
+            AOT_DEBUG("Processing child {} event queues", invokeId);
             // W3C SCXML 6.4: Process child's event queues immediately (synchronous communication)
             child_{{ invoke.invoke_id }}_->step();
-            LOG_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
+            AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
         } else {
             LOG_WARN("Child {} not initialized, cannot send event", invokeId);
         }
@@ -226,10 +226,10 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
     } else if (invokeId == "{{ invoke.invoke_id }}") {
         if (child_{{ invoke.invoke_id }}_) {
             using ChildEvent = ::SCE::Generated::{{ invoke.child_name }}::Event;
-            LOG_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
+            AOT_DEBUG("Sending event {{ action.event }} to child {}", invokeId);
             child_{{ invoke.invoke_id }}_->raiseExternal(ChildEvent::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }});
             child_{{ invoke.invoke_id }}_->step();
-            LOG_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
+            AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
         } else {
             LOG_WARN("Child {} not initialized, cannot send event", invokeId);
         }

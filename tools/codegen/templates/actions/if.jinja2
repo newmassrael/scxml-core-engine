@@ -1,15 +1,15 @@
 // W3C SCXML 3.8.5: <if>
 {% if action.is_pure_in_predicate %}
 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
-if ({{ action.cond_cpp }}) {
+if ({{ action.cond_cpp }}) [[likely]] {
 {% elif model.needs_jsengine %}
 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
 // Use safeEvaluateGuard for std::optional<bool> handling and error.execution support
 this->ensureJSEngine();
 auto& jsEngine = ::SCE::JSEngine::instance();
-if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}", engine)) {
+if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}", engine)) [[likely]] {
 {% else %}
-if ({{ action.cond }}) {
+if ({{ action.cond }}) [[likely]] {
 {% endif %}
     {% for then_action in action.then_actions %}
     {% with action=then_action %}

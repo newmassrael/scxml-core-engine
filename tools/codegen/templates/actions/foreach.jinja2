@@ -63,7 +63,7 @@
             {% endwith %}\
             iterationSuccess = iterationSuccess && success;
             if (!iterationSuccess) {
-                LOG_DEBUG("Foreach: Action {{ loop.index }} (assign) failed, stopping loop (W3C SCXML 4.6)");
+                AOT_DEBUG("Foreach: Action {{ loop.index }} (assign) failed, stopping loop (W3C SCXML 4.6)");
                 return false;  // Stop foreach on error
             }
             {% else %}\

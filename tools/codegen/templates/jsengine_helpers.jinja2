@@ -56,7 +56,7 @@
             [this](const std::string& stateId) { return this->isStateActive(stateId); },
             sessionId_.value()
         );
-        LOG_DEBUG("AOT ensureJSEngine: Registered state query callback for In() predicate");
+        AOT_DEBUG("AOT ensureJSEngine: Registered state query callback for In() predicate");
 {% endif %}
 
         jsEngineInitialized_ = true;
@@ -109,7 +109,7 @@
                 LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
             }
-            LOG_DEBUG("AOT initializeDataModel: Initialized function variable '{{ var.id }}'");
+            AOT_DEBUG("AOT initializeDataModel: Initialized function variable '{{ var.id }}'");
         }
 {% else %}
         // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
@@ -181,7 +181,7 @@
             [this](const std::string& stateId) { return this->isStateActive(stateId); },
             sessionId_.value()
         );
-        LOG_DEBUG("AOT initializeDataModel: Registered state query callback for In() predicate");
+        AOT_DEBUG("AOT initializeDataModel: Registered state query callback for In() predicate");
 {% endif %}
 
         jsEngineInitialized_ = true;
