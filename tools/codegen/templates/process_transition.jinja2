@@ -598,7 +598,10 @@ private:
 {% endif %}
 {# Process single transition with its condition #}
 {% if trans.cond %}
-{% if trans.is_pure_in_predicate %}
+{% if trans.is_cpp_condition %}
+                // Direct C++ condition evaluation (cpp: prefix)
+                if ({{ trans.cond_cpp_transformed }}) [[likely]] {
+{% elif trans.is_pure_in_predicate %}
                 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
                 if ({{ trans.cond_cpp }}) [[likely]] {
 {% elif model.needs_jsengine %}
@@ -661,7 +664,10 @@ private:
 {% for transition in eventless_transitions %}
 {% if transition.cond %}
 {% if first_trans.value %}
-{% if transition.is_pure_in_predicate %}
+{% if transition.is_cpp_condition %}
+                // Direct C++ condition evaluation (cpp: prefix)
+                if ({{ transition.cond_cpp_transformed }}) {
+{% elif transition.is_pure_in_predicate %}
                 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
                 if ({{ transition.cond_cpp }}) {
 {% elif model.needs_jsengine %}
@@ -672,7 +678,10 @@ private:
 {% endif %}
 {% set first_trans.value = False %}
 {% else %}
-{% if transition.is_pure_in_predicate %}
+{% if transition.is_cpp_condition %}
+                // Direct C++ condition evaluation (cpp: prefix)
+                } else if ({{ transition.cond_cpp_transformed }}) {
+{% elif transition.is_pure_in_predicate %}
                 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
                 } else if ({{ transition.cond_cpp }}) {
 {% elif model.needs_jsengine and first_uses_jsengine %}

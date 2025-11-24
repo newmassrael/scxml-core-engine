@@ -28,8 +28,10 @@ class Transition:
     event: str = ""
     target: str = ""
     cond: str = ""  # guard condition (original SCXML expression)
-    cond_cpp: str = ""  # C++ code for pure In() predicates (empty if needs JSEngine)
+    cond_cpp: str = ""  # C++ code for pure In() predicates or cpp: prefix conditions
+    cond_cpp_transformed: str = ""  # C++ code with this->policy_.user_-> prefix for UserContext
     is_pure_in_predicate: bool = False  # True if cond is ONLY In() predicates
+    is_cpp_condition: bool = False  # True if cond uses cpp: prefix for direct C++ evaluation
     type: str = "external"  # external or internal
     actions: List[Dict] = field(default_factory=list)  # executable content
 
@@ -112,6 +114,13 @@ class SCXMLModel:
     # W3C SCXML 3.4: Parallel state regions (parallel_id -> [child_region_ids])
     parallel_regions: Dict[str, List[str]] = field(default_factory=dict)
 
+    # User context objects (for UserContext template dependency injection)
+    user_context_objects: Set[str] = field(default_factory=set)  # Set of object names used in C++ code (e.g., hardware, logger)
+
+    # Lambda capture flag: True if entry/exit lambdas need [this, &engine], False if [&engine] suffices
+    # Computed from: needs_jsengine OR static_invokes OR has_parent_communication OR has_parallel_states OR uses_in_predicate OR user_context_objects
+    needs_nonstatic_method: bool = False
+
 
 class SCXMLParser:
     """
@@ -137,6 +146,87 @@ class SCXMLParser:
         self.model = None
         self.document_order_counter = 0  # W3C SCXML 3.13: Track document order
         self.invoke_counter = 0  # W3C SCXML 6.4.1: Generate invoke IDs when missing
+
+    def _extract_user_objects(self, cpp_code: str) -> Set[str]:
+        """
+        Extract user object names from C++ code for UserContext template.
+        
+        Examples:
+            "hardware.powerOff()" -> {"hardware"}
+            "hardware.sensor.read()" -> {"hardware"}
+            "logger.info(msg)" -> {"logger"}
+            "obj1.method(); obj2.field" -> {"obj1", "obj2"}
+        
+        Args:
+            cpp_code: C++ code string (from <cpp> tag or cpp: prefix)
+            
+        Returns:
+            Set of top-level object names
+        """
+        import re
+        # Match identifiers followed by dot (member access)
+        # Pattern: word boundary + identifier + optional whitespace + dot
+        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.'
+        matches = re.findall(pattern, cpp_code)
+        return set(matches)
+
+    def _transform_cpp_code_with_user_prefix(self, cpp_code: str, user_objects: Set[str]) -> str:
+        """
+        Transform C++ code by adding this->user_-> prefix to user objects.
+        Preserves string literals unchanged.
+        
+        Examples:
+            "hardware.powerOff()" -> "this->user_->hardware.powerOff()"
+            "logger.info(msg)" -> "this->user_->logger.info(msg)"
+            "obj.field = 5" -> "this->user_->obj.field = 5"
+            "text with OFF" -> "text with OFF" (string literals preserved)
+        
+        Supported C++ Patterns:
+            ✅ Member access: object.method(), object.field
+            ✅ Method chains: obj.getX().process()
+            ✅ Nested members: obj.field.subfield
+        
+        Unsupported Patterns (not detected/transformed):
+            ❌ Pointer access: object->method() (use . syntax instead)
+            ❌ Array indexing: object[index].method() (use . syntax first)
+            ❌ Templates: std::vector<T>.method() (namespace collision risk)
+            ⚠️  Workaround: Extract to intermediate variable, then use . syntax
+        
+        Args:
+            cpp_code: Original C++ code
+            user_objects: Set of object names to transform
+            
+        Returns:
+            Transformed C++ code with user_-> prefix (for Policy class context)
+        """
+        import re
+        
+        # Step 1: Extract string literals and replace with placeholders
+        string_literals = []
+        def save_string(match):
+            string_literals.append(match.group(0))
+            return f'__STRING_PLACEHOLDER_{len(string_literals) - 1}__'
+        
+        # Match both single and double quoted strings (including escaped quotes)
+        string_pattern = r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\''
+        code_with_placeholders = re.sub(string_pattern, save_string, cpp_code)
+        
+        # Step 2: Transform user objects outside of string literals
+        result = code_with_placeholders
+        for obj_name in user_objects:
+            # Replace "objname." with "this->user_->objname."
+            # Note: this-> refers to Policy object (not main state machine class)
+            # Word boundary + object name + optional whitespace + dot
+            pattern = rf'\b{re.escape(obj_name)}(\s*\.)'
+            replacement = rf'this->user_->{obj_name}\1'
+            result = re.sub(pattern, replacement, result)
+        
+        # Step 3: Restore string literals
+        for i, literal in enumerate(string_literals):
+            placeholder = f'__STRING_PLACEHOLDER_{i}__'
+            result = result.replace(placeholder, literal)
+        
+        return result
 
     def parse_file(self, scxml_path: str) -> SCXMLModel:
         """
@@ -236,6 +326,17 @@ class SCXMLParser:
 
         # W3C SCXML 3.6: Parse space-separated initial attributes into lists
         self._parse_initial_children()
+
+        # Compute lambda capture flag for entry/exit action templates
+        # True if any feature requires non-static methods (this pointer needed in lambdas)
+        self.model.needs_nonstatic_method = (
+            self.model.needs_jsengine or
+            bool(self.model.static_invokes) or
+            self.model.has_parent_communication or
+            self.model.has_parallel_states or
+            self.model.uses_in_predicate or
+            bool(self.model.user_context_objects)
+        )
 
         return self.model
 
@@ -638,10 +739,27 @@ class SCXMLParser:
         # W3C SCXML 3.13: Guard condition can be specified via 'cond' or 'expr' attribute
         cond = trans_elem.get('cond', '') or trans_elem.get('expr', '')
         
-        # W3C SCXML 5.9.2: Check if condition is pure In() predicate
+        # Check for cpp: prefix for direct C++ condition evaluation
+        is_cpp_condition = False
         is_pure_in = False
         cond_cpp = ''
-        if cond and self._is_pure_in_predicate(cond):
+        
+        if cond and cond.startswith('cpp:'):
+            # Direct C++ condition - no JSEngine needed
+            is_cpp_condition = True
+            cond_cpp = cond[4:]  # Remove 'cpp:' prefix
+            
+            # Extract user object names for UserContext template
+            user_objects = self._extract_user_objects(cond_cpp)
+            self.model.user_context_objects.update(user_objects)
+            
+            # Transform code with user_-> prefix if user objects exist
+            if user_objects:
+                cond_cpp_transformed = self._transform_cpp_code_with_user_prefix(cond_cpp, user_objects)
+            else:
+                cond_cpp_transformed = cond_cpp
+        elif cond and self._is_pure_in_predicate(cond):
+            # W3C SCXML 5.9.2: Check if condition is pure In() predicate
             is_pure_in = True
             cond_cpp = self._convert_in_to_cpp(cond)
         
@@ -650,7 +768,9 @@ class SCXMLParser:
             target=trans_elem.get('target', ''),
             cond=cond,
             cond_cpp=cond_cpp,
+            cond_cpp_transformed=cond_cpp_transformed if is_cpp_condition else cond_cpp,
             is_pure_in_predicate=is_pure_in,
+            is_cpp_condition=is_cpp_condition,
             type=trans_elem.get('type', 'external')
         )
 
@@ -944,8 +1064,28 @@ class SCXMLParser:
             elif tag == 'script':
                 # W3C SCXML 3.8.6: <script>
                 action['src'] = child.get('src', '')
-                action['content'] = child.text or ''
-                self.model.needs_jsengine = True
+                
+                # Check for nested <cpp> tag for direct C++ function calls
+                cpp_elem = child.find('{http://www.w3.org/2005/07/scxml}cpp')
+                if cpp_elem is not None:
+                    # Direct C++ function call - no JSEngine needed
+                    cpp_code = cpp_elem.text or ''
+                    action['content'] = cpp_code
+                    action['is_cpp_function'] = True
+                    
+                    # Extract user object names for UserContext template
+                    user_objects = self._extract_user_objects(cpp_code)
+                    self.model.user_context_objects.update(user_objects)
+                    
+                    # Transform code with user_-> prefix if user objects exist
+                    if user_objects:
+                        action['content_transformed'] = self._transform_cpp_code_with_user_prefix(cpp_code, user_objects)
+                    else:
+                        action['content_transformed'] = cpp_code
+                else:
+                    # JavaScript execution via JSEngine
+                    action['content'] = child.text or ''
+                    self.model.needs_jsengine = True
 
             elif tag == 'cancel':
                 # W3C SCXML 6.2: <cancel>

@@ -1,67 +1,50 @@
-#include "SimpleLight_sm.h"
+#include "simple_light_sm.h"
+#include "wrappers/AutoProcessStateMachine.h"
 #include <iostream>
-#include <string>
-#include <vector>
-
-using namespace SCE::Generated;
-
-// User implementation inheriting from generated base class
-class LightController : public SimpleLightBase<LightController> {
-public:
-    std::vector<std::string> eventLog;
-
-    // Action methods
-    void onLightOff() {
-        eventLog.push_back("Light is OFF");
-    }
-
-    void onLightOn() {
-        eventLog.push_back("Light is ON");
-    }
-
-    void turnOn() {
-        eventLog.push_back("Turning on...");
-    }
-
-    void turnOff() {
-        eventLog.push_back("Turning off...");
-    }
-
-    void printLog() {
-        for (const auto &msg : eventLog) {
-            std::cout << "  - " << msg << std::endl;
-        }
-        eventLog.clear();
-    }
-
-    // Friend declaration for base class access
-    friend class SimpleLightBase<LightController>;
-};
 
 int main() {
-    std::cout << "=== SCE CMake Function Example ===" << std::endl;
-    std::cout << std::endl;
+    using namespace SCE::Generated::simple_light;
 
-    LightController light;
+    std::cout << "=== SCE CMake Integration Example ===" << "\n\n";
+    std::cout << "This example demonstrates:\n";
+    std::cout << "  - Automatic code generation with sce_add_state_machine()\n";
+    std::cout << "  - Dependency tracking (rebuilds when SCXML changes)\n";
+    std::cout << "  - Zero-configuration CMake integration\n";
+    std::cout << "  - Clean project organization\n\n";
 
-    std::cout << "1. Initializing light (should be OFF)" << std::endl;
-    light.initialize();
-    light.printLog();
-    std::cout << "   Current state: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << std::endl;
-    std::cout << std::endl;
+    // Option 1: Easy API - Auto-processing wrapper (recommended for beginners)
+    std::cout << "Using easy API (AutoProcessStateMachine):" << "\n";
+    {
+        SCE::Wrappers::AutoProcessStateMachine<simple_light> light;
 
-    std::cout << "2. Switching light ON" << std::endl;
-    light.processEvent(Event::Switch_on);
-    light.printLog();
-    std::cout << "   Current state: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << std::endl;
-    std::cout << std::endl;
+        light.initialize();
+        std::cout << "  Initial state: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << "\n";
 
-    std::cout << "3. Switching light OFF" << std::endl;
-    light.processEvent(Event::Switch_off);
-    light.printLog();
-    std::cout << "   Current state: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << std::endl;
-    std::cout << std::endl;
+        light.processEvent(Event::Switch_on);
+        std::cout << "  After switch_on: " << (light.getCurrentState() == State::On ? "ON" : "OFF") << "\n";
 
-    std::cout << "=== Example Complete ===" << std::endl;
+        light.processEvent(Event::Switch_off);
+        std::cout << "  After switch_off: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << "\n";
+    }
+
+    std::cout << "\n";
+
+    // Option 2: Low-level API - Manual control (for advanced users)
+    std::cout << "Using low-level API (manual step):" << "\n";
+    {
+        simple_light light;
+
+        light.initialize();
+        std::cout << "  Initial state: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << "\n";
+
+        light.raiseExternal(Event::Switch_on);
+        light.step();
+        std::cout << "  After switch_on: " << (light.getCurrentState() == State::On ? "ON" : "OFF") << "\n";
+
+        light.raiseExternal(Event::Switch_off);
+        light.step();
+        std::cout << "  After switch_off: " << (light.getCurrentState() == State::Off ? "OFF" : "ON") << "\n";
+    }
+
     return 0;
 }

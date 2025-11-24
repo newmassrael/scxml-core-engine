@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="SmartLight" initial="off">
+  <state id="off">
+    <onentry>
+      <script><cpp>hardware.powerOff()</cpp></script>
+    </onentry>
+    <transition event="switch_on" cond="cpp:hardware.hasPower()" target="on">
+      <script><cpp>hardware.powerOn()</cpp></script>
+    </transition>
+  </state>
+
+  <state id="on">
+    <onentry>
+      <script><cpp>hardware.setBrightness(100)</cpp></script>
+    </onentry>
+    <transition event="switch_off" target="off"/>
+  </state>
+</scxml>

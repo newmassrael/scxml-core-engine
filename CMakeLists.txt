@@ -192,11 +192,12 @@ if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-# Example build option (disabled by default)
-option(BUILD_EXAMPLES "Build the examples" OFF)
+# Example build option (enabled by default)
+option(BUILD_EXAMPLES "Build the examples" ON)
 if(BUILD_EXAMPLES)
     add_subdirectory(examples/cmake_function)
     add_subdirectory(examples/traffic_light)
+    add_subdirectory(examples/smart_light)
 endif()
 
 # =============================================================================

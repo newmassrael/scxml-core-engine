@@ -1,4 +1,8 @@
-// W3C SCXML 3.8.6: <script>
+{% if action.is_cpp_function %}
+// W3C SCXML 3.8.6: Direct C++ function call (Zero Overhead)
+{{ action.content_transformed | trim }};
+{% else %}
+// W3C SCXML 3.8.6: <script> via JSEngine
 {
     this->ensureJSEngine();
     auto& jsEngine = ::SCE::JSEngine::instance();
@@ -14,3 +18,4 @@
     LOG_WARN("External script loading (src attribute) not supported");
     {% endif %}
 }
+{% endif %}

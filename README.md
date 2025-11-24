@@ -23,15 +23,17 @@ Generate optimized C++ state machines from SCXML with minimal memory footprint -
 
 ### 🔄 Natural Integration with Your C++ Code
 
-SCXML state logic cleanly separated from your business logic:
+SCXML state logic cleanly separated from your business logic with direct C++ function calls:
 
 ```xml
-<!-- SCXML: State machine logic -->
-<transition event="sensor_update"
-            cond="hardware.isCritical()"
-            target="emergency">
-  <script>hardware.shutdownSystem()</script>
-</transition>
+<!-- SCXML: State machine logic with C++ integration -->
+<state id="monitoring">
+  <transition event="sensor_update"
+              cond="cpp:hardware.isCritical()"
+              target="emergency">
+    <script><cpp>hardware.shutdownSystem()</cpp></script>
+  </transition>
+</state>
 ```
 
 ```cpp
@@ -41,9 +43,21 @@ public:
     bool isCritical() { return sensor.readTemp() > 85; }
     void shutdownSystem() { emergencyStop(); }
 };
+
+// UserContext: Dependency injection pattern
+struct MyContext {
+    Hardware hardware;
+};
+
+// Generated state machine uses your code
+my_machine<MyContext> sm(context);
 ```
 
-The generated state machine calls your existing code - no framework lock-in, no base class requirements.
+**Key Benefits**:
+- Direct C++ function calls (zero overhead, no virtual functions)
+- Type-safe dependency injection via UserContext template
+- No framework lock-in, no base class requirements
+- Your code remains completely independent
 
 ### 📐 W3C SCXML 1.0 Compliance
 
@@ -110,7 +124,7 @@ target_link_libraries(my_app PRIVATE sce_unified)
 - CMake dependency tracking built-in
 - No manual build steps
 
-See [examples/cmake_function](examples/cmake_function) for complete example.
+See [examples/cmake_function](examples/cmake_function) for complete working example.
 
 ### Method 2: FetchContent (Modern CMake)
 
@@ -141,6 +155,69 @@ python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/
 ```
 
 See [Usage Example](#usage-example) below for complete standalone workflow.
+
+---
+
+## Examples
+
+SCE provides three examples with progressive complexity for learning the framework:
+
+### Learning Path
+
+**Recommended order**: Start simple, then integrate with your build system, finally add C++ functions.
+
+#### 1. [traffic_light](examples/traffic_light/) - SCXML Basics
+
+**What you'll learn**:
+- Pure SCXML state machine definition
+- State transitions and event handling
+- Two API patterns (Easy vs Low-level)
+- Manual build process
+
+**Complexity**: Beginner (Pure SCXML, no C++ functions, no CMake integration)
+
+```bash
+# Build and run
+cmake --build build --target traffic_light_example
+./build/examples/traffic_light/traffic_light_example
+```
+
+#### 2. [cmake_function](examples/cmake_function/) - CMake Integration
+
+**What you'll learn**:
+- Automatic code generation with `sce_add_state_machine()`
+- Build system integration and dependency tracking
+- Zero-configuration CMake workflow
+
+**Complexity**: Beginner-Intermediate (CMake integration, Pure SCXML)
+
+```cmake
+sce_add_state_machine(TARGET my_app SCXML_FILE my_machine.scxml)
+```
+
+#### 3. [smart_light](examples/smart_light/) - C++ Function Integration
+
+**What you'll learn**:
+- Direct C++ function calls from SCXML (`<cpp>` tags)
+- UserContext dependency injection pattern
+- Conditional transitions with C++ predicates (`cond="cpp:..."`)
+- Hardware abstraction layer integration
+- Production-ready patterns
+
+**Complexity**: Intermediate (Full C++ integration, testable design)
+
+```xml
+<state id="off">
+  <onentry>
+    <script><cpp>hardware.powerOff()</cpp></script>
+  </onentry>
+  <transition event="switch_on" cond="cpp:hardware.hasPower()" target="on">
+    <script><cpp>hardware.powerOn()</cpp></script>
+  </transition>
+</state>
+```
+
+Each example includes a detailed README with building instructions and usage patterns.
 
 ---
 
@@ -303,6 +380,75 @@ sm.step();                      // Manual processing
 - **Easy API**: Most applications, simpler code, fewer mistakes
 - **Low-level API**: Batch processing, asynchronous systems, precise control
 
+### C++ Function Integration
+
+Direct C++ function calls from SCXML with type-safe dependency injection:
+
+**SCXML Definition:**
+```xml
+<state id="monitoring">
+  <onentry>
+    <!-- Simple function call - no CDATA needed -->
+    <script><cpp>hardware.initialize()</cpp></script>
+  </onentry>
+
+  <transition event="check" cond="cpp:hardware.hasPower()" target="active">
+    <script><cpp>hardware.setBrightness(100)</cpp></script>
+  </transition>
+
+  <transition event="error" target="shutdown">
+    <!-- CDATA for complex expressions with << operator -->
+    <script><cpp><![CDATA[
+      std::cout << "Error: " << hardware.getErrorCode() << "\n";
+      hardware.emergencyShutdown();
+    ]]></cpp></script>
+  </transition>
+</state>
+```
+
+**C++ Implementation:**
+```cpp
+// Your business logic
+class Hardware {
+public:
+    bool hasPower() { return checkPowerSupply(); }
+    void initialize() { setupHardware(); }
+    void setBrightness(int level) { pwmControl(level); }
+    int getErrorCode() { return lastError; }
+    void emergencyShutdown() { safetyProtocol(); }
+private:
+    int lastError = 0;
+};
+
+// UserContext: Dependency injection container
+struct MyContext {
+    Hardware hardware;
+};
+
+// Generated state machine automatically uses UserContext
+my_machine<MyContext> sm(context);
+sm.initialize();
+```
+
+**Key Features:**
+- **Zero-overhead**: Direct calls, no virtual functions
+- **Type-safe**: UserContext template enforces correct types
+- **Testable**: Inject mock objects for unit testing
+- **CDATA support**: Use `<![CDATA[...]]>` for complex C++ expressions with operators (`<<`, `>>`, `<`, `>`)
+- **Automatic transformation**: Generator adds `this->user_->` prefix automatically
+
+**When to use CDATA:**
+- C++ operators: `<<`, `>>`, `<`, `>`, `&&`, `||`
+- Complex expressions with multiple statements
+- String literals with special characters
+
+**Most common case** (no CDATA needed):
+- Simple function calls: `hardware.powerOn()`
+- Method chains: `sensor.read().process()`
+- Conditions: `hardware.temperature() > 50`
+
+See [smart_light example](examples/smart_light/) for production-ready implementation.
+
 ### Parent-Child State Machines
 
 ```xml
@@ -419,15 +565,3 @@ See [LICENSE](LICENSE) and [LICENSE-COMMERCIAL.md](LICENSE-COMMERCIAL.md) for de
 | Your generated code (always) | MIT | FREE |
 
 **Contact:** newmassrael@gmail.com
-
----
-
-## Contributing
-
-Issues and pull requests welcome. Please ensure tests pass before submitting.
-
-```bash
-# Run tests
-cd build
-ctest --output-on-failure
-```

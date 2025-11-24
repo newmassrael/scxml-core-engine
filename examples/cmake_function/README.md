@@ -1,14 +1,14 @@
-# SCE CMake Function Example
+# SCE CMake Integration Example
 
-This example demonstrates how to use the `sce_add_state_machine()` CMake function to automatically generate C++ state machine code from SCXML files.
+This example demonstrates how to integrate SCE into your CMake project using the `sce_add_state_machine()` function for automatic code generation.
 
 ## Overview
 
-The `sce_add_state_machine()` function integrates SCXML code generation into your CMake build process:
-- Automatically generates C++ code from SCXML files
-- Tracks dependencies (regenerates when SCXML changes)
-- Adds generated files to your target
-- Sets up include directories
+The `sce_add_state_machine()` function seamlessly integrates SCXML code generation into your CMake build process:
+- **Automatic Generation**: C++ code generated from SCXML files during build
+- **Dependency Tracking**: Regenerates code when SCXML files change
+- **Zero Configuration**: Automatically adds generated files to your target
+- **Clean Organization**: Generated code placed in dedicated output directory
 
 ## Usage
 
@@ -36,48 +36,46 @@ target_link_libraries(my_app PRIVATE sce_unified)
 ## Generated Output
 
 For an SCXML file named `simple_light.scxml` with `name="SimpleLight"`:
-- Generated file: `SimpleLight_sm.h`
-- Location: `${OUTPUT_DIR}/SimpleLight_sm.h`
-- Namespace: `SCE::Generated`
+- Generated file: `simple_light_sm.h` (based on SCXML filename)
+- Location: `${OUTPUT_DIR}/simple_light_sm.h`
+- Namespace: `SCE::Generated::simple_light` (based on SCXML filename)
 
 ## Implementation Pattern
 
-The generated code uses template-based inheritance for zero-overhead state machines:
+The generated code provides a ready-to-use state machine class with two usage patterns:
 
 ```cpp
-#include "SimpleLight_sm.h"
+#include "simple_light_sm.h"
+#include "wrappers/AutoProcessStateMachine.h"
 
-using namespace SCE::Generated;
-
-// Implement your state machine logic
-class LightController : public SimpleLightBase<LightController> {
-public:
-    // Implement required methods (guards, actions, entry/exit handlers)
-    void onLightOff() { /* ... */ }
-    void onLightOn() { /* ... */ }
-    void turnOn() { /* ... */ }
-    void turnOff() { /* ... */ }
-
-    // Friend declaration for base class access
-    friend class SimpleLightBase<LightController>;
-};
+using namespace SCE::Generated::simple_light;
 
 int main() {
-    LightController light;
+    // Option 1: Easy API - Auto-processing wrapper (recommended for beginners)
+    SCE::Wrappers::AutoProcessStateMachine<simple_light> light;
     light.initialize();
-    light.processEvent(Event::Switch_on);
+    light.processEvent(Event::Switch_on);  // Automatically processes event queue
+
+    // Option 2: Low-level API - Manual control (for advanced users)
+    simple_light lightManual;
+    lightManual.initialize();
+    lightManual.raiseExternal(Event::Switch_on);
+    lightManual.step();  // Explicit queue processing for fine-grained control
+
     return 0;
 }
 ```
+
+**Key Point**: This example uses Pure SCXML (no C++ function integration) to focus on CMake integration. For C++ function integration examples, see [smart_light](../smart_light/).
 
 ## Building This Example
 
 From the project root:
 
 ```bash
-cd build
-cmake .. -DBUILD_EXAMPLES=ON
-make light_example
+mkdir -p build && cd build
+cmake ..  # BUILD_EXAMPLES is ON by default
+cmake --build . --target light_example
 ./examples/cmake_function/light_example
 ```
 
@@ -89,27 +87,31 @@ make light_example
 4. **Type Safety**: Compile-time checks for state machine logic
 5. **Clean Integration**: No manual build steps required
 
-## Roadmap: Full W3C SCXML Support
+## Next Steps
 
-The code generator is being enhanced to support all W3C SCXML 1.0 features while maintaining zero-overhead principles:
+This example focuses on **CMake integration** with Pure SCXML. For advanced features:
 
-### Current Support (~25-30%)
-- Atomic states with event-based transitions
-- Guards and actions (simple C++ function calls)
-- Entry/exit handlers
+- **C++ Function Integration**: See [smart_light](../smart_light/) example for:
+  - Direct C++ function calls from SCXML
+  - UserContext dependency injection pattern
+  - Conditional transitions with C++ predicates
+  - Hardware abstraction layer integration
 
-### Coming Soon (3-5 weeks)
-- **Compound States**: Hierarchical state structures
+- **Basic Usage**: See [traffic_light](../traffic_light/) example for:
+  - Manual build process (no CMake function)
+  - Simple state machine patterns
+  - API usage comparison
+
+## W3C SCXML Support
+
+The code generator supports W3C SCXML 1.0 features with zero-overhead principles:
+
+- **Atomic and Compound States**: Flat and hierarchical state structures
 - **Parallel States**: Multiple active states simultaneously
 - **History States**: State restoration (shallow and deep)
 - **Final States**: Automatic done event generation
-- **Eventless Transitions**: Condition-based automatic transitions
-- **Internal Transitions**: Transitions without exit/entry
-- **Full W3C Compliance**: 202/202 test suite passing
+- **Transitions**: Event-based, eventless, internal, and guarded transitions
+- **ECMAScript Support**: Dynamic expressions via JSEngine (Static Hybrid approach)
+- **Actions**: Entry/exit handlers, transition actions, assign, if, foreach, etc.
 
-### Architecture: Pay for What You Use
-- **Tier 0 (Zero Overhead)**: Structural features - always free
-- **Tier 1 (Minimal Overhead)**: Parallel/History - small data structures only when needed
-- **Tier 2 (Conditional Overhead)**: JavaScript/HTTP/Timers - linked only if SCXML uses them
-
-See [ARCHITECTURE.md](../../ARCHITECTURE.md) for detailed design
+See [ARCHITECTURE.md](../../ARCHITECTURE.md) for detailed design philosophy and W3C test compliance status
