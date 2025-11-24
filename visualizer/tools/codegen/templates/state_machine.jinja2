@@ -8,6 +8,9 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+{% if model.user_context_objects %}
+#include <iostream>  // C++ function integration: Required for std namespace usage
+{% endif %}
 #include "static/StaticExecutionEngine.h"
 {% if model.static_invokes %}
 
@@ -97,7 +100,11 @@
 
 namespace SCE::Generated::{{ model.name }} {
 
-{% if model.has_parent_communication %}
+{% if model.user_context_objects and model.has_parent_communication %}
+template<typename UserContext, typename ParentStateMachine>
+{% elif model.user_context_objects %}
+template<typename UserContext>
+{% elif model.has_parent_communication %}
 template<typename ParentStateMachine>
 {% endif %}
 class {{ model.name }};
@@ -138,7 +145,11 @@ struct TransitionInfo {
 
 {# Policy class #}
 // State policy for {{ model.name }}
-{% if model.has_parent_communication %}
+{% if model.user_context_objects and model.has_parent_communication %}
+template<typename UserContext, typename ParentStateMachine>
+{% elif model.user_context_objects %}
+template<typename UserContext>
+{% elif model.has_parent_communication %}
 template<typename ParentStateMachine>
 {% elif model.static_invokes %}
 template<typename SelfType>
@@ -159,6 +170,11 @@ struct {{ model.name }}Policy {
 
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
     static constexpr bool NEEDS_JSENGINE = {{ 'true' if model.needs_jsengine else 'false' }};
+
+    {% if model.user_context_objects %}
+    // User context pointer for dependency injection (C++ function integration)
+    UserContext* user_ = nullptr;
+    {% endif %}
 
     {% if model.variables %}
     // Datamodel variables
@@ -526,15 +542,40 @@ private:
 };
 
 // User-facing state machine class
-{% if model.has_parent_communication %}
+{% if model.user_context_objects and model.has_parent_communication %}
+template<typename UserContext, typename ParentStateMachine>
+{% elif model.user_context_objects %}
+template<typename UserContext>
+{% elif model.has_parent_communication %}
 template<typename ParentStateMachine>
 {% endif %}
-class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{% if model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %}> {
+class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{% if model.user_context_objects and model.has_parent_communication %}{{ model.name }}Policy<UserContext, ParentStateMachine>{% elif model.user_context_objects %}{{ model.name }}Policy<UserContext>{% elif model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %}> {
 public:
     // W3C SCXML: Policy type alias for test infrastructure
-    using PolicyType = {% if model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %};
+    using PolicyType = {% if model.user_context_objects and model.has_parent_communication %}{{ model.name }}Policy<UserContext, ParentStateMachine>{% elif model.user_context_objects %}{{ model.name }}Policy<UserContext>{% elif model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %};
 
-{% if model.has_parent_communication %}
+{% if model.user_context_objects and model.has_parent_communication %}
+    // W3C SCXML 6.2: Parent state machine pointer for #_parent support (Zero Overhead)
+    // W3C SCXML 6.5: childSessionId for finalize origin matching (test233)
+    // UserContext: Dependency injection for C++ function integration
+    explicit {{ model.name }}(UserContext& user, ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = "") {
+        this->policy_.user_ = &user;
+        this->policy_.parent_ = parent;
+        this->policy_.invokeId_ = invokeId;
+        this->policy_.childSessionId_ = childSessionId;
+        {% if model.static_invokes %}
+        this->policy_.self_ = this;
+        {% endif %}
+    }
+{% elif model.user_context_objects %}
+    // UserContext: Dependency injection for C++ function integration
+    explicit {{ model.name }}(UserContext& user) {
+        this->policy_.user_ = &user;
+        {% if model.static_invokes %}
+        this->policy_.self_ = this;
+        {% endif %}
+    }
+{% elif model.has_parent_communication %}
     // W3C SCXML 6.2: Parent state machine pointer for #_parent support (Zero Overhead)
     // W3C SCXML 6.5: childSessionId for finalize origin matching (test233)
     explicit {{ model.name }}(ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = "") {
