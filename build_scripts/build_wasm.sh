@@ -15,6 +15,17 @@ echo -e "${GREEN}  SCXML Core Engine - WASM Build  ${NC}"
 echo -e "${GREEN}==========================================${NC}"
 echo ""
 
+# Get absolute path to project root (parent directory of build_scripts/)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Check if we're in the correct directory
+if [[ ! -f "$PROJECT_ROOT/CMakeLists.txt" ]]; then
+    echo -e "${RED}Error: CMakeLists.txt not found at $PROJECT_ROOT${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✅ Project root: $PROJECT_ROOT${NC}"
+echo ""
+
 # Auto-source emsdk if needed
 if ! command -v emcc &> /dev/null; then
     echo -e "${YELLOW}Emscripten not found, attempting to source emsdk...${NC}"
@@ -49,18 +60,21 @@ echo -e "${YELLOW}Emscripten version:${NC}"
 emcc --version | head -1
 echo ""
 
-# Create WASM build directory
-BUILD_DIR="build_wasm"
+# Build directory (absolute path)
+BUILD_DIR="$PROJECT_ROOT/build_wasm"
+echo -e "${YELLOW}Build directory: $BUILD_DIR${NC}"
+echo ""
+
 if [ -d "$BUILD_DIR" ]; then
     echo -e "${YELLOW}Removing existing WASM build directory...${NC}"
     rm -rf "$BUILD_DIR"
 fi
 
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
+# Start timing
+START_TIME=$(date +%s)
 
 echo -e "${GREEN}Configuring CMake with Emscripten...${NC}"
-emcmake cmake .. \
+emcmake cmake -S "$PROJECT_ROOT" -B "$BUILD_DIR" \
     -DCMAKE_BUILD_TYPE=Release \
     -DEMSCRIPTEN=ON \
     -DBUILD_TESTS=ON \
@@ -69,28 +83,36 @@ emcmake cmake .. \
 
 echo ""
 echo -e "${GREEN}Building SCE for WASM...${NC}"
-emmake make -j$(nproc)
+cmake --build "$BUILD_DIR" --parallel $(nproc)
 
 if [ $? -eq 0 ]; then
+    # Calculate build time
+    END_TIME=$(date +%s)
+    BUILD_TIME=$((END_TIME - START_TIME))
+
     echo ""
     echo -e "${GREEN}==========================================${NC}"
     echo -e "${GREEN}       WASM Build Completed Successfully       ${NC}"
     echo -e "${GREEN}==========================================${NC}"
     echo ""
+    echo -e "${BLUE}Build Statistics:${NC}"
+    echo -e "  Build time: ${BUILD_TIME} seconds"
+    echo -e "  Build directory: $BUILD_DIR"
+    echo ""
 
     # Visualizer deployment is now handled by CMake target (deploy-visualizer-local)
     # with proper dependency on visualizer build target
-    if [ -f "tests/visualizer.js" ] && [ -f "tests/visualizer.wasm" ]; then
+    if [ -f "$BUILD_DIR/tests/visualizer.js" ] && [ -f "$BUILD_DIR/tests/visualizer.wasm" ]; then
         echo -e "${GREEN}✓ Visualizer built successfully${NC}"
-        echo -e "${YELLOW}  WASM files deployed by CMake: visualizer/visualizer.{js,wasm}${NC}"
+        echo -e "${YELLOW}  WASM files: $BUILD_DIR/tests/visualizer.{js,wasm}${NC}"
         echo ""
     fi
 
     echo -e "${YELLOW}Build artifacts:${NC}"
-    ls -lh sce/libsce_unified.a 2>/dev/null || ls -lh libsce_unified.a
+    ls -lh "$BUILD_DIR/sce/libsce_unified.a" 2>/dev/null || ls -lh "$BUILD_DIR/libsce_unified.a" 2>/dev/null || echo "libsce_unified.a not found"
     echo ""
     echo -e "${YELLOW}Test executables:${NC}"
-    find tests -maxdepth 1 -type f -executable 2>/dev/null | head -5 || echo "No test executables found"
+    find "$BUILD_DIR/tests" -maxdepth 1 -type f -executable 2>/dev/null | head -5 || echo "No test executables found"
     echo ""
     echo -e "${YELLOW}Next steps:${NC}"
     echo "1. Run tests with: node <test_executable>.js"

@@ -33,7 +33,7 @@ endif()
 
 # Validate build directory name
 get_filename_component(BUILD_DIR_NAME "${CMAKE_BINARY_DIR}" NAME)
-if(NOT BUILD_DIR_NAME MATCHES "^(build.*|Build|BUILD|Debug|Release|_build)$")
+if(NOT BUILD_DIR_NAME MATCHES "^(build|build_.*)$")
     message(FATAL_ERROR
         "
 ❌ ERROR: Please use standard build directory name!
@@ -42,15 +42,17 @@ if(NOT BUILD_DIR_NAME MATCHES "^(build.*|Build|BUILD|Debug|Release|_build)$")
 "
         "Current directory: '${BUILD_DIR_NAME}'
 "
-        "Allowed names: build, build_*, Build, BUILD, Debug, Release, _build
+        "Allowed names: build, build_* (e.g., build_release, build_wasm, build_tsan)
 "
         "
 "
         "Correct usage:
 "
-        "  mkdir build         (standard build)
+        "  mkdir build              (standard build)
 "
-        "  mkdir build_wasm    (WASM build)
+        "  mkdir build_release      (release build)
+"
+        "  mkdir build_wasm         (WASM build)
 "
         "  cd build
 "

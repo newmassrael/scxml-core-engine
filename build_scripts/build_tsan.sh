@@ -21,8 +21,8 @@ HOST_GID=$(id -g)
 echo -e "${YELLOW}Host User: UID=$HOST_UID, GID=$HOST_GID${NC}"
 echo ""
 
-# Project root directory
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Project root directory (parent directory of build_scripts/)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Check if Docker image exists
 if ! docker image inspect sce-tsan-env:latest &> /dev/null; then
@@ -63,11 +63,14 @@ if ! docker image inspect sce-tsan-env:latest &> /dev/null; then
     echo ""
 fi
 
-# Build directory
-BUILD_DIR="build_tsan"
+# Build directory (absolute path)
+BUILD_DIR="$PROJECT_ROOT/build_tsan"
 echo -e "${GREEN}Building project with TSAN in Docker...${NC}"
 echo -e "${YELLOW}Build directory: $BUILD_DIR${NC}"
 echo ""
+
+# Start timing
+START_TIME=$(date +%s)
 
 # Run Docker container with:
 # - Host UID/GID for permission matching
@@ -119,16 +122,23 @@ docker run --rm \
     "
 
 if [ $? -eq 0 ]; then
+    # Calculate build time
+    END_TIME=$(date +%s)
+    BUILD_TIME=$((END_TIME - START_TIME))
+
     echo ""
     echo -e "${GREEN}==========================================${NC}"
     echo -e "${GREEN}      TSAN Build Completed Successfully      ${NC}"
     echo -e "${GREEN}==========================================${NC}"
     echo ""
-    echo -e "${YELLOW}Build directory:${NC} $BUILD_DIR"
+    echo -e "${BLUE}Build Statistics:${NC}"
+    echo -e "  Build time: ${BUILD_TIME} seconds"
+    echo -e "  Build directory: $BUILD_DIR"
+    echo ""
     echo -e "${YELLOW}Test executable:${NC} $BUILD_DIR/tests/w3c_test_cli"
     echo ""
     echo -e "${YELLOW}Entering interactive shell in Docker container...${NC}"
-    echo -e "${YELLOW}Working directory:${NC} /workspace/$BUILD_DIR/tests"
+    echo -e "${YELLOW}Working directory:${NC} /workspace/build_tsan/tests"
     echo ""
     echo -e "${YELLOW}Example commands:${NC}"
     echo "  env SPDLOG_LEVEL=off ./w3c_test_cli 144"
@@ -141,7 +151,7 @@ if [ $? -eq 0 ]; then
         --cap-add=SYS_PTRACE \
         --security-opt seccomp=unconfined \
         -v "$PROJECT_ROOT:/workspace" \
-        -w /workspace/$BUILD_DIR/tests \
+        -w /workspace/build_tsan/tests \
         sce-tsan-env:latest \
         /bin/bash
 else

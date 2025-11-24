@@ -1,7 +1,9 @@
 # Build directories
 build/
+build_debug/
 build_wasm/
 build_tsan/
+build_release/
 bin/
 lib/
 out/
