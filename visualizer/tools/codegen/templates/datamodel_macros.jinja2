@@ -19,7 +19,7 @@
                     [&engine](const ::std::string& msg) {
                         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
                     });
-                LOG_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from expr");
+                AOT_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from expr");
 {% elif var.content %}
                 // State {{ state_id }} variable '{{ var.id }}' from content
                 ::SCE::DataModelInitHelper::initializeVariable(
@@ -27,7 +27,7 @@
                     [&engine](const ::std::string& msg) {
                         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
                     });
-                LOG_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from content");
+                AOT_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from content");
 {% elif var.src %}
                 // State {{ state_id }} variable '{{ var.id }}' from src
                 ::SCE::DataModelInitHelper::initializeVariableFromSrc(
@@ -36,7 +36,7 @@
                     [&engine](const ::std::string& msg) {
                         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
                     });
-                LOG_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from src");
+                AOT_DEBUG("{{ log_prefix }}: Initialized state {{ state_id }} variable '{{ var.id }}' from src");
 {% endif %}
 {% endmacro %}
 

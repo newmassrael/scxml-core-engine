@@ -6,6 +6,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include "static/StaticExecutionEngine.h"
 {% if model.static_invokes %}
@@ -68,6 +69,31 @@
 #include "common/ForeachHelper.h"
 #include "common/GuardHelper.h"
 {% endif %}
+
+// Conditional debug logging for generated code
+#ifndef NDEBUG
+    #define AOT_DEBUG(...)  LOG_DEBUG(__VA_ARGS__)
+#else
+    // Debug logging disabled in release builds
+    #define AOT_DEBUG(...)
+#endif
+
+// Transition execution macro - compresses repetitive transition code
+#define AOT_EXECUTE_TRANSITION(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS) \
+    do { \
+        AOT_DEBUG("AOT processTransition: Transition matched in state {}", static_cast<int>(SRC)); \
+        lastTransitionSourceState_ = SRC; \
+        lastTransitionIsInternal_ = IS_INTERNAL; \
+        lastTransitionIsTargetless_ = IS_TARGETLESS; \
+        if (collectMode != nullptr) { \
+            AOT_DEBUG("AOT processTransition: Collecting transition {} -> {}", static_cast<int>(SRC), static_cast<int>(TGT)); \
+            collectMode->push_back(TransitionInfo(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS)); \
+        } else { \
+            AOT_DEBUG("AOT processTransition: State transition {} -> {}", static_cast<int>(currentState), static_cast<int>(TGT)); \
+            currentState = TGT; \
+            transitionTaken = true; \
+        } \
+    } while(0)
 
 namespace SCE::Generated::{{ model.name }} {
 
@@ -328,11 +354,11 @@ struct {{ model.name }}Policy {
     {{ model.name }}Policy& operator=({{ model.name }}Policy&&) = delete;
     {% endif %}
 
-    static State initialState() {
+    [[nodiscard]] static constexpr State initialState() noexcept {
         return State::{{ (model.initial_leaf if model.initial_leaf else model.initial) | capitalize }};
     }
 
-    static bool isFinalState(State state) {
+    [[nodiscard]] static constexpr bool isFinalState(State state) noexcept {
         switch (state) {
             {% for state_id, state in model.states.items() %}
             {% if state.is_final %}
@@ -346,7 +372,7 @@ struct {{ model.name }}Policy {
     }
 
     // W3C SCXML 3.3: Parent state mapping (for HierarchicalStateHelper)
-    static std::optional<State> getParent(State state) {
+    [[nodiscard]] static constexpr std::optional<State> getParent(State state) noexcept {
         switch (state) {
             {% for state_id, state in model.states.items() %}
             {% if state.parent %}
@@ -360,7 +386,7 @@ struct {{ model.name }}Policy {
     }
 
     // W3C SCXML 3.3: Check if state is compound (has initial child)
-    static bool isCompoundState(State state) {
+    [[nodiscard]] static constexpr bool isCompoundState(State state) noexcept {
         switch (state) {
             {% for state_id, state in model.states.items() %}
             {% if state.initial %}

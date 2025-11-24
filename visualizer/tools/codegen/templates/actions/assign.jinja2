@@ -27,9 +27,9 @@
 {% endif %}
 if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
     // Location is valid, proceed with assignment
-    LOG_DEBUG("AOT assign: Before ensureJSEngine for {{ action.location }}");
+    AOT_DEBUG("AOT assign: Before ensureJSEngine for {{ action.location }}");
     this->ensureJSEngine();
-    LOG_DEBUG("AOT assign: After ensureJSEngine, sessionId={}", sessionId_.value_or("NONE"));
+    AOT_DEBUG("AOT assign: After ensureJSEngine, sessionId={}", sessionId_.value_or("NONE"));
     auto& jsEngine = ::SCE::JSEngine::instance();
 
     // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
@@ -49,7 +49,7 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
         }
     );
 
-    if (!success) {
+    if (!success) [[unlikely]] {
         // Assignment failed, error.execution already raised by callback
         {% if action.content %}
         LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = content");
@@ -58,9 +58,9 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
         {% endif %}
     } else {
         {% if action.content %}
-        LOG_DEBUG("AOT assign: Successfully assigned {{ action.location }} = content");
+        AOT_DEBUG("AOT assign: Successfully assigned {{ action.location }} = content");
         {% else %}
-        LOG_DEBUG("AOT assign: Successfully assigned {{ action.location }} = {{ action.expr.rstrip(';') }}");
+        AOT_DEBUG("AOT assign: Successfully assigned {{ action.location }} = {{ action.expr.rstrip(';') }}");
         {% endif %}
     }
 } else {

@@ -4,7 +4,7 @@
     template<typename Engine>
     bool safeEvaluateGuard(::SCE::JSEngine& jsEngine, const std::string& sessionId,
                            const std::string& guardExpr, Engine& engine) const {
-        LOG_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);
+        AOT_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);
         auto result = ::SCE::GuardHelper::evaluateGuard(jsEngine, sessionId, guardExpr);
 
         if (!result.has_value()) {
@@ -14,7 +14,7 @@
             return false;
         }
 
-        LOG_DEBUG("AOT safeEvaluateGuard: Guard '{}' evaluated to: {}", guardExpr, *result);
+        AOT_DEBUG("AOT safeEvaluateGuard: Guard '{}' evaluated to: {}", guardExpr, *result);
         return *result;
     }
 
@@ -32,7 +32,7 @@
 {% endif %}
 
     // Helper: Convert Event enum to string for _event.name (W3C SCXML 5.10)
-    static std::string getEventName(Event event) {
+    [[nodiscard]] static constexpr const char* getEventName(Event event) noexcept {
         switch (event) {
             case Event::NONE: return "";
 {% for event_name in model.events | sort %}
@@ -44,7 +44,7 @@
 
     // Helper: Convert event name string to Event enum (W3C SCXML 6.4.6 autoforward)
     // Used for forwarding events by name to child state machines
-    static std::optional<Event> getEventFromName(const std::string& eventName) {
+    [[nodiscard]] static std::optional<Event> getEventFromName(const std::string& eventName) noexcept {
         if (eventName.empty()) return std::nullopt;
 {% for event_name in model.events | sort %}
         if (eventName == "{{ event_name }}") return Event::{{ event_name | replace('.', '_') | replace('-', '_') | capitalize }};
@@ -67,7 +67,7 @@
         // Find which invoke sent this event by matching child session ID
         for (const auto& [invokeId, childSession] : activeInvokes_) {
             if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
-                LOG_DEBUG("AOT finalize: Executing finalize for invoke '{}' before processing event", invokeId);
+                AOT_DEBUG("AOT finalize: Executing finalize for invoke '{}' before processing event", invokeId);
                 
 {% if model.needs_jsengine %}
                 // W3C SCXML 6.5: Use FinalizeHelper (ARCHITECTURE.md Zero Duplication)
@@ -101,7 +101,7 @@
 
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // Helper: Convert State enum to string for In() predicate (W3C SCXML 5.9.2)
-    static std::string getStateName(State state) {
+    [[nodiscard]] static constexpr const char* getStateName(State state) noexcept {
         switch (state) {
 {% for state_id in model.states.keys() | sort %}
             case State::{{ state_id | capitalize }}: return "{{ state_id }}";
@@ -152,7 +152,7 @@ public:
         if (eventName.empty()) return;
         ensureJSEngine();
         std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
-        LOG_DEBUG("AOT setCurrentEventInJSEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
+        AOT_DEBUG("AOT setCurrentEventInJSEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
                   eventName, eventData, actualType, sendId, origin, originType, invokeId);
         // W3C SCXML 5.10: Wait for setCurrentEvent to complete before proceeding (synchronous)
         ::SCE::JSEngine::instance().setCurrentEvent(sessionId_.value(), eventName, eventData,
