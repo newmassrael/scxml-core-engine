@@ -155,7 +155,7 @@ TEST_F(StdThreadDispatcherTest, ConcurrentEnqueue) {
     std::vector<std::thread> threads;
 
     for (int t = 0; t < numThreads; ++t) {
-        threads.emplace_back([this, &counter, tasksPerThread]() {
+        threads.emplace_back([this, &counter]() {
             for (int i = 0; i < tasksPerThread; ++i) {
                 dispatcher_->enqueue([&counter]() { counter.fetch_add(1); });
             }

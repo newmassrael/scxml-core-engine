@@ -229,7 +229,7 @@ TEST_F(AsyncStateMachineTest, ConcurrentEventPosting) {
     std::vector<std::thread> threads;
 
     for (int t = 0; t < numThreads; ++t) {
-        threads.emplace_back([&sm, eventsPerThread]() {
+        threads.emplace_back([&sm]() {
             for (int i = 0; i < eventsPerThread; ++i) {
                 sm.postEvent(MockStateMachine::Event::Reset);
             }
