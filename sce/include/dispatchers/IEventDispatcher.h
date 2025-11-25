@@ -89,6 +89,50 @@ public:
      * @note Should be called from the same thread that created the dispatcher
      */
     virtual void run() = 0;
+
+    /**
+     * @brief Start a timer
+     *
+     * Schedules a callback to be executed after the specified delay.
+     * If timer with this ID already exists, it will be replaced.
+     *
+     * @param timerID Unique timer identifier
+     * @param delayMs Delay in milliseconds before callback execution
+     * @param callback Function to execute when timer expires
+     * @param periodic If true, timer repeats automatically (default: false)
+     *
+     * @threadsafe Implementation must be thread-safe
+     *
+     * @example
+     * @code
+     * dispatcher->startTimer(1, 1000, []() {
+     *     std::cout << "Timer expired\n";
+     * }, true);  // Fires every 1000ms
+     * @endcode
+     */
+    virtual void startTimer(int timerID, unsigned int delayMs, std::function<void()> callback,
+                            bool periodic = false) = 0;
+
+    /**
+     * @brief Stop a running timer
+     *
+     * Cancels the timer if it exists. Has no effect if timer is not running.
+     *
+     * @param timerID Timer identifier to stop
+     *
+     * @threadsafe Implementation must be thread-safe
+     */
+    virtual void stopTimer(int timerID) = 0;
+
+    /**
+     * @brief Check if timer is currently running
+     *
+     * @param timerID Timer identifier to check
+     * @return true if timer is active, false otherwise
+     *
+     * @threadsafe Implementation must be thread-safe
+     */
+    virtual bool isTimerRunning(int timerID) const = 0;
 };
 
 }  // namespace SCE::Dispatchers

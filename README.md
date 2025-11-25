@@ -160,11 +160,11 @@ See [Usage Example](#usage-example) below for complete standalone workflow.
 
 ## Examples
 
-SCE provides three examples with progressive complexity for learning the framework:
+SCE provides six examples with progressive complexity for learning the framework:
 
 ### Learning Path
 
-**Recommended order**: Start simple, then integrate with your build system, finally add C++ functions.
+**Recommended order**: Start simple, then integrate with your build system, add C++ functions, then explore timers and async patterns.
 
 #### 1. [traffic_light](examples/traffic_light/) - SCXML Basics
 
@@ -292,6 +292,60 @@ eventLoop.join();
 - FIFO task queue with condition variable synchronization
 - Zero overhead when not used (header-only templates)
 - Extensible: Add Qt/GLib/FreeRTOS dispatchers via IEventDispatcher interface
+
+#### 6. [traffic_light_auto](examples/traffic_light_auto/) - Timer Integration with Async Dispatcher
+
+**What you'll learn**:
+- Integration of timer management with async event dispatcher
+- Automatic timer-driven state transitions
+- One-shot and periodic timer patterns
+- Timer callback execution on dispatcher thread
+- Complete async timer workflow
+
+**Complexity**: Advanced (Timers + Async Dispatcher)
+
+```cpp
+#include "dispatchers/StdThreadDispatcher.h"
+#include "wrappers/AsyncStateMachine.h"
+
+// Create dispatcher with timer support
+auto dispatcher = StdThreadDispatcher::create();
+dispatcher->start();
+
+// Wrap state machine for async processing
+AsyncStateMachine<traffic_light, Event> sm(dispatcher);
+sm.initialize();
+
+// Start event loop
+std::thread eventLoop([dispatcher]() {
+    dispatcher->run();
+});
+
+// Schedule timer to fire after 3 seconds
+dispatcher->startTimer(
+    1,      // Timer ID
+    3000,   // Delay in milliseconds
+    [&sm]() {
+        std::cout << "Timer expired! Posting Timer event\n";
+        sm.postEvent(Event::Timer);
+    },
+    false   // One-shot (not periodic)
+);
+
+// Wait for timer to fire
+std::this_thread::sleep_for(std::chrono::milliseconds(3500));
+
+// Cleanup
+dispatcher->stop();
+eventLoop.join();
+```
+
+**Key Features**:
+- Timer callbacks execute on dispatcher thread (thread-safe with state machine)
+- Supports both one-shot (`periodic=false`) and periodic (`periodic=true`) timers
+- Timer management API: `startTimer()`, `stopTimer()`, `isTimerRunning()`
+- Automatic timer cleanup on dispatcher shutdown
+- Timer accuracy: ±30ms tolerance for typical delays
 
 Each example includes a detailed README with building instructions and usage patterns.
 

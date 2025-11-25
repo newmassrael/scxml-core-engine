@@ -329,4 +329,313 @@ TEST_F(StdThreadDispatcherTest, DestructorStopsRunningDispatcher) {
     SUCCEED();
 }
 
+// Timer Tests
+
+TEST_F(StdThreadDispatcherTest, StartOneShotTimer) {
+    std::atomic<bool> timerFired{false};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    dispatcher_->startTimer(1, 100, [&timerFired]() { timerFired.store(true); }, false);
+
+    // Wait for timer to fire
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    dispatcher_->stop();
+    eventLoop.join();
+
+    EXPECT_TRUE(timerFired.load());
+}
+
+TEST_F(StdThreadDispatcherTest, StartPeriodicTimer) {
+    std::atomic<int> fireCount{0};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    dispatcher_->startTimer(1, 50, [&fireCount]() { fireCount.fetch_add(1); }, true);
+
+    // Wait for multiple firings
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    dispatcher_->stopTimer(1);
+    dispatcher_->stop();
+    eventLoop.join();
+
+    // Should have fired at least 3 times (50ms, 100ms, 150ms, 200ms)
+    EXPECT_GE(fireCount.load(), 3);
+}
+
+TEST_F(StdThreadDispatcherTest, StopTimer) {
+    std::atomic<bool> timerFired{false};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    dispatcher_->startTimer(1, 200, [&timerFired]() { timerFired.store(true); }, false);
+
+    // Stop timer before it fires
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    dispatcher_->stopTimer(1);
+
+    // Wait past original expiry time
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    dispatcher_->stop();
+    eventLoop.join();
+
+    EXPECT_FALSE(timerFired.load());
+}
+
+TEST_F(StdThreadDispatcherTest, IsTimerRunning) {
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    EXPECT_FALSE(dispatcher_->isTimerRunning(1));
+
+    dispatcher_->startTimer(1, 100, []() {}, false);
+    EXPECT_TRUE(dispatcher_->isTimerRunning(1));
+
+    dispatcher_->stopTimer(1);
+    EXPECT_FALSE(dispatcher_->isTimerRunning(1));
+
+    dispatcher_->stop();
+    eventLoop.join();
+}
+
+TEST_F(StdThreadDispatcherTest, MultipleTimers) {
+    std::atomic<int> timer1Count{0};
+    std::atomic<int> timer2Count{0};
+    std::atomic<int> timer3Count{0};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    dispatcher_->startTimer(1, 50, [&timer1Count]() { timer1Count.fetch_add(1); }, false);
+    dispatcher_->startTimer(2, 100, [&timer2Count]() { timer2Count.fetch_add(1); }, false);
+    dispatcher_->startTimer(3, 150, [&timer3Count]() { timer3Count.fetch_add(1); }, false);
+
+    // Wait for all timers to fire
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    dispatcher_->stop();
+    eventLoop.join();
+
+    EXPECT_EQ(timer1Count.load(), 1);
+    EXPECT_EQ(timer2Count.load(), 1);
+    EXPECT_EQ(timer3Count.load(), 1);
+}
+
+TEST_F(StdThreadDispatcherTest, ReplaceExistingTimer) {
+    std::atomic<int> fireCount{0};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    // Start timer with 200ms delay
+    dispatcher_->startTimer(1, 200, [&fireCount]() { fireCount.fetch_add(1); }, false);
+
+    // Replace with timer with 50ms delay
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    dispatcher_->startTimer(1, 50, [&fireCount]() { fireCount.fetch_add(1); }, false);
+
+    // Wait for new timer to fire
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    dispatcher_->stop();
+    eventLoop.join();
+
+    // Should have fired once (from second timer)
+    EXPECT_EQ(fireCount.load(), 1);
+}
+
+TEST_F(StdThreadDispatcherTest, TimerAccuracy) {
+    auto startTime = std::chrono::steady_clock::now();
+    std::atomic<bool> timerFired{false};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    const int delayMs = 100;
+    dispatcher_->startTimer(
+        1, delayMs,
+        [&timerFired, &startTime]() {
+            timerFired.store(true);
+            auto endTime = std::chrono::steady_clock::now();
+            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+            // Timer should fire within reasonable tolerance (±30ms)
+            EXPECT_GE(elapsed, delayMs - 30);
+            EXPECT_LE(elapsed, delayMs + 30);
+        },
+        false);
+
+    // Wait for timer
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    dispatcher_->stop();
+    eventLoop.join();
+
+    EXPECT_TRUE(timerFired.load());
+}
+
+TEST_F(StdThreadDispatcherTest, TimerCallbackException) {
+    std::atomic<int> taskCounter{0};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    // Timer with exception
+    dispatcher_->startTimer(1, 50, []() { throw std::runtime_error("Timer exception"); }, false);
+
+    // Normal task after timer
+    dispatcher_->enqueue([&taskCounter]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        taskCounter.fetch_add(1);
+    });
+
+    // Wait for timer and task
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    dispatcher_->stop();
+    eventLoop.join();
+
+    // Task should execute despite timer exception
+    EXPECT_EQ(taskCounter.load(), 1);
+}
+
+TEST_F(StdThreadDispatcherTest, StopNonExistentTimer) {
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    // Should not crash
+    dispatcher_->stopTimer(999);
+
+    dispatcher_->stop();
+    eventLoop.join();
+
+    SUCCEED();
+}
+
+TEST_F(StdThreadDispatcherTest, OneShotTimerAutoRemoved) {
+    std::atomic<int> fireCount{0};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    dispatcher_->startTimer(1, 50, [&fireCount]() { fireCount.fetch_add(1); }, false);
+
+    // Wait for timer to fire
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Timer should be auto-removed
+    EXPECT_FALSE(dispatcher_->isTimerRunning(1));
+
+    // Wait more to ensure it doesn't fire again
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    dispatcher_->stop();
+    eventLoop.join();
+
+    EXPECT_EQ(fireCount.load(), 1);
+}
+
+TEST_F(StdThreadDispatcherTest, PeriodicTimerNotAutoRemoved) {
+    std::atomic<int> fireCount{0};
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    dispatcher_->startTimer(1, 50, [&fireCount]() { fireCount.fetch_add(1); }, true);
+
+    // Wait for timer to fire once
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Timer should still be running
+    EXPECT_TRUE(dispatcher_->isTimerRunning(1));
+
+    dispatcher_->stopTimer(1);
+    dispatcher_->stop();
+    eventLoop.join();
+}
+
+TEST_F(StdThreadDispatcherTest, DestructorStopsTimerThread) {
+    {
+        auto tempDispatcher = StdThreadDispatcher::create();
+        tempDispatcher->start();
+
+        std::thread eventLoop([&tempDispatcher]() { tempDispatcher->run(); });
+
+        // Start a timer
+        tempDispatcher->startTimer(1, 100, []() {}, false);
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+        // Destructor should stop both event loop and timer thread
+        tempDispatcher.reset();
+
+        // Event loop should exit
+        eventLoop.join();
+    }
+
+    // Test passes if no hang occurs
+    SUCCEED();
+}
+
+TEST_F(StdThreadDispatcherTest, PeriodicTimerDriftPrevention) {
+    std::vector<std::chrono::steady_clock::time_point> fireTimes;
+    std::mutex fireTimesMutex;
+    auto startTime = std::chrono::steady_clock::now();
+
+    dispatcher_->start();
+    std::thread eventLoop([this]() { dispatcher_->run(); });
+
+    const int intervalMs = 50;
+    dispatcher_->startTimer(
+        1, intervalMs,
+        [&fireTimes, &fireTimesMutex]() {
+            std::lock_guard<std::mutex> lock(fireTimesMutex);
+            fireTimes.push_back(std::chrono::steady_clock::now());
+        },
+        true);
+
+    // Wait for 10 firings (500ms)
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
+
+    dispatcher_->stopTimer(1);
+    dispatcher_->stop();
+    eventLoop.join();
+
+    // Analyze drift
+    ASSERT_GE(fireTimes.size(), 8);  // At least 8 firings
+
+    // Calculate average interval between firings
+    std::vector<long long> intervals;
+    for (size_t i = 1; i < fireTimes.size(); ++i) {
+        auto interval = std::chrono::duration_cast<std::chrono::milliseconds>(fireTimes[i] - fireTimes[i - 1]).count();
+        intervals.push_back(interval);
+    }
+
+    // Calculate total drift from start time
+    long long totalElapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(fireTimes.back() - startTime).count();
+    long long expectedElapsed = intervalMs * static_cast<long long>(fireTimes.size() - 1);
+    long long totalDrift =
+        (totalElapsed > expectedElapsed) ? (totalElapsed - expectedElapsed) : (expectedElapsed - totalElapsed);
+
+    // Total drift should be less than 100ms over multiple firings
+    EXPECT_LT(totalDrift, 100) << "Total drift: " << totalDrift << "ms over " << fireTimes.size() << " firings";
+
+    // Average interval should be close to expected (±20ms)
+    double avgInterval = 0;
+    for (auto interval : intervals) {
+        avgInterval += interval;
+    }
+    avgInterval /= intervals.size();
+
+    EXPECT_GE(avgInterval, intervalMs - 20) << "Average interval too short: " << avgInterval << "ms";
+    EXPECT_LE(avgInterval, intervalMs + 20) << "Average interval too long: " << avgInterval << "ms";
+}
+
 }  // namespace SCE::Dispatchers
