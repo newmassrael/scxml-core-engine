@@ -73,6 +73,42 @@ target_link_libraries(benchmark_statemachine
         Threads::Threads
 )
 
+# Async Dispatcher Benchmarks
+add_executable(benchmark_async_dispatcher
+    AsyncDispatcherBenchmark.cpp
+)
+target_link_libraries(benchmark_async_dispatcher
+    PRIVATE
+        sce_unified
+        benchmark::benchmark
+        benchmark::benchmark_main
+        Threads::Threads
+)
+
+# Timer Accuracy Benchmarks
+add_executable(benchmark_timer_accuracy
+    TimerAccuracyBenchmark.cpp
+)
+target_link_libraries(benchmark_timer_accuracy
+    PRIVATE
+        sce_unified
+        benchmark::benchmark
+        benchmark::benchmark_main
+        Threads::Threads
+)
+
+# Memory Footprint Benchmarks
+add_executable(benchmark_memory_footprint
+    MemoryFootprintBenchmark.cpp
+)
+target_link_libraries(benchmark_memory_footprint
+    PRIVATE
+        sce_unified
+        benchmark::benchmark
+        benchmark::benchmark_main
+        Threads::Threads
+)
+
 # ============================================================================
 # CTest Integration
 # ============================================================================
@@ -122,6 +158,32 @@ add_test(
     COMMAND benchmark_statemachine
 )
 
+# Async Dispatcher quick benchmark test
+add_test(
+    NAME benchmark_async_dispatcher_quick
+    COMMAND benchmark_async_dispatcher
+        --benchmark_min_time=0.1s
+        --benchmark_filter="SingleThread|PostEventOverhead|EnqueueLatency"
+        --benchmark_format=console
+)
+
+# Timer Accuracy quick benchmark test
+add_test(
+    NAME benchmark_timer_accuracy_quick
+    COMMAND benchmark_timer_accuracy
+        --benchmark_min_time=0.1s
+        --benchmark_filter="OneShotAccuracy/10|StartOverhead|StopOverhead"
+        --benchmark_format=console
+)
+
+# Memory Footprint quick benchmark test
+add_test(
+    NAME benchmark_memory_footprint_quick
+    COMMAND benchmark_memory_footprint
+        --benchmark_filter="MinimalStateMachine|SmallStateMachine|StdThreadDispatcher"
+        --benchmark_format=console
+)
+
 # Configure test properties
 # CTest executes tests with higher COST first, so quick (1000) runs before full (500)
 set_tests_properties(benchmark_event_scheduler_quick PROPERTIES
@@ -162,6 +224,24 @@ set_tests_properties(benchmark_statemachine_full PROPERTIES
     TIMEOUT 600
     COST 500
     DISABLED TRUE
+)
+
+set_tests_properties(benchmark_async_dispatcher_quick PROPERTIES
+    LABELS "benchmark;quick;performance;async;dispatcher"
+    TIMEOUT 300
+    COST 1000
+)
+
+set_tests_properties(benchmark_timer_accuracy_quick PROPERTIES
+    LABELS "benchmark;quick;performance;timer;accuracy"
+    TIMEOUT 300
+    COST 1000
+)
+
+set_tests_properties(benchmark_memory_footprint_quick PROPERTIES
+    LABELS "benchmark;quick;performance;memory"
+    TIMEOUT 300
+    COST 1000
 )
 
 # ============================================================================
