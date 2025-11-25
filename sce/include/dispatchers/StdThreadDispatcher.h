@@ -265,8 +265,12 @@ private:
                             timer.expiryTime = nextExpiry;
                         }
                     } else {
-                        // Remove one-shot timer
-                        runningTimers_.erase(timerID);
+                        // One-shot timer: Mark as expired but keep for restartTimer()
+                        // Set expiryTime to max to prevent re-firing
+                        auto it = runningTimers_.find(timerID);
+                        if (it != runningTimers_.end()) {
+                            it->second.expiryTime = std::chrono::steady_clock::time_point::max();
+                        }
                     }
 
                     continue;  // Recheck timers immediately

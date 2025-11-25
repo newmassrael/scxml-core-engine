@@ -477,6 +477,41 @@ TEST_F(QtDispatcherTest, ReplaceExistingTimer) {
     EXPECT_EQ(fireCount.load(), 1);
 }
 
+TEST_F(QtDispatcherTest, RestartTimer) {
+    std::atomic<int> fireCount{0};
+
+    startEventLoop();
+
+    // Start one-shot timer with 50ms delay
+    dispatcher_->startTimer(1, 50, [&fireCount]() { fireCount.fetch_add(1); }, false);
+
+    // Wait for timer to fire
+    std::this_thread::sleep_for(TestConstants::kTaskWait);
+    EXPECT_EQ(fireCount.load(), 1);
+
+    // Restart the timer (should fire again with same settings)
+    bool restarted = dispatcher_->restartTimer(1);
+    EXPECT_TRUE(restarted);
+
+    // Wait for restarted timer to fire
+    std::this_thread::sleep_for(TestConstants::kTaskWait);
+
+    stopEventLoop();
+
+    // Should have fired twice (original + restart)
+    EXPECT_EQ(fireCount.load(), 2);
+}
+
+TEST_F(QtDispatcherTest, RestartNonExistentTimer) {
+    startEventLoop();
+
+    // Try to restart a timer that was never started
+    bool restarted = dispatcher_->restartTimer(999);
+    EXPECT_FALSE(restarted);
+
+    stopEventLoop();
+}
+
 TEST_F(QtDispatcherTest, TimerCallbackException) {
     std::atomic<int> taskCounter{0};
 

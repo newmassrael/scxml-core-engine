@@ -193,6 +193,11 @@ void GLibDispatcher::unregisterAllTimers() {
     nativeTimers_.clear();
 }
 
+bool GLibDispatcher::isTimerRunningImpl(int timerID) const {
+    std::lock_guard<std::mutex> lock(nativeTimersMutex_);
+    return nativeTimers_.find(timerID) != nativeTimers_.end();
+}
+
 gboolean GLibDispatcher::onPipeDataAvailable(GIOChannel *channel, GIOCondition condition, gpointer data) {
     GLibDispatcher *dispatcher = static_cast<GLibDispatcher *>(data);
 
@@ -242,17 +247,18 @@ gboolean GLibDispatcher::onTimerEvent(gpointer data) {
     {
         std::lock_guard<std::mutex> lock(dispatcher->timerMutex_);
         auto it = dispatcher->runningTimers_.find(timerID);
-        if (it != dispatcher->runningTimers_.end() && it->second.periodic) {
-            return TRUE;  // Continue periodic timer
-        }
-        // One-shot timer - remove from runningTimers_
         if (it != dispatcher->runningTimers_.end()) {
-            dispatcher->runningTimers_.erase(it);
+            if (it->second.periodic) {
+                return TRUE;  // Continue periodic timer
+            }
+            // One-shot timer: Mark as expired but keep for restartTimer() support
+            it->second.expiryTime = std::chrono::steady_clock::time_point::max();
         }
     }
 
-    // One-shot timer cleanup - remove from native timers
+    // One-shot timer cleanup - remove from native timers only
     // Note: Don't unref here - GLib does it when returning FALSE
+    // Keep timer info in runningTimers_ to allow restartTimer()
     {
         std::lock_guard<std::mutex> lock(dispatcher->nativeTimersMutex_);
         dispatcher->nativeTimers_.erase(timerID);

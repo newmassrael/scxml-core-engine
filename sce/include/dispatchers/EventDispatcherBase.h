@@ -107,7 +107,42 @@ public:
     }
 
     /**
+     * @brief Restart a running or expired timer
+     *
+     * Restarts the timer with the same interval and settings that were
+     * provided to startTimer(). The timer must still exist in the internal
+     * timer map (not yet stopped with stopTimer()).
+     *
+     * @param timerID Timer identifier to restart
+     * @return true if timer was found and restarted, false if timer doesn't exist
+     *
+     * @threadsafe
+     */
+    bool restartTimer(int timerID) override {
+        std::lock_guard<std::mutex> lock(timerMutex_);
+
+        auto it = runningTimers_.find(timerID);
+        if (it == runningTimers_.end()) {
+            return false;  // Timer not found
+        }
+
+        TimerInfo &info = it->second;
+        auto now = std::chrono::steady_clock::now();
+        info.expiryTime = now + info.interval;
+
+        // Stop existing platform timer and restart with same interval
+        stopTimerImpl(timerID);
+        startTimerImpl(timerID, static_cast<unsigned int>(info.interval.count()), info.periodic);
+
+        return true;
+    }
+
+    /**
      * @brief Check if timer is currently running
+     *
+     * Returns true only if the timer is actively running (not expired).
+     * For one-shot timers that have fired, returns false even though
+     * timer info is kept for restartTimer() support.
      *
      * @param timerID Timer identifier to check
      * @return true if timer is active, false otherwise
@@ -115,8 +150,7 @@ public:
      * @threadsafe
      */
     bool isTimerRunning(int timerID) const override {
-        std::lock_guard<std::mutex> lock(timerMutex_);
-        return runningTimers_.find(timerID) != runningTimers_.end();
+        return isTimerRunningImpl(timerID);
     }
 
     /**
@@ -126,12 +160,31 @@ public:
      *
      * @threadsafe
      */
-    size_t pendingTasks() const {
+    size_t pendingTasks() const override {
         std::lock_guard<std::mutex> lock(mutex_);
         return taskQueue_.size();
     }
 
 protected:
+    /**
+     * @brief Platform-specific timer running check
+     *
+     * Default implementation checks if timer exists and is not expired.
+     * Override in derived classes to check native timer state.
+     *
+     * @param timerID Timer identifier to check
+     * @return true if timer is actively running
+     */
+    virtual bool isTimerRunningImpl(int timerID) const {
+        std::lock_guard<std::mutex> lock(timerMutex_);
+        auto it = runningTimers_.find(timerID);
+        if (it == runningTimers_.end()) {
+            return false;
+        }
+        // Check if timer is expired (expiryTime set to max)
+        return it->second.expiryTime != std::chrono::steady_clock::time_point::max();
+    }
+
     /**
      * @brief Timer metadata
      */
@@ -235,6 +288,22 @@ protected:
             return it->second.callback;
         }
         return {};
+    }
+
+    /**
+     * @brief Mark timer as expired (one-shot timer fired)
+     *
+     * Sets expiryTime to max to indicate timer is no longer running.
+     * Timer info is kept for restartTimer() support.
+     *
+     * @param timerID Timer identifier to mark as expired
+     */
+    void markTimerExpiredInternal(int timerID) {
+        std::lock_guard<std::mutex> lock(timerMutex_);
+        auto it = runningTimers_.find(timerID);
+        if (it != runningTimers_.end()) {
+            it->second.expiryTime = std::chrono::steady_clock::time_point::max();
+        }
     }
 
     /**

@@ -160,21 +160,18 @@ private slots:
             }
         }
 
-        // Check if one-shot timer - remove from maps
+        // Check if one-shot timer - remove from native timers only
+        // Keep timer info in runningTimers_ to allow restartTimer()
         if (timer->isSingleShot()) {
-            // Remove from base class runningTimers_
-            {
-                std::lock_guard<std::mutex> lock(owner_->timerMutex_);
-                owner_->runningTimers_.erase(timerID);
-            }
-            // Remove from native timers
-            {
-                std::lock_guard<std::mutex> lock(timersMutex_);
-                auto it = nativeTimers_.find(timerID);
-                if (it != nativeTimers_.end()) {
-                    it->second->deleteLater();
-                    nativeTimers_.erase(it);
-                }
+            // Mark as expired in base class (set expiryTime to max)
+            owner_->markTimerExpired(timerID);
+
+            // Remove from native timers only (not from base class runningTimers_)
+            std::lock_guard<std::mutex> lock(timersMutex_);
+            auto it = nativeTimers_.find(timerID);
+            if (it != nativeTimers_.end()) {
+                it->second->deleteLater();
+                nativeTimers_.erase(it);
             }
         }
     }
@@ -192,7 +189,7 @@ private:
     QtDispatcher *owner_;
     static QEvent::Type dispatchEventType_;
     std::map<int, QTimer *> nativeTimers_;
-    std::mutex timersMutex_;
+    mutable std::mutex timersMutex_;
 };
 
 // Static member initialization

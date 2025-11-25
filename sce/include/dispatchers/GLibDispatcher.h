@@ -117,6 +117,7 @@ protected:
     void startTimerImpl(int timerID, unsigned int intervalMs, bool periodic) override;
     void stopTimerImpl(int timerID) override;
     void notifyDispatcherAboutEvent() override;
+    bool isTimerRunningImpl(int timerID) const override;
 
 private:
     /**
@@ -154,7 +155,7 @@ private:
     int pipeFD_[2] = {-1, -1};               ///< Pipe file descriptors
     std::mutex pipeMutex_;                   ///< Protects pipe writes
     std::map<int, GSource *> nativeTimers_;  ///< Active GLib timers
-    std::mutex nativeTimersMutex_;           ///< Protects nativeTimers_ access
+    mutable std::mutex nativeTimersMutex_;   ///< Protects nativeTimers_ access
 };
 
 }  // namespace SCE::Dispatchers

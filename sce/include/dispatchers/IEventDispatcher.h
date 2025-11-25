@@ -125,6 +125,27 @@ public:
     virtual void stopTimer(int timerID) = 0;
 
     /**
+     * @brief Restart a running or expired timer
+     *
+     * Restarts the timer with the same interval and settings that were
+     * provided to startTimer(). Only currently running or expired timers
+     * (with periodic=false) can be restarted.
+     *
+     * @param timerID Timer identifier to restart
+     * @return true if timer was found and restarted, false if timer doesn't exist
+     *
+     * @threadsafe Implementation must be thread-safe
+     *
+     * @example
+     * @code
+     * dispatcher->startTimer(1, 1000, callback, false);  // One-shot timer
+     * // ... timer expires ...
+     * dispatcher->restartTimer(1);  // Restart with same 1000ms delay
+     * @endcode
+     */
+    virtual bool restartTimer(int timerID) = 0;
+
+    /**
      * @brief Check if timer is currently running
      *
      * @param timerID Timer identifier to check
@@ -133,6 +154,15 @@ public:
      * @threadsafe Implementation must be thread-safe
      */
     virtual bool isTimerRunning(int timerID) const = 0;
+
+    /**
+     * @brief Get number of pending tasks
+     *
+     * @return Number of tasks in queue awaiting execution
+     *
+     * @threadsafe Implementation must be thread-safe
+     */
+    virtual size_t pendingTasks() const = 0;
 };
 
 }  // namespace SCE::Dispatchers

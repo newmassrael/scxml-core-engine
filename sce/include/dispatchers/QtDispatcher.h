@@ -143,6 +143,15 @@ public:
         return getTimerCallback(timerID);
     }
 
+    /**
+     * @brief Mark timer as expired (public accessor for QtDispatcherImpl)
+     *
+     * @param timerID Timer identifier to mark as expired
+     */
+    void markTimerExpired(int timerID) {
+        markTimerExpiredInternal(timerID);
+    }
+
 protected:
     void startTimerImpl(int timerID, unsigned int intervalMs, bool periodic) override;
     void stopTimerImpl(int timerID) override;
