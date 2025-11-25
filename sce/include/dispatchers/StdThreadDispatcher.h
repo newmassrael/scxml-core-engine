@@ -1,13 +1,6 @@
 #pragma once
 
-#include "IEventDispatcher.h"
-#include <atomic>
-#include <chrono>
-#include <condition_variable>
-#include <deque>
-#include <iostream>
-#include <map>
-#include <mutex>
+#include "EventDispatcherBase.h"
 #include <thread>
 
 namespace SCE::Dispatchers {
@@ -24,7 +17,7 @@ namespace SCE::Dispatchers {
  * - start()/stop()/run() should be called from dispatcher thread
  *
  * Architecture Compliance:
- * - Zero Duplication: Uses EventQueueManager-like pattern for task queue
+ * - Zero Duplication: Inherits common logic from EventDispatcherBase
  * - Single Source of Truth: Implements IEventDispatcher interface
  * - Thread Safety: Conditional mutex protection for task queue
  *
@@ -48,7 +41,7 @@ namespace SCE::Dispatchers {
  * eventLoop.join();
  * @endcode
  */
-class StdThreadDispatcher : public IEventDispatcher {
+class StdThreadDispatcher : public EventDispatcherBase {
 public:
     /**
      * @brief Create shared_ptr instance of StdThreadDispatcher
@@ -62,7 +55,7 @@ public:
     /**
      * @brief Constructor
      */
-    StdThreadDispatcher() : running_(false), stopRequested_(false) {}
+    StdThreadDispatcher() = default;
 
     /**
      * @brief Destructor - stops dispatcher if still running
@@ -76,12 +69,6 @@ public:
             timerThread_.join();
         }
     }
-
-    // Disable copy/move
-    StdThreadDispatcher(const StdThreadDispatcher &) = delete;
-    StdThreadDispatcher &operator=(const StdThreadDispatcher &) = delete;
-    StdThreadDispatcher(StdThreadDispatcher &&) = delete;
-    StdThreadDispatcher &operator=(StdThreadDispatcher &&) = delete;
 
     /**
      * @brief Start the event dispatcher
@@ -112,18 +99,8 @@ public:
      * The run() method will return after processing current task.
      */
     void stop() override {
-        stopRequested_.store(true);
-        cv_.notify_all();       // Wake up run() if waiting
-        cvTimer_.notify_all();  // Wake up timer thread
-    }
-
-    /**
-     * @brief Check if dispatcher is running
-     *
-     * @return true if start() was called and stop() not yet called
-     */
-    bool isRunning() const override {
-        return running_.load() && !stopRequested_.load();
+        EventDispatcherBase::stop();  // Sets stopRequested_ and notifies cv_
+        cvTimer_.notify_all();        // Wake up timer thread
     }
 
     /**
@@ -145,7 +122,7 @@ public:
             taskQueue_.push_back(std::move(task));
         }
 
-        cv_.notify_one();  // Wake up run() to process task
+        notifyDispatcherAboutEvent();
     }
 
     /**
@@ -202,81 +179,35 @@ public:
         running_.store(false);
     }
 
+protected:
     /**
-     * @brief Get number of pending tasks
+     * @brief Start platform-specific timer
      *
-     * @return Number of tasks in queue
-     *
-     * @threadsafe
+     * Wakes up timer thread to check for new timer.
      */
-    size_t pendingTasks() const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        return taskQueue_.size();
+    void startTimerImpl(int /*timerID*/, unsigned int /*intervalMs*/, bool /*periodic*/) override {
+        cvTimer_.notify_one();
     }
 
     /**
-     * @brief Start a timer
+     * @brief Stop platform-specific timer
      *
-     * Schedules a callback to be executed after the specified delay.
-     * If timer with this ID already exists, it will be replaced.
-     *
-     * @param timerID Unique timer identifier
-     * @param delayMs Delay in milliseconds before callback execution
-     * @param callback Function to execute when timer expires
-     * @param periodic If true, timer repeats automatically (default: false)
-     *
-     * @threadsafe
+     * Timer is removed from runningTimers_ by base class.
+     * No additional action needed for std::thread implementation.
      */
-    void startTimer(int timerID, unsigned int delayMs, std::function<void()> callback, bool periodic = false) override {
-        std::lock_guard<std::mutex> lock(timerMutex_);
-
-        auto now = std::chrono::steady_clock::now();
-        auto expiryTime = now + std::chrono::milliseconds(delayMs);
-
-        TimerInfo info{expiryTime, std::chrono::milliseconds(delayMs), std::move(callback), periodic};
-        runningTimers_[timerID] = std::move(info);
-
-        cvTimer_.notify_one();  // Wake up timer thread
+    void stopTimerImpl(int /*timerID*/) override {
+        // No-op: Timer removed from map by base class
+        // Timer thread will skip it on next check
     }
 
     /**
-     * @brief Stop a running timer
-     *
-     * Cancels the timer if it exists. Has no effect if timer is not running.
-     *
-     * @param timerID Timer identifier to stop
-     *
-     * @threadsafe
+     * @brief Notify event loop about new task
      */
-    void stopTimer(int timerID) override {
-        std::lock_guard<std::mutex> lock(timerMutex_);
-        runningTimers_.erase(timerID);
-    }
-
-    /**
-     * @brief Check if timer is currently running
-     *
-     * @param timerID Timer identifier to check
-     * @return true if timer is active, false otherwise
-     *
-     * @threadsafe
-     */
-    bool isTimerRunning(int timerID) const override {
-        std::lock_guard<std::mutex> lock(timerMutex_);
-        return runningTimers_.find(timerID) != runningTimers_.end();
+    void notifyDispatcherAboutEvent() override {
+        cv_.notify_one();
     }
 
 private:
-    /**
-     * @brief Timer metadata
-     */
-    struct TimerInfo {
-        std::chrono::steady_clock::time_point expiryTime;  ///< When timer expires
-        std::chrono::milliseconds interval;                ///< Timer interval (for periodic)
-        std::function<void()> callback;                    ///< Callback to execute
-        bool periodic;                                     ///< If true, auto-restart
-    };
-
     /**
      * @brief Timer polling thread main loop
      *
@@ -302,7 +233,7 @@ private:
                     std::chrono::duration_cast<std::chrono::milliseconds>(earliestTimer->second.expiryTime - now);
 
                 if (timeUntilExpiry.count() <= 0) {
-                    // Timer expired - enqueue callback
+                    // Timer expired - process it
                     int timerID = earliestTimer->first;
                     TimerInfo info = earliestTimer->second;
 
@@ -318,18 +249,21 @@ private:
                     // Handle periodic timer or remove one-shot
                     if (info.periodic) {
                         // Reschedule periodic timer with drift prevention
-                        auto &timer = runningTimers_[timerID];
+                        auto it = runningTimers_.find(timerID);
+                        if (it != runningTimers_.end()) {
+                            auto &timer = it->second;
 
-                        // Calculate next expiry based on original expiry time (drift prevention)
-                        auto nextExpiry = earliestTimer->second.expiryTime + info.interval;
+                            // Calculate next expiry based on original expiry time (drift prevention)
+                            auto nextExpiry = earliestTimer->second.expiryTime + info.interval;
 
-                        // Catch-up prevention: If processing took longer than interval,
-                        // schedule from current time to avoid busy loop
-                        if (nextExpiry <= now) {
-                            nextExpiry = now + info.interval;
+                            // Catch-up prevention: If processing took longer than interval,
+                            // schedule from current time to avoid busy loop
+                            if (nextExpiry <= now) {
+                                nextExpiry = now + info.interval;
+                            }
+
+                            timer.expiryTime = nextExpiry;
                         }
-
-                        timer.expiryTime = nextExpiry;
                     } else {
                         // Remove one-shot timer
                         runningTimers_.erase(timerID);
@@ -349,16 +283,9 @@ private:
         }
     }
 
-    std::atomic<bool> running_;                    ///< Dispatcher running state
-    std::atomic<bool> stopRequested_;              ///< Stop signal flag
-    std::deque<std::function<void()>> taskQueue_;  ///< FIFO task queue
-    mutable std::mutex mutex_;                     ///< Protects taskQueue_
-    std::condition_variable cv_;                   ///< Notifies run() of new tasks
-    std::thread timerThread_;                      ///< Timer polling thread
-    std::map<int, TimerInfo> runningTimers_;       ///< Active timers
-    mutable std::mutex timerMutex_;                ///< Protects runningTimers_
-    std::condition_variable cvTimer_;              ///< Notifies timer thread
-    std::thread::id eventLoopThreadId_;            ///< Event loop thread ID
+    std::thread timerThread_;            ///< Timer polling thread
+    std::condition_variable cvTimer_;    ///< Notifies timer thread
+    std::thread::id eventLoopThreadId_;  ///< Event loop thread ID
 };
 
 }  // namespace SCE::Dispatchers

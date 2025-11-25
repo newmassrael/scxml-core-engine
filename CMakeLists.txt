@@ -157,6 +157,16 @@ include(GNUInstallDirs)
 # Include SCE code generation utilities
 include(cmake/SCECodegen.cmake)
 
+# =============================================================================
+# Optional Event Dispatchers
+# =============================================================================
+# Platform-specific event dispatcher implementations
+# - Qt: Requires Qt5/Qt6 Core module
+# - GLib: Requires glib-2.0
+
+include(cmake/dispatchers/qt.cmake)
+include(cmake/dispatchers/glib.cmake)
+
 # Position independent code generation (for shared libraries)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 

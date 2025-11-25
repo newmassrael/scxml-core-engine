@@ -525,7 +525,70 @@ if(EMSCRIPTEN)
 endif()
 
 # ============================================================================
-# 8. TXML Converter Tests (W3C SCXML Compliance Testing)
+# 8a. Qt Dispatcher Tests (Optional - requires SCE_DISPATCHER_QT)
+# ============================================================================
+if(SCE_DISPATCHER_QT)
+    # Find Qt for test file (uses Qt headers directly)
+    find_package(Qt6 COMPONENTS Core QUIET)
+    if(NOT Qt6_FOUND)
+        find_package(Qt5 COMPONENTS Core REQUIRED)
+        set(QT_TEST_LIBRARIES Qt5::Core)
+    else()
+        set(QT_TEST_LIBRARIES Qt6::Core)
+    endif()
+
+    add_executable(qt_dispatcher_tests
+        concurrency/QtDispatcherTest.cpp
+    )
+
+    target_include_directories(qt_dispatcher_tests
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/tests
+    )
+
+    target_link_libraries(qt_dispatcher_tests
+        PRIVATE
+            sce_qt_dispatcher
+            ${QT_TEST_LIBRARIES}
+            GTest::gtest_main
+            pthread
+    )
+
+    add_test(NAME QtDispatcherTests COMMAND qt_dispatcher_tests)
+    message(STATUS "SCE Tests: Qt dispatcher tests enabled")
+endif()
+
+# ============================================================================
+# 8b. GLib Dispatcher Tests (Optional - requires SCE_DISPATCHER_GLIB)
+# ============================================================================
+if(SCE_DISPATCHER_GLIB)
+    add_executable(glib_dispatcher_tests
+        concurrency/GLibDispatcherTest.cpp
+    )
+
+    target_include_directories(glib_dispatcher_tests
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/sce/include
+            ${CMAKE_SOURCE_DIR}/tests
+            ${GLIB_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(glib_dispatcher_tests
+        PRIVATE
+            sce_glib_dispatcher
+            GTest::gtest_main
+            pthread
+    )
+
+    add_test(NAME GLibDispatcherTests COMMAND glib_dispatcher_tests)
+    message(STATUS "SCE Tests: GLib dispatcher tests enabled")
+endif()
+
+# ============================================================================
+# 9. TXML Converter Tests (W3C SCXML Compliance Testing)
 # ============================================================================
 add_executable(txml_converter_tests
     w3c/TXMLConverterTest.cpp

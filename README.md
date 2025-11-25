@@ -760,6 +760,143 @@ Thread-safe operations:
 
 ---
 
+## Event Dispatchers
+
+SCE provides event dispatcher implementations for asynchronous state machine event processing across different platforms.
+
+### Available Dispatchers
+
+| Dispatcher | Platform | Event Loop | Timer Source |
+|------------|----------|------------|--------------|
+| StdThreadDispatcher | Any (C++11) | std::thread | std::condition_variable |
+| QtDispatcher | Qt5/Qt6 | QCoreApplication | QTimer |
+| GLibDispatcher | GTK/GNOME | GMainLoop | g_timeout_source |
+
+### StdThreadDispatcher (Default)
+
+Built-in dispatcher using C++ standard library. No additional dependencies.
+
+```cpp
+#include "dispatchers/StdThreadDispatcher.h"
+#include "wrappers/AsyncStateMachine.h"
+#include "traffic_light_sm.h"
+
+using namespace SCE::Dispatchers;
+using namespace SCE::Wrappers;
+
+auto dispatcher = StdThreadDispatcher::create();
+AsyncStateMachine<traffic_light, Event> sm(dispatcher);
+
+sm.initialize();
+dispatcher->start();
+
+// Run event loop in separate thread
+std::thread eventLoop([dispatcher]() { dispatcher->run(); });
+
+// Post events from any thread
+sm.postEvent(Event::Timer);
+
+// Cleanup
+dispatcher->stop();
+eventLoop.join();
+```
+
+### QtDispatcher (Optional)
+
+Integration with Qt's event loop. Requires Qt5 or Qt6 Core module.
+
+```bash
+# Build with Qt dispatcher
+cmake -DSCE_DISPATCHER_QT=ON -B build
+cmake --build build
+```
+
+```cpp
+#include "dispatchers/QtDispatcher.h"
+#include <QCoreApplication>
+
+int main(int argc, char *argv[]) {
+    QCoreApplication app(argc, argv);
+    
+    auto dispatcher = QtDispatcher::create();
+    dispatcher->start();
+    
+    // Events are processed by Qt's event loop
+    dispatcher->enqueue([]() {
+        qDebug() << "Task executed on Qt event loop";
+    });
+    
+    return app.exec();  // Or use dispatcher->run()
+}
+```
+
+### GLibDispatcher (Optional)
+
+Integration with GLib main loop. Requires glib-2.0.
+
+```bash
+# Build with GLib dispatcher
+cmake -DSCE_DISPATCHER_GLIB=ON -B build
+cmake --build build
+```
+
+```cpp
+#include "dispatchers/GLibDispatcher.h"
+
+int main() {
+    auto dispatcher = GLibDispatcher::create();
+    dispatcher->start();
+    
+    dispatcher->enqueue([]() {
+        g_print("Task executed on GLib main loop\n");
+    });
+    
+    dispatcher->run();  // Runs GMainLoop
+    return 0;
+}
+```
+
+### Timer Support
+
+All dispatchers support high-precision timers with drift prevention:
+
+```cpp
+// One-shot timer (100ms delay)
+dispatcher->startTimer(1, 100, []() {
+    std::cout << "Timer fired!\n";
+}, false);
+
+// Periodic timer (50ms interval)
+dispatcher->startTimer(2, 50, []() {
+    std::cout << "Periodic tick\n";
+}, true);
+
+// Check timer status
+if (dispatcher->isTimerRunning(2)) {
+    dispatcher->stopTimer(2);
+}
+```
+
+### Architecture
+
+The dispatcher architecture follows the **Zero Duplication** principle:
+
+```
+IEventDispatcher (interface)
+       ↓
+EventDispatcherBase (shared logic: timers, task queue)
+       ↓
+┌──────────────────┬─────────────────┬────────────────┐
+│ StdThreadDispatcher │ QtDispatcher    │ GLibDispatcher │
+│ (std::thread)       │ (QTimer/QEvent) │ (pipe/GSource) │
+└──────────────────┴─────────────────┴────────────────┘
+```
+
+- **EventDispatcherBase**: Common timer metadata, task queue, and state management
+- **Platform-specific**: Native event loop integration and timer mechanisms
+
+---
+
 ## Testing
 
 ### W3C SCXML Conformance
