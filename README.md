@@ -246,6 +246,53 @@ while (!sm.isInFinalState()) {
 }
 ```
 
+#### 5. [async_dispatcher](examples/async_dispatcher/) - Asynchronous Event Processing
+
+**What you'll learn**:
+- Thread-safe asynchronous event processing
+- Event dispatcher pattern (std::thread backend)
+- Multi-threaded event submission
+- Background event loop integration
+- Safe cross-thread state machine communication
+
+**Complexity**: Advanced (Multi-threading, async patterns)
+
+```cpp
+#include "dispatchers/StdThreadDispatcher.h"
+#include "wrappers/AsyncStateMachine.h"
+
+// Create dispatcher
+auto dispatcher = StdThreadDispatcher::create();
+dispatcher->start();
+
+// Wrap state machine for async processing
+AsyncStateMachine<traffic_light, Event> sm(dispatcher);
+sm.initialize();
+
+// Start event loop in background thread
+std::thread eventLoop([dispatcher]() {
+    dispatcher->run();
+});
+
+// Post events from any thread (thread-safe)
+sm.postEvent(Event::Timer);
+
+// From another thread
+std::thread worker([&sm]() {
+    sm.postEvent(Event::Alert);  // Safe!
+});
+
+// Cleanup
+dispatcher->stop();
+eventLoop.join();
+```
+
+**Key Features**:
+- Thread-safe event posting from multiple threads
+- FIFO task queue with condition variable synchronization
+- Zero overhead when not used (header-only templates)
+- Extensible: Add Qt/GLib/FreeRTOS dispatchers via IEventDispatcher interface
+
 Each example includes a detailed README with building instructions and usage patterns.
 
 ---

@@ -199,6 +199,7 @@ if(BUILD_EXAMPLES)
     add_subdirectory(examples/traffic_light)
     add_subdirectory(examples/smart_light)
     add_subdirectory(examples/timer)
+    add_subdirectory(examples/async_dispatcher)
 endif()
 
 # =============================================================================

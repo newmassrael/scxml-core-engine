@@ -488,6 +488,8 @@ target_link_libraries(model_tests
 add_executable(concurrency_tests
     concurrency/DeadlockReproductionTest.cpp
     concurrency/EventQueueManagerThreadSafetyTest.cpp
+    concurrency/StdThreadDispatcherTest.cpp
+    concurrency/AsyncStateMachineTest.cpp
     mocks/MockEventRaiser.cpp
 )
 
