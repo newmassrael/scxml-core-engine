@@ -4,6 +4,10 @@
 #include <functional>
 #include <string>
 
+#ifdef SCE_THREAD_SAFE
+#include <mutex>
+#endif
+
 namespace SCE::Core {
 
 /**
@@ -18,6 +22,12 @@ namespace SCE::Core {
  * - Shared between static and interpreter engines
  * - Zero overhead when not used (inline methods)
  * - Template-based for type safety
+ * - Optional thread safety via SCE_THREAD_SAFE build flag
+ *
+ * Thread Safety:
+ * - When SCE_THREAD_SAFE is defined, all operations are protected by mutex
+ * - Allows safe event submission from multiple threads
+ * - Zero overhead when thread safety is disabled (default)
  *
  * W3C SCXML References:
  * - Section 3.12.1: Internal Events
@@ -32,34 +42,57 @@ public:
      * They are processed before external events but after currently queued
      * internal events (FIFO ordering).
      *
+     * Thread-safe when SCE_THREAD_SAFE is enabled.
+     *
      * @param event Event to raise internally
      */
     void raise(const EventType &event) {
+#ifdef SCE_THREAD_SAFE
+        std::lock_guard<std::mutex> lock(mutex_);
+#endif
         queue_.push_back(event);
     }
 
     /**
      * @brief Check if internal queue has events
+     *
+     * Thread-safe when SCE_THREAD_SAFE is enabled.
+     *
      * @return true if queue is not empty
      */
     bool hasEvents() const {
+#ifdef SCE_THREAD_SAFE
+        std::lock_guard<std::mutex> lock(mutex_);
+#endif
         return !queue_.empty();
     }
 
     /**
      * @brief Get number of queued events
+     *
+     * Thread-safe when SCE_THREAD_SAFE is enabled.
+     *
      * @return Number of events in queue
      */
     size_t size() const {
+#ifdef SCE_THREAD_SAFE
+        std::lock_guard<std::mutex> lock(mutex_);
+#endif
         return queue_.size();
     }
 
     /**
      * @brief Pop next internal event from queue (FIFO)
+     *
+     * Thread-safe when SCE_THREAD_SAFE is enabled.
+     *
      * @return Next event from front of queue
      * @throws std::runtime_error if queue is empty
      */
     EventType pop() {
+#ifdef SCE_THREAD_SAFE
+        std::lock_guard<std::mutex> lock(mutex_);
+#endif
         if (queue_.empty()) {
             throw std::runtime_error("EventQueueManager: Cannot pop from empty queue");
         }
@@ -70,8 +103,13 @@ public:
 
     /**
      * @brief Clear all queued events
+     *
+     * Thread-safe when SCE_THREAD_SAFE is enabled.
      */
     void clear() {
+#ifdef SCE_THREAD_SAFE
+        std::lock_guard<std::mutex> lock(mutex_);
+#endif
         queue_.clear();
     }
 
@@ -85,9 +123,14 @@ public:
      * The handler is called for each event and should return true if a
      * transition was taken, false otherwise.
      *
+     * Thread-safe when SCE_THREAD_SAFE is enabled.
+     *
      * @param handler Function to process each event: bool handler(EventType)
      */
     template <typename Handler> void processAll(Handler handler) {
+#ifdef SCE_THREAD_SAFE
+        std::lock_guard<std::mutex> lock(mutex_);
+#endif
         while (!queue_.empty()) {
             EventType event = queue_.front();
             queue_.pop_front();
@@ -97,6 +140,10 @@ public:
 
 private:
     std::deque<EventType> queue_;  // FIFO ordering per W3C SCXML 3.12.1
+
+#ifdef SCE_THREAD_SAFE
+    mutable std::mutex mutex_;  // Mutex for thread-safe operations (mutable for const methods)
+#endif
 };
 
 }  // namespace SCE::Core

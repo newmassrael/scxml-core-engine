@@ -1158,7 +1158,16 @@ public:
      * then processes event queues and checks for eventless transitions.
      */
     void tick() {
-        if (!isRunning_ || isInFinalState()) {
+        if (!isRunning_) {
+            return;
+        }
+
+        // W3C SCXML 6.4: If already in final state, notify parent and return
+        if (isInFinalState()) {
+            if (completionCallback_) {
+                LOG_DEBUG("AOT tick: Invoking completion callback for already-final state");
+                completionCallback_();
+            }
             return;
         }
 
@@ -1175,9 +1184,9 @@ public:
             policy_.tickChildren(*this);
         }
 
-        // Process any events that were just raised (or existing events)
-        processEventQueues();
-        checkEventlessTransitions();
+        // Zero Duplication: Delegate event processing + completion callback to step()
+        // step() handles: processEventQueues() + checkEventlessTransitions() + completionCallback_
+        step();
 
         // W3C SCXML 6.4: Execute pending invokes after stable configuration is reached
         // Macrostep has completed - entered-and-not-exited states ready for invoke execution

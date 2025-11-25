@@ -578,6 +578,87 @@ Full ECMAScript support via QuickJS for complex expressions:
 
 ---
 
+## Thread Safety
+
+SCE supports optional thread-safe event submission via the `SCE_THREAD_SAFE` build flag.
+
+### When to Use Thread Safety
+
+**Enable thread safety when**:
+- Multiple threads need to send events to the state machine
+- Sensor threads submit events while main thread processes them
+- Asynchronous I/O callbacks trigger state machine events
+
+**Default (disabled) is appropriate when**:
+- Single-threaded event processing
+- Maximum performance required (zero overhead)
+- Event submission happens only from processing thread
+
+### Building with Thread Safety
+
+```bash
+# Enable thread-safe event queues
+cmake -DSCE_THREAD_SAFE=ON -B build
+cmake --build build
+```
+
+**Performance Impact**:
+- **Disabled (default)**: Zero overhead, no mutex operations
+- **Enabled**: Minimal overhead, mutex only during event queue operations
+
+### Usage Example
+
+```cpp
+#include "traffic_light_sm.h"
+#include <thread>
+
+traffic_light sm;
+sm.initialize();
+
+// Sensor thread: Submit events safely
+std::thread sensorThread([&sm]() {
+    while (running) {
+        if (buttonPressed()) {
+            sm.raiseExternal(Event::Pedestrian_button);  // Thread-safe ✅
+        }
+        std::this_thread::sleep_for(100ms);
+    }
+});
+
+// Timer thread: Submit events safely
+std::thread timerThread([&sm]() {
+    while (running) {
+        std::this_thread::sleep_for(30s);
+        sm.raiseExternal(Event::Timer);  // Thread-safe ✅
+    }
+});
+
+// Main thread: Process events
+while (!sm.isInFinalState()) {
+    sm.tick();   // Process scheduler
+    sm.step();   // Process event queues
+    std::this_thread::sleep_for(10ms);
+}
+```
+
+### Architecture
+
+Thread safety is implemented at the EventQueueManager level:
+- **Zero Duplication**: Single implementation shared across all engines (Static AOT, Interpreter)
+- **Conditional Compilation**: No overhead when disabled via preprocessor directives
+- **W3C Compliance**: Sequential event processing preserved (mutex ensures atomicity)
+
+Thread-safe operations:
+- `raiseExternal()` - Queue external events
+- `raise()` - Queue internal events (from within actions)
+- `tick()` - Process scheduler
+- `step()` - Process event queues
+- All queue operations (`hasEvents()`, `size()`, `pop()`, `clear()`)
+
+**Note**: Each state machine instance processes events sequentially (W3C SCXML requirement). Thread safety enables safe event *submission* from multiple threads, not concurrent event *processing*.
+
+---
+
 ## Testing
 
 ### W3C SCXML Conformance

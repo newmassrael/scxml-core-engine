@@ -202,6 +202,22 @@ if(BUILD_EXAMPLES)
 endif()
 
 # =============================================================================
+# Thread Safety Option
+# =============================================================================
+# Enable thread-safe event queues for cross-thread event submission
+# - When enabled: Adds mutex protection to EventQueueManager operations
+# - When disabled: Zero overhead (default for single-threaded usage)
+# - Zero Duplication: Single implementation in EventQueueManager applies to all engines
+option(SCE_THREAD_SAFE "Enable thread-safe event queues" OFF)
+
+if(SCE_THREAD_SAFE)
+    message(STATUS "SCE: Thread-safe event queues enabled")
+    target_compile_definitions(sce_unified PUBLIC SCE_THREAD_SAFE)
+else()
+    message(STATUS "SCE: Thread-safe event queues disabled (zero overhead)")
+endif()
+
+# =============================================================================
 # Local Visualizer Deployment
 # =============================================================================
 # Deploy visualizer to project root matching GitHub Pages structure
