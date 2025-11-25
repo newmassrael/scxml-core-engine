@@ -217,6 +217,35 @@ sce_add_state_machine(TARGET my_app SCXML_FILE my_machine.scxml)
 </state>
 ```
 
+#### 4. [timer](examples/timer/) - TimerManager API
+
+**What you'll learn**:
+- High-level timer API for periodic and one-shot timers
+- Built on W3C SCXML 6.2 delayed send infrastructure
+- Type-safe timer management via TimerID enum
+- Timer lifecycle (start/stop/restart)
+- Event scheduling and polling patterns
+
+**Complexity**: Intermediate (Timer API, event scheduling)
+
+```cpp
+// Register timers with events
+timers.registerTimer(TimerID::HEARTBEAT, Event::Heartbeat_tick);
+timers.registerTimer(TimerID::TIMEOUT, Event::Operation_timeout);
+
+// Start periodic timer (500ms)
+timers.startTimer(TimerID::HEARTBEAT, 500ms, true);
+
+// Start one-shot timer (3000ms)
+timers.startTimer(TimerID::TIMEOUT, 3000ms, false);
+
+// Process events with manual tick loop
+while (!sm.isInFinalState()) {
+    sm.tick();
+    timers.processExpiredTimers();  // Re-schedule periodic timers
+}
+```
+
 Each example includes a detailed README with building instructions and usage patterns.
 
 ---
@@ -379,6 +408,58 @@ sm.step();                      // Manual processing
 **When to use**:
 - **Easy API**: Most applications, simpler code, fewer mistakes
 - **Low-level API**: Batch processing, asynchronous systems, precise control
+
+### Timer Management API
+
+SCE provides a high-level timer API built on W3C SCXML 6.2 delayed send infrastructure:
+
+```cpp
+#include "wrappers/TimerManager.h"
+
+// Define timer IDs for type-safe timer management
+enum class TimerID : uint8_t {
+    HEARTBEAT,
+    TIMEOUT
+};
+
+// Extend generated SM with TimerID
+struct MyStateMachineSM : public my_state_machine {
+    using TimerID = ::TimerID;
+    using my_state_machine::my_state_machine;
+};
+
+// Create timer manager
+MyStateMachineSM sm;
+SCE::Wrappers::TimerManager<MyStateMachineSM> timers(sm);
+
+// Register timer-to-event mappings
+timers.registerTimer(TimerID::HEARTBEAT, Event::Heartbeat_tick);
+timers.registerTimer(TimerID::TIMEOUT, Event::Operation_timeout);
+
+// Start timers
+timers.startTimer(TimerID::HEARTBEAT, 500ms, true);   // Periodic
+timers.startTimer(TimerID::TIMEOUT, 3000ms, false);   // One-shot
+
+// Process with manual tick loop
+while (!sm.isInFinalState()) {
+    sm.tick();
+    timers.processExpiredTimers();  // Re-schedule periodic timers
+}
+
+// Or use automatic runUntilCompletion
+sm.runUntilCompletion(5000ms, 10ms);  // Timers handled automatically
+```
+
+**Key Features**:
+- Type-safe timer identification via TimerID enum
+- Periodic and one-shot timer support
+- Built on existing EventScheduler infrastructure (zero duplication)
+- Automatic event generation on timer expiration
+- Timer lifecycle management (start/stop/restart)
+
+**Thread Safety**: NOT thread-safe per W3C SCXML specification (single-threaded event processing). Use separate state machine instances per thread and EventRaiserRegistry for cross-thread communication.
+
+See [timer example](examples/timer/) for complete usage patterns.
 
 ### C++ Function Integration
 

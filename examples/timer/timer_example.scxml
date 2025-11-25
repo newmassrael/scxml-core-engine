@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="TimerExample" initial="idle">
+  <!-- Timer Example: Demonstrates timer management with TimerManager -->
+
+  <state id="idle">
+    <transition event="start" target="running"/>
+  </state>
+
+  <state id="running">
+    <onentry>
+      <log label="Timer" expr="'Starting operation...'" />
+    </onentry>
+
+    <!-- Heartbeat event from periodic timer -->
+    <transition event="heartbeat_tick">
+      <log label="Heartbeat" expr="'System alive'" />
+    </transition>
+
+    <!-- Timeout event from one-shot timer -->
+    <transition event="operation_timeout" target="timeout"/>
+
+    <!-- Manual completion -->
+    <transition event="complete" target="done"/>
+  </state>
+
+  <state id="timeout">
+    <onentry>
+      <log label="Timeout" expr="'Operation timed out!'" />
+    </onentry>
+    <transition event="retry" target="running"/>
+    <transition event="cancel" target="idle"/>
+  </state>
+
+  <final id="done">
+    <onentry>
+      <log label="Done" expr="'Operation completed successfully'" />
+    </onentry>
+  </final>
+</scxml>

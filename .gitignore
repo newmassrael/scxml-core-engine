@@ -66,6 +66,9 @@ _deps/
 # Generated code
 generated/
 
+# Generated state machine code from examples (created by sce_add_state_machine)
+examples/**/*_sm.h
+
 # Test generated data
 test_output/
 test_data/

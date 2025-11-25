@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="TimerTest" initial="idle">
+  <!-- Simple state machine for TimerManager testing -->
+
+  <state id="idle">
+    <transition event="start" target="running"/>
+  </state>
+
+  <state id="running">
+    <!-- Heartbeat event from periodic timer -->
+    <transition event="heartbeat">
+      <log label="Heartbeat" expr="'tick'"/>
+    </transition>
+
+    <!-- Timeout event from one-shot timer -->
+    <transition event="timeout" target="timeout_state"/>
+
+    <!-- Manual completion -->
+    <transition event="complete" target="done"/>
+  </state>
+
+  <state id="timeout_state">
+    <transition event="retry" target="running"/>
+  </state>
+
+  <final id="done"/>
+</scxml>
