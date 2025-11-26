@@ -10,7 +10,7 @@
  SDL_Window* window = NULL;
  SDL_Renderer* renderer = NULL;
  SDL_Texture* texture;
-@@ -50,6 +53,18 @@ static unsigned char convertToDoomKey(unsigned int key)
+@@ -50,6 +53,14 @@ static unsigned char convertToDoomKey(unsigned int key)
      case SDLK_DOWN:
        key = KEY_DOWNARROW;
        break;
@@ -20,16 +20,13 @@
 +    case SDLK_s:
 +      key = KEY_DOWNARROW;
 +      break;
-+    case SDLK_a:
-+      key = KEY_STRAFE_L;
-+      break;
-+    case SDLK_d:
-+      key = KEY_STRAFE_R;
-+      break;
++    // NOTE: A and D are NOT converted here - they pass through as lowercase
++    // letters so that cheat codes (like IDDQD) work correctly.
++    // Strafe is handled by m_controls.c key bindings (key_strafeleft = 'a', key_straferight = 'd')
      case SDLK_LCTRL:
      case SDLK_RCTRL:
        key = KEY_FIRE;
-@@ -156,6 +171,9 @@ void DG_Init()
+@@ -156,6 +167,9 @@ void DG_Init()
                                       0, SDL_PIXELFORMAT_RGB888);
 
    memset(DG_ScreenBuffer, 0, DOOMGENERIC_RESX * DOOMGENERIC_RESY * 4);

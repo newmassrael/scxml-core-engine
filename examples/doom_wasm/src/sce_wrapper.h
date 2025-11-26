@@ -52,6 +52,34 @@ void sce_enemy_set_state(void *mobj, const char *state_name);
 void sce_enemy_killed(void *mobj);
 void sce_enemy_remove(void *mobj);
 
+/* Secret Hint State Machine */
+const char *sce_secret_get_state(void);
+void sce_secret_event_enable(void);
+void sce_secret_event_disable(void);
+void sce_secret_event_request(void);      /* Backwards compat - same as next_target */
+void sce_secret_event_next_target(void);  /* H key - toggle path visibility */
+void sce_secret_event_prev_target(void);  /* G key - deprecated, no-op */
+void sce_select_target(int type, int index);  /* Select specific target by type and index, show path */
+void sce_secret_event_cancel(void);
+void sce_secret_event_level_change(void);
+void sce_secret_event_reached(void);
+
+/* Secret path finding result callback */
+void sce_secret_path_found(void);
+void sce_secret_no_path(void);
+
+/* Target counts for UI - returns count for each target type */
+int sce_get_target_count_secret(void);
+int sce_get_target_count_door(void);
+int sce_get_target_count_lift(void);
+int sce_get_target_count_switch(void);
+int sce_get_target_count_teleporter(void);
+int sce_get_target_count_exit(void);
+int sce_get_target_count_keydoor(void);
+
+/* Check if a secret has been discovered (0 = not found, 1 = found) */
+int sce_is_secret_discovered(int index);
+
 #ifdef __cplusplus
 }
 #endif

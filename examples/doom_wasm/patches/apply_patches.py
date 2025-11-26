@@ -50,6 +50,9 @@ def main():
         # G_DoWorldDone - when going from intermission to next level
         (r'(void G_DoWorldDone \(void\)\s*\{\s*\n)',
          r'\1    // SCE: Moving to next level after intermission\n    SCE_GameWorldDone();\n'),
+        # G_Ticker GS_LEVEL case - check if player reached target secret after HU_Ticker
+        (r'(HU_Ticker \(\);)\s*\n(\s*break;)',
+         r'\1\n\tSCE_SecretCheckReached();  // Check if player reached target secret\n\2'),
     ])
 
     # f_finale.c - finale hooks
@@ -151,14 +154,28 @@ def main():
          r'\n\telse {\n\t  plyr->message = DEH_String(STSTR_DQDOFF);\n\t  // SCE: God mode deactivated\n\t  SCE_PlayerGodModeOff();\n\t}'),
     ])
 
-    # doomgeneric_emscripten.c - init hook
+    # doomgeneric_emscripten.c - init hook and WASD support
     patch_file(os.path.join(dg_dir, "doomgeneric_emscripten.c"), [
         # Add include after emscripten.h
         (r'(#include <emscripten\.h>)',
          r'\1\n\n// SCE State Machine Integration\n#include "sce_doom_hooks.h"'),
+        # Add W and S key mappings after SDLK_DOWN case (before SDLK_LCTRL)
+        # NOTE: A and D are intentionally NOT mapped here - they pass through as lowercase
+        # letters so that cheat codes (like IDDQD) work correctly.
+        (r'(case SDLK_DOWN:\s*\n\s*key = KEY_DOWNARROW;\s*\n\s*break;\s*\n)(\s*case SDLK_LCTRL:)',
+         r'\1    case SDLK_w:\n      key = KEY_UPARROW;\n      break;\n    case SDLK_s:\n      key = KEY_DOWNARROW;\n      break;\n    // NOTE: A and D pass through as lowercase letters for cheat code compatibility\n    // Strafe is handled by m_controls.c key bindings\n\2'),
         # After texture creation in DG_Init
         (r'(texture = SDL_CreateTexture\([^;]+;)',
          r'\1\n\n  // Initialize SCE state machines\n  SCE_Init();'),
+    ])
+
+    # m_controls.c - WASD key bindings (for strafe using A/D as letters, not KEY_STRAFE_*)
+    # This allows cheat codes like IDDQD to work while still supporting WASD movement
+    patch_file(os.path.join(dg_dir, "m_controls.c"), [
+        (r'int key_strafeleft = KEY_STRAFE_L;',
+         r"int key_strafeleft = 'a';   // Changed from KEY_STRAFE_L for WASD + cheat code compatibility"),
+        (r'int key_straferight = KEY_STRAFE_R;',
+         r"int key_straferight = 'd';  // Changed from KEY_STRAFE_R for WASD + cheat code compatibility"),
     ])
 
     print("SCE integration patches applied successfully")

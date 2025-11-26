@@ -9,6 +9,8 @@
 #include "sce_doom_hooks.h"
 #include "info.h"
 #include "sce_wrapper.h"
+#include "sce_secret_hint.h"
+#include <string.h>
 
 /* Monster type names for SCE enemy tracking */
 static const char *SCE_GetMonsterTypeName(mobjtype_t type) {
@@ -199,4 +201,55 @@ void SCE_EnemyRemoved(mobj_t *mobj) {
         return;
     }
     sce_enemy_remove(mobj);
+}
+
+/* Secret hint events */
+void SCE_SecretHintEnable(void) {
+    Secret_SetEnabled(true);
+    sce_secret_event_enable();
+}
+
+void SCE_SecretHintDisable(void) {
+    Secret_SetEnabled(false);
+    sce_secret_event_disable();
+}
+
+void SCE_SecretHintRequest(void) {
+    /* H key: Toggle path visibility */
+    Secret_ClearPath();  /* Clear old path first */
+    sce_secret_event_next_target();
+}
+
+void SCE_SecretHintPrevious(void) {
+    /* G key: No longer used - kept for API compatibility */
+}
+
+void SCE_SecretHintCancel(void) {
+    Secret_ClearPath();
+    sce_secret_event_cancel();
+}
+
+void SCE_SecretLevelChange(void) {
+    Secret_OnLevelLoad();
+    sce_secret_event_level_change();
+}
+
+void SCE_SecretCheckReached(void) {
+    /* Update arrow positions while showing hints */
+    if (SCE_SecretIsShowing()) {
+        Secret_UpdateArrows();
+    }
+
+    if (Secret_CheckReached()) {
+        sce_secret_event_reached();
+    }
+}
+
+const char* SCE_SecretGetStateName(void) {
+    return sce_secret_get_state();
+}
+
+boolean SCE_SecretIsShowing(void) {
+    const char *state = sce_secret_get_state();
+    return state && strcmp(state, "showing") == 0;
 }

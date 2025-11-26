@@ -18,7 +18,8 @@ def main():
         'game': 'game_state.scxml',
         'player': 'player_state.scxml',
         'weapon': 'weapon_state.scxml',
-        'enemy': 'enemy_state.scxml'
+        'enemy': 'enemy_state.scxml',
+        'secret': 'secret_hint_state.scxml'
     }
 
     scxml_base64 = {}
@@ -157,6 +158,105 @@ def main():
         .enemy-state-text.PAIN {{ color: #ff00ff; }}
         .enemy-state-text.DEAD {{ color: #666; text-decoration: line-through; }}
 
+        /* Secret Hint Section */
+        .secret-section {{
+            display: none;
+            padding: 10px;
+            background: #252525;
+            border: 1px solid #555;
+            border-bottom: none;
+        }}
+        .secret-section.visible {{
+            display: block;
+        }}
+        .secret-info {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }}
+        .secret-info .info-item {{
+            padding: 5px 10px;
+            background: #333;
+            border-radius: 4px;
+            font-size: 12px;
+        }}
+        .secret-info .hint-key {{
+            color: #ffcc00;
+            font-weight: bold;
+        }}
+        .secret-state-text {{
+            font-weight: bold;
+        }}
+        .secret-state-text.disabled {{ color: #666; }}
+        .secret-state-text.idle {{ color: #00ff00; }}
+        .secret-state-text.calculating {{ color: #ffff00; }}
+        .secret-state-text.showing {{ color: #00ffff; }}
+        .secret-state-text.found {{ color: #ff00ff; }}
+        .secret-state-text.no_path {{ color: #ff6600; }}
+
+        /* Target Buttons Section */
+        .target-buttons-container {{
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+            max-height: 150px;
+            overflow-y: auto;
+        }}
+        .target-group {{
+            display: none;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 8px;
+            align-items: center;
+        }}
+        .target-group.has-targets {{
+            display: flex;
+        }}
+        .target-group .group-label {{
+            color: #f39c12;
+            font-size: 11px;
+            font-weight: bold;
+            min-width: 60px;
+        }}
+        .target-btn {{
+            padding: 4px 10px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ccc;
+            cursor: pointer;
+            font-size: 11px;
+            font-family: monospace;
+        }}
+        .target-btn:hover {{
+            background: #444;
+            border-color: #888;
+        }}
+        .target-btn.active {{
+            background: #1a4a1a;
+            border-color: #00ff00;
+            color: #00ff00;
+        }}
+        .target-btn.secret {{ border-left: 3px solid #ff00ff; }}
+        .target-btn.secret.discovered {{
+            border-left-color: #666;
+            background: #2a2a2a;
+            color: #666;
+            text-decoration: line-through;
+        }}
+        .target-btn.secret.discovered::after {{
+            content: ' ✓';
+            color: #00ff00;
+            text-decoration: none;
+        }}
+        .target-btn.door {{ border-left: 3px solid #00aaff; }}
+        .target-btn.lift {{ border-left: 3px solid #ffaa00; }}
+        .target-btn.switch {{ border-left: 3px solid #ff6600; }}
+        .target-btn.teleporter {{ border-left: 3px solid #aa00ff; }}
+        .target-btn.exit {{ border-left: 3px solid #00ff00; }}
+        .target-btn.keydoor {{ border-left: 3px solid #ffff00; }}
+
         /* Visualizer Section */
         #viz-section {{
             border: 1px solid #555;
@@ -179,6 +279,7 @@ def main():
             right: 0;
             display: flex;
             justify-content: center;
+            align-items: center;
             gap: 30px;
             padding: 10px 15px;
             background: #222;
@@ -187,6 +288,17 @@ def main():
         }}
         #stats span {{ color: #888; }}
         #stats strong {{ color: #00ff00; }}
+        #fullscreen-btn {{
+            padding: 5px 12px;
+            background: #444;
+            border: 1px solid #666;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }}
+        #fullscreen-btn:hover {{ background: #555; }}
+        :fullscreen #fullscreen-btn {{ background: #006600; }}
     </style>
 </head>
 <body>
@@ -213,10 +325,29 @@ def main():
                 <button class="tab-btn" data-machine="enemy" onclick="switchTab('enemy')">
                     Enemy <span class="state-indicator" id="ind-enemy">0 active</span>
                 </button>
+                <button class="tab-btn" data-machine="secret" onclick="switchTab('secret')">
+                    Secret <span class="state-indicator" id="ind-secret">disabled</span>
+                </button>
             </div>
             <div id="enemy-section" class="enemy-section">
                 <div id="enemy-list" class="enemy-list">
                     <!-- Enemy buttons will be added here -->
+                </div>
+            </div>
+            <div id="secret-section" class="secret-section">
+                <div class="secret-info">
+                    <div class="info-item">State: <span id="secret-state" class="secret-state-text disabled">disabled</span></div>
+                    <div class="info-item">Path: <span id="secret-arrows">0</span> waypoints</div>
+                </div>
+                <div class="target-buttons-container" id="target-buttons">
+                    <!-- Target buttons will be generated dynamically -->
+                    <div class="target-group" id="group-secret"><span class="group-label">Secret</span></div>
+                    <div class="target-group" id="group-door"><span class="group-label">Door</span></div>
+                    <div class="target-group" id="group-lift"><span class="group-label">Lift</span></div>
+                    <div class="target-group" id="group-switch"><span class="group-label">Switch</span></div>
+                    <div class="target-group" id="group-teleporter"><span class="group-label">Teleport</span></div>
+                    <div class="target-group" id="group-exit"><span class="group-label">Exit</span></div>
+                    <div class="target-group" id="group-keydoor"><span class="group-label">KeyDoor</span></div>
                 </div>
             </div>
             <div id="viz-section">
@@ -230,29 +361,74 @@ def main():
             <span>Player: <strong id="stat-player">ALIVE</strong></span>
             <span>Enemies: <strong id="stat-enemies">0</strong></span>
             <span>Killed: <strong id="stat-killed">0</strong></span>
+            <span>Secrets: <strong id="stat-secrets">?</strong></span>
+            <button id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen mode blocks Ctrl+W">Fullscreen (F11)</button>
         </div>
 
     </div>
 
     <script>
+        // Fullscreen toggle function
+        function toggleFullscreen() {{
+            if (!document.fullscreenElement) {{
+                document.documentElement.requestFullscreen().then(() => {{
+                    console.log('[SCE] Entered fullscreen - Ctrl+W is now blocked');
+                }}).catch(err => {{
+                    console.warn('[SCE] Fullscreen failed:', err);
+                }});
+            }} else {{
+                document.exitFullscreen();
+            }}
+        }}
+
+        // Intercept Ctrl+W and F11 key events
+        document.addEventListener('keydown', function(e) {{
+            // Block Ctrl+W (works in fullscreen mode)
+            if (e.ctrlKey && e.key === 'w') {{
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[SCE] Ctrl+W blocked');
+                return false;
+            }}
+            // F11 for fullscreen toggle
+            if (e.key === 'F11') {{
+                e.preventDefault();
+                toggleFullscreen();
+                return false;
+            }}
+        }}, true);  // Use capture phase to intercept before browser handles it
+
+        // Update button text based on fullscreen state
+        document.addEventListener('fullscreenchange', function() {{
+            const btn = document.getElementById('fullscreen-btn');
+            if (document.fullscreenElement) {{
+                btn.textContent = 'Exit Fullscreen (F11)';
+            }} else {{
+                btn.textContent = 'Fullscreen (F11)';
+            }}
+        }});
+
         // SCXML Base64 data
         const SCXML_DATA = {{
             game: '{scxml_base64['game']}',
             player: '{scxml_base64['player']}',
             weapon: '{scxml_base64['weapon']}',
-            enemy: '{scxml_base64['enemy']}'
+            enemy: '{scxml_base64['enemy']}',
+            secret: '{scxml_base64['secret']}'
         }};
 
         // Valid machine names for validation
-        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy'];
+        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy', 'secret'];
 
         // State tracking
         const SCE = {{
             currentTab: 'game',
             ready: false,
-            lastState: {{ game: null, player: null, weapon: null, enemy: null }},
+            lastState: {{ game: null, player: null, weapon: null, enemy: null, secret: null }},
             enemies: {{}},  // slot -> {{type, state, instanceId, active}}
-            selectedEnemy: null
+            selectedEnemy: null,
+            secretArrows: [],  // [{{x, y, angle}}, ...]
+            secretRemaining: 0
         }};
 
         // Tab switching
@@ -267,6 +443,10 @@ def main():
             // Show/hide enemy section
             const enemySection = document.getElementById('enemy-section');
             enemySection.classList.toggle('visible', machine === 'enemy');
+
+            // Show/hide secret section
+            const secretSection = document.getElementById('secret-section');
+            secretSection.classList.toggle('visible', machine === 'secret');
 
             // Load new SCXML in visualizer
             const iframe = document.getElementById('visualizer');
@@ -437,7 +617,178 @@ def main():
                     }}, window.location.origin);
                 }}
             }}
+
+            // Special handling for secret state changes
+            if (machine === 'secret') {{
+                const stateEl = document.getElementById('secret-state');
+                if (stateEl) {{
+                    stateEl.textContent = state;
+                    stateEl.className = 'secret-state-text ' + state;
+                }}
+            }}
         }};
+
+        // C++ callback: Called when secret path is found
+        window.onSceSecretPath = function(numArrows, remainingSecrets) {{
+            SCE.secretArrows = [];
+            SCE.secretRemaining = remainingSecrets;
+            const arrowsEl = document.getElementById('secret-arrows');
+            const statsEl = document.getElementById('stat-secrets');
+            if (arrowsEl) arrowsEl.textContent = numArrows;
+            if (statsEl) statsEl.textContent = remainingSecrets + ' left';
+            console.debug('[SCE:Secret] Path found with', numArrows, 'arrows,', remainingSecrets, 'remaining');
+        }};
+
+        // C++ callback: Called for each arrow in the secret path
+        window.onSceSecretArrow = function(index, x, y, angle) {{
+            SCE.secretArrows[index] = {{ x, y, angle }};
+            console.debug('[SCE:Secret] Arrow', index, 'at', x, y, 'angle', angle);
+        }};
+
+        // C++ callback: Called when target info updates
+        window.onSceTargetInfo = function(typeName, name, index, total) {{
+            // Update active button highlight
+            document.querySelectorAll('.target-btn').forEach(btn => {{
+                const isActive = btn.dataset.type === typeName.toLowerCase() &&
+                                 parseInt(btn.dataset.index) === index;
+                btn.classList.toggle('active', isActive);
+            }});
+            console.debug('[SCE:Target] Info:', typeName, name, index, total);
+        }};
+
+        // Select specific target by type and index
+        function selectTarget(type, index) {{
+            if (typeof Module === 'undefined' || !Module.ccall) return;
+            Module.ccall('sce_select_target', null, ['number', 'number'], [type, index]);
+        }}
+
+        // Target type configuration
+        const TARGET_TYPES = [
+            {{ id: 'secret', name: 'Secret', type: 0 }},
+            {{ id: 'door', name: 'Door', type: 1 }},
+            {{ id: 'lift', name: 'Lift', type: 2 }},
+            {{ id: 'switch', name: 'Switch', type: 3 }},
+            {{ id: 'teleporter', name: 'Teleport', type: 4 }},
+            {{ id: 'exit', name: 'Exit', type: 5 }},
+            {{ id: 'keydoor', name: 'KeyDoor', type: 6 }}
+        ];
+
+        // Target count polling and dynamic button generation
+        let targetCounts = {{ secret: 0, door: 0, lift: 0, switch_: 0, teleporter: 0, exit: 0, keydoor: 0 }};
+        let lastCounts = {{ secret: -1, door: -1, lift: -1, switch_: -1, teleporter: -1, exit: -1, keydoor: -1 }};
+
+        function updateTargetCounts() {{
+            if (typeof Module === 'undefined' || !Module.ccall) return;
+
+            try {{
+                targetCounts.secret = Module.ccall('sce_get_target_count_secret', 'number', [], []);
+                targetCounts.door = Module.ccall('sce_get_target_count_door', 'number', [], []);
+                targetCounts.lift = Module.ccall('sce_get_target_count_lift', 'number', [], []);
+                targetCounts.switch_ = Module.ccall('sce_get_target_count_switch', 'number', [], []);
+                targetCounts.teleporter = Module.ccall('sce_get_target_count_teleporter', 'number', [], []);
+                targetCounts.exit = Module.ccall('sce_get_target_count_exit', 'number', [], []);
+                targetCounts.keydoor = Module.ccall('sce_get_target_count_keydoor', 'number', [], []);
+
+                // Check if counts changed and regenerate buttons if needed
+                const countsArray = [
+                    targetCounts.secret, targetCounts.door, targetCounts.lift,
+                    targetCounts.switch_, targetCounts.teleporter, targetCounts.exit, targetCounts.keydoor
+                ];
+                const lastArray = [
+                    lastCounts.secret, lastCounts.door, lastCounts.lift,
+                    lastCounts.switch_, lastCounts.teleporter, lastCounts.exit, lastCounts.keydoor
+                ];
+
+                let changed = false;
+                for (let i = 0; i < countsArray.length; i++) {{
+                    if (countsArray[i] !== lastArray[i]) {{
+                        changed = true;
+                        break;
+                    }}
+                }}
+
+                if (changed) {{
+                    generateTargetButtons();
+                    lastCounts = {{ ...targetCounts }};
+                }} else {{
+                    // Update secret discovery status without regenerating buttons
+                    updateSecretDiscoveryStatus();
+                }}
+            }} catch (e) {{
+                console.error('Error getting target counts:', e);
+            }}
+        }}
+
+        function updateSecretDiscoveryStatus() {{
+            const secretGroup = document.getElementById('group-secret');
+            if (!secretGroup) return;
+
+            const buttons = secretGroup.querySelectorAll('.target-btn.secret');
+            buttons.forEach((btn, i) => {{
+                try {{
+                    const discovered = Module.ccall('sce_is_secret_discovered', 'number', ['number'], [i]);
+                    if (discovered && !btn.classList.contains('discovered')) {{
+                        btn.classList.add('discovered');
+                        btn.title = 'Secret ' + (i + 1) + ' (Found!)';
+                    }}
+                }} catch (e) {{
+                    // Ignore errors
+                }}
+            }});
+        }}
+
+        function generateTargetButtons() {{
+            const countMap = {{
+                secret: targetCounts.secret,
+                door: targetCounts.door,
+                lift: targetCounts.lift,
+                switch: targetCounts.switch_,
+                teleporter: targetCounts.teleporter,
+                exit: targetCounts.exit,
+                keydoor: targetCounts.keydoor
+            }};
+
+            TARGET_TYPES.forEach(cfg => {{
+                const group = document.getElementById('group-' + cfg.id);
+                if (!group) return;
+
+                const count = countMap[cfg.id] || 0;
+
+                // Clear existing buttons (keep label)
+                const label = group.querySelector('.group-label');
+                group.innerHTML = '';
+                if (label) group.appendChild(label);
+
+                // Show/hide group based on count
+                group.classList.toggle('has-targets', count > 0);
+
+                // Generate individual buttons
+                for (let i = 0; i < count; i++) {{
+                    const btn = document.createElement('button');
+                    btn.className = 'target-btn ' + cfg.id;
+                    btn.dataset.type = cfg.id;
+                    btn.dataset.index = i;
+                    btn.textContent = (i + 1);
+                    btn.title = cfg.name + ' ' + (i + 1);
+                    btn.onclick = () => selectTarget(cfg.type, i);
+
+                    // Check if secret is discovered
+                    if (cfg.id === 'secret') {{
+                        try {{
+                            const discovered = Module.ccall('sce_is_secret_discovered', 'number', ['number'], [i]);
+                            if (discovered) {{
+                                btn.classList.add('discovered');
+                                btn.title += ' (Found!)';
+                            }}
+                        }} catch (e) {{
+                            console.error('Error checking secret discovery:', e);
+                        }}
+                    }}
+
+                    group.appendChild(btn);
+                }}
+            }});
+        }}
 
         // Wait for visualizer ready
         window.addEventListener('message', (event) => {{
@@ -472,6 +823,11 @@ def main():
             canvas: document.getElementById('canvas'),
             onRuntimeInitialized: function() {{
                 console.log('[SCE] WASM runtime initialized');
+                // Start target count polling after a delay
+                setTimeout(() => {{
+                    updateTargetCounts();
+                    setInterval(updateTargetCounts, 2000);
+                }}, 3000);
             }},
             print: function(text) {{
                 if (text.includes('[SCE:')) {{

@@ -172,6 +172,129 @@
         .enemy-item .type { color: #e94560; }
         .enemy-item .state { color: #4ecca3; }
 
+        /* Target Navigator Panel */
+        .target-panel {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 15px;
+            border-left: 4px solid #f39c12;
+        }
+        .target-panel h3 {
+            color: #f39c12;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .target-panel h3::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: #f39c12;
+            border-radius: 50%;
+        }
+        .target-info {
+            background: #0f3460;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        .target-type {
+            font-size: 0.8em;
+            color: #f39c12;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .target-name {
+            font-size: 1.3em;
+            color: #4ecca3;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .target-index {
+            font-size: 0.9em;
+            color: #888;
+        }
+        .target-nav {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .target-nav button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1em;
+            transition: all 0.2s;
+        }
+        .target-nav .prev-btn {
+            background: #0f3460;
+            color: #f39c12;
+            border: 2px solid #f39c12;
+        }
+        .target-nav .prev-btn:hover {
+            background: #f39c12;
+            color: #000;
+        }
+        .target-nav .next-btn {
+            background: #f39c12;
+            color: #000;
+        }
+        .target-nav .next-btn:hover {
+            background: #ffb84d;
+        }
+        .target-types {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 5px;
+        }
+        .target-type-btn {
+            padding: 6px 4px;
+            background: #0f3460;
+            border: 1px solid #333;
+            border-radius: 4px;
+            color: #888;
+            font-size: 0.7em;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+        .target-type-btn:hover {
+            background: #1a4a7a;
+            color: #fff;
+        }
+        .target-type-btn.active {
+            background: #f39c12;
+            color: #000;
+            border-color: #f39c12;
+            font-weight: bold;
+        }
+        .target-type-btn .count {
+            display: block;
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        .target-state {
+            margin-top: 10px;
+            padding: 8px;
+            background: #0f3460;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .target-state .label {
+            font-size: 0.75em;
+            color: #888;
+        }
+        .target-state .value {
+            color: #4ecca3;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
         .status-bar {
             grid-column: 1 / -1;
             background: #16213e;
@@ -262,6 +385,43 @@
                     <div class="enemy-item">
                         <span class="type">Waiting for data...</span>
                     </div>
+                </div>
+            </div>
+
+            <div class="target-panel">
+                <h3>Target Navigator</h3>
+                <div class="target-info">
+                    <div class="target-type" id="target-type">--</div>
+                    <div class="target-name" id="target-name">Press a button</div>
+                    <div class="target-index" id="target-index">--</div>
+                </div>
+                <div class="target-nav">
+                    <button class="prev-btn" onclick="selectPrevTarget()">◀ Prev (G)</button>
+                    <button class="next-btn" onclick="selectNextTarget()">Next (H) ▶</button>
+                </div>
+                <div class="target-types" id="target-types">
+                    <button class="target-type-btn" data-type="0" onclick="selectTargetType(0)">
+                        <span class="count" id="count-secret">-</span>Secret
+                    </button>
+                    <button class="target-type-btn" data-type="1" onclick="selectTargetType(1)">
+                        <span class="count" id="count-door">-</span>Door
+                    </button>
+                    <button class="target-type-btn" data-type="2" onclick="selectTargetType(2)">
+                        <span class="count" id="count-lift">-</span>Lift
+                    </button>
+                    <button class="target-type-btn" data-type="3" onclick="selectTargetType(3)">
+                        <span class="count" id="count-switch">-</span>Switch
+                    </button>
+                    <button class="target-type-btn" data-type="4" onclick="selectTargetType(4)">
+                        <span class="count" id="count-teleporter">-</span>Teleport
+                    </button>
+                    <button class="target-type-btn" data-type="5" onclick="selectTargetType(5)">
+                        <span class="count" id="count-exit">-</span>Exit
+                    </button>
+                </div>
+                <div class="target-state">
+                    <span class="label">Hint State: </span>
+                    <span class="value" id="secret-state">IDLE</span>
                 </div>
             </div>
         </div>
@@ -408,9 +568,160 @@
             list.innerHTML = html;
         }
 
+        // Target Navigator Functions
+        let currentTargetType = 'Secret';
+        let currentTargetName = '';
+        let currentTargetIndex = 0;
+        let currentTargetTotal = 0;
+
+        function selectNextTarget() {
+            if (!doomModule || !doomModule.ccall) {
+                console.error('DOOM module not ready');
+                return;
+            }
+            try {
+                doomModule.ccall('sce_secret_event_next_target', null, [], []);
+            } catch (e) {
+                console.error('Error calling next target:', e);
+            }
+        }
+
+        function selectPrevTarget() {
+            if (!doomModule || !doomModule.ccall) {
+                console.error('DOOM module not ready');
+                return;
+            }
+            try {
+                doomModule.ccall('sce_secret_event_prev_target', null, [], []);
+            } catch (e) {
+                console.error('Error calling prev target:', e);
+            }
+        }
+
+        function selectTargetType(typeIndex) {
+            // Cycle through targets until we reach the desired type
+            // This is a simple approach - click next until type matches
+            if (!doomModule || !doomModule.ccall) return;
+
+            // Just call next_target - the user can keep clicking to cycle
+            doomModule.ccall('sce_secret_event_next_target', null, [], []);
+        }
+
+        // Target count polling and dynamic button update
+        let targetCounts = { secret: 0, door: 0, lift: 0, switch_: 0, teleporter: 0, exit: 0, keydoor: 0 };
+
+        function updateTargetCounts() {
+            if (!doomModule || !doomModule.ccall) return;
+
+            try {
+                targetCounts.secret = doomModule.ccall('sce_get_target_count_secret', 'number', [], []);
+                targetCounts.door = doomModule.ccall('sce_get_target_count_door', 'number', [], []);
+                targetCounts.lift = doomModule.ccall('sce_get_target_count_lift', 'number', [], []);
+                targetCounts.switch_ = doomModule.ccall('sce_get_target_count_switch', 'number', [], []);
+                targetCounts.teleporter = doomModule.ccall('sce_get_target_count_teleporter', 'number', [], []);
+                targetCounts.exit = doomModule.ccall('sce_get_target_count_exit', 'number', [], []);
+                targetCounts.keydoor = doomModule.ccall('sce_get_target_count_keydoor', 'number', [], []);
+
+                // Update button counts and visibility
+                updateButtonCount('count-secret', targetCounts.secret, 0);
+                updateButtonCount('count-door', targetCounts.door, 1);
+                updateButtonCount('count-lift', targetCounts.lift, 2);
+                updateButtonCount('count-switch', targetCounts.switch_, 3);
+                updateButtonCount('count-teleporter', targetCounts.teleporter, 4);
+                updateButtonCount('count-exit', targetCounts.exit, 5);
+
+                // Key door button (add if count > 0)
+                const keydoorBtn = document.querySelector('.target-type-btn[data-type="6"]');
+                if (targetCounts.keydoor > 0 && !keydoorBtn) {
+                    addKeyDoorButton();
+                }
+                if (keydoorBtn) {
+                    updateButtonCount('count-keydoor', targetCounts.keydoor, 6);
+                }
+            } catch (e) {
+                console.error('Error getting target counts:', e);
+            }
+        }
+
+        function updateButtonCount(countId, count, typeIdx) {
+            const countEl = document.getElementById(countId);
+            const btn = document.querySelector(`.target-type-btn[data-type="${typeIdx}"]`);
+            if (countEl) {
+                countEl.textContent = count > 0 ? count : '0';
+            }
+            if (btn) {
+                btn.style.display = count > 0 ? '' : 'none';
+            }
+        }
+
+        function addKeyDoorButton() {
+            const container = document.getElementById('target-types');
+            if (!container || document.querySelector('.target-type-btn[data-type="6"]')) return;
+
+            const btn = document.createElement('button');
+            btn.className = 'target-type-btn';
+            btn.dataset.type = '6';
+            btn.onclick = () => selectTargetType(6);
+            btn.innerHTML = '<span class="count" id="count-keydoor">-</span>KeyDoor';
+            container.appendChild(btn);
+        }
+
+        function updateTargetDisplay(typeName, name, index, total) {
+            document.getElementById('target-type').textContent = typeName;
+            document.getElementById('target-name').textContent = name;
+            document.getElementById('target-index').textContent = `${index} / ${total}`;
+
+            currentTargetType = typeName;
+            currentTargetName = name;
+            currentTargetIndex = index;
+            currentTargetTotal = total;
+
+            // Update active button
+            const typeMap = {
+                'Secret': 0, 'Door': 1, 'Lift': 2,
+                'Switch': 3, 'Teleporter': 4, 'Exit': 5, 'Key Door': 6
+            };
+            const typeIdx = typeMap[typeName] || 0;
+            document.querySelectorAll('.target-type-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', i === typeIdx || (typeIdx === 6 && i === 1));
+            });
+        }
+
+        function updateSecretState(state) {
+            const el = document.getElementById('secret-state');
+            if (el) el.textContent = state.toUpperCase();
+        }
+
+        // Set up callbacks from DOOM
+        function setupDoomCallbacks() {
+            if (!doomFrame || !doomFrame.contentWindow) return;
+
+            // Listen for target info updates
+            doomFrame.contentWindow.onSceTargetInfo = function(typeName, name, index, total) {
+                updateTargetDisplay(typeName, name, index, total);
+            };
+
+            // Listen for state changes
+            const originalStateChange = doomFrame.contentWindow.onSceStateChange;
+            doomFrame.contentWindow.onSceStateChange = function(machine, state) {
+                if (originalStateChange) originalStateChange(machine, state);
+                if (machine === 'secret') {
+                    updateSecretState(state);
+                }
+            };
+        }
+
         // Auto-initialize after page load
         window.addEventListener('load', () => {
-            setTimeout(initSCE, 2000);
+            setTimeout(() => {
+                initSCE();
+                setTimeout(setupDoomCallbacks, 1000);
+                // Poll target counts every 2 seconds after initial delay
+                setTimeout(() => {
+                    updateTargetCounts();
+                    setInterval(updateTargetCounts, 2000);
+                }, 3000);
+            }, 2000);
         });
     </script>
 </body>

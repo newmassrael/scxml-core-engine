@@ -24,7 +24,11 @@
 #include "enemy_state_sm.h"
 #include "game_state_sm.h"
 #include "player_state_sm.h"
+#include "secret_hint_state_sm.h"
 #include "weapon_state_sm.h"
+
+// Secret hint pathfinding
+#include "sce_secret_hint.h"
 
 // ============================================
 // Constants
@@ -96,6 +100,7 @@ static int g_next_instance_id = 1;
 static std::unique_ptr<SCE::Generated::game_state::game_state> g_game_sm;
 static std::unique_ptr<SCE::Generated::player_state::player_state> g_player_sm;
 static std::unique_ptr<SCE::Generated::weapon_state::weapon_state> g_weapon_sm;
+static std::unique_ptr<SCE::Generated::secret_hint_state::secret_hint_state> g_secret_sm;
 
 // Forward declarations
 extern "C" {
@@ -107,6 +112,9 @@ const char *sce_get_weapon_state(void);
 static inline void js_notify_state_change(const char *machine, const char *state);
 static inline void js_notify_enemy_update(int slot, const char *type, const char *state, int instance_id, bool active);
 static inline void js_notify_stats_update(int enemy_count, int enemy_killed);
+static inline void js_notify_secret_path(int num_arrows, int remaining_secrets);
+static inline void js_notify_secret_arrow(int index, int x, int y, int angle);
+static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total);
 
 // ============================================
 // Helper Functions
@@ -194,6 +202,42 @@ static inline void js_notify_stats_update(int enemy_count, int enemy_killed) {
 #endif
 }
 
+static inline void js_notify_secret_path(int num_arrows, int remaining_secrets) {
+#ifdef __EMSCRIPTEN__
+    EM_ASM(
+        {
+            if (typeof window.onSceSecretPath === 'function') {
+                window.onSceSecretPath($0, $1);
+            }
+        },
+        num_arrows, remaining_secrets);
+#endif
+}
+
+static inline void js_notify_secret_arrow(int index, int x, int y, int angle) {
+#ifdef __EMSCRIPTEN__
+    EM_ASM(
+        {
+            if (typeof window.onSceSecretArrow === 'function') {
+                window.onSceSecretArrow($0, $1, $2, $3);
+            }
+        },
+        index, x, y, angle);
+#endif
+}
+
+static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total) {
+#ifdef __EMSCRIPTEN__
+    EM_ASM(
+        {
+            if (typeof window.onSceTargetInfo === 'function') {
+                window.onSceTargetInfo(UTF8ToString($0), UTF8ToString($1), $2, $3);
+            }
+        },
+        type_name, name, index, total);
+#endif
+}
+
 // ============================================
 // Enemy Management
 // ============================================
@@ -224,15 +268,20 @@ const char *sce_get_game_state(void);
 // Initialization
 // ============================================
 
+// Forward declaration for secret state
+const char *sce_secret_get_state(void);
+
 EMSCRIPTEN_KEEPALIVE
 void sce_init(void) {
     g_game_sm = std::make_unique<SCE::Generated::game_state::game_state>();
     g_player_sm = std::make_unique<SCE::Generated::player_state::player_state>();
     g_weapon_sm = std::make_unique<SCE::Generated::weapon_state::weapon_state>();
+    g_secret_sm = std::make_unique<SCE::Generated::secret_hint_state::secret_hint_state>();
 
     g_game_sm->initialize();
     g_player_sm->initialize();
     g_weapon_sm->initialize();
+    g_secret_sm->initialize();
 
     // Reset enemy tracking
     for (auto &e : g_enemies) {
@@ -246,6 +295,7 @@ void sce_init(void) {
     js_notify_state_change("game", sce_get_game_state());
     js_notify_state_change("player", sce_get_player_state());
     js_notify_state_change("weapon", sce_get_weapon_state());
+    js_notify_state_change("secret", sce_secret_get_state());
     js_notify_stats_update(0, 0);
 }
 
@@ -436,17 +486,26 @@ int sce_get_max_enemies(void) {
 EMSCRIPTEN_KEEPALIVE
 const char *sce_get_enemy_info(int slot) {
     static char buffer[128];
+    buffer[0] = '\0';
+
     if (slot < 0 || slot >= MAX_ENEMIES || !g_enemies[slot].active) {
-        buffer[0] = '\0';
         return buffer;
     }
+
     // Get state from state machine
     const char *state_name = "UNKNOWN";
     if (g_enemies[slot].sm) {
         state_name = get_enemy_state_name(g_enemies[slot].sm->getCurrentState());
     }
-    snprintf(buffer, sizeof(buffer), "%ld,%s,%s,%d", (long)(intptr_t)g_enemies[slot].mobj_ptr,
-             g_enemies[slot].type_name, state_name, g_enemies[slot].instance_id);
+
+    // Use field width limits to prevent buffer overflow
+    // Format: ptr(max 20), type(max 31), state(max 31), id(max 10) + separators
+    snprintf(buffer, sizeof(buffer), "%ld,%.31s,%.31s,%d",
+             (long)(intptr_t)g_enemies[slot].mobj_ptr,
+             g_enemies[slot].type_name ? g_enemies[slot].type_name : "UNKNOWN",
+             state_name ? state_name : "UNKNOWN",
+             g_enemies[slot].instance_id);
+    buffer[sizeof(buffer) - 1] = '\0';  // Ensure null-termination
     return buffer;
 }
 
@@ -545,6 +604,210 @@ void sce_enemy_remove(void *mobj) {
     g_enemy_count--;
 
     js_notify_stats_update(g_enemy_count, g_enemy_killed);
+}
+
+// ============================================
+// Secret Hint State Machine
+// ============================================
+
+// Forward declarations for secret functions
+void sce_secret_path_found(void);
+void sce_secret_no_path(void);
+
+EMSCRIPTEN_KEEPALIVE
+const char *sce_secret_get_state(void) {
+    if (!g_secret_sm) {
+        return "UNINITIALIZED";
+    }
+    auto state = g_secret_sm->getCurrentState();
+    switch (state) {
+    case SCE::Generated::secret_hint_state::State::Disabled:
+        return "disabled";
+    case SCE::Generated::secret_hint_state::State::Idle:
+        return "idle";
+    case SCE::Generated::secret_hint_state::State::Calculating:
+        return "calculating";
+    case SCE::Generated::secret_hint_state::State::Showing:
+        return "showing";
+    case SCE::Generated::secret_hint_state::State::Found:
+        return "found";
+    case SCE::Generated::secret_hint_state::State::No_path:
+        return "no_path";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_enable(void) {
+    if (g_secret_sm) {
+        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Enable);
+        js_notify_state_change("secret", sce_secret_get_state());
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_disable(void) {
+    if (g_secret_sm) {
+        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Disable);
+        js_notify_state_change("secret", sce_secret_get_state());
+    }
+}
+
+/* Helper to calculate and notify path for current target */
+static void calculate_and_notify_path(void) {
+    if (g_secret_sm->getCurrentState() == SCE::Generated::secret_hint_state::State::Calculating) {
+        secret_path_t path;
+        if (Secret_FindPathToCurrentTarget(&path)) {
+            // Path found - notify JS with arrow data
+            target_info_t info;
+            if (Secret_GetCurrentTarget(&info)) {
+                target_type_t type;
+                int index, total;
+                Secret_GetSelectionInfo(&type, &index, &total);
+                js_notify_target_info(Secret_GetTargetTypeName(type), info.name, index, total);
+            }
+            js_notify_secret_path(path.num_arrows, Secret_GetRemainingCount());
+            for (int i = 0; i < path.num_arrows; i++) {
+                js_notify_secret_arrow(i,
+                                       path.arrows[i].x >> 16,
+                                       path.arrows[i].y >> 16,
+                                       path.arrows[i].angle >> 16);
+            }
+            sce_secret_path_found();
+        } else {
+            sce_secret_no_path();
+        }
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_next_target(void) {
+    /* H key: Toggle visibility only (idle <-> showing) */
+    if (g_secret_sm) {
+        const char *current_state = sce_secret_get_state();
+
+        if (strcmp(current_state, "idle") == 0) {
+            /* From idle: calculate and show path */
+            g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Toggle);
+            js_notify_state_change("secret", sce_secret_get_state());
+            calculate_and_notify_path();
+        } else {
+            /* From showing/no_path/found: hide path, go to idle */
+            g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Toggle);
+            js_notify_state_change("secret", sce_secret_get_state());
+            /* Clear arrows when hiding */
+            js_notify_secret_path(0, Secret_GetRemainingCount());
+        }
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_prev_target(void) {
+    /* G key: No longer used - do nothing */
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_select_target(int type, int index) {
+    /* Button click: Select target and show path */
+    if (g_secret_sm) {
+        if (Secret_SelectTarget((target_type_t)type, index)) {
+            g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Show_path);
+            js_notify_state_change("secret", sce_secret_get_state());
+            calculate_and_notify_path();
+        }
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_request(void) {
+    /* For backwards compatibility - same as toggle */
+    sce_secret_event_next_target();
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_cancel(void) {
+    if (g_secret_sm) {
+        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Cancel_hint);
+        js_notify_state_change("secret", sce_secret_get_state());
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_level_change(void) {
+    if (g_secret_sm) {
+        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Level_change);
+        js_notify_state_change("secret", sce_secret_get_state());
+        /* Clear JS arrow display on level change */
+        js_notify_secret_path(0, Secret_GetRemainingCount());
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_reached(void) {
+    if (g_secret_sm) {
+        int remaining = Secret_GetRemainingCount();
+        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Secret_reached);
+        js_notify_state_change("secret", sce_secret_get_state());
+        js_notify_secret_path(0, remaining);
+        // Selection is preserved - user must manually select next target
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_path_found(void) {
+    if (g_secret_sm) {
+        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Path_found);
+        js_notify_state_change("secret", sce_secret_get_state());
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_no_path(void) {
+    if (g_secret_sm) {
+        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::No_path);
+        js_notify_state_change("secret", sce_secret_get_state());
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_target_count_secret(void) {
+    return Secret_GetTargetCount(TARGET_SECRET);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_target_count_door(void) {
+    return Secret_GetTargetCount(TARGET_DOOR);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_target_count_lift(void) {
+    return Secret_GetTargetCount(TARGET_LIFT);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_target_count_switch(void) {
+    return Secret_GetTargetCount(TARGET_SWITCH);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_target_count_teleporter(void) {
+    return Secret_GetTargetCount(TARGET_TELEPORTER);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_target_count_exit(void) {
+    return Secret_GetTargetCount(TARGET_EXIT);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_target_count_keydoor(void) {
+    return Secret_GetTargetCount(TARGET_KEY_DOOR);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_is_secret_discovered(int index) {
+    return Secret_IsDiscovered(index) ? 1 : 0;
 }
 
 }  // extern "C"

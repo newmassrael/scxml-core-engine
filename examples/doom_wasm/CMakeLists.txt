@@ -32,6 +32,7 @@ include(${SCE_ROOT}/cmake/SCECodegen.cmake)
 # ============================================
 set(SCE_WRAPPER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/sce_wrapper.cpp")
 set(SCE_HOOKS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/sce_doom_hooks.c")
+set(SCE_SECRET_HINT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/sce_secret_hint.c")
 
 # ============================================
 # DOOM Sources (cloned from doomgeneric)
@@ -168,6 +169,7 @@ add_executable(doom_sce
     ${DOOM_SOURCES}
     ${SCE_WRAPPER_SRC}
     ${SCE_HOOKS_SRC}
+    ${SCE_SECRET_HINT_SRC}
 )
 
 # Generate state machines from all SCXML files in scxml/ directory
@@ -204,7 +206,7 @@ target_link_options(doom_sce PRIVATE
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
     -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS']
-    -sEXPORTED_FUNCTIONS=['_main','_sce_init','_sce_get_game_state','_sce_get_player_state','_sce_get_weapon_state','_sce_get_enemy_count','_sce_get_enemy_killed','_sce_get_max_enemies','_sce_get_enemy_info','_sce_enemy_spawn','_sce_enemy_set_state','_sce_enemy_killed','_sce_enemy_remove']
+    -sEXPORTED_FUNCTIONS=['_main','_sce_init','_sce_get_game_state','_sce_get_player_state','_sce_get_weapon_state','_sce_get_enemy_count','_sce_get_enemy_killed','_sce_get_max_enemies','_sce_get_enemy_info','_sce_enemy_spawn','_sce_enemy_set_state','_sce_enemy_killed','_sce_enemy_remove','_sce_secret_get_state','_sce_secret_event_enable','_sce_secret_event_disable','_sce_secret_event_request','_sce_secret_event_cancel','_sce_secret_event_level_change','_sce_secret_event_reached','_sce_secret_path_found','_sce_secret_no_path']
     -sNO_EXIT_RUNTIME=1
     --preload-file ${DOOMGENERIC_DIR}/doomgeneric/doom1.wad@doom1.wad
 )

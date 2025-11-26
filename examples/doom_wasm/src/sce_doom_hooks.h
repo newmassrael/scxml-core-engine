@@ -66,6 +66,31 @@ void SCE_EnemyRemoved(mobj_t *mobj);
  */
 boolean SCE_IsMonster(mobj_t *mobj);
 
+/**
+ * Secret hint events
+ */
+void SCE_SecretHintEnable(void);
+void SCE_SecretHintDisable(void);
+void SCE_SecretHintRequest(void);       /* H key: toggle path visibility */
+void SCE_SecretHintPrevious(void);      /* G key: deprecated, no-op */
+void SCE_SecretHintCancel(void);        /* Cancel current hint display */
+void SCE_SecretLevelChange(void);       /* New level loaded */
+
+/**
+ * Called each frame to check if player reached target secret
+ */
+void SCE_SecretCheckReached(void);
+
+/**
+ * Get current secret hint state name
+ */
+const char* SCE_SecretGetStateName(void);
+
+/**
+ * Check if secret hints are currently being displayed
+ */
+boolean SCE_SecretIsShowing(void);
+
 #ifdef __cplusplus
 }
 #endif
