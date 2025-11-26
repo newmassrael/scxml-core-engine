@@ -171,7 +171,7 @@ static inline void js_notify_enemy_update(int slot, const char *type, const char
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            console.log('[SCE:C++] js_notify_enemy_update called:', $0, UTF8ToString($1), UTF8ToString($2), $3, $4);
+            console.debug('[SCE:C++] js_notify_enemy_update called:', $0, UTF8ToString($1), UTF8ToString($2), $3, $4);
             if (typeof window.onSceEnemyUpdate === 'function') {
                 window.onSceEnemyUpdate($0, UTF8ToString($1), UTF8ToString($2), $3, $4);
             } else {

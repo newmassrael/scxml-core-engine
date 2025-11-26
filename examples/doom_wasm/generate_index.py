@@ -24,6 +24,9 @@ def main():
     scxml_base64 = {}
     for key, filename in scxml_files.items():
         filepath = os.path.join(scxml_dir, filename)
+        if not os.path.exists(filepath):
+            print(f"Error: SCXML file not found: {filepath}")
+            sys.exit(1)
         with open(filepath, 'rb') as f:
             scxml_base64[key] = base64.b64encode(f.read()).decode('utf-8')
 
@@ -34,15 +37,46 @@ def main():
     <meta charset="UTF-8">
     <title>DOOM + SCE State Machines</title>
     <style>
-        body {{ margin: 0; padding: 20px; background: #1a1a1a; color: #fff; font-family: monospace; }}
-        .container {{ max-width: 1400px; margin: 0 auto; }}
-        h1 {{ color: #ff0000; text-align: center; }}
+        body {{ margin: 0; padding: 20px; padding-bottom: 50px; background: #1a1a1a; color: #fff; font-family: monospace; }}
+        .container {{ width: 100%; margin: 0 auto; }}
 
         /* Game Section */
-        #game-section {{ text-align: center; margin-bottom: 20px; }}
-        canvas {{ border: 2px solid #666; }}
-        #status {{ padding: 10px; color: #ffff00; }}
-        .controls {{ font-size: 12px; color: #888; margin-top: 10px; }}
+        #game-section {{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-bottom: 20px;
+        }}
+        #game-container {{
+            display: inline-block;
+            position: relative;
+            overflow: hidden;
+            min-width: 320px;
+            min-height: 200px;
+            border: 2px solid #666;
+            background: #000;
+            aspect-ratio: 8 / 5;
+            resize: horizontal;
+            max-width: min(calc(100vw - 60px), calc((100vh - 20px) * 8 / 5));
+        }}
+        #game-container::after {{
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 20px;
+            height: 20px;
+            cursor: e-resize;
+            background: linear-gradient(135deg, transparent 50%, #888 50%);
+            pointer-events: none;
+        }}
+        canvas {{
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }}
 
         /* Tab Section */
         .tab-container {{ margin-top: 20px; }}
@@ -129,8 +163,7 @@ def main():
             border-radius: 0 0 8px 8px;
             overflow: hidden;
             background: #2a2a2a;
-            height: calc(100vh - 700px);
-            min-height: 300px;
+            height: 350px;
         }}
         #visualizer {{
             width: 100%;
@@ -140,13 +173,17 @@ def main():
 
         /* Stats Section */
         #stats {{
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
             display: flex;
             justify-content: center;
             gap: 30px;
             padding: 10px 15px;
             background: #222;
-            border-radius: 4px;
-            margin-top: 10px;
+            border-top: 1px solid #444;
+            z-index: 100;
         }}
         #stats span {{ color: #888; }}
         #stats strong {{ color: #00ff00; }}
@@ -154,14 +191,10 @@ def main():
 </head>
 <body>
     <div class="container">
-        <h1>DOOM + SCE State Machines</h1>
-
         <!-- Game Section -->
         <div id="game-section">
-            <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" width="640" height="400"></canvas>
-            <div id="status">Loading...</div>
-            <div class="controls">
-                Arrow keys: Move | CTRL: Fire | Space: Use | Shift: Run | 1-7: Weapons
+            <div id="game-container">
+                <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" width="640" height="400"></canvas>
             </div>
         </div>
 
@@ -321,7 +354,7 @@ def main():
                     iframe.contentWindow.postMessage({{
                         type: 'highlight-states',
                         stateIds: [state.toLowerCase()]
-                    }}, '*');
+                    }}, window.location.origin);
                 }}
             }} else {{
                 // Remove button
@@ -358,7 +391,7 @@ def main():
                 return;
             }}
 
-            console.log('[SCE:Enemy] Update:', slot, type, state, instanceId, active);
+            console.debug('[SCE:Enemy] Update:', slot, type, state, instanceId, active);
             updateEnemySubtab(slot, type, state, instanceId, !!active);
         }};
 
@@ -401,7 +434,7 @@ def main():
                     iframe.contentWindow.postMessage({{
                         type: 'highlight-states',
                         stateIds: [state.toLowerCase()]
-                    }}, '*');
+                    }}, window.location.origin);
                 }}
             }}
         }};
@@ -419,7 +452,7 @@ def main():
                         iframe.contentWindow.postMessage({{
                             type: 'highlight-states',
                             stateIds: [SCE.enemies[SCE.selectedEnemy].state.toLowerCase()]
-                        }}, '*');
+                        }}, window.location.origin);
                     }}
                 }} else {{
                     // For game/player/weapon, highlight last known state
@@ -428,38 +461,28 @@ def main():
                         iframe.contentWindow.postMessage({{
                             type: 'highlight-states',
                             stateIds: [lastState.toLowerCase()]
-                        }}, '*');
+                        }}, window.location.origin);
                     }}
                 }}
             }}
         }});
 
-        // Track WASM runtime initialization
-        let wasmReady = false;
-
         // Emscripten Module
         var Module = {{
             canvas: document.getElementById('canvas'),
             onRuntimeInitialized: function() {{
-                wasmReady = true;
-                console.log('[SCE] WASM runtime initialized - state polling enabled');
+                console.log('[SCE] WASM runtime initialized');
             }},
             print: function(text) {{
-                console.log(text);
                 if (text.includes('[SCE:')) {{
                     console.log('%c' + text, 'color: #00ff00; font-weight: bold;');
+                }} else {{
+                    console.log(text);
                 }}
             }},
-            printErr: function(text) {{ console.error(text); }},
-            setStatus: function(text) {{
-                document.getElementById('status').textContent = text || 'Ready';
-            }},
-            totalDependencies: 0,
-            monitorRunDependencies: function(left) {{
-                this.totalDependencies = Math.max(this.totalDependencies, left);
-                Module.setStatus(left ? 'Loading...' : '');
-            }}
+            printErr: function(text) {{ console.error(text); }}
         }};
+
     </script>
     <script async src="doom_sce.js"></script>
 </body>
