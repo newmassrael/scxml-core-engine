@@ -124,6 +124,105 @@
         .enemy-state-text.PAIN { color: #ff00ff; }
         .enemy-state-text.DEAD { color: #666; text-decoration: line-through; }
 
+        /* Secret Hint Section */
+        .secret-section {
+            display: none;
+            padding: 10px;
+            background: #252525;
+            border: 1px solid #555;
+            border-bottom: none;
+        }
+        .secret-section.visible {
+            display: block;
+        }
+        .secret-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+        }
+        .secret-info .info-item {
+            padding: 5px 10px;
+            background: #333;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .secret-info .hint-key {
+            color: #ffcc00;
+            font-weight: bold;
+        }
+        .secret-state-text {
+            font-weight: bold;
+        }
+        .secret-state-text.disabled { color: #666; }
+        .secret-state-text.idle { color: #00ff00; }
+        .secret-state-text.calculating { color: #ffff00; }
+        .secret-state-text.showing { color: #00ffff; }
+        .secret-state-text.found { color: #ff00ff; }
+        .secret-state-text.no_path { color: #ff6600; }
+
+        /* Target Buttons Section */
+        .target-buttons-container {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #444;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .target-group {
+            display: none;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-bottom: 8px;
+            align-items: center;
+        }
+        .target-group.has-targets {
+            display: flex;
+        }
+        .target-group .group-label {
+            color: #f39c12;
+            font-size: 11px;
+            font-weight: bold;
+            min-width: 60px;
+        }
+        .target-btn {
+            padding: 4px 10px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ccc;
+            cursor: pointer;
+            font-size: 11px;
+            font-family: monospace;
+        }
+        .target-btn:hover {
+            background: #444;
+            border-color: #888;
+        }
+        .target-btn.active {
+            background: #1a4a1a;
+            border-color: #00ff00;
+            color: #00ff00;
+        }
+        .target-btn.secret { border-left: 3px solid #ff00ff; }
+        .target-btn.secret.discovered {
+            border-left-color: #666;
+            background: #2a2a2a;
+            color: #666;
+            text-decoration: line-through;
+        }
+        .target-btn.secret.discovered::after {
+            content: ' ✓';
+            color: #00ff00;
+            text-decoration: none;
+        }
+        .target-btn.door { border-left: 3px solid #00aaff; }
+        .target-btn.lift { border-left: 3px solid #ffaa00; }
+        .target-btn.switch { border-left: 3px solid #ff6600; }
+        .target-btn.teleporter { border-left: 3px solid #aa00ff; }
+        .target-btn.exit { border-left: 3px solid #00ff00; }
+        .target-btn.keydoor { border-left: 3px solid #ffff00; }
+
         /* Visualizer Section */
         #viz-section {
             border: 1px solid #555;
@@ -146,6 +245,7 @@
             right: 0;
             display: flex;
             justify-content: center;
+            align-items: center;
             gap: 30px;
             padding: 10px 15px;
             background: #222;
@@ -154,6 +254,17 @@
         }
         #stats span { color: #888; }
         #stats strong { color: #00ff00; }
+        #fullscreen-btn {
+            padding: 5px 12px;
+            background: #444;
+            border: 1px solid #666;
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        #fullscreen-btn:hover { background: #555; }
+        :fullscreen #fullscreen-btn { background: #006600; }
     </style>
 </head>
 <body>
@@ -180,10 +291,29 @@
                 <button class="tab-btn" data-machine="enemy" onclick="switchTab('enemy')">
                     Enemy <span class="state-indicator" id="ind-enemy">0 active</span>
                 </button>
+                <button class="tab-btn" data-machine="secret" onclick="switchTab('secret')">
+                    Secret <span class="state-indicator" id="ind-secret">disabled</span>
+                </button>
             </div>
             <div id="enemy-section" class="enemy-section">
                 <div id="enemy-list" class="enemy-list">
                     <!-- Enemy buttons will be added here -->
+                </div>
+            </div>
+            <div id="secret-section" class="secret-section">
+                <div class="secret-info">
+                    <div class="info-item">State: <span id="secret-state" class="secret-state-text disabled">disabled</span></div>
+                    <div class="info-item">Path: <span id="secret-arrows">0</span> waypoints</div>
+                </div>
+                <div class="target-buttons-container" id="target-buttons">
+                    <!-- Target buttons will be generated dynamically -->
+                    <div class="target-group" id="group-secret"><span class="group-label">Secret</span></div>
+                    <div class="target-group" id="group-door"><span class="group-label">Door</span></div>
+                    <div class="target-group" id="group-lift"><span class="group-label">Lift</span></div>
+                    <div class="target-group" id="group-switch"><span class="group-label">Switch</span></div>
+                    <div class="target-group" id="group-teleporter"><span class="group-label">Teleport</span></div>
+                    <div class="target-group" id="group-exit"><span class="group-label">Exit</span></div>
+                    <div class="target-group" id="group-keydoor"><span class="group-label">KeyDoor</span></div>
                 </div>
             </div>
             <div id="viz-section">
@@ -197,29 +327,74 @@
             <span>Player: <strong id="stat-player">ALIVE</strong></span>
             <span>Enemies: <strong id="stat-enemies">0</strong></span>
             <span>Killed: <strong id="stat-killed">0</strong></span>
+            <span>Secrets: <strong id="stat-secrets">?</strong></span>
+            <button id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen mode blocks Ctrl+W">Fullscreen (F11)</button>
         </div>
 
     </div>
 
     <script>
+        // Fullscreen toggle function
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().then(() => {
+                    console.log('[SCE] Entered fullscreen - Ctrl+W is now blocked');
+                }).catch(err => {
+                    console.warn('[SCE] Fullscreen failed:', err);
+                });
+            } else {
+                document.exitFullscreen();
+            }
+        }
+
+        // Intercept Ctrl+W and F11 key events
+        document.addEventListener('keydown', function(e) {
+            // Block Ctrl+W (works in fullscreen mode)
+            if (e.ctrlKey && e.key === 'w') {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('[SCE] Ctrl+W blocked');
+                return false;
+            }
+            // F11 for fullscreen toggle
+            if (e.key === 'F11') {
+                e.preventDefault();
+                toggleFullscreen();
+                return false;
+            }
+        }, true);  // Use capture phase to intercept before browser handles it
+
+        // Update button text based on fullscreen state
+        document.addEventListener('fullscreenchange', function() {
+            const btn = document.getElementById('fullscreen-btn');
+            if (document.fullscreenElement) {
+                btn.textContent = 'Exit Fullscreen (F11)';
+            } else {
+                btn.textContent = 'Fullscreen (F11)';
+            }
+        });
+
         // SCXML Base64 data
         const SCXML_DATA = {
             game: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBHYW1lIFN0YXRlIE1hY2hpbmUKCiAgICBNb2RlbHMgRE9PTSdzIGFjdHVhbCBnYW1lIHN0YXRlIHRyYW5zaXRpb25zOgogICAgLSBERU1PU0NSRUVOOiBUaXRsZSBzY3JlZW4gLyBkZW1vIHBsYXliYWNrCiAgICAtIExFVkVMOiBBY3RpdmUgZ2FtZXBsYXkKICAgIC0gSU5URVJNSVNTSU9OOiBCZXR3ZWVuLWxldmVsIHN0YXRpc3RpY3MKICAgIC0gRklOQUxFOiBFbmQgb2YgZXBpc29kZS9nYW1lIHRleHQgc2VxdWVuY2UKCiAgICBBY3R1YWwgRE9PTSBmbG93OgogICAgMS4gREVNT1NDUkVFTiDihpIgKG5ld2dhbWUvbG9hZGdhbWUpIOKGkiBMRVZFTAogICAgMi4gTEVWRUwg4oaSIChjb21wbGV0ZWQpIOKGkiBJTlRFUk1JU1NJT04KICAgIDMuIElOVEVSTUlTU0lPTiDihpIgKHdvcmxkZG9uZSkg4oaSIExFVkVMIChuZXh0IGxldmVsKQogICAgNC4gSU5URVJNSVNTSU9OIOKGkiAoZmluYWxlKSDihpIgRklOQUxFIChlbmQgb2YgZXBpc29kZSkKICAgIDUuIExFVkVMIOKGkiAoZmluYWxlKSDihpIgRklOQUxFICh2aWN0b3J5L3NlY3JldCBleGl0KQogICAgNi4gRklOQUxFIOKGkiAod29ybGRkb25lKSDihpIgTEVWRUwgKGNvbnRpbnVlIHRvIG5leHQgZXBpc29kZSkKCiAgICBXM0MgU0NYTUwgMS4wIGNvbXBsaWFudAotLT4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIgogICAgICAgdmVyc2lvbj0iMS4wIgogICAgICAgaW5pdGlhbD0iZGVtb3NjcmVlbiIKICAgICAgIGRhdGFtb2RlbD0ibnVsbCI+CgogICAgPCEtLSBJbml0aWFsIHN0YXRlOiBEZW1vL1RpdGxlIHNjcmVlbiAtLT4KICAgIDxzdGF0ZSBpZD0iZGVtb3NjcmVlbiI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9Im5ld2dhbWUiIHRhcmdldD0ibGV2ZWwiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibG9hZGdhbWUiIHRhcmdldD0ibGV2ZWwiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBBY3RpdmUgZ2FtZXBsYXkgLS0+CiAgICA8c3RhdGUgaWQ9ImxldmVsIj4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iY29tcGxldGVkIiB0YXJnZXQ9ImludGVybWlzc2lvbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJmaW5hbGUiIHRhcmdldD0iZmluYWxlIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gQmV0d2Vlbi1sZXZlbCBpbnRlcm1pc3Npb24gLS0+CiAgICA8c3RhdGUgaWQ9ImludGVybWlzc2lvbiI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9IndvcmxkZG9uZSIgdGFyZ2V0PSJsZXZlbCIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJmaW5hbGUiIHRhcmdldD0iZmluYWxlIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRW5kIGdhbWUvZXBpc29kZSBmaW5hbGUgdGV4dCAtLT4KICAgIDxzdGF0ZSBpZD0iZmluYWxlIj4KICAgICAgICA8IS0tIEFmdGVyIGZpbmFsZSB0ZXh0LCBwbGF5ZXIgY29udGludWVzIHRvIG5leHQgbGV2ZWwvZXBpc29kZSAtLT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0id29ybGRkb25lIiB0YXJnZXQ9ImxldmVsIi8+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K',
             player: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBQbGF5ZXIgU3RhdGUgTWFjaGluZQoKICAgIE1vZGVscyBwbGF5ZXIgbGlmZWN5Y2xlOgogICAgLSBBTElWRTogTm9ybWFsIGdhbWVwbGF5LCBjYW4gdGFrZSBkYW1hZ2UKICAgIC0gREVBRDogRGVhdGggYW5pbWF0aW9uIHBsYXlpbmcsIGF3YWl0aW5nIHJlc3Bhd24KICAgIC0gUkVCT1JOOiBSZXNwYXduaW5nLCBicmllZiBpbnZ1bG5lcmFiaWxpdHkKCiAgICBXM0MgU0NYTUwgMS4wIGNvbXBsaWFudAotLT4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIgogICAgICAgdmVyc2lvbj0iMS4wIgogICAgICAgaW5pdGlhbD0iYWxpdmUiCiAgICAgICBkYXRhbW9kZWw9Im51bGwiPgoKICAgIDwhLS0gUGxheWluZyBzdGF0ZSAtIG5vcm1hbCBnYW1lcGxheSAtLT4KICAgIDxzdGF0ZSBpZD0iYWxpdmUiPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgICAgIDwhLS0gQ2hlYXQgY29kZXMgLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImdvZF9tb2RlX29uIiB0YXJnZXQ9ImludnVsbmVyYWJsZSIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIEludnVsbmVyYWJsZSBzdGF0ZSAoZ29kIG1vZGUpIC0tPgogICAgPHN0YXRlIGlkPSJpbnZ1bG5lcmFibGUiPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJnb2RfbW9kZV9vZmYiIHRhcmdldD0iYWxpdmUiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4gIDwhLS0gQ2FuIHN0aWxsIGRpZSBmcm9tIHNwZWNpYWwgY2FzZXMgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRGVhZCBzdGF0ZSAtIGRlYXRoIGFuaW1hdGlvbiAtLT4KICAgIDxzdGF0ZSBpZD0iZGVhZCI+CiAgICAgICAgPCEtLSBQbGF5ZXIgcHJlc3NlZCB1c2UgdG8gcmVzcGF3biAtIHNldHMgUFNUX1JFQk9STiB3aGljaCB0cmlnZ2VycyByZXNwYXduIGV2ZW50IC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJyZXNwYXduIiB0YXJnZXQ9InJlYm9ybiIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIFJlYm9ybiBzdGF0ZSAtIHJlc3Bhd25pbmcgLS0+CiAgICA8c3RhdGUgaWQ9InJlYm9ybiI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNwYXduX2NvbXBsZXRlIiB0YXJnZXQ9ImFsaXZlIi8+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K',
             weapon: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogIERPT00gV2VhcG9uIFN0YXRlIE1hY2hpbmUKCiAgTW9kZWxzIHdlYXBvbiBhY3Rpb24gbGlmZWN5Y2xlIGFuZCB3ZWFwb24gc3dpdGNoaW5nLgogIFN0YXRlczogUkVBRFksIFJBSVNJTkcsIExPV0VSSU5HLCBGSVJJTkcKCiAgU3luY3Mgd2l0aCBET09NJ3MgcHNwZGVmX3Qgc3RhdGVzOgogIC0gdXBzdGF0ZTogV2VhcG9uIHJhaXNpbmcgYW5pbWF0aW9uCiAgLSBkb3duc3RhdGU6IFdlYXBvbiBsb3dlcmluZyBhbmltYXRpb24KICAtIHJlYWR5c3RhdGU6IFdlYXBvbiByZWFkeSB0byBmaXJlCiAgLSBhdGtzdGF0ZTogV2VhcG9uIGZpcmluZyBhbmltYXRpb24KCiAgQWxzbyB0cmFja3MgY3VycmVudCB3ZWFwb24gdHlwZSB2aWEgZXh0ZW5kZWQgZGF0YS4KLS0+CjxzY3htbCB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwNS8wNy9zY3htbCIgdmVyc2lvbj0iMS4wIiBpbml0aWFsPSJyZWFkeSIgZGF0YW1vZGVsPSJudWxsIj4KCiAgICA8IS0tIFJlYWR5IHN0YXRlIC0gd2VhcG9uIGNhbiBmaXJlIG9yIGJlIHN3aXRjaGVkIC0tPgogICAgPHN0YXRlIGlkPSJyZWFkeSI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDwhLS0gTG9nIHdlYXBvbiByZWFkeSAtLT4KICAgICAgICA8L29uZW50cnk+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImZpcmUiIHRhcmdldD0iZmlyaW5nIj4KICAgICAgICAgICAgPCEtLSBQbGF5ZXIgcHJlc3NlZCBmaXJlIGJ1dHRvbiAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InN3aXRjaF93ZWFwb24iIHRhcmdldD0ibG93ZXJpbmciPgogICAgICAgICAgICA8IS0tIFBsYXllciB3YW50cyB0byBzd2l0Y2ggd2VhcG9ucyAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gTG93ZXJpbmcgc3RhdGUgLSB3ZWFwb24gbW92aW5nIGRvd24gdG8gc3dpdGNoIC0tPgogICAgPHN0YXRlIGlkPSJsb3dlcmluZyI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDwhLS0gU3RhcnQgbG93ZXIgYW5pbWF0aW9uIC0tPgogICAgICAgIDwvb25lbnRyeT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibG93ZXJfY29tcGxldGUiIHRhcmdldD0icmFpc2luZyI+CiAgICAgICAgICAgIDwhLS0gV2VhcG9uIGZ1bGx5IGxvd2VyZWQsIG5vdyByYWlzZSBuZXcgd2VhcG9uIC0tPgogICAgICAgIDwvdHJhbnNpdGlvbj4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBSYWlzaW5nIHN0YXRlIC0gbmV3IHdlYXBvbiBjb21pbmcgdXAgLS0+CiAgICA8c3RhdGUgaWQ9InJhaXNpbmciPgogICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICA8IS0tIFN0YXJ0IHJhaXNlIGFuaW1hdGlvbiwgdXBkYXRlIGN1cnJlbnQgd2VhcG9uIHR5cGUgLS0+CiAgICAgICAgPC9vbmVudHJ5PgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJyYWlzZV9jb21wbGV0ZSIgdGFyZ2V0PSJyZWFkeSI+CiAgICAgICAgICAgIDwhLS0gV2VhcG9uIGZ1bGx5IHJhaXNlZCAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRmlyaW5nIHN0YXRlIC0gd2VhcG9uIGF0dGFja2luZyAtLT4KICAgIDxzdGF0ZSBpZD0iZmlyaW5nIj4KICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgPCEtLSBJbmNyZW1lbnQgc2hvdCBjb3VudCAtLT4KICAgICAgICA8L29uZW50cnk+CiAgICAgICAgPCEtLSBTdGF5cyBpbiBmaXJpbmcgZHVyaW5nIGNvbnRpbnVvdXMgZmlyZSAoY2hhaW5ndW4sIGV0YyksIGV4aXRzIG9uIGZpcmVfY29tcGxldGUgLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImZpcmVfY29tcGxldGUiIHRhcmdldD0icmVhZHkiPgogICAgICAgICAgICA8IS0tIEF0dGFjayBhbmltYXRpb24gZmluaXNoZWQsIG5vdCByZWZpcmluZyAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K',
-            enemy: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIiB2ZXJzaW9uPSIxLjAiCiAgICAgICBuYW1lPSJFbmVteVN0YXRlIiBpbml0aWFsPSJkb3JtYW50Ij4KCiAgICA8IS0tCiAgICBET09NIEVuZW15IFN0YXRlIE1hY2hpbmUKCiAgICBTdGF0ZXM6CiAgICAtIGRvcm1hbnQ6IEVuZW15IGhhcyBub3QgZGV0ZWN0ZWQgcGxheWVyIChpZGxlL3BhdHJvbCkKICAgIC0gYWxlcnQ6IEVuZW15IGp1c3QgZGV0ZWN0ZWQgcGxheWVyLCBwcmVwYXJpbmcgdG8gYWN0CiAgICAtIGNoYXNpbmc6IEVuZW15IGlzIGFjdGl2ZWx5IHB1cnN1aW5nIHBsYXllcgogICAgLSBhdHRhY2tpbmc6IEVuZW15IGlzIHBlcmZvcm1pbmcgYXR0YWNrIGFuaW1hdGlvbgogICAgLSBwYWluOiBFbmVteSBpcyBpbiBwYWluIHN0YXRlIChoaXQgc3R1bikKICAgIC0gZGVhZDogRW5lbXkgaGFzIGJlZW4ga2lsbGVkCgogICAgTm90ZTogRWFjaCBlbmVteSBpbnN0YW5jZSBoYXMgaXRzIG93biBzdGF0ZSBtYWNoaW5lIGluc3RhbmNlCiAgICAtLT4KCiAgICA8IS0tIGRvcm1hbnQ6IEVuZW15IGlkbGUsIGhhc24ndCBzZWVuIHBsYXllciAtLT4KICAgIDxzdGF0ZSBpZD0iZG9ybWFudCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNlZV9wbGF5ZXIiIHRhcmdldD0iYWxlcnQiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0icGFpbiIgdGFyZ2V0PSJwYWluIi8+ICA8IS0tIENhbiB0YWtlIGRhbWFnZSBiZWZvcmUgc2VlaW5nIHBsYXllciAtLT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBhbGVydDogSnVzdCBzcG90dGVkIHBsYXllciwgYWJvdXQgdG8gYWN0IC0tPgogICAgPHN0YXRlIGlkPSJhbGVydCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImNoYXNlIiB0YXJnZXQ9ImNoYXNpbmciLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iYXR0YWNrIiB0YXJnZXQ9ImF0dGFja2luZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJwYWluIiB0YXJnZXQ9InBhaW4iLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgICAgICA8IS0tIE5vdGU6IERPT00gZW5lbWllcyBkb24ndCByZXR1cm4gdG8gZG9ybWFudCBvbmNlIGFsZXJ0ZWQgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gY2hhc2luZzogQWN0aXZlbHkgcHVyc3VpbmcgcGxheWVyIC0tPgogICAgPHN0YXRlIGlkPSJjaGFzaW5nIj4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iYXR0YWNrIiB0YXJnZXQ9ImF0dGFja2luZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJwYWluIiB0YXJnZXQ9InBhaW4iLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgICAgICA8IS0tIE5vdGU6IERPT00gZW5lbWllcyBwZXJzaXN0IGluIGNoYXNlIHVudGlsIGtpbGxlZCBvciBhdHRhY2tpbmcgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gYXR0YWNraW5nOiBQZXJmb3JtaW5nIGF0dGFjayAtLT4KICAgIDxzdGF0ZSBpZD0iYXR0YWNraW5nIj4KICAgICAgICA8IS0tIFJldHVybnMgdG8gY2hhc2luZyB2aWEgY2hhc2UgZXZlbnQgZnJvbSBBX0NoYXNlIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjaGFzZSIgdGFyZ2V0PSJjaGFzaW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InBhaW4iIHRhcmdldD0icGFpbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIHBhaW46IEhpdCBzdHVuIHN0YXRlIC0tPgogICAgPHN0YXRlIGlkPSJwYWluIj4KICAgICAgICA8IS0tIFJldHVybnMgdG8gY2hhc2luZyB2aWEgY2hhc2UgZXZlbnQgZnJvbSBBX0NoYXNlIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjaGFzZSIgdGFyZ2V0PSJjaGFzaW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImF0dGFjayIgdGFyZ2V0PSJhdHRhY2tpbmciLz4gIDwhLS0gQ2FuIGF0dGFjayBkaXJlY3RseSBmcm9tIHBhaW4gLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImtpbGxlZCIgdGFyZ2V0PSJkZWFkIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gZGVhZDogRmluYWwgc3RhdGUgLS0+CiAgICA8ZmluYWwgaWQ9ImRlYWQiLz4KCjwvc2N4bWw+Cg=='
+            enemy: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIiB2ZXJzaW9uPSIxLjAiCiAgICAgICBuYW1lPSJFbmVteVN0YXRlIiBpbml0aWFsPSJkb3JtYW50Ij4KCiAgICA8IS0tCiAgICBET09NIEVuZW15IFN0YXRlIE1hY2hpbmUKCiAgICBTdGF0ZXM6CiAgICAtIGRvcm1hbnQ6IEVuZW15IGhhcyBub3QgZGV0ZWN0ZWQgcGxheWVyIChpZGxlL3BhdHJvbCkKICAgIC0gYWxlcnQ6IEVuZW15IGp1c3QgZGV0ZWN0ZWQgcGxheWVyLCBwcmVwYXJpbmcgdG8gYWN0CiAgICAtIGNoYXNpbmc6IEVuZW15IGlzIGFjdGl2ZWx5IHB1cnN1aW5nIHBsYXllcgogICAgLSBhdHRhY2tpbmc6IEVuZW15IGlzIHBlcmZvcm1pbmcgYXR0YWNrIGFuaW1hdGlvbgogICAgLSBwYWluOiBFbmVteSBpcyBpbiBwYWluIHN0YXRlIChoaXQgc3R1bikKICAgIC0gZGVhZDogRW5lbXkgaGFzIGJlZW4ga2lsbGVkCgogICAgTm90ZTogRWFjaCBlbmVteSBpbnN0YW5jZSBoYXMgaXRzIG93biBzdGF0ZSBtYWNoaW5lIGluc3RhbmNlCiAgICAtLT4KCiAgICA8IS0tIGRvcm1hbnQ6IEVuZW15IGlkbGUsIGhhc24ndCBzZWVuIHBsYXllciAtLT4KICAgIDxzdGF0ZSBpZD0iZG9ybWFudCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNlZV9wbGF5ZXIiIHRhcmdldD0iYWxlcnQiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0icGFpbiIgdGFyZ2V0PSJwYWluIi8+ICA8IS0tIENhbiB0YWtlIGRhbWFnZSBiZWZvcmUgc2VlaW5nIHBsYXllciAtLT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBhbGVydDogSnVzdCBzcG90dGVkIHBsYXllciwgYWJvdXQgdG8gYWN0IC0tPgogICAgPHN0YXRlIGlkPSJhbGVydCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImNoYXNlIiB0YXJnZXQ9ImNoYXNpbmciLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iYXR0YWNrIiB0YXJnZXQ9ImF0dGFja2luZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJwYWluIiB0YXJnZXQ9InBhaW4iLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgICAgICA8IS0tIE5vdGU6IERPT00gZW5lbWllcyBkb24ndCByZXR1cm4gdG8gZG9ybWFudCBvbmNlIGFsZXJ0ZWQgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gY2hhc2luZzogQWN0aXZlbHkgcHVyc3VpbmcgcGxheWVyIC0tPgogICAgPHN0YXRlIGlkPSJjaGFzaW5nIj4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iYXR0YWNrIiB0YXJnZXQ9ImF0dGFja2luZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJwYWluIiB0YXJnZXQ9InBhaW4iLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgICAgICA8IS0tIE5vdGU6IERPT00gZW5lbWllcyBwZXJzaXN0IGluIGNoYXNlIHVudGlsIGtpbGxlZCBvciBhdHRhY2tpbmcgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gYXR0YWNraW5nOiBQZXJmb3JtaW5nIGF0dGFjayAtLT4KICAgIDxzdGF0ZSBpZD0iYXR0YWNraW5nIj4KICAgICAgICA8IS0tIFJldHVybnMgdG8gY2hhc2luZyB2aWEgY2hhc2UgZXZlbnQgZnJvbSBBX0NoYXNlIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjaGFzZSIgdGFyZ2V0PSJjaGFzaW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InBhaW4iIHRhcmdldD0icGFpbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIHBhaW46IEhpdCBzdHVuIHN0YXRlIC0tPgogICAgPHN0YXRlIGlkPSJwYWluIj4KICAgICAgICA8IS0tIFJldHVybnMgdG8gY2hhc2luZyB2aWEgY2hhc2UgZXZlbnQgZnJvbSBBX0NoYXNlIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjaGFzZSIgdGFyZ2V0PSJjaGFzaW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImF0dGFjayIgdGFyZ2V0PSJhdHRhY2tpbmciLz4gIDwhLS0gQ2FuIGF0dGFjayBkaXJlY3RseSBmcm9tIHBhaW4gLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImtpbGxlZCIgdGFyZ2V0PSJkZWFkIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gZGVhZDogRmluYWwgc3RhdGUgLS0+CiAgICA8ZmluYWwgaWQ9ImRlYWQiLz4KCjwvc2N4bWw+Cg==',
+            secret: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBTZWNyZXQgYW5kIFRyaWdnZXIgSGludCBTdGF0ZSBNYWNoaW5lCgogICAgTWFuYWdlcyB0aGUgaGludCBzeXN0ZW0gZm9yIHNlY3JldHMgYW5kIGludGVyYWN0aXZlIHRyaWdnZXJzCiAgICAoZG9vcnMsIGxpZnRzLCBzd2l0Y2hlcywgdGVsZXBvcnRlcnMsIGV4aXRzKS4KCiAgICBTdGF0ZXM6CiAgICAtIERJU0FCTEVEOiBIaW50IHN5c3RlbSBpcyBjb21wbGV0ZWx5IG9mZgogICAgLSBJRExFOiBIaW50IHN5c3RlbSBlbmFibGVkLCBwYXRoIGhpZGRlbgogICAgLSBDQUxDVUxBVElORzogQ29tcHV0aW5nIEJGUyBwYXRoIHRvIHNlbGVjdGVkIHRhcmdldAogICAgLSBTSE9XSU5HOiBBY3RpdmVseSBkaXNwbGF5aW5nIGZsb29yIGFycm93cyB0byB0YXJnZXQKICAgIC0gRk9VTkQ6IFBsYXllciByZWFjaGVkIHRoZSB0YXJnZXQgKHNlY3JldHMgb25seSkKICAgIC0gTk9fUEFUSDogTm8gYWNjZXNzaWJsZSBwYXRoIHRvIHNlbGVjdGVkIHRhcmdldAoKICAgIEV2ZW50czoKICAgIC0gZW5hYmxlOiBUdXJuIG9uIGhpbnQgc3lzdGVtCiAgICAtIGRpc2FibGU6IFR1cm4gb2ZmIGhpbnQgc3lzdGVtCiAgICAtIHRvZ2dsZTogSCBrZXkgLSB0b2dnbGUgcGF0aCB2aXNpYmlsaXR5CiAgICAtIHNob3dfcGF0aDogU2hvdyBwYXRoIHRvIGN1cnJlbnRseSBzZWxlY3RlZCB0YXJnZXQgKGZyb20gYnV0dG9uIGNsaWNrKQogICAgLSBjYW5jZWxfaGludDogQ2FuY2VsIGN1cnJlbnQgaGludCBkaXNwbGF5CiAgICAtIHBhdGhfZm91bmQ6IEJGUyBmb3VuZCBhIHZhbGlkIHBhdGgKICAgIC0gbm9fcGF0aDogTm8gcGF0aCBmb3VuZCB0byB0YXJnZXQKICAgIC0gc2VjcmV0X3JlYWNoZWQ6IFBsYXllciBlbnRlcmVkIHRoZSB0YXJnZXQgc2VjcmV0IHNlY3RvcgogICAgLSBsZXZlbF9jaGFuZ2U6IE5ldyBsZXZlbCBsb2FkZWQsIHJlc2V0IGhpbnQgc3RhdGUKCiAgICBXM0MgU0NYTUwgMS4wIGNvbXBsaWFudAotLT4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIgogICAgICAgdmVyc2lvbj0iMS4wIgogICAgICAgaW5pdGlhbD0iaWRsZSIKICAgICAgIGRhdGFtb2RlbD0ibnVsbCI+CgogICAgPCEtLSBIaW50IHN5c3RlbSBkaXNhYmxlZCAtLT4KICAgIDxzdGF0ZSBpZD0iZGlzYWJsZWQiPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJlbmFibGUiIHRhcmdldD0iaWRsZSIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJsZXZlbF9jaGFuZ2UiIHRhcmdldD0iZGlzYWJsZWQiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBIaW50IHN5c3RlbSBlbmFibGVkLCBwYXRoIGhpZGRlbiAtLT4KICAgIDxzdGF0ZSBpZD0iaWRsZSI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImRpc2FibGUiIHRhcmdldD0iZGlzYWJsZWQiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0idG9nZ2xlIiB0YXJnZXQ9ImNhbGN1bGF0aW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNob3dfcGF0aCIgdGFyZ2V0PSJjYWxjdWxhdGluZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJsZXZlbF9jaGFuZ2UiIHRhcmdldD0iaWRsZSIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIENvbXB1dGluZyBwYXRoIHRvIHRhcmdldCAtLT4KICAgIDxzdGF0ZSBpZD0iY2FsY3VsYXRpbmciPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJwYXRoX2ZvdW5kIiB0YXJnZXQ9InNob3dpbmciLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibm9fcGF0aCIgdGFyZ2V0PSJub19wYXRoIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImRpc2FibGUiIHRhcmdldD0iZGlzYWJsZWQiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibGV2ZWxfY2hhbmdlIiB0YXJnZXQ9ImlkbGUiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBBY3RpdmVseSBkaXNwbGF5aW5nIGZsb29yIGFycm93cyAtLT4KICAgIDxzdGF0ZSBpZD0ic2hvd2luZyI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InRvZ2dsZSIgdGFyZ2V0PSJpZGxlIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNob3dfcGF0aCIgdGFyZ2V0PSJjYWxjdWxhdGluZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjYW5jZWxfaGludCIgdGFyZ2V0PSJpZGxlIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNlY3JldF9yZWFjaGVkIiB0YXJnZXQ9ImZvdW5kIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImRpc2FibGUiIHRhcmdldD0iZGlzYWJsZWQiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibGV2ZWxfY2hhbmdlIiB0YXJnZXQ9ImlkbGUiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBQbGF5ZXIgcmVhY2hlZCB0aGUgc2VjcmV0IC0tPgogICAgPHN0YXRlIGlkPSJmb3VuZCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InRvZ2dsZSIgdGFyZ2V0PSJpZGxlIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNob3dfcGF0aCIgdGFyZ2V0PSJjYWxjdWxhdGluZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJkaXNhYmxlIiB0YXJnZXQ9ImRpc2FibGVkIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJpZGxlIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gTm8gYWNjZXNzaWJsZSBwYXRoIHRvIHRhcmdldCAtLT4KICAgIDxzdGF0ZSBpZD0ibm9fcGF0aCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InRvZ2dsZSIgdGFyZ2V0PSJpZGxlIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNob3dfcGF0aCIgdGFyZ2V0PSJjYWxjdWxhdGluZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJkaXNhYmxlIiB0YXJnZXQ9ImRpc2FibGVkIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJpZGxlIi8+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K'
         };
 
         // Valid machine names for validation
-        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy'];
+        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy', 'secret'];
 
         // State tracking
         const SCE = {
             currentTab: 'game',
             ready: false,
-            lastState: { game: null, player: null, weapon: null, enemy: null },
+            lastState: { game: null, player: null, weapon: null, enemy: null, secret: null },
             enemies: {},  // slot -> {type, state, instanceId, active}
-            selectedEnemy: null
+            selectedEnemy: null,
+            secretArrows: [],  // [{x, y, angle}, ...]
+            secretRemaining: 0
         };
 
         // Tab switching
@@ -234,6 +409,10 @@
             // Show/hide enemy section
             const enemySection = document.getElementById('enemy-section');
             enemySection.classList.toggle('visible', machine === 'enemy');
+
+            // Show/hide secret section
+            const secretSection = document.getElementById('secret-section');
+            secretSection.classList.toggle('visible', machine === 'secret');
 
             // Load new SCXML in visualizer
             const iframe = document.getElementById('visualizer');
@@ -404,7 +583,178 @@
                     }, window.location.origin);
                 }
             }
+
+            // Special handling for secret state changes
+            if (machine === 'secret') {
+                const stateEl = document.getElementById('secret-state');
+                if (stateEl) {
+                    stateEl.textContent = state;
+                    stateEl.className = 'secret-state-text ' + state;
+                }
+            }
         };
+
+        // C++ callback: Called when secret path is found
+        window.onSceSecretPath = function(numArrows, remainingSecrets) {
+            SCE.secretArrows = [];
+            SCE.secretRemaining = remainingSecrets;
+            const arrowsEl = document.getElementById('secret-arrows');
+            const statsEl = document.getElementById('stat-secrets');
+            if (arrowsEl) arrowsEl.textContent = numArrows;
+            if (statsEl) statsEl.textContent = remainingSecrets + ' left';
+            console.debug('[SCE:Secret] Path found with', numArrows, 'arrows,', remainingSecrets, 'remaining');
+        };
+
+        // C++ callback: Called for each arrow in the secret path
+        window.onSceSecretArrow = function(index, x, y, angle) {
+            SCE.secretArrows[index] = { x, y, angle };
+            console.debug('[SCE:Secret] Arrow', index, 'at', x, y, 'angle', angle);
+        };
+
+        // C++ callback: Called when target info updates
+        window.onSceTargetInfo = function(typeName, name, index, total) {
+            // Update active button highlight
+            document.querySelectorAll('.target-btn').forEach(btn => {
+                const isActive = btn.dataset.type === typeName.toLowerCase() &&
+                                 parseInt(btn.dataset.index) === index;
+                btn.classList.toggle('active', isActive);
+            });
+            console.debug('[SCE:Target] Info:', typeName, name, index, total);
+        };
+
+        // Select specific target by type and index
+        function selectTarget(type, index) {
+            if (typeof Module === 'undefined' || !Module.ccall) return;
+            Module.ccall('sce_select_target', null, ['number', 'number'], [type, index]);
+        }
+
+        // Target type configuration
+        const TARGET_TYPES = [
+            { id: 'secret', name: 'Secret', type: 0 },
+            { id: 'door', name: 'Door', type: 1 },
+            { id: 'lift', name: 'Lift', type: 2 },
+            { id: 'switch', name: 'Switch', type: 3 },
+            { id: 'teleporter', name: 'Teleport', type: 4 },
+            { id: 'exit', name: 'Exit', type: 5 },
+            { id: 'keydoor', name: 'KeyDoor', type: 6 }
+        ];
+
+        // Target count polling and dynamic button generation
+        let targetCounts = { secret: 0, door: 0, lift: 0, switch_: 0, teleporter: 0, exit: 0, keydoor: 0 };
+        let lastCounts = { secret: -1, door: -1, lift: -1, switch_: -1, teleporter: -1, exit: -1, keydoor: -1 };
+
+        function updateTargetCounts() {
+            if (typeof Module === 'undefined' || !Module.ccall) return;
+
+            try {
+                targetCounts.secret = Module.ccall('sce_get_target_count_secret', 'number', [], []);
+                targetCounts.door = Module.ccall('sce_get_target_count_door', 'number', [], []);
+                targetCounts.lift = Module.ccall('sce_get_target_count_lift', 'number', [], []);
+                targetCounts.switch_ = Module.ccall('sce_get_target_count_switch', 'number', [], []);
+                targetCounts.teleporter = Module.ccall('sce_get_target_count_teleporter', 'number', [], []);
+                targetCounts.exit = Module.ccall('sce_get_target_count_exit', 'number', [], []);
+                targetCounts.keydoor = Module.ccall('sce_get_target_count_keydoor', 'number', [], []);
+
+                // Check if counts changed and regenerate buttons if needed
+                const countsArray = [
+                    targetCounts.secret, targetCounts.door, targetCounts.lift,
+                    targetCounts.switch_, targetCounts.teleporter, targetCounts.exit, targetCounts.keydoor
+                ];
+                const lastArray = [
+                    lastCounts.secret, lastCounts.door, lastCounts.lift,
+                    lastCounts.switch_, lastCounts.teleporter, lastCounts.exit, lastCounts.keydoor
+                ];
+
+                let changed = false;
+                for (let i = 0; i < countsArray.length; i++) {
+                    if (countsArray[i] !== lastArray[i]) {
+                        changed = true;
+                        break;
+                    }
+                }
+
+                if (changed) {
+                    generateTargetButtons();
+                    lastCounts = { ...targetCounts };
+                } else {
+                    // Update secret discovery status without regenerating buttons
+                    updateSecretDiscoveryStatus();
+                }
+            } catch (e) {
+                console.error('Error getting target counts:', e);
+            }
+        }
+
+        function updateSecretDiscoveryStatus() {
+            const secretGroup = document.getElementById('group-secret');
+            if (!secretGroup) return;
+
+            const buttons = secretGroup.querySelectorAll('.target-btn.secret');
+            buttons.forEach((btn, i) => {
+                try {
+                    const discovered = Module.ccall('sce_is_secret_discovered', 'number', ['number'], [i]);
+                    if (discovered && !btn.classList.contains('discovered')) {
+                        btn.classList.add('discovered');
+                        btn.title = 'Secret ' + (i + 1) + ' (Found!)';
+                    }
+                } catch (e) {
+                    // Ignore errors
+                }
+            });
+        }
+
+        function generateTargetButtons() {
+            const countMap = {
+                secret: targetCounts.secret,
+                door: targetCounts.door,
+                lift: targetCounts.lift,
+                switch: targetCounts.switch_,
+                teleporter: targetCounts.teleporter,
+                exit: targetCounts.exit,
+                keydoor: targetCounts.keydoor
+            };
+
+            TARGET_TYPES.forEach(cfg => {
+                const group = document.getElementById('group-' + cfg.id);
+                if (!group) return;
+
+                const count = countMap[cfg.id] || 0;
+
+                // Clear existing buttons (keep label)
+                const label = group.querySelector('.group-label');
+                group.innerHTML = '';
+                if (label) group.appendChild(label);
+
+                // Show/hide group based on count
+                group.classList.toggle('has-targets', count > 0);
+
+                // Generate individual buttons
+                for (let i = 0; i < count; i++) {
+                    const btn = document.createElement('button');
+                    btn.className = 'target-btn ' + cfg.id;
+                    btn.dataset.type = cfg.id;
+                    btn.dataset.index = i;
+                    btn.textContent = (i + 1);
+                    btn.title = cfg.name + ' ' + (i + 1);
+                    btn.onclick = () => selectTarget(cfg.type, i);
+
+                    // Check if secret is discovered
+                    if (cfg.id === 'secret') {
+                        try {
+                            const discovered = Module.ccall('sce_is_secret_discovered', 'number', ['number'], [i]);
+                            if (discovered) {
+                                btn.classList.add('discovered');
+                                btn.title += ' (Found!)';
+                            }
+                        } catch (e) {
+                            console.error('Error checking secret discovery:', e);
+                        }
+                    }
+
+                    group.appendChild(btn);
+                }
+            });
+        }
 
         // Wait for visualizer ready
         window.addEventListener('message', (event) => {
@@ -439,6 +789,11 @@
             canvas: document.getElementById('canvas'),
             onRuntimeInitialized: function() {
                 console.log('[SCE] WASM runtime initialized');
+                // Start target count polling after a delay
+                setTimeout(() => {
+                    updateTargetCounts();
+                    setInterval(updateTargetCounts, 2000);
+                }, 3000);
             },
             print: function(text) {
                 if (text.includes('[SCE:')) {
