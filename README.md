@@ -64,13 +64,14 @@ my_machine<MyContext> sm(context);
 
 ### 📐 W3C SCXML 1.0 Compliance
 
-Full specification compliance with intelligent code generation strategy:
+Full specification compliance with intelligent AOT code generation:
 
-- **Static Engine**: Pure compile-time state machines (zero runtime overhead)
-- **Static Hybrid Engine**: Static structure + ECMAScript expressions (minimal overhead)
-- **Interpreter Engine**: Full runtime flexibility for dynamic features
-- **Automatic selection**: Code generator chooses optimal strategy per SCXML file
+- **Pure Static**: Compile-time state machines with zero runtime overhead
+- **Static Hybrid**: Automatic ECMAScript support via JSEngine (no manual configuration)
+- **Interpreter**: Only for runtime SCXML loading (workflow designers, visual editors)
+- **Automatic selection**: Code generator detects features and chooses optimal engine
 - **Complete W3C compliance**: All test categories passing
+- **No Interpreter fallback needed**: AOT handles 99% of use cases automatically
 
 ---
 
@@ -99,14 +100,42 @@ cmake --build . -j$(nproc)
 
 SCE provides flexible integration options for different project needs:
 
-### Method 1: CMake Integration (Recommended)
+### Method 1: find_package (Recommended for Installed SCE)
 
-**Best for**: Production projects using CMake
-
-Automatic code generation with dependency tracking:
+**Best for**: Production projects with SCE installed system-wide
 
 ```cmake
-# Add SCE to your project (git submodule or FetchContent)
+# Find installed SCE package
+find_package(SCE REQUIRED)
+
+# Create your executable
+add_executable(my_app main.cpp)
+
+# Auto-generate state machine code from SCXML
+sce_add_state_machine(
+    TARGET my_app
+    SCXML_FILE traffic_light.scxml
+)
+
+# Link SCE library (SCE::sce is the exported target)
+target_link_libraries(my_app PRIVATE SCE::sce)
+```
+
+**Installation**:
+```bash
+cd scxml-core-engine/build
+cmake .. -DCMAKE_INSTALL_PREFIX=/usr/local
+make && sudo make install
+```
+
+See [examples/standalone_project](examples/standalone_project) for complete working example.
+
+### Method 2: add_subdirectory (Development)
+
+**Best for**: Projects including SCE as git submodule
+
+```cmake
+# Add SCE to your project (git submodule)
 add_subdirectory(external/scxml-core-engine)
 
 # Create your executable
@@ -129,7 +158,7 @@ target_link_libraries(my_app PRIVATE sce_unified)
 
 See [examples/cmake_function](examples/cmake_function) for complete working example.
 
-### Method 2: FetchContent (Modern CMake)
+### Method 3: FetchContent (Modern CMake)
 
 **Best for**: Projects wanting automatic dependency management
 
@@ -147,7 +176,7 @@ sce_add_state_machine(TARGET my_app SCXML_FILE traffic_light.scxml)
 target_link_libraries(my_app PRIVATE sce_unified)
 ```
 
-### Method 3: Standalone (Learning & Testing)
+### Method 4: Standalone (Learning & Testing)
 
 **Best for**: Quick experiments and understanding the workflow
 
@@ -159,15 +188,72 @@ python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/
 
 See [Usage Example](#usage-example) below for complete standalone workflow.
 
+### CMake Functions Reference
+
+SCE provides three CMake functions for state machine code generation:
+
+| Function | Purpose |
+|----------|---------|
+| `sce_add_state_machine()` | Generate from single SCXML, add to target |
+| `sce_add_state_machines_from_dir()` | Generate from all SCXML files in directory |
+| `sce_create_state_machine_library()` | Create standalone library for sharing |
+
+**sce_add_state_machine** - Add single SCXML to target:
+```cmake
+sce_add_state_machine(
+    TARGET my_app              # Target to add generated code to
+    SCXML_FILE player.scxml    # SCXML file path
+    [OUTPUT_DIR dir]           # Optional output directory
+)
+```
+
+**sce_add_state_machines_from_dir** - Batch generation from directory:
+```cmake
+sce_add_state_machines_from_dir(
+    TARGET my_app              # Target to add generated code to
+    SCXML_DIR ${CMAKE_SOURCE_DIR}/scxml  # Directory with SCXML files
+    [OUTPUT_DIR dir]           # Optional output directory
+)
+```
+
+**sce_create_state_machine_library** - Create reusable library:
+```cmake
+# Create standalone library
+sce_create_state_machine_library(
+    NAME player_sm             # Library name
+    SCXML_FILE player.scxml    # SCXML file path
+)
+
+# Use in multiple targets
+target_link_libraries(game PRIVATE player_sm SCE::sce)
+target_link_libraries(editor PRIVATE player_sm SCE::sce)
+```
+
 ---
 
 ## Examples
 
-SCE provides six examples with progressive complexity for learning the framework:
+SCE provides seven examples with progressive complexity for learning the framework:
 
 ### Learning Path
 
 **Recommended order**: Start simple, then integrate with your build system, add C++ functions, then explore timers and async patterns.
+
+#### 0. [standalone_project](examples/standalone_project/) - find_package Usage
+
+**What you'll learn**:
+- Using SCE with `find_package(SCE)` in external projects
+- Production-ready CMake integration pattern
+- How to use SCE after system-wide installation
+
+**Complexity**: Beginner (Standalone project template)
+
+```cmake
+find_package(SCE REQUIRED)
+add_executable(my_app main.cpp)
+sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
+target_link_libraries(my_app PRIVATE SCE::sce)
+```
 
 #### 1. [traffic_light](examples/traffic_light/) - SCXML Basics
 
@@ -484,10 +570,53 @@ tests/
 - Generate minimal code with zero dependencies on framework internals
 - Your functions are called via simple function pointers or template callbacks
 
-**Engine Selection**:
-- **Static**: All states, events, targets known at compile-time
-- **Static Hybrid**: Static structure + ECMAScript expressions (e.g., `cond="x > 5"`)
-- **Interpreter**: Dynamic features (e.g., `targetexpr`, `srcexpr`, runtime metadata)
+### AOT Engine Architecture
+
+SCE's AOT (Ahead-of-Time) code generator automatically selects the optimal engine:
+
+```
+SCXML Analysis → Feature Detection → Automatic Engine Selection
+
+┌─────────────────────────────────────────────────────────────────┐
+│  Pure Static         │  Static Hybrid        │  Interpreter     │
+├─────────────────────────────────────────────────────────────────┤
+│  No ECMAScript       │  ECMAScript present   │  Runtime SCXML   │
+│  enum State/Event    │  enum + JSEngine      │  loading only    │
+│  Zero runtime cost   │  Minimal overhead     │  Full flexibility│
+└─────────────────────────────────────────────────────────────────┘
+         ↑                      ↑                      ↑
+    Automatic              Automatic              Manual only
+```
+
+**Key Point: AOT handles 99% of use cases automatically**
+
+| SCXML Feature | Engine | Automatic? |
+|---------------|--------|------------|
+| Basic states/transitions | Pure Static | Yes |
+| ECMAScript guards (`cond="x > 5"`) | Static Hybrid | Yes |
+| ECMAScript actions (`<script>`) | Static Hybrid | Yes |
+| `_event.data` access | Static Hybrid | Yes |
+| `In()` function | Static Hybrid | Yes |
+| Data model expressions | Static Hybrid | Yes |
+| **Runtime SCXML upload** | **Interpreter** | **No** |
+
+**When is Interpreter actually needed?**
+
+Interpreter is **only** required when SCXML content is not known at build time:
+
+```cpp
+// This rare scenario requires Interpreter:
+// User uploads SCXML at runtime (workflow designer, visual editor)
+std::string userUploadedScxml = receiveFromClient();
+interpreter.loadFromString(userUploadedScxml);  // Runtime parsing
+```
+
+**For normal development**: SCXML files are known at build time, so AOT (Pure Static or Static Hybrid) is always sufficient. The code generator automatically switches to Static Hybrid when ECMAScript features are detected.
+
+**Engine Selection Summary**:
+- **Pure Static**: All states, events, targets known at compile-time (maximum performance)
+- **Static Hybrid**: Static structure + ECMAScript expressions (automatic when needed)
+- **Interpreter**: Runtime SCXML loading only (rare, requires explicit use)
 
 ---
 

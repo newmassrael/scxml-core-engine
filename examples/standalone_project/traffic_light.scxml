@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="red">
+    <!-- Traffic Light State Machine Example -->
+    <!-- Demonstrates basic SCXML features with SCE -->
+
+    <state id="red">
+        <onentry>
+            <log label="Traffic Light" expr="'RED - Stop'"/>
+        </onentry>
+        <transition event="timer" target="green"/>
+    </state>
+
+    <state id="green">
+        <onentry>
+            <log label="Traffic Light" expr="'GREEN - Go'"/>
+        </onentry>
+        <transition event="timer" target="yellow"/>
+    </state>
+
+    <state id="yellow">
+        <onentry>
+            <log label="Traffic Light" expr="'YELLOW - Caution'"/>
+        </onentry>
+        <transition event="timer" target="red"/>
+    </state>
+
+</scxml>

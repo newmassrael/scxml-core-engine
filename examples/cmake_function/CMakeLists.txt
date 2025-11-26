@@ -5,13 +5,24 @@ project(SCECMakeFunctionExample)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# This example demonstrates using sce_add_state_machine() CMake function
-# The function is automatically available when using SCE as a subproject
+# =============================================================================
+# SCE CMake Function Example
+# =============================================================================
+# This example demonstrates using sce_add_state_machine() CMake function.
+# The function is automatically available when using SCE as a subproject.
+#
+# Available functions:
+#   sce_add_state_machine()            - Add single SCXML to target
+#   sce_add_state_machines_from_dir()  - Add all SCXML files from directory
+#   sce_create_state_machine_library() - Create standalone library from SCXML
 
 # Create executable
 add_executable(light_example main.cpp)
 
-# Use SCE CMake function to automatically generate state machine code
+# =============================================================================
+# Method 1: sce_add_state_machine() - Add to existing target
+# =============================================================================
+# Use SCE CMake function to automatically generate state machine code.
 # This will:
 #   1. Run Python codegen to generate SimpleLight_sm.h from simple_light.scxml
 #   2. Add generated file to target sources
@@ -24,9 +35,40 @@ sce_add_state_machine(
 )
 
 # Link with SCE library
+# In-tree: use sce_unified directly
+# Installed: use SCE::sce (available after find_package(SCE))
 target_link_libraries(light_example PRIVATE sce_unified)
 
-# Add SCE include directories
+# Add SCE include directories (in-tree usage)
 target_include_directories(light_example PRIVATE
     ${CMAKE_SOURCE_DIR}/sce/include
 )
+
+# =============================================================================
+# Method 2: sce_create_state_machine_library() - Create reusable library
+# =============================================================================
+# Creates a standalone INTERFACE library that can be shared between targets.
+# Useful when multiple executables need the same state machine.
+#
+# Example usage (uncomment to try):
+#
+# sce_create_state_machine_library(
+#     NAME simple_light_sm
+#     SCXML_FILE simple_light.scxml
+# )
+#
+# add_executable(another_app another_main.cpp)
+# target_link_libraries(another_app PRIVATE simple_light_sm sce_unified)
+
+# =============================================================================
+# Method 3: sce_add_state_machines_from_dir() - Batch generation
+# =============================================================================
+# Generate state machines from all SCXML files in a directory.
+# Useful for projects with many state machines.
+#
+# Example usage (uncomment to try):
+#
+# sce_add_state_machines_from_dir(
+#     TARGET light_example
+#     SCXML_DIR ${CMAKE_CURRENT_SOURCE_DIR}/scxml
+# )

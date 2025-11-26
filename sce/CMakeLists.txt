@@ -189,31 +189,34 @@ target_sources(sce_unified PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
 )
 
+# Include directories with proper BUILD_INTERFACE/INSTALL_INTERFACE for export
+# BUILD_INTERFACE: Paths used when building from source (development)
+# INSTALL_INTERFACE: Paths used when installed (find_package usage)
 target_include_directories(sce_unified
     PUBLIC
-        include
-        include/model
-        include/runtime
-        include/scripting
-        include/factory
-        include/common
-        include/backends
-        include/parsing
-        include/actions
-        include/events
-        include/states
-        ${NLOHMANN_JSON_INCLUDE_DIR}
-)
-
-# Unified XML parser includes (pugixml)
-target_include_directories(sce_unified PUBLIC
-    ${PUGIXML_INCLUDE_DIR}
+        # Main include directories
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/model>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/runtime>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/factory>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/parsing>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/actions>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/events>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/states>
+        # Third-party headers
+        $<BUILD_INTERFACE:${NLOHMANN_JSON_INCLUDE_DIR}>
+        $<BUILD_INTERFACE:${PUGIXML_INCLUDE_DIR}>
+        # Installed include path (all headers installed to single directory)
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # Optional spdlog includes (header-only)
 if(SCE_USE_SPDLOG)
     target_include_directories(sce_unified PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include>
     )
 endif()
 

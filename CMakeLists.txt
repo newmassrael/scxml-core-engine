@@ -287,8 +287,25 @@ else()
     )
 endif()
 
-# Installation configuration (using GNUInstallDirs variables)
+# =============================================================================
+# Export Configuration for find_package(SCE)
+# =============================================================================
+# Creates SCE::sce alias for external usage
+
+# Create alias target for external usage (SCE::sce)
+add_library(SCE::sce ALIAS sce_unified)
+
+# =============================================================================
+# Installation Configuration
+# =============================================================================
+
+# Define installation directories
+set(SCE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SCE")
+set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
+
+# Install main library with export
 install(TARGETS sce_unified
+    EXPORT SCETargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -302,47 +319,114 @@ if(NOT EMSCRIPTEN)
     )
 endif()
 
-install(DIRECTORY
-        sce/include/
+# Install headers
+install(DIRECTORY sce/include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h"
 )
 
 # Install Python code generator
 install(PROGRAMS tools/codegen/codegen.py
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    DESTINATION ${SCE_INSTALL_CODEGENDIR}
     RENAME scxml-codegen
 )
 
 install(FILES tools/codegen/scxml_parser.py
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    DESTINATION ${SCE_INSTALL_CODEGENDIR}
 )
 
 install(DIRECTORY tools/codegen/templates
-    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    DESTINATION ${SCE_INSTALL_CODEGENDIR}
     FILES_MATCHING PATTERN "*.jinja2"
 )
 
-# Package configuration
+# Create symlink in bin for backward compatibility (avoids duplicate files)
+# Symlink: ${CMAKE_INSTALL_BINDIR}/scxml-codegen -> ../share/sce/codegen/scxml-codegen
+install(CODE "
+    set(_bin_dir \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\")
+    set(_codegen_rel \"../share/sce/codegen/scxml-codegen\")
+    set(_symlink \"\${_bin_dir}/scxml-codegen\")
+
+    file(MAKE_DIRECTORY \"\${_bin_dir}\")
+
+    if(EXISTS \"\${_symlink}\")
+        file(REMOVE \"\${_symlink}\")
+    endif()
+
+    execute_process(
+        COMMAND \${CMAKE_COMMAND} -E create_symlink \"\${_codegen_rel}\" \"\${_symlink}\"
+        RESULT_VARIABLE _result
+    )
+
+    if(_result EQUAL 0)
+        message(STATUS \"Created symlink: \${_symlink} -> \${_codegen_rel}\")
+    else()
+        message(WARNING \"Failed to create symlink, copying file instead\")
+        file(COPY_FILE
+            \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${SCE_INSTALL_CODEGENDIR}/scxml-codegen\"
+            \"\${_symlink}\"
+        )
+    endif()
+")
+
+# =============================================================================
+# Package Configuration for find_package(SCE)
+# =============================================================================
 include(CMakePackageConfigHelpers)
+
+# Generate version file
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/SCEConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
+
+# Set variables for config file
+set(INCLUDE_INSTALL_DIR "${CMAKE_INSTALL_INCLUDEDIR}")
+set(CODEGEN_INSTALL_DIR "${SCE_INSTALL_CODEGENDIR}")
+
+# Generate config file from template
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCEConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/SCEConfig.cmake"
+    INSTALL_DESTINATION ${SCE_INSTALL_CMAKEDIR}
+    PATH_VARS INCLUDE_INSTALL_DIR CODEGEN_INSTALL_DIR
+)
+
+# Export targets to file
+install(EXPORT SCETargets
+    FILE SCETargets.cmake
+    NAMESPACE SCE::
+    DESTINATION ${SCE_INSTALL_CMAKEDIR}
+)
+
+# Install package configuration files
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/SCEConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/SCEConfigVersion.cmake"
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
+    DESTINATION ${SCE_INSTALL_CMAKEDIR}
+)
+
+# =============================================================================
+# Legacy StateMachine Package (Deprecated - for backward compatibility)
+# =============================================================================
+# Remove this section in future major version
+
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 
-# Generate StateMachineConfig.cmake file
 configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/StateMachineConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfig.cmake
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/StateMachineConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfig.cmake"
     @ONLY
 )
 
-# Package installation
-install(
-    FILES
-        "${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfig.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfigVersion.cmake"
-        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/SCECodegen.cmake"
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/StateMachineConfigVersion.cmake"
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/StateMachine
 )
