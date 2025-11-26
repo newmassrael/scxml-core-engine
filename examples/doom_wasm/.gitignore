@@ -1,0 +1,9 @@
+# Build directories
+build/
+cmake_build/
+
+# Cloned/downloaded during CMake configure
+doomgeneric/
+
+# Generated state machine headers
+generated/

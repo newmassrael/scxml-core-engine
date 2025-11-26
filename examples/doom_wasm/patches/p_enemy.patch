@@ -1,0 +1,42 @@
+--- a/doomgeneric/p_enemy.c
++++ b/doomgeneric/p_enemy.c
+@@ -30,6 +30,9 @@
+ #include "g_game.h"
+ #include "p_enemy.h"
+
++// SCE State Machine Integration
++#include "sce_doom_hooks.h"
++
+ typedef enum
+ {
+     DI_EAST,
+@@ -645,6 +648,9 @@ void A_Look (mobj_t* actor)
+ 	    S_StartSound (actor, sound);
+     }
+
++    // SCE: Monster is now alert and entering chase state
++    SCE_EnemyAlert(actor);
++
+     P_SetMobjState (actor, actor->info->seestate);
+ }
+
+@@ -685,6 +691,9 @@ void A_Chase (mobj_t*	actor)
+ 	    actor->angle += ANG90/2;
+     }
+
++    // SCE: Monster is actively chasing
++    SCE_EnemyChasing(actor);
++
+     if (!actor->target
+ 	|| !(actor->target->flags&MF_SHOOTABLE))
+     {
+@@ -769,6 +778,9 @@ void A_FaceTarget (mobj_t* actor)
+ 	return;
+
+     actor->flags &= ~MF_AMBUSH;
++
++    // SCE: Monster is attacking (turning to face target before attack)
++    SCE_EnemyAttacking(actor);
+
+     actor->angle = R_PointToAngle2 (actor->x,
+ 				    actor->y,

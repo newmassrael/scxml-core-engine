@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="EnemyState" initial="dormant">
+
+    <!--
+    DOOM Enemy State Machine
+
+    States:
+    - dormant: Enemy has not detected player (idle/patrol)
+    - alert: Enemy just detected player, preparing to act
+    - chasing: Enemy is actively pursuing player
+    - attacking: Enemy is performing attack animation
+    - pain: Enemy is in pain state (hit stun)
+    - dead: Enemy has been killed
+
+    Note: Each enemy instance has its own state machine instance
+    -->
+
+    <!-- dormant: Enemy idle, hasn't seen player -->
+    <state id="dormant">
+        <transition event="see_player" target="alert"/>
+        <transition event="wake_up" target="alert"/>
+        <transition event="killed" target="dead"/>
+    </state>
+
+    <!-- alert: Just spotted player, about to act -->
+    <state id="alert">
+        <transition event="chase" target="chasing"/>
+        <transition event="attack" target="attacking"/>
+        <transition event="pain" target="pain"/>
+        <transition event="killed" target="dead"/>
+        <!-- Note: DOOM enemies don't return to dormant once alerted -->
+    </state>
+
+    <!-- chasing: Actively pursuing player -->
+    <state id="chasing">
+        <transition event="attack" target="attacking"/>
+        <transition event="pain" target="pain"/>
+        <transition event="killed" target="dead"/>
+        <!-- Note: DOOM enemies persist in chase until killed or attacking -->
+    </state>
+
+    <!-- attacking: Performing attack -->
+    <state id="attacking">
+        <transition event="chase" target="chasing"/>
+        <transition event="attack_complete" target="chasing"/>
+        <transition event="pain" target="pain"/>
+        <transition event="killed" target="dead"/>
+    </state>
+
+    <!-- pain: Hit stun state -->
+    <state id="pain">
+        <transition event="chase" target="chasing"/>
+        <transition event="pain_complete" target="chasing"/>
+        <transition event="killed" target="dead"/>
+    </state>
+
+    <!-- dead: Final state -->
+    <final id="dead"/>
+
+</scxml>

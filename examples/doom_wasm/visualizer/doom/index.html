@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DOOM + SCE State Machine Visualizer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        header {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #16213e, #0f3460);
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+        header h1 {
+            font-size: 1.8em;
+            color: #e94560;
+            text-shadow: 0 0 10px rgba(233, 69, 96, 0.5);
+        }
+        header p { color: #888; font-size: 0.9em; margin-top: 5px; }
+
+        .game-panel {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .game-panel h2 {
+            color: #e94560;
+            margin-bottom: 10px;
+            font-size: 1.2em;
+        }
+        #game-frame {
+            width: 640px;
+            height: 400px;
+            border: 2px solid #e94560;
+            border-radius: 5px;
+            background: #000;
+        }
+        .game-controls {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+        }
+        .game-controls button {
+            padding: 8px 16px;
+            background: #e94560;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .game-controls button:hover {
+            background: #ff6b6b;
+        }
+
+        .state-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .state-card {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 15px;
+            border-left: 4px solid #e94560;
+        }
+        .state-card h3 {
+            color: #e94560;
+            font-size: 1em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .state-card h3::before {
+            content: '';
+            width: 10px;
+            height: 10px;
+            background: #e94560;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .state-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #4ecca3;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .state-diagram {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            margin-top: 10px;
+        }
+        .state-node {
+            padding: 4px 10px;
+            background: #0f3460;
+            border-radius: 15px;
+            font-size: 0.75em;
+            color: #888;
+            transition: all 0.3s;
+        }
+        .state-node.active {
+            background: #4ecca3;
+            color: #000;
+            font-weight: bold;
+            box-shadow: 0 0 10px rgba(78, 204, 163, 0.5);
+        }
+
+        .enemy-panel {
+            background: #16213e;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        .enemy-panel h3 {
+            color: #e94560;
+            margin-bottom: 10px;
+        }
+        .enemy-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .enemy-stat {
+            background: #0f3460;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .enemy-stat .label { font-size: 0.8em; color: #888; }
+        .enemy-stat .value { font-size: 1.5em; color: #4ecca3; font-weight: bold; }
+
+        .enemy-list {
+            margin-top: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .enemy-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 10px;
+            background: #0f3460;
+            border-radius: 3px;
+            margin-bottom: 3px;
+            font-size: 0.85em;
+        }
+        .enemy-item .type { color: #e94560; }
+        .enemy-item .state { color: #4ecca3; }
+
+        .status-bar {
+            grid-column: 1 / -1;
+            background: #16213e;
+            border-radius: 10px;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #4ecca3;
+        }
+        .status-dot.disconnected { background: #e94560; }
+        .status-dot.connecting { background: #f39c12; animation: pulse 0.5s infinite; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>DOOM + SCE State Machine Visualizer</h1>
+            <p>Real-time SCXML state machine visualization integrated with DOOM</p>
+        </header>
+
+        <div class="game-panel">
+            <h2>DOOM Game</h2>
+            <iframe id="game-frame" src="../../doom_sce.html"></iframe>
+            <div class="game-controls">
+                <button onclick="initSCE()">Initialize SCE</button>
+                <button onclick="togglePolling()">Toggle Polling</button>
+            </div>
+        </div>
+
+        <div class="state-panel">
+            <div class="state-card">
+                <h3>Game State</h3>
+                <div class="state-value" id="game-state">LOADING...</div>
+                <div class="state-diagram">
+                    <span class="state-node" data-state="menu">MENU</span>
+                    <span class="state-node" data-state="playing">PLAYING</span>
+                    <span class="state-node" data-state="paused">PAUSED</span>
+                    <span class="state-node" data-state="completed">COMPLETED</span>
+                </div>
+            </div>
+
+            <div class="state-card">
+                <h3>Player State</h3>
+                <div class="state-value" id="player-state">LOADING...</div>
+                <div class="state-diagram">
+                    <span class="state-node" data-state="alive">ALIVE</span>
+                    <span class="state-node" data-state="hurt">HURT</span>
+                    <span class="state-node" data-state="dead">DEAD</span>
+                    <span class="state-node" data-state="respawning">RESPAWNING</span>
+                </div>
+            </div>
+
+            <div class="state-card">
+                <h3>Weapon State</h3>
+                <div class="state-value" id="weapon-state">LOADING...</div>
+                <div class="state-diagram">
+                    <span class="state-node" data-state="ready">READY</span>
+                    <span class="state-node" data-state="firing">FIRING</span>
+                    <span class="state-node" data-state="reloading">RELOADING</span>
+                    <span class="state-node" data-state="switching">SWITCHING</span>
+                </div>
+            </div>
+
+            <div class="enemy-panel">
+                <h3>Enemy Tracker</h3>
+                <div class="enemy-stats">
+                    <div class="enemy-stat">
+                        <div class="label">Active</div>
+                        <div class="value" id="enemy-count">0</div>
+                    </div>
+                    <div class="enemy-stat">
+                        <div class="label">Killed</div>
+                        <div class="value" id="enemy-killed">0</div>
+                    </div>
+                </div>
+                <div class="enemy-list" id="enemy-list">
+                    <div class="enemy-item">
+                        <span class="type">Waiting for data...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-item">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Connecting to DOOM...</span>
+            </div>
+            <div class="status-item">
+                <span>Update Rate: <strong id="update-rate">100ms</strong></span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let polling = false;
+        let pollInterval = null;
+        let doomFrame = null;
+        let doomModule = null;
+
+        function initSCE() {
+            doomFrame = document.getElementById('game-frame');
+            if (doomFrame && doomFrame.contentWindow && doomFrame.contentWindow.Module) {
+                doomModule = doomFrame.contentWindow.Module;
+                updateStatus('connected', 'Connected to DOOM');
+                startPolling();
+            } else {
+                updateStatus('connecting', 'Waiting for DOOM to load...');
+                setTimeout(initSCE, 1000);
+            }
+        }
+
+        function updateStatus(status, text) {
+            const dot = document.getElementById('status-dot');
+            const textEl = document.getElementById('status-text');
+            dot.className = 'status-dot ' + (status === 'connected' ? '' : status);
+            textEl.textContent = text;
+        }
+
+        function startPolling() {
+            if (pollInterval) return;
+            polling = true;
+            pollInterval = setInterval(updateStates, 100);
+        }
+
+        function stopPolling() {
+            polling = false;
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                pollInterval = null;
+            }
+        }
+
+        function togglePolling() {
+            if (polling) {
+                stopPolling();
+                updateStatus('disconnected', 'Polling stopped');
+            } else {
+                startPolling();
+                updateStatus('connected', 'Polling active');
+            }
+        }
+
+        function updateStates() {
+            if (!doomModule || !doomModule.ccall) return;
+
+            try {
+                // Get state values
+                const gameState = doomModule.ccall('sce_get_game_state', 'string', [], []);
+                const playerState = doomModule.ccall('sce_get_player_state', 'string', [], []);
+                const weaponState = doomModule.ccall('sce_get_weapon_state', 'string', [], []);
+                const enemyCount = doomModule.ccall('sce_get_enemy_count', 'number', [], []);
+                const enemyKilled = doomModule.ccall('sce_get_enemy_killed', 'number', [], []);
+
+                // Update display
+                updateStateDisplay('game-state', gameState);
+                updateStateDisplay('player-state', playerState);
+                updateStateDisplay('weapon-state', weaponState);
+
+                document.getElementById('enemy-count').textContent = enemyCount;
+                document.getElementById('enemy-killed').textContent = enemyKilled;
+
+                // Update state diagrams
+                updateStateDiagram(document.querySelectorAll('.state-card')[0], gameState);
+                updateStateDiagram(document.querySelectorAll('.state-card')[1], playerState);
+                updateStateDiagram(document.querySelectorAll('.state-card')[2], weaponState);
+
+                // Update enemy list
+                updateEnemyList(enemyCount);
+
+            } catch (e) {
+                console.error('Error updating states:', e);
+            }
+        }
+
+        function updateStateDisplay(id, state) {
+            const el = document.getElementById(id);
+            if (el && state) {
+                el.textContent = state.toUpperCase();
+            }
+        }
+
+        function updateStateDiagram(card, currentState) {
+            if (!card || !currentState) return;
+            const nodes = card.querySelectorAll('.state-node');
+            nodes.forEach(node => {
+                const nodeState = node.dataset.state;
+                if (currentState.toLowerCase().includes(nodeState)) {
+                    node.classList.add('active');
+                } else {
+                    node.classList.remove('active');
+                }
+            });
+        }
+
+        function updateEnemyList(count) {
+            if (!doomModule || !doomModule.ccall) return;
+
+            const list = document.getElementById('enemy-list');
+            let html = '';
+
+            const maxEnemies = doomModule.ccall('sce_get_max_enemies', 'number', [], []);
+
+            for (let i = 0; i < Math.min(count, 10); i++) {
+                const info = doomModule.ccall('sce_get_enemy_info', 'string', ['number'], [i]);
+                if (info) {
+                    const parts = info.split(':');
+                    html += `<div class="enemy-item">
+                        <span class="type">${parts[0] || 'Unknown'}</span>
+                        <span class="state">${parts[1] || 'Unknown'}</span>
+                    </div>`;
+                }
+            }
+
+            if (count > 10) {
+                html += `<div class="enemy-item"><span>... and ${count - 10} more</span></div>`;
+            }
+
+            if (html === '') {
+                html = '<div class="enemy-item"><span class="type">No active enemies</span></div>';
+            }
+
+            list.innerHTML = html;
+        }
+
+        // Auto-initialize after page load
+        window.addEventListener('load', () => {
+            setTimeout(initSCE, 2000);
+        });
+    </script>
+</body>
+</html>

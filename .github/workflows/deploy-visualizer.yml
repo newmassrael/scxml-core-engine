@@ -93,7 +93,8 @@ jobs:
         cp examples/doom_wasm/build/doom_sce.js gh-pages/doom/
         cp examples/doom_wasm/build/doom_sce.wasm gh-pages/doom/
         cp examples/doom_wasm/build/doom_sce.data gh-pages/doom/
-        cp -r examples/doom_wasm/build/visualizer gh-pages/doom/
+        # Copy visualizer for DOOM (visualizer.html at root, JS files in visualizer/)
+        cp -r visualizer gh-pages/doom/
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3

@@ -1,0 +1,39 @@
+--- a/doomgeneric/p_inter.c
++++ b/doomgeneric/p_inter.c
+@@ -38,6 +38,9 @@
+
+ #include "p_inter.h"
+
++// SCE State Machine Integration
++#include "sce_doom_hooks.h"
++
+
+ #define BONUSADD	6
+
+@@ -693,6 +696,14 @@ P_KillMobj
+ 	players[0].killcount++;
+     }
+
++    // SCE: Track monster or player death
++    if (target->player)
++    {
++        SCE_PlayerKilled();
++    }
++    else
++    {
++        SCE_EnemyKilled(target);
++    }
++
+     if (target->player)
+     {
+ 	// count environment kills against you
+@@ -898,6 +909,9 @@ P_DamageMobj
+ 	P_SetMobjState (target, target->info->painstate);
+     }
+
++    // SCE: Track monster pain state
++    SCE_EnemyPain(target);
++
+     target->reactiontime = 0;		// we're awake now...
+
+     if ( (!target->threshold || target->type == MT_VILE)

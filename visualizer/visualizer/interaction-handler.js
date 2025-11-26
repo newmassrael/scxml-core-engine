@@ -146,6 +146,12 @@ class InteractionHandler {
 
     highlightActiveStates(activeStateIds) {
         logger.debug(`[highlightActiveStates] Called with:`, activeStateIds);
+
+        // Check if states actually changed (skip redundant center/zoom operations)
+        const newStatesStr = [...activeStateIds].sort().join(',');
+        const oldStatesStr = this.visualizer.activeStates ? [...this.visualizer.activeStates].sort().join(',') : '';
+        const statesChanged = newStatesStr !== oldStatesStr;
+
         this.visualizer.activeStates = new Set(activeStateIds);
 
         // Auto-expand compound/parallel states that are active or have active children
@@ -171,15 +177,19 @@ class InteractionHandler {
                 this.visualizer.render();
                 // Re-highlight after re-render
                 this.visualizer.highlightActiveStatesVisual();
-                // Auto-center on active states
-                this.visualizer.focusManager.centerDiagram(activeStateIds);
+                // Auto-center on active states (only if states changed)
+                if (statesChanged) {
+                    this.visualizer.focusManager.centerDiagram(activeStateIds);
+                }
             });
             return;
         }
 
         this.visualizer.highlightActiveStatesVisual();
-        // Auto-center on active states
-        this.visualizer.focusManager.centerDiagram(activeStateIds);
+        // Auto-center on active states (only if states changed)
+        if (statesChanged) {
+            this.visualizer.focusManager.centerDiagram(activeStateIds);
+        }
     }
 
     highlightActiveStatesVisual() {
