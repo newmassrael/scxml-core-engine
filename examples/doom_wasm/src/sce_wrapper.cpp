@@ -110,7 +110,7 @@ static inline void js_notify_state_change(const char *machine, const char *state
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceStateChange == = 'function') {
+            if (typeof window.onSceStateChange === 'function') {
                 window.onSceStateChange(UTF8ToString($0), UTF8ToString($1));
             }
         },
@@ -123,7 +123,7 @@ static inline void js_notify_enemy_update(int slot, const char *type, const char
     EM_ASM(
         {
             console.log('[SCE:C++] js_notify_enemy_update called:', $0, UTF8ToString($1), UTF8ToString($2), $3, $4);
-            if (typeof window.onSceEnemyUpdate == = 'function') {
+            if (typeof window.onSceEnemyUpdate === 'function') {
                 window.onSceEnemyUpdate($0, UTF8ToString($1), UTF8ToString($2), $3, $4);
             } else {
                 console.warn('[SCE:C++] window.onSceEnemyUpdate not defined!');
@@ -137,7 +137,7 @@ static inline void js_notify_stats_update(int enemy_count, int enemy_killed) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            if (typeof window.onSceStatsUpdate == = 'function') {
+            if (typeof window.onSceStatsUpdate === 'function') {
                 window.onSceStatsUpdate($0, $1);
             }
         },

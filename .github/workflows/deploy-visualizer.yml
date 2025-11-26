@@ -57,6 +57,10 @@ jobs:
         emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
         cmake --build . --target visualizer -j$(nproc)
 
+    - name: Install Python Dependencies for Code Generator
+      run: |
+        pip install lxml jinja2
+
     - name: Build DOOM WASM Example
       run: |
         source emsdk/emsdk_env.sh
