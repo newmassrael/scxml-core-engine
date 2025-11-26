@@ -20,13 +20,9 @@ const char *sce_get_game_state(void);
 void sce_game_event_newgame(void);
 void sce_game_event_loadgame(void);
 void sce_game_event_completed(void);
-void sce_game_event_victory(void);
-void sce_game_event_died(void);
-void sce_game_event_quit(void);
 void sce_game_event_worlddone(void);
 void sce_game_event_finale(void);
-void sce_game_event_done(void);
-void sce_game_event_cast(void);
+void sce_game_event_demostart(void);  /* Reset weapon/enemy for demo playback */
 
 /* Player State Machine */
 const char *sce_get_player_state(void);

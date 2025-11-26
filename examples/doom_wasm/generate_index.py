@@ -78,47 +78,22 @@ def main():
             color: #0969da;
         }}
 
-        /* Visualizer Section */
-        #viz-section {{
-            border: 1px solid #555;
-            border-radius: 0 0 8px 8px;
-            overflow: hidden;
-            background: #2a2a2a;
-            height: calc(100vh - 700px);
-            min-height: 300px;
-        }}
-        #visualizer {{
-            width: 100%;
-            height: 100%;
-            border: none;
-        }}
-
-        /* Stats Section */
-        #stats {{
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-            padding: 10px 15px;
-            background: #222;
-            border-radius: 4px;
-            margin-top: 10px;
-        }}
-        #stats span {{ color: #888; }}
-        #stats strong {{ color: #00ff00; }}
-
-        /* Enemy Section */
+        /* Enemy Section (between tabs and visualizer, only for enemy tab) */
         .enemy-section {{
-            display: block;
-            margin-top: 10px;
+            display: none;
             padding: 10px;
-            background: #222;
-            border-radius: 4px;
+            background: #252525;
+            border: 1px solid #555;
+            border-bottom: none;
+        }}
+        .enemy-section.visible {{
+            display: block;
         }}
         .enemy-list {{
             display: flex;
             flex-wrap: wrap;
             gap: 5px;
-            max-height: 120px;
+            max-height: 100px;
             overflow-y: auto;
         }}
         .enemy-btn {{
@@ -147,6 +122,34 @@ def main():
         .enemy-state-text.ATTACKING {{ color: #ff0000; }}
         .enemy-state-text.PAIN {{ color: #ff00ff; }}
         .enemy-state-text.DEAD {{ color: #666; text-decoration: line-through; }}
+
+        /* Visualizer Section */
+        #viz-section {{
+            border: 1px solid #555;
+            border-radius: 0 0 8px 8px;
+            overflow: hidden;
+            background: #2a2a2a;
+            height: calc(100vh - 700px);
+            min-height: 300px;
+        }}
+        #visualizer {{
+            width: 100%;
+            height: 100%;
+            border: none;
+        }}
+
+        /* Stats Section */
+        #stats {{
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            padding: 10px 15px;
+            background: #222;
+            border-radius: 4px;
+            margin-top: 10px;
+        }}
+        #stats span {{ color: #888; }}
+        #stats strong {{ color: #00ff00; }}
     </style>
 </head>
 <body>
@@ -178,6 +181,11 @@ def main():
                     Enemy <span class="state-indicator" id="ind-enemy">0 active</span>
                 </button>
             </div>
+            <div id="enemy-section" class="enemy-section">
+                <div id="enemy-list" class="enemy-list">
+                    <!-- Enemy buttons will be added here -->
+                </div>
+            </div>
             <div id="viz-section">
                 <iframe id="visualizer" src="visualizer/visualizer.html?embed#scxml={scxml_base64['game']}"></iframe>
             </div>
@@ -191,12 +199,6 @@ def main():
             <span>Killed: <strong id="stat-killed">0</strong></span>
         </div>
 
-        <!-- Active Enemies Section -->
-        <div id="enemy-section" class="enemy-section">
-            <div id="enemy-list" class="enemy-list">
-                <!-- Enemy buttons will be added here -->
-            </div>
-        </div>
     </div>
 
     <script>
@@ -207,6 +209,9 @@ def main():
             weapon: '{scxml_base64['weapon']}',
             enemy: '{scxml_base64['enemy']}'
         }};
+
+        // Valid machine names for validation
+        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy'];
 
         // State tracking
         const SCE = {{
@@ -226,10 +231,48 @@ def main():
                 btn.classList.toggle('active', btn.dataset.machine === machine);
             }});
 
+            // Show/hide enemy section
+            const enemySection = document.getElementById('enemy-section');
+            enemySection.classList.toggle('visible', machine === 'enemy');
+
             // Load new SCXML in visualizer
             const iframe = document.getElementById('visualizer');
             iframe.src = 'visualizer/visualizer.html?embed&t=' + Date.now() + '#scxml=' + SCXML_DATA[machine];
             SCE.ready = false;
+        }}
+
+        // State priority for sorting (lower = first, DEAD and DORMANT at end)
+        const STATE_PRIORITY = {{
+            'ALERT': 1,
+            'CHASING': 2,
+            'ATTACKING': 3,
+            'PAIN': 4,
+            'DORMANT': 98,
+            'DEAD': 99
+        }};
+
+        // Sort enemy buttons in the list (debounced)
+        let sortTimeout = null;
+        function sortEnemyButtons() {{
+            if (sortTimeout) return;  // Already scheduled
+            sortTimeout = setTimeout(() => {{
+                sortTimeout = null;
+                const container = document.getElementById('enemy-list');
+                const buttons = Array.from(container.querySelectorAll('.enemy-btn'));
+
+                buttons.sort((a, b) => {{
+                    const stateA = SCE.enemies[a.dataset.slot]?.state || 'UNKNOWN';
+                    const stateB = SCE.enemies[b.dataset.slot]?.state || 'UNKNOWN';
+                    const priorityA = STATE_PRIORITY[stateA] || 50;
+                    const priorityB = STATE_PRIORITY[stateB] || 50;
+                    if (priorityA !== priorityB) return priorityA - priorityB;
+                    const typeA = SCE.enemies[a.dataset.slot]?.type || '';
+                    const typeB = SCE.enemies[b.dataset.slot]?.type || '';
+                    return typeA.localeCompare(typeB);
+                }});
+
+                buttons.forEach(btn => container.appendChild(btn));
+            }}, 500);  // Sort at most every 500ms
         }}
 
         // Select enemy and show in visualizer
@@ -293,6 +336,9 @@ def main():
                 }}
             }}
 
+            // Sort buttons after update
+            sortEnemyButtons();
+
             // Update stats
             const activeCount = Object.keys(SCE.enemies).length;
             document.getElementById('stat-enemies').textContent = activeCount;
@@ -300,8 +346,20 @@ def main():
 
         // C++ callback: Called when an enemy is updated
         window.onSceEnemyUpdate = function(slot, type, state, instanceId, active) {{
+            // Validate slot is a valid number
+            if (typeof slot !== 'number' || slot < 0) {{
+                console.warn('[SCE:Enemy] Invalid slot:', slot);
+                return;
+            }}
+
+            // Validate type and state are strings
+            if (typeof type !== 'string' || typeof state !== 'string') {{
+                console.warn('[SCE:Enemy] Invalid type or state:', type, state);
+                return;
+            }}
+
             console.log('[SCE:Enemy] Update:', slot, type, state, instanceId, active);
-            updateEnemySubtab(slot, type, state, instanceId, active);
+            updateEnemySubtab(slot, type, state, instanceId, !!active);
         }};
 
         // C++ callback: Called when stats are updated
@@ -313,6 +371,21 @@ def main():
 
         // C++ callback: Called when any state machine state changes
         window.onSceStateChange = function(machine, state) {{
+            // Validate machine name
+            if (!VALID_MACHINES.includes(machine)) {{
+                console.warn('[SCE] Invalid machine name:', machine);
+                return;
+            }}
+
+            // Validate state is a non-empty string
+            if (typeof state !== 'string' || !state) {{
+                console.warn('[SCE] Invalid state for', machine, ':', state);
+                return;
+            }}
+
+            // Save last state
+            SCE.lastState[machine] = state;
+
             // Update indicator
             const indicator = document.getElementById('ind-' + machine);
             if (indicator) indicator.textContent = state;
@@ -324,10 +397,12 @@ def main():
             // Update visualizer if this is the current tab
             if (machine === SCE.currentTab && SCE.ready) {{
                 const iframe = document.getElementById('visualizer');
-                iframe.contentWindow.postMessage({{
-                    type: 'highlight-states',
-                    stateIds: [state.toLowerCase()]
-                }}, '*');
+                if (iframe && iframe.contentWindow) {{
+                    iframe.contentWindow.postMessage({{
+                        type: 'highlight-states',
+                        stateIds: [state.toLowerCase()]
+                    }}, '*');
+                }}
             }}
         }};
 
@@ -337,12 +412,24 @@ def main():
                 SCE.ready = true;
                 const iframe = document.getElementById('visualizer');
 
-                // If enemy is selected, highlight its state
-                if (SCE.currentTab === 'enemy' && SCE.selectedEnemy !== null && SCE.enemies[SCE.selectedEnemy]) {{
-                    iframe.contentWindow.postMessage({{
-                        type: 'highlight-states',
-                        stateIds: [SCE.enemies[SCE.selectedEnemy].state.toLowerCase()]
-                    }}, '*');
+                // Highlight current state based on tab
+                if (SCE.currentTab === 'enemy') {{
+                    // If enemy is selected, highlight its state
+                    if (SCE.selectedEnemy !== null && SCE.enemies[SCE.selectedEnemy]) {{
+                        iframe.contentWindow.postMessage({{
+                            type: 'highlight-states',
+                            stateIds: [SCE.enemies[SCE.selectedEnemy].state.toLowerCase()]
+                        }}, '*');
+                    }}
+                }} else {{
+                    // For game/player/weapon, highlight last known state
+                    const lastState = SCE.lastState[SCE.currentTab];
+                    if (lastState) {{
+                        iframe.contentWindow.postMessage({{
+                            type: 'highlight-states',
+                            stateIds: [lastState.toLowerCase()]
+                        }}, '*');
+                    }}
                 }}
             }}
         }});

@@ -29,9 +29,8 @@
 
     <!-- Dead state - death animation -->
     <state id="dead">
+        <!-- Player pressed use to respawn - sets PST_REBORN which triggers respawn event -->
         <transition event="respawn" target="reborn"/>
-        <!-- In single player, press use to respawn -->
-        <transition event="use_pressed" target="reborn"/>
     </state>
 
     <!-- Reborn state - respawning -->

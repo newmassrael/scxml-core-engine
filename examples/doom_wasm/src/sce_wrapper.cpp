@@ -81,13 +81,7 @@ static EnemyEvent doom_state_to_event(const char *state_name) {
     if (strcmp(state_name, "PAIN") == 0) {
         return EnemyEvent::Pain;
     }
-    // Transition completion events
-    if (strcmp(state_name, "ATTACK_COMPLETE") == 0) {
-        return EnemyEvent::Attack_complete;
-    }
-    if (strcmp(state_name, "PAIN_COMPLETE") == 0) {
-        return EnemyEvent::Pain_complete;
-    }
+    // Note: ATTACK_COMPLETE and PAIN_COMPLETE not needed - chase event handles these transitions
     return EnemyEvent::NONE;
 }
 
@@ -102,6 +96,61 @@ static int g_next_instance_id = 1;
 static std::unique_ptr<SCE::Generated::game_state::game_state> g_game_sm;
 static std::unique_ptr<SCE::Generated::player_state::player_state> g_player_sm;
 static std::unique_ptr<SCE::Generated::weapon_state::weapon_state> g_weapon_sm;
+
+// Forward declarations
+extern "C" {
+const char *sce_get_player_state(void);
+const char *sce_get_weapon_state(void);
+}
+
+// Forward declarations for JavaScript callbacks (defined below)
+static inline void js_notify_state_change(const char *machine, const char *state);
+static inline void js_notify_enemy_update(int slot, const char *type, const char *state, int instance_id, bool active);
+static inline void js_notify_stats_update(int enemy_count, int enemy_killed);
+
+// ============================================
+// Helper Functions
+// ============================================
+
+/**
+ * @brief Reset player and weapon state machines for new/load game
+ *
+ * StaticExecutionEngine::initialize() does NOT reset currentState_,
+ * so we must recreate the state machine objects to properly reset them.
+ */
+static void reset_player_and_weapon_state_machines() {
+    // Recreate player state machine (initialize() doesn't reset currentState_)
+    g_player_sm = std::make_unique<SCE::Generated::player_state::player_state>();
+    g_player_sm->initialize();
+    js_notify_state_change("player", sce_get_player_state());
+
+    // Recreate weapon state machine
+    g_weapon_sm = std::make_unique<SCE::Generated::weapon_state::weapon_state>();
+    g_weapon_sm->initialize();
+    js_notify_state_change("weapon", sce_get_weapon_state());
+}
+
+/**
+ * @brief Reset all enemy tracking and notify JavaScript
+ * @param notify_dead If true, notify JS with DEAD state before removal
+ */
+static void reset_all_enemies(bool notify_dead = false) {
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        if (g_enemies[i].active) {
+            const char *state_name = "UNKNOWN";
+            if (g_enemies[i].sm) {
+                state_name = notify_dead ? "DEAD" : get_enemy_state_name(g_enemies[i].sm->getCurrentState());
+            }
+            js_notify_enemy_update(i, g_enemies[i].type_name, state_name, g_enemies[i].instance_id, false);
+            g_enemies[i].sm.reset();
+        }
+        g_enemies[i] = EnemyInstance{};
+    }
+    g_enemy_count = 0;
+    g_enemy_killed = 0;
+    g_next_instance_id = 1;
+    js_notify_stats_update(0, 0);
+}
 
 // ============================================
 // JavaScript Callbacks (100% Sync)
@@ -168,10 +217,8 @@ static int find_free_slot() {
 
 extern "C" {
 
-// Forward declarations for get state functions
+// Forward declaration for get game state
 const char *sce_get_game_state(void);
-const char *sce_get_player_state(void);
-const char *sce_get_weapon_state(void);
 
 // ============================================
 // Initialization
@@ -235,7 +282,7 @@ const char *sce_get_game_state(void) {
         }                                                                                                              \
     }
 
-// Special handling for newgame - reset all enemies
+// Special handling for newgame - reset all state machines
 EMSCRIPTEN_KEEPALIVE
 void sce_game_event_newgame(void) {
     if (g_game_sm) {
@@ -243,53 +290,43 @@ void sce_game_event_newgame(void) {
         js_notify_state_change("game", sce_get_game_state());
     }
 
-    // Reset player state machine for new game
-    if (g_player_sm) {
-        g_player_sm->initialize();
-        js_notify_state_change("player", sce_get_player_state());
-    }
-
-    // Reset weapon state machine for new game
-    if (g_weapon_sm) {
-        g_weapon_sm->initialize();
-        js_notify_state_change("weapon", sce_get_weapon_state());
-    }
+    // Reset player and weapon state machines
+    reset_player_and_weapon_state_machines();
 
     // Reset all enemy tracking
-    for (int i = 0; i < MAX_ENEMIES; i++) {
-        if (g_enemies[i].active) {
-            // Get state from state machine before cleanup
-            const char *state_name = "UNKNOWN";
-            if (g_enemies[i].sm) {
-                state_name = get_enemy_state_name(g_enemies[i].sm->getCurrentState());
-            }
-            // Notify JS to remove this enemy
-            js_notify_enemy_update(i, g_enemies[i].type_name, state_name, g_enemies[i].instance_id, false);
-            // Reset state machine
-            g_enemies[i].sm.reset();
-        }
-        g_enemies[i].mobj_ptr = nullptr;
-        g_enemies[i].instance_id = 0;
-        g_enemies[i].type_name = "UNKNOWN";
-        g_enemies[i].active = false;
-    }
-    g_enemy_count = 0;
-    g_enemy_killed = 0;
-    g_next_instance_id = 1;
-
-    // Notify stats reset
-    js_notify_stats_update(0, 0);
+    reset_all_enemies(false);
 }
 
-GAME_EVENT(loadgame, Loadgame)
+// Special handling for loadgame - also reset player/weapon states
+EMSCRIPTEN_KEEPALIVE
+void sce_game_event_loadgame(void) {
+    if (g_game_sm) {
+        g_game_sm->processEvent(SCE::Generated::game_state::Event::Loadgame);
+        js_notify_state_change("game", sce_get_game_state());
+    }
+
+    // Reset player and weapon state machines
+    reset_player_and_weapon_state_machines();
+
+    // Reset all enemy tracking (enemies will be re-spawned by level load)
+    reset_all_enemies(true);
+}
+
+// Special handling for demo start - reset player/weapon/enemy without changing game state
+EMSCRIPTEN_KEEPALIVE
+void sce_game_event_demostart(void) {
+    // Game state stays in DEMOSCREEN - no state machine event needed
+
+    // Reset player and weapon state machines for new demo
+    reset_player_and_weapon_state_machines();
+
+    // Reset all enemy tracking
+    reset_all_enemies(false);
+}
+
 GAME_EVENT(completed, Completed)
-GAME_EVENT(victory, Victory)
-GAME_EVENT(died, Died)
-GAME_EVENT(quit, Quit)
 GAME_EVENT(worlddone, Worlddone)
 GAME_EVENT(finale, Finale)
-GAME_EVENT(done, Done)
-GAME_EVENT(cast, Cast)
 
 #undef GAME_EVENT
 

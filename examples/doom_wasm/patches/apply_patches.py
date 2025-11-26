@@ -47,6 +47,19 @@ def main():
         # Player respawn - when playerstate becomes PST_REBORN (dead player wants to respawn)
         (r'(players\[i\]\.playerstate = PST_REBORN;)',
          r'\1\n        // SCE: Player starting respawn\n        SCE_PlayerRespawn();'),
+        # G_DoWorldDone - when going from intermission to next level
+        (r'(void G_DoWorldDone \(void\)\s*\{\s*\n)',
+         r'\1    // SCE: Moving to next level after intermission\n    SCE_GameWorldDone();\n'),
+    ])
+
+    # f_finale.c - finale hooks
+    patch_file(os.path.join(dg_dir, "f_finale.c"), [
+        # Add include at top after includes
+        (r'(#include "doomstat\.h")',
+         r'\1\n\n// SCE State Machine Integration\n#include "sce_doom_hooks.h"'),
+        # F_StartFinale - when finale begins
+        (r'(void F_StartFinale \(void\)\s*\{\s*\n)',
+         r'\1    // SCE: Finale sequence starting\n    SCE_GameFinale();\n'),
     ])
 
     # p_mobj.c - spawn/remove hooks

@@ -97,12 +97,16 @@ void SCE_GameCompleted(void) {
     sce_game_event_completed();
 }
 
-void SCE_GameVictory(void) {
-    sce_game_event_victory();
+void SCE_GameWorldDone(void) {
+    sce_game_event_worlddone();
 }
 
-void SCE_GameDied(void) {
-    sce_game_event_died();
+void SCE_GameFinale(void) {
+    sce_game_event_finale();
+}
+
+void SCE_GameDemoStart(void) {
+    sce_game_event_demostart();
 }
 
 /* Player state events */

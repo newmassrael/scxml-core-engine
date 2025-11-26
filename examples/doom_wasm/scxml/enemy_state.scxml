@@ -19,7 +19,7 @@
     <!-- dormant: Enemy idle, hasn't seen player -->
     <state id="dormant">
         <transition event="see_player" target="alert"/>
-        <transition event="wake_up" target="alert"/>
+        <transition event="pain" target="pain"/>  <!-- Can take damage before seeing player -->
         <transition event="killed" target="dead"/>
     </state>
 
@@ -42,16 +42,17 @@
 
     <!-- attacking: Performing attack -->
     <state id="attacking">
+        <!-- Returns to chasing via chase event from A_Chase -->
         <transition event="chase" target="chasing"/>
-        <transition event="attack_complete" target="chasing"/>
         <transition event="pain" target="pain"/>
         <transition event="killed" target="dead"/>
     </state>
 
     <!-- pain: Hit stun state -->
     <state id="pain">
+        <!-- Returns to chasing via chase event from A_Chase -->
         <transition event="chase" target="chasing"/>
-        <transition event="pain_complete" target="chasing"/>
+        <transition event="attack" target="attacking"/>  <!-- Can attack directly from pain -->
         <transition event="killed" target="dead"/>
     </state>
 

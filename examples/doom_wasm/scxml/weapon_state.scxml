@@ -53,11 +53,9 @@
         <onentry>
             <!-- Increment shot count -->
         </onentry>
+        <!-- Stays in firing during continuous fire (chaingun, etc), exits on fire_complete -->
         <transition event="fire_complete" target="ready">
-            <!-- Attack animation finished -->
-        </transition>
-        <transition event="fire_refire" target="firing">
-            <!-- Continuous fire (chaingun, etc) -->
+            <!-- Attack animation finished, not refiring -->
         </transition>
     </state>
 

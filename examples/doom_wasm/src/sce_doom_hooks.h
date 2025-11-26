@@ -27,8 +27,9 @@ void SCE_Init(void);
 void SCE_GameNewGame(void);
 void SCE_GameLoadGame(void);
 void SCE_GameCompleted(void);
-void SCE_GameVictory(void);
-void SCE_GameDied(void);
+void SCE_GameWorldDone(void);
+void SCE_GameFinale(void);
+void SCE_GameDemoStart(void);  /* Reset weapon/enemy for new demo playback */
 
 /**
  * Player state events
