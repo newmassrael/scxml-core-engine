@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  DOOM Weapon State Machine
+
+  Models weapon action lifecycle and weapon switching.
+  States: READY, RAISING, LOWERING, FIRING
+
+  Syncs with DOOM's pspdef_t states:
+  - upstate: Weapon raising animation
+  - downstate: Weapon lowering animation
+  - readystate: Weapon ready to fire
+  - atkstate: Weapon firing animation
+
+  Also tracks current weapon type via extended data.
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="ready" datamodel="null">
+
+    <!-- Ready state - weapon can fire or be switched -->
+    <state id="ready">
+        <onentry>
+            <!-- Log weapon ready -->
+        </onentry>
+        <transition event="fire" target="firing">
+            <!-- Player pressed fire button -->
+        </transition>
+        <transition event="switch_weapon" target="lowering">
+            <!-- Player wants to switch weapons -->
+        </transition>
+    </state>
+
+    <!-- Lowering state - weapon moving down to switch -->
+    <state id="lowering">
+        <onentry>
+            <!-- Start lower animation -->
+        </onentry>
+        <transition event="lower_complete" target="raising">
+            <!-- Weapon fully lowered, now raise new weapon -->
+        </transition>
+    </state>
+
+    <!-- Raising state - new weapon coming up -->
+    <state id="raising">
+        <onentry>
+            <!-- Start raise animation, update current weapon type -->
+        </onentry>
+        <transition event="raise_complete" target="ready">
+            <!-- Weapon fully raised -->
+        </transition>
+    </state>
+
+    <!-- Firing state - weapon attacking -->
+    <state id="firing">
+        <onentry>
+            <!-- Increment shot count -->
+        </onentry>
+        <transition event="fire_complete" target="ready">
+            <!-- Attack animation finished -->
+        </transition>
+        <transition event="fire_refire" target="firing">
+            <!-- Continuous fire (chaingun, etc) -->
+        </transition>
+    </state>
+
+</scxml>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DOOM Game State Machine
+
+    This SCXML models DOOM's game state transitions:
+    - DEMOSCREEN: Title screen / demo playback
+    - LEVEL: Active gameplay
+    - INTERMISSION: Between-level statistics
+    - FINALE: End of episode/game sequence
+
+    W3C SCXML 1.0 compliant
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       initial="demoscreen"
+       datamodel="null">
+
+    <!-- Initial state: Demo/Title screen -->
+    <state id="demoscreen">
+        <onentry>
+            <log label="DOOM" expr="'Entering demo screen'"/>
+        </onentry>
+        <transition event="newgame" target="level"/>
+        <transition event="loadgame" target="level"/>
+    </state>
+
+    <!-- Active gameplay -->
+    <state id="level">
+        <onentry>
+            <log label="DOOM" expr="'Entering level'"/>
+        </onentry>
+        <transition event="completed" target="intermission"/>
+        <transition event="victory" target="finale"/>
+        <transition event="died" target="demoscreen"/>
+        <transition event="quit" target="demoscreen"/>
+    </state>
+
+    <!-- Between-level intermission -->
+    <state id="intermission">
+        <onentry>
+            <log label="DOOM" expr="'Entering intermission'"/>
+        </onentry>
+        <transition event="worlddone" target="level"/>
+        <transition event="finale" target="finale"/>
+    </state>
+
+    <!-- End game/episode finale -->
+    <state id="finale">
+        <onentry>
+            <log label="DOOM" expr="'Entering finale'"/>
+        </onentry>
+        <transition event="done" target="demoscreen"/>
+        <transition event="cast" target="demoscreen"/>
+    </state>
+
+</scxml>

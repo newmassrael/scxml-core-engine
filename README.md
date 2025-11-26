@@ -8,6 +8,9 @@ A high-performance W3C SCXML 1.0 implementation in C++ with dual-engine architec
 - [Code Generator](https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html) - Full W3C SCXML code generation in browser (Pyodide)
 - [Test Results](https://newmassrael.github.io/scxml-core-engine/test-results/test-results.html) - W3C SCXML compliance report
 
+**Live Demo**:
+- [DOOM + SCXML](https://newmassrael.github.io/scxml-core-engine/visualizer/doom/) - DOOM WebAssembly with real-time state machine visualization
+
 ---
 
 ## Key Features

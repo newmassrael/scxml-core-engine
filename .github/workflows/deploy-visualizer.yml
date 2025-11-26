@@ -8,6 +8,7 @@ on:
       - 'rsm/**'
       - 'tools/codegen/**'
       - 'tests/w3c/InteractiveTestRunner.cpp'
+      - 'examples/doom_wasm/**'
       - '.github/workflows/deploy-visualizer.yml'
   workflow_dispatch:
 
@@ -56,6 +57,13 @@ jobs:
         emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
         cmake --build . --target visualizer -j$(nproc)
 
+    - name: Build DOOM WASM Example
+      run: |
+        source emsdk/emsdk_env.sh
+        cd examples/doom_wasm
+        chmod +x build.sh
+        ./build.sh
+
     - name: Prepare Deployment Directory
       run: |
         mkdir -p gh-pages
@@ -77,6 +85,15 @@ jobs:
         echo "Copying Python codegen files for Pyodide..."
         mkdir -p gh-pages/tools/codegen
         cp -r tools/codegen/* gh-pages/tools/codegen/
+
+        # Copy DOOM WASM example
+        echo "Copying DOOM WASM example..."
+        mkdir -p gh-pages/doom
+        cp examples/doom_wasm/build/index.html gh-pages/doom/
+        cp examples/doom_wasm/build/doom_sce.js gh-pages/doom/
+        cp examples/doom_wasm/build/doom_sce.wasm gh-pages/doom/
+        cp examples/doom_wasm/build/doom_sce.data gh-pages/doom/
+        cp -r examples/doom_wasm/build/visualizer gh-pages/doom/
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3

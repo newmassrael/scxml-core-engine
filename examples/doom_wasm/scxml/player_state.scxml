@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DOOM Player State Machine
+
+    Models player lifecycle:
+    - ALIVE: Normal gameplay, can take damage
+    - DEAD: Death animation playing, awaiting respawn
+    - REBORN: Respawning, brief invulnerability
+
+    W3C SCXML 1.0 compliant
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       initial="alive"
+       datamodel="null">
+
+    <!-- Playing state - normal gameplay -->
+    <state id="alive">
+        <transition event="killed" target="dead"/>
+        <!-- Cheat codes -->
+        <transition event="god_mode_on" target="invulnerable"/>
+    </state>
+
+    <!-- Invulnerable state (god mode) -->
+    <state id="invulnerable">
+        <transition event="god_mode_off" target="alive"/>
+        <transition event="killed" target="dead"/>  <!-- Can still die from special cases -->
+    </state>
+
+    <!-- Dead state - death animation -->
+    <state id="dead">
+        <transition event="respawn" target="reborn"/>
+        <!-- In single player, press use to respawn -->
+        <transition event="use_pressed" target="reborn"/>
+    </state>
+
+    <!-- Reborn state - respawning -->
+    <state id="reborn">
+        <transition event="spawn_complete" target="alive"/>
+    </state>
+
+</scxml>

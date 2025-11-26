@@ -14,6 +14,32 @@
     <!-- Custom Visualizer CSS -->
     <link href="visualizer.css" rel="stylesheet">
 
+    <!-- Embed Mode CSS (applied immediately via URL parameter) -->
+    <script>
+    (function() {
+        const params = new URLSearchParams(window.location.search);
+        if (params.has('embed')) {
+            document.documentElement.classList.add('embed-mode');
+        }
+    })();
+    </script>
+    <style>
+        /* Embed mode: show only the diagram */
+        html.embed-mode .sticky-header { display: none !important; }
+        html.embed-mode #bottom-panels-container { display: none !important; }
+        html.embed-mode .container-lg { padding: 0 !important; max-width: 100% !important; }
+        html.embed-mode #main-content { padding: 0 !important; display: block !important; }
+        html.embed-mode .Box.mb-3 { margin-bottom: 0 !important; border: none !important; background: transparent !important; }
+        html.embed-mode .Box-header { display: none !important; }
+        html.embed-mode .Box-body { padding: 0 !important; }
+        html.embed-mode #state-diagram-single { height: 100vh !important; min-height: 100vh !important; }
+        html.embed-mode .diagram-container { height: 100% !important; min-height: 100vh !important; }
+        html.embed-mode body { overflow: hidden; margin: 0; padding: 0; background: #fff; }
+        html.embed-mode .text-center.text-small { display: none !important; }
+        html.embed-mode #loading-state { display: none !important; }
+        html.embed-mode #error-container { display: none !important; }
+    </style>
+
     <!-- D3.js for SVG rendering (local) -->
     <script src="d3.v7.min.js"></script>
 
@@ -270,5 +296,35 @@
     <script src="panel-controller.js"></script>
 
     <script src="main.js"></script>
+
+    <!-- External State API for iframe communication (DOOM WASM integration) -->
+    <script>
+    (function() {
+        // Handle incoming state updates from parent window
+        window.addEventListener('message', function(event) {
+            if (event.data && event.data.type === 'highlight-states') {
+                // Update active states in the diagram
+                if (window.executionController && window.executionController.visualizer) {
+                    window.executionController.visualizer.highlightActiveStates(event.data.stateIds);
+                }
+            }
+        });
+
+        // Notify parent that visualizer is ready after full initialization
+        window.addEventListener('load', function() {
+            // Wait for WASM module and visualizer to be fully initialized
+            const checkReady = setInterval(function() {
+                if (window.executionController && window.executionController.visualizer) {
+                    clearInterval(checkReady);
+                    window.parent.postMessage({ type: 'visualizer-ready' }, '*');
+                    console.log('[Visualizer] Ready - notified parent');
+                }
+            }, 100);
+
+            // Timeout after 10 seconds
+            setTimeout(function() { clearInterval(checkReady); }, 10000);
+        });
+    })();
+    </script>
 </body>
 </html>
