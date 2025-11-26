@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>DOOM + SCE State Machines</title>
+    <style>
+        body { margin: 0; padding: 20px; background: #1a1a1a; color: #fff; font-family: monospace; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 { color: #ff0000; text-align: center; }
+
+        /* Game Section */
+        #game-section { text-align: center; margin-bottom: 20px; }
+        canvas { border: 2px solid #666; }
+        #status { padding: 10px; color: #ffff00; }
+        .controls { font-size: 12px; color: #888; margin-top: 10px; }
+
+        /* Tab Section */
+        .tab-container { margin-top: 20px; }
+        .tab-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 5px;
+            margin-bottom: 0;
+        }
+        .tab-btn {
+            padding: 10px 20px;
+            background: #333;
+            border: 1px solid #555;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            color: #888;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .tab-btn:hover { background: #444; }
+        .tab-btn.active {
+            background: #2a2a2a;
+            color: #00ff00;
+        }
+        .tab-btn .state-indicator {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 6px;
+            background: #444;
+            border-radius: 3px;
+            font-size: 10px;
+            color: #0969da;
+        }
+
+        /* Visualizer Section */
+        #viz-section {
+            border: 1px solid #555;
+            border-radius: 0 0 8px 8px;
+            overflow: hidden;
+            background: #2a2a2a;
+            height: calc(100vh - 700px);
+            min-height: 300px;
+        }
+        #visualizer {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Stats Section */
+        #stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            padding: 10px 15px;
+            background: #222;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        #stats span { color: #888; }
+        #stats strong { color: #00ff00; }
+
+        /* Enemy Section */
+        .enemy-section {
+            display: block;
+            margin-top: 10px;
+            padding: 10px;
+            background: #222;
+            border-radius: 4px;
+        }
+        .enemy-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            max-height: 120px;
+            overflow-y: auto;
+        }
+        .enemy-btn {
+            padding: 5px 10px;
+            background: #333;
+            border: 1px solid #555;
+            border-radius: 4px;
+            font-size: 11px;
+            color: #ff6600;
+            font-family: monospace;
+            cursor: pointer;
+        }
+        .enemy-btn:hover { background: #444; }
+        .enemy-btn.selected {
+            background: #2a2a2a;
+            border-color: #00ff00;
+            box-shadow: 0 0 5px rgba(0,255,0,0.3);
+        }
+        .enemy-state-text {
+            margin-left: 5px;
+            font-size: 10px;
+        }
+        .enemy-state-text.DORMANT { color: #8888ff; }
+        .enemy-state-text.ALERT { color: #ffff00; }
+        .enemy-state-text.CHASING { color: #ff9900; }
+        .enemy-state-text.ATTACKING { color: #ff0000; }
+        .enemy-state-text.PAIN { color: #ff00ff; }
+        .enemy-state-text.DEAD { color: #666; text-decoration: line-through; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>DOOM + SCE State Machines</h1>
+
+        <!-- Game Section -->
+        <div id="game-section">
+            <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" width="640" height="400"></canvas>
+            <div id="status">Loading...</div>
+            <div class="controls">
+                Arrow keys: Move | CTRL: Fire | Space: Use | Shift: Run | 1-7: Weapons
+            </div>
+        </div>
+
+        <!-- Tab + Visualizer Section -->
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-btn active" data-machine="game" onclick="switchTab('game')">
+                    Game <span class="state-indicator" id="ind-game">DEMOSCREEN</span>
+                </button>
+                <button class="tab-btn" data-machine="player" onclick="switchTab('player')">
+                    Player <span class="state-indicator" id="ind-player">ALIVE</span>
+                </button>
+                <button class="tab-btn" data-machine="weapon" onclick="switchTab('weapon')">
+                    Weapon <span class="state-indicator" id="ind-weapon">READY</span>
+                </button>
+                <button class="tab-btn" data-machine="enemy" onclick="switchTab('enemy')">
+                    Enemy <span class="state-indicator" id="ind-enemy">0 active</span>
+                </button>
+            </div>
+            <div id="viz-section">
+                <iframe id="visualizer" src="visualizer/visualizer.html?embed#scxml=PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBHYW1lIFN0YXRlIE1hY2hpbmUKCiAgICBUaGlzIFNDWE1MIG1vZGVscyBET09NJ3MgZ2FtZSBzdGF0ZSB0cmFuc2l0aW9uczoKICAgIC0gREVNT1NDUkVFTjogVGl0bGUgc2NyZWVuIC8gZGVtbyBwbGF5YmFjawogICAgLSBMRVZFTDogQWN0aXZlIGdhbWVwbGF5CiAgICAtIElOVEVSTUlTU0lPTjogQmV0d2Vlbi1sZXZlbCBzdGF0aXN0aWNzCiAgICAtIEZJTkFMRTogRW5kIG9mIGVwaXNvZGUvZ2FtZSBzZXF1ZW5jZQoKICAgIFczQyBTQ1hNTCAxLjAgY29tcGxpYW50Ci0tPgo8c2N4bWwgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDUvMDcvc2N4bWwiCiAgICAgICB2ZXJzaW9uPSIxLjAiCiAgICAgICBpbml0aWFsPSJkZW1vc2NyZWVuIgogICAgICAgZGF0YW1vZGVsPSJudWxsIj4KCiAgICA8IS0tIEluaXRpYWwgc3RhdGU6IERlbW8vVGl0bGUgc2NyZWVuIC0tPgogICAgPHN0YXRlIGlkPSJkZW1vc2NyZWVuIj4KICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgPGxvZyBsYWJlbD0iRE9PTSIgZXhwcj0iJ0VudGVyaW5nIGRlbW8gc2NyZWVuJyIvPgogICAgICAgIDwvb25lbnRyeT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibmV3Z2FtZSIgdGFyZ2V0PSJsZXZlbCIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJsb2FkZ2FtZSIgdGFyZ2V0PSJsZXZlbCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIEFjdGl2ZSBnYW1lcGxheSAtLT4KICAgIDxzdGF0ZSBpZD0ibGV2ZWwiPgogICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICA8bG9nIGxhYmVsPSJET09NIiBleHByPSInRW50ZXJpbmcgbGV2ZWwnIi8+CiAgICAgICAgPC9vbmVudHJ5PgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjb21wbGV0ZWQiIHRhcmdldD0iaW50ZXJtaXNzaW9uIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InZpY3RvcnkiIHRhcmdldD0iZmluYWxlIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImRpZWQiIHRhcmdldD0iZGVtb3NjcmVlbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJxdWl0IiB0YXJnZXQ9ImRlbW9zY3JlZW4iLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBCZXR3ZWVuLWxldmVsIGludGVybWlzc2lvbiAtLT4KICAgIDxzdGF0ZSBpZD0iaW50ZXJtaXNzaW9uIj4KICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgPGxvZyBsYWJlbD0iRE9PTSIgZXhwcj0iJ0VudGVyaW5nIGludGVybWlzc2lvbiciLz4KICAgICAgICA8L29uZW50cnk+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9IndvcmxkZG9uZSIgdGFyZ2V0PSJsZXZlbCIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJmaW5hbGUiIHRhcmdldD0iZmluYWxlIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRW5kIGdhbWUvZXBpc29kZSBmaW5hbGUgLS0+CiAgICA8c3RhdGUgaWQ9ImZpbmFsZSI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDxsb2cgbGFiZWw9IkRPT00iIGV4cHI9IidFbnRlcmluZyBmaW5hbGUnIi8+CiAgICAgICAgPC9vbmVudHJ5PgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJkb25lIiB0YXJnZXQ9ImRlbW9zY3JlZW4iLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iY2FzdCIgdGFyZ2V0PSJkZW1vc2NyZWVuIi8+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K"></iframe>
+            </div>
+        </div>
+
+        <!-- Stats Section -->
+        <div id="stats">
+            <span>Game: <strong id="stat-game">DEMOSCREEN</strong></span>
+            <span>Player: <strong id="stat-player">ALIVE</strong></span>
+            <span>Enemies: <strong id="stat-enemies">0</strong></span>
+            <span>Killed: <strong id="stat-killed">0</strong></span>
+        </div>
+
+        <!-- Active Enemies Section -->
+        <div id="enemy-section" class="enemy-section">
+            <div id="enemy-list" class="enemy-list">
+                <!-- Enemy buttons will be added here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // SCXML Base64 data
+        const SCXML_DATA = {
+            game: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBHYW1lIFN0YXRlIE1hY2hpbmUKCiAgICBUaGlzIFNDWE1MIG1vZGVscyBET09NJ3MgZ2FtZSBzdGF0ZSB0cmFuc2l0aW9uczoKICAgIC0gREVNT1NDUkVFTjogVGl0bGUgc2NyZWVuIC8gZGVtbyBwbGF5YmFjawogICAgLSBMRVZFTDogQWN0aXZlIGdhbWVwbGF5CiAgICAtIElOVEVSTUlTU0lPTjogQmV0d2Vlbi1sZXZlbCBzdGF0aXN0aWNzCiAgICAtIEZJTkFMRTogRW5kIG9mIGVwaXNvZGUvZ2FtZSBzZXF1ZW5jZQoKICAgIFczQyBTQ1hNTCAxLjAgY29tcGxpYW50Ci0tPgo8c2N4bWwgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDUvMDcvc2N4bWwiCiAgICAgICB2ZXJzaW9uPSIxLjAiCiAgICAgICBpbml0aWFsPSJkZW1vc2NyZWVuIgogICAgICAgZGF0YW1vZGVsPSJudWxsIj4KCiAgICA8IS0tIEluaXRpYWwgc3RhdGU6IERlbW8vVGl0bGUgc2NyZWVuIC0tPgogICAgPHN0YXRlIGlkPSJkZW1vc2NyZWVuIj4KICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgPGxvZyBsYWJlbD0iRE9PTSIgZXhwcj0iJ0VudGVyaW5nIGRlbW8gc2NyZWVuJyIvPgogICAgICAgIDwvb25lbnRyeT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibmV3Z2FtZSIgdGFyZ2V0PSJsZXZlbCIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJsb2FkZ2FtZSIgdGFyZ2V0PSJsZXZlbCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIEFjdGl2ZSBnYW1lcGxheSAtLT4KICAgIDxzdGF0ZSBpZD0ibGV2ZWwiPgogICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICA8bG9nIGxhYmVsPSJET09NIiBleHByPSInRW50ZXJpbmcgbGV2ZWwnIi8+CiAgICAgICAgPC9vbmVudHJ5PgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjb21wbGV0ZWQiIHRhcmdldD0iaW50ZXJtaXNzaW9uIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InZpY3RvcnkiIHRhcmdldD0iZmluYWxlIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImRpZWQiIHRhcmdldD0iZGVtb3NjcmVlbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJxdWl0IiB0YXJnZXQ9ImRlbW9zY3JlZW4iLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBCZXR3ZWVuLWxldmVsIGludGVybWlzc2lvbiAtLT4KICAgIDxzdGF0ZSBpZD0iaW50ZXJtaXNzaW9uIj4KICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgPGxvZyBsYWJlbD0iRE9PTSIgZXhwcj0iJ0VudGVyaW5nIGludGVybWlzc2lvbiciLz4KICAgICAgICA8L29uZW50cnk+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9IndvcmxkZG9uZSIgdGFyZ2V0PSJsZXZlbCIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJmaW5hbGUiIHRhcmdldD0iZmluYWxlIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRW5kIGdhbWUvZXBpc29kZSBmaW5hbGUgLS0+CiAgICA8c3RhdGUgaWQ9ImZpbmFsZSI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDxsb2cgbGFiZWw9IkRPT00iIGV4cHI9IidFbnRlcmluZyBmaW5hbGUnIi8+CiAgICAgICAgPC9vbmVudHJ5PgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJkb25lIiB0YXJnZXQ9ImRlbW9zY3JlZW4iLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iY2FzdCIgdGFyZ2V0PSJkZW1vc2NyZWVuIi8+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K',
+            player: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBQbGF5ZXIgU3RhdGUgTWFjaGluZQoKICAgIE1vZGVscyBwbGF5ZXIgbGlmZWN5Y2xlOgogICAgLSBBTElWRTogTm9ybWFsIGdhbWVwbGF5LCBjYW4gdGFrZSBkYW1hZ2UKICAgIC0gREVBRDogRGVhdGggYW5pbWF0aW9uIHBsYXlpbmcsIGF3YWl0aW5nIHJlc3Bhd24KICAgIC0gUkVCT1JOOiBSZXNwYXduaW5nLCBicmllZiBpbnZ1bG5lcmFiaWxpdHkKCiAgICBXM0MgU0NYTUwgMS4wIGNvbXBsaWFudAotLT4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIgogICAgICAgdmVyc2lvbj0iMS4wIgogICAgICAgaW5pdGlhbD0iYWxpdmUiCiAgICAgICBkYXRhbW9kZWw9Im51bGwiPgoKICAgIDwhLS0gUGxheWluZyBzdGF0ZSAtIG5vcm1hbCBnYW1lcGxheSAtLT4KICAgIDxzdGF0ZSBpZD0iYWxpdmUiPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgICAgIDwhLS0gQ2hlYXQgY29kZXMgLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImdvZF9tb2RlX29uIiB0YXJnZXQ9ImludnVsbmVyYWJsZSIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIEludnVsbmVyYWJsZSBzdGF0ZSAoZ29kIG1vZGUpIC0tPgogICAgPHN0YXRlIGlkPSJpbnZ1bG5lcmFibGUiPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJnb2RfbW9kZV9vZmYiIHRhcmdldD0iYWxpdmUiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4gIDwhLS0gQ2FuIHN0aWxsIGRpZSBmcm9tIHNwZWNpYWwgY2FzZXMgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRGVhZCBzdGF0ZSAtIGRlYXRoIGFuaW1hdGlvbiAtLT4KICAgIDxzdGF0ZSBpZD0iZGVhZCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InJlc3Bhd24iIHRhcmdldD0icmVib3JuIi8+CiAgICAgICAgPCEtLSBJbiBzaW5nbGUgcGxheWVyLCBwcmVzcyB1c2UgdG8gcmVzcGF3biAtLT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0idXNlX3ByZXNzZWQiIHRhcmdldD0icmVib3JuIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gUmVib3JuIHN0YXRlIC0gcmVzcGF3bmluZyAtLT4KICAgIDxzdGF0ZSBpZD0icmVib3JuIj4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ic3Bhd25fY29tcGxldGUiIHRhcmdldD0iYWxpdmUiLz4KICAgIDwvc3RhdGU+Cgo8L3NjeG1sPgo=',
+            weapon: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogIERPT00gV2VhcG9uIFN0YXRlIE1hY2hpbmUKCiAgTW9kZWxzIHdlYXBvbiBhY3Rpb24gbGlmZWN5Y2xlIGFuZCB3ZWFwb24gc3dpdGNoaW5nLgogIFN0YXRlczogUkVBRFksIFJBSVNJTkcsIExPV0VSSU5HLCBGSVJJTkcKCiAgU3luY3Mgd2l0aCBET09NJ3MgcHNwZGVmX3Qgc3RhdGVzOgogIC0gdXBzdGF0ZTogV2VhcG9uIHJhaXNpbmcgYW5pbWF0aW9uCiAgLSBkb3duc3RhdGU6IFdlYXBvbiBsb3dlcmluZyBhbmltYXRpb24KICAtIHJlYWR5c3RhdGU6IFdlYXBvbiByZWFkeSB0byBmaXJlCiAgLSBhdGtzdGF0ZTogV2VhcG9uIGZpcmluZyBhbmltYXRpb24KCiAgQWxzbyB0cmFja3MgY3VycmVudCB3ZWFwb24gdHlwZSB2aWEgZXh0ZW5kZWQgZGF0YS4KLS0+CjxzY3htbCB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwNS8wNy9zY3htbCIgdmVyc2lvbj0iMS4wIiBpbml0aWFsPSJyZWFkeSIgZGF0YW1vZGVsPSJudWxsIj4KCiAgICA8IS0tIFJlYWR5IHN0YXRlIC0gd2VhcG9uIGNhbiBmaXJlIG9yIGJlIHN3aXRjaGVkIC0tPgogICAgPHN0YXRlIGlkPSJyZWFkeSI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDwhLS0gTG9nIHdlYXBvbiByZWFkeSAtLT4KICAgICAgICA8L29uZW50cnk+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImZpcmUiIHRhcmdldD0iZmlyaW5nIj4KICAgICAgICAgICAgPCEtLSBQbGF5ZXIgcHJlc3NlZCBmaXJlIGJ1dHRvbiAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InN3aXRjaF93ZWFwb24iIHRhcmdldD0ibG93ZXJpbmciPgogICAgICAgICAgICA8IS0tIFBsYXllciB3YW50cyB0byBzd2l0Y2ggd2VhcG9ucyAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gTG93ZXJpbmcgc3RhdGUgLSB3ZWFwb24gbW92aW5nIGRvd24gdG8gc3dpdGNoIC0tPgogICAgPHN0YXRlIGlkPSJsb3dlcmluZyI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDwhLS0gU3RhcnQgbG93ZXIgYW5pbWF0aW9uIC0tPgogICAgICAgIDwvb25lbnRyeT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibG93ZXJfY29tcGxldGUiIHRhcmdldD0icmFpc2luZyI+CiAgICAgICAgICAgIDwhLS0gV2VhcG9uIGZ1bGx5IGxvd2VyZWQsIG5vdyByYWlzZSBuZXcgd2VhcG9uIC0tPgogICAgICAgIDwvdHJhbnNpdGlvbj4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBSYWlzaW5nIHN0YXRlIC0gbmV3IHdlYXBvbiBjb21pbmcgdXAgLS0+CiAgICA8c3RhdGUgaWQ9InJhaXNpbmciPgogICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICA8IS0tIFN0YXJ0IHJhaXNlIGFuaW1hdGlvbiwgdXBkYXRlIGN1cnJlbnQgd2VhcG9uIHR5cGUgLS0+CiAgICAgICAgPC9vbmVudHJ5PgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJyYWlzZV9jb21wbGV0ZSIgdGFyZ2V0PSJyZWFkeSI+CiAgICAgICAgICAgIDwhLS0gV2VhcG9uIGZ1bGx5IHJhaXNlZCAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRmlyaW5nIHN0YXRlIC0gd2VhcG9uIGF0dGFja2luZyAtLT4KICAgIDxzdGF0ZSBpZD0iZmlyaW5nIj4KICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgPCEtLSBJbmNyZW1lbnQgc2hvdCBjb3VudCAtLT4KICAgICAgICA8L29uZW50cnk+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImZpcmVfY29tcGxldGUiIHRhcmdldD0icmVhZHkiPgogICAgICAgICAgICA8IS0tIEF0dGFjayBhbmltYXRpb24gZmluaXNoZWQgLS0+CiAgICAgICAgPC90cmFuc2l0aW9uPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJmaXJlX3JlZmlyZSIgdGFyZ2V0PSJmaXJpbmciPgogICAgICAgICAgICA8IS0tIENvbnRpbnVvdXMgZmlyZSAoY2hhaW5ndW4sIGV0YykgLS0+CiAgICAgICAgPC90cmFuc2l0aW9uPgogICAgPC9zdGF0ZT4KCjwvc2N4bWw+Cg==',
+            enemy: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIiB2ZXJzaW9uPSIxLjAiCiAgICAgICBuYW1lPSJFbmVteVN0YXRlIiBpbml0aWFsPSJkb3JtYW50Ij4KCiAgICA8IS0tCiAgICBET09NIEVuZW15IFN0YXRlIE1hY2hpbmUKCiAgICBTdGF0ZXM6CiAgICAtIGRvcm1hbnQ6IEVuZW15IGhhcyBub3QgZGV0ZWN0ZWQgcGxheWVyIChpZGxlL3BhdHJvbCkKICAgIC0gYWxlcnQ6IEVuZW15IGp1c3QgZGV0ZWN0ZWQgcGxheWVyLCBwcmVwYXJpbmcgdG8gYWN0CiAgICAtIGNoYXNpbmc6IEVuZW15IGlzIGFjdGl2ZWx5IHB1cnN1aW5nIHBsYXllcgogICAgLSBhdHRhY2tpbmc6IEVuZW15IGlzIHBlcmZvcm1pbmcgYXR0YWNrIGFuaW1hdGlvbgogICAgLSBwYWluOiBFbmVteSBpcyBpbiBwYWluIHN0YXRlIChoaXQgc3R1bikKICAgIC0gZGVhZDogRW5lbXkgaGFzIGJlZW4ga2lsbGVkCgogICAgTm90ZTogRWFjaCBlbmVteSBpbnN0YW5jZSBoYXMgaXRzIG93biBzdGF0ZSBtYWNoaW5lIGluc3RhbmNlCiAgICAtLT4KCiAgICA8IS0tIGRvcm1hbnQ6IEVuZW15IGlkbGUsIGhhc24ndCBzZWVuIHBsYXllciAtLT4KICAgIDxzdGF0ZSBpZD0iZG9ybWFudCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNlZV9wbGF5ZXIiIHRhcmdldD0iYWxlcnQiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0id2FrZV91cCIgdGFyZ2V0PSJhbGVydCIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIGFsZXJ0OiBKdXN0IHNwb3R0ZWQgcGxheWVyLCBhYm91dCB0byBhY3QgLS0+CiAgICA8c3RhdGUgaWQ9ImFsZXJ0Ij4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iY2hhc2UiIHRhcmdldD0iY2hhc2luZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJhdHRhY2siIHRhcmdldD0iYXR0YWNraW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InBhaW4iIHRhcmdldD0icGFpbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgICAgIDwhLS0gTm90ZTogRE9PTSBlbmVtaWVzIGRvbid0IHJldHVybiB0byBkb3JtYW50IG9uY2UgYWxlcnRlZCAtLT4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBjaGFzaW5nOiBBY3RpdmVseSBwdXJzdWluZyBwbGF5ZXIgLS0+CiAgICA8c3RhdGUgaWQ9ImNoYXNpbmciPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJhdHRhY2siIHRhcmdldD0iYXR0YWNraW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InBhaW4iIHRhcmdldD0icGFpbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgICAgIDwhLS0gTm90ZTogRE9PTSBlbmVtaWVzIHBlcnNpc3QgaW4gY2hhc2UgdW50aWwga2lsbGVkIG9yIGF0dGFja2luZyAtLT4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBhdHRhY2tpbmc6IFBlcmZvcm1pbmcgYXR0YWNrIC0tPgogICAgPHN0YXRlIGlkPSJhdHRhY2tpbmciPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjaGFzZSIgdGFyZ2V0PSJjaGFzaW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImF0dGFja19jb21wbGV0ZSIgdGFyZ2V0PSJjaGFzaW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InBhaW4iIHRhcmdldD0icGFpbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIHBhaW46IEhpdCBzdHVuIHN0YXRlIC0tPgogICAgPHN0YXRlIGlkPSJwYWluIj4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iY2hhc2UiIHRhcmdldD0iY2hhc2luZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJwYWluX2NvbXBsZXRlIiB0YXJnZXQ9ImNoYXNpbmciLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBkZWFkOiBGaW5hbCBzdGF0ZSAtLT4KICAgIDxmaW5hbCBpZD0iZGVhZCIvPgoKPC9zY3htbD4K'
+        };
+
+        // State tracking
+        const SCE = {
+            currentTab: 'game',
+            ready: false,
+            lastState: { game: null, player: null, weapon: null, enemy: null },
+            enemies: {},  // slot -> {type, state, instanceId, active}
+            selectedEnemy: null
+        };
+
+        // Tab switching
+        function switchTab(machine) {
+            SCE.currentTab = machine;
+
+            // Update tab button styles
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.machine === machine);
+            });
+
+            // Load new SCXML in visualizer
+            const iframe = document.getElementById('visualizer');
+            iframe.src = 'visualizer/visualizer.html?embed&t=' + Date.now() + '#scxml=' + SCXML_DATA[machine];
+            SCE.ready = false;
+        }
+
+        // Select enemy and show in visualizer
+        function selectEnemy(slot) {
+            SCE.selectedEnemy = slot;
+
+            // Update button styles
+            document.querySelectorAll('.enemy-btn').forEach(btn => {
+                btn.classList.toggle('selected', parseInt(btn.dataset.slot) === slot);
+            });
+
+            // Switch to enemy tab and highlight state
+            SCE.currentTab = 'enemy';
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.machine === 'enemy');
+            });
+
+            // Load enemy SCXML in visualizer
+            const iframe = document.getElementById('visualizer');
+            iframe.src = 'visualizer/visualizer.html?embed&t=' + Date.now() + '#scxml=' + SCXML_DATA.enemy;
+            SCE.ready = false;
+        }
+
+        // Update enemy button and data
+        function updateEnemySubtab(slot, type, state, instanceId, active) {
+            const container = document.getElementById('enemy-list');
+            let btn = document.querySelector(`.enemy-btn[data-slot="${slot}"]`);
+
+            if (active) {
+                // Create or update button
+                if (!btn) {
+                    btn = document.createElement('button');
+                    btn.className = 'enemy-btn';
+                    btn.dataset.slot = slot;
+                    btn.onclick = () => selectEnemy(slot);
+                    container.appendChild(btn);
+                }
+                btn.innerHTML = `${type} <span class="enemy-state-text ${state}">${state}</span>`;
+
+                // Store enemy data
+                SCE.enemies[slot] = { type, state, instanceId, active };
+
+                // If this enemy is selected and visualizer ready, highlight state
+                if (SCE.selectedEnemy === slot && SCE.ready) {
+                    const iframe = document.getElementById('visualizer');
+                    iframe.contentWindow.postMessage({
+                        type: 'highlight-states',
+                        stateIds: [state.toLowerCase()]
+                    }, '*');
+                }
+            } else {
+                // Remove button
+                if (btn) {
+                    btn.remove();
+                }
+                delete SCE.enemies[slot];
+
+                // If this enemy was selected, clear selection
+                if (SCE.selectedEnemy === slot) {
+                    SCE.selectedEnemy = null;
+                }
+            }
+
+            // Update stats
+            const activeCount = Object.keys(SCE.enemies).length;
+            document.getElementById('stat-enemies').textContent = activeCount;
+        }
+
+        // C++ callback: Called when an enemy is updated
+        window.onSceEnemyUpdate = function(slot, type, state, instanceId, active) {
+            console.log('[SCE:Enemy] Update:', slot, type, state, instanceId, active);
+            updateEnemySubtab(slot, type, state, instanceId, active);
+        };
+
+        // C++ callback: Called when stats are updated
+        window.onSceStatsUpdate = function(enemyCount, enemyKilled) {
+            document.getElementById('stat-enemies').textContent = enemyCount;
+            document.getElementById('stat-killed').textContent = enemyKilled;
+            document.getElementById('ind-enemy').textContent = enemyCount + ' active';
+        };
+
+        // C++ callback: Called when any state machine state changes
+        window.onSceStateChange = function(machine, state) {
+            // Update indicator
+            const indicator = document.getElementById('ind-' + machine);
+            if (indicator) indicator.textContent = state;
+
+            // Update stats
+            const statEl = document.getElementById('stat-' + machine);
+            if (statEl) statEl.textContent = state;
+
+            // Update visualizer if this is the current tab
+            if (machine === SCE.currentTab && SCE.ready) {
+                const iframe = document.getElementById('visualizer');
+                iframe.contentWindow.postMessage({
+                    type: 'highlight-states',
+                    stateIds: [state.toLowerCase()]
+                }, '*');
+            }
+        };
+
+        // Wait for visualizer ready
+        window.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'visualizer-ready') {
+                SCE.ready = true;
+                const iframe = document.getElementById('visualizer');
+
+                // If enemy is selected, highlight its state
+                if (SCE.currentTab === 'enemy' && SCE.selectedEnemy !== null && SCE.enemies[SCE.selectedEnemy]) {
+                    iframe.contentWindow.postMessage({
+                        type: 'highlight-states',
+                        stateIds: [SCE.enemies[SCE.selectedEnemy].state.toLowerCase()]
+                    }, '*');
+                }
+            }
+        });
+
+        // Track WASM runtime initialization
+        let wasmReady = false;
+
+        // Emscripten Module
+        var Module = {
+            canvas: document.getElementById('canvas'),
+            onRuntimeInitialized: function() {
+                wasmReady = true;
+                console.log('[SCE] WASM runtime initialized - state polling enabled');
+            },
+            print: function(text) {
+                console.log(text);
+                if (text.includes('[SCE:')) {
+                    console.log('%c' + text, 'color: #00ff00; font-weight: bold;');
+                }
+            },
+            printErr: function(text) { console.error(text); },
+            setStatus: function(text) {
+                document.getElementById('status').textContent = text || 'Ready';
+            },
+            totalDependencies: 0,
+            monitorRunDependencies: function(left) {
+                this.totalDependencies = Math.max(this.totalDependencies, left);
+                Module.setStatus(left ? 'Loading...' : '');
+            }
+        };
+    </script>
+    <script async src="doom_sce.js"></script>
+</body>
+</html>

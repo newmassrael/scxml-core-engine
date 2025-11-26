@@ -1,0 +1,198 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+// SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
+/**
+ * TransitionLayoutOptimizer
+ *
+ * Optimizes transition arrow layout for minimal crossing and optimal snap positioning.
+ * Handles connection analysis, snap point calculation, and crossing minimization.
+ */
+
+// Use logger for debug output (controlled by ?debug URL parameter)
+// Reuse log if already defined by constraint-solver.js
+if (typeof log === 'undefined') {
+    log = logger.debug.bind(logger);
+}
+
+class TransitionLayoutOptimizer {
+    // Node size constants (half-width and half-height)
+    static NODE_SIZES = {
+        'initial-pseudo': { halfWidth: 10, halfHeight: 10 },
+        'atomic': { halfWidth: 30, halfHeight: 20 },
+        'compound': { halfWidth: 30, halfHeight: 20 },
+        'final': { halfWidth: 30, halfHeight: 20 },
+        'history': { halfWidth: 15, halfHeight: 15 },
+        'parallel': { halfWidth: 30, halfHeight: 20 }
+    };
+
+    // Path segment constants
+    static MIN_SEGMENT_LENGTH = 30;
+    static MIN_SAFE_DISTANCE = 60; // MIN_SEGMENT_LENGTH * 2
+
+    // Progressive optimization configuration
+    static PROGRESS_RENDER_INTERVAL_MS = 50;  // Minimum interval between progressive renders
+    static CSP_THRESHOLD = 15;  // Maximum links for CSP optimization
+    static CSP_DEBOUNCE_MS = 1500;  // Delay before CSP after drag (1.5s, non-blocking via Web Worker)
+
+    // Self-loop optimization penalties
+    static SELF_LOOP_SAME_EDGE_PENALTY = 15000;  // Penalty for U-shaped paths (e.g., top→top)
+    static SELF_LOOP_DIFF_EDGE_BONUS = -8000;    // Bonus for natural side-loops (e.g., top→right)
+
+    /**
+     * Get node size by type or from node object
+     * @param {string|Object} nodeOrType - Node object or node type string
+     * @returns {Object} {halfWidth, halfHeight}
+     */
+    static getNodeSize(nodeOrType) {
+        // If it's a node object with width/height, use actual dimensions
+        if (typeof nodeOrType === 'object' && nodeOrType !== null) {
+            const node = nodeOrType;
+
+            // Check if node is collapsed - use minimum size for collapsed compound/parallel states
+            if (node.collapsed && (node.type === 'compound' || node.type === 'parallel')) {
+                // Use LAYOUT_CONSTANTS from visualizer-core.js
+                if (typeof LAYOUT_CONSTANTS !== 'undefined') {
+                    return {
+                        halfWidth: LAYOUT_CONSTANTS.STATE_MIN_WIDTH / 2,
+                        halfHeight: LAYOUT_CONSTANTS.STATE_MIN_HEIGHT / 2
+                    };
+                }
+                // Fallback if LAYOUT_CONSTANTS not available
+                return {
+                    halfWidth: 70,   // Default STATE_MIN_WIDTH/2
+                    halfHeight: 25   // Default STATE_MIN_HEIGHT/2
+                };
+            }
+
+            // History states: Use actual circle radius (20 from renderer.js), not bbox
+            // W3C SCXML 3.11: History pseudo-state rendered as circle with "H"
+            if (node.type === 'history') {
+                return {
+                    halfWidth: 20,
+                    halfHeight: 20
+                };
+            }
+
+            if (node.width !== undefined && node.height !== undefined) {
+                return {
+                    halfWidth: node.width / 2,
+                    halfHeight: node.height / 2
+                };
+            }
+            // Fallback to type-based lookup if no dimensions
+            nodeOrType = node.type;
+        }
+        // Type-based lookup for nodes without dimensions
+        return this.NODE_SIZES[nodeOrType] || { halfWidth: 30, halfHeight: 20 };
+    }
+
+    constructor(nodes, links, visualizer = null) {
+        this.nodes = nodes;
+        this.links = links;
+        this.visualizer = visualizer;  // Optional visualizer reference for getVisibleLinks
+        this.cspRunning = false; // Flag to prevent concurrent CSP executions
+
+        // Build parent-child map from containment links (for hierarchy-aware greedy scoring)
+        this.parentChildMap = new Map(); // Map<childId, parentId>
+        links.forEach(link => {
+            if (link.linkType === 'containment') {
+                this.parentChildMap.set(link.target, link.source);
+            }
+        });
+
+        // Initialize helper modules
+        this.snapCalculator = new SnapCalculator(this);
+        this.cspSolver = new CSPSolver(this);
+        this.pathUtils = new PathUtils(this);
+    }
+
+    _sortLinksByPriority(links) {
+        return [...links].sort((a, b) => {
+            if (a.linkType === 'initial' && b.linkType !== 'initial') return -1;
+            if (a.linkType !== 'initial' && b.linkType === 'initial') return 1;
+            return 0;
+        });
+    }
+
+    /**
+     * Calculate self-loop penalty/bonus for edge combination
+     * Encourages natural side-loops (different edges) over awkward U-shapes (same edge)
+     * @param {Object} link - Link object
+     * @param {string} sourceEdge - Source edge (top/bottom/left/right)
+     * @param {string} targetEdge - Target edge (top/bottom/left/right)
+     * @returns {number} Penalty (positive) or bonus (negative)
+     */
+    calculateSelfLoopPenalty(link, sourceEdge, targetEdge) {
+        const visualSource = link.visualSource || link.source;
+        const visualTarget = link.visualTarget || link.target;
+        const isSelfLoop = visualSource === visualTarget;
+
+        if (!isSelfLoop) return 0;
+
+        // Same-edge self-loop: U-shaped awkward path (penalty)
+        // Different-edge self-loop: Natural side-loop (bonus)
+        return (sourceEdge === targetEdge)
+            ? TransitionLayoutOptimizer.SELF_LOOP_SAME_EDGE_PENALTY
+            : TransitionLayoutOptimizer.SELF_LOOP_DIFF_EDGE_BONUS;
+    }
+
+    _applySolutionToLinks(assignment, links, nodes) {
+        // Note: Expects already filtered links (transition and initial only)
+
+        // Convert different formats to uniform format
+        let assignments;
+
+        if (assignment instanceof Map) {
+            // Progress case: Map → Array of tuples [[linkId, {sourceEdge, targetEdge}], ...]
+            assignments = Array.from(assignment.entries()).map(([linkId, value]) => ({
+                linkId,
+                sourceEdge: value.sourceEdge,
+                targetEdge: value.targetEdge
+            }));
+        } else if (Array.isArray(assignment)) {
+            // Solution case: Already array of objects [{linkId, sourceEdge, targetEdge}, ...]
+            assignments = assignment;
+        } else {
+            console.error('[OPTIMIZE] Invalid assignment format:', assignment);
+            return;
+        }
+
+        // Apply routing to links
+        assignments.forEach(({ linkId, sourceEdge, targetEdge }) => {
+            const link = links.find(l => l.id === linkId);
+            if (link) {
+                link.routing = RoutingState.fromEdges(sourceEdge, targetEdge);
+            }
+        });
+
+        // Sort and redistribute snap points
+        const sortedLinks = this._sortLinksByPriority(links);
+        this.distributeSnapPointsOnEdges(sortedLinks, nodes);
+    }
+
+    // Delegate methods to helper modules
+    predictEdge(source, target, isSourceEdge) { return this.snapCalculator.predictEdge(source, target, isSourceEdge); }
+    hasInitialTransitionOnEdge(nodeId, edge) { return this.snapCalculator.hasInitialTransitionOnEdge(nodeId, edge); }
+    countConnectionsOnEdge(nodeId, edge) { return this.snapCalculator.countConnectionsOnEdge(nodeId, edge); }
+    estimateSourceSnapPosition(sourceId, targetId, link) { return this.snapCalculator.estimateSourceSnapPosition(sourceId, targetId, link); }
+    calculateSnapPosition(nodeId, edge, linkId, direction) { return this.snapCalculator.calculateSnapPosition(nodeId, edge, linkId, direction); }
+    getAllPossibleSnapCombinations(link, sourceNode, targetNode, reverseRouting) { return this.snapCalculator.getAllPossibleSnapCombinations(link, sourceNode, targetNode, reverseRouting); }
+    getEdgeCenterPoint(node, edge) { return this.snapCalculator.getEdgeCenterPoint(node, edge); }
+    calculateComboScore(link, combo, existingAssignment, allLinks) { return this.snapCalculator.calculateComboScore(link, combo, existingAssignment, allLinks); }
+    distributeSnapPointsOnEdges(links, nodes) { return this.snapCalculator.distributeSnapPointsOnEdges(links, nodes); }
+
+    calculatePathIntersections(path1, path2) { return this.pathUtils.calculatePathIntersections(path1, path2); }
+    getPathSegments(path) { return this.pathUtils.getPathSegments(path); }
+    segmentsIntersect(seg1, seg2) { return this.pathUtils.segmentsIntersect(seg1, seg2); }
+    pathIntersectsNode(path, node, options) { return this.pathUtils.pathIntersectsNode(path, node, options); }
+    segmentIntersectsRect(segment, left, top, right, bottom) { return this.pathUtils.segmentIntersectsRect(segment, left, top, right, bottom); }
+    segmentIntersectsRectExcludingPoints(segment, left, top, right, bottom, excludeStart, excludeEnd) { return this.pathUtils.segmentIntersectsRectExcludingPoints(segment, left, top, right, bottom, excludeStart, excludeEnd); }
+    evaluateCombination(link, sourceNode, targetNode, sourceEdge, targetEdge, assignedPaths, nodes) { return this.pathUtils.evaluateCombination(link, sourceNode, targetNode, sourceEdge, targetEdge, assignedPaths, nodes); }
+
+    optimizeSnapPointAssignmentsProgressive(links, nodes, draggedNodeId, onComplete, onProgress, debounceMs) { return this.cspSolver.optimizeSnapPointAssignmentsProgressive(links, nodes, draggedNodeId, onComplete, onProgress, debounceMs); }
+    fallbackToMainThreadCSP(links, nodes, draggedNodeId, onComplete) { return this.cspSolver.fallbackToMainThreadCSP(links, nodes, draggedNodeId, onComplete); }
+    optimizeSnapPointAssignments(links, nodes, useGreedy, draggedNodeId) { return this.cspSolver.optimizeSnapPointAssignments(links, nodes, useGreedy, draggedNodeId); }
+    convertGreedyToCSPSolution(links) { return this.cspSolver.convertGreedyToCSPSolution(links); }
+    runBackgroundCSPOptimization(transitionLinks, nodes, draggedNodeId) { return this.cspSolver.runBackgroundCSPOptimization(transitionLinks, nodes, draggedNodeId); }
+    optimizeSnapPointAssignmentsGreedy(links, nodes, draggedNodeId) { return this.cspSolver.optimizeSnapPointAssignmentsGreedy(links, nodes, draggedNodeId); }
+}
