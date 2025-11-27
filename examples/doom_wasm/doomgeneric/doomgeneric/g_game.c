@@ -2243,13 +2243,14 @@ void G_DoPlayDemo (void)
 	netdemo = true;
     }
 
-    // don't spend a lot of time in loadlevel 
+    // don't spend a lot of time in loadlevel
     precache = false;
-    G_InitNew (skill, episode, map); 
-    precache = true; 
-    starttime = I_GetTime (); 
+    SCE_GameDemoStart();  // SCE: Reset enemy tracking before level load
+    G_InitNew (skill, episode, map);
+    precache = true;
+    starttime = I_GetTime ();
 
-    usergame = false; 
+    usergame = false;
     demoplayback = true; 
 } 
 

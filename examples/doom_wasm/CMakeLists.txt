@@ -245,12 +245,23 @@ target_link_options(doom_sce PRIVATE
 )
 
 # Generate index.html with embedded SCXML Base64
-add_custom_command(TARGET doom_sce POST_BUILD
+# Use OUTPUT mode with DEPENDS to rebuild when template or SCXML files change
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/index.html
     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/generate_index.py
         ${CMAKE_CURRENT_SOURCE_DIR}/scxml
         ${CMAKE_CURRENT_BINARY_DIR}
+    DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/index.html.template
+        ${CMAKE_CURRENT_SOURCE_DIR}/scxml/game_state.scxml
+        ${CMAKE_CURRENT_SOURCE_DIR}/scxml/player_state.scxml
+        ${CMAKE_CURRENT_SOURCE_DIR}/scxml/weapon_state.scxml
+        ${CMAKE_CURRENT_SOURCE_DIR}/scxml/enemy_state.scxml
+        ${CMAKE_CURRENT_SOURCE_DIR}/scxml/secret_hint_state.scxml
     COMMENT "Generating index.html with SCXML data"
 )
+add_custom_target(generate_index ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/index.html)
+add_dependencies(doom_sce generate_index)
 
 # Symlink visualizer to build directory for local development
 # Using symlink instead of copy - changes are reflected immediately

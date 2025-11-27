@@ -688,8 +688,8 @@ void sce_enemy_spawn(void *mobj, const char *type_name) {
 
     // 100% sync callback
     js_notify_enemy_update(slot, type_name, state_name, g_enemies[slot].instance_id, true);
-    // Use g_enemy_count directly - DOOM's totalkills lags during spawn phase
-    js_notify_stats_update(g_enemy_count, g_enemy_killed, g_enemy_count);
+    // Stats: total = alive + killed, remaining = alive (g_enemy_count)
+    js_notify_stats_update(g_enemy_count + g_enemy_killed, g_enemy_killed, g_enemy_count);
 }
 
 // Called from DOOM when enemy state changes
@@ -724,13 +724,14 @@ void sce_enemy_killed(void *mobj) {
     // Process Killed event through state machine
     g_enemies[slot].sm->processEvent(EnemyEvent::Killed);
     g_enemy_killed++;
+    g_enemy_count--;  // Decrement immediately when killed, not when removed
 
     // Get state from state machine (should be DEAD)
     const char *state_name = get_enemy_state_name(g_enemies[slot].sm->getCurrentState());
 
     // 100% sync callback - notify dead state first
     js_notify_enemy_update(slot, g_enemies[slot].type_name, state_name, g_enemies[slot].instance_id, true);
-    js_notify_stats_update(g_enemy_count, g_enemy_killed, g_enemy_count);
+    js_notify_stats_update(g_enemy_count + g_enemy_killed, g_enemy_killed, g_enemy_count);
 }
 
 // Called from DOOM when enemy is removed from map
@@ -750,13 +751,21 @@ void sce_enemy_remove(void *mobj) {
     // 100% sync callback - notify inactive
     js_notify_enemy_update(slot, g_enemies[slot].type_name, state_name, g_enemies[slot].instance_id, false);
 
+    // Check if this enemy was already counted as killed (DEAD state)
+    bool was_killed = g_enemies[slot].sm &&
+        g_enemies[slot].sm->getCurrentState() == EnemyState::Dead;
+
     // Cleanup state machine
     g_enemies[slot].sm.reset();
     g_enemies[slot].active = false;
     g_enemies[slot].mobj_ptr = nullptr;
-    g_enemy_count--;
 
-    js_notify_stats_update(g_enemy_count, g_enemy_killed, g_enemy_count);
+    // Only decrement if NOT already killed (e.g., removed without dying)
+    if (!was_killed) {
+        g_enemy_count--;
+    }
+
+    js_notify_stats_update(g_enemy_count + g_enemy_killed, g_enemy_killed, g_enemy_count);
 }
 
 // Clear all enemy tracking (for save/load)

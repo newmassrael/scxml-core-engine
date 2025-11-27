@@ -4,15 +4,32 @@
     <meta charset="UTF-8">
     <title>DOOM + SCE State Machines</title>
     <style>
-        body { margin: 0; padding: 20px; padding-bottom: 50px; background: #1a1a1a; color: #fff; font-family: monospace; }
-        .container { width: 100%; margin: 0 auto; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #1a1a1a;
+            color: #fff;
+            font-family: monospace;
+            overflow: hidden;
+        }
+        .container {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
 
-        /* Game Section */
+        /* Game Section - Fixed at top */
         #game-section {
+            flex-shrink: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-bottom: 20px;
+            padding: 15px 20px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #444;
         }
         #game-container {
             display: inline-block;
@@ -24,7 +41,7 @@
             background: #000;
             aspect-ratio: 8 / 5;
             resize: horizontal;
-            max-width: min(calc(100vw - 60px), calc((100vh - 20px) * 8 / 5));
+            max-width: min(calc(100vw - 60px), 640px);
         }
         #game-container::after {
             content: '';
@@ -45,8 +62,18 @@
             image-rendering: crisp-edges;
         }
 
+        /* Panel Section - Vertical scroll only in this area */
+        #panel-section {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 10px 20px 70px 20px;
+        }
+
         /* Tab Section */
-        .tab-container { margin-top: 20px; }
+        .tab-container {
+            margin-top: 10px;
+        }
         .tab-buttons {
             display: flex;
             justify-content: center;
@@ -276,8 +303,9 @@
             </div>
         </div>
 
-        <!-- Tab + Visualizer Section -->
-        <div class="tab-container">
+        <!-- Panel Section - Scrollable -->
+        <div id="panel-section">
+            <div class="tab-container">
             <div class="tab-buttons">
                 <button class="tab-btn active" data-machine="game" onclick="switchTab('game')">
                     Game <span class="state-indicator" id="ind-game">DEMOSCREEN</span>
@@ -318,6 +346,7 @@
             </div>
             <div id="viz-section">
                 <iframe id="visualizer" src="visualizer/visualizer.html?embed#scxml={{SCXML_GAME}}"></iframe>
+            </div>
             </div>
         </div>
 
