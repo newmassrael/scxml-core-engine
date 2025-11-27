@@ -64,6 +64,8 @@ typedef struct {
     int path[SECRET_MAX_PATH_LENGTH];           /* Sector indices from player to secret */
     int num_arrows;                             /* Number of floor arrows to render */
     secret_arrow_t arrows[SECRET_MAX_ARROWS];   /* Arrow positions and directions */
+    fixed_t target_x;                           /* Final target X position */
+    fixed_t target_y;                           /* Final target Y position */
 } secret_path_t;
 
 /**

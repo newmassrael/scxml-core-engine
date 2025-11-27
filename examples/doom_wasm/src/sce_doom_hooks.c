@@ -251,5 +251,6 @@ const char* SCE_SecretGetStateName(void) {
 
 boolean SCE_SecretIsShowing(void) {
     const char *state = sce_secret_get_state();
-    return state && strcmp(state, "showing") == 0;
+    /* Show path in both "showing" and "found" states */
+    return state && (strcmp(state, "showing") == 0 || strcmp(state, "found") == 0);
 }

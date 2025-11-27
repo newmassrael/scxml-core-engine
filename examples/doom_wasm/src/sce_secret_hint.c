@@ -19,6 +19,13 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* Debug logging - define DEBUG_SECRET to enable verbose output */
+#ifdef DEBUG_SECRET
+#define SECRET_DEBUG(...) printf(__VA_ARGS__)
+#else
+#define SECRET_DEBUG(...) ((void)0)
+#endif
+
 /* BFS queue structure */
 typedef struct {
     int sector;
@@ -37,11 +44,14 @@ static int s_num_sprites = 0;
 /* Forward declarations */
 static boolean IsDoorSpecial(int special);
 static boolean IsLiftSpecial(int special);
+static boolean IsImpassableWall(line_t *line);
 static void BuildSectorAdjacency(void);
 static void GetSectorCenter(int sector_idx, fixed_t *out_x, fixed_t *out_y);
 
 /* Line-of-sight checking using P_PathTraverse */
 static boolean s_sight_blocked = false;
+static line_t *s_blocking_line = NULL;  /* The line that blocked sight */
+static fixed_t s_block_frac = FRACUNIT; /* Fraction along path where block occurred */
 
 /**
  * Callback for P_PathTraverse - checks if line blocks sight.
@@ -56,6 +66,8 @@ static boolean PTR_SightCheck(intercept_t *in) {
         if (openrange <= 0) {
             /* No vertical opening - blocked */
             s_sight_blocked = true;
+            s_blocking_line = line;
+            s_block_frac = in->frac;
             return false;
         }
         /* Has opening, continue checking */
@@ -64,6 +76,8 @@ static boolean PTR_SightCheck(intercept_t *in) {
 
     /* One-sided line (solid wall) - blocked */
     s_sight_blocked = true;
+    s_blocking_line = line;
+    s_block_frac = in->frac;
     return false;
 }
 
@@ -73,8 +87,175 @@ static boolean PTR_SightCheck(intercept_t *in) {
  */
 static boolean CheckLineOfSight(fixed_t x1, fixed_t y1, fixed_t x2, fixed_t y2) {
     s_sight_blocked = false;
+    s_blocking_line = NULL;
+    s_block_frac = FRACUNIT;
     P_PathTraverse(x1, y1, x2, y2, PT_ADDLINES, PTR_SightCheck);
     return !s_sight_blocked;
+}
+
+/**
+ * Get the blocking line from the last CheckLineOfSight call.
+ * @return The line that blocked, or NULL if path was clear
+ */
+static line_t* GetBlockingLine(void) {
+    return s_blocking_line;
+}
+
+/**
+ * Find a waypoint to go around a blocking wall.
+ * Tests both vertices of the wall with offsets in both directions.
+ * Chooses the waypoint that is reachable from start AND can reach destination.
+ */
+static void FindWaypointAroundWall(line_t *wall,
+                                    fixed_t start_x, fixed_t start_y,
+                                    fixed_t dest_x, fixed_t dest_y,
+                                    fixed_t *out_x, fixed_t *out_y) {
+    fixed_t v1_x = wall->v1->x;
+    fixed_t v1_y = wall->v1->y;
+    fixed_t v2_x = wall->v2->x;
+    fixed_t v2_y = wall->v2->y;
+
+    /* Wall direction and normal vectors */
+    fixed_t wall_dx = v2_x - v1_x;
+    fixed_t wall_dy = v2_y - v1_y;
+    fixed_t wall_len = P_AproxDistance(wall_dx, wall_dy);
+
+    /* Normal vector (perpendicular to wall) */
+    fixed_t nx = 0, ny = 0;
+    /* Tangent vector (along wall) */
+    fixed_t tx = 0, ty = 0;
+    if (wall_len > 0) {
+        nx = FixedDiv(-wall_dy, wall_len);
+        ny = FixedDiv(wall_dx, wall_len);
+        tx = FixedDiv(wall_dx, wall_len);
+        ty = FixedDiv(wall_dy, wall_len);
+    }
+
+    fixed_t offset = 48 * FRACUNIT;  /* 48 units offset from wall */
+
+    /* Determine which side of the wall the destination is on */
+    /* Using cross product: (dest - v1) x (v2 - v1) */
+    fixed_t dest_side = FixedMul(dest_x - v1_x, wall_dy) - FixedMul(dest_y - v1_y, wall_dx);
+    int dest_sign = (dest_side > 0) ? 1 : -1;
+
+    /* Test 4 candidates: each vertex, offset toward destination side AND along wall */
+    struct {
+        fixed_t x, y;
+        boolean reachable_from_start;
+        boolean can_reach_dest;
+        fixed_t total_dist;
+    } candidates[4];
+    int num_candidates = 0;
+
+    /* For each vertex, create waypoint that goes around the wall end toward destination */
+    /* v1: offset perpendicular (toward dest) and tangent (away from wall center) */
+    /* v2: offset perpendicular (toward dest) and tangent (away from wall center) */
+
+    /* Candidate 0: v1, offset toward dest side and outward along wall */
+    candidates[0].x = v1_x + FixedMul(nx, offset * dest_sign) - FixedMul(tx, offset);
+    candidates[0].y = v1_y + FixedMul(ny, offset * dest_sign) - FixedMul(ty, offset);
+
+    /* Candidate 1: v2, offset toward dest side and outward along wall */
+    candidates[1].x = v2_x + FixedMul(nx, offset * dest_sign) + FixedMul(tx, offset);
+    candidates[1].y = v2_y + FixedMul(ny, offset * dest_sign) + FixedMul(ty, offset);
+
+    /* Candidate 2: v1, opposite side (in case dest_sign is wrong due to geometry) */
+    candidates[2].x = v1_x + FixedMul(nx, offset * (-dest_sign)) - FixedMul(tx, offset);
+    candidates[2].y = v1_y + FixedMul(ny, offset * (-dest_sign)) - FixedMul(ty, offset);
+
+    /* Candidate 3: v2, opposite side */
+    candidates[3].x = v2_x + FixedMul(nx, offset * (-dest_sign)) + FixedMul(tx, offset);
+    candidates[3].y = v2_y + FixedMul(ny, offset * (-dest_sign)) + FixedMul(ty, offset);
+
+    num_candidates = 4;
+
+    /* Check reachability for all candidates */
+    for (int i = 0; i < num_candidates; i++) {
+        candidates[i].reachable_from_start = CheckLineOfSight(start_x, start_y,
+                                                               candidates[i].x, candidates[i].y);
+        candidates[i].can_reach_dest = CheckLineOfSight(candidates[i].x, candidates[i].y,
+                                                         dest_x, dest_y);
+        candidates[i].total_dist =
+            P_AproxDistance(start_x - candidates[i].x, start_y - candidates[i].y) +
+            P_AproxDistance(candidates[i].x - dest_x, candidates[i].y - dest_y);
+    }
+
+    /* Debug: log all candidates */
+    SECRET_DEBUG("[SECRET] FindWaypoint: dest_sign=%d, dest=(%d,%d)\n",
+           dest_sign, dest_x >> FRACBITS, dest_y >> FRACBITS);
+    for (int i = 0; i < num_candidates; i++) {
+        SECRET_DEBUG("[SECRET]   Candidate %d: (%d,%d) reach_start=%d reach_dest=%d\n",
+               i, candidates[i].x >> FRACBITS, candidates[i].y >> FRACBITS,
+               candidates[i].reachable_from_start, candidates[i].can_reach_dest);
+    }
+
+    /* Priority 1: Reachable from start AND can reach dest (prefer dest_sign side first) */
+    int best = -1;
+    fixed_t best_dist = INT_MAX;
+    for (int i = 0; i < 2; i++) {  /* Check dest_sign side first (candidates 0,1) */
+        if (candidates[i].reachable_from_start && candidates[i].can_reach_dest) {
+            if (candidates[i].total_dist < best_dist) {
+                best = i;
+                best_dist = candidates[i].total_dist;
+            }
+        }
+    }
+    if (best < 0) {
+        for (int i = 2; i < 4; i++) {  /* Then check opposite side */
+            if (candidates[i].reachable_from_start && candidates[i].can_reach_dest) {
+                if (candidates[i].total_dist < best_dist) {
+                    best = i;
+                    best_dist = candidates[i].total_dist;
+                }
+            }
+        }
+    }
+
+    /* Priority 2: Can reach dest (even if not directly reachable from start) */
+    if (best < 0) {
+        best_dist = INT_MAX;
+        for (int i = 0; i < num_candidates; i++) {
+            if (candidates[i].can_reach_dest) {
+                if (candidates[i].total_dist < best_dist) {
+                    best = i;
+                    best_dist = candidates[i].total_dist;
+                }
+            }
+        }
+    }
+
+    /* Priority 3: At least reachable from start */
+    if (best < 0) {
+        best_dist = INT_MAX;
+        for (int i = 0; i < num_candidates; i++) {
+            if (candidates[i].reachable_from_start) {
+                if (candidates[i].total_dist < best_dist) {
+                    best = i;
+                    best_dist = candidates[i].total_dist;
+                }
+            }
+        }
+    }
+
+    /* Priority 4: Any candidate (fallback) */
+    if (best < 0) {
+        best_dist = INT_MAX;
+        for (int i = 0; i < num_candidates; i++) {
+            if (candidates[i].total_dist < best_dist) {
+                best = i;
+                best_dist = candidates[i].total_dist;
+            }
+        }
+    }
+
+    if (best >= 0) {
+        *out_x = candidates[best].x;
+        *out_y = candidates[best].y;
+    } else {
+        /* Ultimate fallback: wall midpoint */
+        *out_x = (v1_x + v2_x) / 2;
+        *out_y = (v1_y + v2_y) / 2;
+    }
 }
 
 /* Sector adjacency cache (built per level) */
@@ -83,6 +264,76 @@ static int *s_adjacency_offset = NULL;  /* Start offset for each sector */
 static int *s_adjacency_count = NULL;   /* Count of adjacent sectors for each */
 static int s_adjacency_total = 0;
 static boolean s_adjacency_dirty = true; /* Rebuild when doors/lifts change */
+
+/* Track blocked sector connections (1-sided walls blocking BFS paths) */
+#define MAX_BLOCKED_CONNECTIONS 32
+typedef struct {
+    int sector_a;
+    int sector_b;
+    int blocking_line;  /* The 1-sided wall line index */
+} blocked_connection_t;
+static blocked_connection_t s_blocked_connections[MAX_BLOCKED_CONNECTIONS];
+static int s_num_blocked_connections = 0;
+
+/**
+ * Check if a sector connection is blocked by a known 1-sided wall.
+ */
+static boolean IsConnectionBlocked(int sector_a, int sector_b) {
+    int i;
+    for (i = 0; i < s_num_blocked_connections; i++) {
+        if ((s_blocked_connections[i].sector_a == sector_a &&
+             s_blocked_connections[i].sector_b == sector_b) ||
+            (s_blocked_connections[i].sector_a == sector_b &&
+             s_blocked_connections[i].sector_b == sector_a)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Add a blocked connection (1-sided wall blocks travel between sectors).
+ */
+static void AddBlockedConnection(int sector_a, int sector_b, int blocking_line) {
+    int i;
+
+    /* Check if already blocked */
+    for (i = 0; i < s_num_blocked_connections; i++) {
+        if ((s_blocked_connections[i].sector_a == sector_a &&
+             s_blocked_connections[i].sector_b == sector_b) ||
+            (s_blocked_connections[i].sector_a == sector_b &&
+             s_blocked_connections[i].sector_b == sector_a)) {
+            return;  /* Already tracked */
+        }
+    }
+
+    if (s_num_blocked_connections < MAX_BLOCKED_CONNECTIONS) {
+        s_blocked_connections[s_num_blocked_connections].sector_a = sector_a;
+        s_blocked_connections[s_num_blocked_connections].sector_b = sector_b;
+        s_blocked_connections[s_num_blocked_connections].blocking_line = blocking_line;
+        s_num_blocked_connections++;
+        SECRET_DEBUG("[SECRET] Added blocked connection: sector %d <-> %d (line %d), total=%d\n",
+               sector_a, sector_b, blocking_line, s_num_blocked_connections);
+    }
+}
+
+/**
+ * Clear all blocked connections (on level load or target change).
+ */
+static void ClearBlockedConnections(void) {
+    if (s_num_blocked_connections > 0) {
+        SECRET_DEBUG("[SECRET] Clearing %d blocked connections\n", s_num_blocked_connections);
+    }
+    s_num_blocked_connections = 0;
+}
+
+/* Track last player sector to avoid unnecessary path recalculation */
+static int s_last_player_sector = -1;
+
+/* Track last player position to avoid unnecessary arrow regeneration */
+static fixed_t s_last_player_x = 0;
+static fixed_t s_last_player_y = 0;
+#define PLAYER_MOVE_THRESHOLD (16 * FRACUNIT)  /* Update arrows when moved 16+ units */
 
 /* Target storage for selection system */
 static target_info_t s_targets[TARGET_TYPE_COUNT][SECRET_MAX_TARGETS];
@@ -328,9 +579,12 @@ static void EnsureAdjacencyValid(void) {
 
 /**
  * Mark adjacency as needing rebuild (call when doors/lifts change).
+ * Also triggers path recalculation on next update.
  */
 void Secret_InvalidateAdjacency(void) {
     s_adjacency_dirty = true;
+    /* Force path recalculation by resetting last player sector */
+    s_last_player_sector = -1;
 }
 
 /**
@@ -506,6 +760,10 @@ static boolean BFSFindPath(int start_sector, int target_sector, secret_path_t *o
             neighbor = s_adjacency_list[adj_idx];
 
             if (neighbor >= 0 && neighbor < numsectors && !visited[neighbor]) {
+                /* Skip connections blocked by 1-sided walls */
+                if (IsConnectionBlocked(current, neighbor)) {
+                    continue;
+                }
                 visited[neighbor] = true;
                 queue[queue_tail].sector = neighbor;
                 queue[queue_tail].parent = queue_head;
@@ -614,6 +872,10 @@ static boolean BFSFindSecret(int start_sector, secret_path_t *out_path) {
             neighbor = s_adjacency_list[adj_idx];
 
             if (neighbor >= 0 && neighbor < numsectors && !visited[neighbor]) {
+                /* Skip connections blocked by 1-sided walls */
+                if (IsConnectionBlocked(current, neighbor)) {
+                    continue;
+                }
                 visited[neighbor] = true;
                 queue[queue_tail].sector = neighbor;
                 queue[queue_tail].parent = queue_head;
@@ -723,6 +985,34 @@ static boolean IsLiftSpecial(int special) {
     default:
         return false;
     }
+}
+
+/**
+ * Check if a wall is absolutely impassable (cannot ever be opened).
+ * Returns true for solid walls, false for doors/lifts that can be opened.
+ */
+static boolean IsImpassableWall(line_t *line) {
+    if (!line) {
+        return false;
+    }
+
+    /* 1-sided wall = absolutely impassable (solid geometry) */
+    if (!line->backsector) {
+        return true;
+    }
+
+    /* 2-sided line with door/lift special = can be opened later */
+    if (IsDoorSpecial(line->special) || IsLiftSpecial(line->special)) {
+        return false;
+    }
+
+    /* 2-sided line with ML_BLOCKING but no door/lift special = impassable */
+    if (line->flags & ML_BLOCKING) {
+        return true;
+    }
+
+    /* Otherwise it's passable (or will become passable) */
+    return false;
 }
 
 /**
@@ -927,6 +1217,10 @@ static boolean BFSFindHiddenDoor(int start_sector, secret_path_t *out_path, int 
             neighbor = s_adjacency_list[adj_idx];
 
             if (neighbor >= 0 && neighbor < numsectors && !visited[neighbor]) {
+                /* Skip connections blocked by 1-sided walls */
+                if (IsConnectionBlocked(current, neighbor)) {
+                    continue;
+                }
                 visited[neighbor] = true;
                 queue[queue_tail].sector = neighbor;
                 queue[queue_tail].parent = queue_head;
@@ -971,6 +1265,15 @@ static boolean BFSFindHiddenDoor(int start_sector, secret_path_t *out_path, int 
 /* Track if current path leads to hidden door (not direct to secret) */
 static boolean s_path_to_hidden_door = false;
 static int s_hidden_door_line = -1;
+
+/* Track if current path is blocked by an impassable wall */
+static boolean s_path_blocked = false;
+static int s_blocking_wall_line = -1;  /* Line index of blocking wall */
+static int s_blocking_check_counter = 0;  /* Counter for periodic rechecks */
+#define BLOCKING_RECHECK_INTERVAL 35  /* Check every ~1 second (35 tics) */
+
+/* Note: 1-sided wall blocking no longer triggers recalculation.
+ * Instead, we keep partial path to guide player toward secret. */
 
 /**
  * Get the center point of a linedef (for hidden door marker).
@@ -1166,11 +1469,12 @@ static void PushPathFromWalls(secret_path_t *path) {
 
 /**
  * Add intermediate arrows between two points at regular intervals.
+ * Internal function - does not check for wall collisions.
  * Returns number of arrows added.
  */
-static int AddIntermediateArrows(secret_path_t *path, int start_idx,
-                                  fixed_t x1, fixed_t y1, fixed_t z1,
-                                  fixed_t x2, fixed_t y2, fixed_t z2) {
+static int AddIntermediateArrowsDirect(secret_path_t *path, int start_idx,
+                                        fixed_t x1, fixed_t y1, fixed_t z1,
+                                        fixed_t x2, fixed_t y2, fixed_t z2) {
     fixed_t dx = x2 - x1;
     fixed_t dy = y2 - y1;
     fixed_t dist = P_AproxDistance(dx, dy);
@@ -1200,6 +1504,145 @@ static int AddIntermediateArrows(secret_path_t *path, int start_idx,
 }
 
 /**
+ * Add intermediate arrows between two points, avoiding walls.
+ * If the direct path crosses a wall, finds waypoints to go around it.
+ * Uses recursion with depth limit to handle multiple walls.
+ * Returns number of arrows added.
+ */
+static int AddIntermediateArrows(secret_path_t *path, int start_idx,
+                                  fixed_t x1, fixed_t y1, fixed_t z1,
+                                  fixed_t x2, fixed_t y2, fixed_t z2) {
+    int added = 0;
+    int depth = 0;
+    const int MAX_DEPTH = 8;  /* Prevent infinite recursion */
+
+    /* Waypoint stack for iterative processing */
+    struct {
+        fixed_t x, y, z;
+    } waypoints[MAX_DEPTH + 2];
+    int num_waypoints = 0;
+
+    /* Start with destination as first target */
+    waypoints[num_waypoints].x = x2;
+    waypoints[num_waypoints].y = y2;
+    waypoints[num_waypoints].z = z2;
+    num_waypoints++;
+
+    fixed_t curr_x = x1;
+    fixed_t curr_y = y1;
+    fixed_t curr_z = z1;
+
+    /* Process waypoints, finding intermediate points around walls */
+    while (num_waypoints > 0 && depth < MAX_DEPTH && (start_idx + added) < SECRET_MAX_ARROWS) {
+        fixed_t target_x = waypoints[num_waypoints - 1].x;
+        fixed_t target_y = waypoints[num_waypoints - 1].y;
+        fixed_t target_z = waypoints[num_waypoints - 1].z;
+
+        /* Check if direct path is clear */
+        if (CheckLineOfSight(curr_x, curr_y, target_x, target_y)) {
+            /* Path is clear - add arrows directly */
+            SECRET_DEBUG("[SECRET] LOS clear: (%d,%d) -> (%d,%d)\n",
+                   curr_x >> FRACBITS, curr_y >> FRACBITS,
+                   target_x >> FRACBITS, target_y >> FRACBITS);
+            added += AddIntermediateArrowsDirect(path, start_idx + added,
+                                                  curr_x, curr_y, curr_z,
+                                                  target_x, target_y, target_z);
+            curr_x = target_x;
+            curr_y = target_y;
+            curr_z = target_z;
+            num_waypoints--;  /* Remove processed waypoint */
+        } else {
+            /* Path blocked - find waypoint around wall */
+            line_t *wall = GetBlockingLine();
+            SECRET_DEBUG("[SECRET] LOS BLOCKED: (%d,%d) -> (%d,%d), wall=%p\n",
+                   curr_x >> FRACBITS, curr_y >> FRACBITS,
+                   target_x >> FRACBITS, target_y >> FRACBITS, (void*)wall);
+            if (wall) {
+                SECRET_DEBUG("[SECRET]   Wall vertices: (%d,%d) -> (%d,%d)\n",
+                       wall->v1->x >> FRACBITS, wall->v1->y >> FRACBITS,
+                       wall->v2->x >> FRACBITS, wall->v2->y >> FRACBITS);
+            }
+            if (wall && num_waypoints < MAX_DEPTH + 1) {
+                fixed_t wp_x, wp_y;
+                FindWaypointAroundWall(wall, curr_x, curr_y, target_x, target_y, &wp_x, &wp_y);
+
+                /* Check if waypoint is same as current position (stuck in loop) */
+                fixed_t diff_x = (wp_x > curr_x) ? (wp_x - curr_x) : (curr_x - wp_x);
+                fixed_t diff_y = (wp_y > curr_y) ? (wp_y - curr_y) : (curr_y - wp_y);
+                boolean is_stuck = (diff_x < (8 * FRACUNIT) && diff_y < (8 * FRACUNIT));
+
+                /* Also check if waypoint doesn't help (same side of wall as current) */
+                if (!is_stuck && depth > 0) {
+                    /* Check if new waypoint would make progress toward target */
+                    fixed_t old_dist = P_AproxDistance(curr_x - target_x, curr_y - target_y);
+                    fixed_t new_dist = P_AproxDistance(wp_x - target_x, wp_y - target_y);
+                    if (new_dist >= old_dist) {
+                        is_stuck = true;  /* Not making progress */
+                    }
+                }
+
+                if (is_stuck) {
+                    /* Waypoint doesn't help - check if wall is impassable or openable */
+                    if (IsImpassableWall(wall)) {
+                        /* 1-sided wall blocking our direct path to target.
+                         * Instead of stopping, skip to the next waypoint and continue.
+                         * The BFS path is valid, we just can't draw a direct line here. */
+                        SECRET_DEBUG("[SECRET]   1-sided wall at (%d,%d), skipping direct path to this waypoint\n",
+                               wp_x >> FRACBITS, wp_y >> FRACBITS);
+
+                        /* Skip this waypoint - move to current position closer to waypoint */
+                        /* Don't try to draw through the wall, just accept we can't reach this intermediate point directly */
+                        num_waypoints--;
+
+                        /* If this was the last waypoint (final target), mark as blocked for polling */
+                        if (num_waypoints == 0) {
+                            SECRET_DEBUG("[SECRET]   Final target blocked by 1-sided wall, storing for recheck\n");
+                            s_path_blocked = true;
+                            s_blocking_wall_line = wall - lines;
+                            SECRET_DEBUG("[SECRET]   Stored blocking wall line=%d for recheck\n",
+                                   s_blocking_wall_line);
+                        }
+                    } else {
+                        /* Door/lift that can be opened - draw direct line through it */
+                        SECRET_DEBUG("[SECRET]   Openable door/lift at (%d,%d), drawing through\n",
+                               wp_x >> FRACBITS, wp_y >> FRACBITS);
+                        added += AddIntermediateArrowsDirect(path, start_idx + added,
+                                                              curr_x, curr_y, curr_z,
+                                                              target_x, target_y, target_z);
+                        curr_x = target_x;
+                        curr_y = target_y;
+                        curr_z = target_z;
+                        num_waypoints--;
+                    }
+                } else {
+                    SECRET_DEBUG("[SECRET]   Adding waypoint around wall: (%d,%d), depth=%d\n",
+                           wp_x >> FRACBITS, wp_y >> FRACBITS, depth);
+
+                    /* Insert new waypoint before current target */
+                    waypoints[num_waypoints].x = wp_x;
+                    waypoints[num_waypoints].y = wp_y;
+                    waypoints[num_waypoints].z = curr_z;  /* Use current Z */
+                    num_waypoints++;
+                    depth++;
+                }
+            } else {
+                /* No wall info or max depth - force direct path */
+                SECRET_DEBUG("[SECRET]   Forcing direct path (no wall or max depth)\n");
+                added += AddIntermediateArrowsDirect(path, start_idx + added,
+                                                      curr_x, curr_y, curr_z,
+                                                      target_x, target_y, target_z);
+                curr_x = target_x;
+                curr_y = target_y;
+                curr_z = target_z;
+                num_waypoints--;
+            }
+        }
+    }
+
+    return added;
+}
+
+/**
  * Generate arrow waypoints from sector path.
  * Uses portal waypoints (linedef center pushed into destination sector) to ensure
  * the path goes through actual walkable doorways/openings, not through walls.
@@ -1213,6 +1656,16 @@ static void GenerateArrows(secret_path_t *path) {
     player_t *player = &players[consoleplayer];
     int prev_sector;
 
+    /* Save previous blocking wall to preserve counter if same wall blocks again */
+    int prev_blocking_wall = s_blocking_wall_line;
+    int prev_counter = s_blocking_check_counter;
+
+    /* Reset blocking state before generating new arrows.
+     * If we hit a blocking wall during generation, it will be set again. */
+    s_path_blocked = false;
+    s_blocking_wall_line = -1;
+    /* Don't reset counter here - will restore if same wall blocks */
+
     if (path->path_length < 1) {
         path->num_arrows = 0;
         return;
@@ -1223,11 +1676,24 @@ static void GenerateArrows(secret_path_t *path) {
         prev_x = player->mo->x;
         prev_y = player->mo->y;
         prev_z = player->mo->z;
+        SECRET_DEBUG("[SECRET] GenerateArrows: Starting from player pos (%d, %d)\n",
+               prev_x >> FRACBITS, prev_y >> FRACBITS);
     } else {
         GetSectorCenter(path->path[0], &prev_x, &prev_y);
         prev_z = sectors[path->path[0]].floorheight;
+        SECRET_DEBUG("[SECRET] GenerateArrows: No player->mo, using sector center (%d, %d)\n",
+               prev_x >> FRACBITS, prev_y >> FRACBITS);
     }
     prev_sector = path->path[0];
+
+    /* Add first arrow at player/start position */
+    if (arrow_count < SECRET_MAX_ARROWS) {
+        path->arrows[arrow_count].x = prev_x;
+        path->arrows[arrow_count].y = prev_y;
+        path->arrows[arrow_count].z = prev_z;
+        path->arrows[arrow_count].angle = 0;  /* Will be updated below */
+        arrow_count++;
+    }
 
     /* Generate arrows along path using portal waypoints */
     for (i = 1; i < path->path_length && arrow_count < SECRET_MAX_ARROWS; i++) {
@@ -1235,9 +1701,19 @@ static void GenerateArrows(secret_path_t *path) {
         boolean is_last = (i == path->path_length - 1);
         int connecting_line;
 
-        /* For last segment with trigger target, go to the trigger linedef */
-        if (is_last && s_path_to_hidden_door && s_hidden_door_line >= 0) {
-            GetLinedefCenter(s_hidden_door_line, &curr_x, &curr_y, &curr_z);
+        /* For last segment, go to the actual target position */
+        if (is_last) {
+            /* Use target coordinates if available, otherwise use linedef center for triggers */
+            if (path->target_x != 0 || path->target_y != 0) {
+                curr_x = path->target_x;
+                curr_y = path->target_y;
+                curr_z = sectors[sector_idx].floorheight;
+            } else if (s_path_to_hidden_door && s_hidden_door_line >= 0) {
+                GetLinedefCenter(s_hidden_door_line, &curr_x, &curr_y, &curr_z);
+            } else {
+                GetSectorCenter(sector_idx, &curr_x, &curr_y);
+                curr_z = sectors[sector_idx].floorheight;
+            }
 
             /* Check if direct path is clear, if not go through portal first */
             if (!CheckLineOfSight(prev_x, prev_y, curr_x, curr_y)) {
@@ -1293,8 +1769,72 @@ static void GenerateArrows(secret_path_t *path) {
 
     path->num_arrows = arrow_count;
 
+    /* Update first arrow's angle to point to second arrow (if exists) */
+    if (arrow_count >= 2) {
+        path->arrows[0].angle = CalcAngle(path->arrows[0].x, path->arrows[0].y,
+                                           path->arrows[1].x, path->arrows[1].y);
+    }
+
     /* Push arrows away from walls to avoid clipping */
     PushPathFromWalls(path);
+
+    /* If blocked by same wall as before, preserve the counter to allow polling */
+    if (s_path_blocked && s_blocking_wall_line == prev_blocking_wall && prev_blocking_wall >= 0) {
+        s_blocking_check_counter = prev_counter;
+        SECRET_DEBUG("[SECRET] Same blocking wall line=%d, preserved counter=%d\n",
+               s_blocking_wall_line, s_blocking_check_counter);
+    } else if (s_path_blocked) {
+        /* New blocking wall - reset counter */
+        s_blocking_check_counter = 0;
+        SECRET_DEBUG("[SECRET] New blocking wall line=%d, reset counter\n", s_blocking_wall_line);
+    }
+
+    /* For 1-sided wall blocks, just mark as blocked and keep partial path.
+     * Don't trigger BFS recalculation - the partial path guides toward the secret.
+     * The arrows generated up to the blocking point show the best route we found. */
+    if (s_path_blocked && s_blocking_wall_line >= 0) {
+        line_t *blocking_line = &lines[s_blocking_wall_line];
+
+        /* 1-sided wall means it permanently blocks - record for adjacency graph but don't recalc */
+        if (!blocking_line->backsector) {
+            int line_front_sector = blocking_line->frontsector - sectors;
+
+            /* Find this sector in the path and block connection for future BFS attempts */
+            for (i = 0; i < path->path_length - 1; i++) {
+                int curr_sector = path->path[i];
+                int next_sector = path->path[i + 1];
+
+                /* Check if blocking line's frontsector is involved in this path segment */
+                if (curr_sector == line_front_sector || next_sector == line_front_sector) {
+                    AddBlockedConnection(curr_sector, next_sector, s_blocking_wall_line);
+                    SECRET_DEBUG("[SECRET] 1-sided wall blocks path segment %d -> %d, keeping %d arrows as partial path\n",
+                           curr_sector, next_sector, path->num_arrows);
+                    /* Don't recalc - keep partial path that guides toward secret */
+                    break;
+                }
+            }
+
+            /* If line_front_sector not in path, block based on proximity to target */
+            if (path->path_length >= 2) {
+                boolean already_blocked = false;
+                for (i = 0; i < path->path_length - 1; i++) {
+                    if (path->path[i] == line_front_sector || path->path[i + 1] == line_front_sector) {
+                        already_blocked = true;
+                        break;
+                    }
+                }
+                if (!already_blocked) {
+                    /* Block the last segment as it's likely where we're trying to reach */
+                    int last_sector = path->path[path->path_length - 1];
+                    int prev_sect = path->path[path->path_length - 2];
+                    AddBlockedConnection(prev_sect, last_sector, s_blocking_wall_line);
+                    SECRET_DEBUG("[SECRET] 1-sided wall blocks final segment %d -> %d (proximity), keeping %d arrows\n",
+                           prev_sect, last_sector, path->num_arrows);
+                    /* Don't recalc - keep partial path */
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -1327,6 +1867,9 @@ static void SpawnHintSprites(secret_path_t *path) {
         return;
     }
 
+    /* Log first sprite position */
+    SECRET_DEBUG("[SECRET] SpawnHintSprites: First arrow at (%d, %d), total %d arrows\n",
+           path->arrows[0].x >> FRACBITS, path->arrows[0].y >> FRACBITS, path->num_arrows);
 
     for (i = 0; i < path->num_arrows && i < SECRET_MAX_ARROWS; i++) {
         /* Spawn an imp fireball at this waypoint (SPR_BAL1 - always available) */
@@ -1377,7 +1920,16 @@ void Secret_OnLevelLoad(void) {
     s_adjacency_dirty = true;
     EnsureAdjacencyValid();
     s_path_active = false;
+    s_last_player_sector = -1;  /* Reset sector tracking */
+    s_last_player_x = 0;        /* Reset position tracking */
+    s_last_player_y = 0;
     memset(&s_current_path, 0, sizeof(s_current_path));
+
+    /* Clear blocked connections from previous level */
+    ClearBlockedConnections();
+    s_path_blocked = false;
+    s_blocking_wall_line = -1;
+    s_blocking_check_counter = 0;
 
     /* Save original secret sectors (before any are discovered) */
     s_original_secret_count = 0;
@@ -1387,7 +1939,7 @@ void Secret_OnLevelLoad(void) {
             s_original_secret_count++;
         }
     }
-    printf("[SECRET] Found %d original secret sectors\n", s_original_secret_count);
+    SECRET_DEBUG("[SECRET] Found %d original secret sectors\n", s_original_secret_count);
 
     /* Scan for all targets (secrets + triggers) */
     Secret_ScanTargets();
@@ -1449,10 +2001,10 @@ boolean Secret_FindPath(secret_path_t *out_path) {
         boolean is_secret = (sectors[out_path->target_sector].special == 9);
 
         if (is_secret) {
-            printf("[SECRET] Path to secret %d found (%d steps)\n",
+            SECRET_DEBUG("[SECRET] Path to secret %d found (%d steps)\n",
                    out_path->target_sector, out_path->path_length);
         } else {
-            printf("[SECRET] Partial path (%d steps) - closest reachable to secrets\n",
+            SECRET_DEBUG("[SECRET] Partial path (%d steps) - closest reachable to secrets\n",
                    out_path->path_length);
         }
 
@@ -1467,7 +2019,7 @@ boolean Secret_FindPath(secret_path_t *out_path) {
         return true;
     }
 
-    printf("[SECRET] No path available from sector %d\n", player_sector);
+    SECRET_DEBUG("[SECRET] No path available from sector %d\n", player_sector);
 
     DebugPrintSecretLinedefs();
 
@@ -1508,6 +2060,10 @@ void Secret_ClearPath(void) {
     RemoveHintSprites();
     s_path_active = false;
     s_current_path.valid = false;
+    /* Reset blocking wall state */
+    s_path_blocked = false;
+    s_blocking_wall_line = -1;
+    s_blocking_check_counter = 0;
 }
 
 boolean Secret_CheckReached(void) {
@@ -1530,11 +2086,8 @@ boolean Secret_CheckReached(void) {
     if (current_secret_count < last_secret_count) {
         last_secret_count = current_secret_count;
 
-        /* If we had an active path, clear it */
-        if (s_path_active) {
-            RemoveHintSprites();
-            s_path_active = false;
-        }
+        /* Keep path visible even after secret discovery */
+        /* Path will only be cleared when user selects a different target */
 
         return true;  /* Signal that a secret was reached */
     }
@@ -1562,9 +2115,102 @@ int Secret_GetRemainingCount(void) {
     return count;
 }
 
+/**
+ * Recalculate BFS path from current sector to selected target.
+ * Common function used by both sector change and position update paths.
+ *
+ * @param current_sector Player's current sector index
+ * @param force_adjacency_rebuild If true, rebuild adjacency graph
+ * @return true if path calculation succeeded (or kept existing path)
+ */
+static boolean RecalculatePathToTarget(int current_sector, boolean force_adjacency_rebuild) {
+    target_info_t info;
+    secret_path_t new_path;
+    int target_sector;
+
+    if (!Secret_GetCurrentTarget(&info)) {
+        SECRET_DEBUG("[SECRET] RecalculatePath: GetCurrentTarget failed\n");
+        return false;
+    }
+
+    /* Rebuild adjacency if requested */
+    if (force_adjacency_rebuild) {
+        s_adjacency_dirty = true;
+    }
+    EnsureAdjacencyValid();
+
+    /* Determine target sector */
+    if (info.type == TARGET_SECRET) {
+        target_sector = info.index;
+    } else {
+        line_t *line = &lines[info.index];
+        if (line->frontsector) {
+            target_sector = line->frontsector - sectors;
+        } else if (line->backsector) {
+            target_sector = line->backsector - sectors;
+        } else {
+            target_sector = -1;
+        }
+    }
+
+    SECRET_DEBUG("[SECRET] RecalculatePath: current=%d, target=%d, discovered=%d\n",
+                 current_sector, target_sector, info.discovered);
+
+    /* Special case: already at target sector */
+    if (current_sector == target_sector) {
+        SECRET_DEBUG("[SECRET] RecalculatePath: Already at target sector\n");
+        if (s_current_path.valid && s_current_path.path_length > 0) {
+            s_current_path.target_x = info.x;
+            s_current_path.target_y = info.y;
+            GenerateArrows(&s_current_path);
+            SpawnHintSprites(&s_current_path);
+        }
+        return true;
+    }
+
+    /* Run BFS to find path */
+    if (target_sector >= 0 && BFSFindPath(current_sector, target_sector, &new_path)) {
+        SECRET_DEBUG("[SECRET] RecalculatePath: path found, length=%d\n", new_path.path_length);
+
+        /* Set target coordinates */
+        new_path.target_x = info.x;
+        new_path.target_y = info.y;
+
+        /* Check if path leads to hidden door (for triggers) */
+        if (info.type != TARGET_SECRET && new_path.target_sector == target_sector) {
+            s_path_to_hidden_door = true;
+            s_hidden_door_line = info.index;
+        } else {
+            s_path_to_hidden_door = false;
+            s_hidden_door_line = -1;
+        }
+
+        GenerateArrows(&new_path);
+        memcpy(&s_current_path, &new_path, sizeof(secret_path_t));
+        SpawnHintSprites(&s_current_path);
+        return true;
+    }
+
+    /* BFS failed - keep existing path if we have one */
+    SECRET_DEBUG("[SECRET] RecalculatePath: BFS failed from %d to %d\n",
+                 current_sector, target_sector);
+
+    if (s_current_path.valid && s_current_path.num_arrows > 0) {
+        SECRET_DEBUG("[SECRET] RecalculatePath: keeping existing path with %d arrows\n",
+                     s_current_path.num_arrows);
+        GenerateArrows(&s_current_path);
+        SpawnHintSprites(&s_current_path);
+        return true;  /* Treat as success to prevent retry spam */
+    }
+
+    SECRET_DEBUG("[SECRET] RecalculatePath: no existing path to keep\n");
+    return true;  /* Still return true to prevent retry spam */
+}
+
 void Secret_UpdateArrows(void) {
     player_t *player = &players[consoleplayer];
     int current_sector;
+    fixed_t dx, dy, dist_moved;
 
     if (!s_path_active || !player->mo) {
         return;
@@ -1576,44 +2222,91 @@ void Secret_UpdateArrows(void) {
         return;
     }
 
-    /* Recalculate path every frame from player's current position */
-    secret_path_t new_path;
-    target_info_t info;
+    /* Check if player moved to a different sector - need full BFS recalculation */
+    boolean need_bfs = (current_sector != s_last_player_sector);
 
-    if (Secret_GetCurrentTarget(&info)) {
-        /* Use cached adjacency (rebuilt on path request or level load) */
-        EnsureAdjacencyValid();
+    /* Note: 1-sided wall blocking no longer triggers recalculation.
+     * We keep partial path to guide player toward the secret. */
 
-        int target_sector;
-        if (info.type == TARGET_SECRET) {
-            target_sector = info.index;
+    /* Check if player moved enough to warrant arrow update */
+    dx = player->mo->x - s_last_player_x;
+    dy = player->mo->y - s_last_player_y;
+    dist_moved = P_AproxDistance(dx, dy);
+    boolean need_arrow_update = (dist_moved >= PLAYER_MOVE_THRESHOLD);
+
+    /* Polling: Check if a blocking wall has become passable (door/lift opened).
+     * Skip polling for 1-sided walls since they can never open. */
+    if (s_path_blocked && s_blocking_wall_line >= 0) {
+        line_t *blocking_line = &lines[s_blocking_wall_line];
+
+        /* 1-sided walls are permanently impassable - no need to poll */
+        if (!blocking_line->backsector) {
+            /* Keep showing partial path, no polling needed */
         } else {
-            line_t *line = &lines[info.index];
-            if (line->frontsector) {
-                target_sector = line->frontsector - sectors;
-            } else if (line->backsector) {
-                target_sector = line->backsector - sectors;
-            } else {
-                target_sector = -1;
+            /* 2-sided wall (door/lift) - poll to check if it opened */
+            s_blocking_check_counter++;
+            if (s_blocking_check_counter >= BLOCKING_RECHECK_INTERVAL) {
+                SECRET_DEBUG("[SECRET] Polling check for blocking wall line=%d (counter reached %d)\n",
+                       s_blocking_wall_line, BLOCKING_RECHECK_INTERVAL);
+                s_blocking_check_counter = 0;
+
+                /* Check if blocking wall is still impassable using both methods:
+                 * 1. IsImpassableWall - checks wall type (ML_BLOCKING, special)
+                 * 2. P_LineOpening - checks actual vertical opening (detects open doors) */
+                boolean is_still_blocked = true;
+                boolean is_impassable = IsImpassableWall(blocking_line);
+
+                if (!is_impassable) {
+                    is_still_blocked = false;
+                    SECRET_DEBUG("[SECRET]   IsImpassableWall returned false - wall is now passable\n");
+                } else {
+                    /* 2-sided line: check actual vertical opening */
+                    P_LineOpening(blocking_line);
+                    SECRET_DEBUG("[SECRET]   2-sided line: openrange=%d (need >%d)\n",
+                           openrange >> FRACBITS, 40);
+                    if (openrange > 40 * FRACUNIT) {  /* Enough space to walk through */
+                        is_still_blocked = false;
+                        SECRET_DEBUG("[SECRET]   Vertical opening sufficient - wall is now passable\n");
+                    }
+                }
+
+                if (!is_still_blocked) {
+                    /* Wall became passable (door/lift opened) - force recalculation */
+                    SECRET_DEBUG("[SECRET] Blocking wall line=%d is now passable! Forcing BFS recalculation\n",
+                           s_blocking_wall_line);
+                    s_path_blocked = false;
+                    s_blocking_wall_line = -1;
+                    need_bfs = true;
+                    s_last_player_sector = -1;  /* Force BFS by invalidating sector cache */
+                    s_adjacency_dirty = true;   /* Rebuild adjacency to include new connection */
+                } else {
+                    SECRET_DEBUG("[SECRET]   Wall still blocked, will check again in %d tics\n",
+                           BLOCKING_RECHECK_INTERVAL);
+                }
             }
         }
+    }
 
-        if (target_sector >= 0 && BFSFindPath(current_sector, target_sector, &new_path)) {
-            /* Check if this is a complete path or partial */
-            boolean is_complete = (new_path.target_sector == target_sector);
+    /* Debug: log sector changes */
+    if (need_bfs) {
+        SECRET_DEBUG("[SECRET] UpdateArrows: sector changed %d -> %d, need_bfs=true\n",
+               s_last_player_sector, current_sector);
+    }
 
-            /* For triggers, set the linedef position */
-            if (info.type != TARGET_SECRET && is_complete) {
-                s_path_to_hidden_door = true;
-                s_hidden_door_line = info.index;
-            } else {
-                s_path_to_hidden_door = false;
-                s_hidden_door_line = -1;
-            }
+    if (need_bfs || need_arrow_update) {
+        /* Clear blocked connections when player moves.
+         * This allows BFS to find new paths from the new position. */
+        ClearBlockedConnections();
+        s_path_blocked = false;
+        s_blocking_wall_line = -1;
+        s_blocking_check_counter = 0;
 
-            GenerateArrows(&new_path);
-            memcpy(&s_current_path, &new_path, sizeof(secret_path_t));
-            SpawnHintSprites(&s_current_path);
+        /* Recalculate path using common function.
+         * Always force adjacency rebuild to match original behavior. */
+        if (RecalculatePathToTarget(current_sector, true)) {
+            s_last_player_sector = current_sector;
+            s_last_player_x = player->mo->x;
+            s_last_player_y = player->mo->y;
         }
     }
 }
@@ -1793,7 +2486,7 @@ void Secret_ScanTargets(void) {
         s_target_counts[i] = 0;
     }
 
-    printf("[SECRET] Scanning level for targets...\n");
+    SECRET_DEBUG("[SECRET] Scanning level for targets...\n");
 
     /* Use saved original secret sectors (includes discovered ones) */
     for (i = 0; i < s_original_secret_count && secret_num < SECRET_MAX_TARGETS; i++) {
@@ -1810,7 +2503,7 @@ void Secret_ScanTargets(void) {
         secret_num++;
     }
     s_target_counts[TARGET_SECRET] = secret_num;
-    printf("[SECRET]   Secrets: %d\n", secret_num);
+    SECRET_DEBUG("[SECRET]   Secrets: %d\n", secret_num);
 
     /* Scan linedefs for triggers */
     for (i = 0; i < numlines; i++) {
@@ -1895,8 +2588,8 @@ void Secret_ScanTargets(void) {
     s_target_counts[TARGET_EXIT] = exit_num;
     s_target_counts[TARGET_KEY_DOOR] = keydoor_num;
 
-    printf("[SECRET]   Doors: %d, Lifts: %d, Switches: %d\n", door_num, lift_num, switch_num);
-    printf("[SECRET]   Teleporters: %d, Exits: %d, Key Doors: %d\n", teleporter_num, exit_num, keydoor_num);
+    SECRET_DEBUG("[SECRET]   Doors: %d, Lifts: %d, Switches: %d\n", door_num, lift_num, switch_num);
+    SECRET_DEBUG("[SECRET]   Teleporters: %d, Exits: %d, Key Doors: %d\n", teleporter_num, exit_num, keydoor_num);
 
     /* Reset selection to first secret (or first available type) */
     s_current_type = TARGET_SECRET;
@@ -1976,7 +2669,7 @@ boolean Secret_SelectNextTarget(void) {
     if (changed) {
         target_info_t info;
         if (Secret_GetCurrentTarget(&info)) {
-            printf("[SECRET] Selected: %s (%s %d/%d)\n",
+            SECRET_DEBUG("[SECRET] Selected: %s (%s %d/%d)\n",
                    info.name,
                    Secret_GetTargetTypeName(s_current_type),
                    s_current_index + 1,
@@ -2012,7 +2705,7 @@ boolean Secret_SelectPrevTarget(void) {
     if (changed) {
         target_info_t info;
         if (Secret_GetCurrentTarget(&info)) {
-            printf("[SECRET] Selected: %s (%s %d/%d)\n",
+            SECRET_DEBUG("[SECRET] Selected: %s (%s %d/%d)\n",
                    info.name,
                    Secret_GetTargetTypeName(s_current_type),
                    s_current_index + 1,
@@ -2034,6 +2727,12 @@ boolean Secret_SelectTarget(target_type_t type, int index) {
         return false;
     }
 
+    /* Clear blocked connections when selecting a new target */
+    ClearBlockedConnections();
+    s_path_blocked = false;
+    s_blocking_wall_line = -1;
+    s_blocking_check_counter = 0;
+
     /* Set selection */
     s_current_type = type;
     s_current_index = index;
@@ -2041,7 +2740,7 @@ boolean Secret_SelectTarget(target_type_t type, int index) {
     /* Log selection */
     target_info_t info;
     if (Secret_GetCurrentTarget(&info)) {
-        printf("[SECRET] Selected %s %d/%d: %s\n",
+        SECRET_DEBUG("[SECRET] Selected %s %d/%d: %s\n",
                Secret_GetTargetTypeName(s_current_type),
                s_current_index + 1,
                s_target_counts[s_current_type],
@@ -2119,18 +2818,33 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
         }
     }
 
+    /* Log player position and sector info */
+    SECRET_DEBUG("[SECRET] === FindPathToCurrentTarget ===\n");
+    SECRET_DEBUG("[SECRET] Player position: (%d, %d)\n", player->mo->x >> FRACBITS, player->mo->y >> FRACBITS);
+    SECRET_DEBUG("[SECRET] Player sector: %d\n", player_sector);
+    {
+        fixed_t sector_x, sector_y;
+        GetSectorCenter(player_sector, &sector_x, &sector_y);
+        SECRET_DEBUG("[SECRET] Player sector center: (%d, %d)\n", sector_x >> FRACBITS, sector_y >> FRACBITS);
+    }
+    SECRET_DEBUG("[SECRET] Target sector: %d\n", target_sector);
+
     /* Use BFS to find path (returns partial path if target unreachable) */
     if (BFSFindPath(player_sector, target_sector, out_path)) {
         boolean is_partial = (out_path->target_sector != target_sector);
 
+        /* Set target coordinates for final arrow destination */
+        out_path->target_x = info.x;
+        out_path->target_y = info.y;
+
         if (is_partial) {
-            printf("[SECRET] Partial path to %s (%d steps, closest reachable)\n",
+            SECRET_DEBUG("[SECRET] Partial path to %s (%d steps, closest reachable)\n",
                    info.name, out_path->path_length);
             /* For partial paths, don't set hidden door - just go as far as possible */
             s_path_to_hidden_door = false;
             s_hidden_door_line = -1;
         } else {
-            printf("[SECRET] Path to %s found (%d steps)\n", info.name, out_path->path_length);
+            SECRET_DEBUG("[SECRET] Path to %s found (%d steps)\n", info.name, out_path->path_length);
 
             /* For triggers (lift, door, etc.), set the exact linedef position */
             if (info.type != TARGET_SECRET) {
@@ -2142,16 +2856,29 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
             }
         }
 
+        /* Log path sectors */
+#ifdef DEBUG_SECRET
+        SECRET_DEBUG("[SECRET] Path sectors: ");
+        for (int i = 0; i < out_path->path_length && i < 10; i++) {
+            SECRET_DEBUG("%d ", out_path->path[i]);
+        }
+        if (out_path->path_length > 10) SECRET_DEBUG("...");
+        SECRET_DEBUG("\n");
+#endif
+
         GenerateArrows(out_path);
         memcpy(&s_current_path, out_path, sizeof(secret_path_t));
         s_path_active = true;
+        s_last_player_sector = player_sector;  /* Set initial sector */
+        s_last_player_x = player->mo->x;       /* Set initial position */
+        s_last_player_y = player->mo->y;
 
         SpawnHintSprites(&s_current_path);
         return true;
     }
 
     /* This should rarely happen now - only if completely surrounded */
-    printf("[SECRET] Cannot find any path from sector %d\n", player_sector);
+    SECRET_DEBUG("[SECRET] Cannot find any path from sector %d\n", player_sector);
     out_path->valid = false;
     return false;
 }
