@@ -44,20 +44,31 @@ if(NOT EXISTS ${DOOMGENERIC_DIR}/doomgeneric)
     message(FATAL_ERROR "doomgeneric source not found. This should be included in the repository.")
 endif()
 
-# Download shareware doom1.wad if not present
-set(DOOM_WAD "${DOOMGENERIC_DIR}/doomgeneric/doom1.wad")
-if(NOT EXISTS ${DOOM_WAD})
-    message(STATUS "Downloading doom1.wad (shareware)...")
-    file(DOWNLOAD
-        "https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad"
-        ${DOOM_WAD}
-        SHOW_PROGRESS
-        STATUS DOWNLOAD_STATUS
-    )
-    list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
-    if(NOT STATUS_CODE EQUAL 0)
-        message(FATAL_ERROR "Failed to download doom1.wad. Please download manually.")
+# Check for full game WAD (DOOMU.WAD) or fall back to shareware (doom1.wad)
+set(DOOM_WAD_FULL "${DOOMGENERIC_DIR}/doomgeneric/DOOMU.WAD")
+set(DOOM_WAD_SHAREWARE "${DOOMGENERIC_DIR}/doomgeneric/doom1.wad")
+
+if(EXISTS ${DOOM_WAD_FULL})
+    set(DOOM_WAD ${DOOM_WAD_FULL})
+    set(DOOM_WAD_NAME "doom.wad")  # Mount as doom.wad so DOOM can find it
+    message(STATUS "Using full game: DOOMU.WAD (Ultimate DOOM)")
+else()
+    set(DOOM_WAD ${DOOM_WAD_SHAREWARE})
+    set(DOOM_WAD_NAME "doom1.wad")
+    if(NOT EXISTS ${DOOM_WAD})
+        message(STATUS "Downloading doom1.wad (shareware)...")
+        file(DOWNLOAD
+            "https://distro.ibiblio.org/slitaz/sources/packages/d/doom1.wad"
+            ${DOOM_WAD}
+            SHOW_PROGRESS
+            STATUS DOWNLOAD_STATUS
+        )
+        list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
+        if(NOT STATUS_CODE EQUAL 0)
+            message(FATAL_ERROR "Failed to download doom1.wad. Please download manually.")
+        endif()
     endif()
+    message(STATUS "Using shareware: doom1.wad (Episode 1 only)")
 endif()
 
 # Download FreePats soundfont for MIDI music support
@@ -240,7 +251,7 @@ target_link_options(doom_sce PRIVATE
     -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS']
     -sEXPORTED_FUNCTIONS=['_main','_sce_init','_sce_get_game_state','_sce_get_player_state','_sce_get_weapon_state','_sce_get_enemy_count','_sce_get_enemy_killed','_sce_get_max_enemies','_sce_get_enemy_info','_sce_get_enemies_remaining','_sce_get_level_total_kills','_sce_get_player_kill_count','_sce_enemy_spawn','_sce_enemy_set_state','_sce_enemy_killed','_sce_enemy_remove','_sce_secret_get_state','_sce_secret_event_enable','_sce_secret_event_disable','_sce_secret_event_request','_sce_secret_event_cancel','_sce_secret_event_level_change','_sce_secret_event_reached','_sce_secret_path_found','_sce_secret_no_path']
     -sNO_EXIT_RUNTIME=1
-    "SHELL:--preload-file ${DOOMGENERIC_DIR}/doomgeneric/doom1.wad@doom1.wad"
+    "SHELL:--preload-file ${DOOM_WAD}@${DOOM_WAD_NAME}"
     "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/freepats@/etc/timidity"
 )
 

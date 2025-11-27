@@ -2,8 +2,9 @@
 build/
 cmake_build/
 
-# Downloaded at build time
+# WAD files (downloaded or user-provided)
 doomgeneric/doomgeneric/doom1.wad
+doomgeneric/doomgeneric/DOOMU.WAD
 
 # Generated state machine headers
 generated/
