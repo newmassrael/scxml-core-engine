@@ -26,6 +26,18 @@ extern "C" {
 #define SECRET_MAX_TARGETS 128
 
 /* Target types */
+/* Door activation methods */
+typedef enum {
+    DOOR_OPEN_USE,      /* Press Use key (Space) */
+    DOOR_OPEN_WALK,     /* Walk through to trigger */
+    DOOR_OPEN_SHOOT,    /* Shoot to open */
+    DOOR_OPEN_SWITCH,   /* Activate nearby switch */
+    DOOR_OPEN_BLUE_KEY, /* Requires blue key */
+    DOOR_OPEN_RED_KEY,  /* Requires red key */
+    DOOR_OPEN_YELLOW_KEY, /* Requires yellow key */
+    DOOR_OPEN_UNKNOWN   /* Unknown activation method */
+} door_open_method_t;
+
 typedef enum {
     TARGET_SECRET,      /* Secret sector (special == 9) */
     TARGET_DOOR,        /* Door linedef */
@@ -42,15 +54,25 @@ typedef enum {
 struct mobj_s;
 
 /* Target information structure */
+/* NOTE: Use int instead of boolean for discovered/reachable to ensure
+ * consistent struct layout between C (boolean=enum=4bytes) and C++ (boolean=bool=1byte) */
 typedef struct {
     target_type_t type;     /* Type of target */
     int index;              /* Sector index (secrets) or linedef index (triggers) */
-    fixed_t x;              /* Target X position */
-    fixed_t y;              /* Target Y position */
+    fixed_t x;              /* Trigger X position (linedef center) */
+    fixed_t y;              /* Trigger Y position (linedef center) */
     const char *name;       /* Display name (e.g., "Secret 1", "Blue Door") */
-    boolean discovered;     /* For secrets: already found? */
-    boolean reachable;      /* Can player reach this target? */
+    int discovered;         /* For secrets: already found? (0=false, 1=true) */
+    int reachable;          /* Can player reach this target? (0=false, 1=true) */
     struct mobj_s *mobj;    /* For TARGET_ENEMY: pointer to enemy mobj */
+    /* Sector destination (for lifts/doors with tagged sectors) */
+    fixed_t sector_x;       /* Tagged sector center X */
+    fixed_t sector_y;       /* Tagged sector center Y */
+    int sector_index;       /* Tagged sector index (-1 if none) */
+    /* Door-specific information */
+    door_open_method_t open_method;  /* How to open this door */
+    int is_hidden;          /* Is this a hidden door? (0=false, 1=true) */
+    int linked_secret;      /* Secret index this door leads to (-1 if none) */
 } target_info_t;
 
 /* Arrow waypoint structure */
@@ -237,6 +259,13 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path);
 const char* Secret_GetTargetTypeName(target_type_t type);
 
 /**
+ * Get name string for door open method.
+ * @param method Door open method
+ * @return Static string name (e.g., "Use", "Walk", "Blue Key")
+ */
+const char* Secret_GetDoorOpenMethodName(door_open_method_t method);
+
+/**
  * Get current selection indices.
  * @param out_type Current target type
  * @param out_index Index within type
@@ -264,6 +293,35 @@ void Secret_UpdateEnemyPositions(void);
  * @return true if enemy is still alive
  */
 boolean Secret_IsEnemyAlive(int index);
+
+/* ============================================
+ * Path Destination Mode API
+ * ============================================ */
+
+/* Destination mode for targets with tagged sectors (lifts, doors) */
+typedef enum {
+    DEST_TRIGGER,  /* Path to trigger/switch position (default) */
+    DEST_SECTOR    /* Path to tagged sector (lift platform, door sector) */
+} path_dest_mode_t;
+
+/**
+ * Set path destination mode for current target.
+ * Only affects targets with tagged sectors (lifts, doors, key doors).
+ * @param mode DEST_TRIGGER or DEST_SECTOR
+ */
+void Secret_SetDestinationMode(path_dest_mode_t mode);
+
+/**
+ * Get current path destination mode.
+ * @return Current destination mode
+ */
+path_dest_mode_t Secret_GetDestinationMode(void);
+
+/**
+ * Check if current target has a tagged sector.
+ * @return true if current target has sector_index >= 0
+ */
+boolean Secret_CurrentTargetHasSector(void);
 
 /* External functions from sce_wrapper.cpp (SCXML state machine integration) */
 void sce_secret_recalculate(void);

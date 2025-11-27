@@ -178,6 +178,40 @@
             color: #ffcc00;
             font-weight: bold;
         }
+        /* Destination mode selector */
+        .dest-selector {
+            margin-left: auto;
+        }
+        .dest-btn {
+            padding: 4px 8px;
+            margin-left: 5px;
+            background: #444;
+            border: 1px solid #666;
+            border-radius: 4px;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        .dest-btn:hover {
+            background: #555;
+            color: #fff;
+        }
+        .dest-btn.active {
+            background: #f39c12;
+            border-color: #f39c12;
+            color: #000;
+            font-weight: bold;
+        }
+        /* Door info display */
+        .door-info {
+            margin-left: 10px;
+            padding: 4px 10px;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ffcc00;
+            font-size: 12px;
+        }
         .secret-state-text {
             font-weight: bold;
         }
@@ -418,6 +452,13 @@
                 <div class="secret-info">
                     <div class="info-item">State: <span id="secret-state" class="secret-state-text disabled">disabled</span></div>
                     <div class="info-item">Path: <span id="secret-arrows">0</span> waypoints</div>
+                    <span id="path-partial-warning" style="display: none; color: #ff6600; font-weight: bold; margin-left: 10px;">UNREACHABLE</span>
+                    <div class="info-item dest-selector" id="dest-selector" style="display: none;">
+                        Path to:
+                        <button class="dest-btn active" id="dest-trigger-btn" onclick="setDestMode(0)">Trigger</button>
+                        <button class="dest-btn" id="dest-sector-btn" onclick="setDestMode(1)">Sector</button>
+                    </div>
+                    <div class="info-item door-info" id="door-info" style="display: none;"></div>
                 </div>
                 <div class="target-buttons-container" id="target-buttons">
                     <!-- Target buttons will be generated dynamically -->
@@ -730,14 +771,24 @@
         };
 
         // C++ callback: Called when secret path is found
-        window.onSceSecretPath = function(numArrows, remainingSecrets) {
+        // isPartial: 1 if target is unreachable (path only goes to closest accessible point)
+        window.onSceSecretPath = function(numArrows, remainingSecrets, isPartial) {
             SCE.secretArrows = [];
             SCE.secretRemaining = remainingSecrets;
+            SCE.pathPartial = !!isPartial;
             const arrowsEl = document.getElementById('secret-arrows');
             const statsEl = document.getElementById('stat-secrets');
+            const partialEl = document.getElementById('path-partial-warning');
             if (arrowsEl) arrowsEl.textContent = numArrows;
             if (statsEl) statsEl.textContent = remainingSecrets + ' left';
-            console.debug('[SCE:Secret] Path found with', numArrows, 'arrows,', remainingSecrets, 'remaining');
+            if (partialEl) {
+                partialEl.style.display = isPartial ? 'inline' : 'none';
+            }
+            if (isPartial) {
+                console.warn('[SCE:Secret] PARTIAL path with', numArrows, 'arrows - target UNREACHABLE');
+            } else {
+                console.debug('[SCE:Secret] Path found with', numArrows, 'arrows,', remainingSecrets, 'remaining');
+            }
         };
 
         // C++ callback: Called for each arrow in the secret path
@@ -747,15 +798,85 @@
         };
 
         // C++ callback: Called when target info updates
-        window.onSceTargetInfo = function(typeName, name, index, total) {
+        // Parameters: typeName, name, index, total, triggerX, triggerY, sectorX, sectorY, sectorIdx, openMethod, isHidden, linkedSecret
+        window.onSceTargetInfo = function(typeName, name, index, total, triggerX, triggerY, sectorX, sectorY, sectorIdx, openMethod, isHidden, linkedSecret) {
             // Update active button highlight
+            // Normalize type name: "Key Door" -> "keydoor" to match button dataset
+            const normalizedType = typeName.toLowerCase().replace(/ /g, '');
             document.querySelectorAll('.target-btn').forEach(btn => {
-                const isActive = btn.dataset.type === typeName.toLowerCase() &&
+                const isActive = btn.dataset.type === normalizedType &&
                                  parseInt(btn.dataset.index) === index;
                 btn.classList.toggle('active', isActive);
             });
-            console.debug('[SCE:Target] Info:', typeName, name, index, total);
+            // Store coordinates for visualization
+            SCE.currentTarget = {
+                type: typeName,
+                name: name,
+                index: index,
+                total: total,
+                trigger: { x: triggerX, y: triggerY },
+                sector: { x: sectorX, y: sectorY, index: sectorIdx },
+                openMethod: openMethod || '',
+                isHidden: !!isHidden,
+                linkedSecret: linkedSecret
+            };
+            // Show/hide destination mode selector based on whether target has sector
+            const destSelector = document.getElementById('dest-selector');
+            if (destSelector) {
+                const hasSector = (sectorIdx !== undefined && sectorIdx >= 0);
+                destSelector.style.display = hasSector ? 'inline-block' : 'none';
+            }
+            // Update door info display
+            const doorInfoEl = document.getElementById('door-info');
+            if (doorInfoEl) {
+                const isDoorType = (normalizedType === 'door' || normalizedType === 'keydoor' || normalizedType === 'lift');
+                if (isDoorType && openMethod) {
+                    let infoText = 'Open: ' + openMethod;
+                    if (isHidden) {
+                        infoText = '[Hidden] ' + infoText;
+                        if (linkedSecret >= 0) {
+                            infoText += ' → Secret ' + (linkedSecret + 1);
+                        }
+                    }
+                    doorInfoEl.textContent = infoText;
+                    doorInfoEl.style.display = 'block';
+                } else {
+                    doorInfoEl.style.display = 'none';
+                }
+            }
+            // Log with sector info if available
+            if (sectorIdx >= 0) {
+                console.log('[SCE:Target]', name, '- Trigger:', triggerX, triggerY, '| Sector:', sectorX, sectorY, '(idx:', sectorIdx + ')');
+            } else {
+                console.debug('[SCE:Target] Info:', typeName, name, index, total);
+            }
+            if (openMethod) {
+                console.log('[SCE:Target] Door info: open=' + openMethod + ', hidden=' + isHidden + ', linkedSecret=' + linkedSecret);
+            }
         };
+
+        // Destination mode: 0 = trigger, 1 = sector
+        let currentDestMode = 0;
+
+        function setDestMode(mode) {
+            if (!Module || !Module.ccall) {
+                console.error('Module not ready');
+                return;
+            }
+            currentDestMode = mode;
+            // Update C backend
+            if (mode === 0) {
+                Module.ccall('sce_set_dest_mode_trigger', null, [], []);
+            } else {
+                Module.ccall('sce_set_dest_mode_sector', null, [], []);
+            }
+            // Update button states
+            document.getElementById('dest-trigger-btn').classList.toggle('active', mode === 0);
+            document.getElementById('dest-sector-btn').classList.toggle('active', mode === 1);
+            // Recalculate path with new destination
+            Module.ccall('sce_secret_recalculate', null, [], []);
+            console.log('[SCE:DestMode] Set to', mode === 0 ? 'TRIGGER' : 'SECTOR');
+        }
 
         // C++ callback: Called when aim assist state changes
         window.onSceAimAssistState = function(enabled) {

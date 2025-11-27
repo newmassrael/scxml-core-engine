@@ -45,9 +45,11 @@ static constexpr int MAX_ENEMIES = 64;
 // Forward declarations for JS callbacks
 // ============================================
 static inline void js_notify_state_change(const char *machine, const char *state);
-static inline void js_notify_secret_path(int num_arrows, int remaining_secrets);
+static inline void js_notify_secret_path(int num_arrows, int remaining_secrets, bool is_partial);
 static inline void js_notify_secret_arrow(int index, int x, int y, int angle);
-static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total);
+static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total,
+                                         int trigger_x, int trigger_y, int sector_x, int sector_y, int sector_idx,
+                                         const char *open_method, int is_hidden, int linked_secret);
 
 // Forward declaration for secret state machine (extern "C" for EMSCRIPTEN_KEEPALIVE exports)
 extern "C" {
@@ -150,9 +152,9 @@ struct SecretCallbacks {
         // Disabled state: hint system is off
         Secret_ClearPath();
         js_notify_state_change("secret", sce_secret_get_state());
-        js_notify_secret_path(0, Secret_GetRemainingCount());
+        js_notify_secret_path(0, Secret_GetRemainingCount(), false);
         // Clear button highlight when disabled
-        js_notify_target_info("", "", -1, 0);
+        js_notify_target_info("", "", -1, 0, 0, 0, 0, 0, -1, "", 0, -1);
     }
 
     void onCalculating() {
@@ -164,21 +166,32 @@ struct SecretCallbacks {
         // Reset BFS result
         g_bfs_result = BfsResult::NONE;
 
-        // Always notify target info for button highlighting
+        // Always notify target info for button highlighting (with trigger and sector coordinates)
         target_info_t info;
         if (Secret_GetCurrentTarget(&info)) {
             target_type_t type;
             int index, total;
             Secret_GetSelectionInfo(&type, &index, &total);
-            js_notify_target_info(Secret_GetTargetTypeName(type), info.name, index, total);
+
+            js_notify_target_info(Secret_GetTargetTypeName(type), info.name, index, total,
+                                  info.x >> 16, info.y >> 16,
+                                  info.sector_x >> 16, info.sector_y >> 16, info.sector_index,
+                                  Secret_GetDoorOpenMethodName(info.open_method), info.is_hidden, info.linked_secret);
         }
 
         // Run BFS and store result (no event raising)
         secret_path_t path = {};
         bool bfs_success = Secret_FindPathToCurrentTarget(&path);
         if (bfs_success && path.num_arrows > 0) {
-            // Path found - notify JS with arrow data
-            js_notify_secret_path(path.num_arrows, Secret_GetRemainingCount());
+            // Check if path is partial (target unreachable)
+            // For secrets: compare path.target_sector with info.index (sector index)
+            // For triggers: we trust the BFS result
+            bool is_partial = false;
+            if (info.type == TARGET_SECRET && path.target_sector != info.index) {
+                is_partial = true;
+            }
+            // Path found - notify JS with arrow data and partial flag
+            js_notify_secret_path(path.num_arrows, Secret_GetRemainingCount(), is_partial);
             for (int i = 0; i < path.num_arrows; i++) {
                 js_notify_secret_arrow(i,
                                        path.arrows[i].x >> 16,
@@ -317,9 +330,11 @@ const char *sce_get_weapon_state(void);
 static inline void js_notify_state_change(const char *machine, const char *state);
 static inline void js_notify_enemy_update(int slot, const char *type, const char *state, int instance_id, bool active);
 static inline void js_notify_stats_update(int enemy_count, int enemy_killed, int enemy_remaining);
-static inline void js_notify_secret_path(int num_arrows, int remaining_secrets);
+static inline void js_notify_secret_path(int num_arrows, int remaining_secrets, bool is_partial);
 static inline void js_notify_secret_arrow(int index, int x, int y, int angle);
-static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total);
+static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total,
+                                         int trigger_x, int trigger_y, int sector_x, int sector_y, int sector_idx,
+                                         const char *open_method, int is_hidden, int linked_secret);
 
 // ============================================
 // Helper Functions
@@ -406,15 +421,15 @@ static inline void js_notify_stats_update(int enemy_count, int enemy_killed, int
 #endif
 }
 
-static inline void js_notify_secret_path(int num_arrows, int remaining_secrets) {
+static inline void js_notify_secret_path(int num_arrows, int remaining_secrets, bool is_partial) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
             if (typeof window.onSceSecretPath === 'function') {
-                window.onSceSecretPath($0, $1);
+                window.onSceSecretPath($0, $1, $2);
             }
         },
-        num_arrows, remaining_secrets);
+        num_arrows, remaining_secrets, is_partial ? 1 : 0);
 #endif
 }
 
@@ -430,15 +445,19 @@ static inline void js_notify_secret_arrow(int index, int x, int y, int angle) {
 #endif
 }
 
-static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total) {
+static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total,
+                                         int trigger_x, int trigger_y, int sector_x, int sector_y, int sector_idx,
+                                         const char *open_method, int is_hidden, int linked_secret) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
             if (typeof window.onSceTargetInfo === 'function') {
-                window.onSceTargetInfo(UTF8ToString($0), UTF8ToString($1), $2, $3);
+                window.onSceTargetInfo(UTF8ToString($0), UTF8ToString($1), $2, $3, $4, $5, $6, $7, $8,
+                                       UTF8ToString($9), $10, $11);
             }
         },
-        type_name, name, index, total);
+        type_name, name, index, total, trigger_x, trigger_y, sector_x, sector_y, sector_idx,
+        open_method, is_hidden, linked_secret);
 #endif
 }
 
@@ -1124,6 +1143,30 @@ int sce_is_enemy_alive(int index) {
 EMSCRIPTEN_KEEPALIVE
 void sce_refresh_enemy_targets(void) {
     Secret_RefreshEnemyTargets();
+}
+
+// ============================================
+// Path Destination Mode API
+// ============================================
+
+EMSCRIPTEN_KEEPALIVE
+void sce_set_dest_mode_trigger(void) {
+    Secret_SetDestinationMode(DEST_TRIGGER);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_set_dest_mode_sector(void) {
+    Secret_SetDestinationMode(DEST_SECTOR);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_dest_mode(void) {
+    return (int)Secret_GetDestinationMode();
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_current_target_has_sector(void) {
+    return Secret_CurrentTargetHasSector() ? 1 : 0;
 }
 
 // ============================================

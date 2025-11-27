@@ -51,6 +51,8 @@ static boolean IsLiftSpecial(int special);
 static boolean IsImpassableWall(line_t *line);
 static void BuildSectorAdjacency(void);
 static void GetSectorCenter(int sector_idx, fixed_t *out_x, fixed_t *out_y);
+static door_open_method_t GetDoorOpenMethod(int special);
+static boolean IsHiddenDoorToSecret(int line_idx, int *out_secret_index);
 
 /* Line-of-sight checking using P_PathTraverse */
 static boolean s_sight_blocked = false;
@@ -351,6 +353,7 @@ static target_info_t s_targets[TARGET_TYPE_COUNT][SECRET_MAX_TARGETS];
 static int s_target_counts[TARGET_TYPE_COUNT] = {0};
 static target_type_t s_current_type = TARGET_SECRET;
 static int s_current_index = 0;
+static path_dest_mode_t s_dest_mode = DEST_TRIGGER;  /* Path to trigger by default */
 
 /* Original secret sector tracking (preserves info after discovery) */
 static int s_original_secret_sectors[SECRET_MAX_TARGETS];  /* Sector indices that were originally secrets */
@@ -2651,6 +2654,36 @@ static void GetLineCenter(int line_idx, fixed_t *out_x, fixed_t *out_y) {
     *out_y = (line->v1->y + line->v2->y) / 2;
 }
 
+
+/* Get the center of a tagged sector from a trigger linedef.
+ * Returns true if a tagged sector was found, false otherwise.
+ * Used to find the destination sector for lifts/doors. */
+static boolean GetTaggedSectorCenter(int line_idx, fixed_t *out_x, fixed_t *out_y, int *out_sector_idx) {
+    line_t *line = &lines[line_idx];
+    int i;
+
+    /* Initialize outputs */
+    *out_x = 0;
+    *out_y = 0;
+    *out_sector_idx = -1;
+
+    /* Linedefs with tag 0 don't reference a sector */
+    if (line->tag == 0) {
+        return false;
+    }
+
+    /* Find the sector with matching tag */
+    for (i = 0; i < numsectors; i++) {
+        if (sectors[i].tag == line->tag) {
+            *out_sector_idx = i;
+            GetSectorCenter(i, out_x, out_y);
+            return true;
+        }
+    }
+
+    return false;
+}
+
 void Secret_ScanTargets(void) {
     int i, j;
     int secret_num = 0;
@@ -2675,6 +2708,7 @@ void Secret_ScanTargets(void) {
     for (i = 0; i < s_original_secret_count && secret_num < SECRET_MAX_TARGETS; i++) {
         int sector_idx = s_original_secret_sectors[i];
         target_info_t *t = &s_targets[TARGET_SECRET][secret_num];
+        memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
         t->type = TARGET_SECRET;
         t->index = sector_idx;
         GetSectorCenter(sector_idx, &t->x, &t->y);
@@ -2683,6 +2717,7 @@ void Secret_ScanTargets(void) {
         /* Check if secret has been discovered (special changes from 9 to 0) */
         t->discovered = (sectors[sector_idx].special != 9);
         t->reachable = true;
+        t->sector_index = -1;  /* No sector for secrets */
         secret_num++;
     }
     s_target_counts[TARGET_SECRET] = secret_num;
@@ -2714,14 +2749,30 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_KEY_DOOR][keydoor_num];
+                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
                 t->type = TARGET_KEY_DOOR;
                 t->index = i;
                 t->x = line_x;
                 t->y = line_y;
-                snprintf(s_target_names[keydoor_num], 32, "%s Key Door", GetKeyDoorColor(special));
-                t->name = s_target_names[keydoor_num];
                 t->discovered = false;
                 t->reachable = true;
+                t->sector_index = -1;  /* Default: no sector */
+                /* Get tagged sector (door sector) */
+                GetTaggedSectorCenter(i, &t->sector_x, &t->sector_y, &t->sector_index);
+                /* Set door opening method (includes key requirement) */
+                t->open_method = GetDoorOpenMethod(special);
+                t->is_hidden = 0;
+                t->linked_secret = -1;
+                /* Check if this is a hidden key door to a secret */
+                int secret_idx = -1;
+                if (IsHiddenDoorToSecret(i, &secret_idx)) {
+                    t->is_hidden = 1;
+                    t->linked_secret = secret_idx;
+                }
+                /* Generate name with key color */
+                const char *key_color = GetKeyDoorColor(special);
+                snprintf(s_target_names[keydoor_num], 32, "%s Key Door", key_color);
+                t->name = s_target_names[keydoor_num];
                 keydoor_num++;
             }
         }
@@ -2738,6 +2789,7 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_EXIT][exit_num];
+                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
                 t->type = TARGET_EXIT;
                 t->index = i;
                 t->x = line_x;
@@ -2745,6 +2797,7 @@ void Secret_ScanTargets(void) {
                 t->name = (special == 51 || special == 124 || special == 198) ? "Secret Exit" : "Exit";
                 t->discovered = false;
                 t->reachable = true;
+                t->sector_index = -1;  /* No sector for exits */
                 exit_num++;
             }
         }
@@ -2761,6 +2814,7 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_TELEPORTER][teleporter_num];
+                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
                 t->type = TARGET_TELEPORTER;
                 t->index = i;
                 t->x = line_x;
@@ -2768,6 +2822,7 @@ void Secret_ScanTargets(void) {
                 t->name = "Teleporter";
                 t->discovered = false;
                 t->reachable = true;
+                t->sector_index = -1;  /* No sector for teleporters */
                 teleporter_num++;
             }
         }
@@ -2784,13 +2839,46 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_LIFT][lift_num];
+                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
                 t->type = TARGET_LIFT;
                 t->index = i;
                 t->x = line_x;
                 t->y = line_y;
-                t->name = "Lift";
                 t->discovered = false;
                 t->reachable = true;
+                t->sector_index = -1;  /* Default: no sector */
+                /* Get tagged sector (lift destination) */
+                GetTaggedSectorCenter(i, &t->sector_x, &t->sector_y, &t->sector_index);
+                /* Determine lift activation method */
+                door_open_method_t lift_method;
+                switch (special) {
+                case 10:   /* W1 Lift */
+                case 88:   /* WR Lift */
+                case 120:  /* WR Lift Fast */
+                case 121:  /* W1 Lift Fast */
+                    lift_method = DOOR_OPEN_WALK;
+                    break;
+                case 21:   /* S1 Lift */
+                case 62:   /* SR Lift */
+                case 122:  /* S1 Lift Fast */
+                case 123:  /* SR Lift Fast */
+                    lift_method = DOOR_OPEN_USE;
+                    break;
+                default:
+                    lift_method = DOOR_OPEN_USE;
+                    break;
+                }
+                t->open_method = lift_method;
+                t->is_hidden = 0;
+                t->linked_secret = -1;
+                /* Generate name with activation method */
+                const char *method_name = Secret_GetDoorOpenMethodName(lift_method);
+                if (method_name[0] != '\0') {
+                    snprintf(s_target_names[lift_num + SECRET_MAX_TARGETS/2], 32, "Lift (%s)", method_name);
+                    t->name = s_target_names[lift_num + SECRET_MAX_TARGETS/2];
+                } else {
+                    t->name = "Lift";
+                }
                 lift_num++;
             }
         }
@@ -2807,6 +2895,7 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_SWITCH][switch_num];
+                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
                 t->type = TARGET_SWITCH;
                 t->index = i;
                 t->x = line_x;
@@ -2814,6 +2903,7 @@ void Secret_ScanTargets(void) {
                 t->name = "Switch";
                 t->discovered = false;
                 t->reachable = true;
+                t->sector_index = -1;  /* No sector for switches */
                 switch_num++;
             }
         }
@@ -2830,13 +2920,34 @@ void Secret_ScanTargets(void) {
             }
             if (!is_duplicate) {
                 target_info_t *t = &s_targets[TARGET_DOOR][door_num];
+                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
                 t->type = TARGET_DOOR;
                 t->index = i;
                 t->x = line_x;
                 t->y = line_y;
-                t->name = "Door";
                 t->discovered = false;
                 t->reachable = true;
+                /* Get tagged sector (door sector) */
+                GetTaggedSectorCenter(i, &t->sector_x, &t->sector_y, &t->sector_index);
+                /* Set door opening method */
+                t->open_method = GetDoorOpenMethod(special);
+                /* Check if this is a hidden door to a secret */
+                int secret_idx = -1;
+                t->is_hidden = IsHiddenDoorToSecret(i, &secret_idx) ? 1 : 0;
+                t->linked_secret = secret_idx;
+                /* Generate descriptive name */
+                if (t->is_hidden && secret_idx >= 0) {
+                    snprintf(s_target_names[door_num], 32, "Hidden→Secret %d (%s)", 
+                             secret_idx + 1, Secret_GetDoorOpenMethodName(t->open_method));
+                } else {
+                    const char *method_name = Secret_GetDoorOpenMethodName(t->open_method);
+                    if (method_name[0] != '\0') {
+                        snprintf(s_target_names[door_num], 32, "Door (%s)", method_name);
+                    } else {
+                        snprintf(s_target_names[door_num], 32, "Door");
+                    }
+                }
+                t->name = s_target_names[door_num];
                 door_num++;
             }
         }
@@ -2886,6 +2997,129 @@ const char* Secret_GetTargetTypeName(target_type_t type) {
     case TARGET_ENEMY:      return "Enemy";
     default:                return "Unknown";
     }
+}
+
+const char* Secret_GetDoorOpenMethodName(door_open_method_t method) {
+    switch (method) {
+    case DOOR_OPEN_USE:        return "Use";
+    case DOOR_OPEN_WALK:       return "Walk";
+    case DOOR_OPEN_SHOOT:      return "Shoot";
+    case DOOR_OPEN_SWITCH:     return "Switch";
+    case DOOR_OPEN_BLUE_KEY:   return "Blue Key";
+    case DOOR_OPEN_RED_KEY:    return "Red Key";
+    case DOOR_OPEN_YELLOW_KEY: return "Yellow Key";
+    default:                   return "";
+    }
+}
+
+/**
+ * Determine how to open a door based on its linedef special.
+ * @param special Linedef special number
+ * @return Door open method enum
+ */
+static door_open_method_t GetDoorOpenMethod(int special) {
+    switch (special) {
+    /* Use doors (DR/D1 types) - press Use key */
+    case 1:    /* DR Door Open Wait Close */
+    case 31:   /* D1 Door Open Stay */
+    case 117:  /* DR Door Blazing Open Wait Close */
+    case 118:  /* D1 Door Blazing Open Stay */
+    case 103:  /* S1 Door Open Stay (switch-like but Use activated) */
+        return DOOR_OPEN_USE;
+
+    /* Walk-trigger doors (W1/WR types) */
+    case 2:    /* W1 Door Open Stay */
+    case 3:    /* W1 Door Close */
+    case 4:    /* W1 Door Raise */
+    case 16:   /* W1 Door Close Wait Open */
+    case 90:   /* WR Door Raise */
+    case 86:   /* WR Door Open Stay */
+        return DOOR_OPEN_WALK;
+
+    /* Gunfire doors (GR types) */
+    case 46:   /* GR Door Open Stay */
+        return DOOR_OPEN_SHOOT;
+
+    /* Switch-activated doors (S1/SR types) */
+    case 29:   /* S1 Door Raise */
+    case 50:   /* S1 Door Close */
+    case 42:   /* SR Door Close */
+    case 61:   /* SR Door Open Stay */
+    case 63:   /* SR Door Raise */
+        return DOOR_OPEN_SWITCH;
+
+    /* Blue key doors */
+    case 26:   /* DR Blue Door */
+    case 32:   /* D1 Blue Door Open Stay */
+    case 99:   /* SR Blue Blazing Door */
+    case 133:  /* S1 Blue Blazing Door Open Stay */
+        return DOOR_OPEN_BLUE_KEY;
+
+    /* Red key doors */
+    case 28:   /* DR Red Door */
+    case 33:   /* D1 Red Door Open Stay */
+    case 134:  /* SR Red Blazing Door */
+    case 135:  /* S1 Red Blazing Door Open Stay */
+        return DOOR_OPEN_RED_KEY;
+
+    /* Yellow key doors */
+    case 27:   /* DR Yellow Door */
+    case 34:   /* D1 Yellow Door Open Stay */
+    case 136:  /* SR Yellow Blazing Door */
+    case 137:  /* S1 Yellow Blazing Door Open Stay */
+        return DOOR_OPEN_YELLOW_KEY;
+
+    /* NOTE: Lifts are handled separately in Secret_ScanTargets() with proper W1/S1 detection */
+
+    default:
+        return DOOR_OPEN_UNKNOWN;
+    }
+}
+
+/**
+ * Check if a linedef is a hidden door to a secret sector.
+ * @param line_idx Linedef index
+ * @param out_secret_index Output: which secret this leads to (-1 if none)
+ * @return true if this is a hidden door to a secret
+ */
+static boolean IsHiddenDoorToSecret(int line_idx, int *out_secret_index) {
+    line_t *line = &lines[line_idx];
+    int i;
+
+    *out_secret_index = -1;
+
+    /* Must be a door special */
+    if (!IsDoorSpecial(line->special)) {
+        return false;
+    }
+
+    /* Check if either side connects to a secret sector */
+    int front_sector = line->frontsector ? (line->frontsector - sectors) : -1;
+    int back_sector = line->backsector ? (line->backsector - sectors) : -1;
+
+    /* Check frontsector for secret */
+    if (front_sector >= 0 && sectors[front_sector].special == 9) {
+        /* Find which secret index this is */
+        for (i = 0; i < s_original_secret_count; i++) {
+            if (s_original_secret_sectors[i] == front_sector) {
+                *out_secret_index = i;
+                return true;
+            }
+        }
+    }
+
+    /* Check backsector for secret */
+    if (back_sector >= 0 && sectors[back_sector].special == 9) {
+        /* Find which secret index this is */
+        for (i = 0; i < s_original_secret_count; i++) {
+            if (s_original_secret_sectors[i] == back_sector) {
+                *out_secret_index = i;
+                return true;
+            }
+        }
+    }
+
+    return false;
 }
 
 int Secret_GetTargetCount(target_type_t type) {
@@ -3109,16 +3343,27 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
             return false;
         }
     } else {
-        /* For triggers, find the sector containing the linedef */
-        line_t *line = &lines[info.index];
-        /* Use frontsector as target (player activates from front) */
-        if (line->frontsector) {
-            target_sector = line->frontsector - sectors;
-        } else if (line->backsector) {
-            target_sector = line->backsector - sectors;
+        /* For triggers (lifts, doors, switches), handle destination mode */
+        if (s_dest_mode == DEST_SECTOR && info.sector_index >= 0) {
+            /* Path to tagged sector (lift platform, door sector) */
+            target_sector = info.sector_index;
+            /* Use sector center as destination coordinates */
+            info.x = info.sector_x;
+            info.y = info.sector_y;
+            SECRET_DEBUG("[SECRET] Using DEST_SECTOR mode: sector %d at (%d, %d)\n",
+                         target_sector, info.x >> FRACBITS, info.y >> FRACBITS);
         } else {
-            out_path->valid = false;
-            return false;
+            /* Path to trigger linedef (default) */
+            line_t *line = &lines[info.index];
+            /* Use frontsector as target (player activates from front) */
+            if (line->frontsector) {
+                target_sector = line->frontsector - sectors;
+            } else if (line->backsector) {
+                target_sector = line->backsector - sectors;
+            } else {
+                out_path->valid = false;
+                return false;
+            }
         }
     }
 
@@ -3273,6 +3518,7 @@ void Secret_RefreshEnemyTargets(void) {
             /* Only include live monsters (MF_COUNTKILL flag and health > 0) */
             if ((mobj->flags & MF_COUNTKILL) && mobj->health > 0) {
                 target_info_t *t = &s_targets[TARGET_ENEMY][enemy_num];
+                memset(t, 0, sizeof(target_info_t));  /* Zero-initialize all fields */
                 t->type = TARGET_ENEMY;
                 t->index = enemy_num;
                 t->x = mobj->x;
@@ -3281,6 +3527,7 @@ void Secret_RefreshEnemyTargets(void) {
                 t->discovered = false;  /* Not applicable for enemies */
                 t->reachable = true;    /* Assume reachable */
                 t->mobj = mobj;
+                t->sector_index = -1;   /* No sector for enemies */
                 enemy_num++;
             }
         }
@@ -3310,4 +3557,25 @@ boolean Secret_IsEnemyAlive(int index) {
 
     target_info_t *t = &s_targets[TARGET_ENEMY][index];
     return (t->mobj && t->mobj->health > 0);
+}
+
+
+/* ============================================
+ * Path Destination Mode API
+ * ============================================ */
+
+void Secret_SetDestinationMode(path_dest_mode_t mode) {
+    s_dest_mode = mode;
+}
+
+path_dest_mode_t Secret_GetDestinationMode(void) {
+    return s_dest_mode;
+}
+
+boolean Secret_CurrentTargetHasSector(void) {
+    if (s_target_counts[s_current_type] == 0) {
+        return false;
+    }
+    target_info_t *t = &s_targets[s_current_type][s_current_index];
+    return (t->sector_index >= 0);
 }
