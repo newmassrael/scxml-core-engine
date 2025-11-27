@@ -235,8 +235,15 @@ void SCE_SecretLevelChange(void) {
 }
 
 void SCE_SecretCheckReached(void) {
-    /* Update arrow positions while showing hints */
-    if (SCE_SecretIsShowing()) {
+    const char *state = sce_secret_get_state();
+
+    /* Update arrows in showing, found, or no_path states.
+     * - showing: update arrow positions as player moves
+     * - found: keep showing path after reaching target
+     * - no_path: keep trying to find path as player moves */
+    if (state && (strcmp(state, "showing") == 0 ||
+                  strcmp(state, "found") == 0 ||
+                  strcmp(state, "no_path") == 0)) {
         Secret_UpdateArrows();
     }
 
@@ -247,10 +254,4 @@ void SCE_SecretCheckReached(void) {
 
 const char* SCE_SecretGetStateName(void) {
     return sce_secret_get_state();
-}
-
-boolean SCE_SecretIsShowing(void) {
-    const char *state = sce_secret_get_state();
-    /* Show path in both "showing" and "found" states */
-    return state && (strcmp(state, "showing") == 0 || strcmp(state, "found") == 0);
 }

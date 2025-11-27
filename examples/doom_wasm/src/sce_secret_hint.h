@@ -227,6 +227,10 @@ const char* Secret_GetTargetTypeName(target_type_t type);
  */
 void Secret_GetSelectionInfo(target_type_t *out_type, int *out_index, int *out_total);
 
+/* External functions from sce_wrapper.cpp (SCXML state machine integration) */
+void sce_secret_recalculate(void);
+const char *sce_secret_get_state(void);
+
 #ifdef __cplusplus
 }
 #endif

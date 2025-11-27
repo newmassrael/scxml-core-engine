@@ -1478,26 +1478,103 @@ static int AddIntermediateArrowsDirect(secret_path_t *path, int start_idx,
     fixed_t dx = x2 - x1;
     fixed_t dy = y2 - y1;
     fixed_t dist = P_AproxDistance(dx, dy);
+    fixed_t dz = (z2 > z1) ? (z2 - z1) : (z1 - z2);
     int num_segments;
     int added = 0;
     int i;
+    fixed_t prev_z = z1;
+    angle_t arrow_angle = CalcAngle(x1, y1, x2, y2);
 
-    if (dist < ARROW_SPACING) {
-        return 0;  /* Points are close enough, no intermediates needed */
+    /* Height change threshold for inserting extra sprites (16 units) */
+    const fixed_t HEIGHT_THRESHOLD = 16 * FRACUNIT;
+
+    /* Check if we need sprites based on horizontal distance OR height change */
+    if (dist < ARROW_SPACING && dz < HEIGHT_THRESHOLD) {
+        return 0;  /* Points are close enough AND no significant height change */
     }
 
-    /* Calculate how many intermediate points we need */
-    num_segments = (dist + ARROW_SPACING - 1) / ARROW_SPACING;
+    /* Calculate segments based on both horizontal distance and height change */
+    int horiz_segments = (dist > 0) ? ((dist + ARROW_SPACING - 1) / ARROW_SPACING) : 0;
+    int vert_segments = (dz > 0) ? ((dz + HEIGHT_THRESHOLD - 1) / HEIGHT_THRESHOLD) : 0;
+    
+    /* Use the larger of the two to ensure coverage */
+    num_segments = (horiz_segments > vert_segments) ? horiz_segments : vert_segments;
     if (num_segments < 2) num_segments = 2;
 
     /* Add intermediate points (skip first point, include last) */
     for (i = 1; i <= num_segments && (start_idx + added) < SECRET_MAX_ARROWS; i++) {
         fixed_t t = (i * FRACUNIT) / num_segments;
-        path->arrows[start_idx + added].x = x1 + FixedMul(dx, t);
-        path->arrows[start_idx + added].y = y1 + FixedMul(dy, t);
-        path->arrows[start_idx + added].z = z1 + FixedMul(z2 - z1, t);
-        path->arrows[start_idx + added].angle = CalcAngle(x1, y1, x2, y2);
-        added++;
+        fixed_t point_x = x1 + FixedMul(dx, t);
+        fixed_t point_y = y1 + FixedMul(dy, t);
+        fixed_t point_z;
+
+        /* Get actual floor height at this position instead of linear interpolation.
+         * This handles stairs and height changes correctly. */
+        int sector_idx = GetSectorAt(point_x, point_y);
+        if (sector_idx >= 0) {
+            point_z = sectors[sector_idx].floorheight;
+        } else {
+            /* Fallback to linear interpolation if sector lookup fails */
+            point_z = z1 + FixedMul(z2 - z1, t);
+        }
+
+        /* Check for significant height change and insert extra sprites */
+        fixed_t height_diff = (point_z > prev_z) ? (point_z - prev_z) : (prev_z - point_z);
+        if (height_diff > HEIGHT_THRESHOLD && i > 1 && (start_idx + added + 1) < SECRET_MAX_ARROWS) {
+            /* Insert intermediate sprite at height transition point */
+            /* Sample midpoint between previous and current position */
+            fixed_t mid_t = ((i - 1) * FRACUNIT + t) / 2;
+            fixed_t mid_x = x1 + FixedMul(dx, mid_t);
+            fixed_t mid_y = y1 + FixedMul(dy, mid_t);
+            fixed_t mid_z;
+
+            int mid_sector = GetSectorAt(mid_x, mid_y);
+            if (mid_sector >= 0) {
+                mid_z = sectors[mid_sector].floorheight;
+            } else {
+                mid_z = (prev_z + point_z) / 2;
+            }
+
+            /* Add extra sprite at transition */
+            path->arrows[start_idx + added].x = mid_x;
+            path->arrows[start_idx + added].y = mid_y;
+            path->arrows[start_idx + added].z = mid_z;
+            path->arrows[start_idx + added].angle = arrow_angle;
+            added++;
+
+            /* If height change is very large (stairs), add more intermediate points */
+            if (height_diff > HEIGHT_THRESHOLD * 2 && (start_idx + added + 1) < SECRET_MAX_ARROWS) {
+                /* Add another sprite at 3/4 position */
+                fixed_t quarter_t = ((i - 1) * FRACUNIT * 3 + t) / 4;
+                fixed_t quarter_x = x1 + FixedMul(dx, quarter_t);
+                fixed_t quarter_y = y1 + FixedMul(dy, quarter_t);
+                fixed_t quarter_z;
+
+                int quarter_sector = GetSectorAt(quarter_x, quarter_y);
+                if (quarter_sector >= 0) {
+                    quarter_z = sectors[quarter_sector].floorheight;
+                } else {
+                    quarter_z = (mid_z + point_z) / 2;
+                }
+
+                path->arrows[start_idx + added].x = quarter_x;
+                path->arrows[start_idx + added].y = quarter_y;
+                path->arrows[start_idx + added].z = quarter_z;
+                path->arrows[start_idx + added].angle = arrow_angle;
+                added++;
+            }
+        }
+
+        /* Add the regular sprite */
+        if ((start_idx + added) < SECRET_MAX_ARROWS) {
+            path->arrows[start_idx + added].x = point_x;
+            path->arrows[start_idx + added].y = point_y;
+            path->arrows[start_idx + added].z = point_z;
+            path->arrows[start_idx + added].angle = arrow_angle;
+            added++;
+        }
+
+        prev_z = point_z;
     }
 
     return added;
@@ -1765,6 +1842,16 @@ static void GenerateArrows(secret_path_t *path) {
         prev_y = curr_y;
         prev_z = curr_z;
         prev_sector = sector_idx;
+    }
+
+    /* Handle path_length == 1 case: player is in target sector but need arrows to target point */
+    if (path->path_length == 1 && (path->target_x != 0 || path->target_y != 0)) {
+        fixed_t target_z = sectors[path->path[0]].floorheight;
+        SECRET_DEBUG("[SECRET] GenerateArrows: path_length=1, adding direct arrows to target (%d, %d)\n",
+               path->target_x >> FRACBITS, path->target_y >> FRACBITS);
+        arrow_count += AddIntermediateArrowsDirect(path, arrow_count,
+                                                    prev_x, prev_y, prev_z,
+                                                    path->target_x, path->target_y, target_z);
     }
 
     path->num_arrows = arrow_count;
@@ -2211,24 +2298,66 @@ void Secret_UpdateArrows(void) {
     player_t *player = &players[consoleplayer];
     int current_sector;
     fixed_t dx, dy, dist_moved;
+    const char *state;
 
-    if (!s_path_active || !player->mo) {
+    if (!player->mo) {
+        return;
+    }
+
+    /* Check current SCXML state - only update in showing or no_path states */
+    state = sce_secret_get_state();
+    if (!state) {
+        return;
+    }
+
+    /* Process updates in showing, found, or no_path states */
+    boolean is_showing = (strcmp(state, "showing") == 0);
+    boolean is_found = (strcmp(state, "found") == 0);
+    boolean is_no_path = (strcmp(state, "no_path") == 0);
+
+    if (!is_showing && !is_found && !is_no_path) {
         return;
     }
 
     /* Get player's current sector */
     current_sector = GetSectorAt(player->mo->x, player->mo->y);
+
+    /* In no_path state, periodically retry path calculation.
+     * Throttle to avoid BFS every frame (performance). */
+    if (is_no_path) {
+        static int no_path_throttle = 0;
+        #define NO_PATH_RECALC_INTERVAL 5  /* ~140ms at 35 tics/sec */
+
+        if (++no_path_throttle < NO_PATH_RECALC_INTERVAL) {
+            return;
+        }
+        no_path_throttle = 0;
+
+        /* Update position tracking even with invalid sector */
+        s_last_player_x = player->mo->x;
+        s_last_player_y = player->mo->y;
+        if (current_sector >= 0) {
+            s_last_player_sector = current_sector;
+        }
+
+        /* Trigger recalculation */
+        ClearBlockedConnections();
+        s_path_blocked = false;
+        s_blocking_wall_line = -1;
+        s_blocking_check_counter = 0;
+        sce_secret_recalculate();
+        return;
+    }
+
+    /* For showing/found states, require valid sector */
     if (current_sector < 0) {
         return;
     }
 
-    /* Check if player moved to a different sector - need full BFS recalculation */
-    boolean need_bfs = (current_sector != s_last_player_sector);
+    /* Check if player moved to a different sector - need recalculation */
+    boolean need_recalc = (current_sector != s_last_player_sector);
 
-    /* Note: 1-sided wall blocking no longer triggers recalculation.
-     * We keep partial path to guide player toward the secret. */
-
-    /* Check if player moved enough to warrant arrow update */
+    /* Check if player moved enough to warrant update */
     dx = player->mo->x - s_last_player_x;
     dy = player->mo->y - s_last_player_y;
     dist_moved = P_AproxDistance(dx, dy);
@@ -2272,12 +2401,12 @@ void Secret_UpdateArrows(void) {
 
                 if (!is_still_blocked) {
                     /* Wall became passable (door/lift opened) - force recalculation */
-                    SECRET_DEBUG("[SECRET] Blocking wall line=%d is now passable! Forcing BFS recalculation\n",
+                    SECRET_DEBUG("[SECRET] Blocking wall line=%d is now passable! Forcing recalculation\n",
                            s_blocking_wall_line);
                     s_path_blocked = false;
                     s_blocking_wall_line = -1;
-                    need_bfs = true;
-                    s_last_player_sector = -1;  /* Force BFS by invalidating sector cache */
+                    need_recalc = true;
+                    s_last_player_sector = -1;  /* Force recalc by invalidating sector cache */
                     s_adjacency_dirty = true;   /* Rebuild adjacency to include new connection */
                 } else {
                     SECRET_DEBUG("[SECRET]   Wall still blocked, will check again in %d tics\n",
@@ -2288,12 +2417,12 @@ void Secret_UpdateArrows(void) {
     }
 
     /* Debug: log sector changes */
-    if (need_bfs) {
-        SECRET_DEBUG("[SECRET] UpdateArrows: sector changed %d -> %d, need_bfs=true\n",
+    if (need_recalc) {
+        SECRET_DEBUG("[SECRET] UpdateArrows: sector changed %d -> %d, triggering recalculation\n",
                s_last_player_sector, current_sector);
     }
 
-    if (need_bfs || need_arrow_update) {
+    if (need_recalc || need_arrow_update) {
         /* Clear blocked connections when player moves.
          * This allows BFS to find new paths from the new position. */
         ClearBlockedConnections();
@@ -2301,13 +2430,14 @@ void Secret_UpdateArrows(void) {
         s_blocking_wall_line = -1;
         s_blocking_check_counter = 0;
 
-        /* Recalculate path using common function.
-         * Always force adjacency rebuild to match original behavior. */
-        if (RecalculatePathToTarget(current_sector, true)) {
-            s_last_player_sector = current_sector;
-            s_last_player_x = player->mo->x;
-            s_last_player_y = player->mo->y;
-        }
+        /* Update position tracking */
+        s_last_player_sector = current_sector;
+        s_last_player_x = player->mo->x;
+        s_last_player_y = player->mo->y;
+
+        /* Trigger SCXML recalculate event - this will go to calculating state
+         * and onCalculating callback will run BFS and update path */
+        sce_secret_recalculate();
     }
 }
 
@@ -2472,7 +2602,7 @@ static void GetLineCenter(int line_idx, fixed_t *out_x, fixed_t *out_y) {
 }
 
 void Secret_ScanTargets(void) {
-    int i;
+    int i, j;
     int secret_num = 0;
     int door_num = 0;
     int lift_num = 0;
@@ -2480,6 +2610,9 @@ void Secret_ScanTargets(void) {
     int teleporter_num = 0;
     int exit_num = 0;
     int keydoor_num = 0;
+
+    /* Distance threshold for considering two targets as duplicates (64 units) */
+    const fixed_t DUPLICATE_THRESHOLD = 64 * FRACUNIT;
 
     /* Clear all counts */
     for (i = 0; i < TARGET_TYPE_COUNT; i++) {
@@ -2509,75 +2642,153 @@ void Secret_ScanTargets(void) {
     for (i = 0; i < numlines; i++) {
         line_t *line = &lines[i];
         int special = line->special;
+        fixed_t line_x, line_y;
+        boolean is_duplicate;
 
         if (special == 0) continue;
 
+        /* Get line center for duplicate check */
+        GetLineCenter(i, &line_x, &line_y);
+
         /* Key doors (highest priority doors) */
         if (IsKeyDoorSpecial(special) && keydoor_num < SECRET_MAX_TARGETS) {
-            target_info_t *t = &s_targets[TARGET_KEY_DOOR][keydoor_num];
-            t->type = TARGET_KEY_DOOR;
-            t->index = i;
-            GetLineCenter(i, &t->x, &t->y);
-            snprintf(s_target_names[keydoor_num], 32, "%s Key Door", GetKeyDoorColor(special));
-            t->name = s_target_names[keydoor_num];
-            t->discovered = false;
-            t->reachable = true;
-            keydoor_num++;
+            /* Check for duplicate (same position) */
+            is_duplicate = false;
+            for (j = 0; j < keydoor_num; j++) {
+                fixed_t dx = line_x - s_targets[TARGET_KEY_DOOR][j].x;
+                fixed_t dy = line_y - s_targets[TARGET_KEY_DOOR][j].y;
+                if (P_AproxDistance(dx, dy) < DUPLICATE_THRESHOLD) {
+                    is_duplicate = true;
+                    break;
+                }
+            }
+            if (!is_duplicate) {
+                target_info_t *t = &s_targets[TARGET_KEY_DOOR][keydoor_num];
+                t->type = TARGET_KEY_DOOR;
+                t->index = i;
+                t->x = line_x;
+                t->y = line_y;
+                snprintf(s_target_names[keydoor_num], 32, "%s Key Door", GetKeyDoorColor(special));
+                t->name = s_target_names[keydoor_num];
+                t->discovered = false;
+                t->reachable = true;
+                keydoor_num++;
+            }
         }
         /* Exit triggers */
         else if (IsExitSpecial(special) && exit_num < SECRET_MAX_TARGETS) {
-            target_info_t *t = &s_targets[TARGET_EXIT][exit_num];
-            t->type = TARGET_EXIT;
-            t->index = i;
-            GetLineCenter(i, &t->x, &t->y);
-            t->name = (special == 51 || special == 124 || special == 198) ? "Secret Exit" : "Exit";
-            t->discovered = false;
-            t->reachable = true;
-            exit_num++;
+            is_duplicate = false;
+            for (j = 0; j < exit_num; j++) {
+                fixed_t dx = line_x - s_targets[TARGET_EXIT][j].x;
+                fixed_t dy = line_y - s_targets[TARGET_EXIT][j].y;
+                if (P_AproxDistance(dx, dy) < DUPLICATE_THRESHOLD) {
+                    is_duplicate = true;
+                    break;
+                }
+            }
+            if (!is_duplicate) {
+                target_info_t *t = &s_targets[TARGET_EXIT][exit_num];
+                t->type = TARGET_EXIT;
+                t->index = i;
+                t->x = line_x;
+                t->y = line_y;
+                t->name = (special == 51 || special == 124 || special == 198) ? "Secret Exit" : "Exit";
+                t->discovered = false;
+                t->reachable = true;
+                exit_num++;
+            }
         }
         /* Teleporters */
         else if (IsTeleporterSpecial(special) && teleporter_num < SECRET_MAX_TARGETS) {
-            target_info_t *t = &s_targets[TARGET_TELEPORTER][teleporter_num];
-            t->type = TARGET_TELEPORTER;
-            t->index = i;
-            GetLineCenter(i, &t->x, &t->y);
-            t->name = "Teleporter";
-            t->discovered = false;
-            t->reachable = true;
-            teleporter_num++;
+            is_duplicate = false;
+            for (j = 0; j < teleporter_num; j++) {
+                fixed_t dx = line_x - s_targets[TARGET_TELEPORTER][j].x;
+                fixed_t dy = line_y - s_targets[TARGET_TELEPORTER][j].y;
+                if (P_AproxDistance(dx, dy) < DUPLICATE_THRESHOLD) {
+                    is_duplicate = true;
+                    break;
+                }
+            }
+            if (!is_duplicate) {
+                target_info_t *t = &s_targets[TARGET_TELEPORTER][teleporter_num];
+                t->type = TARGET_TELEPORTER;
+                t->index = i;
+                t->x = line_x;
+                t->y = line_y;
+                t->name = "Teleporter";
+                t->discovered = false;
+                t->reachable = true;
+                teleporter_num++;
+            }
         }
         /* Lifts (before general doors since some overlap) */
         else if (IsLiftSpecial(special) && lift_num < SECRET_MAX_TARGETS) {
-            target_info_t *t = &s_targets[TARGET_LIFT][lift_num];
-            t->type = TARGET_LIFT;
-            t->index = i;
-            GetLineCenter(i, &t->x, &t->y);
-            t->name = "Lift";
-            t->discovered = false;
-            t->reachable = true;
-            lift_num++;
+            is_duplicate = false;
+            for (j = 0; j < lift_num; j++) {
+                fixed_t dx = line_x - s_targets[TARGET_LIFT][j].x;
+                fixed_t dy = line_y - s_targets[TARGET_LIFT][j].y;
+                if (P_AproxDistance(dx, dy) < DUPLICATE_THRESHOLD) {
+                    is_duplicate = true;
+                    break;
+                }
+            }
+            if (!is_duplicate) {
+                target_info_t *t = &s_targets[TARGET_LIFT][lift_num];
+                t->type = TARGET_LIFT;
+                t->index = i;
+                t->x = line_x;
+                t->y = line_y;
+                t->name = "Lift";
+                t->discovered = false;
+                t->reachable = true;
+                lift_num++;
+            }
         }
         /* Switches (excluding lifts and doors that are handled elsewhere) */
         else if (IsSwitchSpecial(special) && !IsLiftSpecial(special) && switch_num < SECRET_MAX_TARGETS) {
-            target_info_t *t = &s_targets[TARGET_SWITCH][switch_num];
-            t->type = TARGET_SWITCH;
-            t->index = i;
-            GetLineCenter(i, &t->x, &t->y);
-            t->name = "Switch";
-            t->discovered = false;
-            t->reachable = true;
-            switch_num++;
+            is_duplicate = false;
+            for (j = 0; j < switch_num; j++) {
+                fixed_t dx = line_x - s_targets[TARGET_SWITCH][j].x;
+                fixed_t dy = line_y - s_targets[TARGET_SWITCH][j].y;
+                if (P_AproxDistance(dx, dy) < DUPLICATE_THRESHOLD) {
+                    is_duplicate = true;
+                    break;
+                }
+            }
+            if (!is_duplicate) {
+                target_info_t *t = &s_targets[TARGET_SWITCH][switch_num];
+                t->type = TARGET_SWITCH;
+                t->index = i;
+                t->x = line_x;
+                t->y = line_y;
+                t->name = "Switch";
+                t->discovered = false;
+                t->reachable = true;
+                switch_num++;
+            }
         }
         /* Regular doors (non-key) */
         else if (IsDoorSpecial(special) && !IsKeyDoorSpecial(special) && !IsLiftSpecial(special) && door_num < SECRET_MAX_TARGETS) {
-            target_info_t *t = &s_targets[TARGET_DOOR][door_num];
-            t->type = TARGET_DOOR;
-            t->index = i;
-            GetLineCenter(i, &t->x, &t->y);
-            t->name = "Door";
-            t->discovered = false;
-            t->reachable = true;
-            door_num++;
+            is_duplicate = false;
+            for (j = 0; j < door_num; j++) {
+                fixed_t dx = line_x - s_targets[TARGET_DOOR][j].x;
+                fixed_t dy = line_y - s_targets[TARGET_DOOR][j].y;
+                if (P_AproxDistance(dx, dy) < DUPLICATE_THRESHOLD) {
+                    is_duplicate = true;
+                    break;
+                }
+            }
+            if (!is_duplicate) {
+                target_info_t *t = &s_targets[TARGET_DOOR][door_num];
+                t->type = TARGET_DOOR;
+                t->index = i;
+                t->x = line_x;
+                t->y = line_y;
+                t->name = "Door";
+                t->discovered = false;
+                t->reachable = true;
+                door_num++;
+            }
         }
     }
 
@@ -2727,6 +2938,12 @@ boolean Secret_SelectTarget(target_type_t type, int index) {
         return false;
     }
 
+    /* Check if selecting the same target */
+    if (type == s_current_type && index == s_current_index) {
+        /* Same target - return true but don't change anything */
+        return true;
+    }
+
     /* Clear blocked connections when selecting a new target */
     ClearBlockedConnections();
     s_path_blocked = false;
@@ -2773,13 +2990,18 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
     player_t *player = &players[consoleplayer];
     int player_sector;
 
+    /* Initialize output to safe defaults for all early returns */
+    out_path->valid = false;
+    out_path->num_arrows = 0;
+    out_path->path_length = 0;
+
     if (!Secret_GetCurrentTarget(&info)) {
-        out_path->valid = false;
+        SECRET_DEBUG("[SECRET] FindPath: No current target\n");
         return false;
     }
 
     if (!player->mo) {
-        out_path->valid = false;
+        SECRET_DEBUG("[SECRET] FindPath: No player mobj\n");
         return false;
     }
 
@@ -2789,13 +3011,14 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
     EnsureAdjacencyValid();
 
     if (!s_adjacency_list) {
-        out_path->valid = false;
+        SECRET_DEBUG("[SECRET] FindPath: No adjacency list\n");
         return false;
     }
 
     player_sector = GetSectorAt(player->mo->x, player->mo->y);
     if (player_sector < 0) {
-        out_path->valid = false;
+        SECRET_DEBUG("[SECRET] FindPath: Invalid player sector (x=%d y=%d)\n",
+                     player->mo->x >> FRACBITS, player->mo->y >> FRACBITS);
         return false;
     }
 
@@ -2828,6 +3051,36 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
         SECRET_DEBUG("[SECRET] Player sector center: (%d, %d)\n", sector_x >> FRACBITS, sector_y >> FRACBITS);
     }
     SECRET_DEBUG("[SECRET] Target sector: %d\n", target_sector);
+
+    /* Handle case where player is already in target sector */
+    if (player_sector == target_sector) {
+        SECRET_DEBUG("[SECRET] Player already in target sector - creating direct path\n");
+        out_path->valid = true;
+        out_path->path_length = 1;
+        out_path->path[0] = player_sector;
+        out_path->target_sector = target_sector;
+        out_path->target_x = info.x;
+        out_path->target_y = info.y;
+
+        /* For triggers, set the exact linedef position */
+        if (info.type != TARGET_SECRET) {
+            s_path_to_hidden_door = true;
+            s_hidden_door_line = info.index;
+        } else {
+            s_path_to_hidden_door = false;
+            s_hidden_door_line = -1;
+        }
+
+        GenerateArrows(out_path);
+        memcpy(&s_current_path, out_path, sizeof(secret_path_t));
+        s_path_active = true;
+        s_last_player_sector = player_sector;
+        s_last_player_x = player->mo->x;
+        s_last_player_y = player->mo->y;
+
+        SpawnHintSprites(&s_current_path);
+        return true;
+    }
 
     /* Use BFS to find path (returns partial path if target unreachable) */
     if (BFSFindPath(player_sector, target_sector, out_path)) {
@@ -2878,7 +3131,8 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
     }
 
     /* This should rarely happen now - only if completely surrounded */
-    SECRET_DEBUG("[SECRET] Cannot find any path from sector %d\n", player_sector);
-    out_path->valid = false;
+    SECRET_DEBUG("[SECRET] Cannot find any path from sector %d to target sector %d\n",
+                 player_sector, target_sector);
+    /* out_path already initialized at function start */
     return false;
 }

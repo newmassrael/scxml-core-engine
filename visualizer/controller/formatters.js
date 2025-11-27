@@ -72,9 +72,16 @@ class Formatters {
             // W3C SCXML 6.3: Display cancel attributes
             text = this.controller.appendOptionalAttributes(text, action, ['sendid', 'sendidexpr']);        } else if (action.actionType === 'script') {
             // W3C SCXML 5.9: Display script content preview
+            // Supports <cpp> tag for direct C++ function calls
             if (action.content) {
-                const preview = action.content.substring(0, 50);
-                text += ` ${this.controller.escapeHtml(preview)}${action.content.length > 50 ? '...' : ''}`;
+                const cppMatch = action.content.match(/<cpp>([\s\S]*?)<\/cpp>/);
+                if (cppMatch) {
+                    const cppCode = cppMatch[1].trim();
+                    text = `• ⚙️ C++: ${this.controller.escapeHtml(cppCode)}`;
+                } else {
+                    const preview = action.content.substring(0, 50);
+                    text += ` ${this.controller.escapeHtml(preview)}${action.content.length > 50 ? '...' : ''}`;
+                }
             }
         }
 

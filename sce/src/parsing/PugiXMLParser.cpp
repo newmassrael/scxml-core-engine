@@ -99,8 +99,18 @@ std::string PugiXMLElement::getTextContent() const {
         return "";
     }
 
+    // First try direct text child
     auto textNode = node_.child_value();
-    return textNode ? textNode : "";
+    if (textNode && strlen(textNode) > 0) {
+        return textNode;
+    }
+
+    // If no direct text, get inner XML (handles <cpp>...</cpp> etc.)
+    std::ostringstream ss;
+    for (auto child : node_.children()) {
+        child.print(ss, "", pugi::format_raw);
+    }
+    return ss.str();
 }
 
 bool PugiXMLElement::importNode(const std::shared_ptr<IXMLElement> &source) {

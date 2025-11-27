@@ -219,13 +219,14 @@ add_custom_command(TARGET doom_sce POST_BUILD
     COMMENT "Generating index.html with SCXML data"
 )
 
-# Copy visualizer to build directory for local development
-# Note: Using shell cp command because CMake copy_directory fails with large WASM files
-add_custom_command(TARGET doom_sce POST_BUILD
-    COMMAND rm -rf ${CMAKE_CURRENT_BINARY_DIR}/visualizer
-    COMMAND cp -r ${SCE_ROOT}/visualizer ${CMAKE_CURRENT_BINARY_DIR}/
-    COMMENT "Copying visualizer to build directory"
+# Symlink visualizer to build directory for local development
+# Using symlink instead of copy - changes are reflected immediately
+add_custom_target(link_visualizer ALL
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_CURRENT_BINARY_DIR}/visualizer
+    COMMAND ${CMAKE_COMMAND} -E create_symlink ${SCE_ROOT}/visualizer ${CMAKE_CURRENT_BINARY_DIR}/visualizer
+    COMMENT "Creating symlink to visualizer"
 )
+add_dependencies(doom_sce link_visualizer)
 
 message(STATUS "DOOM WASM + SCE configured")
 message(STATUS "  DOOM sources: ${DOOMGENERIC_DIR}")

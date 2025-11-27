@@ -189,7 +189,7 @@ def main():
             font-weight: bold;
         }}
         .secret-state-text.disabled {{ color: #666; }}
-        .secret-state-text.idle {{ color: #00ff00; }}
+        .secret-state-text.enabled {{ color: #00ff00; }}
         .secret-state-text.calculating {{ color: #ffff00; }}
         .secret-state-text.showing {{ color: #00ffff; }}
         .secret-state-text.found {{ color: #ff00ff; }}
@@ -571,7 +571,6 @@ def main():
                 return;
             }}
 
-            console.debug('[SCE:Enemy] Update:', slot, type, state, instanceId, active);
             updateEnemySubtab(slot, type, state, instanceId, !!active);
         }};
 

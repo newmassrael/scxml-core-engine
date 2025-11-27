@@ -35,6 +35,134 @@
 // ============================================
 static constexpr int MAX_ENEMIES = 64;
 
+// ============================================
+// Forward declarations for JS callbacks
+// ============================================
+static inline void js_notify_state_change(const char *machine, const char *state);
+static inline void js_notify_secret_path(int num_arrows, int remaining_secrets);
+static inline void js_notify_secret_arrow(int index, int x, int y, int angle);
+static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total);
+
+// Forward declaration for secret state machine (extern "C" for EMSCRIPTEN_KEEPALIVE exports)
+extern "C" {
+void sce_secret_path_found(void);
+void sce_secret_no_path(void);
+void sce_secret_recalculate(void);
+const char *sce_secret_get_state(void);
+}
+
+// ============================================
+// Secret SCXML UserContext: C++ Callback Integration
+// ============================================
+
+/**
+ * @brief Callback handler for secret hint state machine
+ *
+ * Implements onentry actions for each state as defined in secret_hint_state.scxml.
+ * The generated code calls user_->secret.onXxx() when entering each state.
+ */
+struct SecretCallbacks {
+    void onDisabled() {
+        // Disabled state: hint system is off
+        Secret_ClearPath();
+        js_notify_state_change("secret", sce_secret_get_state());
+        js_notify_secret_path(0, Secret_GetRemainingCount());
+    }
+
+    void onCalculating() {
+        // Calculating state: run BFS and raise path_found/no_path event
+        js_notify_state_change("secret", sce_secret_get_state());
+
+        // Note: Previous path is cleared by onexit of 'showing' state (SCXML)
+
+        // Always notify target info for button highlighting (even if no path)
+        target_info_t info;
+        if (Secret_GetCurrentTarget(&info)) {
+            target_type_t type;
+            int index, total;
+            Secret_GetSelectionInfo(&type, &index, &total);
+#ifdef __EMSCRIPTEN__
+            EM_ASM({
+                console.debug('[SCE:Calculating] Target found: type=' + $0 + ' index=' + $1 + ' total=' + $2);
+            }, (int)type, index, total);
+#endif
+            js_notify_target_info(Secret_GetTargetTypeName(type), info.name, index, total);
+        } else {
+#ifdef __EMSCRIPTEN__
+            EM_ASM({
+                console.debug('[SCE:Calculating] NO TARGET SET - Secret_GetCurrentTarget returned false');
+            });
+#endif
+        }
+
+        secret_path_t path = {};  // Zero-initialize to avoid stale values
+        bool bfs_result = Secret_FindPathToCurrentTarget(&path);
+#ifdef __EMSCRIPTEN__
+        EM_ASM({
+            console.debug('[SCE:Calculating] BFS result=' + $0 + ' num_arrows=' + $1);
+        }, bfs_result ? 1 : 0, path.num_arrows);
+#endif
+        if (bfs_result && path.num_arrows > 0) {
+            // Path found with arrows - notify JS with arrow data
+            js_notify_secret_path(path.num_arrows, Secret_GetRemainingCount());
+            for (int i = 0; i < path.num_arrows; i++) {
+                js_notify_secret_arrow(i,
+                                       path.arrows[i].x >> 16,
+                                       path.arrows[i].y >> 16,
+                                       path.arrows[i].angle >> 16);
+            }
+            sce_secret_path_found();
+        } else {
+            // No path or path has no arrows (target too close or unreachable)
+#ifdef __EMSCRIPTEN__
+            EM_ASM({
+                console.debug('[SCE:Calculating] Going to no_path state');
+            });
+#endif
+            sce_secret_no_path();
+        }
+    }
+
+    void onShowing() {
+        // Showing state: arrows already sent during calculating
+        js_notify_state_change("secret", sce_secret_get_state());
+    }
+
+    void onExitShowing() {
+        // Exiting showing state: clear path and sprites from map
+        Secret_ClearPath();
+    }
+
+    void onFound() {
+        // Found state: player reached target, keep showing path
+        // Path will be recalculated by Secret_UpdateArrows
+        js_notify_state_change("secret", sce_secret_get_state());
+    }
+
+    void onExitFound() {
+        // Exiting found state: clear path and sprites from map
+        Secret_ClearPath();
+    }
+
+    void onNoPath() {
+        // No path state: keep display as-is, notify JS
+        js_notify_state_change("secret", sce_secret_get_state());
+    }
+};
+
+/**
+ * @brief UserContext for secret hint state machine
+ *
+ * The generated code expects UserContext with a 'secret' member.
+ * Calls to secret.onXxx() in SCXML become user_->secret.onXxx() in C++.
+ */
+struct SecretContext {
+    SecretCallbacks secret;
+};
+
+// Global secret context instance
+static SecretContext g_secret_context;
+
 // Type aliases for enemy state machine
 using EnemySM = SCE::Generated::enemy_state::enemy_state;
 using EnemyState = SCE::Generated::enemy_state::State;
@@ -100,7 +228,10 @@ static int g_next_instance_id = 1;
 static std::unique_ptr<SCE::Generated::game_state::game_state> g_game_sm;
 static std::unique_ptr<SCE::Generated::player_state::player_state> g_player_sm;
 static std::unique_ptr<SCE::Generated::weapon_state::weapon_state> g_weapon_sm;
-static std::unique_ptr<SCE::Generated::secret_hint_state::secret_hint_state> g_secret_sm;
+// Secret state machine with UserContext for C++ callbacks
+using SecretSM = SCE::Generated::secret_hint_state::secret_hint_state<SecretContext>;
+using SecretEvent = SCE::Generated::secret_hint_state::Event;
+static std::unique_ptr<SecretSM> g_secret_sm;
 
 // Forward declarations
 extern "C" {
@@ -179,7 +310,6 @@ static inline void js_notify_enemy_update(int slot, const char *type, const char
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
-            console.debug('[SCE:C++] js_notify_enemy_update called:', $0, UTF8ToString($1), UTF8ToString($2), $3, $4);
             if (typeof window.onSceEnemyUpdate === 'function') {
                 window.onSceEnemyUpdate($0, UTF8ToString($1), UTF8ToString($2), $3, $4);
             } else {
@@ -276,7 +406,8 @@ void sce_init(void) {
     g_game_sm = std::make_unique<SCE::Generated::game_state::game_state>();
     g_player_sm = std::make_unique<SCE::Generated::player_state::player_state>();
     g_weapon_sm = std::make_unique<SCE::Generated::weapon_state::weapon_state>();
-    g_secret_sm = std::make_unique<SCE::Generated::secret_hint_state::secret_hint_state>();
+    // Secret state machine: pass UserContext for C++ callback integration
+    g_secret_sm = std::make_unique<SecretSM>(g_secret_context);
 
     g_game_sm->initialize();
     g_player_sm->initialize();
@@ -623,8 +754,8 @@ const char *sce_secret_get_state(void) {
     switch (state) {
     case SCE::Generated::secret_hint_state::State::Disabled:
         return "disabled";
-    case SCE::Generated::secret_hint_state::State::Idle:
-        return "idle";
+    case SCE::Generated::secret_hint_state::State::Enabled:
+        return "enabled";
     case SCE::Generated::secret_hint_state::State::Calculating:
         return "calculating";
     case SCE::Generated::secret_hint_state::State::Showing:
@@ -638,135 +769,123 @@ const char *sce_secret_get_state(void) {
     }
 }
 
+// SCXML-driven: processEvent() triggers onentry callbacks automatically
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_toggle(void) {
+    // H key: Toggle hint system (disabled <-> enabled)
+    // SCXML handles state transitions, onentry callbacks do the work
+    if (g_secret_sm) {
+#ifdef __EMSCRIPTEN__
+        EM_ASM({
+            console.debug('[SCE:Toggle] H key pressed, current state:', UTF8ToString($0));
+        }, sce_secret_get_state());
+#endif
+        g_secret_sm->processEvent(SecretEvent::Toggle);
+#ifdef __EMSCRIPTEN__
+        EM_ASM({
+            console.debug('[SCE:Toggle] After toggle, new state:', UTF8ToString($0));
+        }, sce_secret_get_state());
+#endif
+    }
+}
+
+// Legacy aliases for backwards compatibility
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_enable(void) {
-    if (g_secret_sm) {
-        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Enable);
-        js_notify_state_change("secret", sce_secret_get_state());
-    }
+    sce_secret_event_toggle();
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_disable(void) {
-    if (g_secret_sm) {
-        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Disable);
-        js_notify_state_change("secret", sce_secret_get_state());
-    }
-}
-
-/* Helper to calculate and notify path for current target */
-static void calculate_and_notify_path(void) {
-    if (g_secret_sm->getCurrentState() == SCE::Generated::secret_hint_state::State::Calculating) {
-        secret_path_t path;
-        if (Secret_FindPathToCurrentTarget(&path)) {
-            // Path found - notify JS with arrow data
-            target_info_t info;
-            if (Secret_GetCurrentTarget(&info)) {
-                target_type_t type;
-                int index, total;
-                Secret_GetSelectionInfo(&type, &index, &total);
-                js_notify_target_info(Secret_GetTargetTypeName(type), info.name, index, total);
-            }
-            js_notify_secret_path(path.num_arrows, Secret_GetRemainingCount());
-            for (int i = 0; i < path.num_arrows; i++) {
-                js_notify_secret_arrow(i,
-                                       path.arrows[i].x >> 16,
-                                       path.arrows[i].y >> 16,
-                                       path.arrows[i].angle >> 16);
-            }
-            sce_secret_path_found();
-        } else {
-            sce_secret_no_path();
-        }
-    }
+    sce_secret_event_toggle();
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_next_target(void) {
-    /* H key: Toggle visibility only (idle <-> showing) */
-    if (g_secret_sm) {
-        const char *current_state = sce_secret_get_state();
-
-        if (strcmp(current_state, "idle") == 0) {
-            /* From idle: calculate and show path */
-            g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Toggle);
-            js_notify_state_change("secret", sce_secret_get_state());
-            calculate_and_notify_path();
-        } else {
-            /* From showing/no_path/found: hide path, go to idle */
-            g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Toggle);
-            js_notify_state_change("secret", sce_secret_get_state());
-            /* Clear arrows when hiding */
-            js_notify_secret_path(0, Secret_GetRemainingCount());
-        }
-    }
+    sce_secret_event_toggle();
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_prev_target(void) {
-    /* G key: No longer used - do nothing */
+    // G key: No longer used
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_select_target(int type, int index) {
-    /* Button click: Select target and show path */
+    // Button click: Select target and show path
+    // SCXML calculating state onentry will run BFS
     if (g_secret_sm) {
+        // Get current selection to check if same target
+        target_type_t curr_type;
+        int curr_index, curr_total;
+        Secret_GetSelectionInfo(&curr_type, &curr_index, &curr_total);
+
+        // Check if selecting the same target
+        bool is_same_target = (curr_type == (target_type_t)type && curr_index == index);
+
         if (Secret_SelectTarget((target_type_t)type, index)) {
-            g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Show_path);
-            js_notify_state_change("secret", sce_secret_get_state());
-            calculate_and_notify_path();
+            // Check current state for same-target behavior
+            auto current_state = g_secret_sm->getCurrentState();
+            bool in_no_path = (current_state == SCE::Generated::secret_hint_state::State::No_path);
+
+            if (is_same_target && !in_no_path) {
+                // Same target clicked while showing - toggle off (enabled -> disabled)
+                g_secret_sm->processEvent(SecretEvent::Toggle);
+            } else {
+                // Different target OR same target in no_path - recalculate
+                g_secret_sm->processEvent(SecretEvent::Select);
+            }
         }
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_request(void) {
-    /* For backwards compatibility - same as toggle */
+    // Backwards compatibility - same as toggle
     sce_secret_event_next_target();
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_cancel(void) {
-    if (g_secret_sm) {
-        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Cancel_hint);
-        js_notify_state_change("secret", sce_secret_get_state());
-    }
+    // Legacy function - cancel is now just toggle (disable)
+    sce_secret_event_toggle();
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_level_change(void) {
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Level_change);
-        js_notify_state_change("secret", sce_secret_get_state());
-        /* Clear JS arrow display on level change */
-        js_notify_secret_path(0, Secret_GetRemainingCount());
+        g_secret_sm->processEvent(SecretEvent::Level_change);
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_reached(void) {
     if (g_secret_sm) {
-        int remaining = Secret_GetRemainingCount();
-        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Secret_reached);
-        js_notify_state_change("secret", sce_secret_get_state());
-        js_notify_secret_path(0, remaining);
-        // Selection is preserved - user must manually select next target
+        g_secret_sm->processEvent(SecretEvent::Secret_reached);
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_path_found(void) {
+    // Called from onCalculating callback when BFS finds path
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::Path_found);
-        js_notify_state_change("secret", sce_secret_get_state());
+        g_secret_sm->processEvent(SecretEvent::Path_found);
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_no_path(void) {
+    // Called from onCalculating callback when BFS fails
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SCE::Generated::secret_hint_state::Event::No_path);
-        js_notify_state_change("secret", sce_secret_get_state());
+        g_secret_sm->processEvent(SecretEvent::No_path);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_recalculate(void) {
+    // Called from Secret_UpdateArrows when player moves significantly
+    if (g_secret_sm) {
+        g_secret_sm->processEvent(SecretEvent::Recalculate);
     }
 }
 

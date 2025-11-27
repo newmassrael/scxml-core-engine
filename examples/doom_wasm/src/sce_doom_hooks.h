@@ -86,11 +86,6 @@ void SCE_SecretCheckReached(void);
  */
 const char* SCE_SecretGetStateName(void);
 
-/**
- * Check if secret hints are currently being displayed
- */
-boolean SCE_SecretIsShowing(void);
-
 #ifdef __cplusplus
 }
 #endif
