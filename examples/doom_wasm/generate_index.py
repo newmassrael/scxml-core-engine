@@ -19,7 +19,8 @@ def main():
         'PLAYER': 'player_state.scxml',
         'WEAPON': 'weapon_state.scxml',
         'ENEMY': 'enemy_state.scxml',
-        'SECRET': 'secret_hint_state.scxml'
+        'SECRET': 'secret_hint_state.scxml',
+        'AIM': 'aim_assist_state.scxml'
     }
 
     scxml_base64 = {}

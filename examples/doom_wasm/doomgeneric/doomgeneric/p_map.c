@@ -39,6 +39,9 @@
 // Data.
 #include "sounds.h"
 
+// SCE State Machine Integration
+#include "sce_doom_hooks.h"
+
 // Spechit overrun magic value.
 //
 // This is the value used by PrBoom-plus.  I think the value below is 
@@ -1074,26 +1077,36 @@ P_AimLineAttack
     fixed_t	y2;
 
     t1 = P_SubstNullMobj(t1);
-	
+
     angle >>= ANGLETOFINESHIFT;
     shootthing = t1;
-    
+
     x2 = t1->x + (distance>>FRACBITS)*finecosine[angle];
     y2 = t1->y + (distance>>FRACBITS)*finesine[angle];
     shootz = t1->z + (t1->height>>1) + 8*FRACUNIT;
 
-    // can't shoot outside view angles
-    topslope = 100*FRACUNIT/160;	
-    bottomslope = -100*FRACUNIT/160;
-    
+    // SCE Aim Assist: Expand vertical aim range when enabled
+    if (SCE_AimAssistIsEnabled())
+    {
+	// Extreme vertical aim range for aim assist (nearly unlimited)
+	topslope = 4*FRACUNIT;       // Can aim almost straight up
+	bottomslope = -4*FRACUNIT;   // Can aim almost straight down
+    }
+    else
+    {
+	// can't shoot outside view angles (default)
+	topslope = 100*FRACUNIT/160;
+	bottomslope = -100*FRACUNIT/160;
+    }
+
     attackrange = distance;
     linetarget = NULL;
-	
+
     P_PathTraverse ( t1->x, t1->y,
 		     x2, y2,
 		     PT_ADDLINES|PT_ADDTHINGS,
 		     PTR_AimTraverse );
-		
+
     if (linetarget)
 	return aimslope;
 

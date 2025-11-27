@@ -794,8 +794,13 @@ boolean G_Responder (event_t* ev)
         if (ev->type == ev_keydown && ev->data1 == 'g') {
             SCE_SecretHintPrevious();
             return true;
-        } 
-	 
+        }
+        // Y key: Toggle aim assist
+        if (ev->type == ev_keydown && ev->data1 == 'y') {
+            SCE_AimAssistToggle();
+            return true;
+        }
+
     if (gamestate == GS_FINALE) 
     { 
 	if (F_Responder (ev)) 

@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PORT="${1:-8080}"
+PORT="${1:-8000}"
 
 # Kill existing process on port
 kill_port() {

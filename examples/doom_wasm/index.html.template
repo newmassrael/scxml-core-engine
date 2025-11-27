@@ -41,7 +41,7 @@
             background: #000;
             aspect-ratio: 8 / 5;
             resize: horizontal;
-            max-width: min(calc(100vw - 60px), 640px);
+            max-width: min(calc(100vw - 60px), 1600px);
         }
         #game-container::after {
             content: '';
@@ -188,6 +188,71 @@
         .secret-state-text.found { color: #ff00ff; }
         .secret-state-text.no_path { color: #ff6600; }
 
+        /* Aim Assist Section */
+        .aim-section {
+            display: none;
+            padding: 10px;
+            background: #252525;
+            border: 1px solid #555;
+            border-bottom: none;
+        }
+        .aim-section.visible {
+            display: block;
+        }
+        .aim-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .aim-info .info-item {
+            padding: 5px 10px;
+            background: #333;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .aim-state-text {
+            font-weight: bold;
+        }
+        .aim-state-text.disabled { color: #666; }
+        .aim-state-text.enabled { color: #00ff00; }
+        .aim-features {
+            margin: 10px 0;
+            padding: 10px;
+            background: #1a1a1a;
+            border-radius: 4px;
+        }
+        .aim-features .feature-item {
+            color: #aaa;
+            font-size: 11px;
+            padding: 3px 0;
+        }
+        .aim-features .feature-item::before {
+            content: '✓ ';
+            color: #00ff00;
+        }
+        .aim-toggle-btn {
+            padding: 10px 20px;
+            background: #333;
+            border: 2px solid #555;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .aim-toggle-btn:hover {
+            background: #444;
+            border-color: #666;
+        }
+        .aim-toggle-btn.enabled {
+            background: #1a4a1a;
+            border-color: #00ff00;
+            color: #00ff00;
+        }
+
         /* Target Buttons Section */
         .target-buttons-container {
             margin-top: 10px;
@@ -249,6 +314,24 @@
         .target-btn.teleporter { border-left: 3px solid #aa00ff; }
         .target-btn.exit { border-left: 3px solid #00ff00; }
         .target-btn.keydoor { border-left: 3px solid #ffff00; }
+        .target-btn.enemy { border-left: 3px solid #ff0000; }
+        .target-btn.enemy.dead {
+            border-left-color: #666;
+            background: #2a2a2a;
+            color: #666;
+            text-decoration: line-through;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .target-btn.enemy.dead::after {
+            content: ' X';
+            color: #ff0000;
+            text-decoration: none;
+        }
+        .target-btn:disabled {
+            cursor: not-allowed;
+            pointer-events: none;
+        }
 
         /* Visualizer Section */
         #viz-section {
@@ -322,6 +405,9 @@
                 <button class="tab-btn" data-machine="secret" onclick="switchTab('secret')">
                     Secret <span class="state-indicator" id="ind-secret">disabled</span>
                 </button>
+                <button class="tab-btn" data-machine="aim" onclick="switchTab('aim')">
+                    Aim <span class="state-indicator" id="ind-aim">disabled</span>
+                </button>
             </div>
             <div id="enemy-section" class="enemy-section">
                 <div id="enemy-list" class="enemy-list">
@@ -342,7 +428,22 @@
                     <div class="target-group" id="group-teleporter"><span class="group-label">Teleport</span></div>
                     <div class="target-group" id="group-exit"><span class="group-label">Exit</span></div>
                     <div class="target-group" id="group-keydoor"><span class="group-label">KeyDoor</span></div>
+                    <div class="target-group" id="group-enemy"><span class="group-label">Enemy</span></div>
                 </div>
+            </div>
+            <div id="aim-section" class="aim-section">
+                <div class="aim-info">
+                    <div class="info-item">State: <span id="aim-state" class="aim-state-text disabled">disabled</span></div>
+                    <div class="info-item">Press <span class="hint-key">Y</span> to toggle</div>
+                </div>
+                <div class="aim-features">
+                    <div class="feature-item">Auto-aim snaps to nearest enemy</div>
+                    <div class="feature-item">100% accuracy (no weapon spread)</div>
+                    <div class="feature-item">Extended vertical aim range</div>
+                </div>
+                <button id="aim-toggle-btn" class="aim-toggle-btn" onclick="toggleAimAssist()">
+                    Enable Aim Assist
+                </button>
             </div>
             <div id="viz-section">
                 <iframe id="visualizer" src="visualizer/visualizer.html?embed#scxml={{SCXML_GAME}}"></iframe>
@@ -409,21 +510,23 @@
             player: '{{SCXML_PLAYER}}',
             weapon: '{{SCXML_WEAPON}}',
             enemy: '{{SCXML_ENEMY}}',
-            secret: '{{SCXML_SECRET}}'
+            secret: '{{SCXML_SECRET}}',
+            aim: '{{SCXML_AIM}}'
         };
 
         // Valid machine names for validation
-        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy', 'secret'];
+        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy', 'secret', 'aim'];
 
         // State tracking
         const SCE = {
             currentTab: 'game',
             ready: false,
-            lastState: { game: null, player: null, weapon: null, enemy: null, secret: null },
+            lastState: { game: null, player: null, weapon: null, enemy: null, secret: null, aim: null },
             enemies: {},  // slot -> {type, state, instanceId, active}
             selectedEnemy: null,
             secretArrows: [],  // [{x, y, angle}, ...]
-            secretRemaining: 0
+            secretRemaining: 0,
+            aimAssistEnabled: false
         };
 
         // Tab switching
@@ -442,6 +545,10 @@
             // Show/hide secret section
             const secretSection = document.getElementById('secret-section');
             secretSection.classList.toggle('visible', machine === 'secret');
+
+            // Show/hide aim section
+            const aimSection = document.getElementById('aim-section');
+            aimSection.classList.toggle('visible', machine === 'aim');
 
             // Load new SCXML in visualizer
             const iframe = document.getElementById('visualizer');
@@ -650,6 +757,38 @@
             console.debug('[SCE:Target] Info:', typeName, name, index, total);
         };
 
+        // C++ callback: Called when aim assist state changes
+        window.onSceAimAssistState = function(enabled) {
+            SCE.aimAssistEnabled = !!enabled;
+            const state = enabled ? 'enabled' : 'disabled';
+
+            // Update indicator
+            const indicator = document.getElementById('ind-aim');
+            if (indicator) indicator.textContent = state;
+
+            // Update aim state text
+            const stateEl = document.getElementById('aim-state');
+            if (stateEl) {
+                stateEl.textContent = state;
+                stateEl.className = 'aim-state-text ' + state;
+            }
+
+            // Update toggle button
+            const btn = document.getElementById('aim-toggle-btn');
+            if (btn) {
+                btn.textContent = enabled ? 'Disable Aim Assist' : 'Enable Aim Assist';
+                btn.classList.toggle('enabled', enabled);
+            }
+
+            console.debug('[SCE:Aim] State changed to:', state);
+        };
+
+        // Toggle aim assist from UI button
+        function toggleAimAssist() {
+            if (typeof Module === 'undefined' || !Module.ccall) return;
+            Module.ccall('sce_aim_event_toggle', null, [], []);
+        }
+
         // Select specific target by type and index
         function selectTarget(type, index) {
             if (typeof Module === 'undefined' || !Module.ccall) return;
@@ -664,12 +803,13 @@
             { id: 'switch', name: 'Switch', type: 3 },
             { id: 'teleporter', name: 'Teleport', type: 4 },
             { id: 'exit', name: 'Exit', type: 5 },
-            { id: 'keydoor', name: 'KeyDoor', type: 6 }
+            { id: 'keydoor', name: 'KeyDoor', type: 6 },
+            { id: 'enemy', name: 'Enemy', type: 7 }
         ];
 
         // Target count polling and dynamic button generation
-        let targetCounts = { secret: 0, door: 0, lift: 0, switch_: 0, teleporter: 0, exit: 0, keydoor: 0 };
-        let lastCounts = { secret: -1, door: -1, lift: -1, switch_: -1, teleporter: -1, exit: -1, keydoor: -1 };
+        let targetCounts = { secret: 0, door: 0, lift: 0, switch_: 0, teleporter: 0, exit: 0, keydoor: 0, enemy: 0 };
+        let lastCounts = { secret: -1, door: -1, lift: -1, switch_: -1, teleporter: -1, exit: -1, keydoor: -1, enemy: -1 };
 
         function updateTargetCounts() {
             if (typeof Module === 'undefined' || !Module.ccall) return;
@@ -682,15 +822,18 @@
                 targetCounts.teleporter = Module.ccall('sce_get_target_count_teleporter', 'number', [], []);
                 targetCounts.exit = Module.ccall('sce_get_target_count_exit', 'number', [], []);
                 targetCounts.keydoor = Module.ccall('sce_get_target_count_keydoor', 'number', [], []);
+                targetCounts.enemy = Module.ccall('sce_get_target_count_enemy', 'number', [], []);
 
                 // Check if counts changed and regenerate buttons if needed
                 const countsArray = [
                     targetCounts.secret, targetCounts.door, targetCounts.lift,
-                    targetCounts.switch_, targetCounts.teleporter, targetCounts.exit, targetCounts.keydoor
+                    targetCounts.switch_, targetCounts.teleporter, targetCounts.exit, targetCounts.keydoor,
+                    targetCounts.enemy
                 ];
                 const lastArray = [
                     lastCounts.secret, lastCounts.door, lastCounts.lift,
-                    lastCounts.switch_, lastCounts.teleporter, lastCounts.exit, lastCounts.keydoor
+                    lastCounts.switch_, lastCounts.teleporter, lastCounts.exit, lastCounts.keydoor,
+                    lastCounts.enemy
                 ];
 
                 let changed = false;
@@ -705,8 +848,9 @@
                     generateTargetButtons();
                     lastCounts = { ...targetCounts };
                 } else {
-                    // Update secret discovery status without regenerating buttons
+                    // Update status without regenerating buttons
                     updateSecretDiscoveryStatus();
+                    updateEnemyAliveStatus();
                 }
             } catch (e) {
                 console.error('Error getting target counts:', e);
@@ -731,6 +875,25 @@
             });
         }
 
+        function updateEnemyAliveStatus() {
+            const enemyGroup = document.getElementById('group-enemy');
+            if (!enemyGroup) return;
+
+            const buttons = enemyGroup.querySelectorAll('.target-btn.enemy');
+            buttons.forEach((btn, i) => {
+                try {
+                    const alive = Module.ccall('sce_is_enemy_alive', 'number', ['number'], [i]);
+                    if (!alive && !btn.classList.contains('dead')) {
+                        btn.classList.add('dead');
+                        btn.title = 'Enemy ' + (i + 1) + ' (Dead)';
+                        btn.disabled = true;
+                    }
+                } catch (e) {
+                    // Ignore errors
+                }
+            });
+        }
+
         function generateTargetButtons() {
             const countMap = {
                 secret: targetCounts.secret,
@@ -739,7 +902,8 @@
                 switch: targetCounts.switch_,
                 teleporter: targetCounts.teleporter,
                 exit: targetCounts.exit,
-                keydoor: targetCounts.keydoor
+                keydoor: targetCounts.keydoor,
+                enemy: targetCounts.enemy
             };
 
             TARGET_TYPES.forEach(cfg => {
@@ -776,6 +940,19 @@
                             }
                         } catch (e) {
                             console.error('Error checking secret discovery:', e);
+                        }
+                    }
+
+                    // Check if enemy is dead
+                    if (cfg.id === 'enemy') {
+                        try {
+                            const alive = Module.ccall('sce_is_enemy_alive', 'number', ['number'], [i]);
+                            if (!alive) {
+                                btn.classList.add('dead');
+                                btn.title += ' (Dead)';
+                            }
+                        } catch (e) {
+                            console.error('Error checking enemy status:', e);
                         }
                     }
 

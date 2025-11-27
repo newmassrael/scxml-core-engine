@@ -103,6 +103,23 @@ const char* SCE_SecretGetStateName(void);
 int SCE_GetLevelTotalKills(void);
 int SCE_GetPlayerKillCount(void);
 
+/**
+ * Aim Assist events
+ */
+void SCE_AimAssistToggle(void);           /* Toggle aim assist on/off */
+boolean SCE_AimAssistIsEnabled(void);     /* Check if aim assist is currently enabled */
+void SCE_AimAssistTick(void);             /* Called every game tick to update lock-on */
+void SCE_AimAssistSetTarget(mobj_t *target);  /* Set lock-on target */
+void SCE_AimAssistClearTarget(void);      /* Clear lock-on target */
+mobj_t* SCE_AimAssistGetTarget(void);     /* Get current lock-on target (NULL if none) */
+
+/* SCXML state machine events */
+void SCE_AimEventShotFired(void);         /* Player fired weapon */
+void SCE_AimEventTargetAcquired(void);    /* Target found and locked */
+void SCE_AimEventTargetLost(void);        /* Target died or out of range */
+void SCE_AimEventNoTarget(void);          /* Search completed, no target found */
+void SCE_AimEventShotComplete(void);      /* Shot processing finished, return to idle */
+
 #ifdef __cplusplus
 }
 #endif

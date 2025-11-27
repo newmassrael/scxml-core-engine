@@ -13,11 +13,15 @@
 #include "r_main.h"
 #include "p_local.h"
 #include "p_mobj.h"
+#include "p_tick.h"
 #include "info.h"
 #include "tables.h"
 #include "m_fixed.h"
 #include <string.h>
 #include <stdlib.h>
+
+/* Forward declaration for P_MobjThinker (used to identify mobj thinkers) */
+void P_MobjThinker(mobj_t *mobj);
 
 /* Debug logging - define DEBUG_SECRET to enable verbose output */
 #ifdef DEBUG_SECRET
@@ -333,6 +337,13 @@ static int s_last_player_sector = -1;
 /* Track last player position to avoid unnecessary arrow regeneration */
 static fixed_t s_last_player_x = 0;
 static fixed_t s_last_player_y = 0;
+
+/* Last tracked enemy position (for TARGET_ENEMY path updates) */
+static fixed_t s_last_enemy_x = 0;
+static fixed_t s_last_enemy_y = 0;
+
+/* Threshold for enemy movement to trigger path recalculation (2 map units) */
+#define ENEMY_MOVE_THRESHOLD (2 * FRACUNIT)
 #define PLAYER_MOVE_THRESHOLD (16 * FRACUNIT)  /* Update arrows when moved 16+ units */
 
 /* Target storage for selection system */
@@ -2363,6 +2374,33 @@ void Secret_UpdateArrows(void) {
     dist_moved = P_AproxDistance(dx, dy);
     boolean need_arrow_update = (dist_moved >= PLAYER_MOVE_THRESHOLD);
 
+    /* Check if enemy target has moved (for TARGET_ENEMY) */
+    if (s_current_type == TARGET_ENEMY && 
+        s_current_index >= 0 && s_current_index < s_target_counts[TARGET_ENEMY]) {
+        target_info_t *enemy_target = &s_targets[TARGET_ENEMY][s_current_index];
+        if (enemy_target->mobj && enemy_target->mobj->health > 0) {
+            fixed_t enemy_dx = enemy_target->mobj->x - s_last_enemy_x;
+            fixed_t enemy_dy = enemy_target->mobj->y - s_last_enemy_y;
+            fixed_t enemy_dist_moved = P_AproxDistance(enemy_dx, enemy_dy);
+            
+            if (enemy_dist_moved >= ENEMY_MOVE_THRESHOLD) {
+                SECRET_DEBUG("[SECRET] Enemy moved %d units, triggering recalculation\n",
+                       enemy_dist_moved >> FRACBITS);
+                /* Update stored target position */
+                enemy_target->x = enemy_target->mobj->x;
+                enemy_target->y = enemy_target->mobj->y;
+                s_last_enemy_x = enemy_target->mobj->x;
+                s_last_enemy_y = enemy_target->mobj->y;
+                need_recalc = true;
+            }
+        } else {
+            /* Enemy died - clear path and refresh targets */
+            SECRET_DEBUG("[SECRET] Enemy target died, refreshing targets\n");
+            Secret_RefreshEnemyTargets();
+            s_current_path.valid = false;
+        }
+    }
+
     /* Polling: Check if a blocking wall has become passable (door/lift opened).
      * Skip polling for 1-sided walls since they can never open. */
     if (s_path_blocked && s_blocking_wall_line >= 0) {
@@ -2814,6 +2852,9 @@ void Secret_ScanTargets(void) {
     SECRET_DEBUG("[SECRET]   Doors: %d, Lifts: %d, Switches: %d\n", door_num, lift_num, switch_num);
     SECRET_DEBUG("[SECRET]   Teleporters: %d, Exits: %d, Key Doors: %d\n", teleporter_num, exit_num, keydoor_num);
 
+    /* Scan for live enemies */
+    Secret_RefreshEnemyTargets();
+
     /* Reset selection to first secret (or first available type) */
     s_current_type = TARGET_SECRET;
     s_current_index = 0;
@@ -2842,6 +2883,7 @@ const char* Secret_GetTargetTypeName(target_type_t type) {
     case TARGET_TELEPORTER: return "Teleporter";
     case TARGET_EXIT:       return "Exit";
     case TARGET_KEY_DOOR:   return "Key Door";
+    case TARGET_ENEMY:      return "Enemy";
     default:                return "Unknown";
     }
 }
@@ -2976,6 +3018,12 @@ boolean Secret_SelectTarget(target_type_t type, int index) {
                info.name);
     }
 
+    /* Initialize enemy position tracking for TARGET_ENEMY */
+    if (type == TARGET_ENEMY && s_targets[TARGET_ENEMY][index].mobj) {
+        s_last_enemy_x = s_targets[TARGET_ENEMY][index].mobj->x;
+        s_last_enemy_y = s_targets[TARGET_ENEMY][index].mobj->y;
+    }
+
     return true;
 }
 
@@ -3039,6 +3087,27 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
     if (info.type == TARGET_SECRET) {
         /* For secrets, target is the sector itself */
         target_sector = info.index;
+    } else if (info.type == TARGET_ENEMY) {
+        /* For enemies, update position from mobj and get sector */
+        if (info.mobj && info.mobj->health > 0) {
+            /* Update position (enemy may have moved) */
+            info.x = info.mobj->x;
+            info.y = info.mobj->y;
+            /* Also update in the target array */
+            s_targets[TARGET_ENEMY][s_current_index].x = info.x;
+            s_targets[TARGET_ENEMY][s_current_index].y = info.y;
+        } else {
+            /* Enemy is dead, no path */
+            SECRET_DEBUG("[SECRET] FindPath: Enemy target is dead\n");
+            out_path->valid = false;
+            return false;
+        }
+        target_sector = GetSectorAt(info.x, info.y);
+        if (target_sector < 0) {
+            SECRET_DEBUG("[SECRET] FindPath: Invalid enemy sector\n");
+            out_path->valid = false;
+            return false;
+        }
     } else {
         /* For triggers, find the sector containing the linedef */
         line_t *line = &lines[info.index];
@@ -3074,8 +3143,8 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
         out_path->target_x = info.x;
         out_path->target_y = info.y;
 
-        /* For triggers, set the exact linedef position */
-        if (info.type != TARGET_SECRET) {
+        /* For triggers (not secrets or enemies), set the exact linedef position */
+        if (info.type != TARGET_SECRET && info.type != TARGET_ENEMY) {
             s_path_to_hidden_door = true;
             s_hidden_door_line = info.index;
         } else {
@@ -3112,7 +3181,8 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
             SECRET_DEBUG("[SECRET] Path to %s found (%d steps)\n", info.name, out_path->path_length);
 
             /* For triggers (lift, door, etc.), set the exact linedef position */
-            if (info.type != TARGET_SECRET) {
+            /* Enemies and secrets don't have linedef indices */
+            if (info.type != TARGET_SECRET && info.type != TARGET_ENEMY) {
                 s_path_to_hidden_door = true;
                 s_hidden_door_line = info.index;  /* info.index is linedef index for triggers */
             } else {
@@ -3147,4 +3217,97 @@ boolean Secret_FindPathToCurrentTarget(secret_path_t *out_path) {
                  player_sector, target_sector);
     /* out_path already initialized at function start */
     return false;
+}
+
+/* ============================================
+ * Enemy Target Functions
+ * ============================================ */
+
+/* Get short name for monster type */
+static const char* GetMonsterShortName(mobjtype_t type) {
+    switch (type) {
+    case MT_POSSESSED:  return "Zombie";
+    case MT_SHOTGUY:    return "Shotgun";
+    case MT_VILE:       return "Archvile";
+    case MT_UNDEAD:     return "Revenant";
+    case MT_FATSO:      return "Mancubus";
+    case MT_CHAINGUY:   return "Chaingun";
+    case MT_TROOP:      return "Imp";
+    case MT_SERGEANT:   return "Demon";
+    case MT_SHADOWS:    return "Spectre";
+    case MT_HEAD:       return "Cacodemon";
+    case MT_BRUISER:    return "Baron";
+    case MT_KNIGHT:     return "HellKnight";
+    case MT_SKULL:      return "LostSoul";
+    case MT_SPIDER:     return "Spider";
+    case MT_BABY:       return "Arachno";
+    case MT_CYBORG:     return "Cyberdemon";
+    case MT_PAIN:       return "Pain";
+    case MT_WOLFSS:     return "SS";
+    case MT_KEEN:       return "Keen";
+    case MT_BOSSBRAIN:  return "Brain";
+    default:            return "Enemy";
+    }
+}
+
+void Secret_RefreshEnemyTargets(void) {
+    extern thinker_t thinkercap;
+    extern gamestate_t gamestate;
+    thinker_t *th;
+    int enemy_num = 0;
+
+    /* Clear existing enemy targets */
+    s_target_counts[TARGET_ENEMY] = 0;
+
+    /* Only iterate thinkers when in-game (thinkercap not initialized in menu) */
+    if (gamestate != GS_LEVEL) {
+        return;
+    }
+
+    /* Iterate through all thinkers */
+    for (th = thinkercap.next; th != &thinkercap && enemy_num < SECRET_MAX_TARGETS; th = th->next) {
+        /* Check if this is a mobj thinker */
+        if (th->function.acp1 == (actionf_p1)P_MobjThinker) {
+            mobj_t *mobj = (mobj_t *)th;
+
+            /* Only include live monsters (MF_COUNTKILL flag and health > 0) */
+            if ((mobj->flags & MF_COUNTKILL) && mobj->health > 0) {
+                target_info_t *t = &s_targets[TARGET_ENEMY][enemy_num];
+                t->type = TARGET_ENEMY;
+                t->index = enemy_num;
+                t->x = mobj->x;
+                t->y = mobj->y;
+                t->name = GetMonsterShortName(mobj->type);
+                t->discovered = false;  /* Not applicable for enemies */
+                t->reachable = true;    /* Assume reachable */
+                t->mobj = mobj;
+                enemy_num++;
+            }
+        }
+    }
+
+    s_target_counts[TARGET_ENEMY] = enemy_num;
+    SECRET_DEBUG("[SECRET]   Enemies: %d\n", enemy_num);
+}
+
+void Secret_UpdateEnemyPositions(void) {
+    int i;
+    int count = s_target_counts[TARGET_ENEMY];
+
+    for (i = 0; i < count; i++) {
+        target_info_t *t = &s_targets[TARGET_ENEMY][i];
+        if (t->mobj && t->mobj->health > 0) {
+            t->x = t->mobj->x;
+            t->y = t->mobj->y;
+        }
+    }
+}
+
+boolean Secret_IsEnemyAlive(int index) {
+    if (index < 0 || index >= s_target_counts[TARGET_ENEMY]) {
+        return false;
+    }
+
+    target_info_t *t = &s_targets[TARGET_ENEMY][index];
+    return (t->mobj && t->mobj->health > 0);
 }

@@ -1,6 +1,7 @@
 #include "parsing/PugiXMLParser.h"
 #include "common/Logger.h"
 #include "parsing/IXMLElement.h"
+#include <cstring>
 #include <filesystem>
 #include <sstream>
 #include <unordered_set>

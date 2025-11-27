@@ -14,6 +14,7 @@
 #include "p_local.h"
 #include "doomstat.h"
 #include "d_player.h"
+#include "r_main.h"
 #include <string.h>
 
 /* Forward declaration for P_MobjThinker */
@@ -158,6 +159,10 @@ void SCE_WeaponRaiseComplete(void) {
 
 void SCE_WeaponFireComplete(void) {
     sce_weapon_event_fire_complete();
+    // Aim assist: Return to idle when weapon fire animation completes
+    if (SCE_AimAssistIsEnabled()) {
+        SCE_AimEventShotComplete();
+    }
 }
 
 /* Enemy lifecycle events */
@@ -310,4 +315,89 @@ int SCE_GetLevelTotalKills(void) {
 
 int SCE_GetPlayerKillCount(void) {
     return players[0].killcount;
+}
+
+/* Aim Assist */
+static mobj_t *g_aim_target = NULL;  /* Current lock-on target */
+
+void SCE_AimAssistToggle(void) {
+    sce_aim_event_toggle();
+    /* Clear target when toggling off */
+    if (!sce_aim_is_enabled()) {
+        g_aim_target = NULL;
+    }
+}
+
+boolean SCE_AimAssistIsEnabled(void) {
+    return sce_aim_is_enabled() ? true : false;
+}
+
+void SCE_AimAssistSetTarget(mobj_t *target) {
+    g_aim_target = target;
+}
+
+void SCE_AimAssistClearTarget(void) {
+    g_aim_target = NULL;
+}
+
+mobj_t* SCE_AimAssistGetTarget(void) {
+    /* Return target only if valid */
+    if (g_aim_target && g_aim_target->health > 0) {
+        return g_aim_target;
+    }
+    g_aim_target = NULL;
+    return NULL;
+}
+
+void SCE_AimAssistTick(void) {
+    player_t *player;
+    mobj_t *mo;
+
+    if (!sce_aim_is_enabled() || !g_aim_target) {
+        return;
+    }
+
+    /* Check if target is still valid (alive and exists) */
+    if (g_aim_target->health <= 0) {
+        g_aim_target = NULL;
+        SCE_AimEventTargetLost();  /* SCXML: locked -> idle */
+        return;
+    }
+
+    /* Get player */
+    player = &players[0];
+    if (!player->mo) {
+        return;
+    }
+    mo = player->mo;
+
+    /* Lock-on: continuously update player angle to face target */
+    mo->angle = R_PointToAngle2(mo->x, mo->y, g_aim_target->x, g_aim_target->y);
+}
+
+/* SCXML State Machine Event Wrappers */
+extern void sce_aim_event_shot_fired(void);
+extern void sce_aim_event_target_acquired(void);
+extern void sce_aim_event_target_lost(void);
+extern void sce_aim_event_no_target(void);
+extern void sce_aim_event_shot_complete(void);
+
+void SCE_AimEventShotFired(void) {
+    sce_aim_event_shot_fired();
+}
+
+void SCE_AimEventTargetAcquired(void) {
+    sce_aim_event_target_acquired();
+}
+
+void SCE_AimEventTargetLost(void) {
+    sce_aim_event_target_lost();
+}
+
+void SCE_AimEventNoTarget(void) {
+    sce_aim_event_no_target();
+}
+
+void SCE_AimEventShotComplete(void) {
+    sce_aim_event_shot_complete();
 }

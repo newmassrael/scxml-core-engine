@@ -86,6 +86,11 @@ int sce_get_target_count_keydoor(void);
 /* Check if a secret has been discovered (0 = not found, 1 = found) */
 int sce_is_secret_discovered(int index);
 
+/* Aim Assist State Machine */
+const char *sce_aim_get_state(void);
+void sce_aim_event_toggle(void);
+int sce_aim_is_enabled(void);  /* Returns 1 if aim assist is enabled, 0 otherwise */
+
 #ifdef __cplusplus
 }
 #endif

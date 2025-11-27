@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    DOOM Aim Assist State Machine (Extended)
+
+    Provides detailed aim assist state tracking for the player.
+
+    Top-level States:
+    - disabled: Normal DOOM aiming (with spread)
+    - enabled: Aim assist active (compound state with sub-states)
+
+    Enabled Sub-states:
+    - idle: Waiting, no target (default state when not shooting)
+    - searching: Actively searching for target during shot
+    - locked: Target acquired during current shot
+
+    Events:
+    - toggle: Toggle aim assist on/off
+    - level_change: New level loaded
+    - shot_fired: Player fired weapon, start searching
+    - target_acquired: Found valid target
+    - target_lost: Target died or went out of range
+    - no_target: Search completed, no target found
+    - shot_complete: Shot processing finished, return to idle
+
+    C++ Integration:
+    - Uses <cpp> tag for direct C++ function calls (Zero Overhead)
+    - aim.xxx() calls are transformed to user_->aim.xxx()
+
+    W3C SCXML 1.0 compliant
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       version="1.0"
+       initial="disabled"
+       datamodel="null">
+
+    <!-- Aim assist disabled - normal DOOM aiming -->
+    <state id="disabled">
+        <onentry>
+            <script><cpp>aim.onDisabled()</cpp></script>
+        </onentry>
+        <!-- Toggle goes directly to idle sub-state (not to enabled compound) -->
+        <transition event="toggle" target="idle"/>
+        <transition event="level_change" target="disabled"/>
+    </state>
+
+    <!-- Aim assist enabled - compound state with sub-states -->
+    <state id="enabled" initial="idle">
+        <onentry>
+            <script><cpp>aim.onEnabled()</cpp></script>
+        </onentry>
+
+        <!-- Toggle from any sub-state disables aim assist -->
+        <transition event="toggle" target="disabled"/>
+
+        <!-- Idle: Waiting for shot, no target (default state) -->
+        <state id="idle">
+            <onentry>
+                <script><cpp>aim.onIdle()</cpp></script>
+            </onentry>
+            <transition event="shot_fired" target="searching"/>
+            <transition event="level_change" target="idle"/>
+        </state>
+
+        <!-- Searching: Looking for target during shot -->
+        <state id="searching">
+            <onentry>
+                <script><cpp>aim.onSearching()</cpp></script>
+            </onentry>
+            <transition event="target_acquired" target="locked"/>
+            <transition event="no_target" target="idle"/>
+            <transition event="level_change" target="idle"/>
+        </state>
+
+        <!-- Locked: Target acquired during current shot -->
+        <state id="locked">
+            <onentry>
+                <script><cpp>aim.onLocked()</cpp></script>
+            </onentry>
+            <!-- Return to idle after shot completes -->
+            <transition event="shot_complete" target="idle"/>
+            <!-- Also return to idle if target dies -->
+            <transition event="target_lost" target="idle"/>
+            <!-- New shot starts new search -->
+            <transition event="shot_fired" target="searching"/>
+            <transition event="level_change" target="idle"/>
+        </state>
+
+    </state>
+
+</scxml>

@@ -21,6 +21,7 @@
 #endif
 
 // SCE Generated State Machines
+#include "aim_assist_state_sm.h"
 #include "enemy_state_sm.h"
 #include "game_state_sm.h"
 #include "player_state_sm.h"
@@ -29,6 +30,11 @@
 
 // Secret hint pathfinding
 #include "sce_secret_hint.h"
+
+// DOOM hooks (C functions)
+extern "C" {
+void SCE_AimAssistClearTarget(void);
+}
 
 // ============================================
 // Constants
@@ -56,6 +62,72 @@ int SCE_GetPlayerKillCount(void);
 }
 
 // ============================================
+// Aim Assist SCXML UserContext: C++ Callback Integration
+// ============================================
+
+// Global flag for DOOM to check aim assist status
+static bool g_aim_assist_enabled = false;
+
+// Forward declaration for JS callbacks
+static inline void js_notify_aim_assist_state(bool enabled);
+
+/**
+ * @brief Callback handler for aim assist state machine
+ *
+ * Implements onentry actions for each state as defined in aim_assist_state.scxml.
+ * The generated code calls user_->aim.onXxx() when entering each state.
+ */
+struct AimCallbacks {
+    void onDisabled() {
+        printf("[AIM SCXML] onDisabled callback\n");
+        g_aim_assist_enabled = false;
+        SCE_AimAssistClearTarget();  // Clear any lingering lock-on target
+        js_notify_aim_assist_state(false);
+        js_notify_state_change("aim", "disabled");
+    }
+
+    void onEnabled() {
+        printf("[AIM SCXML] onEnabled callback\n");
+        g_aim_assist_enabled = true;
+        js_notify_aim_assist_state(true);
+        // Note: onEnabled is called when entering the compound state,
+        // sub-state callbacks (onIdle, etc.) will be called immediately after
+    }
+
+    void onIdle() {
+        printf("[AIM SCXML] onIdle callback\n");
+        // Aim assist enabled but no target locked - clear lock-on
+        SCE_AimAssistClearTarget();
+        js_notify_state_change("aim", "idle");
+    }
+
+    void onSearching() {
+        printf("[AIM SCXML] onSearching callback\n");
+        // Actively searching for target during shot
+        js_notify_state_change("aim", "searching");
+    }
+
+    void onLocked() {
+        printf("[AIM SCXML] onLocked callback\n");
+        // Target acquired and locked on
+        js_notify_state_change("aim", "locked");
+    }
+};
+
+/**
+ * @brief UserContext for aim assist state machine
+ *
+ * The generated code expects UserContext with an 'aim' member.
+ * Calls to aim.onXxx() in SCXML become user_->aim.onXxx() in C++.
+ */
+struct AimContext {
+    AimCallbacks aim;
+};
+
+// Global aim context instance
+static AimContext g_aim_context;
+
+// ============================================
 // Secret SCXML UserContext: C++ Callback Integration
 // ============================================
 
@@ -65,49 +137,47 @@ int SCE_GetPlayerKillCount(void);
  * Implements onentry actions for each state as defined in secret_hint_state.scxml.
  * The generated code calls user_->secret.onXxx() when entering each state.
  */
+// BFS result storage for clean event separation
+// Set by onCalculating callback, processed by caller after step() returns
+enum class BfsResult { NONE, PATH_FOUND, NO_PATH };
+static BfsResult g_bfs_result = BfsResult::NONE;
+
+// Forward declaration for BFS result processing
+static void sce_process_bfs_result(void);
+
 struct SecretCallbacks {
     void onDisabled() {
         // Disabled state: hint system is off
         Secret_ClearPath();
         js_notify_state_change("secret", sce_secret_get_state());
         js_notify_secret_path(0, Secret_GetRemainingCount());
+        // Clear button highlight when disabled
+        js_notify_target_info("", "", -1, 0);
     }
 
     void onCalculating() {
-        // Calculating state: run BFS and raise path_found/no_path event
+        // Calculating state: run BFS and store result
+        // NOTE: Do NOT raise events here - we're inside step() call
+        // The result will be processed by the caller after step() returns
         js_notify_state_change("secret", sce_secret_get_state());
 
-        // Note: Previous path is cleared by onexit of 'showing' state (SCXML)
+        // Reset BFS result
+        g_bfs_result = BfsResult::NONE;
 
-        // Always notify target info for button highlighting (even if no path)
+        // Always notify target info for button highlighting
         target_info_t info;
         if (Secret_GetCurrentTarget(&info)) {
             target_type_t type;
             int index, total;
             Secret_GetSelectionInfo(&type, &index, &total);
-#ifdef __EMSCRIPTEN__
-            EM_ASM({
-                console.debug('[SCE:Calculating] Target found: type=' + $0 + ' index=' + $1 + ' total=' + $2);
-            }, (int)type, index, total);
-#endif
             js_notify_target_info(Secret_GetTargetTypeName(type), info.name, index, total);
-        } else {
-#ifdef __EMSCRIPTEN__
-            EM_ASM({
-                console.debug('[SCE:Calculating] NO TARGET SET - Secret_GetCurrentTarget returned false');
-            });
-#endif
         }
 
-        secret_path_t path = {};  // Zero-initialize to avoid stale values
-        bool bfs_result = Secret_FindPathToCurrentTarget(&path);
-#ifdef __EMSCRIPTEN__
-        EM_ASM({
-            console.debug('[SCE:Calculating] BFS result=' + $0 + ' num_arrows=' + $1);
-        }, bfs_result ? 1 : 0, path.num_arrows);
-#endif
-        if (bfs_result && path.num_arrows > 0) {
-            // Path found with arrows - notify JS with arrow data
+        // Run BFS and store result (no event raising)
+        secret_path_t path = {};
+        bool bfs_success = Secret_FindPathToCurrentTarget(&path);
+        if (bfs_success && path.num_arrows > 0) {
+            // Path found - notify JS with arrow data
             js_notify_secret_path(path.num_arrows, Secret_GetRemainingCount());
             for (int i = 0; i < path.num_arrows; i++) {
                 js_notify_secret_arrow(i,
@@ -115,16 +185,11 @@ struct SecretCallbacks {
                                        path.arrows[i].y >> 16,
                                        path.arrows[i].angle >> 16);
             }
-            sce_secret_path_found();
+            g_bfs_result = BfsResult::PATH_FOUND;
         } else {
-            // No path or path has no arrows (target too close or unreachable)
-#ifdef __EMSCRIPTEN__
-            EM_ASM({
-                console.debug('[SCE:Calculating] Going to no_path state');
-            });
-#endif
-            sce_secret_no_path();
+            g_bfs_result = BfsResult::NO_PATH;
         }
+        // Result stored - caller will process after step() returns
     }
 
     void onShowing() {
@@ -236,6 +301,11 @@ static std::unique_ptr<SCE::Generated::weapon_state::weapon_state> g_weapon_sm;
 using SecretSM = SCE::Generated::secret_hint_state::secret_hint_state<SecretContext>;
 using SecretEvent = SCE::Generated::secret_hint_state::Event;
 static std::unique_ptr<SecretSM> g_secret_sm;
+
+// Aim assist state machine with UserContext for C++ callbacks
+using AimSM = SCE::Generated::aim_assist_state::aim_assist_state<AimContext>;
+using AimEvent = SCE::Generated::aim_assist_state::Event;
+static std::unique_ptr<AimSM> g_aim_sm;
 
 // Forward declarations
 extern "C" {
@@ -372,6 +442,18 @@ static inline void js_notify_target_info(const char *type_name, const char *name
 #endif
 }
 
+static inline void js_notify_aim_assist_state(bool enabled) {
+#ifdef __EMSCRIPTEN__
+    EM_ASM(
+        {
+            if (typeof window.onSceAimAssistState === 'function') {
+                window.onSceAimAssistState($0);
+            }
+        },
+        enabled ? 1 : 0);
+#endif
+}
+
 // ============================================
 // Enemy Management
 // ============================================
@@ -405,6 +487,9 @@ const char *sce_get_game_state(void);
 // Forward declaration for secret state
 const char *sce_secret_get_state(void);
 
+// Forward declaration for aim assist state
+const char *sce_aim_get_state(void);
+
 EMSCRIPTEN_KEEPALIVE
 void sce_init(void) {
     g_game_sm = std::make_unique<SCE::Generated::game_state::game_state>();
@@ -412,11 +497,14 @@ void sce_init(void) {
     g_weapon_sm = std::make_unique<SCE::Generated::weapon_state::weapon_state>();
     // Secret state machine: pass UserContext for C++ callback integration
     g_secret_sm = std::make_unique<SecretSM>(g_secret_context);
+    // Aim assist state machine: pass UserContext for C++ callback integration
+    g_aim_sm = std::make_unique<AimSM>(g_aim_context);
 
     g_game_sm->initialize();
     g_player_sm->initialize();
     g_weapon_sm->initialize();
     g_secret_sm->initialize();
+    g_aim_sm->initialize();
 
     // Reset enemy tracking
     for (auto &e : g_enemies) {
@@ -431,6 +519,7 @@ void sce_init(void) {
     js_notify_state_change("player", sce_get_player_state());
     js_notify_state_change("weapon", sce_get_weapon_state());
     js_notify_state_change("secret", sce_secret_get_state());
+    js_notify_state_change("aim", sce_aim_get_state());
     js_notify_stats_update(0, 0, 0);
 }
 
@@ -821,17 +910,8 @@ void sce_secret_event_toggle(void) {
     // H key: Toggle hint system (disabled <-> enabled)
     // SCXML handles state transitions, onentry callbacks do the work
     if (g_secret_sm) {
-#ifdef __EMSCRIPTEN__
-        EM_ASM({
-            console.debug('[SCE:Toggle] H key pressed, current state:', UTF8ToString($0));
-        }, sce_secret_get_state());
-#endif
-        g_secret_sm->processEvent(SecretEvent::Toggle);
-#ifdef __EMSCRIPTEN__
-        EM_ASM({
-            console.debug('[SCE:Toggle] After toggle, new state:', UTF8ToString($0));
-        }, sce_secret_get_state());
-#endif
+        g_secret_sm->raiseExternal(SecretEvent::Toggle);
+        g_secret_sm->step();
     }
 }
 
@@ -869,17 +949,25 @@ void sce_select_target(int type, int index) {
         // Check if selecting the same target
         bool is_same_target = (curr_type == (target_type_t)type && curr_index == index);
 
-        if (Secret_SelectTarget((target_type_t)type, index)) {
-            // Check current state for same-target behavior
-            auto current_state = g_secret_sm->getCurrentState();
-            bool in_no_path = (current_state == SCE::Generated::secret_hint_state::State::No_path);
+        auto current_state = g_secret_sm->getCurrentState();
+        bool in_disabled = (current_state == SCE::Generated::secret_hint_state::State::Disabled);
+        bool in_no_path = (current_state == SCE::Generated::secret_hint_state::State::No_path);
 
-            if (is_same_target && !in_no_path) {
+        if (Secret_SelectTarget((target_type_t)type, index)) {
+            if (in_disabled) {
+                // From disabled state - go to calculating via Select
+                g_secret_sm->raiseExternal(SecretEvent::Select);
+                g_secret_sm->step();          // Enter calculating, run BFS, store result
+                sce_process_bfs_result();     // Process stored result (clean separation)
+            } else if (is_same_target && !in_no_path) {
                 // Same target clicked while showing - toggle off (enabled -> disabled)
-                g_secret_sm->processEvent(SecretEvent::Toggle);
+                g_secret_sm->raiseExternal(SecretEvent::Toggle);
+                g_secret_sm->step();
             } else {
                 // Different target OR same target in no_path - recalculate
-                g_secret_sm->processEvent(SecretEvent::Select);
+                g_secret_sm->raiseExternal(SecretEvent::Select);
+                g_secret_sm->step();          // Enter calculating, run BFS, store result
+                sce_process_bfs_result();     // Process stored result (clean separation)
             }
         }
     }
@@ -895,7 +983,9 @@ EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_select(void) {
     // Select event: triggers path calculation to currently selected target
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SecretEvent::Select);
+        g_secret_sm->raiseExternal(SecretEvent::Select);
+        g_secret_sm->step();          // Enter calculating, run BFS, store result
+        sce_process_bfs_result();     // Process stored result
     }
 }
 
@@ -908,38 +998,74 @@ void sce_secret_event_cancel(void) {
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_level_change(void) {
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SecretEvent::Level_change);
+        g_secret_sm->raiseExternal(SecretEvent::Level_change);
+        g_secret_sm->step();
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_reached(void) {
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SecretEvent::Secret_reached);
+        g_secret_sm->raiseExternal(SecretEvent::Secret_reached);
+        g_secret_sm->step();
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_path_found(void) {
-    // Called from onCalculating callback when BFS finds path
+    // Legacy function - kept for API compatibility
+    // Prefer using sce_process_bfs_result() after step()
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SecretEvent::Path_found);
+        g_secret_sm->raiseExternal(SecretEvent::Path_found);
     }
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_no_path(void) {
-    // Called from onCalculating callback when BFS fails
+    // Legacy function - kept for API compatibility
+    // Prefer using sce_process_bfs_result() after step()
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SecretEvent::No_path);
+        g_secret_sm->raiseExternal(SecretEvent::No_path);
     }
+}
+
+/**
+ * @brief Process BFS result after step() returns from calculating state
+ *
+ * This function should be called after step() returns from entering
+ * the calculating state. The onCalculating callback stores the BFS
+ * result in g_bfs_result without raising events (to avoid nested step()).
+ *
+ * Clean design pattern:
+ *   raiseExternal(Select) → step() → onCalculating() stores result
+ *   → sce_process_bfs_result() raises event → step() transitions state
+ */
+static void sce_process_bfs_result(void) {
+    if (!g_secret_sm) return;
+
+    switch (g_bfs_result) {
+        case BfsResult::PATH_FOUND:
+            g_secret_sm->raiseExternal(SecretEvent::Path_found);
+            g_secret_sm->step();
+            break;
+        case BfsResult::NO_PATH:
+            g_secret_sm->raiseExternal(SecretEvent::No_path);
+            g_secret_sm->step();
+            break;
+        case BfsResult::NONE:
+            // No BFS was performed (shouldn't happen in normal flow)
+            break;
+    }
+    g_bfs_result = BfsResult::NONE;  // Reset for next calculation
 }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_secret_recalculate(void) {
     // Called from Secret_UpdateArrows when player moves significantly
     if (g_secret_sm) {
-        g_secret_sm->processEvent(SecretEvent::Recalculate);
+        g_secret_sm->raiseExternal(SecretEvent::Recalculate);
+        g_secret_sm->step();          // Enter calculating, run BFS, store result
+        sce_process_bfs_result();     // Process stored result
     }
 }
 
@@ -979,8 +1105,112 @@ int sce_get_target_count_keydoor(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE
+int sce_get_target_count_enemy(void) {
+    // Refresh enemy list to remove dead enemies before returning count
+    Secret_RefreshEnemyTargets();
+    return Secret_GetTargetCount(TARGET_ENEMY);
+}
+
+EMSCRIPTEN_KEEPALIVE
 int sce_is_secret_discovered(int index) {
     return Secret_IsDiscovered(index) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_is_enemy_alive(int index) {
+    return Secret_IsEnemyAlive(index) ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_refresh_enemy_targets(void) {
+    Secret_RefreshEnemyTargets();
+}
+
+// ============================================
+// Aim Assist State Machine
+// ============================================
+
+EMSCRIPTEN_KEEPALIVE
+const char *sce_aim_get_state(void) {
+    if (!g_aim_sm) {
+        return "UNINITIALIZED";
+    }
+    auto state = g_aim_sm->getCurrentState();
+    switch (state) {
+    case SCE::Generated::aim_assist_state::State::Disabled:
+        return "disabled";
+    case SCE::Generated::aim_assist_state::State::Enabled:
+        return "enabled";
+    case SCE::Generated::aim_assist_state::State::Idle:
+        return "idle";
+    case SCE::Generated::aim_assist_state::State::Searching:
+        return "searching";
+    case SCE::Generated::aim_assist_state::State::Locked:
+        return "locked";
+    default:
+        return "UNKNOWN";
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_aim_event_toggle(void) {
+    if (g_aim_sm) {
+        // W3C SCXML: Use raiseExternal + step for proper hierarchical state entry
+        // processEvent() bypasses handleHierarchicalTransition, missing parent state entry
+        g_aim_sm->raiseExternal(AimEvent::Toggle);
+        g_aim_sm->step();
+        js_notify_state_change("aim", sce_aim_get_state());
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_aim_event_shot_fired(void) {
+    printf("[AIM EVENT] shot_fired, g_aim_sm=%p\n", (void*)g_aim_sm.get());
+    if (g_aim_sm) {
+        g_aim_sm->raiseExternal(AimEvent::Shot_fired);
+        g_aim_sm->step();
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_aim_event_target_acquired(void) {
+    printf("[AIM EVENT] target_acquired, g_aim_sm=%p\n", (void*)g_aim_sm.get());
+    if (g_aim_sm) {
+        g_aim_sm->raiseExternal(AimEvent::Target_acquired);
+        g_aim_sm->step();
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_aim_event_target_lost(void) {
+    printf("[AIM EVENT] target_lost, g_aim_sm=%p\n", (void*)g_aim_sm.get());
+    if (g_aim_sm) {
+        g_aim_sm->raiseExternal(AimEvent::Target_lost);
+        g_aim_sm->step();
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_aim_event_no_target(void) {
+    printf("[AIM EVENT] no_target, g_aim_sm=%p\n", (void*)g_aim_sm.get());
+    if (g_aim_sm) {
+        g_aim_sm->raiseExternal(AimEvent::No_target);
+        g_aim_sm->step();
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_aim_event_shot_complete(void) {
+    printf("[AIM EVENT] shot_complete, g_aim_sm=%p\n", (void*)g_aim_sm.get());
+    if (g_aim_sm) {
+        g_aim_sm->raiseExternal(AimEvent::Shot_complete);
+        g_aim_sm->step();
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_aim_is_enabled(void) {
+    return g_aim_assist_enabled ? 1 : 0;
 }
 
 }  // extern "C"

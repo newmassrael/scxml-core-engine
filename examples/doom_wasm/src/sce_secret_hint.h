@@ -34,8 +34,12 @@ typedef enum {
     TARGET_TELEPORTER,  /* Teleporter linedef */
     TARGET_EXIT,        /* Exit switch/linedef */
     TARGET_KEY_DOOR,    /* Key-locked door */
+    TARGET_ENEMY,       /* Live enemy (mobj_t with MF_COUNTKILL) */
     TARGET_TYPE_COUNT
 } target_type_t;
+
+/* Forward declaration for mobj_t */
+struct mobj_s;
 
 /* Target information structure */
 typedef struct {
@@ -46,6 +50,7 @@ typedef struct {
     const char *name;       /* Display name (e.g., "Secret 1", "Blue Door") */
     boolean discovered;     /* For secrets: already found? */
     boolean reachable;      /* Can player reach this target? */
+    struct mobj_s *mobj;    /* For TARGET_ENEMY: pointer to enemy mobj */
 } target_info_t;
 
 /* Arrow waypoint structure */
@@ -238,6 +243,27 @@ const char* Secret_GetTargetTypeName(target_type_t type);
  * @param out_total Total targets of this type
  */
 void Secret_GetSelectionInfo(target_type_t *out_type, int *out_index, int *out_total);
+
+/**
+ * Refresh enemy targets list.
+ * Scans all thinkers for live enemies and updates TARGET_ENEMY list.
+ * Call periodically or when enemy count changes.
+ */
+void Secret_RefreshEnemyTargets(void);
+
+/**
+ * Update enemy target positions.
+ * Updates x/y coordinates for all TARGET_ENEMY entries based on current mobj positions.
+ * Call each frame when showing path to enemy.
+ */
+void Secret_UpdateEnemyPositions(void);
+
+/**
+ * Check if an enemy target is still valid (alive).
+ * @param index Enemy target index
+ * @return true if enemy is still alive
+ */
+boolean Secret_IsEnemyAlive(int index);
 
 /* External functions from sce_wrapper.cpp (SCXML state machine integration) */
 void sce_secret_recalculate(void);

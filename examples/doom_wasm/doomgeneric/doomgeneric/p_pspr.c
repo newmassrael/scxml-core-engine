@@ -33,6 +33,9 @@
 // SCE State Machine Integration
 #include "sce_doom_hooks.h"
 
+// Rendering (for R_PointToAngle2)
+#include "r_main.h"
+
 // Data.
 #include "sounds.h"
 
@@ -625,19 +628,77 @@ fixed_t		bulletslope;
 void P_BulletSlope (mobj_t*	mo)
 {
     angle_t	an;
-    
+    boolean	aim_assist = SCE_AimAssistIsEnabled();
+
+    printf("[AIM DEBUG] P_BulletSlope called, aim_assist=%d\n", aim_assist);
+
+    // SCE Aim Assist: Clear previous lock-on and fire SCXML shot_fired event
+    if (aim_assist)
+    {
+	printf("[AIM DEBUG] Clearing target and firing shot_fired event\n");
+	SCE_AimAssistClearTarget();
+	SCE_AimEventShotFired();  // SCXML: idle/locked -> searching
+    }
+
     // see which target is to be aimed at
     an = mo->angle;
-    bulletslope = P_AimLineAttack (mo, an, 16*64*FRACUNIT);
+
+    // SCE Aim Assist: Use much longer range for finding targets
+    fixed_t aim_range = aim_assist ? 64*64*FRACUNIT : 16*64*FRACUNIT;
+
+    bulletslope = P_AimLineAttack (mo, an, aim_range);
 
     if (!linetarget)
     {
-	an += 1<<26;
-	bulletslope = P_AimLineAttack (mo, an, 16*64*FRACUNIT);
-	if (!linetarget)
+	// SCE Aim Assist: 60 degree search (±30 degrees from view direction)
+	if (aim_assist)
 	{
-	    an -= 2<<26;
+	    // Search in 5 degree increments (12 steps = 60 degrees total)
+	    // ANG90 = 1<<30 = 90 degrees, so 5 degrees = ANG90/18
+	    angle_t step = ANG90 / 18;  // ~5 degrees
+	    int i;
+
+	    for (i = 1; i <= 6 && !linetarget; i++)
+	    {
+		// Try right
+		an = mo->angle + step * i;
+		bulletslope = P_AimLineAttack (mo, an, aim_range);
+		if (linetarget) break;
+
+		// Try left
+		an = mo->angle - step * i;
+		bulletslope = P_AimLineAttack (mo, an, aim_range);
+	    }
+	}
+	else
+	{
+	    // Default DOOM behavior: ±5.6 degrees
+	    an += 1<<26;
 	    bulletslope = P_AimLineAttack (mo, an, 16*64*FRACUNIT);
+	    if (!linetarget)
+	    {
+		an -= 2<<26;
+		bulletslope = P_AimLineAttack (mo, an, 16*64*FRACUNIT);
+	    }
+	}
+    }
+
+    // SCE Aim Assist: Update SCXML state and set lock-on
+    if (aim_assist)
+    {
+	printf("[AIM DEBUG] linetarget=%p\n", (void*)linetarget);
+	if (linetarget)
+	{
+	    printf("[AIM DEBUG] Target found! Firing target_acquired event\n");
+	    SCE_AimAssistSetTarget(linetarget);
+	    mo->angle = R_PointToAngle2(mo->x, mo->y, linetarget->x, linetarget->y);
+	    SCE_AimEventTargetAcquired();  // SCXML: searching -> locked
+	    // Note: locked state persists until target dies or next shot
+	}
+	else
+	{
+	    printf("[AIM DEBUG] No target found, firing no_target event\n");
+	    SCE_AimEventNoTarget();  // SCXML: searching -> idle
 	}
     }
 }
@@ -653,11 +714,12 @@ P_GunShot
 {
     angle_t	angle;
     int		damage;
-	
+
     damage = 5*(P_Random ()%3+1);
     angle = mo->angle;
 
-    if (!accurate)
+    // SCE Aim Assist: Skip spread when aim assist is enabled
+    if (!accurate && !SCE_AimAssistIsEnabled())
 	angle += (P_Random()-P_Random())<<18;
 
     P_LineAttack (mo, angle, MISSILERANGE, bulletslope, damage);
@@ -719,13 +781,14 @@ A_FireShotgun
 void
 A_FireShotgun2
 ( player_t*	player,
-  pspdef_t*	psp ) 
+  pspdef_t*	psp )
 {
     int		i;
     angle_t	angle;
     int		damage;
-		
-	
+    boolean	aim_assist = SCE_AimAssistIsEnabled();
+
+
     S_StartSound (player->mo, sfx_dshtgn);
     P_SetMobjState (player->mo, S_PLAY_ATK2);
 
@@ -736,16 +799,18 @@ A_FireShotgun2
 		  weaponinfo[player->readyweapon].flashstate);
 
     P_BulletSlope (player->mo);
-	
+
     for (i=0 ; i<20 ; i++)
     {
 	damage = 5*(P_Random ()%3+1);
 	angle = player->mo->angle;
-	angle += (P_Random()-P_Random())<<19;
+	// SCE Aim Assist: Skip spread when aim assist is enabled
+	if (!aim_assist)
+	    angle += (P_Random()-P_Random())<<19;
 	P_LineAttack (player->mo,
 		      angle,
 		      MISSILERANGE,
-		      bulletslope + ((P_Random()-P_Random())<<5), damage);
+		      aim_assist ? bulletslope : bulletslope + ((P_Random()-P_Random())<<5), damage);
     }
 }
 

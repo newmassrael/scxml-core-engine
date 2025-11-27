@@ -23,6 +23,9 @@
 
 #include "doomstat.h"
 
+// SCE State Machine Integration
+#include "sce_doom_hooks.h"
+
 
 int	leveltime;
 
@@ -146,6 +149,9 @@ void P_Ticker (void)
     P_UpdateSpecials ();
     P_RespawnSpecials ();
 
+    // SCE Aim Assist: Update lock-on target tracking
+    SCE_AimAssistTick();
+
     // for par times
-    leveltime++;	
+    leveltime++;
 }
