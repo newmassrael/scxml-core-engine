@@ -27,7 +27,7 @@ def main():
 
     dg_dir = os.path.join(sys.argv[1], "doomgeneric")
 
-    # g_game.c - game state hooks
+    # g_game.c - game state hooks and IDBFS sync
     patch_file(os.path.join(dg_dir, "g_game.c"), [
         # Add include after doomstat.h
         (r'(#include "doomstat\.h")',
@@ -53,6 +53,16 @@ def main():
         # G_Ticker GS_LEVEL case - check if player reached target secret after HU_Ticker
         (r'(HU_Ticker \(\);)\s*\n(\s*break;)',
          r'\1\n\tSCE_SecretCheckReached();  // Check if player reached target secret\n\2'),
+        # G_DoSaveGame - sync to IndexedDB after save complete (before closing brace)
+        (r'(players\[consoleplayer\]\.message = DEH_String\(GGSAVED\);\s*\n\s*\n\s*// draw the pattern into the back screen\s*\n\s*R_FillBackScreen \(\);)\s*\n(\})',
+         r'''\1
+
+#ifdef __EMSCRIPTEN__
+    // Sync saves to IndexedDB for persistence
+    extern void IDBFS_SyncToIndexedDB(void);
+    IDBFS_SyncToIndexedDB();
+#endif
+\2'''),
     ])
 
     # f_finale.c - finale hooks
@@ -154,11 +164,68 @@ def main():
          r'\n\telse {\n\t  plyr->message = DEH_String(STSTR_DQDOFF);\n\t  // SCE: God mode deactivated\n\t  SCE_PlayerGodModeOff();\n\t}'),
     ])
 
-    # doomgeneric_emscripten.c - init hook and WASD support
+    # doomgeneric_emscripten.c - init hook, WASD support, and IDBFS persistent saves
     patch_file(os.path.join(dg_dir, "doomgeneric_emscripten.c"), [
-        # Add include after emscripten.h
+        # Add include and IDBFS code after emscripten.h
         (r'(#include <emscripten\.h>)',
-         r'\1\n\n// SCE State Machine Integration\n#include "sce_doom_hooks.h"'),
+         r'''\1
+
+// SCE State Machine Integration
+#include "sce_doom_hooks.h"
+
+// IDBFS persistent storage for save games
+static int idbfs_mounted = 0;
+
+// Mount IDBFS for persistent saves
+static void mount_idbfs(void) {
+    if (idbfs_mounted) return;
+
+    EM_ASM({
+        // Create save directory
+        try {
+            FS.mkdir('/doom_saves');
+        } catch(e) {
+            // Directory may already exist
+        }
+
+        // Mount IDBFS
+        FS.mount(IDBFS, {}, '/doom_saves');
+
+        // Load existing saves from IndexedDB
+        FS.syncfs(true, function(err) {
+            if (err) {
+                console.error('[IDBFS] Error loading saves:', err);
+            } else {
+                console.log('[IDBFS] Saves loaded from IndexedDB');
+                try {
+                    var files = FS.readdir('/doom_saves');
+                    console.log('[IDBFS] Found save files:', files.filter(f => f !== '.' && f !== '..'));
+                } catch(e) {}
+            }
+        });
+    });
+
+    idbfs_mounted = 1;
+    printf("[IDBFS] Mounted persistent storage at /doom_saves\\n");
+}
+
+// Sync saves to IndexedDB (call after saving)
+void IDBFS_SyncToIndexedDB(void) {
+    if (!idbfs_mounted) return;
+
+    EM_ASM({
+        FS.syncfs(false, function(err) {
+            if (err) {
+                console.error('[IDBFS] Error saving to IndexedDB:', err);
+            } else {
+                console.log('[IDBFS] Game saved to IndexedDB');
+            }
+        });
+    });
+}'''),
+        # Add backspace key mapping for save game name editing
+        (r'(case SDLK_ESCAPE:\s*\n\s*key = KEY_ESCAPE;\s*\n\s*break;\s*\n)(\s*case SDLK_LEFT:)',
+         r'\1    case SDLK_BACKSPACE:\n      key = KEY_BACKSPACE;\n      break;\n\2'),
         # Add W and S key mappings after SDLK_DOWN case (before SDLK_LCTRL)
         # NOTE: A and D are intentionally NOT mapped here - they pass through as lowercase
         # letters so that cheat codes (like IDDQD) work correctly.
@@ -167,6 +234,9 @@ def main():
         # After texture creation in DG_Init
         (r'(texture = SDL_CreateTexture\([^;]+;)',
          r'\1\n\n  // Initialize SCE state machines\n  SCE_Init();'),
+        # Mount IDBFS before doomgeneric_Create in main()
+        (r'(int main\(int argc, char \*\*argv\)\s*\{\s*\n)',
+         r'\1    // Mount IDBFS for persistent save games before DOOM initializes\n    mount_idbfs();\n\n'),
     ])
 
     # m_controls.c - WASD key bindings (for strafe using A/D as letters, not KEY_STRAFE_*)
@@ -176,6 +246,40 @@ def main():
          r"int key_strafeleft = 'a';   // Changed from KEY_STRAFE_L for WASD + cheat code compatibility"),
         (r'int key_straferight = KEY_STRAFE_R;',
          r"int key_straferight = 'd';  // Changed from KEY_STRAFE_R for WASD + cheat code compatibility"),
+    ])
+
+    # d_main.c - Fix function signature mismatch for WebAssembly and IDBFS save directory
+    # G_CheckDemoStatus returns boolean, but atexit_func_t expects void.
+    # In WebAssembly, function signature mismatches cause runtime errors
+    # ("null function or function signature mismatch").
+    patch_file(os.path.join(dg_dir, "d_main.c"), [
+        # Add wrapper function at file scope (after d_main.h include)
+        (r'(#include "d_main\.h")',
+         r'\1\n\n// WebAssembly function signature compatibility wrapper for I_AtExit.\n// G_CheckDemoStatus returns boolean, but atexit_func_t expects void.\n// In WebAssembly, function pointer signature mismatches cause runtime errors.\nstatic void G_CheckDemoStatusWrapper(void) { G_CheckDemoStatus(); }'),
+        # Use wrapper instead of cast
+        (r'I_AtExit\(\(atexit_func_t\) G_CheckDemoStatus, true\);',
+         r'I_AtExit(G_CheckDemoStatusWrapper, true);'),
+        # Use IDBFS directory for Emscripten builds
+        (r'(#ifdef _WIN32\s*\n\s*// In -cdrom mode, we write savegames to c:\\\\doomdata as well as configs\.\s*\n\s*if \(M_ParmExists\("-cdrom"\)\)\s*\n\s*\{\s*\n\s*savegamedir = configdir;\s*\n\s*\}\s*\n\s*else\s*\n#endif\s*\n\s*\{\s*\n\s*savegamedir = M_GetSaveGameDir\(D_SaveGameIWADName\(gamemission\)\);\s*\n\s*\})',
+         r'''#ifdef __EMSCRIPTEN__
+    // Use IDBFS-mounted directory for persistent saves
+    savegamedir = strdup("/doom_saves/");
+    printf("Using IDBFS persistent storage for saves: %s\\n", savegamedir);
+#elif defined(_WIN32)
+    // In -cdrom mode, we write savegames to c:\\doomdata as well as configs.
+    if (M_ParmExists("-cdrom"))
+    {
+        savegamedir = configdir;
+    }
+    else
+    {
+        savegamedir = M_GetSaveGameDir(D_SaveGameIWADName(gamemission));
+    }
+#else
+    {
+        savegamedir = M_GetSaveGameDir(D_SaveGameIWADName(gamemission));
+    }
+#endif'''),
     ])
 
     print("SCE integration patches applied successfully")

@@ -74,6 +74,50 @@ if(NOT EXISTS ${DOOM_WAD})
     endif()
 endif()
 
+# Download FreePats soundfont for MIDI music support
+set(FREEPATS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/freepats")
+set(FREEPATS_CFG "${FREEPATS_DIR}/freepats.cfg")
+if(NOT EXISTS ${FREEPATS_CFG})
+    file(MAKE_DIRECTORY ${FREEPATS_DIR})
+    message(STATUS "Downloading FreePats soundfont for MIDI support...")
+    set(FREEPATS_ARCHIVE "${FREEPATS_DIR}/freepats.tar.gz")
+    file(DOWNLOAD
+        "http://ftp.debian.org/debian/pool/main/f/freepats/freepats_20060219.orig.tar.gz"
+        ${FREEPATS_ARCHIVE}
+        SHOW_PROGRESS
+        STATUS DOWNLOAD_STATUS
+    )
+    list(GET DOWNLOAD_STATUS 0 STATUS_CODE)
+    if(NOT STATUS_CODE EQUAL 0)
+        message(WARNING "Failed to download FreePats. MIDI music will not work.")
+    else()
+        # Extract FreePats (Debian package has nested tar.bz2)
+        message(STATUS "Extracting FreePats...")
+        execute_process(
+            COMMAND tar xzf ${FREEPATS_ARCHIVE}
+            WORKING_DIRECTORY ${FREEPATS_DIR}
+        )
+        # Extract inner tar.bz2
+        execute_process(
+            COMMAND tar xjf freepats-20060219/upstream/freepats-20060219.tar.bz2
+            WORKING_DIRECTORY ${FREEPATS_DIR}
+        )
+        # Move files from nested directory to freepats root
+        execute_process(
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${FREEPATS_DIR}/freepats ${FREEPATS_DIR}
+            WORKING_DIRECTORY ${FREEPATS_DIR}
+        )
+        # Cleanup
+        file(REMOVE ${FREEPATS_ARCHIVE})
+        file(REMOVE_RECURSE "${FREEPATS_DIR}/freepats-20060219")
+        file(REMOVE_RECURSE "${FREEPATS_DIR}/freepats")
+        # Create timidity.cfg
+        file(WRITE "${FREEPATS_DIR}/timidity.cfg" "source freepats.cfg\n")
+        message(STATUS "FreePats installed successfully")
+    endif()
+endif()
+
 # DOOM source files (WASM-compatible only, exclude platform-specific)
 set(DOOM_SOURCES
     ${DOOMGENERIC_DIR}/doomgeneric/dummy.c
@@ -203,12 +247,15 @@ target_compile_options(doom_sce PRIVATE
 target_link_options(doom_sce PRIVATE
     -sUSE_SDL=2
     -sUSE_SDL_MIXER=2
+    "-sSDL2_MIXER_FORMATS=[\"mid\"]"
     -sALLOW_MEMORY_GROWTH=1
     -sFORCE_FILESYSTEM=1
+    -lidbfs.js  # Enable IndexedDB filesystem for persistent saves
     -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS']
     -sEXPORTED_FUNCTIONS=['_main','_sce_init','_sce_get_game_state','_sce_get_player_state','_sce_get_weapon_state','_sce_get_enemy_count','_sce_get_enemy_killed','_sce_get_max_enemies','_sce_get_enemy_info','_sce_enemy_spawn','_sce_enemy_set_state','_sce_enemy_killed','_sce_enemy_remove','_sce_secret_get_state','_sce_secret_event_enable','_sce_secret_event_disable','_sce_secret_event_request','_sce_secret_event_cancel','_sce_secret_event_level_change','_sce_secret_event_reached','_sce_secret_path_found','_sce_secret_no_path']
     -sNO_EXIT_RUNTIME=1
-    --preload-file ${DOOMGENERIC_DIR}/doomgeneric/doom1.wad@doom1.wad
+    "SHELL:--preload-file ${DOOMGENERIC_DIR}/doomgeneric/doom1.wad@doom1.wad"
+    "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/freepats@/etc/timidity"
 )
 
 # Generate index.html with embedded SCXML Base64
