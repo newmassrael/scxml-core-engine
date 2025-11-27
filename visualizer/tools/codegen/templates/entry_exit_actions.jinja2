@@ -133,6 +133,12 @@
 {% endfor %}
 {% endif %}
 {% if state.on_entry_blocks %}
+{% set single_cpp_action = (state.on_entry_blocks|length == 1 and state.on_entry_blocks[0]|length == 1 and state.on_entry_blocks[0][0].type == 'script' and state.on_entry_blocks[0][0].is_cpp_function) %}
+{% if single_cpp_action %}
+                // W3C SCXML 3.8.6: Single <cpp> action - direct call (true Zero Overhead)
+                // Optimization: No std::vector, std::function, or EntryExitHelper overhead
+                {{ state.on_entry_blocks[0][0].content_transformed | trim }};
+{% else %}
                 {
                     // W3C SCXML 3.8: Build onentry block lambdas for EntryExitHelper
                     // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
@@ -153,6 +159,7 @@
                         entryBlocks, engine, "{{ state_id }}"
                     );
                 }
+{% endif %}
 {% elif state.on_entry %}
                 // Backward compatibility: flat on_entry list (deprecated - use on_entry_blocks)
 {% for action in state.on_entry %}
@@ -456,6 +463,12 @@
 {% endfor %}
 {% endif %}
 {% if state.on_exit_blocks %}
+{% set single_cpp_exit_action = (state.on_exit_blocks|length == 1 and state.on_exit_blocks[0]|length == 1 and state.on_exit_blocks[0][0].type == 'script' and state.on_exit_blocks[0][0].is_cpp_function) %}
+{% if single_cpp_exit_action %}
+                // W3C SCXML 3.9.6: Single <cpp> action - direct call (true Zero Overhead)
+                // Optimization: No std::vector, std::function, or EntryExitHelper overhead
+                {{ state.on_exit_blocks[0][0].content_transformed | trim }};
+{% else %}
                 {
                     // W3C SCXML 3.9: Build onexit block lambdas for EntryExitHelper
                     // ARCHITECTURE.md Zero Duplication: Delegate to shared Helper (lines 311-373)
@@ -476,6 +489,7 @@
                         exitBlocks, engine, "{{ state_id }}"
                     );
                 }
+{% endif %}
 {% elif state.on_exit %}
                 // Backward compatibility: flat on_exit list (deprecated - use on_exit_blocks)
 {% for action in state.on_exit %}

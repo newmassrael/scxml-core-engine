@@ -167,15 +167,22 @@ const ActionFormatter = (function() {
     /**
      * Format script action
      * W3C SCXML 5.9: Execute ECMAScript code
+     * Supports <cpp> tag for direct C++ function calls
      * @param {Object} action - Script action object
      * @returns {string} Formatted action text
      */
     function formatScriptAction(action) {
-        const icon = '📜';
         const content = action.content || action.src || '';
 
         if (!content) {
-            return `${icon} Script: (empty)`;
+            return `📜 Script: (empty)`;
+        }
+
+        // Detect <cpp> tag for C++ direct calls
+        const cppMatch = content.match(/<cpp>([\s\S]*?)<\/cpp>/);
+        if (cppMatch) {
+            const cppCode = cppMatch[1].trim();
+            return `⚙️ C++: ${cppCode}`;
         }
 
         // Show script content (no truncation)
@@ -183,10 +190,10 @@ const ActionFormatter = (function() {
 
         // If it's a source file reference
         if (action.src) {
-            return `${icon} Script: src="${scriptContent}"`;
+            return `📜 Script: src="${scriptContent}"`;
         }
 
-        return `${icon} Script: ${scriptContent}`;
+        return `📜 Script: ${scriptContent}`;
     }
 
     /**
