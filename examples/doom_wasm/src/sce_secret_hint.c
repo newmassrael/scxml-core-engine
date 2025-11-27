@@ -2457,6 +2457,18 @@ void Secret_SetEnabled(boolean enabled) {
     }
 }
 
+void Secret_PrepareForSave(void) {
+    /* Remove hint sprites before save - they're mobj and would be serialized */
+    RemoveHintSprites();
+}
+
+void Secret_RestoreAfterSave(void) {
+    /* Respawn hint sprites after save if path is still active */
+    if (s_path_active && s_current_path.valid && s_current_path.num_arrows > 0) {
+        SpawnHintSprites(&s_current_path);
+    }
+}
+
 boolean Secret_IsPathToHiddenDoor(void) {
     return s_path_to_hidden_door;
 }

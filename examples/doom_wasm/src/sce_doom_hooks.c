@@ -10,7 +10,14 @@
 #include "info.h"
 #include "sce_wrapper.h"
 #include "sce_secret_hint.h"
+#include "p_tick.h"
+#include "p_local.h"
+#include "doomstat.h"
+#include "d_player.h"
 #include <string.h>
+
+/* Forward declaration for P_MobjThinker */
+void P_MobjThinker(mobj_t *mobj);
 
 /* Monster type names for SCE enemy tracking */
 static const char *SCE_GetMonsterTypeName(mobjtype_t type) {
@@ -203,6 +210,27 @@ void SCE_EnemyRemoved(mobj_t *mobj) {
     sce_enemy_remove(mobj);
 }
 
+void SCE_EnemyClearAll(void) {
+    sce_enemy_clear_all();
+}
+
+void SCE_EnemyRescanAll(void) {
+    /* Iterate through all thinkers and re-register live monsters */
+    extern thinker_t thinkercap;
+    thinker_t *th;
+
+    for (th = thinkercap.next; th != &thinkercap; th = th->next) {
+        /* Check if this is a mobj thinker */
+        if (th->function.acp1 == (actionf_p1)P_MobjThinker) {
+            mobj_t *mobj = (mobj_t *)th;
+            /* Only register live monsters (not corpses) */
+            if (SCE_IsMonster(mobj) && mobj->health > 0) {
+                sce_enemy_spawn(mobj, SCE_GetMonsterTypeName(mobj->type));
+            }
+        }
+    }
+}
+
 /* Secret hint events */
 void SCE_SecretHintEnable(void) {
     Secret_SetEnabled(true);
@@ -214,14 +242,33 @@ void SCE_SecretHintDisable(void) {
     sce_secret_event_disable();
 }
 
+void SCE_SecretHintToggle(void) {
+    /* H key: Toggle hint system on/off using SCXML toggle event */
+    const char *state = sce_secret_get_state();
+    if (state && strcmp(state, "disabled") == 0) {
+        /* Enable: send toggle event to transition from disabled → calculating */
+        Secret_SetEnabled(true);
+    } else {
+        /* Disable: send toggle event to transition from any enabled state → disabled */
+        Secret_ClearPath();
+        Secret_SetEnabled(false);
+    }
+    /* The SCXML state machine handles the toggle event to switch states */
+    sce_secret_event_toggle();
+}
+
 void SCE_SecretHintRequest(void) {
-    /* H key: Toggle path visibility */
+    /* Request path to current target */
     Secret_ClearPath();  /* Clear old path first */
-    sce_secret_event_next_target();
+    sce_secret_event_request();
 }
 
 void SCE_SecretHintPrevious(void) {
-    /* G key: No longer used - kept for API compatibility */
+    /* G key: Select previous target */
+    if (Secret_SelectPrevTarget()) {
+        Secret_ClearPath();
+        sce_secret_event_select();
+    }
 }
 
 void SCE_SecretHintCancel(void) {
@@ -254,4 +301,13 @@ void SCE_SecretCheckReached(void) {
 
 const char* SCE_SecretGetStateName(void) {
     return sce_secret_get_state();
+}
+
+/* DOOM Level Statistics */
+int SCE_GetLevelTotalKills(void) {
+    return totalkills;
+}
+
+int SCE_GetPlayerKillCount(void) {
+    return players[0].killcount;
 }

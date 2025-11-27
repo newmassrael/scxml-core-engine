@@ -49,6 +49,10 @@ void sce_secret_path_found(void);
 void sce_secret_no_path(void);
 void sce_secret_recalculate(void);
 const char *sce_secret_get_state(void);
+
+// DOOM level statistics helper functions (defined in sce_doom_hooks.c)
+int SCE_GetLevelTotalKills(void);
+int SCE_GetPlayerKillCount(void);
 }
 
 // ============================================
@@ -242,7 +246,7 @@ const char *sce_get_weapon_state(void);
 // Forward declarations for JavaScript callbacks (defined below)
 static inline void js_notify_state_change(const char *machine, const char *state);
 static inline void js_notify_enemy_update(int slot, const char *type, const char *state, int instance_id, bool active);
-static inline void js_notify_stats_update(int enemy_count, int enemy_killed);
+static inline void js_notify_stats_update(int enemy_count, int enemy_killed, int enemy_remaining);
 static inline void js_notify_secret_path(int num_arrows, int remaining_secrets);
 static inline void js_notify_secret_arrow(int index, int x, int y, int angle);
 static inline void js_notify_target_info(const char *type_name, const char *name, int index, int total);
@@ -288,7 +292,7 @@ static void reset_all_enemies(bool notify_dead = false) {
     g_enemy_count = 0;
     g_enemy_killed = 0;
     g_next_instance_id = 1;
-    js_notify_stats_update(0, 0);
+    js_notify_stats_update(0, 0, 0);
 }
 
 // ============================================
@@ -320,15 +324,15 @@ static inline void js_notify_enemy_update(int slot, const char *type, const char
 #endif
 }
 
-static inline void js_notify_stats_update(int enemy_count, int enemy_killed) {
+static inline void js_notify_stats_update(int enemy_count, int enemy_killed, int enemy_remaining) {
 #ifdef __EMSCRIPTEN__
     EM_ASM(
         {
             if (typeof window.onSceStatsUpdate === 'function') {
-                window.onSceStatsUpdate($0, $1);
+                window.onSceStatsUpdate($0, $1, $2);
             }
         },
-        enemy_count, enemy_killed);
+        enemy_count, enemy_killed, enemy_remaining);
 #endif
 }
 
@@ -427,7 +431,7 @@ void sce_init(void) {
     js_notify_state_change("player", sce_get_player_state());
     js_notify_state_change("weapon", sce_get_weapon_state());
     js_notify_state_change("secret", sce_secret_get_state());
-    js_notify_stats_update(0, 0);
+    js_notify_stats_update(0, 0, 0);
 }
 
 // ============================================
@@ -613,6 +617,23 @@ int sce_get_max_enemies(void) {
     return MAX_ENEMIES;
 }
 
+// DOOM Level Statistics
+EMSCRIPTEN_KEEPALIVE
+int sce_get_level_total_kills(void) {
+    return SCE_GetLevelTotalKills();
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_player_kill_count(void) {
+    return SCE_GetPlayerKillCount();
+}
+
+EMSCRIPTEN_KEEPALIVE
+int sce_get_enemies_remaining(void) {
+    // Return count of currently tracked live enemies
+    return g_enemy_count;
+}
+
 // Get enemy info by slot: returns "ptr,type,state,instance_id" or empty
 EMSCRIPTEN_KEEPALIVE
 const char *sce_get_enemy_info(int slot) {
@@ -667,7 +688,8 @@ void sce_enemy_spawn(void *mobj, const char *type_name) {
 
     // 100% sync callback
     js_notify_enemy_update(slot, type_name, state_name, g_enemies[slot].instance_id, true);
-    js_notify_stats_update(g_enemy_count, g_enemy_killed);
+    // Use g_enemy_count directly - DOOM's totalkills lags during spawn phase
+    js_notify_stats_update(g_enemy_count, g_enemy_killed, g_enemy_count);
 }
 
 // Called from DOOM when enemy state changes
@@ -708,7 +730,7 @@ void sce_enemy_killed(void *mobj) {
 
     // 100% sync callback - notify dead state first
     js_notify_enemy_update(slot, g_enemies[slot].type_name, state_name, g_enemies[slot].instance_id, true);
-    js_notify_stats_update(g_enemy_count, g_enemy_killed);
+    js_notify_stats_update(g_enemy_count, g_enemy_killed, g_enemy_count);
 }
 
 // Called from DOOM when enemy is removed from map
@@ -734,7 +756,22 @@ void sce_enemy_remove(void *mobj) {
     g_enemies[slot].mobj_ptr = nullptr;
     g_enemy_count--;
 
-    js_notify_stats_update(g_enemy_count, g_enemy_killed);
+    js_notify_stats_update(g_enemy_count, g_enemy_killed, g_enemy_count);
+}
+
+// Clear all enemy tracking (for save/load)
+EMSCRIPTEN_KEEPALIVE
+void sce_enemy_clear_all(void) {
+    for (int i = 0; i < MAX_ENEMIES; i++) {
+        if (g_enemies[i].active) {
+            g_enemies[i].sm.reset();
+            g_enemies[i].active = false;
+            g_enemies[i].mobj_ptr = nullptr;
+        }
+    }
+    g_enemy_count = 0;
+    g_enemy_killed = 0;
+    js_notify_stats_update(g_enemy_count, g_enemy_killed, g_enemy_count);
 }
 
 // ============================================
@@ -843,6 +880,14 @@ EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_request(void) {
     // Backwards compatibility - same as toggle
     sce_secret_event_next_target();
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_event_select(void) {
+    // Select event: triggers path calculation to currently selected target
+    if (g_secret_sm) {
+        g_secret_sm->processEvent(SecretEvent::Select);
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE

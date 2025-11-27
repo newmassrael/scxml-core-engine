@@ -35,27 +35,13 @@ set(SCE_HOOKS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/sce_doom_hooks.c")
 set(SCE_SECRET_HINT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/sce_secret_hint.c")
 
 # ============================================
-# DOOM Sources (cloned from doomgeneric)
+# DOOM Sources (pre-patched doomgeneric included in repo)
 # ============================================
 set(DOOMGENERIC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/doomgeneric")
 
-# Check if doomgeneric exists
-if(NOT EXISTS ${DOOMGENERIC_DIR})
-    message(STATUS "Cloning doomgeneric...")
-    execute_process(
-        COMMAND git clone --depth 1 https://github.com/ozkl/doomgeneric.git ${DOOMGENERIC_DIR}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    )
-
-    # Apply SCE integration patches using Python script
-    message(STATUS "Applying SCE integration patches...")
-    execute_process(
-        COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/patches/apply_patches.py ${DOOMGENERIC_DIR}
-        RESULT_VARIABLE PATCH_RESULT
-    )
-    if(NOT PATCH_RESULT EQUAL 0)
-        message(WARNING "Patch application had issues, check output")
-    endif()
+# Verify doomgeneric exists (should be committed to repo)
+if(NOT EXISTS ${DOOMGENERIC_DIR}/doomgeneric)
+    message(FATAL_ERROR "doomgeneric source not found. This should be included in the repository.")
 endif()
 
 # Download shareware doom1.wad if not present
@@ -252,7 +238,7 @@ target_link_options(doom_sce PRIVATE
     -sFORCE_FILESYSTEM=1
     -lidbfs.js  # Enable IndexedDB filesystem for persistent saves
     -sEXPORTED_RUNTIME_METHODS=['ccall','cwrap','FS']
-    -sEXPORTED_FUNCTIONS=['_main','_sce_init','_sce_get_game_state','_sce_get_player_state','_sce_get_weapon_state','_sce_get_enemy_count','_sce_get_enemy_killed','_sce_get_max_enemies','_sce_get_enemy_info','_sce_enemy_spawn','_sce_enemy_set_state','_sce_enemy_killed','_sce_enemy_remove','_sce_secret_get_state','_sce_secret_event_enable','_sce_secret_event_disable','_sce_secret_event_request','_sce_secret_event_cancel','_sce_secret_event_level_change','_sce_secret_event_reached','_sce_secret_path_found','_sce_secret_no_path']
+    -sEXPORTED_FUNCTIONS=['_main','_sce_init','_sce_get_game_state','_sce_get_player_state','_sce_get_weapon_state','_sce_get_enemy_count','_sce_get_enemy_killed','_sce_get_max_enemies','_sce_get_enemy_info','_sce_get_enemies_remaining','_sce_get_level_total_kills','_sce_get_player_kill_count','_sce_enemy_spawn','_sce_enemy_set_state','_sce_enemy_killed','_sce_enemy_remove','_sce_secret_get_state','_sce_secret_event_enable','_sce_secret_event_disable','_sce_secret_event_request','_sce_secret_event_cancel','_sce_secret_event_level_change','_sce_secret_event_reached','_sce_secret_path_found','_sce_secret_no_path']
     -sNO_EXIT_RUNTIME=1
     "SHELL:--preload-file ${DOOMGENERIC_DIR}/doomgeneric/doom1.wad@doom1.wad"
     "SHELL:--preload-file ${CMAKE_CURRENT_SOURCE_DIR}/freepats@/etc/timidity"

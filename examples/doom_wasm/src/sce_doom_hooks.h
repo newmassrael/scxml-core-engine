@@ -67,12 +67,23 @@ void SCE_EnemyRemoved(mobj_t *mobj);
 boolean SCE_IsMonster(mobj_t *mobj);
 
 /**
+ * Clear all enemy tracking (call before loading saved game)
+ */
+void SCE_EnemyClearAll(void);
+
+/**
+ * Re-scan all thinkers and register live monsters (call after loading saved game)
+ */
+void SCE_EnemyRescanAll(void);
+
+/**
  * Secret hint events
  */
 void SCE_SecretHintEnable(void);
 void SCE_SecretHintDisable(void);
-void SCE_SecretHintRequest(void);       /* H key: toggle path visibility */
-void SCE_SecretHintPrevious(void);      /* G key: deprecated, no-op */
+void SCE_SecretHintToggle(void);        /* H key: toggle hint system on/off */
+void SCE_SecretHintRequest(void);       /* Request path to current target */
+void SCE_SecretHintPrevious(void);      /* G key: select previous target */
 void SCE_SecretHintCancel(void);        /* Cancel current hint display */
 void SCE_SecretLevelChange(void);       /* New level loaded */
 
@@ -85,6 +96,12 @@ void SCE_SecretCheckReached(void);
  * Get current secret hint state name
  */
 const char* SCE_SecretGetStateName(void);
+
+/**
+ * DOOM Level Statistics - for UI display
+ */
+int SCE_GetLevelTotalKills(void);
+int SCE_GetPlayerKillCount(void);
 
 #ifdef __cplusplus
 }

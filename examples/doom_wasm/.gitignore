@@ -2,9 +2,11 @@
 build/
 cmake_build/
 
-# Cloned/downloaded during CMake configure
-doomgeneric/
+# Downloaded at build time
+doomgeneric/doomgeneric/doom1.wad
 
 # Generated state machine headers
 generated/
+
+# Downloaded at build time (FreePats soundfont ~33MB)
 freepats/

@@ -373,7 +373,7 @@
                 <h3>Enemy Tracker</h3>
                 <div class="enemy-stats">
                     <div class="enemy-stat">
-                        <div class="label">Active</div>
+                        <div class="label">Remaining</div>
                         <div class="value" id="enemy-count">0</div>
                     </div>
                     <div class="enemy-stat">
@@ -494,7 +494,7 @@
                 const gameState = doomModule.ccall('sce_get_game_state', 'string', [], []);
                 const playerState = doomModule.ccall('sce_get_player_state', 'string', [], []);
                 const weaponState = doomModule.ccall('sce_get_weapon_state', 'string', [], []);
-                const enemyCount = doomModule.ccall('sce_get_enemy_count', 'number', [], []);
+                const enemyCount = doomModule.ccall('sce_get_enemies_remaining', 'number', [], []);
                 const enemyKilled = doomModule.ccall('sce_get_enemy_killed', 'number', [], []);
 
                 // Update display

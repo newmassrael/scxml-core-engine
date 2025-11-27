@@ -142,6 +142,18 @@ void Secret_RenderArrows(void);
 boolean Secret_IsEnabled(void);
 
 /**
+ * Remove hint sprites before save game (sprites not serializable).
+ * Call before P_ArchiveThinkers().
+ */
+void Secret_PrepareForSave(void);
+
+/**
+ * Respawn hint sprites after save game.
+ * Call after P_ArchiveThinkers().
+ */
+void Secret_RestoreAfterSave(void);
+
+/**
  * Enable/disable hint system.
  */
 void Secret_SetEnabled(boolean enabled);
@@ -230,6 +242,14 @@ void Secret_GetSelectionInfo(target_type_t *out_type, int *out_index, int *out_t
 /* External functions from sce_wrapper.cpp (SCXML state machine integration) */
 void sce_secret_recalculate(void);
 const char *sce_secret_get_state(void);
+void sce_secret_event_toggle(void);
+void sce_secret_event_enable(void);
+void sce_secret_event_disable(void);
+void sce_secret_event_request(void);
+void sce_secret_event_select(void);
+void sce_secret_event_cancel(void);
+void sce_secret_event_level_change(void);
+void sce_secret_event_reached(void);
 
 #ifdef __cplusplus
 }

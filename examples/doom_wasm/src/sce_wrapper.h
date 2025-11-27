@@ -46,11 +46,17 @@ int sce_get_enemy_killed(void);
 int sce_get_max_enemies(void);
 const char *sce_get_enemy_info(int slot);
 
+/* DOOM Level Statistics */
+int sce_get_level_total_kills(void);     /* Total monsters in level */
+int sce_get_player_kill_count(void);     /* Player's kill count */
+int sce_get_enemies_remaining(void);     /* Remaining = total - killed */
+
 /* Enemy lifecycle functions - call from DOOM code */
 void sce_enemy_spawn(void *mobj, const char *type_name);
 void sce_enemy_set_state(void *mobj, const char *state_name);
 void sce_enemy_killed(void *mobj);
 void sce_enemy_remove(void *mobj);
+void sce_enemy_clear_all(void);  /* Clear all tracking (for save/load) */
 
 /* Secret Hint State Machine */
 const char *sce_secret_get_state(void);
