@@ -4,15 +4,32 @@
     <meta charset="UTF-8">
     <title>DOOM + SCE State Machines</title>
     <style>
-        body { margin: 0; padding: 20px; padding-bottom: 50px; background: #1a1a1a; color: #fff; font-family: monospace; }
-        .container { width: 100%; margin: 0 auto; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            background: #1a1a1a;
+            color: #fff;
+            font-family: monospace;
+            overflow: hidden;
+        }
+        .container {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
 
-        /* Game Section */
+        /* Game Section - Fixed at top */
         #game-section {
+            flex-shrink: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
-            margin-bottom: 20px;
+            padding: 15px 20px;
+            background: #1a1a1a;
+            border-bottom: 1px solid #444;
         }
         #game-container {
             display: inline-block;
@@ -24,7 +41,7 @@
             background: #000;
             aspect-ratio: 8 / 5;
             resize: horizontal;
-            max-width: min(calc(100vw - 60px), calc((100vh - 20px) * 8 / 5));
+            max-width: min(calc(100vw - 60px), 1600px);
         }
         #game-container::after {
             content: '';
@@ -45,8 +62,18 @@
             image-rendering: crisp-edges;
         }
 
+        /* Panel Section - Vertical scroll only in this area */
+        #panel-section {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 10px 20px 70px 20px;
+        }
+
         /* Tab Section */
-        .tab-container { margin-top: 20px; }
+        .tab-container {
+            margin-top: 10px;
+        }
         .tab-buttons {
             display: flex;
             justify-content: center;
@@ -151,6 +178,40 @@
             color: #ffcc00;
             font-weight: bold;
         }
+        /* Destination mode selector */
+        .dest-selector {
+            margin-left: auto;
+        }
+        .dest-btn {
+            padding: 4px 8px;
+            margin-left: 5px;
+            background: #444;
+            border: 1px solid #666;
+            border-radius: 4px;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        .dest-btn:hover {
+            background: #555;
+            color: #fff;
+        }
+        .dest-btn.active {
+            background: #f39c12;
+            border-color: #f39c12;
+            color: #000;
+            font-weight: bold;
+        }
+        /* Door info display */
+        .door-info {
+            margin-left: 10px;
+            padding: 4px 10px;
+            background: #2a2a2a;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #ffcc00;
+            font-size: 12px;
+        }
         .secret-state-text {
             font-weight: bold;
         }
@@ -160,6 +221,71 @@
         .secret-state-text.showing { color: #00ffff; }
         .secret-state-text.found { color: #ff00ff; }
         .secret-state-text.no_path { color: #ff6600; }
+
+        /* Aim Assist Section */
+        .aim-section {
+            display: none;
+            padding: 10px;
+            background: #252525;
+            border: 1px solid #555;
+            border-bottom: none;
+        }
+        .aim-section.visible {
+            display: block;
+        }
+        .aim-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .aim-info .info-item {
+            padding: 5px 10px;
+            background: #333;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .aim-state-text {
+            font-weight: bold;
+        }
+        .aim-state-text.disabled { color: #666; }
+        .aim-state-text.enabled { color: #00ff00; }
+        .aim-features {
+            margin: 10px 0;
+            padding: 10px;
+            background: #1a1a1a;
+            border-radius: 4px;
+        }
+        .aim-features .feature-item {
+            color: #aaa;
+            font-size: 11px;
+            padding: 3px 0;
+        }
+        .aim-features .feature-item::before {
+            content: '✓ ';
+            color: #00ff00;
+        }
+        .aim-toggle-btn {
+            padding: 10px 20px;
+            background: #333;
+            border: 2px solid #555;
+            border-radius: 6px;
+            color: #fff;
+            cursor: pointer;
+            font-family: monospace;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .aim-toggle-btn:hover {
+            background: #444;
+            border-color: #666;
+        }
+        .aim-toggle-btn.enabled {
+            background: #1a4a1a;
+            border-color: #00ff00;
+            color: #00ff00;
+        }
 
         /* Target Buttons Section */
         .target-buttons-container {
@@ -222,6 +348,24 @@
         .target-btn.teleporter { border-left: 3px solid #aa00ff; }
         .target-btn.exit { border-left: 3px solid #00ff00; }
         .target-btn.keydoor { border-left: 3px solid #ffff00; }
+        .target-btn.enemy { border-left: 3px solid #ff0000; }
+        .target-btn.enemy.dead {
+            border-left-color: #666;
+            background: #2a2a2a;
+            color: #666;
+            text-decoration: line-through;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        .target-btn.enemy.dead::after {
+            content: ' X';
+            color: #ff0000;
+            text-decoration: none;
+        }
+        .target-btn:disabled {
+            cursor: not-allowed;
+            pointer-events: none;
+        }
 
         /* Visualizer Section */
         #viz-section {
@@ -276,8 +420,9 @@
             </div>
         </div>
 
-        <!-- Tab + Visualizer Section -->
-        <div class="tab-container">
+        <!-- Panel Section - Scrollable -->
+        <div id="panel-section">
+            <div class="tab-container">
             <div class="tab-buttons">
                 <button class="tab-btn active" data-machine="game" onclick="switchTab('game')">
                     Game <span class="state-indicator" id="ind-game">DEMOSCREEN</span>
@@ -289,10 +434,13 @@
                     Weapon <span class="state-indicator" id="ind-weapon">READY</span>
                 </button>
                 <button class="tab-btn" data-machine="enemy" onclick="switchTab('enemy')">
-                    Enemy <span class="state-indicator" id="ind-enemy">0 active</span>
+                    Enemy <span class="state-indicator" id="ind-enemy">0 remaining</span>
                 </button>
                 <button class="tab-btn" data-machine="secret" onclick="switchTab('secret')">
                     Secret <span class="state-indicator" id="ind-secret">disabled</span>
+                </button>
+                <button class="tab-btn" data-machine="aim" onclick="switchTab('aim')">
+                    Aim <span class="state-indicator" id="ind-aim">disabled</span>
                 </button>
             </div>
             <div id="enemy-section" class="enemy-section">
@@ -304,6 +452,13 @@
                 <div class="secret-info">
                     <div class="info-item">State: <span id="secret-state" class="secret-state-text disabled">disabled</span></div>
                     <div class="info-item">Path: <span id="secret-arrows">0</span> waypoints</div>
+                    <span id="path-partial-warning" style="display: none; color: #ff6600; font-weight: bold; margin-left: 10px;">UNREACHABLE</span>
+                    <div class="info-item dest-selector" id="dest-selector" style="display: none;">
+                        Path to:
+                        <button class="dest-btn active" id="dest-trigger-btn" onclick="setDestMode(0)">Trigger</button>
+                        <button class="dest-btn" id="dest-sector-btn" onclick="setDestMode(1)">Sector</button>
+                    </div>
+                    <div class="info-item door-info" id="door-info" style="display: none;"></div>
                 </div>
                 <div class="target-buttons-container" id="target-buttons">
                     <!-- Target buttons will be generated dynamically -->
@@ -314,10 +469,26 @@
                     <div class="target-group" id="group-teleporter"><span class="group-label">Teleport</span></div>
                     <div class="target-group" id="group-exit"><span class="group-label">Exit</span></div>
                     <div class="target-group" id="group-keydoor"><span class="group-label">KeyDoor</span></div>
+                    <div class="target-group" id="group-enemy"><span class="group-label">Enemy</span></div>
                 </div>
+            </div>
+            <div id="aim-section" class="aim-section">
+                <div class="aim-info">
+                    <div class="info-item">State: <span id="aim-state" class="aim-state-text disabled">disabled</span></div>
+                    <div class="info-item">Press <span class="hint-key">Y</span> to toggle</div>
+                </div>
+                <div class="aim-features">
+                    <div class="feature-item">Auto-aim snaps to nearest enemy</div>
+                    <div class="feature-item">100% accuracy (no weapon spread)</div>
+                    <div class="feature-item">Extended vertical aim range</div>
+                </div>
+                <button id="aim-toggle-btn" class="aim-toggle-btn" onclick="toggleAimAssist()">
+                    Enable Aim Assist
+                </button>
             </div>
             <div id="viz-section">
                 <iframe id="visualizer" src="visualizer/visualizer.html?embed#scxml=PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBHYW1lIFN0YXRlIE1hY2hpbmUKCiAgICBNb2RlbHMgRE9PTSdzIGFjdHVhbCBnYW1lIHN0YXRlIHRyYW5zaXRpb25zOgogICAgLSBERU1PU0NSRUVOOiBUaXRsZSBzY3JlZW4gLyBkZW1vIHBsYXliYWNrCiAgICAtIExFVkVMOiBBY3RpdmUgZ2FtZXBsYXkKICAgIC0gSU5URVJNSVNTSU9OOiBCZXR3ZWVuLWxldmVsIHN0YXRpc3RpY3MKICAgIC0gRklOQUxFOiBFbmQgb2YgZXBpc29kZS9nYW1lIHRleHQgc2VxdWVuY2UKCiAgICBBY3R1YWwgRE9PTSBmbG93OgogICAgMS4gREVNT1NDUkVFTiDihpIgKG5ld2dhbWUvbG9hZGdhbWUpIOKGkiBMRVZFTAogICAgMi4gTEVWRUwg4oaSIChjb21wbGV0ZWQpIOKGkiBJTlRFUk1JU1NJT04KICAgIDMuIElOVEVSTUlTU0lPTiDihpIgKHdvcmxkZG9uZSkg4oaSIExFVkVMIChuZXh0IGxldmVsKQogICAgNC4gSU5URVJNSVNTSU9OIOKGkiAoZmluYWxlKSDihpIgRklOQUxFIChlbmQgb2YgZXBpc29kZSkKICAgIDUuIExFVkVMIOKGkiAoZmluYWxlKSDihpIgRklOQUxFICh2aWN0b3J5L3NlY3JldCBleGl0KQogICAgNi4gRklOQUxFIOKGkiAod29ybGRkb25lKSDihpIgTEVWRUwgKGNvbnRpbnVlIHRvIG5leHQgZXBpc29kZSkKCiAgICBXM0MgU0NYTUwgMS4wIGNvbXBsaWFudAotLT4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIgogICAgICAgdmVyc2lvbj0iMS4wIgogICAgICAgaW5pdGlhbD0iZGVtb3NjcmVlbiIKICAgICAgIGRhdGFtb2RlbD0ibnVsbCI+CgogICAgPCEtLSBJbml0aWFsIHN0YXRlOiBEZW1vL1RpdGxlIHNjcmVlbiAtLT4KICAgIDxzdGF0ZSBpZD0iZGVtb3NjcmVlbiI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9Im5ld2dhbWUiIHRhcmdldD0ibGV2ZWwiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibG9hZGdhbWUiIHRhcmdldD0ibGV2ZWwiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBBY3RpdmUgZ2FtZXBsYXkgLS0+CiAgICA8c3RhdGUgaWQ9ImxldmVsIj4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iY29tcGxldGVkIiB0YXJnZXQ9ImludGVybWlzc2lvbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJmaW5hbGUiIHRhcmdldD0iZmluYWxlIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gQmV0d2Vlbi1sZXZlbCBpbnRlcm1pc3Npb24gLS0+CiAgICA8c3RhdGUgaWQ9ImludGVybWlzc2lvbiI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9IndvcmxkZG9uZSIgdGFyZ2V0PSJsZXZlbCIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJmaW5hbGUiIHRhcmdldD0iZmluYWxlIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRW5kIGdhbWUvZXBpc29kZSBmaW5hbGUgdGV4dCAtLT4KICAgIDxzdGF0ZSBpZD0iZmluYWxlIj4KICAgICAgICA8IS0tIEFmdGVyIGZpbmFsZSB0ZXh0LCBwbGF5ZXIgY29udGludWVzIHRvIG5leHQgbGV2ZWwvZXBpc29kZSAtLT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0id29ybGRkb25lIiB0YXJnZXQ9ImxldmVsIi8+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K"></iframe>
+            </div>
             </div>
         </div>
 
@@ -380,21 +551,23 @@
             player: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBQbGF5ZXIgU3RhdGUgTWFjaGluZQoKICAgIE1vZGVscyBwbGF5ZXIgbGlmZWN5Y2xlOgogICAgLSBBTElWRTogTm9ybWFsIGdhbWVwbGF5LCBjYW4gdGFrZSBkYW1hZ2UKICAgIC0gREVBRDogRGVhdGggYW5pbWF0aW9uIHBsYXlpbmcsIGF3YWl0aW5nIHJlc3Bhd24KICAgIC0gUkVCT1JOOiBSZXNwYXduaW5nLCBicmllZiBpbnZ1bG5lcmFiaWxpdHkKCiAgICBXM0MgU0NYTUwgMS4wIGNvbXBsaWFudAotLT4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIgogICAgICAgdmVyc2lvbj0iMS4wIgogICAgICAgaW5pdGlhbD0iYWxpdmUiCiAgICAgICBkYXRhbW9kZWw9Im51bGwiPgoKICAgIDwhLS0gUGxheWluZyBzdGF0ZSAtIG5vcm1hbCBnYW1lcGxheSAtLT4KICAgIDxzdGF0ZSBpZD0iYWxpdmUiPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgICAgIDwhLS0gQ2hlYXQgY29kZXMgLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImdvZF9tb2RlX29uIiB0YXJnZXQ9ImludnVsbmVyYWJsZSIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIEludnVsbmVyYWJsZSBzdGF0ZSAoZ29kIG1vZGUpIC0tPgogICAgPHN0YXRlIGlkPSJpbnZ1bG5lcmFibGUiPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJnb2RfbW9kZV9vZmYiIHRhcmdldD0iYWxpdmUiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4gIDwhLS0gQ2FuIHN0aWxsIGRpZSBmcm9tIHNwZWNpYWwgY2FzZXMgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRGVhZCBzdGF0ZSAtIGRlYXRoIGFuaW1hdGlvbiAtLT4KICAgIDxzdGF0ZSBpZD0iZGVhZCI+CiAgICAgICAgPCEtLSBQbGF5ZXIgcHJlc3NlZCB1c2UgdG8gcmVzcGF3biAtIHNldHMgUFNUX1JFQk9STiB3aGljaCB0cmlnZ2VycyByZXNwYXduIGV2ZW50IC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJyZXNwYXduIiB0YXJnZXQ9InJlYm9ybiIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIFJlYm9ybiBzdGF0ZSAtIHJlc3Bhd25pbmcgLS0+CiAgICA8c3RhdGUgaWQ9InJlYm9ybiI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNwYXduX2NvbXBsZXRlIiB0YXJnZXQ9ImFsaXZlIi8+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K',
             weapon: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogIERPT00gV2VhcG9uIFN0YXRlIE1hY2hpbmUKCiAgTW9kZWxzIHdlYXBvbiBhY3Rpb24gbGlmZWN5Y2xlIGFuZCB3ZWFwb24gc3dpdGNoaW5nLgogIFN0YXRlczogUkVBRFksIFJBSVNJTkcsIExPV0VSSU5HLCBGSVJJTkcKCiAgU3luY3Mgd2l0aCBET09NJ3MgcHNwZGVmX3Qgc3RhdGVzOgogIC0gdXBzdGF0ZTogV2VhcG9uIHJhaXNpbmcgYW5pbWF0aW9uCiAgLSBkb3duc3RhdGU6IFdlYXBvbiBsb3dlcmluZyBhbmltYXRpb24KICAtIHJlYWR5c3RhdGU6IFdlYXBvbiByZWFkeSB0byBmaXJlCiAgLSBhdGtzdGF0ZTogV2VhcG9uIGZpcmluZyBhbmltYXRpb24KCiAgQWxzbyB0cmFja3MgY3VycmVudCB3ZWFwb24gdHlwZSB2aWEgZXh0ZW5kZWQgZGF0YS4KLS0+CjxzY3htbCB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwNS8wNy9zY3htbCIgdmVyc2lvbj0iMS4wIiBpbml0aWFsPSJyZWFkeSIgZGF0YW1vZGVsPSJudWxsIj4KCiAgICA8IS0tIFJlYWR5IHN0YXRlIC0gd2VhcG9uIGNhbiBmaXJlIG9yIGJlIHN3aXRjaGVkIC0tPgogICAgPHN0YXRlIGlkPSJyZWFkeSI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDwhLS0gTG9nIHdlYXBvbiByZWFkeSAtLT4KICAgICAgICA8L29uZW50cnk+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImZpcmUiIHRhcmdldD0iZmlyaW5nIj4KICAgICAgICAgICAgPCEtLSBQbGF5ZXIgcHJlc3NlZCBmaXJlIGJ1dHRvbiAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InN3aXRjaF93ZWFwb24iIHRhcmdldD0ibG93ZXJpbmciPgogICAgICAgICAgICA8IS0tIFBsYXllciB3YW50cyB0byBzd2l0Y2ggd2VhcG9ucyAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gTG93ZXJpbmcgc3RhdGUgLSB3ZWFwb24gbW92aW5nIGRvd24gdG8gc3dpdGNoIC0tPgogICAgPHN0YXRlIGlkPSJsb3dlcmluZyI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDwhLS0gU3RhcnQgbG93ZXIgYW5pbWF0aW9uIC0tPgogICAgICAgIDwvb25lbnRyeT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibG93ZXJfY29tcGxldGUiIHRhcmdldD0icmFpc2luZyI+CiAgICAgICAgICAgIDwhLS0gV2VhcG9uIGZ1bGx5IGxvd2VyZWQsIG5vdyByYWlzZSBuZXcgd2VhcG9uIC0tPgogICAgICAgIDwvdHJhbnNpdGlvbj4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBSYWlzaW5nIHN0YXRlIC0gbmV3IHdlYXBvbiBjb21pbmcgdXAgLS0+CiAgICA8c3RhdGUgaWQ9InJhaXNpbmciPgogICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICA8IS0tIFN0YXJ0IHJhaXNlIGFuaW1hdGlvbiwgdXBkYXRlIGN1cnJlbnQgd2VhcG9uIHR5cGUgLS0+CiAgICAgICAgPC9vbmVudHJ5PgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJyYWlzZV9jb21wbGV0ZSIgdGFyZ2V0PSJyZWFkeSI+CiAgICAgICAgICAgIDwhLS0gV2VhcG9uIGZ1bGx5IHJhaXNlZCAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gRmlyaW5nIHN0YXRlIC0gd2VhcG9uIGF0dGFja2luZyAtLT4KICAgIDxzdGF0ZSBpZD0iZmlyaW5nIj4KICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgPCEtLSBJbmNyZW1lbnQgc2hvdCBjb3VudCAtLT4KICAgICAgICA8L29uZW50cnk+CiAgICAgICAgPCEtLSBTdGF5cyBpbiBmaXJpbmcgZHVyaW5nIGNvbnRpbnVvdXMgZmlyZSAoY2hhaW5ndW4sIGV0YyksIGV4aXRzIG9uIGZpcmVfY29tcGxldGUgLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImZpcmVfY29tcGxldGUiIHRhcmdldD0icmVhZHkiPgogICAgICAgICAgICA8IS0tIEF0dGFjayBhbmltYXRpb24gZmluaXNoZWQsIG5vdCByZWZpcmluZyAtLT4KICAgICAgICA8L3RyYW5zaXRpb24+CiAgICA8L3N0YXRlPgoKPC9zY3htbD4K',
             enemy: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHNjeG1sIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDA1LzA3L3NjeG1sIiB2ZXJzaW9uPSIxLjAiCiAgICAgICBuYW1lPSJFbmVteVN0YXRlIiBpbml0aWFsPSJkb3JtYW50Ij4KCiAgICA8IS0tCiAgICBET09NIEVuZW15IFN0YXRlIE1hY2hpbmUKCiAgICBTdGF0ZXM6CiAgICAtIGRvcm1hbnQ6IEVuZW15IGhhcyBub3QgZGV0ZWN0ZWQgcGxheWVyIChpZGxlL3BhdHJvbCkKICAgIC0gYWxlcnQ6IEVuZW15IGp1c3QgZGV0ZWN0ZWQgcGxheWVyLCBwcmVwYXJpbmcgdG8gYWN0CiAgICAtIGNoYXNpbmc6IEVuZW15IGlzIGFjdGl2ZWx5IHB1cnN1aW5nIHBsYXllcgogICAgLSBhdHRhY2tpbmc6IEVuZW15IGlzIHBlcmZvcm1pbmcgYXR0YWNrIGFuaW1hdGlvbgogICAgLSBwYWluOiBFbmVteSBpcyBpbiBwYWluIHN0YXRlIChoaXQgc3R1bikKICAgIC0gZGVhZDogRW5lbXkgaGFzIGJlZW4ga2lsbGVkCgogICAgTm90ZTogRWFjaCBlbmVteSBpbnN0YW5jZSBoYXMgaXRzIG93biBzdGF0ZSBtYWNoaW5lIGluc3RhbmNlCiAgICAtLT4KCiAgICA8IS0tIGRvcm1hbnQ6IEVuZW15IGlkbGUsIGhhc24ndCBzZWVuIHBsYXllciAtLT4KICAgIDxzdGF0ZSBpZD0iZG9ybWFudCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNlZV9wbGF5ZXIiIHRhcmdldD0iYWxlcnQiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0icGFpbiIgdGFyZ2V0PSJwYWluIi8+ICA8IS0tIENhbiB0YWtlIGRhbWFnZSBiZWZvcmUgc2VlaW5nIHBsYXllciAtLT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgIDwvc3RhdGU+CgogICAgPCEtLSBhbGVydDogSnVzdCBzcG90dGVkIHBsYXllciwgYWJvdXQgdG8gYWN0IC0tPgogICAgPHN0YXRlIGlkPSJhbGVydCI+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImNoYXNlIiB0YXJnZXQ9ImNoYXNpbmciLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iYXR0YWNrIiB0YXJnZXQ9ImF0dGFja2luZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJwYWluIiB0YXJnZXQ9InBhaW4iLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgICAgICA8IS0tIE5vdGU6IERPT00gZW5lbWllcyBkb24ndCByZXR1cm4gdG8gZG9ybWFudCBvbmNlIGFsZXJ0ZWQgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gY2hhc2luZzogQWN0aXZlbHkgcHVyc3VpbmcgcGxheWVyIC0tPgogICAgPHN0YXRlIGlkPSJjaGFzaW5nIj4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0iYXR0YWNrIiB0YXJnZXQ9ImF0dGFja2luZyIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJwYWluIiB0YXJnZXQ9InBhaW4iLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ia2lsbGVkIiB0YXJnZXQ9ImRlYWQiLz4KICAgICAgICA8IS0tIE5vdGU6IERPT00gZW5lbWllcyBwZXJzaXN0IGluIGNoYXNlIHVudGlsIGtpbGxlZCBvciBhdHRhY2tpbmcgLS0+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gYXR0YWNraW5nOiBQZXJmb3JtaW5nIGF0dGFjayAtLT4KICAgIDxzdGF0ZSBpZD0iYXR0YWNraW5nIj4KICAgICAgICA8IS0tIFJldHVybnMgdG8gY2hhc2luZyB2aWEgY2hhc2UgZXZlbnQgZnJvbSBBX0NoYXNlIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjaGFzZSIgdGFyZ2V0PSJjaGFzaW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InBhaW4iIHRhcmdldD0icGFpbiIvPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJraWxsZWQiIHRhcmdldD0iZGVhZCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIHBhaW46IEhpdCBzdHVuIHN0YXRlIC0tPgogICAgPHN0YXRlIGlkPSJwYWluIj4KICAgICAgICA8IS0tIFJldHVybnMgdG8gY2hhc2luZyB2aWEgY2hhc2UgZXZlbnQgZnJvbSBBX0NoYXNlIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJjaGFzZSIgdGFyZ2V0PSJjaGFzaW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImF0dGFjayIgdGFyZ2V0PSJhdHRhY2tpbmciLz4gIDwhLS0gQ2FuIGF0dGFjayBkaXJlY3RseSBmcm9tIHBhaW4gLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImtpbGxlZCIgdGFyZ2V0PSJkZWFkIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gZGVhZDogRmluYWwgc3RhdGUgLS0+CiAgICA8ZmluYWwgaWQ9ImRlYWQiLz4KCjwvc2N4bWw+Cg==',
-            secret: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBTZWNyZXQgYW5kIFRyaWdnZXIgSGludCBTdGF0ZSBNYWNoaW5lCgogICAgTWFuYWdlcyB0aGUgaGludCBzeXN0ZW0gZm9yIHNlY3JldHMgYW5kIGludGVyYWN0aXZlIHRyaWdnZXJzCiAgICAoZG9vcnMsIGxpZnRzLCBzd2l0Y2hlcywgdGVsZXBvcnRlcnMsIGV4aXRzKS4KCiAgICBTdGF0ZXM6CiAgICAtIERJU0FCTEVEOiBIaW50IHN5c3RlbSBpcyBvZmYsIG5vIHBhdGggZGlzcGxheWVkCiAgICAtIEVOQUJMRUQgKGNvbXBvdW5kKTogSGludCBzeXN0ZW0gaXMgb24KICAgICAgLSBDQUxDVUxBVElORzogQ29tcHV0aW5nIEJGUyBwYXRoIHRvIHNlbGVjdGVkIHRhcmdldAogICAgICAtIFNIT1dJTkc6IEFjdGl2ZWx5IGRpc3BsYXlpbmcgZmxvb3IgYXJyb3dzIHRvIHRhcmdldAogICAgICAtIEZPVU5EOiBQbGF5ZXIgcmVhY2hlZCB0aGUgdGFyZ2V0IChzZWNyZXRzIG9ubHkpCiAgICAgIC0gTk9fUEFUSDogTm8gYWNjZXNzaWJsZSBwYXRoIHRvIHNlbGVjdGVkIHRhcmdldAoKICAgIEV2ZW50czoKICAgIC0gdG9nZ2xlOiBIIGtleSAtIHRvZ2dsZSBoaW50IHN5c3RlbSBvbi9vZmYKICAgIC0gc2VsZWN0OiBCdXR0b24gY2xpY2sgLSBzZWxlY3QgdGFyZ2V0IGFuZCBzaG93IHBhdGgKICAgIC0gcmVjYWxjdWxhdGU6IFBsYXllciBtb3ZlZCAtIHJlY2FsY3VsYXRlIHBhdGgKICAgIC0gcGF0aF9mb3VuZDogQkZTIGZvdW5kIGEgdmFsaWQgcGF0aAogICAgLSBub19wYXRoOiBObyBwYXRoIGZvdW5kIHRvIHRhcmdldAogICAgLSBzZWNyZXRfcmVhY2hlZDogUGxheWVyIGVudGVyZWQgdGhlIHRhcmdldCBzZWNyZXQgc2VjdG9yCiAgICAtIGxldmVsX2NoYW5nZTogTmV3IGxldmVsIGxvYWRlZCwgcmVzZXQgaGludCBzdGF0ZQoKICAgIEMrKyBJbnRlZ3JhdGlvbjoKICAgIC0gVXNlcyA8Y3BwPiB0YWcgZm9yIGRpcmVjdCBDKysgZnVuY3Rpb24gY2FsbHMgKFplcm8gT3ZlcmhlYWQpCiAgICAtIHNlY3JldC54eHgoKSBjYWxscyBhcmUgdHJhbnNmb3JtZWQgdG8gdXNlcl8tPnNlY3JldC54eHgoKQogICAgLSBSZXF1aXJlcyBTZWNyZXRDb250ZXh0IHN0cnVjdCB0byBiZSBwYXNzZWQgdG8gc3RhdGUgbWFjaGluZQoKICAgIFczQyBTQ1hNTCAxLjAgY29tcGxpYW50Ci0tPgo8c2N4bWwgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDUvMDcvc2N4bWwiCiAgICAgICB2ZXJzaW9uPSIxLjAiCiAgICAgICBpbml0aWFsPSJkaXNhYmxlZCIKICAgICAgIGRhdGFtb2RlbD0ibnVsbCI+CgogICAgPCEtLSBIaW50IHN5c3RlbSBkaXNhYmxlZCAtLT4KICAgIDxzdGF0ZSBpZD0iZGlzYWJsZWQiPgogICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICA8c2NyaXB0PjxjcHA+c2VjcmV0Lm9uRGlzYWJsZWQoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgIDwvb25lbnRyeT4KICAgICAgICA8IS0tIEgga2V5IG9yIGJ1dHRvbiBjbGljayBlbmFibGVzIGhpbnQgc3lzdGVtIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJ0b2dnbGUiIHRhcmdldD0iY2FsY3VsYXRpbmciLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ic2VsZWN0IiB0YXJnZXQ9ImNhbGN1bGF0aW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIEhpbnQgc3lzdGVtIGVuYWJsZWQgKGNvbXBvdW5kIHN0YXRlKSAtLT4KICAgIDxzdGF0ZSBpZD0iZW5hYmxlZCIgaW5pdGlhbD0iY2FsY3VsYXRpbmciPgogICAgICAgIDwhLS0gSCBrZXkgZnJvbSBhbnkgc3ViLXN0YXRlIGRpc2FibGVzIGhpbnQgc3lzdGVtIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJ0b2dnbGUiIHRhcmdldD0iZGlzYWJsZWQiLz4KCiAgICAgICAgPCEtLSBDb21wdXRpbmcgcGF0aCB0byB0YXJnZXQgLS0+CiAgICAgICAgPHN0YXRlIGlkPSJjYWxjdWxhdGluZyI+CiAgICAgICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICAgICAgPHNjcmlwdD48Y3BwPnNlY3JldC5vbkNhbGN1bGF0aW5nKCk8L2NwcD48L3NjcmlwdD4KICAgICAgICAgICAgPC9vbmVudHJ5PgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0icGF0aF9mb3VuZCIgdGFyZ2V0PSJzaG93aW5nIi8+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJub19wYXRoIiB0YXJnZXQ9Im5vX3BhdGgiLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgogICAgICAgIDwvc3RhdGU+CgogICAgICAgIDwhLS0gQWN0aXZlbHkgZGlzcGxheWluZyBmbG9vciBhcnJvd3MgLS0+CiAgICAgICAgPHN0YXRlIGlkPSJzaG93aW5nIj4KICAgICAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgICAgICA8c2NyaXB0PjxjcHA+c2VjcmV0Lm9uU2hvd2luZygpPC9jcHA+PC9zY3JpcHQ+CiAgICAgICAgICAgIDwvb25lbnRyeT4KICAgICAgICAgICAgPG9uZXhpdD4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5zZWNyZXQub25FeGl0U2hvd2luZygpPC9jcHA+PC9zY3JpcHQ+CiAgICAgICAgICAgIDwvb25leGl0PgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ic2VsZWN0IiB0YXJnZXQ9ImNhbGN1bGF0aW5nIi8+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJyZWNhbGN1bGF0ZSIgdGFyZ2V0PSJjYWxjdWxhdGluZyIvPgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ic2VjcmV0X3JlYWNoZWQiIHRhcmdldD0iZm91bmQiLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgogICAgICAgIDwvc3RhdGU+CgogICAgICAgIDwhLS0gUGxheWVyIHJlYWNoZWQgdGhlIHNlY3JldCAoa2VlcCBzaG93aW5nIHBhdGgpIC0tPgogICAgICAgIDxzdGF0ZSBpZD0iZm91bmQiPgogICAgICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5zZWNyZXQub25Gb3VuZCgpPC9jcHA+PC9zY3JpcHQ+CiAgICAgICAgICAgIDwvb25lbnRyeT4KICAgICAgICAgICAgPG9uZXhpdD4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5zZWNyZXQub25FeGl0Rm91bmQoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgICAgICA8L29uZXhpdD4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNlbGVjdCIgdGFyZ2V0PSJjYWxjdWxhdGluZyIvPgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0icmVjYWxjdWxhdGUiIHRhcmdldD0iY2FsY3VsYXRpbmciLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgogICAgICAgIDwvc3RhdGU+CgogICAgICAgIDwhLS0gTm8gYWNjZXNzaWJsZSBwYXRoIHRvIHRhcmdldCAtLT4KICAgICAgICA8c3RhdGUgaWQ9Im5vX3BhdGgiPgogICAgICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5zZWNyZXQub25Ob1BhdGgoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgICAgICA8L29uZW50cnk+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJzZWxlY3QiIHRhcmdldD0iY2FsY3VsYXRpbmciLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InJlY2FsY3VsYXRlIiB0YXJnZXQ9ImNhbGN1bGF0aW5nIi8+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJsZXZlbF9jaGFuZ2UiIHRhcmdldD0iZGlzYWJsZWQiLz4KICAgICAgICA8L3N0YXRlPgogICAgPC9zdGF0ZT4KCjwvc2N4bWw+Cg=='
+            secret: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBTZWNyZXQgYW5kIFRyaWdnZXIgSGludCBTdGF0ZSBNYWNoaW5lCgogICAgTWFuYWdlcyB0aGUgaGludCBzeXN0ZW0gZm9yIHNlY3JldHMgYW5kIGludGVyYWN0aXZlIHRyaWdnZXJzCiAgICAoZG9vcnMsIGxpZnRzLCBzd2l0Y2hlcywgdGVsZXBvcnRlcnMsIGV4aXRzKS4KCiAgICBTdGF0ZXM6CiAgICAtIERJU0FCTEVEOiBIaW50IHN5c3RlbSBpcyBvZmYsIG5vIHBhdGggZGlzcGxheWVkCiAgICAtIEVOQUJMRUQgKGNvbXBvdW5kKTogSGludCBzeXN0ZW0gaXMgb24KICAgICAgLSBDQUxDVUxBVElORzogQ29tcHV0aW5nIEJGUyBwYXRoIHRvIHNlbGVjdGVkIHRhcmdldAogICAgICAtIFNIT1dJTkc6IEFjdGl2ZWx5IGRpc3BsYXlpbmcgZmxvb3IgYXJyb3dzIHRvIHRhcmdldAogICAgICAtIEZPVU5EOiBQbGF5ZXIgcmVhY2hlZCB0aGUgdGFyZ2V0IChzZWNyZXRzIG9ubHkpCiAgICAgIC0gTk9fUEFUSDogTm8gYWNjZXNzaWJsZSBwYXRoIHRvIHNlbGVjdGVkIHRhcmdldAoKICAgIEV2ZW50czoKICAgIC0gdG9nZ2xlOiBIIGtleSAtIHRvZ2dsZSBoaW50IHN5c3RlbSBvbi9vZmYKICAgIC0gc2VsZWN0OiBCdXR0b24gY2xpY2sgLSBzZWxlY3QgdGFyZ2V0IGFuZCBzaG93IHBhdGgKICAgIC0gcmVjYWxjdWxhdGU6IFBsYXllciBtb3ZlZCAtIHJlY2FsY3VsYXRlIHBhdGgKICAgIC0gcGF0aF9mb3VuZDogQkZTIGZvdW5kIGEgdmFsaWQgcGF0aAogICAgLSBub19wYXRoOiBObyBwYXRoIGZvdW5kIHRvIHRhcmdldAogICAgLSBzZWNyZXRfcmVhY2hlZDogUGxheWVyIGVudGVyZWQgdGhlIHRhcmdldCBzZWNyZXQgc2VjdG9yCiAgICAtIGxldmVsX2NoYW5nZTogTmV3IGxldmVsIGxvYWRlZCwgcmVzZXQgaGludCBzdGF0ZQoKICAgIEMrKyBJbnRlZ3JhdGlvbjoKICAgIC0gVXNlcyA8Y3BwPiB0YWcgZm9yIGRpcmVjdCBDKysgZnVuY3Rpb24gY2FsbHMgKFplcm8gT3ZlcmhlYWQpCiAgICAtIHNlY3JldC54eHgoKSBjYWxscyBhcmUgdHJhbnNmb3JtZWQgdG8gdXNlcl8tPnNlY3JldC54eHgoKQogICAgLSBSZXF1aXJlcyBTZWNyZXRDb250ZXh0IHN0cnVjdCB0byBiZSBwYXNzZWQgdG8gc3RhdGUgbWFjaGluZQoKICAgIFczQyBTQ1hNTCAxLjAgY29tcGxpYW50Ci0tPgo8c2N4bWwgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDUvMDcvc2N4bWwiCiAgICAgICB2ZXJzaW9uPSIxLjAiCiAgICAgICBpbml0aWFsPSJkaXNhYmxlZCIKICAgICAgIGRhdGFtb2RlbD0ibnVsbCI+CgogICAgPCEtLSBIaW50IHN5c3RlbSBkaXNhYmxlZCAtLT4KICAgIDxzdGF0ZSBpZD0iZGlzYWJsZWQiPgogICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICA8c2NyaXB0PjxjcHA+c2VjcmV0Lm9uRGlzYWJsZWQoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgIDwvb25lbnRyeT4KICAgICAgICA8IS0tIEgga2V5IG9yIGJ1dHRvbiBjbGljayBlbmFibGVzIGhpbnQgc3lzdGVtIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJ0b2dnbGUiIHRhcmdldD0iY2FsY3VsYXRpbmciLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ic2VsZWN0IiB0YXJnZXQ9ImNhbGN1bGF0aW5nIi8+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgogICAgPC9zdGF0ZT4KCiAgICA8IS0tIEhpbnQgc3lzdGVtIGVuYWJsZWQgKGNvbXBvdW5kIHN0YXRlKSAtLT4KICAgIDxzdGF0ZSBpZD0iZW5hYmxlZCIgaW5pdGlhbD0iY2FsY3VsYXRpbmciPgogICAgICAgIDwhLS0gSCBrZXkgZnJvbSBhbnkgc3ViLXN0YXRlIGRpc2FibGVzIGhpbnQgc3lzdGVtIC0tPgogICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJ0b2dnbGUiIHRhcmdldD0iZGlzYWJsZWQiLz4KCiAgICAgICAgPCEtLSBDb21wdXRpbmcgcGF0aCB0byB0YXJnZXQgLS0+CiAgICAgICAgPHN0YXRlIGlkPSJjYWxjdWxhdGluZyI+CiAgICAgICAgICAgIDxvbmVudHJ5PgogICAgICAgICAgICAgICAgPHNjcmlwdD48Y3BwPnNlY3JldC5vbkNhbGN1bGF0aW5nKCk8L2NwcD48L3NjcmlwdD4KICAgICAgICAgICAgPC9vbmVudHJ5PgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0icGF0aF9mb3VuZCIgdGFyZ2V0PSJzaG93aW5nIi8+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJub19wYXRoIiB0YXJnZXQ9Im5vX3BhdGgiLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgogICAgICAgIDwvc3RhdGU+CgogICAgICAgIDwhLS0gQWN0aXZlbHkgZGlzcGxheWluZyBmbG9vciBhcnJvd3MgLS0+CiAgICAgICAgPHN0YXRlIGlkPSJzaG93aW5nIj4KICAgICAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgICAgICA8c2NyaXB0PjxjcHA+c2VjcmV0Lm9uU2hvd2luZygpPC9jcHA+PC9zY3JpcHQ+CiAgICAgICAgICAgIDwvb25lbnRyeT4KICAgICAgICAgICAgPG9uZXhpdD4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5zZWNyZXQub25FeGl0U2hvd2luZygpPC9jcHA+PC9zY3JpcHQ+CiAgICAgICAgICAgIDwvb25leGl0PgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ic2VsZWN0IiB0YXJnZXQ9ImNhbGN1bGF0aW5nIi8+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJyZWNhbGN1bGF0ZSIgdGFyZ2V0PSJjYWxjdWxhdGluZyIvPgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ic2VjcmV0X3JlYWNoZWQiIHRhcmdldD0iZm91bmQiLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgogICAgICAgIDwvc3RhdGU+CgogICAgICAgIDwhLS0gUGxheWVyIHJlYWNoZWQgdGhlIHNlY3JldCAoa2VlcCBzaG93aW5nIHBhdGgpIC0tPgogICAgICAgIDxzdGF0ZSBpZD0iZm91bmQiPgogICAgICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5zZWNyZXQub25Gb3VuZCgpPC9jcHA+PC9zY3JpcHQ+CiAgICAgICAgICAgIDwvb25lbnRyeT4KICAgICAgICAgICAgPG9uZXhpdD4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5zZWNyZXQub25FeGl0Rm91bmQoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgICAgICA8L29uZXhpdD4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNlbGVjdCIgdGFyZ2V0PSJjYWxjdWxhdGluZyIvPgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0icmVjYWxjdWxhdGUiIHRhcmdldD0iY2FsY3VsYXRpbmciLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgogICAgICAgIDwvc3RhdGU+CgogICAgICAgIDwhLS0gTm8gYWNjZXNzaWJsZSBwYXRoIHRvIHRhcmdldCAtLT4KICAgICAgICA8c3RhdGUgaWQ9Im5vX3BhdGgiPgogICAgICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5zZWNyZXQub25Ob1BhdGgoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgICAgICA8L29uZW50cnk+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJzZWxlY3QiIHRhcmdldD0iY2FsY3VsYXRpbmciLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InJlY2FsY3VsYXRlIiB0YXJnZXQ9ImNhbGN1bGF0aW5nIi8+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJsZXZlbF9jaGFuZ2UiIHRhcmdldD0iZGlzYWJsZWQiLz4KICAgICAgICA8L3N0YXRlPgogICAgPC9zdGF0ZT4KCjwvc2N4bWw+Cg==',
+            aim: 'PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPCEtLQogICAgRE9PTSBBaW0gQXNzaXN0IFN0YXRlIE1hY2hpbmUgKEV4dGVuZGVkKQoKICAgIFByb3ZpZGVzIGRldGFpbGVkIGFpbSBhc3Npc3Qgc3RhdGUgdHJhY2tpbmcgZm9yIHRoZSBwbGF5ZXIuCgogICAgVG9wLWxldmVsIFN0YXRlczoKICAgIC0gZGlzYWJsZWQ6IE5vcm1hbCBET09NIGFpbWluZyAod2l0aCBzcHJlYWQpCiAgICAtIGVuYWJsZWQ6IEFpbSBhc3Npc3QgYWN0aXZlIChjb21wb3VuZCBzdGF0ZSB3aXRoIHN1Yi1zdGF0ZXMpCgogICAgRW5hYmxlZCBTdWItc3RhdGVzOgogICAgLSBpZGxlOiBXYWl0aW5nLCBubyB0YXJnZXQgKGRlZmF1bHQgc3RhdGUgd2hlbiBub3Qgc2hvb3RpbmcpCiAgICAtIHNlYXJjaGluZzogQWN0aXZlbHkgc2VhcmNoaW5nIGZvciB0YXJnZXQgZHVyaW5nIHNob3QKICAgIC0gbG9ja2VkOiBUYXJnZXQgYWNxdWlyZWQgZHVyaW5nIGN1cnJlbnQgc2hvdAoKICAgIEV2ZW50czoKICAgIC0gdG9nZ2xlOiBUb2dnbGUgYWltIGFzc2lzdCBvbi9vZmYKICAgIC0gbGV2ZWxfY2hhbmdlOiBOZXcgbGV2ZWwgbG9hZGVkCiAgICAtIHNob3RfZmlyZWQ6IFBsYXllciBmaXJlZCB3ZWFwb24sIHN0YXJ0IHNlYXJjaGluZwogICAgLSB0YXJnZXRfYWNxdWlyZWQ6IEZvdW5kIHZhbGlkIHRhcmdldAogICAgLSB0YXJnZXRfbG9zdDogVGFyZ2V0IGRpZWQgb3Igd2VudCBvdXQgb2YgcmFuZ2UKICAgIC0gbm9fdGFyZ2V0OiBTZWFyY2ggY29tcGxldGVkLCBubyB0YXJnZXQgZm91bmQKICAgIC0gc2hvdF9jb21wbGV0ZTogU2hvdCBwcm9jZXNzaW5nIGZpbmlzaGVkLCByZXR1cm4gdG8gaWRsZQoKICAgIEMrKyBJbnRlZ3JhdGlvbjoKICAgIC0gVXNlcyA8Y3BwPiB0YWcgZm9yIGRpcmVjdCBDKysgZnVuY3Rpb24gY2FsbHMgKFplcm8gT3ZlcmhlYWQpCiAgICAtIGFpbS54eHgoKSBjYWxscyBhcmUgdHJhbnNmb3JtZWQgdG8gdXNlcl8tPmFpbS54eHgoKQoKICAgIFczQyBTQ1hNTCAxLjAgY29tcGxpYW50Ci0tPgo8c2N4bWwgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDUvMDcvc2N4bWwiCiAgICAgICB2ZXJzaW9uPSIxLjAiCiAgICAgICBpbml0aWFsPSJkaXNhYmxlZCIKICAgICAgIGRhdGFtb2RlbD0ibnVsbCI+CgogICAgPCEtLSBBaW0gYXNzaXN0IGRpc2FibGVkIC0gbm9ybWFsIERPT00gYWltaW5nIC0tPgogICAgPHN0YXRlIGlkPSJkaXNhYmxlZCI+CiAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5haW0ub25EaXNhYmxlZCgpPC9jcHA+PC9zY3JpcHQ+CiAgICAgICAgPC9vbmVudHJ5PgogICAgICAgIDwhLS0gVG9nZ2xlIGdvZXMgZGlyZWN0bHkgdG8gaWRsZSBzdWItc3RhdGUgKG5vdCB0byBlbmFibGVkIGNvbXBvdW5kKSAtLT4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0idG9nZ2xlIiB0YXJnZXQ9ImlkbGUiLz4KICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibGV2ZWxfY2hhbmdlIiB0YXJnZXQ9ImRpc2FibGVkIi8+CiAgICA8L3N0YXRlPgoKICAgIDwhLS0gQWltIGFzc2lzdCBlbmFibGVkIC0gY29tcG91bmQgc3RhdGUgd2l0aCBzdWItc3RhdGVzIC0tPgogICAgPHN0YXRlIGlkPSJlbmFibGVkIiBpbml0aWFsPSJpZGxlIj4KICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgPHNjcmlwdD48Y3BwPmFpbS5vbkVuYWJsZWQoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgIDwvb25lbnRyeT4KCiAgICAgICAgPCEtLSBUb2dnbGUgZnJvbSBhbnkgc3ViLXN0YXRlIGRpc2FibGVzIGFpbSBhc3Npc3QgLS0+CiAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InRvZ2dsZSIgdGFyZ2V0PSJkaXNhYmxlZCIvPgoKICAgICAgICA8IS0tIElkbGU6IFdhaXRpbmcgZm9yIHNob3QsIG5vIHRhcmdldCAoZGVmYXVsdCBzdGF0ZSkgLS0+CiAgICAgICAgPHN0YXRlIGlkPSJpZGxlIj4KICAgICAgICAgICAgPG9uZW50cnk+CiAgICAgICAgICAgICAgICA8c2NyaXB0PjxjcHA+YWltLm9uSWRsZSgpPC9jcHA+PC9zY3JpcHQ+CiAgICAgICAgICAgIDwvb25lbnRyeT4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9InNob3RfZmlyZWQiIHRhcmdldD0ic2VhcmNoaW5nIi8+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJsZXZlbF9jaGFuZ2UiIHRhcmdldD0iaWRsZSIvPgogICAgICAgIDwvc3RhdGU+CgogICAgICAgIDwhLS0gU2VhcmNoaW5nOiBMb29raW5nIGZvciB0YXJnZXQgZHVyaW5nIHNob3QgLS0+CiAgICAgICAgPHN0YXRlIGlkPSJzZWFyY2hpbmciPgogICAgICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5haW0ub25TZWFyY2hpbmcoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgICAgICA8L29uZW50cnk+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJ0YXJnZXRfYWNxdWlyZWQiIHRhcmdldD0ibG9ja2VkIi8+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJub190YXJnZXQiIHRhcmdldD0iaWRsZSIvPgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ibGV2ZWxfY2hhbmdlIiB0YXJnZXQ9ImlkbGUiLz4KICAgICAgICA8L3N0YXRlPgoKICAgICAgICA8IS0tIExvY2tlZDogVGFyZ2V0IGFjcXVpcmVkIGR1cmluZyBjdXJyZW50IHNob3QgLS0+CiAgICAgICAgPHN0YXRlIGlkPSJsb2NrZWQiPgogICAgICAgICAgICA8b25lbnRyeT4KICAgICAgICAgICAgICAgIDxzY3JpcHQ+PGNwcD5haW0ub25Mb2NrZWQoKTwvY3BwPjwvc2NyaXB0PgogICAgICAgICAgICA8L29uZW50cnk+CiAgICAgICAgICAgIDwhLS0gUmV0dXJuIHRvIGlkbGUgYWZ0ZXIgc2hvdCBjb21wbGV0ZXMgLS0+CiAgICAgICAgICAgIDx0cmFuc2l0aW9uIGV2ZW50PSJzaG90X2NvbXBsZXRlIiB0YXJnZXQ9ImlkbGUiLz4KICAgICAgICAgICAgPCEtLSBBbHNvIHJldHVybiB0byBpZGxlIGlmIHRhcmdldCBkaWVzIC0tPgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0idGFyZ2V0X2xvc3QiIHRhcmdldD0iaWRsZSIvPgogICAgICAgICAgICA8IS0tIE5ldyBzaG90IHN0YXJ0cyBuZXcgc2VhcmNoIC0tPgogICAgICAgICAgICA8dHJhbnNpdGlvbiBldmVudD0ic2hvdF9maXJlZCIgdGFyZ2V0PSJzZWFyY2hpbmciLz4KICAgICAgICAgICAgPHRyYW5zaXRpb24gZXZlbnQ9ImxldmVsX2NoYW5nZSIgdGFyZ2V0PSJpZGxlIi8+CiAgICAgICAgPC9zdGF0ZT4KCiAgICA8L3N0YXRlPgoKPC9zY3htbD4K'
         };
 
         // Valid machine names for validation
-        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy', 'secret'];
+        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy', 'secret', 'aim'];
 
         // State tracking
         const SCE = {
             currentTab: 'game',
             ready: false,
-            lastState: { game: null, player: null, weapon: null, enemy: null, secret: null },
+            lastState: { game: null, player: null, weapon: null, enemy: null, secret: null, aim: null },
             enemies: {},  // slot -> {type, state, instanceId, active}
             selectedEnemy: null,
             secretArrows: [],  // [{x, y, angle}, ...]
-            secretRemaining: 0
+            secretRemaining: 0,
+            aimAssistEnabled: false
         };
 
         // Tab switching
@@ -413,6 +586,10 @@
             // Show/hide secret section
             const secretSection = document.getElementById('secret-section');
             secretSection.classList.toggle('visible', machine === 'secret');
+
+            // Show/hide aim section
+            const aimSection = document.getElementById('aim-section');
+            aimSection.classList.toggle('visible', machine === 'aim');
 
             // Load new SCXML in visualizer
             const iframe = document.getElementById('visualizer');
@@ -541,10 +718,10 @@
         };
 
         // C++ callback: Called when stats are updated
-        window.onSceStatsUpdate = function(enemyCount, enemyKilled) {
+        window.onSceStatsUpdate = function(enemyCount, enemyKilled, enemyRemaining) {
             document.getElementById('stat-enemies').textContent = enemyCount;
             document.getElementById('stat-killed').textContent = enemyKilled;
-            document.getElementById('ind-enemy').textContent = enemyCount + ' active';
+            document.getElementById('ind-enemy').textContent = enemyRemaining + ' remaining';
         };
 
         // C++ callback: Called when any state machine state changes
@@ -594,14 +771,24 @@
         };
 
         // C++ callback: Called when secret path is found
-        window.onSceSecretPath = function(numArrows, remainingSecrets) {
+        // isPartial: 1 if target is unreachable (path only goes to closest accessible point)
+        window.onSceSecretPath = function(numArrows, remainingSecrets, isPartial) {
             SCE.secretArrows = [];
             SCE.secretRemaining = remainingSecrets;
+            SCE.pathPartial = !!isPartial;
             const arrowsEl = document.getElementById('secret-arrows');
             const statsEl = document.getElementById('stat-secrets');
+            const partialEl = document.getElementById('path-partial-warning');
             if (arrowsEl) arrowsEl.textContent = numArrows;
             if (statsEl) statsEl.textContent = remainingSecrets + ' left';
-            console.debug('[SCE:Secret] Path found with', numArrows, 'arrows,', remainingSecrets, 'remaining');
+            if (partialEl) {
+                partialEl.style.display = isPartial ? 'inline' : 'none';
+            }
+            if (isPartial) {
+                console.warn('[SCE:Secret] PARTIAL path with', numArrows, 'arrows - target UNREACHABLE');
+            } else {
+                console.debug('[SCE:Secret] Path found with', numArrows, 'arrows,', remainingSecrets, 'remaining');
+            }
         };
 
         // C++ callback: Called for each arrow in the secret path
@@ -611,15 +798,117 @@
         };
 
         // C++ callback: Called when target info updates
-        window.onSceTargetInfo = function(typeName, name, index, total) {
+        // Parameters: typeName, name, index, total, triggerX, triggerY, sectorX, sectorY, sectorIdx, openMethod, isHidden, linkedSecret
+        window.onSceTargetInfo = function(typeName, name, index, total, triggerX, triggerY, sectorX, sectorY, sectorIdx, openMethod, isHidden, linkedSecret) {
             // Update active button highlight
+            // Normalize type name: "Key Door" -> "keydoor" to match button dataset
+            const normalizedType = typeName.toLowerCase().replace(/ /g, '');
             document.querySelectorAll('.target-btn').forEach(btn => {
-                const isActive = btn.dataset.type === typeName.toLowerCase() &&
+                const isActive = btn.dataset.type === normalizedType &&
                                  parseInt(btn.dataset.index) === index;
                 btn.classList.toggle('active', isActive);
             });
-            console.debug('[SCE:Target] Info:', typeName, name, index, total);
+            // Store coordinates for visualization
+            SCE.currentTarget = {
+                type: typeName,
+                name: name,
+                index: index,
+                total: total,
+                trigger: { x: triggerX, y: triggerY },
+                sector: { x: sectorX, y: sectorY, index: sectorIdx },
+                openMethod: openMethod || '',
+                isHidden: !!isHidden,
+                linkedSecret: linkedSecret
+            };
+            // Show/hide destination mode selector based on whether target has sector
+            const destSelector = document.getElementById('dest-selector');
+            if (destSelector) {
+                const hasSector = (sectorIdx !== undefined && sectorIdx >= 0);
+                destSelector.style.display = hasSector ? 'inline-block' : 'none';
+            }
+            // Update door info display
+            const doorInfoEl = document.getElementById('door-info');
+            if (doorInfoEl) {
+                const isDoorType = (normalizedType === 'door' || normalizedType === 'keydoor' || normalizedType === 'lift');
+                if (isDoorType && openMethod) {
+                    let infoText = 'Open: ' + openMethod;
+                    if (isHidden) {
+                        infoText = '[Hidden] ' + infoText;
+                        if (linkedSecret >= 0) {
+                            infoText += ' → Secret ' + (linkedSecret + 1);
+                        }
+                    }
+                    doorInfoEl.textContent = infoText;
+                    doorInfoEl.style.display = 'block';
+                } else {
+                    doorInfoEl.style.display = 'none';
+                }
+            }
+            // Log with sector info if available
+            if (sectorIdx >= 0) {
+                console.log('[SCE:Target]', name, '- Trigger:', triggerX, triggerY, '| Sector:', sectorX, sectorY, '(idx:', sectorIdx + ')');
+            } else {
+                console.debug('[SCE:Target] Info:', typeName, name, index, total);
+            }
+            if (openMethod) {
+                console.log('[SCE:Target] Door info: open=' + openMethod + ', hidden=' + isHidden + ', linkedSecret=' + linkedSecret);
+            }
         };
+
+        // Destination mode: 0 = trigger, 1 = sector
+        let currentDestMode = 0;
+
+        function setDestMode(mode) {
+            if (!Module || !Module.ccall) {
+                console.error('Module not ready');
+                return;
+            }
+            currentDestMode = mode;
+            // Update C backend
+            if (mode === 0) {
+                Module.ccall('sce_set_dest_mode_trigger', null, [], []);
+            } else {
+                Module.ccall('sce_set_dest_mode_sector', null, [], []);
+            }
+            // Update button states
+            document.getElementById('dest-trigger-btn').classList.toggle('active', mode === 0);
+            document.getElementById('dest-sector-btn').classList.toggle('active', mode === 1);
+            // Recalculate path with new destination
+            Module.ccall('sce_secret_recalculate', null, [], []);
+            console.log('[SCE:DestMode] Set to', mode === 0 ? 'TRIGGER' : 'SECTOR');
+        }
+
+        // C++ callback: Called when aim assist state changes
+        window.onSceAimAssistState = function(enabled) {
+            SCE.aimAssistEnabled = !!enabled;
+            const state = enabled ? 'enabled' : 'disabled';
+
+            // Update indicator
+            const indicator = document.getElementById('ind-aim');
+            if (indicator) indicator.textContent = state;
+
+            // Update aim state text
+            const stateEl = document.getElementById('aim-state');
+            if (stateEl) {
+                stateEl.textContent = state;
+                stateEl.className = 'aim-state-text ' + state;
+            }
+
+            // Update toggle button
+            const btn = document.getElementById('aim-toggle-btn');
+            if (btn) {
+                btn.textContent = enabled ? 'Disable Aim Assist' : 'Enable Aim Assist';
+                btn.classList.toggle('enabled', enabled);
+            }
+
+            console.debug('[SCE:Aim] State changed to:', state);
+        };
+
+        // Toggle aim assist from UI button
+        function toggleAimAssist() {
+            if (typeof Module === 'undefined' || !Module.ccall) return;
+            Module.ccall('sce_aim_event_toggle', null, [], []);
+        }
 
         // Select specific target by type and index
         function selectTarget(type, index) {
@@ -635,12 +924,13 @@
             { id: 'switch', name: 'Switch', type: 3 },
             { id: 'teleporter', name: 'Teleport', type: 4 },
             { id: 'exit', name: 'Exit', type: 5 },
-            { id: 'keydoor', name: 'KeyDoor', type: 6 }
+            { id: 'keydoor', name: 'KeyDoor', type: 6 },
+            { id: 'enemy', name: 'Enemy', type: 7 }
         ];
 
         // Target count polling and dynamic button generation
-        let targetCounts = { secret: 0, door: 0, lift: 0, switch_: 0, teleporter: 0, exit: 0, keydoor: 0 };
-        let lastCounts = { secret: -1, door: -1, lift: -1, switch_: -1, teleporter: -1, exit: -1, keydoor: -1 };
+        let targetCounts = { secret: 0, door: 0, lift: 0, switch_: 0, teleporter: 0, exit: 0, keydoor: 0, enemy: 0 };
+        let lastCounts = { secret: -1, door: -1, lift: -1, switch_: -1, teleporter: -1, exit: -1, keydoor: -1, enemy: -1 };
 
         function updateTargetCounts() {
             if (typeof Module === 'undefined' || !Module.ccall) return;
@@ -653,15 +943,18 @@
                 targetCounts.teleporter = Module.ccall('sce_get_target_count_teleporter', 'number', [], []);
                 targetCounts.exit = Module.ccall('sce_get_target_count_exit', 'number', [], []);
                 targetCounts.keydoor = Module.ccall('sce_get_target_count_keydoor', 'number', [], []);
+                targetCounts.enemy = Module.ccall('sce_get_target_count_enemy', 'number', [], []);
 
                 // Check if counts changed and regenerate buttons if needed
                 const countsArray = [
                     targetCounts.secret, targetCounts.door, targetCounts.lift,
-                    targetCounts.switch_, targetCounts.teleporter, targetCounts.exit, targetCounts.keydoor
+                    targetCounts.switch_, targetCounts.teleporter, targetCounts.exit, targetCounts.keydoor,
+                    targetCounts.enemy
                 ];
                 const lastArray = [
                     lastCounts.secret, lastCounts.door, lastCounts.lift,
-                    lastCounts.switch_, lastCounts.teleporter, lastCounts.exit, lastCounts.keydoor
+                    lastCounts.switch_, lastCounts.teleporter, lastCounts.exit, lastCounts.keydoor,
+                    lastCounts.enemy
                 ];
 
                 let changed = false;
@@ -676,8 +969,9 @@
                     generateTargetButtons();
                     lastCounts = { ...targetCounts };
                 } else {
-                    // Update secret discovery status without regenerating buttons
+                    // Update status without regenerating buttons
                     updateSecretDiscoveryStatus();
+                    updateEnemyAliveStatus();
                 }
             } catch (e) {
                 console.error('Error getting target counts:', e);
@@ -702,6 +996,25 @@
             });
         }
 
+        function updateEnemyAliveStatus() {
+            const enemyGroup = document.getElementById('group-enemy');
+            if (!enemyGroup) return;
+
+            const buttons = enemyGroup.querySelectorAll('.target-btn.enemy');
+            buttons.forEach((btn, i) => {
+                try {
+                    const alive = Module.ccall('sce_is_enemy_alive', 'number', ['number'], [i]);
+                    if (!alive && !btn.classList.contains('dead')) {
+                        btn.classList.add('dead');
+                        btn.title = 'Enemy ' + (i + 1) + ' (Dead)';
+                        btn.disabled = true;
+                    }
+                } catch (e) {
+                    // Ignore errors
+                }
+            });
+        }
+
         function generateTargetButtons() {
             const countMap = {
                 secret: targetCounts.secret,
@@ -710,7 +1023,8 @@
                 switch: targetCounts.switch_,
                 teleporter: targetCounts.teleporter,
                 exit: targetCounts.exit,
-                keydoor: targetCounts.keydoor
+                keydoor: targetCounts.keydoor,
+                enemy: targetCounts.enemy
             };
 
             TARGET_TYPES.forEach(cfg => {
@@ -747,6 +1061,19 @@
                             }
                         } catch (e) {
                             console.error('Error checking secret discovery:', e);
+                        }
+                    }
+
+                    // Check if enemy is dead
+                    if (cfg.id === 'enemy') {
+                        try {
+                            const alive = Module.ccall('sce_is_enemy_alive', 'number', ['number'], [i]);
+                            if (!alive) {
+                                btn.classList.add('dead');
+                                btn.title += ' (Dead)';
+                            }
+                        } catch (e) {
+                            console.error('Error checking enemy status:', e);
                         }
                     }
 
