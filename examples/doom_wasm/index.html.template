@@ -1056,12 +1056,12 @@
                 const rect = gameContainer.getBoundingClientRect();
                 const rightZone = document.getElementById('right-zone');
 
-                // Right zone (turning) - constrain to game area only
+                // Right zone (turning) - browser width, game height
                 if (rightZone) {
                     rightZone.style.top = rect.top + 'px';
-                    rightZone.style.left = rect.left + (rect.width * 0.5) + 'px';  // Right half of game
-                    rightZone.style.width = (rect.width * 0.5) + 'px';
-                    rightZone.style.height = (rect.height * 0.92) + 'px';  // Leave space for DOOM status bar
+                    rightZone.style.left = (window.innerWidth * 0.5) + 'px';  // Right half of browser
+                    rightZone.style.width = (window.innerWidth * 0.5) + 'px';
+                    rightZone.style.height = (rect.height * 0.92) + 'px';  // Until game bottom (minus status bar)
                 }
             }
 
