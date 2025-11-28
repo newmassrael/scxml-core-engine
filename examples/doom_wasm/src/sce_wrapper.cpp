@@ -152,7 +152,8 @@ struct SecretCallbacks {
         // Disabled state: hint system is off
         Secret_ClearPath();
         js_notify_state_change("secret", sce_secret_get_state());
-        js_notify_secret_path(0, Secret_GetRemainingCount(), false);
+        int count = Secret_GetRemainingCount();
+        js_notify_secret_path(0, count, false);
         // Clear button highlight when disabled
         js_notify_target_info("", "", -1, 0, 0, 0, 0, 0, -1, "", 0, -1);
     }
@@ -946,6 +947,20 @@ void sce_secret_event_disable(void) {
 }
 
 EMSCRIPTEN_KEEPALIVE
+void sce_secret_discovered(void) {
+    // Called from p_spec.c when player enters a secret sector
+    // Update JavaScript UI with new remaining secret count
+    js_notify_secret_path(0, Secret_GetRemainingCount(), false);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void sce_secret_update_count(void) {
+    // Called to update the secret count display without changing state
+    int count = Secret_GetRemainingCount();
+    js_notify_secret_path(0, count, false);
+}
+
+EMSCRIPTEN_KEEPALIVE
 void sce_secret_event_next_target(void) {
     sce_secret_event_toggle();
 }
@@ -1020,6 +1035,8 @@ void sce_secret_event_level_change(void) {
         g_secret_sm->raiseExternal(SecretEvent::Level_change);
         g_secret_sm->step();
     }
+    // Send initial secret count when level starts
+    js_notify_secret_path(0, Secret_GetRemainingCount(), false);
 }
 
 EMSCRIPTEN_KEEPALIVE

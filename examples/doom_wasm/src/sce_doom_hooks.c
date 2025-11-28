@@ -16,6 +16,7 @@
 #include "d_player.h"
 #include "r_main.h"
 #include <string.h>
+#include <emscripten.h>
 
 /* Forward declaration for P_MobjThinker */
 void P_MobjThinker(mobj_t *mobj);
@@ -284,6 +285,7 @@ void SCE_SecretHintCancel(void) {
 void SCE_SecretLevelChange(void) {
     Secret_OnLevelLoad();
     sce_secret_event_level_change();
+    sce_secret_update_count();  /* Update secret count display after level load */
 }
 
 void SCE_SecretCheckReached(void) {

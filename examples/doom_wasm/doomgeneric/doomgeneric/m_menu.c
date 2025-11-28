@@ -20,7 +20,7 @@
 
 #include <stdlib.h>
 #include <ctype.h>
-
+#include <time.h>
 
 #include "doomdef.h"
 #include "doomkeys.h"
@@ -629,14 +629,51 @@ void M_DoSave(int slot)
 	quickSaveSlot = slot;
 }
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+// Check if running on mobile device
+EM_JS(int, is_mobile_device, (), {
+    return (('ontouchstart' in window) ||
+            (navigator.maxTouchPoints > 0) ||
+            /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) ? 1 : 0;
+});
+
+// Generate auto save name with timestamp
+static void M_GenerateAutoSaveName(char *dest, int slot)
+{
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    snprintf(dest, SAVESTRINGSIZE, "Save %d - %02d:%02d",
+             slot + 1, t->tm_hour, t->tm_min);
+}
+#endif
+
 //
 // User wants to save. Start string input for M_Responder
 //
 void M_SaveSelect(int choice)
 {
-    // we are going to be intercepting all chars
+#ifdef __EMSCRIPTEN__
+    // On mobile, auto-generate save name and save (keep menu open)
+    if (is_mobile_device())
+    {
+        saveSlot = choice;
+        M_GenerateAutoSaveName(savegamestrings[choice], choice);
+        G_SaveGame(choice, savegamestrings[choice]);
+
+        // Set quicksave slot if not set
+        if (quickSaveSlot == -2)
+            quickSaveSlot = choice;
+
+        // Menu stays open - user can ESC to close
+        return;
+    }
+#endif
+
+    // Desktop: intercept all chars for manual input
     saveStringEnter = 1;
-    
+
     saveSlot = choice;
     M_StringCopy(saveOldString,savegamestrings[choice], SAVESTRINGSIZE);
     if (!strcmp(savegamestrings[choice], EMPTYSTRING))

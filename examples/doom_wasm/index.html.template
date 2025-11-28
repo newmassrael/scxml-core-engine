@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DOOM + SCE State Machines</title>
     <style>
+        :root {
+            /* Joystick sizes */
+            --move-joystick-size: 140px;
+            --move-stick-size: 60px;
+            --use-joystick-size: 70px;
+            --use-stick-size: 45px;
+            --fire-btn-size: 85px;
+        }
         html, body {
             margin: 0;
             padding: 0;
@@ -19,6 +28,7 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            box-sizing: border-box;
         }
 
         /* Game Section - Fixed at top */
@@ -62,23 +72,276 @@
             image-rendering: crisp-edges;
         }
 
-        /* Panel Section - Vertical scroll only in this area */
+        /* Mobile Start Overlay */
+        #start-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: opacity 0.3s ease;
+        }
+        #start-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .start-content {
+            text-align: center;
+        }
+        .doom-logo {
+            font-size: 48px;
+            font-weight: bold;
+            color: #ff0000;
+            text-shadow: 0 0 20px #ff0000, 0 0 40px #880000;
+            margin-bottom: 30px;
+            letter-spacing: 8px;
+        }
+        #start-btn {
+            padding: 20px 50px;
+            font-size: 24px;
+            font-family: monospace;
+            background: #cc0000;
+            color: #fff;
+            border: 3px solid #ff0000;
+            border-radius: 8px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            transition: all 0.2s ease;
+        }
+        #start-btn:hover {
+            background: #ff0000;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.5);
+        }
+        #start-btn:active {
+            transform: scale(0.95);
+        }
+        .start-hint {
+            margin-top: 20px;
+            color: #666;
+            font-size: 12px;
+        }
+        @media (max-width: 600px) {
+            .doom-logo {
+                font-size: 32px;
+                letter-spacing: 4px;
+            }
+            #start-btn {
+                padding: 15px 35px;
+                font-size: 18px;
+            }
+        }
+
+        /* Mobile Touch Controls - Modern FPS Style */
+        #touch-controls {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 50;
+            touch-action: none;
+            user-select: none;
+            -webkit-user-select: none;
+            pointer-events: none;
+        }
+        #touch-controls.visible {
+            display: block;
+        }
+        #touch-controls > * {
+            pointer-events: auto;
+        }
+
+        /* Left Zone - Movement Joystick */
+        #left-zone {
+            position: fixed;
+            left: 0;
+            bottom: 0;
+            width: 200px;
+            height: 200px;
+            background: transparent;
+        }
+        .joystick-container {
+            position: fixed;
+            left: 20px;
+            bottom: 20px;
+            width: var(--move-joystick-size);
+            height: var(--move-joystick-size);
+        }
+        .joystick-base {
+            position: absolute;
+            width: var(--move-joystick-size);
+            height: var(--move-joystick-size);
+            background: radial-gradient(circle, rgba(60,60,60,0.4) 0%, rgba(40,40,40,0.4) 100%);
+            border: 2px solid rgba(100,100,100,0.3);
+            border-radius: 50%;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.3);
+        }
+        .joystick-stick {
+            position: absolute;
+            width: var(--move-stick-size);
+            height: var(--move-stick-size);
+            background: radial-gradient(circle at 30% 30%, rgba(136,136,136,0.6), rgba(68,68,68,0.6));
+            border: 2px solid rgba(102,102,102,0.5);
+            border-radius: 50%;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .joystick-stick.active {
+            background: radial-gradient(circle at 30% 30%, rgba(170,170,170,0.7), rgba(102,102,102,0.7));
+            border-color: rgba(136,136,136,0.6);
+        }
+
+        /* Right Zone - Look/Aim (tap to fire) - covers right half of game area */
+        #right-zone {
+            position: fixed;
+            background: transparent;
+            /* Position set dynamically by JavaScript */
+        }
+
+        /* Action Buttons - Bottom Right */
+        .action-buttons {
+            position: fixed;
+            right: 15px;
+            bottom: 20px;
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+        }
+        .action-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: 3px solid;
+            font-family: monospace;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+        }
+        .action-btn:active, .action-btn.pressed {
+            transform: scale(0.9);
+        }
+        /* Use Joystick - aim control with tap to use */
+        .use-joystick {
+            position: relative;
+            width: var(--use-joystick-size);
+            height: var(--use-joystick-size);
+        }
+        .use-joystick-base {
+            position: absolute;
+            width: var(--use-joystick-size);
+            height: var(--use-joystick-size);
+            background: radial-gradient(circle, rgba(20,40,80,0.4) 0%, rgba(10,20,40,0.4) 100%);
+            border: 2px solid rgba(100,150,255,0.3);
+            border-radius: 50%;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.3);
+        }
+        .use-joystick-stick {
+            position: absolute;
+            width: var(--use-stick-size);
+            height: var(--use-stick-size);
+            background: radial-gradient(circle at 30% 30%, rgba(68,136,255,0.6), rgba(0,68,170,0.6));
+            border: 3px solid rgba(102,170,255,0.5);
+            border-radius: 50%;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.4);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(255,255,255,0.8);
+            font-family: monospace;
+            font-size: 10px;
+            font-weight: bold;
+            text-shadow: 0 0 8px rgba(0,102,255,0.5);
+        }
+        .use-joystick-stick.active {
+            background: radial-gradient(circle at 30% 30%, rgba(100,160,255,0.8), rgba(50,100,200,0.8));
+            border-color: rgba(150,190,255,0.7);
+        }
+        #fire-btn {
+            width: var(--fire-btn-size);
+            height: var(--fire-btn-size);
+            background: radial-gradient(circle at 30% 30%, rgba(255,68,68,0.5), rgba(170,0,0,0.5));
+            border-color: rgba(255,102,102,0.5);
+            color: rgba(255,255,255,0.8);
+            text-shadow: 0 0 8px rgba(255,0,0,0.5);
+            font-size: 14px;
+        }
+
+        /* Weapon switch buttons - Bottom Center */
+        .weapon-switch {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 5px;
+        }
+        .weapon-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            background: rgba(40,40,40,0.5);
+            border: 2px solid rgba(85,85,85,0.5);
+            color: rgba(170,170,170,0.8);
+            font-family: monospace;
+            font-size: 13px;
+            font-weight: bold;
+        }
+        .weapon-btn:active {
+            background: rgba(80,80,80,0.6);
+            border-color: rgba(136,136,136,0.6);
+            color: #fff;
+        }
+
+        /* Touch indicator for right zone */
+        #aim-indicator {
+            position: fixed;
+            width: 50px;
+            height: 50px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            pointer-events: none;
+            display: none;
+            transform: translate(-50%, -50%);
+        }
+        #aim-indicator.visible {
+            display: block;
+        }
+
+        /* Panel Section - Flexbox column to fill space */
         #panel-section {
             flex: 1;
-            overflow-y: auto;
-            overflow-x: hidden;
-            padding: 10px 20px 70px 20px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 10px 20px 20px 20px;
         }
 
         /* Tab Section */
         .tab-container {
+            flex-shrink: 0;
             margin-top: 10px;
         }
         .tab-buttons {
             display: flex;
-            justify-content: center;
+            justify-content: flex-start;
             gap: 5px;
             margin-bottom: 0;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 5px;
         }
         .tab-btn {
             padding: 10px 20px;
@@ -90,6 +353,8 @@
             cursor: pointer;
             font-family: monospace;
             font-size: 14px;
+            flex-shrink: 0;
+            white-space: nowrap;
         }
         .tab-btn:hover { background: #444; }
         .tab-btn.active {
@@ -109,6 +374,7 @@
         /* Enemy Section (between tabs and visualizer, only for enemy tab) */
         .enemy-section {
             display: none;
+            flex-shrink: 0;
             padding: 10px;
             background: #252525;
             border: 1px solid #555;
@@ -154,6 +420,7 @@
         /* Secret Hint Section */
         .secret-section {
             display: none;
+            flex-shrink: 0;
             padding: 10px;
             background: #252525;
             border: 1px solid #555;
@@ -225,6 +492,7 @@
         /* Aim Assist Section */
         .aim-section {
             display: none;
+            flex-shrink: 0;
             padding: 10px;
             background: #252525;
             border: 1px solid #555;
@@ -367,13 +635,14 @@
             pointer-events: none;
         }
 
-        /* Visualizer Section */
+        /* Visualizer Section - Fill remaining space */
         #viz-section {
+            flex: 1;
+            min-height: 200px;
             border: 1px solid #555;
             border-radius: 0 0 8px 8px;
             overflow: hidden;
             background: #2a2a2a;
-            height: 350px;
         }
         #visualizer {
             width: 100%;
@@ -381,34 +650,58 @@
             border: none;
         }
 
-        /* Stats Section */
+        /* Stats Section - Always at top, single line */
         #stats {
             position: fixed;
-            bottom: 0;
+            top: 0;
             left: 0;
             right: 0;
+            height: 36px;
             display: flex;
-            justify-content: center;
-            align-items: center;
-            gap: 30px;
-            padding: 10px 15px;
-            background: #222;
-            border-top: 1px solid #444;
+            background: rgba(0, 0, 0, 0.8);
+            border-bottom: 1px solid #444;
             z-index: 100;
         }
-        #stats span { color: #888; }
-        #stats strong { color: #00ff00; }
-        #fullscreen-btn {
-            padding: 5px 12px;
+        #stats-info {
+            flex: 1;
+            min-width: 0;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 0 10px;
+            overflow-x: auto;
+            overflow-y: hidden;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+            touch-action: pan-x;
+        }
+        #stats-info::-webkit-scrollbar { display: none; }
+        #stats-info span { color: #888; font-size: 12px; flex-shrink: 0; }
+        #stats-info strong { color: #00ff00; }
+        #stats-buttons {
+            flex-shrink: 0;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 0 8px;
+            background: rgba(0, 0, 0, 0.9);
+        }
+        #menu-btn, #fullscreen-btn, #audio-btn {
+            padding: 4px 10px;
             background: #444;
             border: 1px solid #666;
             color: #fff;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 12px;
+            font-size: 11px;
         }
-        #fullscreen-btn:hover { background: #555; }
+        #menu-btn:hover, #fullscreen-btn:hover, #audio-btn:hover { background: #555; }
         :fullscreen #fullscreen-btn { background: #006600; }
+        #audio-btn.muted { background: #663333; }
     </style>
 </head>
 <body>
@@ -417,6 +710,50 @@
         <div id="game-section">
             <div id="game-container">
                 <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" width="640" height="400"></canvas>
+                <!-- Mobile Start Overlay -->
+                <div id="start-overlay">
+                    <div class="start-content">
+                        <div class="doom-logo">DOOM</div>
+                        <button id="start-btn">TAP TO START</button>
+                        <p class="start-hint">Audio requires user interaction on mobile</p>
+                    </div>
+                </div>
+                <!-- Mobile Touch Controls - Modern FPS Style -->
+                <div id="touch-controls">
+                    <!-- Left Zone: Movement -->
+                    <div id="left-zone">
+                        <div class="joystick-container" id="joystick">
+                            <div class="joystick-base"></div>
+                            <div class="joystick-stick" id="joystick-stick"></div>
+                        </div>
+                    </div>
+
+                    <!-- Right Zone: Look/Aim (drag to turn, tap to fire) -->
+                    <div id="right-zone">
+                        <div id="aim-indicator"></div>
+                    </div>
+
+                    <!-- Weapon Switch - Bottom Center -->
+                    <div class="weapon-switch">
+                        <button class="weapon-btn" data-key="1">1</button>
+                        <button class="weapon-btn" data-key="2">2</button>
+                        <button class="weapon-btn" data-key="3">3</button>
+                        <button class="weapon-btn" data-key="4">4</button>
+                        <button class="weapon-btn" data-key="5">5</button>
+                        <button class="weapon-btn" data-key="6">6</button>
+                        <button class="weapon-btn" data-key="7">7</button>
+                    </div>
+
+                    <!-- Action Buttons - Bottom Right -->
+                    <div class="action-buttons">
+                        <!-- Use Joystick - drag to aim, tap to use -->
+                        <div class="use-joystick" id="use-joystick">
+                            <div class="use-joystick-base"></div>
+                            <div class="use-joystick-stick" id="use-stick">USE</div>
+                        </div>
+                        <button class="action-btn" id="fire-btn">FIRE</button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -486,25 +823,533 @@
                     Enable Aim Assist
                 </button>
             </div>
+            </div>
             <div id="viz-section">
                 <iframe id="visualizer" src="visualizer/visualizer.html?embed#scxml={{SCXML_GAME}}"></iframe>
-            </div>
             </div>
         </div>
 
         <!-- Stats Section -->
         <div id="stats">
-            <span>Game: <strong id="stat-game">DEMOSCREEN</strong></span>
-            <span>Player: <strong id="stat-player">ALIVE</strong></span>
-            <span>Enemies: <strong id="stat-enemies">0</strong></span>
-            <span>Killed: <strong id="stat-killed">0</strong></span>
-            <span>Secrets: <strong id="stat-secrets">?</strong></span>
-            <button id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen mode blocks Ctrl+W">Fullscreen (F11)</button>
+            <div id="stats-info">
+                <span>Game: <strong id="stat-game">DEMOSCREEN</strong></span>
+                <span>Player: <strong id="stat-player">ALIVE</strong></span>
+                <span>Enemies: <strong id="stat-enemies">0</strong></span>
+                <span>Threats: <strong id="stat-threats">0</strong></span>
+                <span>Killed: <strong id="stat-killed">0</strong></span>
+                <span>Secrets: <strong id="stat-secrets">?</strong></span>
+                <span>Aim: <strong id="stat-aim">OFF</strong></span>
+            </div>
+            <div id="stats-buttons">
+                <button id="audio-btn" onclick="toggleAudio()" title="Toggle Audio">Sound</button>
+                <button id="fullscreen-btn" onclick="toggleFullscreen()" title="Fullscreen">Full</button>
+                <button id="menu-btn" onclick="openMenu()" title="Menu (ESC)">Menu</button>
+            </div>
         </div>
 
     </div>
 
     <script>
+        // Mobile Audio Unlock - Required for iOS/Android browsers
+        (function() {
+            const overlay = document.getElementById('start-overlay');
+            const startBtn = document.getElementById('start-btn');
+            const canvas = document.getElementById('canvas');
+            let audioUnlocked = false;
+
+            // Detect mobile/touch device
+            function isMobileDevice() {
+                return (
+                    ('ontouchstart' in window) ||
+                    (navigator.maxTouchPoints > 0) ||
+                    /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+                );
+            }
+
+            // Desktop: Hide overlay immediately
+            if (!isMobileDevice()) {
+                overlay.classList.add('hidden');
+                console.log('[SCE] Desktop detected - overlay hidden');
+            } else {
+                console.log('[SCE] Mobile detected - showing start overlay');
+            }
+
+            function unlockAudio() {
+                if (audioUnlocked) return;
+
+                // Create and play silent audio to unlock AudioContext
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const buffer = audioCtx.createBuffer(1, 1, 22050);
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioCtx.destination);
+                source.start(0);
+
+                // Resume any suspended AudioContext (Emscripten SDL audio)
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+
+                // Also try to resume SDL audio context if it exists
+                if (typeof SDL !== 'undefined' && SDL.audioContext) {
+                    SDL.audioContext.resume();
+                }
+
+                audioUnlocked = true;
+                console.log('[SCE] Audio unlocked via user interaction');
+            }
+
+            function hideOverlay() {
+                overlay.classList.add('hidden');
+                canvas.focus();
+                unlockAudio();
+            }
+
+            // Start button click/tap
+            startBtn.addEventListener('click', hideOverlay);
+            startBtn.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                hideOverlay();
+            });
+
+            // Also allow clicking anywhere on overlay
+            overlay.addEventListener('click', function(e) {
+                if (e.target === overlay) hideOverlay();
+            });
+        })();
+
+        // Mobile Touch Controls - Modern FPS Style
+        (function() {
+            const touchControls = document.getElementById('touch-controls');
+            const leftZone = document.getElementById('left-zone');
+            const rightZone = document.getElementById('right-zone');
+            const joystick = document.getElementById('joystick');
+            const stick = document.getElementById('joystick-stick');
+            const aimIndicator = document.getElementById('aim-indicator');
+            const useJoystick = document.getElementById('use-joystick');
+            const useStick = document.getElementById('use-stick');
+            const fireBtn = document.getElementById('fire-btn');
+
+            // Detect mobile/touch device
+            function isMobileDevice() {
+                return (
+                    ('ontouchstart' in window) ||
+                    (navigator.maxTouchPoints > 0) ||
+                    /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+                );
+            }
+
+            // Show controls only on mobile
+            if (isMobileDevice()) {
+                touchControls.classList.add('visible');
+                console.log('[SCE] Mobile FPS touch controls enabled');
+            }
+
+            // Update touch control positions based on game container
+            const gameContainer = document.getElementById('game-container');
+            function updateControlPositions() {
+                const rect = gameContainer.getBoundingClientRect();
+                const rightZone = document.getElementById('right-zone');
+
+                // Right zone (turning) - constrain to game area only
+                if (rightZone) {
+                    rightZone.style.top = rect.top + 'px';
+                    rightZone.style.left = rect.left + (rect.width * 0.5) + 'px';  // Right half of game
+                    rightZone.style.width = (rect.width * 0.5) + 'px';
+                    rightZone.style.height = (rect.height * 0.92) + 'px';  // Leave space for DOOM status bar
+                }
+            }
+
+            // Update on load, resize, and orientation change
+            updateControlPositions();
+            window.addEventListener('resize', updateControlPositions);
+            window.addEventListener('orientationchange', () => {
+                setTimeout(updateControlPositions, 100);
+            });
+
+            // Key mapping for DOOM
+            const KEY_MAP = {
+                // Movement
+                UP:           { keyCode: 38, key: 'ArrowUp',    code: 'ArrowUp' },
+                DOWN:         { keyCode: 40, key: 'ArrowDown',  code: 'ArrowDown' },
+                // Turning (right zone)
+                TURN_LEFT:    { keyCode: 37, key: 'ArrowLeft',  code: 'ArrowLeft' },
+                TURN_RIGHT:   { keyCode: 39, key: 'ArrowRight', code: 'ArrowRight' },
+                // Strafe (left joystick horizontal) - DOOM uses 'a' and 'd'
+                STRAFE_LEFT:  { keyCode: 65, key: 'a',          code: 'KeyA' },
+                STRAFE_RIGHT: { keyCode: 68, key: 'd',          code: 'KeyD' },
+                // Actions
+                CTRL:         { keyCode: 17, key: 'Control',    code: 'ControlLeft' },
+                SHIFT:        { keyCode: 16, key: 'Shift',      code: 'ShiftLeft' },
+                SPACE:        { keyCode: 32, key: ' ',          code: 'Space' },
+                ENTER:        { keyCode: 13, key: 'Enter',      code: 'Enter' },
+                ESCAPE:       { keyCode: 27, key: 'Escape',     code: 'Escape' },
+                BACKSPACE:    { keyCode: 8,  key: 'Backspace',  code: 'Backspace' }
+            };
+
+            // Track currently pressed keys
+            const pressedKeys = new Set();
+
+            // Simulate key event - dispatch to document for Emscripten/SDL
+            function simulateKey(keyInfo, type) {
+                const event = new KeyboardEvent(type, {
+                    key: keyInfo.key,
+                    code: keyInfo.code,
+                    keyCode: keyInfo.keyCode,
+                    which: keyInfo.keyCode,
+                    bubbles: true,
+                    cancelable: true,
+                    view: window
+                });
+                document.dispatchEvent(event);
+            }
+
+            function pressKey(keyName) {
+                if (KEY_MAP[keyName] && !pressedKeys.has(keyName)) {
+                    pressedKeys.add(keyName);
+                    simulateKey(KEY_MAP[keyName], 'keydown');
+                }
+            }
+
+            function releaseKey(keyName) {
+                if (KEY_MAP[keyName] && pressedKeys.has(keyName)) {
+                    pressedKeys.delete(keyName);
+                    simulateKey(KEY_MAP[keyName], 'keyup');
+                }
+            }
+
+            // ===== LEFT ZONE: Movement Joystick =====
+            let joystickActive = false;
+            let joystickTouchId = null;
+            const joystickCenter = { x: 70, y: 70 };
+            const maxDistance = 40;
+            const deadzone = 12;
+            let moveDirection = { up: false, down: false, strafeLeft: false, strafeRight: false };
+
+            function updateMoveJoystick(touchX, touchY) {
+                const rect = joystick.getBoundingClientRect();
+                const centerX = rect.left + joystickCenter.x;
+                const centerY = rect.top + joystickCenter.y;
+
+                let deltaX = touchX - centerX;
+                let deltaY = touchY - centerY;
+                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+                if (distance > maxDistance) {
+                    deltaX = (deltaX / distance) * maxDistance;
+                    deltaY = (deltaY / distance) * maxDistance;
+                }
+
+                stick.style.transform = `translate(calc(-50% + ${deltaX}px), calc(-50% + ${deltaY}px))`;
+
+                const newDir = { up: false, down: false, strafeLeft: false, strafeRight: false };
+
+                if (distance > deadzone) {
+                    const normX = deltaX / maxDistance;
+                    const normY = deltaY / maxDistance;
+                    const threshold = 0.3;
+
+                    // Y axis: forward/backward
+                    if (normY < -threshold) newDir.up = true;
+                    if (normY > threshold) newDir.down = true;
+                    // X axis: strafe left/right
+                    if (normX < -threshold) newDir.strafeLeft = true;
+                    if (normX > threshold) newDir.strafeRight = true;
+                }
+
+                // Update keys only when changed
+                if (newDir.up !== moveDirection.up) {
+                    newDir.up ? pressKey('UP') : releaseKey('UP');
+                }
+                if (newDir.down !== moveDirection.down) {
+                    newDir.down ? pressKey('DOWN') : releaseKey('DOWN');
+                }
+                if (newDir.strafeLeft !== moveDirection.strafeLeft) {
+                    newDir.strafeLeft ? pressKey('STRAFE_LEFT') : releaseKey('STRAFE_LEFT');
+                }
+                if (newDir.strafeRight !== moveDirection.strafeRight) {
+                    newDir.strafeRight ? pressKey('STRAFE_RIGHT') : releaseKey('STRAFE_RIGHT');
+                }
+
+                moveDirection = newDir;
+            }
+
+            function resetMoveJoystick() {
+                stick.style.transform = 'translate(-50%, -50%)';
+                stick.classList.remove('active');
+
+                if (moveDirection.up) releaseKey('UP');
+                if (moveDirection.down) releaseKey('DOWN');
+                if (moveDirection.strafeLeft) releaseKey('STRAFE_LEFT');
+                if (moveDirection.strafeRight) releaseKey('STRAFE_RIGHT');
+
+                moveDirection = { up: false, down: false, strafeLeft: false, strafeRight: false };
+            }
+
+            // Left zone touch events (joystick)
+            leftZone.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                const touch = e.changedTouches[0];
+                joystickActive = true;
+                joystickTouchId = touch.identifier;
+                stick.classList.add('active');
+                updateMoveJoystick(touch.clientX, touch.clientY);
+            }, { passive: false });
+
+            leftZone.addEventListener('touchmove', function(e) {
+                e.preventDefault();
+                if (!joystickActive) return;
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === joystickTouchId) {
+                        updateMoveJoystick(touch.clientX, touch.clientY);
+                        break;
+                    }
+                }
+            }, { passive: false });
+
+            leftZone.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === joystickTouchId) {
+                        joystickActive = false;
+                        joystickTouchId = null;
+                        resetMoveJoystick();
+                        break;
+                    }
+                }
+            }, { passive: false });
+
+            leftZone.addEventListener('touchcancel', function(e) {
+                joystickActive = false;
+                joystickTouchId = null;
+                resetMoveJoystick();
+            });
+
+            // ===== RIGHT ZONE: Look/Aim (drag to turn, tap to fire) =====
+            let rightTouchId = null;
+            let rightTouchStart = { x: 0, y: 0, time: 0 };
+            let lastTouchX = 0;
+            let turnDirection = { left: false, right: false };
+            const turnSensitivity = 3;  // pixels per turn event
+            const tapThreshold = 200;   // ms for tap detection
+            const tapMoveThreshold = 15; // pixels - max movement for tap
+
+            // Helper function to reset right zone state
+            function resetRightZone() {
+                if (turnDirection.left) releaseKey('TURN_LEFT');
+                if (turnDirection.right) releaseKey('TURN_RIGHT');
+                turnDirection = { left: false, right: false };
+                rightTouchId = null;
+                aimIndicator.classList.remove('visible');
+            }
+
+            rightZone.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                const touch = e.changedTouches[0];
+                rightTouchId = touch.identifier;
+                rightTouchStart = { x: touch.clientX, y: touch.clientY, time: Date.now() };
+                lastTouchX = touch.clientX;
+
+                // Show aim indicator
+                aimIndicator.style.left = touch.clientX + 'px';
+                aimIndicator.style.top = touch.clientY + 'px';
+                aimIndicator.classList.add('visible');
+            }, { passive: false });
+
+            rightZone.addEventListener('touchmove', function(e) {
+                e.preventDefault();
+                for (let touch of e.changedTouches) {
+                    if (touch.identifier === rightTouchId) {
+                        const deltaX = touch.clientX - lastTouchX;
+                        lastTouchX = touch.clientX;
+
+                        // Update aim indicator
+                        aimIndicator.style.left = touch.clientX + 'px';
+                        aimIndicator.style.top = touch.clientY + 'px';
+
+                        // Turn based on horizontal drag
+                        if (Math.abs(deltaX) > turnSensitivity) {
+                            if (deltaX < 0) {
+                                // Turning left
+                                if (!turnDirection.left) {
+                                    releaseKey('TURN_RIGHT');
+                                    pressKey('TURN_LEFT');
+                                    turnDirection = { left: true, right: false };
+                                }
+                            } else {
+                                // Turning right
+                                if (!turnDirection.right) {
+                                    releaseKey('TURN_LEFT');
+                                    pressKey('TURN_RIGHT');
+                                    turnDirection = { left: false, right: true };
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }, { passive: false });
+
+            rightZone.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                const touch = Array.from(e.changedTouches).find(t => t.identifier === rightTouchId);
+                if (!touch) {
+                    resetRightZone();
+                    return;
+                }
+
+                const elapsed = Date.now() - rightTouchStart.time;
+                const movedX = Math.abs(touch.clientX - rightTouchStart.x);
+                const movedY = Math.abs(touch.clientY - rightTouchStart.y);
+
+                // Detect tap (short touch with minimal movement)
+                if (elapsed < tapThreshold && movedX < tapMoveThreshold && movedY < tapMoveThreshold) {
+                    // Fire on tap
+                    pressKey('CTRL');
+                    setTimeout(() => releaseKey('CTRL'), 50);
+                }
+
+                resetRightZone();
+            }, { passive: false });
+
+            rightZone.addEventListener('touchcancel', function(e) {
+                resetRightZone();
+            });
+
+            // ===== FIRE BUTTON =====
+            fireBtn.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                pressKey('CTRL');
+                pressKey('ENTER');
+                this.classList.add('pressed');
+            }, { passive: false });
+
+            fireBtn.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                releaseKey('CTRL');
+                releaseKey('ENTER');
+                this.classList.remove('pressed');
+            }, { passive: false });
+
+            // ===== USE JOYSTICK (Aim + Use) =====
+            let useJoystickActive = false;
+            let useJoystickTouchId = null;
+            let useJoystickStartX = 0;
+            let useJoystickStartY = 0;
+            let useJoystickStartTime = 0;
+            const USE_TAP_THRESHOLD = 10;
+            const USE_TAP_TIME = 300;
+            const USE_JOYSTICK_MAX_MOVE = 12.5;  // (70 - 45) / 2
+
+            // Helper function to reset use joystick state
+            function resetUseJoystick() {
+                useJoystickActive = false;
+                useJoystickTouchId = null;
+                useStick.style.transform = 'translate(-50%, -50%)';
+                useStick.classList.remove('active');
+                releaseKey('SHIFT');
+                releaseKey('TURN_LEFT');
+                releaseKey('TURN_RIGHT');
+            }
+
+            useJoystick.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (useJoystickActive) return;
+
+                const touch = e.changedTouches[0];
+                useJoystickTouchId = touch.identifier;
+                useJoystickActive = true;
+                useJoystickStartX = touch.clientX;
+                useJoystickStartY = touch.clientY;
+                useJoystickStartTime = Date.now();
+
+                pressKey('SHIFT');
+                useStick.classList.add('active');
+            }, { passive: false });
+
+            useJoystick.addEventListener('touchmove', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!useJoystickActive) return;
+
+                const touch = Array.from(e.changedTouches).find(t => t.identifier === useJoystickTouchId);
+                if (!touch) return;
+
+                const deltaX = touch.clientX - useJoystickStartX;
+                const clampedX = Math.max(-USE_JOYSTICK_MAX_MOVE, Math.min(USE_JOYSTICK_MAX_MOVE, deltaX));
+
+                useStick.style.transform = `translate(calc(-50% + ${clampedX}px), -50%)`;
+
+                const turnThreshold = 5;
+                if (deltaX > turnThreshold) {
+                    releaseKey('TURN_LEFT');
+                    pressKey('TURN_RIGHT');
+                } else if (deltaX < -turnThreshold) {
+                    releaseKey('TURN_RIGHT');
+                    pressKey('TURN_LEFT');
+                } else {
+                    releaseKey('TURN_LEFT');
+                    releaseKey('TURN_RIGHT');
+                }
+            }, { passive: false });
+
+            useJoystick.addEventListener('touchend', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                const touch = Array.from(e.changedTouches).find(t => t.identifier === useJoystickTouchId);
+                if (!touch) {
+                    resetUseJoystick();
+                    return;
+                }
+
+                const deltaX = touch.clientX - useJoystickStartX;
+                const deltaY = touch.clientY - useJoystickStartY;
+                const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+                const duration = Date.now() - useJoystickStartTime;
+
+                if (distance < USE_TAP_THRESHOLD && duration < USE_TAP_TIME) {
+                    pressKey('SPACE');
+                    pressKey('BACKSPACE');
+                    setTimeout(() => {
+                        releaseKey('SPACE');
+                        releaseKey('BACKSPACE');
+                    }, 100);
+                }
+
+                resetUseJoystick();
+            }, { passive: false });
+
+            useJoystick.addEventListener('touchcancel', function(e) {
+                resetUseJoystick();
+            }, { passive: false });
+
+            // Weapon switch buttons - create key info dynamically
+            document.querySelectorAll('.weapon-btn').forEach(btn => {
+                const keyNum = btn.dataset.key;
+                const keyInfo = {
+                    keyCode: 48 + parseInt(keyNum),
+                    key: keyNum,
+                    code: 'Digit' + keyNum
+                };
+
+                btn.addEventListener('touchstart', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    simulateKey(keyInfo, 'keydown');
+                }, { passive: false });
+
+                btn.addEventListener('touchend', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    simulateKey(keyInfo, 'keyup');
+                }, { passive: false });
+            });
+        })();
+
         // Fullscreen toggle function
         function toggleFullscreen() {
             if (!document.fullscreenElement) {
@@ -515,6 +1360,104 @@
                 });
             } else {
                 document.exitFullscreen();
+            }
+        }
+
+        // Open game menu (send ESC key)
+        function openMenu() {
+            const canvas = document.getElementById('canvas');
+            const escEvent = new KeyboardEvent('keydown', {
+                key: 'Escape',
+                code: 'Escape',
+                keyCode: 27,
+                which: 27,
+                bubbles: true,
+                cancelable: true
+            });
+            canvas.dispatchEvent(escEvent);
+            // Also send keyup
+            setTimeout(() => {
+                const escUpEvent = new KeyboardEvent('keyup', {
+                    key: 'Escape',
+                    code: 'Escape',
+                    keyCode: 27,
+                    which: 27,
+                    bubbles: true,
+                    cancelable: true
+                });
+                canvas.dispatchEvent(escUpEvent);
+            }, 50);
+        }
+
+        // Audio toggle function - robust mute via master GainNode
+        let audioMuted = false;
+        let masterGain = null;
+        let cachedAudioCtx = null;
+
+        // Hook into AudioContext to intercept audio and insert master gain node
+        (function() {
+            const OriginalAudioContext = window.AudioContext || window.webkitAudioContext;
+            if (!OriginalAudioContext) return;
+
+            // Store original connect method
+            const originalConnect = AudioNode.prototype.connect;
+
+            // Override connect to intercept connections to destination
+            AudioNode.prototype.connect = function(destination, ...args) {
+                // If connecting to destination and we have a master gain, route through it
+                if (destination instanceof AudioDestinationNode && masterGain && this !== masterGain) {
+                    return originalConnect.call(this, masterGain, ...args);
+                }
+                return originalConnect.call(this, destination, ...args);
+            };
+
+            // Hook AudioContext creation
+            window.AudioContext = function(...args) {
+                const ctx = new OriginalAudioContext(...args);
+                cachedAudioCtx = ctx;
+
+                // Create master gain node for volume control
+                masterGain = ctx.createGain();
+                masterGain.connect(ctx.destination);
+                masterGain.gain.value = 1.0;
+
+                return ctx;
+            };
+            window.AudioContext.prototype = OriginalAudioContext.prototype;
+
+            if (window.webkitAudioContext) {
+                window.webkitAudioContext = window.AudioContext;
+            }
+        })();
+
+        function toggleAudio() {
+            const btn = document.getElementById('audio-btn');
+
+            if (masterGain) {
+                if (audioMuted) {
+                    masterGain.gain.setValueAtTime(1.0, cachedAudioCtx.currentTime);
+                    audioMuted = false;
+                    btn.textContent = 'Sound';
+                    btn.classList.remove('muted');
+                } else {
+                    masterGain.gain.setValueAtTime(0, cachedAudioCtx.currentTime);
+                    audioMuted = true;
+                    btn.textContent = 'Muted';
+                    btn.classList.add('muted');
+                }
+            } else if (cachedAudioCtx) {
+                // Fallback: suspend/resume
+                if (audioMuted) {
+                    cachedAudioCtx.resume();
+                    audioMuted = false;
+                    btn.textContent = 'Sound';
+                    btn.classList.remove('muted');
+                } else {
+                    cachedAudioCtx.suspend();
+                    audioMuted = true;
+                    btn.textContent = 'Muted';
+                    btn.classList.add('muted');
+                }
             }
         }
 
@@ -590,6 +1533,16 @@
             // Show/hide aim section
             const aimSection = document.getElementById('aim-section');
             aimSection.classList.toggle('visible', machine === 'aim');
+
+            // For enemy tab, auto-select first enemy if available
+            if (machine === 'enemy') {
+                const firstEnemyBtn = document.querySelector('.enemy-btn');
+                if (firstEnemyBtn) {
+                    const slot = parseInt(firstEnemyBtn.dataset.slot);
+                    selectEnemy(slot);
+                    return;  // selectEnemy handles visualizer loading
+                }
+            }
 
             // Load new SCXML in visualizer
             const iframe = document.getElementById('visualizer');
@@ -698,6 +1651,25 @@
             // Update stats
             const activeCount = Object.keys(SCE.enemies).length;
             document.getElementById('stat-enemies').textContent = activeCount;
+
+            // Update threat count (enemies in CHASING or ATTACKING state)
+            updateThreatCount();
+        }
+
+        // Count and display enemies in threatening states
+        function updateThreatCount() {
+            let threats = 0;
+            for (const slot in SCE.enemies) {
+                const enemy = SCE.enemies[slot];
+                if (enemy.state === 'CHASING' || enemy.state === 'ATTACKING') {
+                    threats++;
+                }
+            }
+            const statThreats = document.getElementById('stat-threats');
+            if (statThreats) {
+                statThreats.textContent = threats;
+                statThreats.style.color = threats > 0 ? '#ff6600' : '#00ff00';
+            }
         }
 
         // C++ callback: Called when an enemy is updated
@@ -766,6 +1738,19 @@
                 if (stateEl) {
                     stateEl.textContent = state;
                     stateEl.className = 'secret-state-text ' + state;
+                }
+            }
+
+            // Auto-enable aim assist on mobile when game starts
+            const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+            if (machine === 'game' && state.toUpperCase() === 'LEVEL') {
+                if (!SCE.aimAssistEnabled && isMobile) {
+                    setTimeout(() => {
+                        if (!SCE.aimAssistEnabled && typeof Module !== 'undefined' && Module.ccall) {
+                            Module.ccall('sce_aim_event_toggle', null, [], []);
+                        }
+                    }, 1000);
                 }
             }
         };
@@ -844,15 +1829,6 @@
                     doorInfoEl.style.display = 'none';
                 }
             }
-            // Log with sector info if available
-            if (sectorIdx >= 0) {
-                console.log('[SCE:Target]', name, '- Trigger:', triggerX, triggerY, '| Sector:', sectorX, sectorY, '(idx:', sectorIdx + ')');
-            } else {
-                console.debug('[SCE:Target] Info:', typeName, name, index, total);
-            }
-            if (openMethod) {
-                console.log('[SCE:Target] Door info: open=' + openMethod + ', hidden=' + isHidden + ', linkedSecret=' + linkedSecret);
-            }
         };
 
         // Destination mode: 0 = trigger, 1 = sector
@@ -875,7 +1851,6 @@
             document.getElementById('dest-sector-btn').classList.toggle('active', mode === 1);
             // Recalculate path with new destination
             Module.ccall('sce_secret_recalculate', null, [], []);
-            console.log('[SCE:DestMode] Set to', mode === 0 ? 'TRIGGER' : 'SECTOR');
         }
 
         // C++ callback: Called when aim assist state changes
@@ -892,6 +1867,13 @@
             if (stateEl) {
                 stateEl.textContent = state;
                 stateEl.className = 'aim-state-text ' + state;
+            }
+
+            // Update stats bar
+            const statAim = document.getElementById('stat-aim');
+            if (statAim) {
+                statAim.textContent = enabled ? 'ON' : 'OFF';
+                statAim.style.color = enabled ? '#00ff00' : '#888';
             }
 
             // Update toggle button

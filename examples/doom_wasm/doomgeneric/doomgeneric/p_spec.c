@@ -47,6 +47,8 @@
 // Data.
 #include "sounds.h"
 
+// SCE wrapper function for secret discovery notification
+extern void sce_secret_discovered(void);
 
 //
 // Animating textures and planes
@@ -1059,6 +1061,7 @@ void P_PlayerInSpecialSector (player_t* player)
 	// SECRET SECTOR
 	player->secretcount++;
 	sector->special = 0;
+	sce_secret_discovered();
 	break;
 			
       case 11:

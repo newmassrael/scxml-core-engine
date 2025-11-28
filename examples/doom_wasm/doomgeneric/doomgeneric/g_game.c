@@ -604,9 +604,9 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
 //
 // G_DoLoadLevel 
 //
-void G_DoLoadLevel (void) 
-{ 
-    int             i; 
+void G_DoLoadLevel (void)
+{
+    int             i;
 
     // Set the sky map.
     // First thing, we have a dummy sky texture name,
@@ -886,11 +886,11 @@ void G_Ticker (void)
 	    G_DoReborn (i);
     
     // do things to change the game state
-    while (gameaction != ga_nothing) 
-    { 
-	switch (gameaction) 
-	{ 
-	  case ga_loadlevel: 
+    while (gameaction != ga_nothing)
+    {
+	switch (gameaction)
+	{
+	  case ga_loadlevel:
 	    G_DoLoadLevel (); 
 	    break; 
 	  case ga_newgame: 
@@ -1750,7 +1750,7 @@ G_DeferedInitNew
 } 
 
 
-void G_DoNewGame (void) 
+void G_DoNewGame (void)
 {
     SCE_GameNewGame();
     demoplayback = false; 

@@ -2204,16 +2204,9 @@ void Secret_ResetTracking(void) {
 }
 
 int Secret_GetRemainingCount(void) {
-    int count = 0;
-    int i;
-
-    for (i = 0; i < numsectors; i++) {
-        if (sectors[i].special == 9) {
-            count++;
-        }
-    }
-
-    return count;
+    player_t *player = &players[consoleplayer];
+    int remaining = totalsecret - player->secretcount;
+    return (remaining > 0) ? remaining : 0;
 }
 
 /**

@@ -69,6 +69,7 @@ void sce_select_target(int type, int index);  /* Select specific target by type 
 void sce_secret_event_cancel(void);
 void sce_secret_event_level_change(void);
 void sce_secret_event_reached(void);
+void sce_secret_update_count(void);  /* Update secret count display */
 
 /* Secret path finding result callback */
 void sce_secret_path_found(void);
