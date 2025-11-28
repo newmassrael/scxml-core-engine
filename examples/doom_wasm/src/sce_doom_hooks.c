@@ -403,3 +403,87 @@ void SCE_AimEventNoTarget(void) {
 void SCE_AimEventShotComplete(void) {
     sce_aim_event_shot_complete();
 }
+
+/* ============================================
+ * Logical Time Processing (GameLoopTimer)
+ * ============================================ */
+extern void sce_process_tic(void);
+
+void SCE_ProcessTic(void) {
+    sce_process_tic();
+}
+
+/* ============================================
+ * Kill Combo System
+ * ============================================ */
+extern void sce_combo_reset(void);
+extern int sce_combo_get_count(void);
+extern int sce_combo_is_active(void);
+extern const char *sce_combo_get_state(void);
+
+void SCE_ComboReset(void) {
+    sce_combo_reset();
+}
+
+int SCE_ComboGetCount(void) {
+    return sce_combo_get_count();
+}
+
+boolean SCE_ComboIsActive(void) {
+    return sce_combo_is_active() ? true : false;
+}
+
+const char *SCE_ComboGetStateName(void) {
+    return sce_combo_get_state();
+}
+
+/* ============================================
+ * Berserk Mode System
+ * ============================================ */
+extern int sce_combo_is_berserk(void);
+extern int sce_berserk_get_intensity(void);
+
+/* Berserk state - managed by SCXML callbacks */
+static float g_berserk_multiplier = 1.0f;  /* Damage multiplier (1.0 = normal) */
+
+boolean SCE_BerserkIsActive(void) {
+    return sce_combo_is_berserk() ? true : false;
+}
+
+int SCE_BerserkGetIntensity(void) {
+    return sce_berserk_get_intensity();
+}
+
+float SCE_BerserkGetMultiplier(void) {
+    return g_berserk_multiplier;
+}
+
+int SCE_BerserkGetAttackSpeed(void) {
+    int intensity = sce_berserk_get_intensity();
+    if (intensity <= 1) return 1;
+    // Scale: x2-x3 = 2, x4-x5 = 3, x6-x7 = 4, x8-x10 = 5
+    int speed = 1 + (intensity - 1) / 2;
+    if (speed > 5) speed = 5;
+    return speed;
+}
+
+void SCE_BerserkHealPlayer(void) {
+    player_t *player = &players[0];
+    if (player && player->health < 100) {
+        player->health = 100;
+        if (player->mo) {
+            player->mo->health = 100;
+        }
+        printf("[BERSERK] Healed player to 100 HP!\n");
+    }
+}
+
+void SCE_BerserkSetMultiplier(float mult) {
+    g_berserk_multiplier = mult;
+    printf("[BERSERK] Damage multiplier set to %.2f\n", mult);
+}
+
+void SCE_BerserkReset(void) {
+    g_berserk_multiplier = 1.0f;
+    printf("[BERSERK] Reset! Damage multiplier back to 1.0\n");
+}

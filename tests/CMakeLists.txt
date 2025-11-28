@@ -356,6 +356,30 @@ target_link_libraries(timer_manager_tests
 apply_sce_test_policies(timer_manager_tests)
 
 # ============================================================================
+# 4b. Game Loop Timer Tests (Logical Time Scheduler + GameLoopTimer)
+# ============================================================================
+
+add_executable(game_loop_timer_tests
+    api/GameLoopTimerTest.cpp
+)
+
+target_include_directories(game_loop_timer_tests
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(game_loop_timer_tests
+    PRIVATE
+        sce_unified
+        GTest::gtest_main
+        pthread
+)
+
+apply_sce_test_policies(game_loop_timer_tests)
+
+# ============================================================================
 # 5. Core Parser Tests (SCE namespace updated)
 # ============================================================================
 
@@ -1183,6 +1207,7 @@ add_test(NAME ActionTests COMMAND action_tests)
 add_test(NAME SCESCXMLTests COMMAND sce_scxml_tests)
 add_test(NAME ReadySCXMLEngineTests COMMAND ready_scxml_engine_tests)
 add_test(NAME TimerManagerTests COMMAND timer_manager_tests)
+add_test(NAME GameLoopTimerTests COMMAND game_loop_timer_tests)
 add_test(NAME ComprehensiveInteractiveTests COMMAND comprehensive_interactive_test)
 
 # Priority Level 3: Integration and concurrency tests (system-level validation, ~5-15s)
@@ -1255,6 +1280,7 @@ set_tests_properties(W3CFullComplianceTests PROPERTIES DEPENDS "IntegrationTests
 set_tests_properties(SCESCXMLTests PROPERTIES TIMEOUT 30)
 set_tests_properties(ReadySCXMLEngineTests PROPERTIES TIMEOUT 30)
 set_tests_properties(TimerManagerTests PROPERTIES TIMEOUT 60)
+set_tests_properties(GameLoopTimerTests PROPERTIES TIMEOUT 30)
 set_tests_properties(JSEngineTests CoreParserTests StateMachineTests PROPERTIES TIMEOUT 60)
 set_tests_properties(ActionTests HistoryTests StatesTests PROPERTIES TIMEOUT 90)
 set_tests_properties(IntegrationTests ConcurrencyTests PROPERTIES TIMEOUT 180)

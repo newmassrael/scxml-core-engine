@@ -33,6 +33,8 @@
 
 #include "s_sound.h"
 
+#include "sce_doom_hooks.h"
+
 // State.
 #include "doomstat.h"
 #include "r_state.h"
@@ -1129,9 +1131,18 @@ P_LineAttack
 {
     fixed_t	x2;
     fixed_t	y2;
-	
+
     angle >>= ANGLETOFINESHIFT;
     shootthing = t1;
+
+    // Apply berserk damage multiplier for player attacks
+    if (t1->player && damage > 0) {
+        float mult = SCE_BerserkGetMultiplier();
+        if (mult > 1.0f) {
+            damage = (int)(damage * mult);
+        }
+    }
+
     la_damage = damage;
     x2 = t1->x + (distance>>FRACBITS)*finecosine[angle];
     y2 = t1->y + (distance>>FRACBITS)*finesine[angle];
@@ -1285,8 +1296,17 @@ P_RadiusAttack
     xl = (spot->x - dist - bmaporgx)>>MAPBLOCKSHIFT;
     bombspot = spot;
     bombsource = source;
+
+    // Apply berserk damage multiplier for player-caused explosions
+    if (source && source->player && damage > 0) {
+        float mult = SCE_BerserkGetMultiplier();
+        if (mult > 1.0f) {
+            damage = (int)(damage * mult);
+        }
+    }
+
     bombdamage = damage;
-	
+
     for (y=yl ; y<=yh ; y++)
 	for (x=xl ; x<=xh ; x++)
 	    P_BlockThingsIterator (x, y, PIT_RadiusAttack );

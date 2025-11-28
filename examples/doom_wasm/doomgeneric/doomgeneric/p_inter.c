@@ -813,7 +813,15 @@ P_DamageMobj
     player = target->player;
     if (player && gameskill == sk_baby)
 	damage >>= 1; 	// take half damage in trainer mode
-		
+
+    // Berserk damage reduction: take 1/intensity damage (x2 = 1/2, x10 = 1/10)
+    if (player && damage > 0) {
+        float mult = SCE_BerserkGetMultiplier();
+        if (mult > 1.0f) {
+            damage = (int)(damage / mult);
+            if (damage < 1) damage = 1;  // Minimum 1 damage
+        }
+    }
 
     // Some close combat weapons should not
     // inflict thrust and push the victim out of reach,

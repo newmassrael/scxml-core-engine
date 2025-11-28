@@ -20,7 +20,8 @@ def main():
         'WEAPON': 'weapon_state.scxml',
         'ENEMY': 'enemy_state.scxml',
         'SECRET': 'secret_hint_state.scxml',
-        'AIM': 'aim_assist_state.scxml'
+        'AIM': 'aim_assist_state.scxml',
+        'COMBO': 'combo_state.scxml'
     }
 
     scxml_base64 = {}

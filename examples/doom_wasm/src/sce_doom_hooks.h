@@ -120,6 +120,31 @@ void SCE_AimEventTargetLost(void);        /* Target died or out of range */
 void SCE_AimEventNoTarget(void);          /* Search completed, no target found */
 void SCE_AimEventShotComplete(void);      /* Shot processing finished, return to idle */
 
+/**
+ * Logical time processing - call from G_Ticker
+ * Advances GameLoopTimer for timer-based state machines (combo system)
+ */
+void SCE_ProcessTic(void);
+
+/**
+ * Kill Combo System
+ */
+void SCE_ComboReset(void);               /* Reset combo on level change */
+int SCE_ComboGetCount(void);             /* Get current combo count */
+boolean SCE_ComboIsActive(void);         /* Check if combo is active */
+const char* SCE_ComboGetStateName(void); /* Get current combo state name */
+
+/**
+ * Berserk Mode System (triggered at combo 5+)
+ */
+boolean SCE_BerserkIsActive(void);        /* Check if berserk mode is active */
+int SCE_BerserkGetIntensity(void);        /* Get current berserk intensity (0-10) */
+float SCE_BerserkGetMultiplier(void);     /* Get current damage multiplier */
+int SCE_BerserkGetAttackSpeed(void);      /* Get attack speed multiplier (1-5) */
+void SCE_BerserkHealPlayer(void);         /* Heal player to 100 HP (called from SCXML) */
+void SCE_BerserkSetMultiplier(float mult); /* Set damage multiplier (called from SCXML) */
+void SCE_BerserkReset(void);              /* Reset berserk effects (called from SCXML) */
+
 #ifdef __cplusplus
 }
 #endif

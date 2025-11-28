@@ -25,24 +25,39 @@
 
     <!-- Initial state: Demo/Title screen -->
     <state id="demoscreen">
+        <onentry>
+            <script><cpp>game.onDemoScreen()</cpp></script>
+        </onentry>
         <transition event="newgame" target="level"/>
         <transition event="loadgame" target="level"/>
     </state>
 
     <!-- Active gameplay -->
     <state id="level">
+        <onentry>
+            <script><cpp>game.onLevelStart()</cpp></script>
+        </onentry>
+        <onexit>
+            <script><cpp>game.onLevelEnd()</cpp></script>
+        </onexit>
         <transition event="completed" target="intermission"/>
         <transition event="finale" target="finale"/>
     </state>
 
     <!-- Between-level intermission -->
     <state id="intermission">
+        <onentry>
+            <script><cpp>game.onIntermission()</cpp></script>
+        </onentry>
         <transition event="worlddone" target="level"/>
         <transition event="finale" target="finale"/>
     </state>
 
     <!-- End game/episode finale text -->
     <state id="finale">
+        <onentry>
+            <script><cpp>game.onFinale()</cpp></script>
+        </onentry>
         <!-- After finale text, player continues to next level/episode -->
         <transition event="worlddone" target="level"/>
     </state>

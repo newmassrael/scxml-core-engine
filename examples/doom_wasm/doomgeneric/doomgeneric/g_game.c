@@ -1027,12 +1027,13 @@ void G_Ticker (void)
     // do main actions
     switch (gamestate) 
     { 
-      case GS_LEVEL: 
-	P_Ticker (); 
-	ST_Ticker (); 
-	AM_Ticker (); 
+      case GS_LEVEL:
+	P_Ticker ();
+	ST_Ticker ();
+	AM_Ticker ();
 	HU_Ticker ();
 	SCE_SecretCheckReached();  // Check if player reached target secret
+	SCE_ProcessTic();          // Process logical time for timer-based state machines
 	break; 
 	 
       case GS_INTERMISSION: 

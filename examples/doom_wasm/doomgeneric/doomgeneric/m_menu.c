@@ -980,12 +980,15 @@ void M_VerifyNightmare(int key)
 
 void M_ChooseSkill(int choice)
 {
+#ifndef __EMSCRIPTEN__
+    // Show nightmare confirmation only on desktop (mobile can't type Y/N)
     if (choice == nightmare)
     {
 	M_StartMessage(DEH_String(NIGHTMARE),M_VerifyNightmare,true);
 	return;
     }
-	
+#endif
+
     G_DeferedInitNew(choice,epi+1,1);
     M_ClearMenus ();
 }

@@ -72,6 +72,80 @@
             image-rendering: crisp-edges;
         }
 
+        /* Kill Combo Display */
+        #combo-display {
+            position: absolute;
+            top: 15%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 28px;
+            font-weight: bold;
+            color: #ff6600;
+            text-shadow: 0 0 10px #ff0000, 2px 2px 0 #000;
+            letter-spacing: 2px;
+            pointer-events: none;
+            z-index: 90;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        #combo-display.combo-active {
+            opacity: 1;
+            animation: combo-pulse 0.3s ease-out;
+        }
+        #combo-display.berserk-active {
+            opacity: 1;
+            color: #ff0000;
+            font-size: 36px;
+            text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000, 2px 2px 0 #000;
+            animation: berserk-text-pulse 0.5s ease-in-out infinite;
+        }
+        @keyframes combo-pulse {
+            0% { transform: translateX(-50%) scale(1.3); }
+            100% { transform: translateX(-50%) scale(1); }
+        }
+        @keyframes berserk-text-pulse {
+            0%, 100% { transform: translateX(-50%) scale(1); }
+            50% { transform: translateX(-50%) scale(1.1); }
+        }
+
+        /* Berserk Red Screen Overlay */
+        #berserk-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(ellipse at center, transparent 20%, rgba(255, 0, 0, 0.3) 100%);
+            pointer-events: none;
+            z-index: 80;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        #berserk-overlay.active {
+            opacity: 1;
+        }
+        #berserk-overlay.intensity-low {
+            animation: berserk-pulse-slow 1s ease-in-out infinite;
+        }
+        #berserk-overlay.intensity-mid {
+            animation: berserk-pulse-mid 0.6s ease-in-out infinite;
+        }
+        #berserk-overlay.intensity-high {
+            animation: berserk-pulse-fast 0.3s ease-in-out infinite;
+        }
+        @keyframes berserk-pulse-slow {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+        }
+        @keyframes berserk-pulse-mid {
+            0%, 100% { opacity: 0.85; }
+            50% { opacity: 1; }
+        }
+        @keyframes berserk-pulse-fast {
+            0%, 100% { opacity: 0.9; filter: brightness(1); }
+            50% { opacity: 1; filter: brightness(1.1); }
+        }
+
         /* Mobile Start Overlay */
         #start-overlay {
             position: absolute;
@@ -499,40 +573,62 @@
             border-bottom: none;
         }
         .aim-section.visible {
-            display: block;
-        }
-        .aim-info {
             display: flex;
-            flex-wrap: wrap;
-            gap: 15px;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .aim-info .info-item {
-            padding: 5px 10px;
-            background: #333;
-            border-radius: 4px;
-            font-size: 12px;
         }
         .aim-state-text {
             font-weight: bold;
         }
         .aim-state-text.disabled { color: #666; }
         .aim-state-text.enabled { color: #00ff00; }
-        .aim-features {
-            margin: 10px 0;
-            padding: 10px;
+
+        /* Combo Section */
+        .combo-section {
+            display: none;
+            flex-shrink: 0;
+            padding: 3px 8px;
+            background: #252525;
+            border: 1px solid #555;
+            border-bottom: none;
+        }
+        .combo-section.visible {
+            display: block;
+        }
+        .combo-counter {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 2px 6px;
             background: #1a1a1a;
-            border-radius: 4px;
+            border-radius: 3px;
         }
-        .aim-features .feature-item {
-            color: #aaa;
-            font-size: 11px;
-            padding: 3px 0;
+        .combo-counter > div:first-child {
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
-        .aim-features .feature-item::before {
-            content: '✓ ';
-            color: #00ff00;
+        .combo-counter-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #ff6600;
+            text-shadow: 0 0 6px #ff3300;
+        }
+        .combo-counter-label {
+            font-size: 10px;
+            color: #888;
+            text-transform: uppercase;
+        }
+        .combo-timer-bar {
+            flex: 1;
+            height: 4px;
+            background: #333;
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .combo-timer-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6600, #ff3300);
+            width: 0%;
+            transition: width 0.1s linear;
         }
         .aim-toggle-btn {
             padding: 10px 20px;
@@ -710,6 +806,10 @@
         <div id="game-section">
             <div id="game-container">
                 <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" width="640" height="400"></canvas>
+                <!-- Berserk Red Screen Overlay -->
+                <div id="berserk-overlay"></div>
+                <!-- Kill Combo Display -->
+                <div id="combo-display"></div>
                 <!-- Mobile Start Overlay -->
                 <div id="start-overlay">
                     <div class="start-content">
@@ -779,6 +879,9 @@
                 <button class="tab-btn" data-machine="aim" onclick="switchTab('aim')">
                     Aim <span class="state-indicator" id="ind-aim">disabled</span>
                 </button>
+                <button class="tab-btn" data-machine="combo" onclick="switchTab('combo')">
+                    Combo <span class="state-indicator" id="ind-combo">idle</span>
+                </button>
             </div>
             <div id="enemy-section" class="enemy-section">
                 <div id="enemy-list" class="enemy-list">
@@ -809,19 +912,21 @@
                     <div class="target-group" id="group-enemy"><span class="group-label">Enemy</span></div>
                 </div>
             </div>
-            <div id="aim-section" class="aim-section">
-                <div class="aim-info">
-                    <div class="info-item">State: <span id="aim-state" class="aim-state-text disabled">disabled</span></div>
-                    <div class="info-item">Press <span class="hint-key">Y</span> to toggle</div>
+            <div id="aim-section" class="aim-section" style="align-items:center; gap:10px; padding:5px 10px;">
+                <span id="aim-state" class="aim-state-text disabled">OFF</span>
+                <span id="aim-scxml-state" style="color:#888; font-size:12px;">(disabled)</span>
+                <button id="aim-toggle-btn" class="aim-toggle-btn" onclick="toggleAimAssist()" style="padding:3px 10px; font-size:12px;">Y: Toggle</button>
+            </div>
+            <div id="combo-section" class="combo-section">
+                <div class="combo-counter">
+                    <div>
+                        <div class="combo-counter-value" id="combo-count">0</div>
+                        <div class="combo-counter-label">Combo</div>
+                    </div>
+                    <div class="combo-timer-bar">
+                        <div class="combo-timer-fill" id="combo-timer"></div>
+                    </div>
                 </div>
-                <div class="aim-features">
-                    <div class="feature-item">Auto-aim snaps to nearest enemy</div>
-                    <div class="feature-item">100% accuracy (no weapon spread)</div>
-                    <div class="feature-item">Extended vertical aim range</div>
-                </div>
-                <button id="aim-toggle-btn" class="aim-toggle-btn" onclick="toggleAimAssist()">
-                    Enable Aim Assist
-                </button>
             </div>
             </div>
             <div id="viz-section">
@@ -1495,11 +1600,12 @@
             weapon: '{{SCXML_WEAPON}}',
             enemy: '{{SCXML_ENEMY}}',
             secret: '{{SCXML_SECRET}}',
-            aim: '{{SCXML_AIM}}'
+            aim: '{{SCXML_AIM}}',
+            combo: '{{SCXML_COMBO}}'
         };
 
         // Valid machine names for validation
-        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy', 'secret', 'aim'];
+        const VALID_MACHINES = ['game', 'player', 'weapon', 'enemy', 'secret', 'aim', 'combo'];
 
         // State tracking
         const SCE = {
@@ -1533,6 +1639,10 @@
             // Show/hide aim section
             const aimSection = document.getElementById('aim-section');
             aimSection.classList.toggle('visible', machine === 'aim');
+
+            // Show/hide combo section
+            const comboSection = document.getElementById('combo-section');
+            comboSection.classList.toggle('visible', machine === 'combo');
 
             // For enemy tab, auto-select first enemy if available
             if (machine === 'enemy') {
@@ -1696,6 +1806,288 @@
             document.getElementById('ind-enemy').textContent = enemyRemaining + ' remaining';
         };
 
+        // Combo/Berserk state (timer is now driven by C++ game loop via onSceComboTimer)
+        // Note: Timer bar is updated directly from C++ at 35Hz, perfectly synced with game logic
+
+        // Berserk state (updated by onSceBerserkUpdate)
+        let berserkActive = false;
+        let berserkIntensity = 0;
+
+        // C++ callback: Called when berserk state changes
+        window.onSceBerserkUpdate = function(intensity, active) {
+            console.log('[SCE:Berserk] Update: intensity=' + intensity + ', active=' + active);
+            berserkActive = active;
+            berserkIntensity = intensity;
+
+            // Update red screen overlay with intensity-based effects
+            const overlayEl = document.getElementById('berserk-overlay');
+            if (overlayEl) {
+                if (active && intensity > 0) {
+                    // Strong red intensity: 0.2 at x1, up to 0.8 at x10+
+                    const cappedIntensity = Math.min(intensity, 10);
+                    const redIntensity = 0.2 + (cappedIntensity / 10) * 0.6;
+                    // Smaller transparent center at high intensity
+                    const transparentSize = Math.max(5, 25 - cappedIntensity * 2);
+                    overlayEl.style.background = 'radial-gradient(ellipse at center, transparent ' + transparentSize + '%, rgba(255, 0, 0, ' + redIntensity + ') 100%)';
+
+                    // Intensity-based pulse speed
+                    let intensityClass = 'active ';
+                    if (cappedIntensity <= 3) {
+                        intensityClass += 'intensity-low';
+                    } else if (cappedIntensity <= 6) {
+                        intensityClass += 'intensity-mid';
+                    } else {
+                        intensityClass += 'intensity-high';
+                    }
+                    overlayEl.className = intensityClass;
+                } else {
+                    overlayEl.className = '';
+                    overlayEl.style.background = '';
+                }
+            }
+
+            // Update combo display text for berserk
+            const comboEl = document.getElementById('combo-display');
+            if (comboEl && active) {
+                comboEl.textContent = 'BERSERK! x' + intensity;
+                comboEl.className = 'berserk-active';
+            }
+
+            // Reset timer animation for berserk (10 second timeout)
+            if (active) {
+                comboTimerStart = Date.now();
+                const timerEl = document.getElementById('combo-timer');
+                if (timerEl) {
+                    timerEl.style.width = '100%';
+                    timerEl.style.background = '#ff0000';  // Red for berserk
+                }
+            }
+        };
+
+        // C++ callback: Called when kill combo state changes
+        window.onSceComboUpdate = function(count, active) {
+            // Update game overlay (only if not in berserk - berserk has its own display)
+            const comboEl = document.getElementById('combo-display');
+            if (comboEl && !berserkActive) {
+                if (active && count > 1) {
+                    comboEl.textContent = count + 'x COMBO!';
+                    comboEl.className = 'combo-active';
+                } else if (!active) {
+                    comboEl.textContent = '';
+                    comboEl.className = '';
+                }
+            }
+
+            // Update combo section panel
+            const countEl = document.getElementById('combo-count');
+            if (countEl) {
+                countEl.textContent = count;
+            }
+
+            // Set timer bar color based on mode (actual animation driven by onSceComboTimer)
+            const timerEl = document.getElementById('combo-timer');
+            if (timerEl) {
+                if (active) {
+                    timerEl.style.width = '100%';
+                    timerEl.style.background = berserkActive ? '#ff0000' : '#ff6600';
+                } else {
+                    timerEl.style.width = '0%';
+                    timerEl.style.background = '#ff6600';  // Reset to normal color
+                }
+            }
+
+            // Clear berserk overlay if combo ended
+            if (!active) {
+                const overlayEl = document.getElementById('berserk-overlay');
+                if (overlayEl) {
+                    overlayEl.className = '';
+                }
+            }
+        };
+
+        // C++ callback: Called every game tic with remaining timer (synced with game logic)
+        window.onSceComboTimer = function(remainingMs, totalMs) {
+            const timerEl = document.getElementById('combo-timer');
+            if (timerEl) {
+                if (remainingMs < 0 || totalMs <= 0) {
+                    // Timer ended
+                    timerEl.style.width = '0%';
+                } else {
+                    // Update timer bar from C++ game time (perfectly synced)
+                    const percent = Math.max(0, (remainingMs / totalMs) * 100);
+                    timerEl.style.width = percent + '%';
+                    // Color based on berserk state
+                    timerEl.style.background = berserkActive ? '#ff0000' : '#ff6600';
+                }
+            }
+        };
+
+        // C++ callback: Called when game state machine triggers callbacks
+        // This enables bidirectional control: SCXML → JavaScript
+        window.onSceGameCallback = function(callbackType) {
+            console.log('[SCE:Game] Callback:', callbackType);
+
+            // Bidirectional control actions based on game state
+            switch(callbackType) {
+                case 'demo':
+                    // Demo screen: could auto-pause background processes
+                    break;
+                case 'level_start':
+                    // Level starting: reset combo, prepare UI
+                    if (typeof Module !== 'undefined' && Module.ccall) {
+                        Module.ccall('sce_combo_reset', null, [], []);
+                    }
+                    break;
+                case 'level_end':
+                    // Level ending: could save stats
+                    break;
+                case 'intermission':
+                    // Between levels: update stats display
+                    break;
+                case 'finale':
+                    // Game finale: could show celebration
+                    break;
+            }
+        };
+
+        // C++ callback: Called when player state machine triggers callbacks
+        // This enables bidirectional control: SCXML → JavaScript
+        window.onScePlayerCallback = function(callbackType) {
+            console.log('[SCE:Player] Callback:', callbackType);
+
+            // Bidirectional control actions based on player state
+            switch(callbackType) {
+                case 'alive':
+                    // Player alive: normal gameplay
+                    break;
+                case 'invulnerable':
+                    // God mode: could show visual indicator
+                    break;
+                case 'dead':
+                    // Player died: could show death screen overlay
+                    break;
+                case 'reborn':
+                    // Respawning: could show respawn animation
+                    break;
+            }
+        };
+
+        // C++ callback: Called when weapon state machine triggers callbacks
+        // This enables bidirectional control: SCXML → JavaScript
+        window.onSceWeaponCallback = function(callbackType) {
+            console.log('[SCE:Weapon] Callback:', callbackType);
+
+            // Bidirectional control actions based on weapon state
+            switch(callbackType) {
+                case 'ready':
+                    // Weapon ready: can fire or switch
+                    break;
+                case 'lowering':
+                    // Weapon lowering: switching to new weapon
+                    break;
+                case 'raising':
+                    // New weapon raising: almost ready
+                    break;
+                case 'firing':
+                    // Weapon firing: attack animation
+                    break;
+            }
+        };
+
+        // C++ callback: Called when enemy state machine triggers callbacks (multi-instance)
+        // This enables bidirectional control: SCXML → JavaScript
+        window.onSceEnemyCallback = function(slot, callbackType, typeName, instanceId) {
+            console.log('[SCE:Enemy] slot=' + slot + ' Callback:', callbackType, 'type=' + typeName, 'id=' + instanceId);
+
+            // Bidirectional control actions based on enemy state
+            switch(callbackType) {
+                case 'dormant':
+                    // Enemy idle, hasn't seen player
+                    break;
+                case 'alert':
+                    // Enemy just spotted player
+                    break;
+                case 'chasing':
+                    // Enemy actively pursuing player
+                    break;
+                case 'attacking':
+                    // Enemy performing attack
+                    break;
+                case 'pain':
+                    // Enemy in pain state (hit stun)
+                    break;
+                case 'dead':
+                    // Enemy has been killed
+                    break;
+            }
+        };
+
+        // C++ callback: Called when secret state machine triggers callbacks
+        // This enables bidirectional control: SCXML → JavaScript
+        window.onSceSecretCallback = function(callbackType) {
+            console.log('[SCE:Secret] Callback:', callbackType);
+
+            // Bidirectional control actions based on secret state
+            switch(callbackType) {
+                case 'disabled':
+                    // Hint system is off
+                    break;
+                case 'calculating':
+                    // Computing BFS path to target
+                    break;
+                case 'showing':
+                    // Actively displaying floor arrows
+                    break;
+                case 'found':
+                    // Player reached the secret
+                    break;
+                case 'no_path':
+                    // No accessible path to target
+                    break;
+            }
+        };
+
+        // C++ callback: Called when aim assist state machine triggers callbacks
+        // This enables bidirectional control: SCXML → JavaScript
+        window.onSceAimCallback = function(callbackType) {
+            console.log('[SCE:Aim] Callback:', callbackType);
+
+            // Bidirectional control actions based on aim assist state
+            switch(callbackType) {
+                case 'disabled':
+                    // Aim assist off, normal DOOM aiming
+                    break;
+                case 'enabled':
+                    // Aim assist on (compound state entry)
+                    break;
+                case 'idle':
+                    // Waiting for shot, no target
+                    break;
+                case 'searching':
+                    // Looking for target during shot
+                    break;
+                case 'locked':
+                    // Target acquired during current shot
+                    break;
+            }
+        };
+
+        // C++ callback: Called when combo state machine triggers callbacks
+        // This enables bidirectional control: SCXML → JavaScript
+        window.onSceComboCallback = function(callbackType) {
+            console.log('[SCE:Combo] Callback:', callbackType);
+
+            // Bidirectional control actions based on combo state
+            switch(callbackType) {
+                case 'idle':
+                    // No active combo
+                    break;
+                case 'active':
+                    // Combo in progress
+                    break;
+            }
+        };
+
         // C++ callback: Called when any state machine state changes
         window.onSceStateChange = function(machine, state) {
             // Validate machine name
@@ -1738,6 +2130,14 @@
                 if (stateEl) {
                     stateEl.textContent = state;
                     stateEl.className = 'secret-state-text ' + state;
+                }
+            }
+
+            // Special handling for aim state changes
+            if (machine === 'aim') {
+                const scxmlState = document.getElementById('aim-scxml-state');
+                if (scxmlState) {
+                    scxmlState.textContent = '(' + state + ')';
                 }
             }
 
@@ -1860,12 +2260,12 @@
 
             // Update indicator
             const indicator = document.getElementById('ind-aim');
-            if (indicator) indicator.textContent = state;
+            if (indicator) indicator.textContent = enabled ? 'ON' : 'OFF';
 
             // Update aim state text
             const stateEl = document.getElementById('aim-state');
             if (stateEl) {
-                stateEl.textContent = state;
+                stateEl.textContent = enabled ? 'ON' : 'OFF';
                 stateEl.className = 'aim-state-text ' + state;
             }
 
@@ -1879,7 +2279,6 @@
             // Update toggle button
             const btn = document.getElementById('aim-toggle-btn');
             if (btn) {
-                btn.textContent = enabled ? 'Disable Aim Assist' : 'Enable Aim Assist';
                 btn.classList.toggle('enabled', enabled);
             }
 

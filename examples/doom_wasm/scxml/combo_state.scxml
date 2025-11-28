@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kill Combo State Machine with Berserk Mode
+
+  Tracks consecutive kills within a time window using GameLoopTimer.
+  When combo reaches 5+ kills, activates berserk mode.
+
+  States:
+  - idle: No active combo
+  - active (compound): Combo in progress
+    - normal: Standard combo (1-4 kills, 3s timeout)
+    - berserk: Berserk mode (5+ kills, 10s timeout)
+
+  Events:
+  - kill: Enemy killed (restarts timer, may trigger berserk)
+  - timeout: Combo window expired (3s in normal mode)
+  - berserk_activate: Combo reached 5 kills (trigger berserk)
+  - berserk_timeout: Berserk 10s timer expired
+
+  Berserk Features:
+  - 10 second duration (resets on each kill)
+  - Intensity increases with each kill (up to max)
+  - Screen turns red proportionally
+  - Weapon damage increases proportionally
+  - Heals to 100 HP on activation
+
+  C++ Integration:
+  - Uses <cpp> tag for direct C++ function calls (Zero Overhead)
+  - combo.xxx() calls are transformed to user_->combo.xxx()
+  - berserk.xxx() calls are transformed to user_->berserk.xxx()
+
+  W3C SCXML 1.0 compliant (compound states per W3C SCXML 3.4)
+-->
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle" name="combo_state" datamodel="null">
+
+    <state id="idle">
+        <onentry>
+            <script><cpp>combo.onIdle()</cpp></script>
+        </onentry>
+        <!-- First kill starts combo -->
+        <transition event="kill" target="normal"/>
+    </state>
+
+    <!-- Compound state: active combo (W3C SCXML 3.4) -->
+    <state id="active" initial="normal">
+
+        <!-- Normal combo: kills 1-4 -->
+        <state id="normal">
+            <onentry>
+                <script><cpp>combo.onActive()</cpp></script>
+            </onentry>
+            <!-- Additional kill extends combo (internal self-transition triggers onentry) -->
+            <transition event="kill" type="internal" target="normal"/>
+            <!-- Combo reached 5+, activate berserk -->
+            <transition event="berserk_activate" target="berserk"/>
+            <!-- Timeout ends combo -->
+            <transition event="timeout" target="idle"/>
+        </state>
+
+        <!-- Berserk mode: kills 5+ (W3C SCXML 3.4 compound sub-state) -->
+        <state id="berserk">
+            <onentry>
+                <script><cpp>berserk.onActive()</cpp></script>
+            </onentry>
+            <onexit>
+                <script><cpp>berserk.onExit()</cpp></script>
+            </onexit>
+            <!-- Additional kill extends berserk (internal self-transition resets 10s timer and triggers onentry) -->
+            <transition event="kill" type="internal" target="berserk"/>
+            <!-- Berserk 10s timeout -->
+            <transition event="berserk_timeout" target="idle"/>
+        </state>
+
+    </state>
+
+</scxml>

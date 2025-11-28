@@ -6,6 +6,11 @@
     - ALIVE: Normal gameplay, can take damage
     - DEAD: Death animation playing, awaiting respawn
     - REBORN: Respawning, brief invulnerability
+    - INVULNERABLE: God mode active
+
+    C++ Integration:
+    - Uses <cpp> tag for direct C++ function calls (Zero Overhead)
+    - player.xxx() calls are transformed to user_->player.xxx()
 
     W3C SCXML 1.0 compliant
 -->
@@ -16,6 +21,9 @@
 
     <!-- Playing state - normal gameplay -->
     <state id="alive">
+        <onentry>
+            <script><cpp>player.onAlive()</cpp></script>
+        </onentry>
         <transition event="killed" target="dead"/>
         <!-- Cheat codes -->
         <transition event="god_mode_on" target="invulnerable"/>
@@ -23,18 +31,27 @@
 
     <!-- Invulnerable state (god mode) -->
     <state id="invulnerable">
+        <onentry>
+            <script><cpp>player.onInvulnerable()</cpp></script>
+        </onentry>
         <transition event="god_mode_off" target="alive"/>
         <transition event="killed" target="dead"/>  <!-- Can still die from special cases -->
     </state>
 
     <!-- Dead state - death animation -->
     <state id="dead">
+        <onentry>
+            <script><cpp>player.onDead()</cpp></script>
+        </onentry>
         <!-- Player pressed use to respawn - sets PST_REBORN which triggers respawn event -->
         <transition event="respawn" target="reborn"/>
     </state>
 
     <!-- Reborn state - respawning -->
     <state id="reborn">
+        <onentry>
+            <script><cpp>player.onReborn()</cpp></script>
+        </onentry>
         <transition event="spawn_complete" target="alive"/>
     </state>
 

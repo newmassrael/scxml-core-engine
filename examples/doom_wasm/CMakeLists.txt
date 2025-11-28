@@ -270,6 +270,7 @@ add_custom_command(
         ${CMAKE_CURRENT_SOURCE_DIR}/scxml/enemy_state.scxml
         ${CMAKE_CURRENT_SOURCE_DIR}/scxml/secret_hint_state.scxml
         ${CMAKE_CURRENT_SOURCE_DIR}/scxml/aim_assist_state.scxml
+        ${CMAKE_CURRENT_SOURCE_DIR}/scxml/combo_state.scxml
     COMMENT "Generating index.html with SCXML data"
 )
 add_custom_target(generate_index ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/index.html)

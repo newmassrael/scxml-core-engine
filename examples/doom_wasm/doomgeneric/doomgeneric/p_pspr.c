@@ -559,6 +559,10 @@ A_Saw
 
 static void DecreaseAmmo(player_t *player, int ammonum, int amount)
 {
+    // Berserk mode: unlimited ammo
+    if (SCE_BerserkIsActive())
+        return;
+
     if (ammonum < NUMAMMO)
     {
         player->ammo[ammonum] -= amount;
@@ -952,10 +956,12 @@ void P_MovePsprites (player_t* player)
 	    // drop tic count and possibly change state
 
 	    // a -1 tic count never changes
-	    if (psp->tics != -1)	
+	    if (psp->tics != -1)
 	    {
-		psp->tics--;
-		if (!psp->tics)
+		// Berserk attack speed: decrement by speed multiplier (1-5)
+		int speed = SCE_BerserkGetAttackSpeed();
+		psp->tics -= speed;
+		if (psp->tics <= 0)
 		    P_SetPsprite (player, i, psp->state->nextstate);
 	    }				
 	}

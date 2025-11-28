@@ -724,12 +724,13 @@ protected:
                     "AOT processEventQueues (internal): processTransition returned {}, oldState={}, currentState={}",
                     transitionTaken, static_cast<int>(oldState), static_cast<int>(currentState_));
                 if (transitionTaken) {
-                    // W3C SCXML 5.9.2: Internal self-transitions (non-descendant) behave as external
+                    // W3C SCXML 3.13: Self-transitions (target = source) exit and re-enter the state
+                    // W3C SCXML 5.9.2: Both internal and external self-transitions behave the same
+                    // (internal only differs when target is proper descendant, not when target = source)
                     // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
                     bool isSelfTransition = (oldState == currentState_);
                     bool needsHierarchicalHandling =
-                        (oldState != currentState_) ||
-                        (isSelfTransition && policy_.lastTransitionIsInternal_ && !policy_.lastTransitionIsTargetless_);
+                        (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
 
                     if (needsHierarchicalHandling) {
                         LOG_DEBUG("AOT processEventQueues: State transition {} -> {}", static_cast<int>(oldState),
@@ -794,12 +795,13 @@ protected:
                     "AOT processEventQueues (external): processTransition returned {}, oldState={}, currentState={}",
                     transitionTaken, static_cast<int>(oldState), static_cast<int>(currentState_));
                 if (transitionTaken) {
-                    // W3C SCXML 5.9.2: Internal self-transitions (non-descendant) behave as external
+                    // W3C SCXML 3.13: Self-transitions (target = source) exit and re-enter the state
+                    // W3C SCXML 5.9.2: Both internal and external self-transitions behave the same
+                    // (internal only differs when target is proper descendant, not when target = source)
                     // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
                     bool isSelfTransition = (oldState == currentState_);
                     bool needsHierarchicalHandling =
-                        (oldState != currentState_) ||
-                        (isSelfTransition && policy_.lastTransitionIsInternal_ && !policy_.lastTransitionIsTargetless_);
+                        (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
 
                     if (needsHierarchicalHandling) {
                         // W3C SCXML Appendix D: For parallel states, executeMicrostep already handled

@@ -11,52 +11,45 @@
   - readystate: Weapon ready to fire
   - atkstate: Weapon firing animation
 
-  Also tracks current weapon type via extended data.
+  C++ Integration:
+  - Uses <cpp> tag for direct C++ function calls (Zero Overhead)
+  - weapon.xxx() calls are transformed to user_->weapon.xxx()
+
+  W3C SCXML 1.0 compliant
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="ready" datamodel="null">
 
     <!-- Ready state - weapon can fire or be switched -->
     <state id="ready">
         <onentry>
-            <!-- Log weapon ready -->
+            <script><cpp>weapon.onReady()</cpp></script>
         </onentry>
-        <transition event="fire" target="firing">
-            <!-- Player pressed fire button -->
-        </transition>
-        <transition event="switch_weapon" target="lowering">
-            <!-- Player wants to switch weapons -->
-        </transition>
+        <transition event="fire" target="firing"/>
+        <transition event="switch_weapon" target="lowering"/>
     </state>
 
     <!-- Lowering state - weapon moving down to switch -->
     <state id="lowering">
         <onentry>
-            <!-- Start lower animation -->
+            <script><cpp>weapon.onLowering()</cpp></script>
         </onentry>
-        <transition event="lower_complete" target="raising">
-            <!-- Weapon fully lowered, now raise new weapon -->
-        </transition>
+        <transition event="lower_complete" target="raising"/>
     </state>
 
     <!-- Raising state - new weapon coming up -->
     <state id="raising">
         <onentry>
-            <!-- Start raise animation, update current weapon type -->
+            <script><cpp>weapon.onRaising()</cpp></script>
         </onentry>
-        <transition event="raise_complete" target="ready">
-            <!-- Weapon fully raised -->
-        </transition>
+        <transition event="raise_complete" target="ready"/>
     </state>
 
     <!-- Firing state - weapon attacking -->
     <state id="firing">
         <onentry>
-            <!-- Increment shot count -->
+            <script><cpp>weapon.onFiring()</cpp></script>
         </onentry>
-        <!-- Stays in firing during continuous fire (chaingun, etc), exits on fire_complete -->
-        <transition event="fire_complete" target="ready">
-            <!-- Attack animation finished, not refiring -->
-        </transition>
+        <transition event="fire_complete" target="ready"/>
     </state>
 
 </scxml>
