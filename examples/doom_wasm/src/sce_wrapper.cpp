@@ -1215,8 +1215,24 @@ const char *sce_get_player_state(void) {
     }
 
 PLAYER_EVENT(killed, Killed)
-PLAYER_EVENT(respawn, Respawn)
 PLAYER_EVENT(spawn_complete, Spawn_complete)
+
+// Custom respawn handler - resets enemy tracking and combo
+EMSCRIPTEN_KEEPALIVE
+void sce_player_event_respawn(void) {
+    if (g_player_sm) {
+        g_player_sm->raiseExternal(PlayerEvent::Respawn);
+        g_player_sm->step();
+    }
+
+    // Reset enemy tracking (threats/killed counts) on respawn
+    reset_all_enemies(false);
+
+    // Reset combo/berserk state
+    sce_combo_reset();
+
+    printf("[PLAYER] Respawn - reset enemies and combo\n");
+}
 PLAYER_EVENT(god_mode_on, God_mode_on)
 PLAYER_EVENT(god_mode_off, God_mode_off)
 

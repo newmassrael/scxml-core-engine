@@ -1179,6 +1179,9 @@
                 moveDirection = newDir;
             }
 
+            // Sticky USE key: keep SHIFT pressed while left joystick is active
+            let useKeySticky = false;
+
             function resetMoveJoystick() {
                 stick.style.transform = 'translate(-50%, -50%)';
                 stick.classList.remove('active');
@@ -1189,6 +1192,12 @@
                 if (moveDirection.strafeRight) releaseKey('STRAFE_RIGHT');
 
                 moveDirection = { up: false, down: false, strafeLeft: false, strafeRight: false };
+
+                // Release sticky USE key when left joystick is released
+                if (useKeySticky) {
+                    releaseKey('SHIFT');
+                    useKeySticky = false;
+                }
             }
 
             // Left zone touch events (joystick)
@@ -1354,7 +1363,14 @@
                 useJoystickTouchId = null;
                 useStick.style.transform = 'translate(-50%, -50%)';
                 useStick.classList.remove('active');
-                releaseKey('SHIFT');
+
+                // If left joystick is still active, keep SHIFT pressed (sticky)
+                if (joystickActive) {
+                    useKeySticky = true;
+                } else {
+                    releaseKey('SHIFT');
+                }
+
                 releaseKey('TURN_LEFT');
                 releaseKey('TURN_RIGHT');
             }
@@ -1388,7 +1404,8 @@
 
                 useStick.style.transform = `translate(calc(-50% + ${clampedX}px), -50%)`;
 
-                const turnThreshold = 5;
+                // Reduced sensitivity: higher threshold = less sensitive turning
+                const turnThreshold = 30;
                 if (deltaX > turnThreshold) {
                     releaseKey('TURN_LEFT');
                     pressKey('TURN_RIGHT');
