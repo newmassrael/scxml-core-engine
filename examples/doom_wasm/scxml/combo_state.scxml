@@ -1,35 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Kill Combo State Machine with Berserk Mode
+  Kill Combo State Machine with Berserk Mode (Pure State Transitions)
 
-  Tracks consecutive kills within a time window using GameLoopTimer.
-  When combo reaches 5+ kills, activates berserk mode.
+  Demonstrates W3C SCXML state machine pattern with external timer management:
+  - Pure state transitions (no internal timers)
+  - External events for timeout (game manages pausable timers)
+  - Compound states (W3C SCXML 3.4)
 
   States:
   - idle: No active combo
   - active (compound): Combo in progress
-    - normal: Standard combo (1-4 kills, 3s timeout)
-    - berserk: Berserk mode (5+ kills, 10s timeout)
+    - normal: Standard combo (1-4 kills)
+    - berserk: Berserk mode (5+ kills)
 
   Events:
-  - kill: Enemy killed (restarts timer, may trigger berserk)
-  - timeout: Combo window expired (3s in normal mode)
+  - kill: Enemy killed (extends timer window)
+  - combo_timeout: Combo window expired (from external timer)
   - berserk_activate: Combo reached 5 kills (trigger berserk)
-  - berserk_timeout: Berserk 10s timer expired
+  - berserk_timeout: Berserk timer expired (from external timer)
 
-  Berserk Features:
-  - 10 second duration (resets on each kill)
-  - Intensity increases with each kill (up to max)
-  - Screen turns red proportionally
-  - Weapon damage increases proportionally
-  - Heals to 100 HP on activation
+  Timer Architecture (External - Pausable):
+  - Game manages timers externally via onentry/onexit callbacks
+  - combo.onActive() → game starts 5s timer
+  - berserk.onActive() → game starts 10s timer
+  - combo.onIdle() → game cancels all timers
+  - Game pauses timers when menu opens
+  - Game raises timeout events when timer expires
 
   C++ Integration:
   - Uses <cpp> tag for direct C++ function calls (Zero Overhead)
   - combo.xxx() calls are transformed to user_->combo.xxx()
   - berserk.xxx() calls are transformed to user_->berserk.xxx()
 
-  W3C SCXML 1.0 compliant (compound states per W3C SCXML 3.4)
+  W3C SCXML 1.0 compliant (W3C SCXML 3.4 compound states)
 -->
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle" name="combo_state" datamodel="null">
 
@@ -47,27 +50,29 @@
         <!-- Normal combo: kills 1-4 -->
         <state id="normal">
             <onentry>
+                <!-- Game callback starts external 5s timer -->
                 <script><cpp>combo.onActive()</cpp></script>
             </onentry>
-            <!-- Additional kill extends combo (internal self-transition triggers onentry) -->
-            <transition event="kill" type="internal" target="normal"/>
+            <!-- Additional kill: re-enter to restart timer -->
+            <transition event="kill" target="normal"/>
             <!-- Combo reached 5+, activate berserk -->
             <transition event="berserk_activate" target="berserk"/>
-            <!-- Timeout ends combo -->
-            <transition event="timeout" target="idle"/>
+            <!-- External timer expired -->
+            <transition event="combo_timeout" target="idle"/>
         </state>
 
         <!-- Berserk mode: kills 5+ (W3C SCXML 3.4 compound sub-state) -->
         <state id="berserk">
             <onentry>
+                <!-- Game callback starts external 10s timer -->
                 <script><cpp>berserk.onActive()</cpp></script>
             </onentry>
             <onexit>
                 <script><cpp>berserk.onExit()</cpp></script>
             </onexit>
-            <!-- Additional kill extends berserk (internal self-transition resets 10s timer and triggers onentry) -->
-            <transition event="kill" type="internal" target="berserk"/>
-            <!-- Berserk 10s timeout -->
+            <!-- Additional kill: re-enter to restart timer -->
+            <transition event="kill" target="berserk"/>
+            <!-- External timer expired -->
             <transition event="berserk_timeout" target="idle"/>
         </state>
 

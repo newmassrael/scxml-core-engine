@@ -18,25 +18,23 @@
 
 #include <atomic>
 #include <chrono>
-#include <queue>
+#include <map>
+#include <memory>
 #include <regex>
 #include <string>
-#include <unordered_set>
+#include <unordered_map>
 
 namespace SCE {
 
 /**
- * @brief Helper for W3C SCXML <send> delay parsing and scheduling
+ * @brief Helper for W3C SCXML <send> delay parsing
  *
- * Single Source of Truth for send action delay logic shared between:
- * - Interpreter engine (ActionExecutorImpl)
- * - AOT engine (StaticCodeGenerator)
+ * Single Source of Truth for delay parsing logic shared between:
+ * - Interpreter engine (EventSchedulerImpl)
+ * - AOT engine (StaticExecutionEngine)
  *
  * W3C SCXML References:
  * - 6.2: Send element delay/delayexpr semantics
- * - 3.12: Event scheduling and delayed delivery
- *
- * W3C SCXML 6.2: Timer support for delayed send events
  */
 class SendSchedulingHelper {
 public:
@@ -44,9 +42,6 @@ public:
      * @brief Parse W3C SCXML delay string to milliseconds
      *
      * W3C SCXML 6.2: Delay formats - "5s", "100ms", "2min", ".5s", "0.5s"
-     *
-     * Single Source of Truth for delay parsing logic.
-     * Used by both Interpreter and AOT engines to ensure consistent timing.
      *
      * @param delayStr Delay specification (e.g., "5s", "100ms", "2min")
      * @return Delay in milliseconds, 0 if invalid or empty
@@ -56,18 +51,16 @@ public:
             return std::chrono::milliseconds{0};
         }
 
-        // Parse delay formats: "5s", "100ms", "2min", "1h", ".5s", "0.5s"
         std::regex delayPattern(R"((\d*\.?\d+)\s*(ms|s|min|h|sec|seconds?|minutes?|hours?)?)");
         std::smatch match;
 
         if (!std::regex_match(delayStr, match, delayPattern)) {
-            return std::chrono::milliseconds{0};  // Invalid format
+            return std::chrono::milliseconds{0};
         }
 
         double value = std::stod(match[1].str());
         std::string unit = match[2].str();
 
-        // Convert to milliseconds based on unit
         if (unit.empty() || unit == "s" || unit == "sec" || unit == "second" || unit == "seconds") {
             return std::chrono::milliseconds(static_cast<long long>(value * 1000));
         } else if (unit == "ms") {
@@ -78,193 +71,255 @@ public:
             return std::chrono::milliseconds(static_cast<long long>(value * 3600000));
         }
 
-        return std::chrono::milliseconds{0};  // Unknown unit
+        return std::chrono::milliseconds{0};
+    }
+};
+
+/**
+ * @brief Core event queue using std::map for W3C SCXML compliant scheduling
+ *
+ * Single Source of Truth (Zero Duplication) for event scheduling logic:
+ * - Interpreter engine (EventSchedulerImpl): Same pattern with thread-safety wrapper
+ * - AOT engine (PullScheduler): Direct delegation to this class
+ *
+ * Design Rationale - Why std::map over std::priority_queue:
+ * - W3C SCXML 6.3 requires actual event cancellation, not lazy marking
+ * - std::map supports O(log n) deletion by iterator
+ * - std::priority_queue does NOT support deletion (only lazy cancellation workaround)
+ *
+ * Performance:
+ * - Insert: O(log n)
+ * - Get next (begin): O(1)
+ * - Pop (erase begin): O(log n) amortized
+ * - Cancel by sendId: O(log n) - ACTUAL removal, not lazy!
+ *
+ * Thread-safety: NOT thread-safe (caller must provide synchronization)
+ *
+ * @tparam EventType The event type (enum for AOT, EventDescriptor for Interpreter)
+ * @tparam EventDataType Additional data (std::string for AOT, shared_ptr<IEventTarget> for Interpreter)
+ */
+template <typename EventType, typename EventDataType = std::string> class SchedulerQueueCore {
+public:
+    using TimePoint = std::chrono::steady_clock::time_point;
+
+    /**
+     * @brief Scheduled event entry
+     */
+    struct ScheduledEntry {
+        EventType event;
+        TimePoint fireTime;
+        std::string sendId;
+        EventDataType eventData;
+        uint64_t sequenceNum;  // FIFO ordering for same fireTime
+
+        ScheduledEntry(EventType evt, TimePoint fire, std::string id, EventDataType data, uint64_t seq)
+            : event(std::move(evt)), fireTime(fire), sendId(std::move(id)), eventData(std::move(data)),
+              sequenceNum(seq) {}
+    };
+
+    using EntryPtr = std::shared_ptr<ScheduledEntry>;
+
+    /**
+     * @brief Key for map ordering (fireTime, sequenceNum)
+     */
+    struct OrderKey {
+        TimePoint fireTime;
+        uint64_t sequenceNum;
+
+        bool operator<(const OrderKey &other) const {
+            if (fireTime != other.fireTime) {
+                return fireTime < other.fireTime;
+            }
+            return sequenceNum < other.sequenceNum;
+        }
+    };
+
+    /**
+     * @brief Schedule an event for future delivery
+     *
+     * W3C SCXML 6.2: Delayed send
+     * W3C SCXML 6.3: If sendId exists, REMOVES old event (not lazy marking!)
+     *
+     * @param event Event to schedule
+     * @param fireTime When the event should fire
+     * @param sendId Unique identifier for cancellation
+     * @param eventData Additional event data
+     * @return The sendId assigned
+     */
+    std::string schedule(EventType event, TimePoint fireTime, const std::string &sendId,
+                         EventDataType eventData = EventDataType{}) {
+        std::string actualSendId = sendId.empty() ? generateUniqueSendId() : sendId;
+
+        // W3C SCXML 6.3: Cancel existing event with same sendId (ACTUAL removal)
+        cancel(actualSendId);
+
+        // Create and insert new entry
+        uint64_t seqNum = sequenceCounter_++;
+        auto entry =
+            std::make_shared<ScheduledEntry>(std::move(event), fireTime, actualSendId, std::move(eventData), seqNum);
+
+        OrderKey key{fireTime, seqNum};
+        auto it = queue_.emplace(key, entry);
+        sendIdIndex_[actualSendId] = it.first;
+
+        return actualSendId;
     }
 
     /**
-     * @brief Scheduled event structure for delayed send
+     * @brief Cancel a scheduled event by sendId
      *
-     * Stores event with its scheduled fire time and optional sendid for cancellation.
-     * Used by AOT engine to implement W3C SCXML delayed event delivery.
+     * W3C SCXML 6.3: ACTUALLY REMOVES the event (not lazy marking!)
      *
-     * W3C SCXML 6.2.5: sendid enables event cancellation via <cancel sendidexpr="..."/>
-     * W3C SCXML 5.10: eventData stores _event.data for param elements (test186)
+     * @param sendId The sendId to cancel
+     * @return true if found and removed
      */
-    template <typename EventType> struct ScheduledEvent {
-        EventType event;
-        std::chrono::steady_clock::time_point fireTime;
-        std::string sendId;     // W3C SCXML 6.2.5: Unique identifier for cancellation
-        std::string eventData;  // W3C SCXML 5.10: Event data JSON from params
-
-        ScheduledEvent(EventType evt, std::chrono::steady_clock::time_point fire, std::string id = "",
-                       std::string data = "")
-            : event(evt), fireTime(fire), sendId(std::move(id)), eventData(std::move(data)) {}
-
-        // Comparator for priority queue (earlier times have higher priority)
-        bool operator>(const ScheduledEvent &other) const {
-            return fireTime > other.fireTime;
-        }
-    };
-
-    /**
-     * @brief Simple event scheduler for AOT-generated state machines
-     *
-     * Provides basic delayed event delivery without full EventSchedulerImpl overhead.
-     * Follows "You don't pay for what you don't use" philosophy.
-     *
-     * Thread-safety: Not thread-safe (AOT state machines are single-threaded)
-     * Performance: O(log n) insert, O(log n) pop
-     */
-    template <typename EventType> class SimpleScheduler {
-    public:
-        using ScheduledEventType = ScheduledEvent<EventType>;
-
-        /**
-         * @brief Schedule an event for future delivery
-         *
-         * W3C SCXML 6.2: Send element with delay/delayexpr
-         * W3C SCXML 6.2.5: Returns sendid for event tracking and cancellation
-         * W3C SCXML 5.10: eventData contains _event.data from params (test186)
-         *
-         * @param event Event to schedule
-         * @param delay Delay before delivery
-         * @param sendId Optional sendid for cancellation (generated if empty)
-         * @param eventData Optional event data JSON from params
-         * @return The sendid assigned to this event (for cancellation)
-         */
-        std::string scheduleEvent(EventType event, std::chrono::milliseconds delay, const std::string &sendId = "",
-                                  const std::string &eventData = "") {
-            auto fireTime = std::chrono::steady_clock::now() + delay;
-
-            // W3C SCXML 6.2.5: Generate unique sendid if not provided
-            std::string actualSendId = sendId;
-            if (actualSendId.empty()) {
-                actualSendId = generateUniqueSendId();
-            }
-
-            queue_.push(ScheduledEventType(event, fireTime, actualSendId, eventData));
-            return actualSendId;
-        }
-
-        /**
-         * @brief Check if any events are ready to fire
-         *
-         * @return true if events ready, false otherwise
-         */
-        bool hasReadyEvents() const {
-            if (queue_.empty()) {
-                return false;
-            }
-            return queue_.top().fireTime <= std::chrono::steady_clock::now();
-        }
-
-        /**
-         * @brief Get next ready event (skips cancelled events)
-         *
-         * W3C SCXML 6.2.5: Cancelled events are automatically filtered out
-         * W3C SCXML 5.10: outEventData contains _event.data from params (test186)
-         *
-         * @param outEvent Output parameter for event
-         * @param outEventData Output parameter for event data JSON
-         * @return true if event retrieved, false if no ready events
-         */
-        bool popReadyEvent(EventType &outEvent, std::string &outEventData) {
-            while (!queue_.empty()) {
-                if (queue_.top().fireTime > std::chrono::steady_clock::now()) {
-                    return false;  // No ready events yet
-                }
-
-                auto scheduledEvent = queue_.top();
-                queue_.pop();
-
-                // W3C SCXML 6.2.5: Skip cancelled events
-                if (!scheduledEvent.sendId.empty() && isCancelled(scheduledEvent.sendId)) {
-                    cancelledSendIds_.erase(scheduledEvent.sendId);  // Clean up
-                    continue;                                        // Skip this event
-                }
-
-                outEvent = scheduledEvent.event;
-                outEventData = scheduledEvent.eventData;
-                return true;
-            }
+    bool cancel(const std::string &sendId) {
+        if (sendId.empty()) {
             return false;
         }
 
-        /**
-         * @brief Get next ready event (skips cancelled events) - backward compatibility
-         *
-         * W3C SCXML 6.2.5: Cancelled events are automatically filtered out
-         *
-         * @param outEvent Output parameter for event
-         * @return true if event retrieved, false if no ready events
-         */
-        bool popReadyEvent(EventType &outEvent) {
-            std::string eventData;
-            return popReadyEvent(outEvent, eventData);
+        auto indexIt = sendIdIndex_.find(sendId);
+        if (indexIt == sendIdIndex_.end()) {
+            return false;
         }
 
-        /**
-         * @brief Check if scheduler has any pending events
-         *
-         * @return true if pending events exist
-         */
-        bool hasPendingEvents() const {
-            return !queue_.empty();
+        queue_.erase(indexIt->second);  // ACTUAL removal!
+        sendIdIndex_.erase(indexIt);
+        return true;
+    }
+
+    /**
+     * @brief Check if any events are ready
+     */
+    bool hasReadyEvents() const {
+        return !queue_.empty() && queue_.begin()->first.fireTime <= std::chrono::steady_clock::now();
+    }
+
+    /**
+     * @brief Check if any events are ready at specified time
+     */
+    bool hasReadyEvents(TimePoint now) const {
+        return !queue_.empty() && queue_.begin()->first.fireTime <= now;
+    }
+
+    /**
+     * @brief Pop and return the next ready event
+     */
+    bool popReadyEvent(EventType &outEvent, EventDataType &outEventData) {
+        std::string sendId;
+        return popReadyEventImpl(std::chrono::steady_clock::now(), outEvent, outEventData, sendId);
+    }
+
+    /**
+     * @brief Pop and return the next ready event (with sendId output)
+     */
+    bool popReadyEvent(EventType &outEvent, EventDataType &outEventData, std::string &outSendId) {
+        return popReadyEventImpl(std::chrono::steady_clock::now(), outEvent, outEventData, outSendId);
+    }
+
+    /**
+     * @brief Pop at specified time
+     */
+    bool popReadyEvent(TimePoint now, EventType &outEvent, EventDataType &outEventData) {
+        std::string sendId;
+        return popReadyEventImpl(now, outEvent, outEventData, sendId);
+    }
+
+    bool hasPendingEvents() const {
+        return !queue_.empty();
+    }
+
+    size_t size() const {
+        return queue_.size();
+    }
+
+    void clear() {
+        queue_.clear();
+        sendIdIndex_.clear();
+    }
+
+    bool hasEvent(const std::string &sendId) const {
+        return sendIdIndex_.count(sendId) > 0;
+    }
+
+    TimePoint getNextFireTime() const {
+        return queue_.empty() ? TimePoint::max() : queue_.begin()->first.fireTime;
+    }
+
+private:
+    bool popReadyEventImpl(TimePoint now, EventType &outEvent, EventDataType &outEventData, std::string &outSendId) {
+        if (queue_.empty() || queue_.begin()->first.fireTime > now) {
+            return false;
         }
 
-        /**
-         * @brief Cancel a scheduled event by sendid
-         *
-         * W3C SCXML 6.2.5: <cancel sendidexpr="..."/> cancels pending delayed send
-         *
-         * @param sendId The sendid of the event to cancel
-         * @return true if event was found and cancelled, false otherwise
-         */
-        bool cancelEvent(const std::string &sendId) {
-            if (sendId.empty()) {
-                return false;
-            }
+        auto it = queue_.begin();
+        outEvent = std::move(it->second->event);
+        outEventData = std::move(it->second->eventData);
+        outSendId = it->second->sendId;
 
-            // Note: std::priority_queue doesn't support removal
-            // Store cancelled sendids and filter during popReadyEvent()
-            cancelledSendIds_.insert(sendId);
-            return true;
-        }
+        sendIdIndex_.erase(it->second->sendId);
+        queue_.erase(it);
+        return true;
+    }
 
-        /**
-         * @brief Check if a sendid has been cancelled
-         *
-         * @param sendId The sendid to check
-         * @return true if cancelled, false otherwise
-         */
-        bool isCancelled(const std::string &sendId) const {
-            return cancelledSendIds_.find(sendId) != cancelledSendIds_.end();
-        }
+    static std::string generateUniqueSendId() {
+        static std::atomic<uint64_t> counter{0};
+        return "auto_" + std::to_string(++counter);
+    }
 
-        /**
-         * @brief Clear all scheduled events and cancellation records
-         */
-        void clear() {
-            while (!queue_.empty()) {
-                queue_.pop();
-            }
-            cancelledSendIds_.clear();
-        }
+    std::map<OrderKey, EntryPtr> queue_;
+    std::unordered_map<std::string, typename std::map<OrderKey, EntryPtr>::iterator> sendIdIndex_;
+    uint64_t sequenceCounter_ = 0;
+};
 
-    private:
-        /**
-         * @brief Generate unique sendid for event tracking
-         * @return Unique sendid string
-         */
-        static std::string generateUniqueSendId() {
-            static std::atomic<uint64_t> counter{0};
-            return "sendid_" + std::to_string(++counter);
-        }
+/**
+ * @brief Pull-based event scheduler for AOT-generated state machines
+ *
+ * Lightweight wrapper around SchedulerQueueCore.
+ * Zero Duplication: All scheduling logic in SchedulerQueueCore.
+ *
+ * Design: Pull-based (caller pulls ready events) vs Push-based (EventSchedulerImpl)
+ * Thread-safety: Not thread-safe (AOT state machines are single-threaded)
+ */
+template <typename EventType> class PullScheduler {
+public:
+    std::string scheduleEvent(EventType event, std::chrono::milliseconds delay, const std::string &sendId = "",
+                              const std::string &eventData = "") {
+        auto fireTime = std::chrono::steady_clock::now() + delay;
+        return core_.schedule(std::move(event), fireTime, sendId, eventData);
+    }
 
-        std::priority_queue<ScheduledEventType, std::vector<ScheduledEventType>, std::greater<ScheduledEventType>>
-            queue_;
-        std::unordered_set<std::string> cancelledSendIds_;  // W3C SCXML 6.2.5: Track cancelled events
-    };
+    bool hasReadyEvents() const {
+        return core_.hasReadyEvents();
+    }
+
+    bool popReadyEvent(EventType &outEvent, std::string &outEventData) {
+        return core_.popReadyEvent(outEvent, outEventData);
+    }
+
+    bool popReadyEvent(EventType &outEvent) {
+        std::string eventData;
+        return core_.popReadyEvent(outEvent, eventData);
+    }
+
+    bool hasPendingEvents() const {
+        return core_.hasPendingEvents();
+    }
+
+    bool cancelEvent(const std::string &sendId) {
+        return core_.cancel(sendId);
+    }
+
+    bool isCancelled(const std::string &sendId) const {
+        return !core_.hasEvent(sendId);
+    }
+
+    void clear() {
+        core_.clear();
+    }
+
+private:
+    SchedulerQueueCore<EventType, std::string> core_;
 };
 
 }  // namespace SCE

@@ -634,12 +634,9 @@ void P_BulletSlope (mobj_t*	mo)
     angle_t	an;
     boolean	aim_assist = SCE_AimAssistIsEnabled();
 
-    printf("[AIM DEBUG] P_BulletSlope called, aim_assist=%d\n", aim_assist);
-
     // SCE Aim Assist: Clear previous lock-on and fire SCXML shot_fired event
     if (aim_assist)
     {
-	printf("[AIM DEBUG] Clearing target and firing shot_fired event\n");
 	SCE_AimAssistClearTarget();
 	SCE_AimEventShotFired();  // SCXML: idle/locked -> searching
     }
@@ -690,18 +687,14 @@ void P_BulletSlope (mobj_t*	mo)
     // SCE Aim Assist: Update SCXML state and set lock-on
     if (aim_assist)
     {
-	printf("[AIM DEBUG] linetarget=%p\n", (void*)linetarget);
 	if (linetarget)
 	{
-	    printf("[AIM DEBUG] Target found! Firing target_acquired event\n");
 	    SCE_AimAssistSetTarget(linetarget);
 	    mo->angle = R_PointToAngle2(mo->x, mo->y, linetarget->x, linetarget->y);
 	    SCE_AimEventTargetAcquired();  // SCXML: searching -> locked
-	    // Note: locked state persists until target dies or next shot
 	}
 	else
 	{
-	    printf("[AIM DEBUG] No target found, firing no_target event\n");
 	    SCE_AimEventNoTarget();  // SCXML: searching -> idle
 	}
     }

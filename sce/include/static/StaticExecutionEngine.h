@@ -276,8 +276,8 @@ private:
     SCE::Core::EventQueueManager<EventWithMetadata>
         externalQueue_;  // W3C SCXML C.1: External event queue (low priority)
     bool isRunning_ = false;
-    std::function<void()> completionCallback_;                     // W3C SCXML 6.4: Callback for done.invoke
-    SCE::SendSchedulingHelper::SimpleScheduler<Event> scheduler_;  // W3C SCXML 6.2: Delayed event scheduler
+    std::function<void()> completionCallback_;  // W3C SCXML 6.4: Callback for done.invoke
+    SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
 protected:
     StatePolicy policy_;  // Policy instance for stateful policies

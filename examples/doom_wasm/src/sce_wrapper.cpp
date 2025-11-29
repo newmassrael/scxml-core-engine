@@ -7,6 +7,7 @@
  */
 
 #include <array>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -29,8 +30,11 @@
 #include "secret_hint_state_sm.h"
 #include "weapon_state_sm.h"
 
-// GameLoopTimer for logical time scheduling
-#include "wrappers/GameLoopTimer.h"
+// External Pausable Timer Architecture:
+// - Game manages timers externally (not SCXML internal scheduler)
+// - Timers pause when menu opens, resume when menu closes
+// - Callbacks notify game to start/cancel timers
+// - Game raises timeout events when timer expires
 
 // Secret hint pathfinding
 #include "sce_secret_hint.h"
@@ -78,6 +82,7 @@ static bool g_aim_assist_enabled = false;
 static inline void js_notify_aim_assist_state(bool enabled);
 static inline void js_notify_aim_callback(const char *callback_type);
 static inline void js_notify_combo_update(int count, bool active);
+static inline void js_notify_combo_timer(double remaining_ms, double total_ms);
 
 /**
  * @brief Callback handler for aim assist state machine
@@ -158,16 +163,33 @@ void SCE_BerserkReset(void);
 // Berserk constants
 static constexpr int BERSERK_TRIGGER_COMBO = 5;       // Combo count to trigger berserk
 static constexpr int BERSERK_MAX_INTENSITY = 10;      // Maximum berserk intensity level (for damage cap)
-static constexpr uint32_t BERSERK_TIMEOUT_TICS = 350; // 10 seconds at 35Hz
 // Damage multiplier = intensity level (x1 at intensity 1, x10 at intensity 10)
+
+// Timer durations (external management, not SCXML internal)
+static constexpr double COMBO_TIMEOUT_MS = 5000.0;    // 5s for normal mode
+static constexpr double BERSERK_TIMEOUT_MS = 10000.0; // 10s for berserk mode
+
+// External Pausable Timer State
+// Timers are managed by game, not SCXML internal scheduler
+// This allows pausing when menu opens
+enum class ComboTimerType { NONE, COMBO, BERSERK };
+static ComboTimerType g_active_timer_type = ComboTimerType::NONE;
+static std::chrono::steady_clock::time_point g_timer_start;
+static double g_timer_duration_ms = 0;
+static double g_timer_elapsed_before_pause_ms = 0;  // Accumulated time before pause
+static bool g_timer_paused = false;
+static bool g_timer_pause_ui_sent = false;  // Prevent redundant UI updates in paused state
+
+// Helper function to clear external timer state (deduplication)
+static void clear_external_timer() {
+    g_active_timer_type = ComboTimerType::NONE;
+    g_timer_paused = false;
+    g_timer_elapsed_before_pause_ms = 0;
+    g_timer_pause_ui_sent = false;
+}
 
 // Berserk tracking state
 static int g_berserk_intensity = 0;
-static std::string g_berserk_current_timeout_id;
-static double g_berserk_fire_time_ms = -1.0;  // Scheduled fire time for UI sync
-
-// Combo fire time (forward declaration, main combo state defined later with timer)
-static double g_combo_fire_time_ms = -1.0;  // Scheduled fire time for UI sync
 
 /**
  * @brief Callback handler for combo state machine (normal mode)
@@ -179,9 +201,8 @@ struct ComboCallbacks {
     void onIdle() {
         printf("[COMBO SCXML] onIdle callback\n");
 
-        // Clear fire times for UI sync (ensures timer bar stays at 0%)
-        g_combo_fire_time_ms = -1.0;
-        g_berserk_fire_time_ms = -1.0;
+        // Cancel external timer
+        clear_external_timer();
 
         // Reset berserk intensity when combo ends (entering idle)
         // This is the true "end of combo" reset point
@@ -199,6 +220,15 @@ struct ComboCallbacks {
         printf("[COMBO SCXML] onActive (normal) callback\n");
         js_notify_combo_callback("active");
         js_notify_state_change("combo", "NORMAL");
+
+        // Start external 5s timer (pausable)
+        g_active_timer_type = ComboTimerType::COMBO;
+        g_timer_start = std::chrono::steady_clock::now();
+        g_timer_duration_ms = COMBO_TIMEOUT_MS;
+        g_timer_elapsed_before_pause_ms = 0;
+        g_timer_paused = false;
+
+        printf("[COMBO] External timer started: %.0fms (pausable)\n", COMBO_TIMEOUT_MS);
     }
 };
 
@@ -229,8 +259,15 @@ struct BerserkCallbacks {
         // Notify UI with intensity (uncapped) and active state
         js_notify_berserk_update(g_berserk_intensity, true);
 
-        printf("[BERSERK] Activated! Intensity=%d (display), Multiplier=x%.0f (capped at %d)\n",
-               g_berserk_intensity, multiplier, BERSERK_MAX_INTENSITY);
+        // Start external 10s timer (pausable)
+        g_active_timer_type = ComboTimerType::BERSERK;
+        g_timer_start = std::chrono::steady_clock::now();
+        g_timer_duration_ms = BERSERK_TIMEOUT_MS;
+        g_timer_elapsed_before_pause_ms = 0;
+        g_timer_paused = false;
+
+        printf("[BERSERK] Activated! Intensity=%d, Multiplier=x%.0f, Timer=%.0fms (pausable)\n",
+               g_berserk_intensity, multiplier, BERSERK_TIMEOUT_MS);
     }
 
     void onExit() {
@@ -356,6 +393,11 @@ struct PlayerCallbacks {
 
     void onDead() {
         printf("[PLAYER SCXML] onDead callback\n");
+
+        // Full combo/berserk reset when player dies
+        // (clears timer, combo count, berserk UI, timer bar)
+        sce_combo_reset();
+
         js_notify_player_callback("dead");
         js_notify_state_change("player", "DEAD");
     }
@@ -591,37 +633,31 @@ struct EnemyCallbacks {
     const char *type_name = "UNKNOWN";
 
     void onDormant() {
-        printf("[ENEMY SCXML] slot=%d onDormant callback\n", slot);
         js_notify_enemy_callback(slot, "dormant", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "DORMANT", instance_id, true);
     }
 
     void onAlert() {
-        printf("[ENEMY SCXML] slot=%d onAlert callback\n", slot);
         js_notify_enemy_callback(slot, "alert", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "ALERT", instance_id, true);
     }
 
     void onChasing() {
-        printf("[ENEMY SCXML] slot=%d onChasing callback\n", slot);
         js_notify_enemy_callback(slot, "chasing", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "CHASING", instance_id, true);
     }
 
     void onAttacking() {
-        printf("[ENEMY SCXML] slot=%d onAttacking callback\n", slot);
         js_notify_enemy_callback(slot, "attacking", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "ATTACKING", instance_id, true);
     }
 
     void onPain() {
-        printf("[ENEMY SCXML] slot=%d onPain callback\n", slot);
         js_notify_enemy_callback(slot, "pain", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "PAIN", instance_id, true);
     }
 
     void onDead() {
-        printf("[ENEMY SCXML] slot=%d onDead callback\n", slot);
         js_notify_enemy_callback(slot, "dead", type_name, instance_id);
         js_notify_enemy_update(slot, type_name, "DEAD", instance_id, true);
     }
@@ -724,18 +760,15 @@ using AimSM = SCE::Generated::aim_assist_state::aim_assist_state<AimContext>;
 using AimEvent = SCE::Generated::aim_assist_state::Event;
 static std::unique_ptr<AimSM> g_aim_sm;
 
-// Kill combo state machine with GameLoopTimer and UserContext
-// Uses logical time (game tics) for combo timeout
+// Kill combo state machine with external pausable timer management
+// Uses external C++ timers (not SCXML <send delay>) for menu pause support
 using ComboSM = SCE::Generated::combo_state::combo_state<ComboContext>;
 using ComboEvent = SCE::Generated::combo_state::Event;
 using ComboState = SCE::Generated::combo_state::State;
 static std::unique_ptr<ComboSM> g_combo_sm;
-static std::unique_ptr<SCE::Wrappers::GameLoopTimer<ComboSM>> g_combo_timer;
 
-// Combo tracking state (g_combo_fire_time_ms declared earlier with berserk state)
+// Combo tracking state
 static int g_combo_count = 0;
-static constexpr uint32_t COMBO_TIMEOUT_TICS = 175;  // 5 seconds at 35Hz
-static std::string g_combo_current_timeout_id;  // Track current timeout's unique sendId
 
 // Forward declarations
 extern "C" {
@@ -1062,9 +1095,8 @@ void sce_init(void) {
     g_secret_sm = std::make_unique<SecretSM>(g_secret_context);
     // Aim assist state machine: pass UserContext for C++ callback integration
     g_aim_sm = std::make_unique<AimSM>(g_aim_context);
-    // Kill combo state machine with GameLoopTimer for logical time and UserContext
+    // Kill combo state machine with external pausable timer management
     g_combo_sm = std::make_unique<ComboSM>(g_combo_context);
-    g_combo_timer = std::make_unique<SCE::Wrappers::GameLoopTimer<ComboSM>>(*g_combo_sm);
 
     g_game_sm->initialize();
     g_player_sm->initialize();
@@ -1217,7 +1249,8 @@ const char *sce_get_player_state(void) {
 PLAYER_EVENT(killed, Killed)
 PLAYER_EVENT(spawn_complete, Spawn_complete)
 
-// Custom respawn handler - resets enemy tracking and combo
+// Custom respawn handler - resets enemy tracking
+// Note: combo/berserk already reset in onDead() callback
 EMSCRIPTEN_KEEPALIVE
 void sce_player_event_respawn(void) {
     if (g_player_sm) {
@@ -1228,10 +1261,7 @@ void sce_player_event_respawn(void) {
     // Reset enemy tracking (threats/killed counts) on respawn
     reset_all_enemies(false);
 
-    // Reset combo/berserk state
-    sce_combo_reset();
-
-    printf("[PLAYER] Respawn - reset enemies and combo\n");
+    printf("[PLAYER] Respawn - reset enemies\n");
 }
 PLAYER_EVENT(god_mode_on, God_mode_on)
 PLAYER_EVENT(god_mode_off, God_mode_off)
@@ -1412,8 +1442,10 @@ void sce_enemy_killed(void *mobj) {
     }
 
     // Kill Combo System: Always process kills even if enemy not tracked
+    // External Timer Architecture: Callbacks handle timer restart on kill
     // W3C SCXML 3.4: Compound states with normal/berserk sub-states
-    if (g_combo_sm && g_combo_timer) {
+    if (g_combo_sm) {
+        // Send kill event - onentry callback restarts external timer
         g_combo_sm->raiseExternal(ComboEvent::Kill);
         g_combo_sm->step();
         // Note: onentry callback handles js_notify_state_change
@@ -1425,60 +1457,28 @@ void sce_enemy_killed(void *mobj) {
             // In normal combo mode (1-4 kills)
             g_combo_count++;
 
-            // Cancel previous combo timeout and schedule new one
-            if (!g_combo_current_timeout_id.empty()) {
-                g_combo_timer->cancel(g_combo_current_timeout_id);
-            }
-            g_combo_current_timeout_id = g_combo_timer->scheduleByTics(
-                ComboEvent::Timeout, COMBO_TIMEOUT_TICS);
-            // Record fire time for UI sync (avoids bug where cancelled events affect getRemainingTimeMs)
-            g_combo_fire_time_ms = g_combo_timer->getLogicalTimeMs() + COMBO_TIMEOUT_TICS * (1000.0 / 35.0);
-
-            printf("[COMBO] Kill #%d in NORMAL mode - timeout in %.0fms\n",
-                   g_combo_count, COMBO_TIMEOUT_TICS * (1000.0 / 35.0));
+            printf("[COMBO] Kill #%d in NORMAL mode - external timer restarted (5s)\n",
+                   g_combo_count);
 
             // Check if we should trigger berserk (combo >= 5)
             if (g_combo_count >= BERSERK_TRIGGER_COMBO) {
                 printf("[COMBO] Combo >= %d, triggering BERSERK!\n", BERSERK_TRIGGER_COMBO);
 
-                // Cancel combo timeout - berserk has its own timer
-                g_combo_timer->cancel(g_combo_current_timeout_id);
-                g_combo_current_timeout_id.clear();
-                g_combo_fire_time_ms = -1.0;  // Clear combo fire time
-
                 // Trigger transition to berserk state
+                // SCXML onentry handles: cancel combo_timer, schedule berserk_timer (10s)
                 g_combo_sm->raiseExternal(ComboEvent::Berserk_activate);
                 g_combo_sm->step();
-
-                // Schedule berserk timeout (10 seconds)
-                g_berserk_current_timeout_id = g_combo_timer->scheduleByTics(
-                    ComboEvent::Berserk_timeout, BERSERK_TIMEOUT_TICS);
-                // Record fire time for UI sync
-                g_berserk_fire_time_ms = g_combo_timer->getLogicalTimeMs() + BERSERK_TIMEOUT_TICS * (1000.0 / 35.0);
-
-                printf("[BERSERK] Scheduled timeout id='%s' at %.0fms\n",
-                       g_berserk_current_timeout_id.c_str(),
-                       g_berserk_fire_time_ms);
             }
 
             // Notify UI with current combo count
             js_notify_combo_update(g_combo_count, true);
 
         } else if (new_state == ComboState::Berserk) {
-            // In berserk mode - kill extends timer and increases intensity
+            // In berserk mode - kill extends timer (callback restarts on self-transition)
             g_combo_count++;
 
-            // Cancel previous berserk timeout and schedule new one
-            if (!g_berserk_current_timeout_id.empty()) {
-                g_combo_timer->cancel(g_berserk_current_timeout_id);
-            }
-            g_berserk_current_timeout_id = g_combo_timer->scheduleByTics(
-                ComboEvent::Berserk_timeout, BERSERK_TIMEOUT_TICS);
-            // Record fire time for UI sync
-            g_berserk_fire_time_ms = g_combo_timer->getLogicalTimeMs() + BERSERK_TIMEOUT_TICS * (1000.0 / 35.0);
-
-            printf("[BERSERK] Kill #%d - extended timeout to %.0fms, intensity=%d\n",
-                   g_combo_count, g_berserk_fire_time_ms - g_combo_timer->getLogicalTimeMs(), g_berserk_intensity);
+            printf("[BERSERK] Kill #%d - external timer restarted (10s), intensity=%d\n",
+                   g_combo_count, g_berserk_intensity);
 
             // Notify UI with current combo count (berserk active)
             js_notify_combo_update(g_combo_count, true);
@@ -1918,7 +1918,7 @@ int sce_aim_is_enabled(void) {
 
 // ============================================
 // Kill Combo State Machine
-// Uses GameLoopTimer for logical time (game tics)
+// Uses external pausable timer (supports menu pause)
 // ============================================
 
 EMSCRIPTEN_KEEPALIVE
@@ -1967,99 +1967,163 @@ int sce_berserk_get_intensity(void) {
 }
 
 /**
+ * @brief Calculate elapsed time for external timer (supports pause)
+ *
+ * @return Elapsed milliseconds since timer start, accounting for pauses
+ */
+static double get_timer_elapsed_ms() {
+    if (g_active_timer_type == ComboTimerType::NONE) {
+        return 0;
+    }
+
+    double elapsed = g_timer_elapsed_before_pause_ms;
+
+    if (g_timer_paused) {
+        // Timer is paused - elapsed is frozen at pause point
+        return elapsed;
+    }
+
+    // Add time since last (re)start
+    auto now = std::chrono::steady_clock::now();
+    elapsed += std::chrono::duration<double, std::milli>(now - g_timer_start).count();
+    return elapsed;
+}
+
+/**
  * @brief Process one game tic for timer-based state machines
  *
  * Called from DOOM's game loop (G_Ticker) at 35Hz.
- * Advances logical time and processes any scheduled timeouts.
- * Handles both combo (5s) and berserk (10s) timeouts.
- * Sends remaining time to JS for UI synchronization.
+ * External Timer Architecture: Game manages pausable timers, raises events on expiry.
+ * Handles combo_timeout (5s) and berserk_timeout (10s) events.
  */
 EMSCRIPTEN_KEEPALIVE
 void sce_process_tic(void) {
-    if (g_combo_timer && g_combo_sm) {
-        // Debug: Print timer state every ~1 second (35 tics)
-        static uint64_t debug_counter = 0;
-        if (++debug_counter % 35 == 0 && g_combo_timer->hasPendingEvents()) {
-            printf("[COMBO/BERSERK] tic=%llu, state=%s, count=%d, intensity=%d, pending=%zu\n",
-                   (unsigned long long)g_combo_timer->getCurrentTic(),
-                   sce_combo_get_state(),
-                   g_combo_count,
-                   g_berserk_intensity,
-                   g_combo_timer->getPendingCount());
-        }
+    if (!g_combo_sm) {
+        return;
+    }
 
-        size_t events_processed = g_combo_timer->processTic();
+    // Check if external timer expired (only when not paused)
+    if (g_active_timer_type != ComboTimerType::NONE && !g_timer_paused) {
+        double elapsed = get_timer_elapsed_ms();
+        double remaining = g_timer_duration_ms - elapsed;
 
-        // Send remaining time to JS for UI synchronization (every tick)
-        // Use tracked fire times instead of getRemainingTimeMs() to avoid bug where
-        // cancelled events (still in queue) cause incorrect remaining time calculation
-        bool is_berserk = (g_combo_sm->getCurrentState() == ComboState::Berserk);
-        double fire_time_ms = is_berserk ? g_berserk_fire_time_ms : g_combo_fire_time_ms;
-        if (fire_time_ms > 0) {
-            double remaining_ms = fire_time_ms - g_combo_timer->getLogicalTimeMs();
-            if (remaining_ms < 0) remaining_ms = 0;
-            double total_ms = is_berserk ? (BERSERK_TIMEOUT_TICS * 1000.0 / 35.0)
-                                         : (COMBO_TIMEOUT_TICS * 1000.0 / 35.0);
-            js_notify_combo_timer(remaining_ms, total_ms);
-        }
+        if (remaining <= 0) {
+            // Timer expired - raise appropriate timeout event
+            ComboState prev_state = g_combo_sm->getCurrentState();
 
-        // Check if state changed due to timeout event
-        if (events_processed > 0) {
-            ComboState current_state = g_combo_sm->getCurrentState();
-            printf("[COMBO/BERSERK] Events processed: %zu, state after: %s\n",
-                   events_processed, sce_combo_get_state());
-
-            if (current_state == ComboState::Idle) {
-                // Combo/berserk ended due to timeout
-                printf("[COMBO/BERSERK] Timeout fired! Resetting combo from %d to 0\n", g_combo_count);
-                g_combo_count = 0;  // Reset count first
-                g_berserk_intensity = 0;  // Reset berserk intensity
-                js_notify_combo_update(0, false);  // Then notify UI with 0
-                js_notify_berserk_update(0, false);  // Notify berserk deactivated
-                js_notify_combo_timer(-1, 0);  // Timer ended
-                js_notify_state_change("combo", sce_combo_get_state());
-                g_combo_current_timeout_id.clear();  // Clear combo timeout ID
-                g_berserk_current_timeout_id.clear();  // Clear berserk timeout ID
-                g_combo_fire_time_ms = -1.0;  // Clear fire time for UI sync
-                g_berserk_fire_time_ms = -1.0;  // Clear fire time for UI sync
+            if (g_active_timer_type == ComboTimerType::COMBO) {
+                printf("[COMBO] External timer expired (%.0fms) - raising combo_timeout\n", g_timer_duration_ms);
+                g_combo_sm->raiseExternal(ComboEvent::Combo_timeout);
+            } else if (g_active_timer_type == ComboTimerType::BERSERK) {
+                printf("[BERSERK] External timer expired (%.0fms) - raising berserk_timeout\n", g_timer_duration_ms);
+                g_combo_sm->raiseExternal(ComboEvent::Berserk_timeout);
             }
+
+            g_combo_sm->step();
+
+            // Timer is now cleared by onIdle callback
+            ComboState current_state = g_combo_sm->getCurrentState();
+
+            // If state changed to idle, combo ended
+            if (current_state == ComboState::Idle && prev_state != ComboState::Idle) {
+                printf("[COMBO/BERSERK] State: %s -> idle, resetting combo from %d to 0\n",
+                       prev_state == ComboState::Normal ? "normal" : "berserk",
+                       g_combo_count);
+                g_combo_count = 0;
+                js_notify_combo_update(0, false);
+                js_notify_combo_timer(-1, 0);  // Clear timer bar
+            }
+        } else {
+            // Timer still running - update UI with remaining time
+            js_notify_combo_timer(remaining, g_timer_duration_ms);
+        }
+    } else if (g_active_timer_type != ComboTimerType::NONE && g_timer_paused) {
+        // Timer is paused - update UI once only (avoid 35Hz redundant calls)
+        if (!g_timer_pause_ui_sent) {
+            double elapsed = get_timer_elapsed_ms();
+            double remaining = g_timer_duration_ms - elapsed;
+            js_notify_combo_timer(remaining, g_timer_duration_ms);
+            g_timer_pause_ui_sent = true;
         }
     }
+}
+
+/**
+ * @brief Pause combo/berserk timer (call when menu opens)
+ *
+ * External Timer Architecture: Pauses timer without losing progress.
+ * Resume with sce_combo_timer_resume().
+ */
+EMSCRIPTEN_KEEPALIVE
+void sce_combo_timer_pause(void) {
+    printf("[TIMER] sce_combo_timer_pause() CALLED - timer_type=%d, paused=%d\n",
+           (int)g_active_timer_type, g_timer_paused);
+
+    if (g_active_timer_type == ComboTimerType::NONE || g_timer_paused) {
+        printf("[TIMER] Early return - no timer or already paused\n");
+        return;  // No timer or already paused
+    }
+
+    // Save elapsed time up to now
+    auto now = std::chrono::steady_clock::now();
+    g_timer_elapsed_before_pause_ms += std::chrono::duration<double, std::milli>(now - g_timer_start).count();
+    g_timer_paused = true;
+    g_timer_pause_ui_sent = false;  // Allow one UI update for paused state
+
+    printf("[TIMER] Paused at %.0fms / %.0fms\n",
+           g_timer_elapsed_before_pause_ms, g_timer_duration_ms);
+}
+
+/**
+ * @brief Resume combo/berserk timer (call when menu closes)
+ *
+ * External Timer Architecture: Continues timer from where it was paused.
+ */
+EMSCRIPTEN_KEEPALIVE
+void sce_combo_timer_resume(void) {
+    if (g_active_timer_type == ComboTimerType::NONE || !g_timer_paused) {
+        return;  // No timer or not paused
+    }
+
+    g_timer_paused = false;
+    g_timer_start = std::chrono::steady_clock::now();  // Restart timing from now
+
+    printf("[TIMER] Resumed at %.0fms / %.0fms\n",
+           g_timer_elapsed_before_pause_ms, g_timer_duration_ms);
+}
+
+/**
+ * @brief Check if combo/berserk timer is currently paused
+ *
+ * @return 1 if paused, 0 if running or no timer
+ */
+EMSCRIPTEN_KEEPALIVE
+int sce_combo_timer_is_paused(void) {
+    return (g_active_timer_type != ComboTimerType::NONE && g_timer_paused) ? 1 : 0;
 }
 
 /**
  * @brief Reset combo state machine (for new game/level change)
  *
  * Called when starting a new level to reset combo and berserk tracking.
+ * External Timer Architecture: Clears timer state when resetting.
  */
 EMSCRIPTEN_KEEPALIVE
 void sce_combo_reset(void) {
-    if (g_combo_sm && g_combo_timer) {
-        // Cancel pending combo timeout (if any)
-        if (!g_combo_current_timeout_id.empty()) {
-            g_combo_timer->cancel(g_combo_current_timeout_id);
-            g_combo_current_timeout_id.clear();
-        }
-        // Cancel pending berserk timeout (if any)
-        if (!g_berserk_current_timeout_id.empty()) {
-            g_combo_timer->cancel(g_berserk_current_timeout_id);
-            g_berserk_current_timeout_id.clear();
-        }
-        g_combo_timer->reset();
-
+    if (g_combo_sm) {
         // Reset berserk effects in DOOM
         SCE_BerserkReset();
 
+        // Reset external timer state
+        clear_external_timer();
+
         // Recreate state machine to properly reset state with UserContext
         g_combo_sm = std::make_unique<ComboSM>(g_combo_context);
-        g_combo_timer = std::make_unique<SCE::Wrappers::GameLoopTimer<ComboSM>>(*g_combo_sm);
         g_combo_sm->initialize();
         // Note: onentry callback (onIdle) handles js_notify_state_change
 
         g_combo_count = 0;
         g_berserk_intensity = 0;
-        g_combo_fire_time_ms = -1.0;  // Clear fire time for UI sync
-        g_berserk_fire_time_ms = -1.0;  // Clear fire time for UI sync
         js_notify_combo_update(0, false);
         js_notify_berserk_update(0, false);
         js_notify_combo_timer(-1, 0);  // Clear timer bar

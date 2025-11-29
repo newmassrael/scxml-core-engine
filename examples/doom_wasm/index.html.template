@@ -1585,6 +1585,25 @@
 
         // Intercept Ctrl+W and F11 key events
         document.addEventListener('keydown', function(e) {
+            // ESC key toggles menu - pause/resume timer accordingly
+            if (e.key === 'Escape') {
+                if (typeof Module !== 'undefined') {
+                    // Toggle pause/resume based on current state
+                    if (Module._sce_combo_timer_is_paused && Module._sce_combo_timer_is_paused()) {
+                        // Timer is paused, menu is closing -> resume
+                        if (Module._sce_combo_timer_resume) {
+                            Module._sce_combo_timer_resume();
+                            console.log('[SCE] ESC: Timer resumed');
+                        }
+                    } else {
+                        // Timer is running, menu is opening -> pause
+                        if (Module._sce_combo_timer_pause) {
+                            Module._sce_combo_timer_pause();
+                            console.log('[SCE] ESC: Timer paused');
+                        }
+                    }
+                }
+            }
             // Block Ctrl+W (works in fullscreen mode)
             if (e.ctrlKey && e.key === 'w') {
                 e.preventDefault();
@@ -1599,6 +1618,13 @@
                 return false;
             }
         }, true);  // Use capture phase to intercept before browser handles it
+
+        // Also handle ESC keyup for timer resume
+        document.addEventListener('keyup', function(e) {
+            if (e.key === 'Escape') {
+                console.log('[SCE DEBUG] ESC keyup detected - NOT resuming timer (menu might be open)');
+            }
+        }, true);
 
         // Update button text based on fullscreen state
         document.addEventListener('fullscreenchange', function() {
@@ -2014,8 +2040,6 @@
         // C++ callback: Called when enemy state machine triggers callbacks (multi-instance)
         // This enables bidirectional control: SCXML → JavaScript
         window.onSceEnemyCallback = function(slot, callbackType, typeName, instanceId) {
-            console.log('[SCE:Enemy] slot=' + slot + ' Callback:', callbackType, 'type=' + typeName, 'id=' + instanceId);
-
             // Bidirectional control actions based on enemy state
             switch(callbackType) {
                 case 'dormant':
