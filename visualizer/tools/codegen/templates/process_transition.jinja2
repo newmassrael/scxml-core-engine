@@ -130,18 +130,8 @@
         // Note: Datamodel initialization happens in StaticExecutionEngine::initialize()
         this->ensureJSEngine();
 {%- endif %}
-{%- if model.needs_event_scheduler and model.needs_event_data and (model.needs_event_data_helper or model.needs_jsengine) %}
-
-
-        // W3C SCXML 5.10: Retrieve event data from scheduled event map (test186)
-        {
-            auto it = scheduledEventData_.find(event);
-            if (it != scheduledEventData_.end()) {
-                pendingEventData_ = it->second;
-                scheduledEventData_.erase(it);  // Clean up after retrieval
-            }
-        }
-{%- endif %}
+{# W3C SCXML 5.10: Event data for scheduled events handled via EventWithMetadata #}
+{# scheduledEventData_ map retrieval removed - engine.tick() passes eventData through raiseExternal() #}
 {%- if model.needs_event_name or model.needs_event_type %}
 
 
@@ -346,27 +336,8 @@
         }
 
 {% endif %}
-{% if model.needs_event_scheduler %}
-        // W3C SCXML 6.2: Process ready scheduled events
-        {
-            Event scheduledEvent;
-{% if model.needs_event_data_helper or model.needs_jsengine %}
-            std::string eventData;
-            while (eventScheduler_.popReadyEvent(scheduledEvent, eventData)) {
-                if (!eventData.empty()) {
-                    // W3C SCXML 5.10: Store event data in map for later retrieval (test186)
-                    scheduledEventData_[scheduledEvent] = eventData;
-                }
-                engine.raise(scheduledEvent);
-            }
-{% else %}
-            while (eventScheduler_.popReadyEvent(scheduledEvent)) {
-                engine.raise(scheduledEvent);
-            }
-{% endif %}
-        }
-
-{% endif %}
+        {# W3C SCXML 6.2: Scheduled event polling handled by StaticExecutionEngine::tick() #}
+        {# Policy-level polling removed - engine.tick() properly polls scheduler_ and calls raiseExternal() #}
 
         return transitionTaken;
     }

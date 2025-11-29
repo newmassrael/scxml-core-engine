@@ -203,7 +203,7 @@ struct {{ model.name }}Policy {
 
     // W3C SCXML 6.4.5: Delayed sends to parent scheduler (using SendSchedulingHelper)
     // ARCHITECTURE.md Zero Duplication: Reuses SendSchedulingHelper (Single Source of Truth)
-    mutable ::SCE::SendSchedulingHelper::SimpleScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
+    mutable ::SCE::PullScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
     {% endif %}
 
     {% if model.needs_jsengine or model.static_invokes %}
@@ -304,14 +304,8 @@ struct {{ model.name }}Policy {
     // W3C SCXML 6.4: Pending invokes (deferred until macrostep end)
     mutable std::vector<PendingInvoke> pendingInvokes_;
     {% endif %}
-    {% if model.needs_event_scheduler %}
-    // W3C SCXML 6.2: Event scheduler for delayed send (lazy-init)
-    mutable ::SCE::SendSchedulingHelper::SimpleScheduler<Event> eventScheduler_;
-    {% if model.needs_event_data_helper or model.needs_jsengine %}
-    // W3C SCXML 5.10: Event data map for scheduled events with params (test186)
-    mutable ::std::map<Event, ::std::string> scheduledEventData_;
-    {% endif %}
-    {% endif %}
+    {# W3C SCXML 6.2: Event scheduling handled by StaticExecutionEngine::scheduler_ #}
+    {# Policy-level eventScheduler_ removed - use engine.scheduleEvent() and engine.tick() #}
     {% if model.history_states %}
     // W3C SCXML 3.11: Runtime history tracking variables (matches Interpreter HistoryEntry)
     {% for history_id, history_info in model.history_states.items() %}
