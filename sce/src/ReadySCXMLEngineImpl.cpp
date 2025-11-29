@@ -23,6 +23,27 @@ private:
     std::string lastError_;
     bool initialized_ = false;
 
+    // Internal helper for setVariable overloads (Zero Duplication)
+    template <typename T> bool setVariableImpl(const std::string &name, T value) {
+        if (!initialized_ || !scxmlEngine_) {
+            lastError_ = "Engine not initialized";
+            return false;
+        }
+
+        try {
+            bool result = scxmlEngine_->setVariableSync(name, value, sessionId_);
+            if (!result) {
+                lastError_ = scxmlEngine_->getLastStateMachineError(sessionId_);
+                LOG_WARN("ReadySCXMLEngine: Failed to set variable '{}': {}", name, lastError_);
+            }
+            return result;
+        } catch (const std::exception &e) {
+            lastError_ = std::string("Variable setting exception: ") + e.what();
+            LOG_ERROR("ReadySCXMLEngine: Variable '{}' exception: {}", name, e.what());
+            return false;
+        }
+    }
+
 public:
     ReadySCXMLEngineImpl() {
         // Create SCXMLEngine instance
@@ -157,23 +178,19 @@ public:
     }
 
     bool setVariable(const std::string &name, const std::string &value) override {
-        if (!initialized_ || !scxmlEngine_) {
-            lastError_ = "Engine not initialized";
-            return false;
-        }
+        return setVariableImpl(name, value);
+    }
 
-        try {
-            bool result = scxmlEngine_->setVariableSync(name, value, sessionId_);
-            if (!result) {
-                lastError_ = scxmlEngine_->getLastStateMachineError(sessionId_);
-                LOG_WARN("ReadySCXMLEngine: Failed to set variable '{}': {}", name, lastError_);
-            }
-            return result;
-        } catch (const std::exception &e) {
-            lastError_ = std::string("Variable setting exception: ") + e.what();
-            LOG_ERROR("ReadySCXMLEngine: Variable '{}' exception: {}", name, e.what());
-            return false;
-        }
+    bool setVariable(const std::string &name, bool value) override {
+        return setVariableImpl(name, value);
+    }
+
+    bool setVariable(const std::string &name, double value) override {
+        return setVariableImpl(name, value);
+    }
+
+    bool setVariable(const std::string &name, int64_t value) override {
+        return setVariableImpl(name, value);
     }
 
     std::string getVariable(const std::string &name) const override {

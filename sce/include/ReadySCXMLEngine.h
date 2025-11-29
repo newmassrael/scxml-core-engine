@@ -95,12 +95,36 @@ public:
     // === Simple Variable Access ===
 
     /**
-     * @brief Set a variable in the state machine's data model
+     * @brief Set a string variable in the state machine's data model
      * @param name Variable name
-     * @param value Variable value (will be converted to appropriate type)
+     * @param value String value
      * @return true if variable was set successfully
      */
     virtual bool setVariable(const std::string &name, const std::string &value) = 0;
+
+    /**
+     * @brief Set a boolean variable in the state machine's data model
+     * @param name Variable name
+     * @param value Boolean value (native JavaScript boolean type)
+     * @return true if variable was set successfully
+     */
+    virtual bool setVariable(const std::string &name, bool value) = 0;
+
+    /**
+     * @brief Set a numeric variable in the state machine's data model
+     * @param name Variable name
+     * @param value Double value (native JavaScript number type)
+     * @return true if variable was set successfully
+     */
+    virtual bool setVariable(const std::string &name, double value) = 0;
+
+    /**
+     * @brief Set an integer variable in the state machine's data model
+     * @param name Variable name
+     * @param value Integer value (native JavaScript number type)
+     * @return true if variable was set successfully
+     */
+    virtual bool setVariable(const std::string &name, int64_t value) = 0;
 
     /**
      * @brief Get a variable from the state machine's data model

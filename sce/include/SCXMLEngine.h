@@ -200,12 +200,39 @@ public:
     /**
      * @brief Set a variable in the state machine's data model (synchronous)
      * @param name Variable name
-     * @param value Variable value (will be converted to appropriate type)
+     * @param value Variable value (string)
      * @param sessionId Target session (uses default if empty)
      * @return true if variable was set successfully
      */
     virtual bool setVariableSync(const std::string &name, const std::string &value,
                                  const std::string &sessionId = "") = 0;
+
+    /**
+     * @brief Set a boolean variable in the state machine's data model (synchronous)
+     * @param name Variable name
+     * @param value Boolean value (native JavaScript boolean type)
+     * @param sessionId Target session (uses default if empty)
+     * @return true if variable was set successfully
+     */
+    virtual bool setVariableSync(const std::string &name, bool value, const std::string &sessionId = "") = 0;
+
+    /**
+     * @brief Set a numeric variable in the state machine's data model (synchronous)
+     * @param name Variable name
+     * @param value Double value (native JavaScript number type)
+     * @param sessionId Target session (uses default if empty)
+     * @return true if variable was set successfully
+     */
+    virtual bool setVariableSync(const std::string &name, double value, const std::string &sessionId = "") = 0;
+
+    /**
+     * @brief Set an integer variable in the state machine's data model (synchronous)
+     * @param name Variable name
+     * @param value Integer value (native JavaScript number type)
+     * @param sessionId Target session (uses default if empty)
+     * @return true if variable was set successfully
+     */
+    virtual bool setVariableSync(const std::string &name, int64_t value, const std::string &sessionId = "") = 0;
 
     /**
      * @brief Get a variable from the state machine's data model (synchronous)

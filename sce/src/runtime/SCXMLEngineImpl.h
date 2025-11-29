@@ -59,6 +59,9 @@ public:
     bool isInStateSync(const std::string &stateId, const std::string &sessionId = "") const override;
     std::vector<std::string> getActiveStatesSync(const std::string &sessionId = "") const override;
     bool setVariableSync(const std::string &name, const std::string &value, const std::string &sessionId = "") override;
+    bool setVariableSync(const std::string &name, bool value, const std::string &sessionId = "") override;
+    bool setVariableSync(const std::string &name, double value, const std::string &sessionId = "") override;
+    bool setVariableSync(const std::string &name, int64_t value, const std::string &sessionId = "") override;
     std::string getVariableSync(const std::string &name, const std::string &sessionId = "") const override;
     std::string getLastStateMachineError(const std::string &sessionId = "") const override;
     Statistics getStatisticsSync(const std::string &sessionId = "") const override;
@@ -68,6 +71,9 @@ public:
     void collectGarbage() override;
 
 private:
+    // Internal helper for setVariableSync overloads (Zero Duplication)
+    bool setVariableSyncImpl(const std::string &name, const ScriptValue &value, const std::string &sessionId);
+
     // Convert internal JSResult to public ExecutionResult
     ExecutionResult convertResult(const JSResult &jsResult) const;
 

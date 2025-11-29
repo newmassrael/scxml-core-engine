@@ -365,7 +365,9 @@ std::vector<std::string> SCXMLEngineImpl::getActiveStatesSync([[maybe_unused]] c
     return stateMachine_->getActiveStates();
 }
 
-bool SCXMLEngineImpl::setVariableSync(const std::string &name, const std::string &value, const std::string &sessionId) {
+// Private helper for all setVariableSync overloads (Zero Duplication)
+bool SCXMLEngineImpl::setVariableSyncImpl(const std::string &name, const ScriptValue &value,
+                                          const std::string &sessionId) {
     std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
 
     if (!stateMachine_) {
@@ -374,10 +376,9 @@ bool SCXMLEngineImpl::setVariableSync(const std::string &name, const std::string
     }
 
     try {
-        // Use StateMachine's session ID
         const std::string &smSessionId = stateMachine_->getSessionId();
         auto &jsEngine = JSEngine::instance();
-        auto future = jsEngine.setVariable(smSessionId, name, ScriptValue(value));
+        auto future = jsEngine.setVariable(smSessionId, name, value);
         auto result = future.get();
 
         if (!JSEngine::isSuccess(result)) {
@@ -392,6 +393,22 @@ bool SCXMLEngineImpl::setVariableSync(const std::string &name, const std::string
         LOG_ERROR("SCXMLEngine: Variable '{}' exception: {}", name, e.what());
         return false;
     }
+}
+
+bool SCXMLEngineImpl::setVariableSync(const std::string &name, const std::string &value, const std::string &sessionId) {
+    return setVariableSyncImpl(name, ScriptValue(value), sessionId);
+}
+
+bool SCXMLEngineImpl::setVariableSync(const std::string &name, bool value, const std::string &sessionId) {
+    return setVariableSyncImpl(name, ScriptValue(value), sessionId);
+}
+
+bool SCXMLEngineImpl::setVariableSync(const std::string &name, double value, const std::string &sessionId) {
+    return setVariableSyncImpl(name, ScriptValue(value), sessionId);
+}
+
+bool SCXMLEngineImpl::setVariableSync(const std::string &name, int64_t value, const std::string &sessionId) {
+    return setVariableSyncImpl(name, ScriptValue(value), sessionId);
 }
 
 std::string SCXMLEngineImpl::getVariableSync(const std::string &name,
