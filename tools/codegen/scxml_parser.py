@@ -778,7 +778,8 @@ class SCXMLParser:
         transition.actions = self._parse_executable_content(trans_elem)
 
         # Detect guard conditions requiring JSEngine
-        if transition.cond:
+        # cpp: prefix conditions are evaluated directly in C++ — skip JSEngine check
+        if transition.cond and not transition.is_cpp_condition:
             if self._requires_jsengine(transition.cond):
                 self.model.needs_jsengine = True
 

@@ -1,6 +1,9 @@
 # SCE Unified Module
 # Complete SCE implementation with domain models, runtime engine, and scripting
 
+# Build options
+option(SCE_ENABLE_HTTP "Enable HTTP/BasicHTTPEventProcessor support (requires cpp-httplib)" ON)
+
 # XML Parser Infrastructure (Unified)
 # All platforms: pugixml (lightweight, W3C compliant, header-only)
 set(PUGIXML_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src)
@@ -39,8 +42,8 @@ else()
     message(STATUS "SCE: Building without spdlog (using DefaultBackend)")
 endif()
 
-# Add cpp-httplib subdirectory (native builds only, not WASM)
-if(NOT EMSCRIPTEN)
+# Add cpp-httplib subdirectory (native builds only, not WASM, HTTP enabled)
+if(NOT EMSCRIPTEN AND SCE_ENABLE_HTTP)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/cpp-httplib ${CMAKE_CURRENT_BINARY_DIR}/cpp-httplib)
 endif()
 
@@ -161,25 +164,27 @@ target_sources(sce_unified PRIVATE
     src/parsing/XIncludeProcessor.cpp
 )
 
-# HTTP infrastructure (native builds only, not WASM)
+# HTTP infrastructure (native builds only, not WASM, HTTP enabled)
 # W3C SCXML C.2: BasicHTTP Event I/O Processor requires native sockets
-if(NOT EMSCRIPTEN)
-    target_sources(sce_unified PRIVATE
-        src/common/HttpResponseUtils.cpp
-        src/common/UrlEncodingHelper.cpp
-        src/events/HttpEventTarget.cpp
-        src/events/HttpEventReceiver.cpp
-        src/events/HttpEventBridge.cpp
-        src/events/HttpEventCoordinator.cpp
-        src/events/CppHttplibClient.cpp
-    )
-else()
-    target_sources(sce_unified PRIVATE
-        src/common/UrlEncodingHelper.cpp
-        src/events/HttpEventTarget.cpp
-        src/events/HttpClientFactory.cpp
-        src/events/EmscriptenFetchClient.cpp
-)
+if(SCE_ENABLE_HTTP)
+    if(NOT EMSCRIPTEN)
+        target_sources(sce_unified PRIVATE
+            src/common/HttpResponseUtils.cpp
+            src/common/UrlEncodingHelper.cpp
+            src/events/HttpEventTarget.cpp
+            src/events/HttpEventReceiver.cpp
+            src/events/HttpEventBridge.cpp
+            src/events/HttpEventCoordinator.cpp
+            src/events/CppHttplibClient.cpp
+        )
+    else()
+        target_sources(sce_unified PRIVATE
+            src/common/UrlEncodingHelper.cpp
+            src/events/HttpEventTarget.cpp
+            src/events/HttpClientFactory.cpp
+            src/events/EmscriptenFetchClient.cpp
+        )
+    endif()
 endif()
 
 # XML Parser implementation (Unified)
@@ -273,9 +278,12 @@ if(EMSCRIPTEN)
     message(STATUS "WASM build: pthread enabled for EventDispatcherImpl (no PROXY_TO_PTHREAD)")
 endif()
 
-# HTTP library (native builds only, not WASM)
-if(NOT EMSCRIPTEN)
-    target_link_libraries(sce_unified PUBLIC httplib::httplib)
+# HTTP support (optional feature)
+if(SCE_ENABLE_HTTP)
+    target_compile_definitions(sce_unified PUBLIC SCE_ENABLE_HTTP)
+    if(NOT EMSCRIPTEN)
+        target_link_libraries(sce_unified PUBLIC httplib::httplib)
+    endif()
 endif()
 
 # Set C++20 standard

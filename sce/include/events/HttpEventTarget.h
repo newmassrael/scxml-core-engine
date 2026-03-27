@@ -4,7 +4,7 @@
 #include "IEventTarget.h"
 #include <chrono>
 #include <future>
-#ifndef __EMSCRIPTEN__
+#if !defined(__EMSCRIPTEN__) && defined(SCE_ENABLE_HTTP)
 #include <httplib.h>
 #endif
 #include <string>

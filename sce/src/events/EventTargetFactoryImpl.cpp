@@ -9,9 +9,9 @@
 #include <algorithm>
 #include <stdexcept>
 
-// HTTP infrastructure (both native and WASM)
-// Native: Uses cpp-httplib, WASM: Uses EmscriptenFetchClient
+#ifdef SCE_ENABLE_HTTP
 #include "events/HttpEventTarget.h"
+#endif
 
 namespace SCE {
 
@@ -26,6 +26,7 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
     registerTargetType("internal",
                        [this](const std::string &targetUri) { return createInternalTarget(targetUri, ""); });
 
+#ifdef SCE_ENABLE_HTTP
     // Register HTTP target creator (both native and WASM)
     // W3C SCXML C.2: BasicHTTP Event I/O Processor
     // Native: Uses cpp-httplib, WASM: Uses EmscriptenFetchClient
@@ -44,12 +45,15 @@ EventTargetFactoryImpl::EventTargetFactoryImpl(std::shared_ptr<IEventRaiser> eve
         return target;
     });
 
-#ifdef __EMSCRIPTEN__
+  #ifdef __EMSCRIPTEN__
     LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal, HTTP, and HTTPS target support (WASM with "
               "EmscriptenFetchClient)");
-#else
+  #else
     LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal, HTTP, and HTTPS target support (Native with "
               "cpp-httplib)");
+  #endif
+#else
+    LOG_DEBUG("EventTargetFactoryImpl: Factory created with internal target support (HTTP disabled)");
 #endif
 }
 

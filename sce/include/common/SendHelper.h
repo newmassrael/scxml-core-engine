@@ -18,7 +18,9 @@
 
 #include "common/SCXMLConstants.h"
 #include "common/UniqueIdGenerator.h"
+#ifdef SCE_ENABLE_HTTP
 #include "common/UrlEncodingHelper.h"
+#endif
 #include <map>
 #include <string>
 #include <vector>
@@ -423,6 +425,7 @@ public:
         }
     }
 
+#ifdef SCE_ENABLE_HTTP
     /**
      * @brief Build HTTP POST body with W3C SCXML C.2 compliance
      *
@@ -476,6 +479,7 @@ public:
 
         return payload;
     }
+#endif // SCE_ENABLE_HTTP
 };
 
 }  // namespace SCE

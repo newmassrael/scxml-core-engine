@@ -29,15 +29,17 @@
 #include "core/EventQueueAdapters.h"
 #include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
-#ifndef __EMSCRIPTEN__
-#include "events/CppHttplibClient.h"
-#else
-#include "events/EmscriptenFetchClient.h"
+#ifdef SCE_ENABLE_HTTP
+  #ifndef __EMSCRIPTEN__
+  #include "events/CppHttplibClient.h"
+  #else
+  #include "events/EmscriptenFetchClient.h"
+  #endif
+  #include <nlohmann/json.hpp>
 #endif
 #include <chrono>
 #include <cstdint>
 #include <memory>
-#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -368,6 +370,7 @@ public:
      * @param eventWithMetadata Event with metadata (including invokeid)
      */
     void raiseExternal(const EventWithMetadata &eventWithMetadata) {
+#ifdef SCE_ENABLE_HTTP
         // W3C SCXML C.2: Check if this is a BasicHTTP Event I/O Processor send
         bool isHttpSend = !eventWithMetadata.originType.empty() &&
                           (eventWithMetadata.originType.find("BasicHTTPEventProcessor") != std::string::npos);
@@ -500,7 +503,9 @@ public:
                 LOG_ERROR("AOT raiseExternal WASM: Exception while getting HTTP result: {}", e.what());
             }
 #endif
-        } else {
+        } else
+#endif // SCE_ENABLE_HTTP
+        {
             // Normal internal/external queue processing
             LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
                       static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
