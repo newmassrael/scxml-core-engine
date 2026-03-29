@@ -1,6 +1,6 @@
 #include "runtime/HistoryManager.h"
 #include "common/HistoryHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "model/IStateNode.h"
 #include "runtime/HistoryValidator.h"
 
@@ -11,12 +11,12 @@ namespace SCE {
 HistoryManager::HistoryManager(std::function<std::shared_ptr<IStateNode>(const std::string &)> stateProvider,
                                std::unique_ptr<IHistoryValidator> validator)
     : stateProvider_(std::move(stateProvider)), validator_(std::move(validator)) {
-    LOG_INFO("HistoryManager: Initialized - using shared HistoryHelper (Zero Duplication)");
+    SCE_LOG_INFO("HistoryManager: Initialized - using shared HistoryHelper (Zero Duplication)");
 }
 
 bool HistoryManager::registerHistoryState(const std::string &historyStateId, const std::string &parentStateId,
                                           HistoryType type, const std::string &defaultStateId) {
-    LOG_INFO("HistoryManager: Registering history state - {} for parent {}", historyStateId, parentStateId);
+    SCE_LOG_INFO("HistoryManager: Registering history state - {} for parent {}", historyStateId, parentStateId);
 
     std::lock_guard<std::mutex> lock(historyMutex_);
 
@@ -36,7 +36,7 @@ bool HistoryManager::registerHistoryState(const std::string &historyStateId, con
     }
 
     if (!validationResult) {
-        LOG_ERROR("HistoryManager: Registration validation failed for {}", historyStateId);
+        SCE_LOG_ERROR("HistoryManager: Registration validation failed for {}", historyStateId);
         return false;
     }
 
@@ -58,21 +58,21 @@ bool HistoryManager::registerHistoryState(const std::string &historyStateId, con
     }
 
     std::string typeStr = (type == HistoryType::SHALLOW) ? "shallow" : "deep";
-    LOG_INFO("HistoryManager: Successfully registered {} history state: {} for parent: {}", typeStr, historyStateId,
+    SCE_LOG_INFO("HistoryManager: Successfully registered {} history state: {} for parent: {}", typeStr, historyStateId,
              parentStateId);
 
     return true;
 }
 
 bool HistoryManager::recordHistory(const std::string &parentStateId, const std::vector<std::string> &activeStateIds) {
-    LOG_INFO("HistoryManager: Recording history for parent {} with {} active states", parentStateId,
+    SCE_LOG_INFO("HistoryManager: Recording history for parent {} with {} active states", parentStateId,
              activeStateIds.size());
 
     std::lock_guard<std::mutex> lock(historyMutex_);
 
     // Validate recording using injected validator
     if (!validator_->validateRecording(parentStateId, activeStateIds)) {
-        LOG_ERROR("HistoryManager: Recording validation failed for {}", parentStateId);
+        SCE_LOG_ERROR("HistoryManager: Recording validation failed for {}", parentStateId);
         return false;
     }
 
@@ -119,19 +119,19 @@ bool HistoryManager::recordHistory(const std::string &parentStateId, const std::
         recordedAny = true;
 
         std::string typeStr = (historyInfo.type == HistoryType::SHALLOW) ? "shallow" : "deep";
-        LOG_INFO("HistoryManager: Recorded {} history with {} states for {}", typeStr, filteredStates.size(),
+        SCE_LOG_INFO("HistoryManager: Recorded {} history with {} states for {}", typeStr, filteredStates.size(),
                  historyInfo.historyStateId);
     }
 
     if (!recordedAny) {
-        LOG_DEBUG("HistoryManager: No history states found or no states to record for {}", parentStateId);
+        SCE_LOG_DEBUG("HistoryManager: No history states found or no states to record for {}", parentStateId);
     }
 
     return recordedAny;
 }
 
 HistoryRestorationResult HistoryManager::restoreHistory(const std::string &historyStateId) {
-    LOG_INFO("HistoryManager: Restoring history for {}", historyStateId);
+    SCE_LOG_INFO("HistoryManager: Restoring history for {}", historyStateId);
 
     std::lock_guard<std::mutex> lock(historyMutex_);
 
@@ -153,12 +153,12 @@ HistoryRestorationResult HistoryManager::restoreHistory(const std::string &histo
     if (historyIt != recordedHistory_.end() && historyIt->second.isValid) {
         // Restore from recorded history
         const auto &entry = historyIt->second;
-        LOG_INFO("HistoryManager: Restoring {} recorded states for {}", entry.recordedStateIds.size(), historyStateId);
+        SCE_LOG_INFO("HistoryManager: Restoring {} recorded states for {}", entry.recordedStateIds.size(), historyStateId);
         return HistoryRestorationResult::createSuccess(entry.recordedStateIds, true);  // fromRecording = true
     } else {
         // Use default states
         auto defaultStates = getDefaultStates(historyInfo);
-        LOG_INFO("HistoryManager: No recorded history found, using {} default states for {}", defaultStates.size(),
+        SCE_LOG_INFO("HistoryManager: No recorded history found, using {} default states for {}", defaultStates.size(),
                  historyStateId);
         return HistoryRestorationResult::createSuccess(defaultStates, false);  // fromRecording = false
     }
@@ -172,7 +172,7 @@ bool HistoryManager::isHistoryState(const std::string &stateId) const {
 void HistoryManager::clearAllHistory() {
     std::lock_guard<std::mutex> lock(historyMutex_);
     recordedHistory_.clear();
-    LOG_INFO("HistoryManager: Cleared all recorded history");
+    SCE_LOG_INFO("HistoryManager: Cleared all recorded history");
 }
 
 std::vector<HistoryEntry> HistoryManager::getHistoryEntries() const {
@@ -185,7 +185,7 @@ std::vector<HistoryEntry> HistoryManager::getHistoryEntries() const {
         entries.push_back(pair.second);
     }
 
-    LOG_DEBUG("HistoryManager: Retrieved {} history entries", entries.size());
+    SCE_LOG_DEBUG("HistoryManager: Retrieved {} history entries", entries.size());
     return entries;
 }
 
@@ -199,7 +199,7 @@ HistoryManager::findHistoryStatesForParent(const std::string &parentStateId) con
         }
     }
 
-    LOG_DEBUG("HistoryManager: Found {} history states for parent {}", result.size(), parentStateId);
+    SCE_LOG_DEBUG("HistoryManager: Found {} history states for parent {}", result.size(), parentStateId);
     return result;
 }
 
@@ -208,7 +208,7 @@ std::vector<std::string> HistoryManager::getDefaultStates(const HistoryStateInfo
 
     if (!historyStateInfo.defaultStateId.empty()) {
         defaultStates.push_back(historyStateInfo.defaultStateId);
-        LOG_DEBUG("HistoryManager: Using explicit default state: {}", historyStateInfo.defaultStateId);
+        SCE_LOG_DEBUG("HistoryManager: Using explicit default state: {}", historyStateInfo.defaultStateId);
     } else {
         // If no explicit default, try to find the initial state of the parent
         if (stateProvider_) {
@@ -217,13 +217,13 @@ std::vector<std::string> HistoryManager::getDefaultStates(const HistoryStateInfo
                 std::string initialState = parentState->getInitialState();
                 if (!initialState.empty()) {
                     defaultStates.push_back(initialState);
-                    LOG_DEBUG("HistoryManager: Using parent's initial state as default: {}", initialState);
+                    SCE_LOG_DEBUG("HistoryManager: Using parent's initial state as default: {}", initialState);
                 } else {
                     // Fallback: use first child state
                     const auto &children = parentState->getChildren();
                     if (!children.empty()) {
                         defaultStates.push_back(children[0]->getId());
-                        LOG_DEBUG("HistoryManager: Using first child as default: {}", children[0]->getId());
+                        SCE_LOG_DEBUG("HistoryManager: Using first child as default: {}", children[0]->getId());
                     }
                 }
             }
@@ -231,7 +231,7 @@ std::vector<std::string> HistoryManager::getDefaultStates(const HistoryStateInfo
     }
 
     if (defaultStates.empty()) {
-        LOG_WARN("HistoryManager: No default states available for {}", historyStateInfo.historyStateId);
+        SCE_LOG_WARN("HistoryManager: No default states available for {}", historyStateInfo.historyStateId);
     }
 
     return defaultStates;

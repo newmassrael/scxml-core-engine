@@ -7,7 +7,7 @@
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 #include <regex>
 

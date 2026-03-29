@@ -1,6 +1,6 @@
 #define SCXML_ENGINE_EXPORTS
 #include "SCXMLEngineImpl.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/StateMachineFactory.h"
@@ -49,16 +49,16 @@ SCXMLEngineImpl::~SCXMLEngineImpl() {
 }
 
 bool SCXMLEngineImpl::initialize() {
-    LOG_DEBUG("SCXMLEngineImpl: Starting initialization...");
+    SCE_LOG_DEBUG("SCXMLEngineImpl: Starting initialization...");
     if (initialized_) {
-        LOG_DEBUG("SCXMLEngineImpl: Already initialized");
+        SCE_LOG_DEBUG("SCXMLEngineImpl: Already initialized");
         return true;
     }
 
     // JSEngine automatically initialized in constructor (RAII)
     // instance() call provides fully initialized engine
     SCE::JSEngine::instance();  // RAII guaranteed
-    LOG_DEBUG("SCXMLEngineImpl: JSEngine automatically initialized via RAII");
+    SCE_LOG_DEBUG("SCXMLEngineImpl: JSEngine automatically initialized via RAII");
     initialized_ = true;
     return true;
 }
@@ -227,24 +227,24 @@ bool SCXMLEngineImpl::loadSCXMLFromString(const std::string &scxmlContent, const
                           .build();
         if (!result.has_value()) {
             sessionErrors_[actualSessionId] = "Failed to create state machine: " + result.error;
-            LOG_ERROR("SCXMLEngine: Failed to load SCXML content: {}", result.error);
+            SCE_LOG_ERROR("SCXMLEngine: Failed to load SCXML content: {}", result.error);
             return false;
         }
 
         stateMachine_ = std::move(result.value);
         if (!stateMachine_) {
             sessionErrors_[actualSessionId] = "State machine creation returned null";
-            LOG_ERROR("SCXMLEngine: State machine creation returned null");
+            SCE_LOG_ERROR("SCXMLEngine: State machine creation returned null");
             return false;
         }
 
-        LOG_INFO("SCXMLEngine: SCXML content loaded successfully with session: {}", actualSessionId);
+        SCE_LOG_INFO("SCXMLEngine: SCXML content loaded successfully with session: {}", actualSessionId);
         return true;
 
     } catch (const std::exception &e) {
         std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
         sessionErrors_[actualSessionId] = std::string("Load failed: ") + e.what();
-        LOG_ERROR("SCXMLEngine: Exception during SCXML load: {}", e.what());
+        SCE_LOG_ERROR("SCXMLEngine: Exception during SCXML load: {}", e.what());
         return false;
     }
 }
@@ -256,7 +256,7 @@ bool SCXMLEngineImpl::loadSCXMLFromFile(const std::string &scxmlFile, const std:
         if (!file.is_open()) {
             std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
             sessionErrors_[actualSessionId] = "Cannot open SCXML file: " + scxmlFile;
-            LOG_ERROR("SCXMLEngine: Cannot open SCXML file: {}", scxmlFile);
+            SCE_LOG_ERROR("SCXMLEngine: Cannot open SCXML file: {}", scxmlFile);
             return false;
         }
 
@@ -266,7 +266,7 @@ bool SCXMLEngineImpl::loadSCXMLFromFile(const std::string &scxmlFile, const std:
     } catch (const std::exception &e) {
         std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
         sessionErrors_[actualSessionId] = std::string("File load failed: ") + e.what();
-        LOG_ERROR("SCXMLEngine: Exception during file load: {}", e.what());
+        SCE_LOG_ERROR("SCXMLEngine: Exception during file load: {}", e.what());
         return false;
     }
 }
@@ -276,7 +276,7 @@ bool SCXMLEngineImpl::startStateMachine(const std::string &sessionId) {
 
     if (!stateMachine_) {
         sessionErrors_[actualSessionId] = "No state machine loaded";
-        LOG_ERROR("SCXMLEngine: Cannot start - no state machine loaded");
+        SCE_LOG_ERROR("SCXMLEngine: Cannot start - no state machine loaded");
         return false;
     }
 
@@ -284,16 +284,16 @@ bool SCXMLEngineImpl::startStateMachine(const std::string &sessionId) {
         bool result = stateMachine_->start();
         if (!result) {
             sessionErrors_[actualSessionId] = "Failed to start state machine";
-            LOG_ERROR("SCXMLEngine: Failed to start state machine");
+            SCE_LOG_ERROR("SCXMLEngine: Failed to start state machine");
             return false;
         }
 
-        LOG_INFO("SCXMLEngine: State machine started successfully for session: {}", actualSessionId);
+        SCE_LOG_INFO("SCXMLEngine: State machine started successfully for session: {}", actualSessionId);
         return true;
 
     } catch (const std::exception &e) {
         sessionErrors_[actualSessionId] = std::string("Start failed: ") + e.what();
-        LOG_ERROR("SCXMLEngine: Exception during start: {}", e.what());
+        SCE_LOG_ERROR("SCXMLEngine: Exception during start: {}", e.what());
         return false;
     }
 }
@@ -303,9 +303,9 @@ void SCXMLEngineImpl::stopStateMachine(const std::string &sessionId) {
         try {
             stateMachine_->stop();
             std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
-            LOG_INFO("SCXMLEngine: State machine stopped for session: {}", actualSessionId);
+            SCE_LOG_INFO("SCXMLEngine: State machine stopped for session: {}", actualSessionId);
         } catch (const std::exception &e) {
-            LOG_WARN("SCXMLEngine: Exception during stop: {}", e.what());
+            SCE_LOG_WARN("SCXMLEngine: Exception during stop: {}", e.what());
         }
     }
 }
@@ -328,14 +328,14 @@ bool SCXMLEngineImpl::sendEventSync(const std::string &eventName, const std::str
         auto result = stateMachine_->processEvent(eventName, eventData);
         if (!result.success) {
             sessionErrors_[actualSessionId] = "Event processing failed: " + result.errorMessage;
-            LOG_WARN("SCXMLEngine: Event '{}' failed: {}", eventName, result.errorMessage);
+            SCE_LOG_WARN("SCXMLEngine: Event '{}' failed: {}", eventName, result.errorMessage);
             return false;
         }
         return true;
 
     } catch (const std::exception &e) {
         sessionErrors_[actualSessionId] = std::string("Event processing exception: ") + e.what();
-        LOG_ERROR("SCXMLEngine: Event '{}' exception: {}", eventName, e.what());
+        SCE_LOG_ERROR("SCXMLEngine: Event '{}' exception: {}", eventName, e.what());
         return false;
     }
 }
@@ -383,14 +383,14 @@ bool SCXMLEngineImpl::setVariableSyncImpl(const std::string &name, const ScriptV
 
         if (!JSEngine::isSuccess(result)) {
             sessionErrors_[actualSessionId] = "Failed to set variable: " + result.getErrorMessage();
-            LOG_WARN("SCXMLEngine: Failed to set variable '{}': {}", name, result.getErrorMessage());
+            SCE_LOG_WARN("SCXMLEngine: Failed to set variable '{}': {}", name, result.getErrorMessage());
             return false;
         }
         return true;
 
     } catch (const std::exception &e) {
         sessionErrors_[actualSessionId] = std::string("Variable setting exception: ") + e.what();
-        LOG_ERROR("SCXMLEngine: Variable '{}' exception: {}", name, e.what());
+        SCE_LOG_ERROR("SCXMLEngine: Variable '{}' exception: {}", name, e.what());
         return false;
     }
 }
@@ -430,7 +430,7 @@ std::string SCXMLEngineImpl::getVariableSync(const std::string &name,
         return JSEngine::resultToString(result);
 
     } catch (const std::exception &e) {
-        LOG_WARN("SCXMLEngine: Failed to get variable '{}': {}", name, e.what());
+        SCE_LOG_WARN("SCXMLEngine: Failed to get variable '{}': {}", name, e.what());
         return "";
     }
 }

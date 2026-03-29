@@ -94,13 +94,17 @@ void SpdlogBackend::setLevel(LogLevel level) {
     }
 }
 
+bool SpdlogBackend::shouldLog(LogLevel level) const {
+    return logger_ && logger_->should_log(convertLevel(level));
+}
+
 void SpdlogBackend::flush() {
     if (logger_) {
         logger_->flush();
     }
 }
 
-spdlog::level::level_enum SpdlogBackend::convertLevel(LogLevel level) {
+spdlog::level::level_enum SpdlogBackend::convertLevel(LogLevel level) const {
     switch (level) {
     case LogLevel::Trace:
         return spdlog::level::trace;

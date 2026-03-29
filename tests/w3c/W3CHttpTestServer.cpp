@@ -1,6 +1,6 @@
 #include "W3CHttpTestServer.h"
 #include "common/JsonUtils.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/TestUtils.h"
 #include "events/HttpEventBridge.h"
 #include <chrono>
@@ -20,7 +20,7 @@ W3CHttpTestServer::W3CHttpTestServer(int port, const std::string &path)
     // Set up POST handler for W3C HTTP event processing
     server_->Post(path_, [this](const httplib::Request &req, httplib::Response &res) { handlePost(req, res); });
 
-    LOG_INFO("W3CHttpTestServer: Created server instance {} for {}:{}{}", instanceId_, "localhost", port_, path_);
+    SCE_LOG_INFO("W3CHttpTestServer: Created server instance {} for {}:{}{}", instanceId_, "localhost", port_, path_);
 }
 
 W3CHttpTestServer::~W3CHttpTestServer() {
@@ -29,7 +29,7 @@ W3CHttpTestServer::~W3CHttpTestServer() {
 
 bool W3CHttpTestServer::start() {
     if (running_.load()) {
-        LOG_WARN("W3CHttpTestServer: Server already running");
+        SCE_LOG_WARN("W3CHttpTestServer: Server already running");
         return false;
     }
 
@@ -37,7 +37,7 @@ bool W3CHttpTestServer::start() {
 
     // Start server in background thread
     serverThread_ = std::thread([this]() {
-        LOG_INFO("W3CHttpTestServer: [{}] Starting HTTP server on localhost:{}{}", instanceId_, port_, path_);
+        SCE_LOG_INFO("W3CHttpTestServer: [{}] Starting HTTP server on localhost:{}{}", instanceId_, port_, path_);
 
         running_ = true;
 
@@ -53,13 +53,13 @@ bool W3CHttpTestServer::start() {
         bool success = server_->listen("localhost", port_);
 
         if (!success && !shutdownRequested_.load()) {
-            LOG_ERROR("W3CHttpTestServer: [{}] Failed to start server on port {}", instanceId_, port_);
+            SCE_LOG_ERROR("W3CHttpTestServer: [{}] Failed to start server on port {}", instanceId_, port_);
             running_ = false;  // Set to false immediately on failure
         } else {
             running_ = false;  // Normal shutdown
         }
 
-        LOG_DEBUG("W3CHttpTestServer: [{}] Server thread ended", instanceId_);
+        SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Server thread ended", instanceId_);
     });
 
     // Wait a bit for server to start
@@ -72,7 +72,7 @@ bool W3CHttpTestServer::start() {
         return false;
     }
 
-    LOG_INFO("W3CHttpTestServer: [{}] HTTP server started successfully on localhost:{}{}", instanceId_, port_, path_);
+    SCE_LOG_INFO("W3CHttpTestServer: [{}] HTTP server started successfully on localhost:{}{}", instanceId_, port_, path_);
     return true;
 }
 
@@ -81,7 +81,7 @@ void W3CHttpTestServer::stop() {
         return;
     }
 
-    LOG_INFO("W3CHttpTestServer: [{}] Stopping HTTP server", instanceId_);
+    SCE_LOG_INFO("W3CHttpTestServer: [{}] Stopping HTTP server", instanceId_);
 
     shutdownRequested_ = true;
 
@@ -96,12 +96,12 @@ void W3CHttpTestServer::stop() {
     // Give OS more time to release the port completely
     std::this_thread::sleep_for(SCE::Test::Utils::LONG_WAIT_MS);
 
-    LOG_INFO("W3CHttpTestServer: [{}] HTTP server stopped", instanceId_);
+    SCE_LOG_INFO("W3CHttpTestServer: [{}] HTTP server stopped", instanceId_);
 }
 
 void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Response &res) {
-    LOG_DEBUG("W3CHttpTestServer: [{}] Received POST request to {}", instanceId_, req.path);
-    LOG_DEBUG("W3CHttpTestServer: [{}] Request body: {}", instanceId_, req.body);
+    SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Received POST request to {}", instanceId_, req.path);
+    SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Request body: {}", instanceId_, req.body);
 
     try {
         // Parse incoming HTTP request according to W3C SCXML BasicHTTPEventProcessor spec
@@ -119,7 +119,7 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
             // W3C SCXML test 531: Check _scxmleventname parameter with highest priority
             if (req.has_param("_scxmleventname")) {
                 eventName = req.get_param_value("_scxmleventname");
-                LOG_DEBUG("W3CHttpTestServer: [{}] Using _scxmleventname parameter: {}", instanceId_, eventName);
+                SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Using _scxmleventname parameter: {}", instanceId_, eventName);
             }
 
             // W3C SCXML test 518, 519, 534: Map form parameters to _event.data fields
@@ -157,7 +157,7 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
             // Convert to JSON string for event data
             if (!dataObj.empty()) {
                 eventData = JsonUtils::toCompactString(dataObj);
-                LOG_DEBUG("W3CHttpTestServer: [{}] Form parameters as JSON: {}", instanceId_, eventData);
+                SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Form parameters as JSON: {}", instanceId_, eventData);
             }
         } else {
             // W3C SCXML C.2: Check if body is JSON or plain content
@@ -178,7 +178,7 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
                             size_t quoteEnd = req.body.find("\"", quoteStart + 1);
                             if (quoteEnd != std::string::npos) {
                                 eventName = req.body.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
-                                LOG_DEBUG("W3CHttpTestServer: [{}] Extracted event name from JSON: {}", instanceId_,
+                                SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Extracted event name from JSON: {}", instanceId_,
                                           eventName);
                             }
                         }
@@ -189,7 +189,7 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
             // W3C SCXML C.2: For non-JSON content, generate HTTP.POST event
             if (!isJsonContent && !req.body.empty() && !isFormData) {
                 eventName = "HTTP.POST";
-                LOG_DEBUG("W3CHttpTestServer: [{}] Non-JSON content detected, using HTTP.POST event", instanceId_);
+                SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Non-JSON content detected, using HTTP.POST event", instanceId_);
             }
 
             // Default event name if not specified (W3C test compatibility)
@@ -205,7 +205,7 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
         // Generate unique sendId for W3C compliance
         std::string sendId = "w3c_test_" + std::to_string(std::chrono::system_clock::now().time_since_epoch().count());
 
-        LOG_INFO("W3CHttpTestServer: [{}] Processing event '{}' with sendId '{}'", instanceId_, eventName, sendId);
+        SCE_LOG_INFO("W3CHttpTestServer: [{}] Processing event '{}' with sendId '{}'", instanceId_, eventName, sendId);
 
         // Forward event to SCXML system via callback (thread-safe)
         // If callback not set yet, queue event for later delivery
@@ -214,7 +214,7 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
             if (eventCallback_) {
                 eventCallback_(eventName, eventData);
             } else {
-                LOG_DEBUG("W3CHttpTestServer: [{}] Callback not set yet, queuing event '{}' for later delivery",
+                SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Callback not set yet, queuing event '{}' for later delivery",
                           instanceId_, eventName);
                 pendingEvents_.emplace_back(eventName, eventData);
             }
@@ -239,10 +239,10 @@ void W3CHttpTestServer::handlePost(const httplib::Request &req, httplib::Respons
         res.set_header("Access-Control-Allow-Methods", "POST, OPTIONS");
         res.set_header("Access-Control-Allow-Headers", "Content-Type");
 
-        LOG_DEBUG("W3CHttpTestServer: [{}] Sent response: {}", instanceId_, responseBody);
+        SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Sent response: {}", instanceId_, responseBody);
 
     } catch (const std::exception &e) {
-        LOG_ERROR("W3CHttpTestServer: [{}] Exception handling POST request: {}", instanceId_, e.what());
+        SCE_LOG_ERROR("W3CHttpTestServer: [{}] Exception handling POST request: {}", instanceId_, e.what());
         res.status = 500;
         res.set_content(R"({"status": "error", "message": "Internal server error"})", "application/json");
     }

@@ -1,5 +1,5 @@
 #include "common/UniqueIdGenerator.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 
 #include <iomanip>
 #include <sstream>
@@ -42,7 +42,7 @@ std::string UniqueIdGenerator::generateInvokeId(const std::string &stateId) {
         oss << stateId << ".invoke_" << globalCount;
 
         std::string id = oss.str();
-        LOG_DEBUG("UniqueIdGenerator: Generated W3C invoke ID: {} (type counter: {})", id, typeCounter);
+        SCE_LOG_DEBUG("UniqueIdGenerator: Generated W3C invoke ID: {} (type counter: {})", id, typeCounter);
 
         return id;
     }
@@ -91,7 +91,7 @@ bool UniqueIdGenerator::isGeneratedId(const std::string &id) {
 }
 
 void UniqueIdGenerator::resetForTesting() {
-    LOG_DEBUG("UniqueIdGenerator: Resetting counters for testing");
+    SCE_LOG_DEBUG("UniqueIdGenerator: Resetting counters for testing");
     globalCounter_.store(0);
     sessionIdCount_.store(0);
     sendIdCount_.store(0);
@@ -140,7 +140,7 @@ std::string UniqueIdGenerator::generateBaseId(const std::string &prefix, std::at
     oss << prefix << "_" << timestamp << "_" << globalCount << "_" << std::hex << randomComponent;
 
     std::string id = oss.str();
-    LOG_DEBUG("UniqueIdGenerator: Generated ID: {} (type counter: {})", id, typeCounter);
+    SCE_LOG_DEBUG("UniqueIdGenerator: Generated ID: {} (type counter: {})", id, typeCounter);
 
     return id;
 }

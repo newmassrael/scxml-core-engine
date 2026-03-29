@@ -7,7 +7,7 @@
 
 #include "actions/CancelAction.h"
 #include "actions/SendAction.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/TestUtils.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -172,7 +172,7 @@ TEST_F(EventSchedulingTest, DebugHangingPoint) {
 
     bool success = sendAction.execute(context);
 
-    LOG_DEBUG("Send action executed, success={}", success);
+    SCE_LOG_DEBUG("Send action executed, success={}", success);
     EXPECT_TRUE(success);
 }
 
@@ -530,7 +530,7 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
     // Wait 100ms, then destroy session_2 (W3C SCXML 6.2: should cancel its delayed events)
     std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
 
-    LOG_DEBUG("Destroying session_2 - should cancel its delayed events (W3C SCXML 6.2)");
+    SCE_LOG_DEBUG("Destroying session_2 - should cancel its delayed events (W3C SCXML 6.2)");
     jsEngine.destroySession("session_2");
 
     // Session 2's event should now be cancelled
@@ -571,7 +571,7 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
     EXPECT_FALSE(scheduler_->hasEvent("session2_event"));
     EXPECT_FALSE(scheduler_->hasEvent("session3_event"));
 
-    LOG_DEBUG("Session-aware delayed event cancellation validated successfully");
+    SCE_LOG_DEBUG("Session-aware delayed event cancellation validated successfully");
 
     // Clean up remaining sessions
     jsEngine.destroySession("session_1");
@@ -594,7 +594,7 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
 // Re-enabled after fixing race conditions with mutex-based synchronization
 // Tests concurrent invoke session isolation with delayed event routing
 TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
-    LOG_DEBUG("High-level SCXML invoke session isolation test");
+    SCE_LOG_DEBUG("High-level SCXML invoke session isolation test");
 
     // High-level SCXML-based session isolation test (restored with dual invoke)
     std::atomic<bool> parentReceivedChild1Event{false};
@@ -724,7 +724,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
         std::make_shared<SCE::Test::MockEventRaiser>([&](const std::string &name, const std::string &data) -> bool {
             (void)data;
 
-            LOG_DEBUG("EventRaiser callback: event '{}' received", name);
+            SCE_LOG_DEBUG("EventRaiser callback: event '{}' received", name);
 
             if (name == "child1.ready") {
                 parentReceivedChild1Event = true;
@@ -739,13 +739,13 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
             // Forward event to StateMachine
             if (parentStateMachine->isRunning()) {
                 std::string currentState = parentStateMachine->getCurrentState();
-                LOG_DEBUG("Parent state: {}, processing event: {}", currentState, name);
+                SCE_LOG_DEBUG("Parent state: {}, processing event: {}", currentState, name);
                 auto result = parentStateMachine->processEvent(name, data);
-                LOG_DEBUG("processEvent({}) returned success={}, fromState={}, toState={}", name, result.success,
+                SCE_LOG_DEBUG("processEvent({}) returned success={}, fromState={}, toState={}", name, result.success,
                           result.fromState, result.toState);
                 return result.success;
             }
-            LOG_WARN("Parent StateMachine not running, cannot process event: {}", name);
+            SCE_LOG_WARN("Parent StateMachine not running, cannot process event: {}", name);
             return false;
         });
 
@@ -757,7 +757,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
     ASSERT_TRUE(parentStateMachine->loadSCXMLFromString(parentScxml)) << "Failed to load parent SCXML";
     ASSERT_TRUE(parentStateMachine->start()) << "Failed to start parent StateMachine";
 
-    LOG_DEBUG("Waiting for invoke sessions and delayed events to execute...");
+    SCE_LOG_DEBUG("Waiting for invoke sessions and delayed events to execute...");
 
     // Wait sufficient time (child session creation + delayed event execution + EventScheduler processing time)
     // child1: 100ms delay, child2: 150ms delay + substantial processing time
@@ -780,7 +780,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
     // Clean up StateMachine
     parentStateMachine->stop();
 
-    LOG_DEBUG("High-level session isolation test completed - Child1: {}, Child2: {}, Violations: {}",
+    SCE_LOG_DEBUG("High-level session isolation test completed - Child1: {}, Child2: {}, Violations: {}",
               child1ReceivedOwnEvent.load(), child2ReceivedOwnEvent.load(), sessionIsolationViolated.load());
 }
 
@@ -797,7 +797,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
  * - Within same priority, events must maintain insertion order
  */
 TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
-    LOG_DEBUG("=== SCXML 3.12.1: Internal Event Queue FIFO Ordering Test ===");
+    SCE_LOG_DEBUG("=== SCXML 3.12.1: Internal Event Queue FIFO Ordering Test ===");
 
     // Create EventRaiserImpl instance
     auto eventRaiser = std::make_shared<EventRaiserImpl>();
@@ -811,12 +811,12 @@ TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
         [&processedOrder, &orderMutex](const std::string &eventName, const std::string &) -> bool {
             std::lock_guard<std::mutex> lock(orderMutex);
             processedOrder.push_back(eventName);
-            LOG_DEBUG("Processed event: {}, current order: {}", eventName, processedOrder.size());
+            SCE_LOG_DEBUG("Processed event: {}, current order: {}", eventName, processedOrder.size());
             return true;
         });
 
     // Test 1: Same priority events should maintain FIFO order
-    LOG_DEBUG("Test 1: Raising foo and bar with INTERNAL priority");
+    SCE_LOG_DEBUG("Test 1: Raising foo and bar with INTERNAL priority");
 
     // Raise events in specific order (simulating test 144)
     EXPECT_TRUE(eventRaiser->raiseInternalEvent("foo", ""));
@@ -830,11 +830,11 @@ TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
     EXPECT_EQ(processedOrder[0], "foo") << "foo should be processed first";
     EXPECT_EQ(processedOrder[1], "bar") << "bar should be processed second";
 
-    LOG_DEBUG("Test 1 passed: Events processed in FIFO order");
+    SCE_LOG_DEBUG("Test 1 passed: Events processed in FIFO order");
 
     // Test 2: Multiple events with same priority
     processedOrder.clear();
-    LOG_DEBUG("Test 2: Raising multiple events with INTERNAL priority");
+    SCE_LOG_DEBUG("Test 2: Raising multiple events with INTERNAL priority");
 
     std::vector<std::string> expectedOrder = {"event1", "event2", "event3", "event4", "event5"};
     for (const auto &eventName : expectedOrder) {
@@ -849,11 +849,11 @@ TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
             << "Event at position " << i << " should be " << expectedOrder[i];
     }
 
-    LOG_DEBUG("Test 2 passed: Multiple events processed in FIFO order");
+    SCE_LOG_DEBUG("Test 2 passed: Multiple events processed in FIFO order");
 
     // Test 3: Mixed priority events (INTERNAL should come before EXTERNAL)
     processedOrder.clear();
-    LOG_DEBUG("Test 3: Mixed priority events");
+    SCE_LOG_DEBUG("Test 3: Mixed priority events");
 
     // Raise events with different priorities
     EXPECT_TRUE(eventRaiser->raiseExternalEvent("external1", ""));
@@ -872,11 +872,11 @@ TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
     EXPECT_EQ(processedOrder[2], "external1") << "First EXTERNAL event should be processed third";
     EXPECT_EQ(processedOrder[3], "external2") << "Second EXTERNAL event should be processed fourth";
 
-    LOG_DEBUG("Test 3 passed: Priority ordering with FIFO within each priority");
+    SCE_LOG_DEBUG("Test 3 passed: Priority ordering with FIFO within each priority");
 
     // Test 4: Process one event at a time (W3C SCXML compliance)
     processedOrder.clear();
-    LOG_DEBUG("Test 4: Processing events one at a time");
+    SCE_LOG_DEBUG("Test 4: Processing events one at a time");
 
     EXPECT_TRUE(eventRaiser->raiseInternalEvent("first", ""));
     EXPECT_TRUE(eventRaiser->raiseInternalEvent("second", ""));
@@ -897,12 +897,12 @@ TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
 
     EXPECT_FALSE(eventRaiser->processNextQueuedEvent()) << "Queue should be empty";
 
-    LOG_DEBUG("Test 4 passed: Single event processing maintains FIFO order");
+    SCE_LOG_DEBUG("Test 4 passed: Single event processing maintains FIFO order");
 
     // Clean up
     eventRaiser->shutdown();
 
-    LOG_DEBUG("=== SCXML 3.12.1: All FIFO ordering tests passed ===");
+    SCE_LOG_DEBUG("=== SCXML 3.12.1: All FIFO ordering tests passed ===");
 }
 
 /**
@@ -932,7 +932,7 @@ TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
  *            and values as the original event"
  */
 TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
-    LOG_DEBUG("=== W3C SCXML Test 230: Autoforward Event Field Preservation ===");
+    SCE_LOG_DEBUG("=== W3C SCXML Test 230: Autoforward Event Field Preservation ===");
 
     auto parentStateMachine = std::make_shared<StateMachine>();
 
@@ -1081,7 +1081,7 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
     EXPECT_EQ(parentName, "childToParent") << "Event name should be 'childToParent'";
 
     parentStateMachine->stop();
-    LOG_DEBUG("=== W3C Test 230 PASSED: All event fields preserved during autoforward ===");
+    SCE_LOG_DEBUG("=== W3C Test 230 PASSED: All event fields preserved during autoforward ===");
 }
 
 /**
@@ -1109,7 +1109,7 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
  * Critical verification: Both nested states (sub01 and sub0) must execute onexit
  */
 TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers) {
-    LOG_DEBUG("=== W3C SCXML Test 250: Invoke Cancellation Onexit Handlers ===");
+    SCE_LOG_DEBUG("=== W3C SCXML Test 250: Invoke Cancellation Onexit Handlers ===");
 
     auto parentStateMachine = std::make_shared<StateMachine>();
 
@@ -1210,11 +1210,11 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
         EXPECT_TRUE(exitedSub01) << "Child state sub01 onexit handler must execute during cancellation";
         EXPECT_TRUE(exitedSub0) << "Child state sub0 onexit handler must execute during cancellation";
 
-        LOG_DEBUG("W3C Test 250: Child onexit handlers verified - sub01: {}, sub0: {}", exitedSub01, exitedSub0);
+        SCE_LOG_DEBUG("W3C Test 250: Child onexit handlers verified - sub01: {}, sub0: {}", exitedSub01, exitedSub0);
     } else {
         // Child session already destroyed - check if it existed and was cancelled properly
         // This is acceptable if invoke was cancelled correctly
-        LOG_DEBUG("W3C Test 250: Child session destroyed after cancellation (expected behavior)");
+        SCE_LOG_DEBUG("W3C Test 250: Child session destroyed after cancellation (expected behavior)");
 
         // Verify parent reached final state, confirming invoke cancellation occurred
         EXPECT_EQ(finalState, "final") << "Parent must reach final state, confirming invoke cancellation";
@@ -1229,7 +1229,7 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
     }
 
     parentStateMachine->stop();
-    LOG_DEBUG("=== W3C Test 250 PASSED: All onexit handlers executed during invoke cancellation ===");
+    SCE_LOG_DEBUG("=== W3C Test 250 PASSED: All onexit handlers executed during invoke cancellation ===");
 }
 
 // ============================================================================
@@ -1259,7 +1259,7 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
  * that documents with unloadable external scripts are properly rejected during loading.
  */
 TEST_F(EventSchedulingTest, W3C_Test301_ExternalScriptRejection) {
-    LOG_DEBUG("=== W3C SCXML Test 301: External Script Rejection ===");
+    SCE_LOG_DEBUG("=== W3C SCXML Test 301: External Script Rejection ===");
 
     // TXML test301.txml structure with external script that cannot be loaded
     std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
@@ -1283,7 +1283,7 @@ TEST_F(EventSchedulingTest, W3C_Test301_ExternalScriptRejection) {
     EXPECT_FALSE(loadResult)
         << "W3C Test 301: Document with unloadable external script must be rejected (W3C SCXML 5.8)";
 
-    LOG_DEBUG("=== W3C Test 301 PASSED: Document with external script correctly rejected ===");
+    SCE_LOG_DEBUG("=== W3C Test 301 PASSED: Document with external script correctly rejected ===");
 }
 
 // ============================================================================
@@ -1311,7 +1311,7 @@ TEST_F(EventSchedulingTest, W3C_Test301_ExternalScriptRejection) {
  * in the data model instead of relying on log output inspection.
  */
 TEST_F(EventSchedulingTest, W3C_Test307_LateBindingVariableAccess) {
-    LOG_DEBUG("=== W3C SCXML Test 307: Late Binding Variable Access ===");
+    SCE_LOG_DEBUG("=== W3C SCXML Test 307: Late Binding Variable Access ===");
 
     // TXML test307.scxml structure with late binding
     std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
@@ -1398,7 +1398,7 @@ Then in s1 we access a non-existent substructure of a variable. -->
         << " (s0_error=" << s0_error << ", s1_error=" << s1_error << ")";
 
     sm->stop();
-    LOG_DEBUG("=== W3C Test 307 PASSED: Late binding variable access verified ===");
+    SCE_LOG_DEBUG("=== W3C Test 307 PASSED: Late binding variable access verified ===");
 }
 
 // ============================================================================
@@ -1434,7 +1434,7 @@ Then in s1 we access a non-existent substructure of a variable. -->
  * Both behaviors are W3C SCXML 5.9 compliant.
  */
 TEST_F(EventSchedulingTest, W3C_Test313_IllegalExpressionErrorHandling) {
-    LOG_DEBUG("=== W3C SCXML Test 313: Illegal Expression Error Handling ===");
+    SCE_LOG_DEBUG("=== W3C SCXML Test 313: Illegal Expression Error Handling ===");
 
     // TXML test313.txml structure with illegal expression
     std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
@@ -1487,13 +1487,13 @@ with its illegal expression, it must raise an error -->
 
     if (!loadResult) {
         // Option 1: Document rejected at load time (conformant behavior)
-        LOG_DEBUG("W3C Test 313: Document rejected at load time (W3C SCXML 5.9 conformant)");
+        SCE_LOG_DEBUG("W3C Test 313: Document rejected at load time (W3C SCXML 5.9 conformant)");
         EXPECT_FALSE(loadResult) << "Document with illegal expression rejected at load time (conformant)";
         return;
     }
 
     // Option 2: Document accepted, must raise error.execution at runtime
-    LOG_DEBUG("W3C Test 313: Document accepted, expecting error.execution at runtime");
+    SCE_LOG_DEBUG("W3C Test 313: Document accepted, expecting error.execution at runtime");
 
     ASSERT_TRUE(sm->start()) << "Failed to start StateMachine";
 
@@ -1512,7 +1512,7 @@ with its illegal expression, it must raise an error -->
     EXPECT_EQ(finalState, "pass") << "W3C Test 313: Illegal expression must raise error.execution (W3C SCXML 5.9)";
 
     sm->stop();
-    LOG_DEBUG("=== W3C Test 313 PASSED: Illegal expression error handling verified ===");
+    SCE_LOG_DEBUG("=== W3C Test 313 PASSED: Illegal expression error handling verified ===");
 }
 
 // ============================================================================
@@ -1549,7 +1549,7 @@ with its illegal expression, it must raise an error -->
  * - Test 314: Multi-state, delayed evaluation at specific point (s03 onentry)
  */
 TEST_F(EventSchedulingTest, W3C_Test314_ErrorEvaluationTiming) {
-    LOG_DEBUG("=== W3C SCXML Test 314: Error Evaluation Timing ===");
+    SCE_LOG_DEBUG("=== W3C SCXML Test 314: Error Evaluation Timing ===");
 
     // TXML test314.txml structure with delayed illegal expression evaluation
     std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
@@ -1614,13 +1614,13 @@ it should not raise an error until it gets to s03 and evaluates the illegal expr
 
     if (!loadResult) {
         // Option 1: Document rejected at load time (conformant behavior)
-        LOG_DEBUG("W3C Test 314: Document rejected at load time (W3C SCXML 5.9 conformant)");
+        SCE_LOG_DEBUG("W3C Test 314: Document rejected at load time (W3C SCXML 5.9 conformant)");
         EXPECT_FALSE(loadResult) << "Document with illegal expression rejected at load time (conformant)";
         return;
     }
 
     // Option 2: Document accepted, must raise error.execution at s03 evaluation time
-    LOG_DEBUG("W3C Test 314: Document accepted, expecting error.execution at s03 evaluation time");
+    SCE_LOG_DEBUG("W3C Test 314: Document accepted, expecting error.execution at s03 evaluation time");
 
     ASSERT_TRUE(sm->start()) << "Failed to start StateMachine";
 
@@ -1642,7 +1642,7 @@ it should not raise an error until it gets to s03 and evaluates the illegal expr
         << "W3C Test 314: Error must be raised at expression evaluation time (s03 onentry), not earlier";
 
     sm->stop();
-    LOG_DEBUG("=== W3C Test 314 PASSED: Error evaluation timing verified ===");
+    SCE_LOG_DEBUG("=== W3C Test 314 PASSED: Error evaluation timing verified ===");
 }
 
 // ============================================================================
@@ -1680,7 +1680,7 @@ it should not raise an error until it gets to s03 and evaluates the illegal expr
  * the final state's onentry handler.
  */
 TEST_F(EventSchedulingTest, W3C_Test415_TopLevelFinalStateHaltsProcessing) {
-    LOG_DEBUG("=== W3C SCXML Test 415: Top-Level Final State Halts Processing ===");
+    SCE_LOG_DEBUG("=== W3C SCXML Test 415: Top-Level Final State Halts Processing ===");
 
     // TXML test415.txml structure with initial="final"
     std::string scxmlContent = R"(<?xml version="1.0" encoding="UTF-8"?>
@@ -1706,7 +1706,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
         [&sm, &event1Processed](const std::string &name, const std::string &data) -> bool {
             if (name == "event1") {
                 event1Processed = true;
-                LOG_ERROR("W3C Test 415: event1 was processed - VIOLATION of W3C SCXML 3.13");
+                SCE_LOG_ERROR("W3C Test 415: event1 was processed - VIOLATION of W3C SCXML 3.13");
             }
 
             if (sm && sm->isRunning()) {
@@ -1737,7 +1737,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
         << "W3C Test 415: event1 raised in final state's onentry should NOT be processed (W3C SCXML 3.13)";
 
     sm->stop();
-    LOG_DEBUG("=== W3C Test 415 PASSED: State machine halted on top-level final state entry ===");
+    SCE_LOG_DEBUG("=== W3C Test 415 PASSED: State machine halted on top-level final state entry ===");
 }
 
 // ============================================================================
@@ -1780,7 +1780,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
         GTEST_SKIP() << "Skipping HTTP test in Docker TSAN environment";
     }
 
-    LOG_DEBUG("=== W3C SCXML Test 513: BasicHTTPEventProcessor Success Response ===");
+    SCE_LOG_DEBUG("=== W3C SCXML Test 513: BasicHTTPEventProcessor Success Response ===");
 
     // Track if event was received by the event queue
     std::atomic<bool> eventReceived{false};
@@ -1794,7 +1794,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     // Set callback to track received events
     httpServer->setEventCallback([&eventReceived, &receivedEventName, &receivedEventData](const std::string &eventName,
                                                                                           const std::string &data) {
-        LOG_DEBUG("W3C Test 513: HTTP server received event '{}' with data: {}", eventName, data);
+        SCE_LOG_DEBUG("W3C Test 513: HTTP server received event '{}' with data: {}", eventName, data);
         eventReceived = true;
         receivedEventName = eventName;
         receivedEventData = data;
@@ -1802,7 +1802,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
 
     // Start HTTP server
     ASSERT_TRUE(httpServer->start()) << "Failed to start W3C HTTP test server";
-    LOG_DEBUG("W3C Test 513: HTTP server started on localhost:{}{}", testPort, "/test");
+    SCE_LOG_DEBUG("W3C Test 513: HTTP server started on localhost:{}{}", testPort, "/test");
 
     // Wait for server to be fully ready
     std::this_thread::sleep_for(SCE::Test::Utils::LONG_WAIT_MS);
@@ -1818,7 +1818,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     params.emplace("testParam1", "value1");
     params.emplace("testParam2", "value2");
 
-    LOG_DEBUG("W3C Test 513: Sending HTTP POST request to localhost:{}{}", testPort, "/test");
+    SCE_LOG_DEBUG("W3C Test 513: Sending HTTP POST request to localhost:{}{}", testPort, "/test");
     auto response = client.Post("/test", params);
 
     // Verify HTTP response received
@@ -1833,8 +1833,8 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     EXPECT_GE(response->status, 200) << "Response code should be >= 200";
     EXPECT_LT(response->status, 300) << "Response code should be < 300 (2XX range)";
 
-    LOG_DEBUG("W3C Test 513: Received HTTP response with status {}", response->status);
-    LOG_DEBUG("W3C Test 513: Response body: {}", response->body);
+    SCE_LOG_DEBUG("W3C Test 513: Received HTTP response with status {}", response->status);
+    SCE_LOG_DEBUG("W3C Test 513: Response body: {}", response->body);
 
     // Wait briefly for event callback to be processed
     std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
@@ -1846,7 +1846,7 @@ TEST_F(EventSchedulingTest, W3C_Test513_BasicHTTPEventProcessor_SuccessResponse)
     // Stop HTTP server
     httpServer->stop();
 
-    LOG_DEBUG("=== W3C Test 513 PASSED: BasicHTTPEventProcessor returned 2XX success response ===");
+    SCE_LOG_DEBUG("=== W3C Test 513 PASSED: BasicHTTPEventProcessor returned 2XX success response ===");
 }
 
 }  // namespace SCE

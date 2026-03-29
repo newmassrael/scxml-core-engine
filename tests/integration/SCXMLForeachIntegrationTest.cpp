@@ -1,4 +1,5 @@
 #include "actions/AssignAction.h"
+#include "common/LogMacros.h"
 #include "actions/ForeachAction.h"
 #include "actions/LogAction.h"
 #include "actions/ScriptAction.h"
@@ -440,7 +441,7 @@ TEST_F(SCXMLForeachIntegrationTest, W3C_SCXML_ForeachAction_ItemVariableNameVali
     auto validErrors = validForeachAction->validate();
     if (!validErrors.empty()) {
         for (const auto &error : validErrors) {
-            LOG_DEBUG("Validation error: {}", error);
+            SCE_LOG_DEBUG("Validation error: {}", error);
         }
     }
     EXPECT_TRUE(validErrors.empty());  // Should have no validation errors

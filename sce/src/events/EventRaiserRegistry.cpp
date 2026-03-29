@@ -1,17 +1,17 @@
 #include "events/EventRaiserRegistry.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 
 namespace SCE {
 
 bool EventRaiserRegistry::registerEventRaiser(const std::string &sessionId, std::shared_ptr<IEventRaiser> eventRaiser) {
     if (sessionId.empty()) {
-        LOG_ERROR("EventRaiserRegistry: Cannot register EventRaiser - session ID is empty");
+        SCE_LOG_ERROR("EventRaiserRegistry: Cannot register EventRaiser - session ID is empty");
         return false;
     }
 
     if (!eventRaiser) {
-        LOG_ERROR("EventRaiserRegistry: Cannot register EventRaiser - eventRaiser is null for session: {}", sessionId);
+        SCE_LOG_ERROR("EventRaiserRegistry: Cannot register EventRaiser - eventRaiser is null for session: {}", sessionId);
         return false;
     }
 
@@ -20,13 +20,13 @@ bool EventRaiserRegistry::registerEventRaiser(const std::string &sessionId, std:
     // Check if EventRaiser is already registered
     auto it = eventRaisers_.find(sessionId);
     if (it != eventRaisers_.end()) {
-        LOG_DEBUG("EventRaiserRegistry: EventRaiser already registered for session: {}", sessionId);
+        SCE_LOG_DEBUG("EventRaiserRegistry: EventRaiser already registered for session: {}", sessionId);
         return true;  // Already registered, not an error
     }
 
     // Register new EventRaiser
     eventRaisers_[sessionId] = eventRaiser;
-    LOG_DEBUG("EventRaiserRegistry: Successfully registered EventRaiser for session: {} (total: {})", sessionId,
+    SCE_LOG_DEBUG("EventRaiserRegistry: Successfully registered EventRaiser for session: {} (total: {})", sessionId,
               eventRaisers_.size());
 
     return true;
@@ -34,7 +34,7 @@ bool EventRaiserRegistry::registerEventRaiser(const std::string &sessionId, std:
 
 std::shared_ptr<IEventRaiser> EventRaiserRegistry::getEventRaiser(const std::string &sessionId) const {
     if (sessionId.empty()) {
-        LOG_DEBUG("EventRaiserRegistry: Cannot get EventRaiser - session ID is empty");
+        SCE_LOG_DEBUG("EventRaiserRegistry: Cannot get EventRaiser - session ID is empty");
         return nullptr;
     }
 
@@ -42,17 +42,17 @@ std::shared_ptr<IEventRaiser> EventRaiserRegistry::getEventRaiser(const std::str
 
     auto it = eventRaisers_.find(sessionId);
     if (it != eventRaisers_.end()) {
-        LOG_DEBUG("EventRaiserRegistry: Found EventRaiser for session: {}", sessionId);
+        SCE_LOG_DEBUG("EventRaiserRegistry: Found EventRaiser for session: {}", sessionId);
         return it->second;
     }
 
-    LOG_DEBUG("EventRaiserRegistry: No EventRaiser found for session: {}", sessionId);
+    SCE_LOG_DEBUG("EventRaiserRegistry: No EventRaiser found for session: {}", sessionId);
     return nullptr;
 }
 
 bool EventRaiserRegistry::unregisterEventRaiser(const std::string &sessionId) {
     if (sessionId.empty()) {
-        LOG_ERROR("EventRaiserRegistry: Cannot unregister EventRaiser - session ID is empty");
+        SCE_LOG_ERROR("EventRaiserRegistry: Cannot unregister EventRaiser - session ID is empty");
         return false;
     }
 
@@ -61,12 +61,12 @@ bool EventRaiserRegistry::unregisterEventRaiser(const std::string &sessionId) {
     auto it = eventRaisers_.find(sessionId);
     if (it != eventRaisers_.end()) {
         eventRaisers_.erase(it);
-        LOG_DEBUG("EventRaiserRegistry: Successfully unregistered EventRaiser for session: {} (remaining: {})",
+        SCE_LOG_DEBUG("EventRaiserRegistry: Successfully unregistered EventRaiser for session: {} (remaining: {})",
                   sessionId, eventRaisers_.size());
         return true;
     }
 
-    LOG_DEBUG("EventRaiserRegistry: EventRaiser not found for unregistration - session: {}", sessionId);
+    SCE_LOG_DEBUG("EventRaiserRegistry: EventRaiser not found for unregistration - session: {}", sessionId);
     return false;
 }
 
@@ -88,7 +88,7 @@ void EventRaiserRegistry::clear() {
     std::lock_guard<std::mutex> lock(registryMutex_);
     size_t clearedCount = eventRaisers_.size();
     eventRaisers_.clear();
-    LOG_DEBUG("EventRaiserRegistry: Cleared {} EventRaiser registrations", clearedCount);
+    SCE_LOG_DEBUG("EventRaiserRegistry: Cleared {} EventRaiser registrations", clearedCount);
 }
 
 }  // namespace SCE

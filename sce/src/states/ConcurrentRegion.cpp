@@ -1,7 +1,7 @@
 #include "states/ConcurrentRegion.h"
 #include "actions/AssignAction.h"
 #include "actions/ScriptAction.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "events/EventDescriptor.h"
 #include "model/IStateNode.h"
 #include "model/ITransitionNode.h"
@@ -20,21 +20,21 @@ ConcurrentRegion::ConcurrentRegion(const std::string &id, std::shared_ptr<IState
     // SCXML W3C specification section 3.4: regions must have valid identifiers
     assert(!id_.empty() && "SCXML violation: concurrent region must have non-empty ID");
 
-    LOG_DEBUG("Creating region: {}", id_);
+    SCE_LOG_DEBUG("Creating region: {}", id_);
 
     if (rootState_) {
-        LOG_DEBUG("Root state provided: {}", rootState_->getId());
+        SCE_LOG_DEBUG("Root state provided: {}", rootState_->getId());
     } else {
-        LOG_DEBUG("No root state provided (will be set later)");
+        SCE_LOG_DEBUG("No root state provided (will be set later)");
     }
 }
 
 ConcurrentRegion::~ConcurrentRegion() {
-    LOG_DEBUG("Destroying region: {}", id_);
+    SCE_LOG_DEBUG("Destroying region: {}", id_);
 
     // Clean deactivation if still active
     if (status_ == ConcurrentRegionStatus::ACTIVE) {
-        LOG_DEBUG("Deactivating region during destruction");
+        SCE_LOG_DEBUG("Deactivating region during destruction");
         deactivate(nullptr);
     }
 }
@@ -45,7 +45,7 @@ const std::string &ConcurrentRegion::getId() const {
 
 ConcurrentOperationResult ConcurrentRegion::activate() {
     if (status_ == ConcurrentRegionStatus::ACTIVE) {
-        LOG_DEBUG("Region {} already active", id_);
+        SCE_LOG_DEBUG("Region {} already active", id_);
         return ConcurrentOperationResult::success(id_);
     }
 
@@ -54,7 +54,7 @@ ConcurrentOperationResult ConcurrentRegion::activate() {
         std::string error = std::format("SCXML violation: cannot activate region '{}' without root state. SCXML "
                                         "specification requires regions to have states.",
                                         id_);
-        LOG_ERROR("Activate error: {}", error);
+        SCE_LOG_ERROR("Activate error: {}", error);
         setErrorState(error);
         return ConcurrentOperationResult::failure(id_, error);
     }
@@ -62,12 +62,12 @@ ConcurrentOperationResult ConcurrentRegion::activate() {
     // Validate root state before activation
     if (!validateRootState()) {
         std::string error = std::format("Root state validation failed for region: {}", id_);
-        LOG_ERROR("Root state validation failed: {}", error);
+        SCE_LOG_ERROR("Root state validation failed: {}", error);
         setErrorState(error);
         return ConcurrentOperationResult::failure(id_, error);
     }
 
-    LOG_DEBUG("Activating region: {}", id_);
+    SCE_LOG_DEBUG("Activating region: {}", id_);
 
     // Mark region as active before entering initial state to enable final state detection
     status_ = ConcurrentRegionStatus::ACTIVE;
@@ -75,40 +75,40 @@ ConcurrentOperationResult ConcurrentRegion::activate() {
     // Enter initial state according to SCXML semantics
     auto result = enterInitialState();
     if (!result.isSuccess) {
-        LOG_ERROR("Failed to enter initial state: {}", result.errorMessage);
+        SCE_LOG_ERROR("Failed to enter initial state: {}", result.errorMessage);
         status_ = ConcurrentRegionStatus::ERROR;  // Rollback on failure
         setErrorState(result.errorMessage);
         return result;
     }
     updateCurrentState();
 
-    LOG_DEBUG("Successfully activated region: {}", id_);
+    SCE_LOG_DEBUG("Successfully activated region: {}", id_);
     return ConcurrentOperationResult::success(id_);
 }
 
 ConcurrentOperationResult ConcurrentRegion::deactivate(std::shared_ptr<IExecutionContext> executionContext) {
     if (status_ == ConcurrentRegionStatus::INACTIVE) {
-        LOG_DEBUG("Region {} already inactive", id_);
+        SCE_LOG_DEBUG("Region {} already inactive", id_);
         return ConcurrentOperationResult::success(id_);
     }
 
     // W3C SCXML 3.13: If activeStates_ is already empty, region was exited via exit set
     // Skip exitAllStates to avoid duplicate exit action execution (test 504)
     if (activeStates_.empty()) {
-        LOG_DEBUG("Region {} activeStates already empty, skipping exitAllStates", id_);
+        SCE_LOG_DEBUG("Region {} activeStates already empty, skipping exitAllStates", id_);
         status_ = ConcurrentRegionStatus::INACTIVE;
         currentState_.clear();
         isInFinalState_ = false;
-        LOG_DEBUG("Successfully deactivated region: {}", id_);
+        SCE_LOG_DEBUG("Successfully deactivated region: {}", id_);
         return ConcurrentOperationResult::success(id_);
     }
 
-    LOG_DEBUG("Deactivating region: {}", id_);
+    SCE_LOG_DEBUG("Deactivating region: {}", id_);
 
     // Exit all active states
     auto result = exitAllStates(executionContext);
     if (!result.isSuccess) {
-        LOG_WARN("Warning during state exit: {}", result.errorMessage);
+        SCE_LOG_WARN("Warning during state exit: {}", result.errorMessage);
         // Continue with deactivation even if exit has issues
     }
 
@@ -117,7 +117,7 @@ ConcurrentOperationResult ConcurrentRegion::deactivate(std::shared_ptr<IExecutio
     activeStates_.clear();
     isInFinalState_ = false;
 
-    LOG_DEBUG("Successfully deactivated region: {}", id_);
+    SCE_LOG_DEBUG("Successfully deactivated region: {}", id_);
     return ConcurrentOperationResult::success(id_);
 }
 
@@ -147,18 +147,18 @@ ConcurrentRegionInfo ConcurrentRegion::getInfo() const {
 ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &event) {
     if (status_ != ConcurrentRegionStatus::ACTIVE) {
         std::string error = std::format("Cannot process event in inactive region: {}", id_);
-        LOG_WARN("processEvent - {}", error);
+        SCE_LOG_WARN("processEvent - {}", error);
         return ConcurrentOperationResult::failure(id_, error);
     }
 
     if (!rootState_) {
         std::string error = std::format("SCXML violation: cannot process event without root state in region: {}", id_);
-        LOG_ERROR("Error: {}", error);
+        SCE_LOG_ERROR("Error: {}", error);
         setErrorState(error);
         return ConcurrentOperationResult::failure(id_, error);
     }
 
-    LOG_DEBUG("Processing event '{}' in region: {}", event.eventName, id_);
+    SCE_LOG_DEBUG("Processing event '{}' in region: {}", event.eventName, id_);
 
     // W3C SCXML Appendix D.2: Collect enabled transitions instead of executing immediately
     // This allows StateMachine to apply conflict resolution across all regions
@@ -208,11 +208,11 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                     if (!guard.empty()) {
                         if (conditionEvaluator_) {
                             conditionResult = conditionEvaluator_(guard);
-                            LOG_DEBUG(
+                            SCE_LOG_DEBUG(
                                 "ConcurrentRegion: Evaluated guard condition '{}' for transition: {} -> result: {}",
                                 guard, event.eventName, conditionResult ? "true" : "false");
                         } else {
-                            LOG_WARN("ConcurrentRegion: Guard condition '{}' present but no evaluator set, defaulting "
+                            SCE_LOG_WARN("ConcurrentRegion: Guard condition '{}' present but no evaluator set, defaulting "
                                      "to true",
                                      guard);
                         }
@@ -220,7 +220,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
 
                     // Skip this transition if condition is false
                     if (!conditionResult) {
-                        LOG_DEBUG("ConcurrentRegion: Skipping transition due to false guard condition: {}", guard);
+                        SCE_LOG_DEBUG("ConcurrentRegion: Skipping transition due to false guard condition: {}", guard);
                         transitionIndex++;
                         continue;
                     }
@@ -231,7 +231,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                     bool isInternal = transition->isInternal();
                     bool hasActions = !transition->getActionNodes().empty();
 
-                    LOG_DEBUG("ConcurrentRegion: Found enabled transition in state {}: {} -> {} (event='{}', "
+                    SCE_LOG_DEBUG("ConcurrentRegion: Found enabled transition in state {}: {} -> {} (event='{}', "
                               "internal={}, hasActions={})",
                               checkStatePtr->getId(), checkStatePtr->getId(), targetState, transitionEvent, isInternal,
                               hasActions);
@@ -250,7 +250,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                             if (regionRoot && isDescendantOf(regionRoot, targetState)) {
                                 // Target is within this parallel state's regions -> internal transition
                                 isExternalTransition = false;
-                                LOG_DEBUG("ConcurrentRegion: Target '{}' is within parallel state '{}' -> internal "
+                                SCE_LOG_DEBUG("ConcurrentRegion: Target '{}' is within parallel state '{}' -> internal "
                                           "transition",
                                           targetState, parallelStatePtr->getId());
                                 break;
@@ -258,14 +258,14 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                         }
 
                         if (isExternalTransition) {
-                            LOG_DEBUG(
+                            SCE_LOG_DEBUG(
                                 "ConcurrentRegion: Target '{}' is outside parallel state '{}' -> external transition",
                                 targetState, parallelStatePtr->getId());
                         }
                     }
 
                     if (isExternalTransition) {
-                        LOG_DEBUG("ConcurrentRegion: Transition target '{}' is outside region '{}' - marking as "
+                        SCE_LOG_DEBUG("ConcurrentRegion: Transition target '{}' is outside region '{}' - marking as "
                                   "external for conflict resolution",
                                   targetState, id_);
                     }
@@ -284,7 +284,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                     // W3C SCXML: Exit set is all states from source up to (but not including) LCA with target
                     descriptor.exitSet = computeExitSet(checkStatePtr->getId(), targetState);
 
-                    LOG_DEBUG("ConcurrentRegion: Transition descriptor: {} -> {} (exitSet size: {}, transitionIndex: "
+                    SCE_LOG_DEBUG("ConcurrentRegion: Transition descriptor: {} -> {} (exitSet size: {}, transitionIndex: "
                               "{}, external: {})",
                               descriptor.source, descriptor.target, descriptor.exitSet.size(),
                               descriptor.transitionIndex, descriptor.isExternal);
@@ -297,7 +297,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
                 // But STOP at region boundary - don't bubble beyond the region's root state
                 // This prevents regions from collecting transitions from the parallel state's ancestors
                 if (checkStatePtr == rootState_.get()) {
-                    LOG_DEBUG("ConcurrentRegion: Reached region boundary at {}, stopping hierarchy bubbling",
+                    SCE_LOG_DEBUG("ConcurrentRegion: Reached region boundary at {}, stopping hierarchy bubbling",
                               checkStatePtr->getId());
                     break;  // Reached region boundary, stop bubbling
                 }
@@ -311,7 +311,7 @@ ConcurrentOperationResult ConcurrentRegion::processEvent(const EventDescriptor &
     }
 
     // No enabled transitions found - return success with empty enabledTransitions
-    LOG_DEBUG("ConcurrentRegion: No enabled transitions found in region: {}", id_);
+    SCE_LOG_DEBUG("ConcurrentRegion: No enabled transitions found in region: {}", id_);
     return result;
 }
 
@@ -324,12 +324,12 @@ void ConcurrentRegion::setRootState(std::shared_ptr<IStateNode> rootState) {
     assert(rootState && "SCXML violation: concurrent region cannot have null root state");
 
     if (status_ == ConcurrentRegionStatus::ACTIVE) {
-        LOG_WARN(
+        SCE_LOG_WARN(
             "ConcurrentRegion::setRootState - Setting root state on active region {} (consider deactivating first)",
             id_);
     }
 
-    LOG_DEBUG("Setting root state for region {} to: {}", id_, (rootState ? rootState->getId() : "null"));
+    SCE_LOG_DEBUG("Setting root state for region {} to: {}", id_, (rootState ? rootState->getId() : "null"));
 
     rootState_ = rootState;
 
@@ -349,13 +349,13 @@ std::vector<std::string> ConcurrentRegion::getActiveStates() const {
 }
 
 ConcurrentOperationResult ConcurrentRegion::reset() {
-    LOG_DEBUG("Resetting region: {}", id_);
+    SCE_LOG_DEBUG("Resetting region: {}", id_);
 
     // Deactivate if currently active
     if (status_ == ConcurrentRegionStatus::ACTIVE) {
         auto result = deactivate();
         if (!result.isSuccess) {
-            LOG_ERROR("Failed to deactivate during reset: {}", result.errorMessage);
+            SCE_LOG_ERROR("Failed to deactivate during reset: {}", result.errorMessage);
             return result;
         }
     }
@@ -367,7 +367,7 @@ ConcurrentOperationResult ConcurrentRegion::reset() {
     isInFinalState_ = false;
     errorMessage_.clear();
 
-    LOG_DEBUG("Successfully reset region: {}", id_);
+    SCE_LOG_DEBUG("Successfully reset region: {}", id_);
     return ConcurrentOperationResult::success(id_);
 }
 
@@ -414,13 +414,13 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
         // Validate the state is within this region's scope
         bool isValidState = isDescendantOf(rootState_, stateId);
         if (!isValidState) {
-            LOG_WARN("ConcurrentRegion: Attempting to set currentState to '{}' which is not within region '{}' scope",
+            SCE_LOG_WARN("ConcurrentRegion: Attempting to set currentState to '{}' which is not within region '{}' scope",
                      stateId, id_);
             // Continue anyway - StateHierarchyManager knows best in deep target scenarios
         }
     }
 
-    LOG_DEBUG("ConcurrentRegion: Setting currentState for region {} to: {}", id_, stateId);
+    SCE_LOG_DEBUG("ConcurrentRegion: Setting currentState for region {} to: {}", id_, stateId);
 
     // W3C SCXML 3.13: Detect if this is a state change or just a refresh (e.g., during snapshot restore)
     // Only trigger callbacks on actual state transitions, not on redundant setCurrentState calls
@@ -437,12 +437,12 @@ void ConcurrentRegion::setCurrentState(const std::string &stateId) {
     // Skip callback during restoration to prevent spurious event generation
     if (isInFinalState_ && status_ != ConcurrentRegionStatus::FINAL && isStateChange && !isRestoringSnapshot_) {
         status_ = ConcurrentRegionStatus::FINAL;
-        LOG_DEBUG("ConcurrentRegion: Region {} entered final state '{}', updating status to FINAL", id_, stateId);
+        SCE_LOG_DEBUG("ConcurrentRegion: Region {} entered final state '{}', updating status to FINAL", id_, stateId);
 
         // W3C SCXML 3.13: Generate done.state.{regionId} event when compound state enters final
         // test570: When p0s1 (compound region) reaches p0s1final, generate done.state.p0s1
         if (doneStateCallback_) {
-            LOG_DEBUG("ConcurrentRegion: Calling doneStateCallback for region {}", id_);
+            SCE_LOG_DEBUG("ConcurrentRegion: Calling doneStateCallback for region {}", id_);
             doneStateCallback_(id_);
         }
     }
@@ -461,7 +461,7 @@ void ConcurrentRegion::setActiveForRestore() {
         activeStates_.push_back(currentState_);
     }
 
-    LOG_DEBUG("Region '{}' marked as ACTIVE for restoration (current state: {}, activeStates: {})", id_, currentState_,
+    SCE_LOG_DEBUG("Region '{}' marked as ACTIVE for restoration (current state: {}, activeStates: {})", id_, currentState_,
               activeStates_.size());
 }
 
@@ -469,7 +469,7 @@ void ConcurrentRegion::setRestoringSnapshot(bool restoring) {
     // W3C SCXML 3.13: Enable/disable restoration mode for time-travel debugging
     // When enabled, prevents side effects (callbacks, event generation) during snapshot restoration
     isRestoringSnapshot_ = restoring;
-    LOG_DEBUG("Region '{}' restoration mode: {} [isRestoringSnapshot_={}]", id_, restoring ? "ENABLED" : "DISABLED",
+    SCE_LOG_DEBUG("Region '{}' restoration mode: {} [isRestoringSnapshot_={}]", id_, restoring ? "ENABLED" : "DISABLED",
               isRestoringSnapshot_.load());
 }
 
@@ -478,7 +478,7 @@ bool ConcurrentRegion::isInErrorState() const {
 }
 
 void ConcurrentRegion::setErrorState(const std::string &errorMessage) {
-    LOG_ERROR("Region {} entering error state: {}", id_, errorMessage);
+    SCE_LOG_ERROR("Region {} entering error state: {}", id_, errorMessage);
     status_ = ConcurrentRegionStatus::ERROR;
     errorMessage_ = errorMessage;
 
@@ -490,40 +490,40 @@ void ConcurrentRegion::setErrorState(const std::string &errorMessage) {
 
 void ConcurrentRegion::clearErrorState() {
     if (status_ == ConcurrentRegionStatus::ERROR) {
-        LOG_DEBUG("Clearing error state for region: {}", id_);
+        SCE_LOG_DEBUG("Clearing error state for region: {}", id_);
         status_ = ConcurrentRegionStatus::INACTIVE;
         errorMessage_.clear();
     }
 }
 
 void ConcurrentRegion::setExecutionContext(std::shared_ptr<IExecutionContext> executionContext) {
-    LOG_DEBUG("Setting ExecutionContext for region: {} - new context is {}", id_, executionContext ? "valid" : "null");
+    SCE_LOG_DEBUG("Setting ExecutionContext for region: {} - new context is {}", id_, executionContext ? "valid" : "null");
     executionContext_ = executionContext;
-    LOG_DEBUG("ExecutionContext set successfully for region: {} - stored context is {}", id_,
+    SCE_LOG_DEBUG("ExecutionContext set successfully for region: {} - stored context is {}", id_,
               executionContext_ ? "valid" : "null");
 }
 
 void ConcurrentRegion::setInvokeCallback(
     std::function<void(const std::string &, const std::vector<std::shared_ptr<IInvokeNode>> &)> callback) {
     invokeCallback_ = callback;
-    LOG_DEBUG("ConcurrentRegion: Invoke callback set for region: {} (W3C SCXML 6.4 compliance)", id_);
+    SCE_LOG_DEBUG("ConcurrentRegion: Invoke callback set for region: {} (W3C SCXML 6.4 compliance)", id_);
 }
 
 void ConcurrentRegion::setConditionEvaluator(std::function<bool(const std::string &)> evaluator) {
     conditionEvaluator_ = evaluator;
-    LOG_DEBUG(
+    SCE_LOG_DEBUG(
         "ConcurrentRegion: Condition evaluator callback set for region: {} (W3C SCXML transition guard compliance)",
         id_);
 }
 
 void ConcurrentRegion::setDoneStateCallback(std::function<void(const std::string &)> callback) {
     doneStateCallback_ = callback;
-    LOG_DEBUG("ConcurrentRegion: Done state callback set for region: {} (W3C SCXML 3.4 compliance)", id_);
+    SCE_LOG_DEBUG("ConcurrentRegion: Done state callback set for region: {} (W3C SCXML 3.4 compliance)", id_);
 }
 
 void ConcurrentRegion::setDesiredInitialChild(const std::string &childStateId) {
     desiredInitialChild_ = childStateId;
-    LOG_DEBUG("ConcurrentRegion: Region '{}' desiredInitialChild set to '{}'", id_, childStateId);
+    SCE_LOG_DEBUG("ConcurrentRegion: Region '{}' desiredInitialChild set to '{}'", id_, childStateId);
 }
 
 // Private methods
@@ -535,7 +535,7 @@ bool ConcurrentRegion::validateRootState() const {
 
     // Basic validation - can be extended with more sophisticated checks
     if (rootState_->getId().empty()) {
-        LOG_ERROR("Root state has empty ID in region: {}", id_);
+        SCE_LOG_ERROR("Root state has empty ID in region: {}", id_);
         return false;
     }
 
@@ -562,7 +562,7 @@ void ConcurrentRegion::updateCurrentState() {
     activeStates_.clear();
     activeStates_.push_back(currentState_);
 
-    LOG_DEBUG("Region {} current state: {}", id_, currentState_);
+    SCE_LOG_DEBUG("Region {} current state: {}", id_, currentState_);
 }
 
 std::vector<std::string> ConcurrentRegion::computeExitSet(const std::string &source, const std::string &target) const {
@@ -688,13 +688,13 @@ std::vector<std::string> ConcurrentRegion::computeExitSet(const std::string &sou
             exitSet.push_back(state);
         }
 
-        LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} (within-region, LCA: {}, exitSet size: {})", source,
+        SCE_LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} (within-region, LCA: {}, exitSet size: {})", source,
                   target, lca, exitSet.size());
         return exitSet;
     }
 
     const char *transitionType = !targetNode ? "external" : (isCrossRegion ? "cross-region" : "within-region");
-    LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} ({}, exitSet size: {})", source, target, transitionType,
+    SCE_LOG_DEBUG("ConcurrentRegion::computeExitSet: {} -> {} ({}, exitSet size: {})", source, target, transitionType,
               exitSet.size());
     return exitSet;
 }
@@ -721,14 +721,14 @@ bool ConcurrentRegion::isDescendantOf(const std::shared_ptr<IStateNode> &root, c
 }
 
 bool ConcurrentRegion::determineIfInFinalState() const {
-    LOG_DEBUG(
+    SCE_LOG_DEBUG(
         "ConcurrentRegion::determineIfInFinalState - Region {} checking final state. Status: {}, currentState: '{}'",
         id_, static_cast<int>(status_), currentState_);
 
     // W3C SCXML 3.4: Check final state even if status is already FINAL
     // This handles cases where setCurrentState() is called multiple times (e.g., during hierarchyManager sync)
     if (!rootState_) {
-        LOG_DEBUG("Region {} has no root state", id_);
+        SCE_LOG_DEBUG("Region {} has no root state", id_);
         return false;
     }
 
@@ -745,7 +745,7 @@ bool ConcurrentRegion::determineIfInFinalState() const {
     for (const auto &child : children) {
         if (child && child->getId() == currentState_) {
             bool isFinal = child->isFinalState();
-            LOG_DEBUG("Region {} current state '{}' is {}", id_, currentState_, (isFinal ? "FINAL" : "NOT FINAL"));
+            SCE_LOG_DEBUG("Region {} current state '{}' is {}", id_, currentState_, (isFinal ? "FINAL" : "NOT FINAL"));
             return isFinal;
         }
     }
@@ -753,11 +753,11 @@ bool ConcurrentRegion::determineIfInFinalState() const {
     // If current state is the root state itself, check if root is final
     if (currentState_ == rootState_->getId()) {
         bool isFinal = rootState_->isFinalState();
-        LOG_DEBUG("Region {} root state '{}' is {}", id_, currentState_, (isFinal ? "FINAL" : "NOT FINAL"));
+        SCE_LOG_DEBUG("Region {} root state '{}' is {}", id_, currentState_, (isFinal ? "FINAL" : "NOT FINAL"));
         return isFinal;
     }
 
-    LOG_WARN("Region {} current state '{}' not found in state hierarchy", id_, currentState_);
+    SCE_LOG_WARN("Region {} current state '{}' not found in state hierarchy", id_, currentState_);
     return false;
 }
 
@@ -767,11 +767,11 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
         return ConcurrentOperationResult::failure(id_, error);
     }
 
-    LOG_DEBUG("Entering initial state for region: {}", id_);
+    SCE_LOG_DEBUG("Entering initial state for region: {}", id_);
 
     // SCXML W3C specification section 3.4: Execute entry actions for the region state
     if (executionContext_) {
-        LOG_DEBUG("Executing entry actions for: {}", rootState_->getId());
+        SCE_LOG_DEBUG("Executing entry actions for: {}", rootState_->getId());
 
         // W3C SCXML 3.8: Execute entry action blocks
         const auto &entryBlocks = rootState_->getEntryActionBlocks();
@@ -780,17 +780,17 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                 for (const auto &actionNode : actionBlock) {
                     if (actionNode) {
                         try {
-                            LOG_DEBUG("Executing entry action: {}", actionNode->getId());
+                            SCE_LOG_DEBUG("Executing entry action: {}", actionNode->getId());
                             executeActionNode(actionNode, "enterInitialState");
                         } catch (const std::exception &e) {
-                            LOG_WARN("Entry action failed: {}", e.what());
+                            SCE_LOG_WARN("Entry action failed: {}", e.what());
                         }
                     }
                 }
             }
         }
     } else {
-        LOG_DEBUG("No execution context available, skipping entry actions");
+        SCE_LOG_DEBUG("No execution context available, skipping entry actions");
     }
 
     // Set up initial configuration
@@ -800,10 +800,10 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
 
     // W3C SCXML 6.4: Check and defer invoke elements for root state itself
     const auto &rootInvokes = rootState_->getInvoke();
-    LOG_INFO("ConcurrentRegion: Root state {} has {} invokes, callback is {}", rootState_->getId(), rootInvokes.size(),
+    SCE_LOG_INFO("ConcurrentRegion: Root state {} has {} invokes, callback is {}", rootState_->getId(), rootInvokes.size(),
              invokeCallback_ ? "set" : "null");
     if (!rootInvokes.empty() && invokeCallback_) {
-        LOG_INFO("ConcurrentRegion: Delegating {} invokes for root state: {} to callback", rootInvokes.size(),
+        SCE_LOG_INFO("ConcurrentRegion: Delegating {} invokes for root state: {} to callback", rootInvokes.size(),
                  currentState_);
         invokeCallback_(currentState_, rootInvokes);
     }
@@ -817,28 +817,28 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
         // Priority 1: Parent state's deep initial target (e.g., s1 initial="s11p112 s11p122")
         if (!desiredInitialChild_.empty()) {
             initialChild = desiredInitialChild_;
-            LOG_DEBUG("ConcurrentRegion: Region '{}' using desiredInitialChild: '{}'", id_, initialChild);
+            SCE_LOG_DEBUG("ConcurrentRegion: Region '{}' using desiredInitialChild: '{}'", id_, initialChild);
         }
         // Priority 2: Region's <initial> element with transition target
         else if (const auto &initialTransition = rootState_->getInitialTransition();
                  initialTransition && !initialTransition->getTargets().empty()) {
             initialChild = initialTransition->getTargets()[0];
-            LOG_DEBUG("Found initial transition targeting: {} in region: {}", initialChild, id_);
+            SCE_LOG_DEBUG("Found initial transition targeting: {} in region: {}", initialChild, id_);
         }
         // Priority 3: Region's initial attribute
         else if (std::string initialFromAttr = rootState_->getInitialState(); !initialFromAttr.empty()) {
             initialChild = initialFromAttr;
-            LOG_DEBUG("ConcurrentRegion: Region '{}' rootState '{}' has initialState='{}'", id_, rootState_->getId(),
+            SCE_LOG_DEBUG("ConcurrentRegion: Region '{}' rootState '{}' has initialState='{}'", id_, rootState_->getId(),
                       initialChild);
         }
         // Priority 4: First child in document order (W3C default)
         else if (!children.empty()) {
             initialChild = children[0]->getId();
-            LOG_DEBUG("ConcurrentRegion: Region '{}' using first child as fallback: '{}'", id_, initialChild);
+            SCE_LOG_DEBUG("ConcurrentRegion: Region '{}' using first child as fallback: '{}'", id_, initialChild);
         }
 
         if (!initialChild.empty()) {
-            LOG_DEBUG("ConcurrentRegion: Region '{}' entering initial child state: '{}'", id_, initialChild);
+            SCE_LOG_DEBUG("ConcurrentRegion: Region '{}' entering initial child state: '{}'", id_, initialChild);
 
             // Find the child state node once for efficiency
             auto childState = std::find_if(children.begin(), children.end(),
@@ -851,7 +851,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                 // If initial child is a history state, it will be handled by StateHierarchyManager
                 // Do NOT add history state to activeStates_ - it must remain transparent
                 if ((*childState)->getType() == Type::HISTORY) {
-                    LOG_DEBUG("ConcurrentRegion: Initial child '{}' is HISTORY state, skipping activeStates addition "
+                    SCE_LOG_DEBUG("ConcurrentRegion: Initial child '{}' is HISTORY state, skipping activeStates addition "
                               "(W3C SCXML 3.10 compliance, test 580)",
                               initialChild);
                     // History restoration will be handled externally by StateHierarchyManager
@@ -870,9 +870,9 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                     for (const auto &actionBlock : childEntryBlocks) {
                         for (const auto &actionNode : actionBlock) {
                             if (actionNode) {
-                                LOG_DEBUG("Executing child entry action: {}", actionNode->getId());
+                                SCE_LOG_DEBUG("Executing child entry action: {}", actionNode->getId());
                                 if (!executeActionNode(actionNode, "enterInitialState")) {
-                                    LOG_WARN("W3C SCXML 3.8: Child entry action failed, stopping remaining actions in "
+                                    SCE_LOG_WARN("W3C SCXML 3.8: Child entry action failed, stopping remaining actions in "
                                              "THIS block only");
                                     break;  // W3C SCXML 3.8: stop remaining actions in this block
                                 }
@@ -884,7 +884,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                     // Delegate to StateHierarchyManager via callback pattern for proper timing
                     const auto &childInvokes = (*childState)->getInvoke();
                     if (!childInvokes.empty() && invokeCallback_) {
-                        LOG_INFO("ConcurrentRegion: Delegating {} invokes for child state: {} to callback",
+                        SCE_LOG_INFO("ConcurrentRegion: Delegating {} invokes for child state: {} to callback",
                                  childInvokes.size(), initialChild);
                         invokeCallback_(initialChild, childInvokes);
                     }
@@ -898,7 +898,7 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                         }
 
                         if (!childInitialState.empty()) {
-                            LOG_DEBUG("Child state is compound, entering "
+                            SCE_LOG_DEBUG("Child state is compound, entering "
                                       "grandchild: {}",
                                       childInitialState);
                             activeStates_.push_back(childInitialState);
@@ -917,11 +917,11 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
                                 for (const auto &actionBlock : grandchildEntryBlocks) {
                                     for (const auto &actionNode : actionBlock) {
                                         if (actionNode) {
-                                            LOG_DEBUG("Executing grandchild entry "
+                                            SCE_LOG_DEBUG("Executing grandchild entry "
                                                       "action: {}",
                                                       actionNode->getId());
                                             if (!executeActionNode(actionNode, "enterInitialState")) {
-                                                LOG_WARN("W3C SCXML 3.8: Grandchild entry action failed, stopping "
+                                                SCE_LOG_WARN("W3C SCXML 3.8: Grandchild entry action failed, stopping "
                                                          "remaining actions in THIS block only");
                                                 break;  // W3C SCXML 3.8: stop remaining actions in this block
                                             }
@@ -941,17 +941,17 @@ ConcurrentOperationResult ConcurrentRegion::enterInitialState() {
     // Update region status to FINAL if we entered a final state immediately
     if (isInFinalState_) {
         status_ = ConcurrentRegionStatus::FINAL;
-        LOG_DEBUG(
+        SCE_LOG_DEBUG(
             "ConcurrentRegion::enterInitialState - Region {} immediately entered final state, updating status to FINAL",
             id_);
     }
 
-    LOG_DEBUG("Successfully entered initial state: {}", currentState_);
+    SCE_LOG_DEBUG("Successfully entered initial state: {}", currentState_);
     return ConcurrentOperationResult::success(id_);
 }
 
 ConcurrentOperationResult ConcurrentRegion::exitAllStates(std::shared_ptr<IExecutionContext> executionContext) {
-    LOG_DEBUG("Exiting all states in region: {}", id_);
+    SCE_LOG_DEBUG("Exiting all states in region: {}", id_);
 
     try {
         // SCXML W3C Specification compliance: Exit sequence for parallel states
@@ -961,20 +961,20 @@ ConcurrentOperationResult ConcurrentRegion::exitAllStates(std::shared_ptr<IExecu
         if (exitHandler_ && !activeStates_.empty()) {
             // W3C SCXML 3.13: Execute exit actions for all active states in document order
             // Note: activeStates_ already includes rootState_, so no need to execute it separately (test 504)
-            LOG_DEBUG("Executing exit actions for active states");
+            SCE_LOG_DEBUG("Executing exit actions for active states");
 
             exitActionsSuccess = exitHandler_->executeMultipleStateExits(activeStates_, rootState_, executionContext);
 
             if (!exitActionsSuccess) {
-                LOG_WARN("Some exit actions failed, continuing with cleanup");
+                SCE_LOG_WARN("Some exit actions failed, continuing with cleanup");
             }
         } else {
-            LOG_DEBUG("No exit handler or active states, skipping exit actions");
+            SCE_LOG_DEBUG("No exit handler or active states, skipping exit actions");
         }
 
         // Step 3: Clear the active configuration (always perform cleanup)
         // SCXML spec: Maintain legal state configuration after transition
-        LOG_DEBUG("Clearing active configuration");
+        SCE_LOG_DEBUG("Clearing active configuration");
         activeStates_.clear();
         currentState_.clear();
         isInFinalState_ = false;
@@ -987,12 +987,12 @@ ConcurrentOperationResult ConcurrentRegion::exitAllStates(std::shared_ptr<IExecu
             resultMsg += " (with exit action warnings)";
         }
 
-        LOG_DEBUG("{}", resultMsg);
+        SCE_LOG_DEBUG("{}", resultMsg);
         return ConcurrentOperationResult::success(id_);
 
     } catch (const std::exception &e) {
         std::string errorMsg = std::format("Failed to exit states in region {}: {}", id_, e.what());
-        LOG_ERROR("Error: {}", errorMsg);
+        SCE_LOG_ERROR("Error: {}", errorMsg);
 
         // Ensure cleanup even on failure
         activeStates_.clear();
@@ -1005,22 +1005,22 @@ ConcurrentOperationResult ConcurrentRegion::exitAllStates(std::shared_ptr<IExecu
 
 bool ConcurrentRegion::executeActionNode(const std::shared_ptr<IActionNode> &actionNode, const std::string &context) {
     if (!actionNode) {
-        LOG_WARN("{} - Null ActionNode encountered, skipping", context);
+        SCE_LOG_WARN("{} - Null ActionNode encountered, skipping", context);
         return false;
     }
 
     try {
-        LOG_DEBUG("{} - Executing ActionNode: {} (ID: {})", context, actionNode->getActionType(), actionNode->getId());
+        SCE_LOG_DEBUG("{} - Executing ActionNode: {} (ID: {})", context, actionNode->getActionType(), actionNode->getId());
 
         if (actionNode->execute(*executionContext_)) {
-            LOG_DEBUG("{} - Successfully executed ActionNode: {}", context, actionNode->getActionType());
+            SCE_LOG_DEBUG("{} - Successfully executed ActionNode: {}", context, actionNode->getActionType());
             return true;
         } else {
-            LOG_WARN("{} - ActionNode failed: {}", context, actionNode->getActionType());
+            SCE_LOG_WARN("{} - ActionNode failed: {}", context, actionNode->getActionType());
             return false;
         }
     } catch (const std::exception &e) {
-        LOG_WARN("{} - ActionNode exception: {} Error: {}", context, actionNode->getActionType(), e.what());
+        SCE_LOG_WARN("{} - ActionNode exception: {} Error: {}", context, actionNode->getActionType(), e.what());
         return false;
     }
 }
@@ -1029,7 +1029,7 @@ void ConcurrentRegion::executeActionNodes(const std::vector<std::shared_ptr<IAct
                                           const std::string &context) {
     // P1 refactoring: DRY principle - centralized action execution
     if (!executionContext_) {
-        LOG_ERROR("ConcurrentRegion::executeActionNodes - Cannot execute actions for '{}': executionContext is null in "
+        SCE_LOG_ERROR("ConcurrentRegion::executeActionNodes - Cannot execute actions for '{}': executionContext is null in "
                   "region '{}'",
                   context, id_);
         return;
@@ -1041,17 +1041,17 @@ void ConcurrentRegion::executeActionNodes(const std::vector<std::shared_ptr<IAct
 
     for (const auto &actionNode : actionNodes) {
         if (!actionNode) {
-            LOG_WARN("ConcurrentRegion::executeActionNodes - Null ActionNode in '{}', skipping", context);
+            SCE_LOG_WARN("ConcurrentRegion::executeActionNodes - Null ActionNode in '{}', skipping", context);
             continue;
         }
 
         try {
             if (!actionNode->execute(*executionContext_)) {
-                LOG_WARN("ConcurrentRegion::executeActionNodes - ActionNode '{}' failed in '{}'",
+                SCE_LOG_WARN("ConcurrentRegion::executeActionNodes - ActionNode '{}' failed in '{}'",
                          actionNode->getActionType(), context);
             }
         } catch (const std::exception &e) {
-            LOG_WARN("ConcurrentRegion::executeActionNodes - ActionNode '{}' exception in '{}': {}",
+            SCE_LOG_WARN("ConcurrentRegion::executeActionNodes - ActionNode '{}' exception in '{}': {}",
                      actionNode->getActionType(), context, e.what());
         }
     }

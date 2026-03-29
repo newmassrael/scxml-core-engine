@@ -1,5 +1,5 @@
 #include "W3CEventTestHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "runtime/StateMachine.h"
 #include "scripting/JSEngine.h"
 #include <fstream>
@@ -560,7 +560,7 @@ TEST_F(JSEngineBasicTest, IntegratedAPI_JSONStringifyFallback) {
         << "Object conversion should contain 'test' or '[object]' fallback";
 }
 
-// WASM: EXPECT_THROW doesn't catch exceptions across library boundaries (sce_unified -> test)
+// WASM: EXPECT_THROW doesn't catch exceptions across library boundaries (sce_runtime -> test)
 // W3C SCXML compliance: error.execution event mechanism works correctly (test194, test487, test528 pass)
 // This test verifies C++ exception throwing from convenience APIs (not W3C requirements)
 // Native build: Passes (functionality verified)

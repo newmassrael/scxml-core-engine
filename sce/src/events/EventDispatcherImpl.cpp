@@ -1,5 +1,5 @@
 #include "events/EventDispatcherImpl.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/StringUtils.h"
 #include <sstream>
 #include <stdexcept>
@@ -17,7 +17,7 @@ EventDispatcherImpl::EventDispatcherImpl(std::shared_ptr<IEventScheduler> schedu
         throw std::invalid_argument("EventDispatcherImpl requires a valid target factory");
     }
 
-    LOG_DEBUG("Dispatcher created with scheduler and target factory");
+    SCE_LOG_DEBUG("Dispatcher created with scheduler and target factory");
 }
 
 std::future<SendResult> EventDispatcherImpl::sendEvent(const EventDescriptor &event) {
@@ -41,10 +41,10 @@ std::future<SendResult> EventDispatcherImpl::sendEvent(const EventDescriptor &ev
             if (isPlatform && effectiveDelay.count() == 0) {
                 // Platform events queue immediately (0ms) to prevent nested processing
                 effectiveDelay = std::chrono::milliseconds(0);
-                LOG_DEBUG("Platform event '{}' queued immediately (0ms)", event.eventName);
+                SCE_LOG_DEBUG("Platform event '{}' queued immediately (0ms)", event.eventName);
             }
 
-            LOG_DEBUG("Scheduling delayed event '{}' with {}ms delay in session '{}' (sendId: '{}')", event.eventName,
+            SCE_LOG_DEBUG("Scheduling delayed event '{}' with {}ms delay in session '{}' (sendId: '{}')", event.eventName,
                       effectiveDelay.count(), event.sessionId, event.sendId);
 
             // Schedule the event for delayed execution
@@ -62,12 +62,12 @@ std::future<SendResult> EventDispatcherImpl::sendEvent(const EventDescriptor &ev
             return resultPromise.get_future();
         } else {
             // Execute immediately
-            LOG_DEBUG("Executing immediate event '{}'", event.eventName);
+            SCE_LOG_DEBUG("Executing immediate event '{}'", event.eventName);
             return executeEventImmediately(event, target);
         }
 
     } catch (const std::exception &e) {
-        LOG_ERROR("Error sending event '{}': {}", event.eventName, e.what());
+        SCE_LOG_ERROR("Error sending event '{}': {}", event.eventName, e.what());
         std::promise<SendResult> errorPromise;
         errorPromise.set_value(
             SendResult::error("Failed to send event: " + std::string(e.what()), SendResult::ErrorType::INTERNAL_ERROR));
@@ -77,11 +77,11 @@ std::future<SendResult> EventDispatcherImpl::sendEvent(const EventDescriptor &ev
 
 bool EventDispatcherImpl::cancelEvent(const std::string &sendId, const std::string &sessionId) {
     if (sendId.empty()) {
-        LOG_WARN("Cannot cancel event with empty sendId");
+        SCE_LOG_WARN("Cannot cancel event with empty sendId");
         return false;
     }
 
-    LOG_DEBUG("EventDispatcherImpl: Cancelling event with sendId: {}", sendId);
+    SCE_LOG_DEBUG("EventDispatcherImpl: Cancelling event with sendId: {}", sendId);
     return scheduler_->cancelEvent(sendId, sessionId);
 }
 
@@ -107,51 +107,51 @@ std::string EventDispatcherImpl::getStatistics() const {
 }
 
 void EventDispatcherImpl::shutdown() {
-    LOG_DEBUG("EventDispatcherImpl: Shutting down dispatcher");
+    SCE_LOG_DEBUG("EventDispatcherImpl: Shutting down dispatcher");
 
     if (scheduler_) {
         scheduler_->shutdown(true);
     }
 
-    LOG_DEBUG("EventDispatcherImpl: Dispatcher shutdown complete");
+    SCE_LOG_DEBUG("EventDispatcherImpl: Dispatcher shutdown complete");
 }
 
 size_t EventDispatcherImpl::cancelEventsForSession(const std::string &sessionId) {
-    LOG_DEBUG("EventDispatcherImpl: Cancelling all events for session: {}", sessionId);
+    SCE_LOG_DEBUG("EventDispatcherImpl: Cancelling all events for session: {}", sessionId);
 
     // W3C SCXML 6.2: Cancel all scheduled events for the specified session
     if (scheduler_) {
         return scheduler_->cancelEventsForSession(sessionId);
     }
 
-    LOG_WARN("EventDispatcherImpl: No scheduler available for session event cancellation");
+    SCE_LOG_WARN("EventDispatcherImpl: No scheduler available for session event cancellation");
     return 0;
 }
 
 std::future<SendResult> EventDispatcherImpl::executeEventImmediately(const EventDescriptor &event,
                                                                      std::shared_ptr<IEventTarget> target) {
     try {
-        LOG_DEBUG("EventDispatcherImpl: Executing immediate event '{}' to target '{}'", event.eventName, event.target);
+        SCE_LOG_DEBUG("EventDispatcherImpl: Executing immediate event '{}' to target '{}'", event.eventName, event.target);
 
         // Validate target before sending
         if (!target) {
-            LOG_ERROR("EventDispatcherImpl: Target is null for event '{}'", event.eventName);
+            SCE_LOG_ERROR("EventDispatcherImpl: Target is null for event '{}'", event.eventName);
             std::promise<SendResult> errorPromise;
             errorPromise.set_value(SendResult::error("Target is null", SendResult::ErrorType::TARGET_NOT_FOUND));
             return errorPromise.get_future();
         }
 
-        LOG_DEBUG("EventDispatcherImpl: Calling target->send() for event '{}' with target type: {}", event.eventName,
+        SCE_LOG_DEBUG("EventDispatcherImpl: Calling target->send() for event '{}' with target type: {}", event.eventName,
                   target->getTargetType());
 
         // Execute the event directly on the target
         auto resultFuture = target->send(event);
 
-        LOG_DEBUG("EventDispatcherImpl: target->send() called successfully for event '{}'", event.eventName);
+        SCE_LOG_DEBUG("EventDispatcherImpl: target->send() called successfully for event '{}'", event.eventName);
         return resultFuture;
 
     } catch (const std::exception &e) {
-        LOG_ERROR("EventDispatcherImpl: Error executing immediate event '{}': {}", event.eventName, e.what());
+        SCE_LOG_ERROR("EventDispatcherImpl: Error executing immediate event '{}': {}", event.eventName, e.what());
 
         std::promise<SendResult> errorPromise;
         errorPromise.set_value(SendResult::error("Failed to execute immediate event: " + std::string(e.what()),
@@ -164,7 +164,7 @@ std::future<SendResult> EventDispatcherImpl::onScheduledEventExecution(const Eve
                                                                        std::shared_ptr<IEventTarget> target,
                                                                        const std::string &sendId) {
     try {
-        LOG_DEBUG("EventDispatcherImpl: Executing scheduled event '{}' with sendId '{}'", event.eventName, sendId);
+        SCE_LOG_DEBUG("EventDispatcherImpl: Executing scheduled event '{}' with sendId '{}'", event.eventName, sendId);
 
         // Execute the scheduled event on the target
         auto resultFuture = target->send(event);
@@ -175,15 +175,15 @@ std::future<SendResult> EventDispatcherImpl::onScheduledEventExecution(const Eve
         try {
             auto result = resultFuture.get();
             if (result.isSuccess) {
-                LOG_DEBUG("EventDispatcherImpl: Scheduled event '{}' with sendId '{}' executed successfully",
+                SCE_LOG_DEBUG("EventDispatcherImpl: Scheduled event '{}' with sendId '{}' executed successfully",
                           event.eventName, sendId);
             } else {
-                LOG_WARN("EventDispatcherImpl: Scheduled event '{}' with sendId '{}' failed: {}", event.eventName,
+                SCE_LOG_WARN("EventDispatcherImpl: Scheduled event '{}' with sendId '{}' failed: {}", event.eventName,
                          sendId, result.errorMessage);
             }
             wrappedPromise.set_value(std::move(result));
         } catch (const std::exception &e) {
-            LOG_ERROR("EventDispatcherImpl: Exception executing scheduled event '{}' with sendId '{}': {}",
+            SCE_LOG_ERROR("EventDispatcherImpl: Exception executing scheduled event '{}' with sendId '{}': {}",
                       event.eventName, sendId, e.what());
             wrappedPromise.set_value(SendResult::error("Scheduled event execution failed: " + std::string(e.what()),
                                                        SendResult::ErrorType::INTERNAL_ERROR));
@@ -192,7 +192,7 @@ std::future<SendResult> EventDispatcherImpl::onScheduledEventExecution(const Eve
         return wrappedPromise.get_future();
 
     } catch (const std::exception &e) {
-        LOG_ERROR("EventDispatcherImpl: Error executing scheduled event '{}' with sendId '{}': {}", event.eventName,
+        SCE_LOG_ERROR("EventDispatcherImpl: Error executing scheduled event '{}' with sendId '{}': {}", event.eventName,
                   sendId, e.what());
 
         std::promise<SendResult> errorPromise;

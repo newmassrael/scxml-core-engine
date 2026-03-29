@@ -1,5 +1,5 @@
 #include "runtime/HistoryStateAutoRegistrar.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "model/IStateNode.h"
 #include "model/ITransitionNode.h"
 #include "model/SCXMLModel.h"
@@ -13,33 +13,33 @@ namespace SCE {
 HistoryStateAutoRegistrar::HistoryStateAutoRegistrar(
     std::function<std::shared_ptr<IStateNode>(const std::string &)> stateProvider)
     : stateProvider_(std::move(stateProvider)) {
-    LOG_DEBUG("HistoryStateAutoRegistrar: Initialized with SOLID architecture");
+    SCE_LOG_DEBUG("HistoryStateAutoRegistrar: Initialized with SOLID architecture");
 }
 
 bool HistoryStateAutoRegistrar::autoRegisterHistoryStates(const std::shared_ptr<SCXMLModel> &model,
                                                           HistoryManager *historyManager) {
     if (!autoRegistrationEnabled_) {
-        LOG_DEBUG("HistoryStateAutoRegistrar: Auto-registration is disabled");
+        SCE_LOG_DEBUG("HistoryStateAutoRegistrar: Auto-registration is disabled");
         return true;
     }
 
     if (!model) {
-        LOG_ERROR("HistoryStateAutoRegistrar: Cannot register - null model");
+        SCE_LOG_ERROR("HistoryStateAutoRegistrar: Cannot register - null model");
         return false;
     }
 
     if (!historyManager) {
-        LOG_ERROR("HistoryStateAutoRegistrar: Cannot register - null history manager");
+        SCE_LOG_ERROR("HistoryStateAutoRegistrar: Cannot register - null history manager");
         return false;
     }
 
-    LOG_INFO("HistoryStateAutoRegistrar: Starting SCXML W3C compliant auto-registration");
+    SCE_LOG_INFO("HistoryStateAutoRegistrar: Starting SCXML W3C compliant auto-registration");
 
     // Extract history states from model
     auto historyStates = extractHistoryStatesFromModel(model);
 
     if (historyStates.empty()) {
-        LOG_DEBUG("HistoryStateAutoRegistrar: No history states found in model");
+        SCE_LOG_DEBUG("HistoryStateAutoRegistrar: No history states found in model");
         registeredHistoryStateCount_ = 0;
         return true;
     }
@@ -49,19 +49,19 @@ bool HistoryStateAutoRegistrar::autoRegisterHistoryStates(const std::shared_ptr<
         if (registerSingleHistoryState(historyInfo.historyStateId, historyInfo.parentStateId, historyInfo.historyType,
                                        historyInfo.defaultStateId, historyManager)) {
             successCount++;
-            LOG_DEBUG("Successfully registered history state: {}", historyInfo.historyStateId);
+            SCE_LOG_DEBUG("Successfully registered history state: {}", historyInfo.historyStateId);
         } else {
-            LOG_WARN("Failed to register history state: {}", historyInfo.historyStateId);
+            SCE_LOG_WARN("Failed to register history state: {}", historyInfo.historyStateId);
         }
     }
 
     registeredHistoryStateCount_ = successCount;
 
     if (successCount == historyStates.size()) {
-        LOG_INFO("Successfully registered all {} history states", successCount);
+        SCE_LOG_INFO("Successfully registered all {} history states", successCount);
         return true;
     } else {
-        LOG_WARN("Registered {} out of {} history states", successCount, historyStates.size());
+        SCE_LOG_WARN("Registered {} out of {} history states", successCount, historyStates.size());
         return false;
     }
 }
@@ -76,7 +76,7 @@ bool HistoryStateAutoRegistrar::isAutoRegistrationEnabled() const {
 
 void HistoryStateAutoRegistrar::setAutoRegistrationEnabled(bool enabled) {
     autoRegistrationEnabled_ = enabled;
-    LOG_DEBUG("Auto-registration {}", (enabled ? "enabled" : "disabled"));
+    SCE_LOG_DEBUG("Auto-registration {}", (enabled ? "enabled" : "disabled"));
 }
 
 bool HistoryStateAutoRegistrar::registerSingleHistoryState(const std::string &historyStateId,
@@ -85,7 +85,7 @@ bool HistoryStateAutoRegistrar::registerSingleHistoryState(const std::string &hi
                                                            HistoryManager *historyManager) {
     // Validate history type
     if (historyType == HistoryType::NONE) {
-        LOG_ERROR("Invalid history type NONE for state '{}'", historyStateId);
+        SCE_LOG_ERROR("Invalid history type NONE for state '{}'", historyStateId);
         return false;
     }
 
@@ -96,7 +96,7 @@ bool HistoryStateAutoRegistrar::registerSingleHistoryState(const std::string &hi
     } else if (historyType == HistoryType::DEEP) {
         historyTypeStr = "deep";
     } else {
-        LOG_ERROR("Invalid history type for state '{}'", historyStateId);
+        SCE_LOG_ERROR("Invalid history type for state '{}'", historyStateId);
         return false;
     }
 
@@ -104,10 +104,10 @@ bool HistoryStateAutoRegistrar::registerSingleHistoryState(const std::string &hi
     bool success = historyManager->registerHistoryState(historyStateId, parentStateId, historyType, defaultStateId);
 
     if (success) {
-        LOG_DEBUG("Registered {} history state '{}' in parent '{}' with default '{}'", historyTypeStr, historyStateId,
+        SCE_LOG_DEBUG("Registered {} history state '{}' in parent '{}' with default '{}'", historyTypeStr, historyStateId,
                   parentStateId, defaultStateId);
     } else {
-        LOG_ERROR("Failed to register history state '{}'", historyStateId);
+        SCE_LOG_ERROR("Failed to register history state '{}'", historyStateId);
     }
 
     return success;
@@ -145,7 +145,7 @@ HistoryStateAutoRegistrar::extractHistoryStatesFromModel(const std::shared_ptr<S
                 for (const auto &trans : transitions) {
                     if (trans->getEvent().empty() && !trans->getTargets().empty()) {
                         info.defaultStateId = trans->getTargets()[0];
-                        LOG_DEBUG("HistoryStateAutoRegistrar: Found default '{}' from transition in history '{}'",
+                        SCE_LOG_DEBUG("HistoryStateAutoRegistrar: Found default '{}' from transition in history '{}'",
                                   info.defaultStateId, info.historyStateId);
                         break;
                     }
@@ -155,7 +155,7 @@ HistoryStateAutoRegistrar::extractHistoryStatesFromModel(const std::shared_ptr<S
             // W3C SCXML 3.6: History states without default transition will trigger error.platform at runtime
             // This is allowed by the spec - default is optional, error handling is runtime responsibility
             if (info.defaultStateId.empty()) {
-                LOG_WARN("HistoryStateAutoRegistrar: History state '{}' has no default transition - will generate "
+                SCE_LOG_WARN("HistoryStateAutoRegistrar: History state '{}' has no default transition - will generate "
                          "error.platform if history is empty",
                          info.historyStateId);
             }
@@ -182,7 +182,7 @@ std::string HistoryStateAutoRegistrar::findParentStateId(const std::string &hist
         }
     }
 
-    LOG_WARN("Could not find parent for history state: {}", historyStateId);
+    SCE_LOG_WARN("Could not find parent for history state: {}", historyStateId);
     return "";
 }
 
@@ -197,7 +197,7 @@ std::string HistoryStateAutoRegistrar::extractDefaultStateId(const std::shared_p
         }
     }
 
-    LOG_DEBUG("No default state found for history state: {}", historyState->getId());
+    SCE_LOG_DEBUG("No default state found for history state: {}", historyState->getId());
     return "";
 }
 

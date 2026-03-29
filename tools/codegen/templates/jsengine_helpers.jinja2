@@ -19,28 +19,28 @@
         std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
         auto setupResult = ::SCE::SystemVariableHelper::setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
-            LOG_ERROR("AOT ensureJSEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
+            SCE_LOG_ERROR("AOT ensureJSEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
 
 {% for var in model.variables %}
 {% if var.expr %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), "{{ var.expr | escape_cpp }}").get();
         if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
-            LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
+            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
         }
 {% elif var.content %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), R"({{ var.content | escape_cpp }})").get();
         if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
-            LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
+            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
         }
 {% elif var.type == 'runtime' %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), "undefined").get();
         if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
-            LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
+            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
         }
@@ -78,7 +78,7 @@
         std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
         auto setupResult = ::SCE::SystemVariableHelper::setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
-            LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
+            SCE_LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
 {% if not model.variables and not (model.states.values() | selectattr('datamodel') | list) and not model.global_scripts %}
         // No variables or scripts to initialize
@@ -106,7 +106,7 @@
             auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ var.id }} = {{ var.expr | escape_cpp }}").get();
             if (!::SCE::JSEngine::isSuccess(scriptResult)) {
                 std::string errorMsg = "Failed to assign function expression for '{{ var.id }}'";
-                LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
+                SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
             }
             AOT_DEBUG("AOT initializeDataModel: Initialized function variable '{{ var.id }}'");
@@ -165,7 +165,7 @@
             auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ script.content | escape_cpp }}").get();
             if (!::SCE::JSEngine::isSuccess(scriptResult)) {
                 std::string errorMsg = "Global script execution failed";
-                LOG_ERROR("W3C SCXML 5.8: {}", errorMsg);
+                SCE_LOG_ERROR("W3C SCXML 5.8: {}", errorMsg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
             }
         }

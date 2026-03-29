@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <functional>
 
 namespace SCE::Core {
@@ -58,7 +58,7 @@ public:
 
             // Stop if event processing fails
             if (!handler(event)) {
-                LOG_DEBUG("EventProcessingAlgorithms: Event handler returned false, stopping queue processing");
+                SCE_LOG_DEBUG("EventProcessingAlgorithms: Event handler returned false, stopping queue processing");
                 break;
             }
         }
@@ -118,7 +118,7 @@ public:
         }
 
         if (iterations >= maxIterations) {
-            LOG_ERROR("EventProcessingAlgorithms: Eventless transition loop detected after {} iterations",
+            SCE_LOG_ERROR("EventProcessingAlgorithms: Eventless transition loop detected after {} iterations",
                       maxIterations);
             return false;
         }

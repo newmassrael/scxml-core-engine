@@ -1,6 +1,6 @@
 #include "common/TypeRegistry.h"
 #include "common/Constants.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include <algorithm>
 #include <cctype>
@@ -20,7 +20,7 @@ TypeRegistry::TypeRegistry() {
 
 bool TypeRegistry::registerType(Category category, const std::string &uri, const std::string &canonicalName) {
     if (uri.empty() || canonicalName.empty()) {
-        LOG_ERROR("TypeRegistry: Cannot register type with empty URI or canonical name");
+        SCE_LOG_ERROR("TypeRegistry: Cannot register type with empty URI or canonical name");
         return false;
     }
 
@@ -33,7 +33,7 @@ bool TypeRegistry::registerType(Category category, const std::string &uri, const
     auto &categoryMap = typeMap_[category];
     auto existing = categoryMap.find(normalizedUri);
     if (existing != categoryMap.end() && existing->second != canonicalName) {
-        LOG_WARN("TypeRegistry: URI '{}' already registered with canonical name '{}', not '{}'", uri, existing->second,
+        SCE_LOG_WARN("TypeRegistry: URI '{}' already registered with canonical name '{}', not '{}'", uri, existing->second,
                  canonicalName);
         return false;
     }
@@ -44,7 +44,7 @@ bool TypeRegistry::registerType(Category category, const std::string &uri, const
     // Register in reverse map
     reverseMap_[category][canonicalName].insert(normalizedUri);
 
-    LOG_DEBUG("TypeRegistry: Registered type URI '{}' -> '{}' in category '{}'", uri, canonicalName,
+    SCE_LOG_DEBUG("TypeRegistry: Registered type URI '{}' -> '{}' in category '{}'", uri, canonicalName,
               categoryToString(category));
 
     return true;
@@ -222,7 +222,7 @@ void TypeRegistry::clear() {
 
     typeMap_.clear();
     reverseMap_.clear();
-    LOG_DEBUG("TypeRegistry: All type registrations cleared");
+    SCE_LOG_DEBUG("TypeRegistry: All type registrations cleared");
 }
 
 std::string TypeRegistry::getDebugInfo() {
@@ -246,7 +246,7 @@ std::string TypeRegistry::getDebugInfo() {
 }
 
 void TypeRegistry::initializeDefaultTypes() {
-    LOG_DEBUG("TypeRegistry: Initializing default SCXML types");
+    SCE_LOG_DEBUG("TypeRegistry: Initializing default SCXML types");
 
     // ========================================================================
     // Event Processors
@@ -320,7 +320,7 @@ void TypeRegistry::initializeDefaultTypes() {
     registerType(Category::CONTENT_TYPE, "application/x-www-form-urlencoded", "form");
     registerType(Category::CONTENT_TYPE, "multipart/form-data", "multipart-form");
 
-    LOG_INFO("TypeRegistry: Initialized {} event processors, {} invoke processors, {} data models, {} content types",
+    SCE_LOG_INFO("TypeRegistry: Initialized {} event processors, {} invoke processors, {} data models, {} content types",
              getRegisteredTypes(Category::EVENT_PROCESSOR).size(),
              getRegisteredTypes(Category::INVOKE_PROCESSOR).size(), getRegisteredTypes(Category::DATA_MODEL).size(),
              getRegisteredTypes(Category::CONTENT_TYPE).size());

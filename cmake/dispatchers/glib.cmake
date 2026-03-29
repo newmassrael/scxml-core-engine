@@ -25,7 +25,7 @@ if(SCE_DISPATCHER_GLIB)
 
     target_link_libraries(sce_glib_dispatcher
         PUBLIC
-            sce_unified
+            sce_runtime
             ${GLIB_LIBRARIES}
     )
 

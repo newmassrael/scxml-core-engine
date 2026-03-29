@@ -77,6 +77,8 @@ void DefaultBackend::setLevel(LogLevel level) {
     currentLevel_ = level;
 }
 
+bool DefaultBackend::shouldLog(LogLevel level) const { return level >= currentLevel_; }
+
 void DefaultBackend::flush() {
     std::lock_guard<std::mutex> lock(mutex_);
     std::cout.flush();

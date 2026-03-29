@@ -1,6 +1,6 @@
 #include "events/ParentEventTarget.h"
 #include "common/JsonUtils.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"
@@ -22,16 +22,16 @@ ParentEventTarget::ParentEventTarget(const std::string &childSessionId, std::sha
         throw std::invalid_argument("ParentEventTarget requires a valid event raiser");
     }
 
-    LOG_DEBUG("ParentEventTarget: Created for child session: {}", childSessionId_);
+    SCE_LOG_DEBUG("ParentEventTarget: Created for child session: {}", childSessionId_);
 }
 
 std::future<SendResult> ParentEventTarget::send(const EventDescriptor &event) {
-    LOG_DEBUG("ParentEventTarget::send() - ENTRY: event='{}', target='{}', sessionId='{}', delay={}ms", event.eventName,
+    SCE_LOG_DEBUG("ParentEventTarget::send() - ENTRY: event='{}', target='{}', sessionId='{}', delay={}ms", event.eventName,
               event.target, event.sessionId, event.delay.count());
 
     // Check if this is a delayed event and scheduler is available
     if (event.delay.count() > 0 && scheduler_) {
-        LOG_DEBUG("ParentEventTarget: Scheduling delayed parent event '{}' for {}ms", event.eventName,
+        SCE_LOG_DEBUG("ParentEventTarget: Scheduling delayed parent event '{}' for {}ms", event.eventName,
                   event.delay.count());
 
         // Create a copy of this target for delayed execution
@@ -59,7 +59,7 @@ std::future<SendResult> ParentEventTarget::send(const EventDescriptor &event) {
 }
 
 std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor &event) {
-    LOG_DEBUG("ParentEventTarget::sendImmediately() - ENTRY: event='{}', target='{}', sessionId='{}'", event.eventName,
+    SCE_LOG_DEBUG("ParentEventTarget::sendImmediately() - ENTRY: event='{}', target='{}', sessionId='{}'", event.eventName,
               event.target, event.sessionId);
 
     std::promise<SendResult> resultPromise;
@@ -68,7 +68,7 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
     try {
         // Use session ID from event descriptor as child session ID
         std::string actualChildSessionId = event.sessionId.empty() ? childSessionId_ : event.sessionId;
-        LOG_DEBUG(
+        SCE_LOG_DEBUG(
             "ParentEventTarget::sendImmediately() - Child session: '{}' (from event: '{}', from constructor: '{}')",
             actualChildSessionId, event.sessionId, childSessionId_);
 
@@ -78,31 +78,31 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
         auto it = event.params.find("_parentSessionId");
         if (it != event.params.end() && !it->second.empty()) {
             parentSessionId = it->second[0];  // W3C SCXML: Get first value from vector
-            LOG_DEBUG("ParentEventTarget: Using parent session from params: '{}'", parentSessionId);
+            SCE_LOG_DEBUG("ParentEventTarget: Using parent session from params: '{}'", parentSessionId);
         } else {
             parentSessionId = findParentSessionId(actualChildSessionId);
-            LOG_DEBUG("ParentEventTarget: Found parent session via JSEngine: '{}'", parentSessionId);
+            SCE_LOG_DEBUG("ParentEventTarget: Found parent session via JSEngine: '{}'", parentSessionId);
         }
 
         if (parentSessionId.empty()) {
             // W3C SCXML: This is normal during cleanup when parent relationship is already removed
             // Child's onexit handlers may try to send events after invoke is cancelled
-            LOG_DEBUG("ParentEventTarget: No parent session found for child: {} (likely during cleanup)",
+            SCE_LOG_DEBUG("ParentEventTarget: No parent session found for child: {} (likely during cleanup)",
                       actualChildSessionId);
             resultPromise.set_value(SendResult::error("No parent session found for child: " + actualChildSessionId,
                                                       SendResult::ErrorType::TARGET_NOT_FOUND));
             return resultFuture;
         }
 
-        LOG_DEBUG("ParentEventTarget: Routing event '{}' from child '{}' to parent '{}'", event.eventName,
+        SCE_LOG_DEBUG("ParentEventTarget: Routing event '{}' from child '{}' to parent '{}'", event.eventName,
                   actualChildSessionId, parentSessionId);
 
         // Get parent session's EventRaiser from centralized service
-        LOG_DEBUG("ParentEventTarget: Looking up EventRaiser for parent session: {}", parentSessionId);
+        SCE_LOG_DEBUG("ParentEventTarget: Looking up EventRaiser for parent session: {}", parentSessionId);
         auto parentEventRaiser = EventRaiserService::getInstance().getEventRaiser(parentSessionId);
-        LOG_DEBUG("ParentEventTarget: EventRaiser lookup result: {}", parentEventRaiser ? "FOUND" : "NOT FOUND");
+        SCE_LOG_DEBUG("ParentEventTarget: EventRaiser lookup result: {}", parentEventRaiser ? "FOUND" : "NOT FOUND");
         if (!parentEventRaiser) {
-            LOG_ERROR("ParentEventTarget: No EventRaiser found for parent session: {}", parentSessionId);
+            SCE_LOG_ERROR("ParentEventTarget: No EventRaiser found for parent session: {}", parentSessionId);
             resultPromise.set_value(SendResult::error("No EventRaiser found for parent session: " + parentSessionId,
                                                       SendResult::ErrorType::TARGET_NOT_FOUND));
             return resultFuture;
@@ -141,20 +141,20 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
         // W3C SCXML 5.10: Pass origintype as SCXML processor type (test 253, 331, 352, 372)
         // ARCHITECTURE.md: Use SCXMLConstants for Single Source of Truth
         std::string originType = SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;
-        LOG_DEBUG("ParentEventTarget::sendImmediately() - Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
+        SCE_LOG_DEBUG("ParentEventTarget::sendImmediately() - Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
                   "'{}', invokeId: '{}', originType: '{}')",
                   eventName, eventData, actualChildSessionId, invokeId, originType);
         bool raiseResult =
             parentEventRaiser->raiseEvent(eventName, eventData, actualChildSessionId, invokeId, originType);
-        LOG_DEBUG("ParentEventTarget::sendImmediately() - parent EventRaiser->raiseEvent() returned: {}", raiseResult);
+        SCE_LOG_DEBUG("ParentEventTarget::sendImmediately() - parent EventRaiser->raiseEvent() returned: {}", raiseResult);
 
-        LOG_DEBUG("ParentEventTarget: Successfully routed event '{}' to parent session '{}'", eventName,
+        SCE_LOG_DEBUG("ParentEventTarget: Successfully routed event '{}' to parent session '{}'", eventName,
                   parentSessionId);
 
         resultPromise.set_value(SendResult::success(event.sendId));
 
     } catch (const std::exception &e) {
-        LOG_ERROR("ParentEventTarget: Error sending event to parent: {}", e.what());
+        SCE_LOG_ERROR("ParentEventTarget: Error sending event to parent: {}", e.what());
         resultPromise.set_value(SendResult::error("Failed to send event to parent: " + std::string(e.what()),
                                                   SendResult::ErrorType::INTERNAL_ERROR));
     }
@@ -203,9 +203,9 @@ std::string ParentEventTarget::findParentSessionId(const std::string &childSessi
     std::string parentSessionId = jsEngine.getParentSessionId(childSessionId);
 
     if (parentSessionId.empty()) {
-        LOG_DEBUG("ParentEventTarget: No parent session found for child: {}", childSessionId);
+        SCE_LOG_DEBUG("ParentEventTarget: No parent session found for child: {}", childSessionId);
     } else {
-        LOG_DEBUG("ParentEventTarget: Found parent session '{}' for child '{}'", parentSessionId, childSessionId);
+        SCE_LOG_DEBUG("ParentEventTarget: Found parent session '{}' for child '{}'", parentSessionId, childSessionId);
     }
 
     return parentSessionId;

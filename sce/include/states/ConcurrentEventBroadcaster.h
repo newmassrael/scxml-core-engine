@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ConcurrentEventTypes.h"
-#include "common/Logger.h"
 #include "states/IConcurrentEventBroadcaster.h"
 #include <future>
 #include <mutex>

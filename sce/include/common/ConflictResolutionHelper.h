@@ -17,7 +17,7 @@
 #pragma once
 
 #include "common/HierarchicalStateHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/ParallelTransitionHelper.h"
 #include <algorithm>
 #include <optional>
@@ -125,7 +125,7 @@ public:
         // Convert unordered_set to vector for conflict resolution algorithm
         std::vector<State> exitSet(exitSetUnordered.begin(), exitSetUnordered.end());
 
-        LOG_DEBUG("ConflictResolutionHelper::computeExitSet: Transition {} -> {} exits {} states",
+        SCE_LOG_DEBUG("ConflictResolutionHelper::computeExitSet: Transition {} -> {} exits {} states",
                   static_cast<int>(source), static_cast<int>(target), exitSet.size());
 
         return exitSet;
@@ -221,7 +221,7 @@ public:
     removeConflictingTransitions(const std::vector<TransitionDescriptor> &enabledTransitions) {
         std::vector<TransitionDescriptor> filteredTransitions;
 
-        LOG_DEBUG("ConflictResolutionHelper::removeConflictingTransitions: Processing {} transitions",
+        SCE_LOG_DEBUG("ConflictResolutionHelper::removeConflictingTransitions: Processing {} transitions",
                   enabledTransitions.size());
 
         // For each transition t1 in enabledTransitions
@@ -246,7 +246,7 @@ public:
                 if (!hasConflict) {
                     if (t1.target == t2.source || t2.target == t1.source) {
                         hasConflict = true;
-                        LOG_DEBUG("ConflictResolutionHelper: Target/source conflict: {} -> {} conflicts with {} -> {}",
+                        SCE_LOG_DEBUG("ConflictResolutionHelper: Target/source conflict: {} -> {} conflicts with {} -> {}",
                                   static_cast<int>(t1.source), static_cast<int>(t1.target), static_cast<int>(t2.source),
                                   static_cast<int>(t2.target));
                     }
@@ -261,7 +261,7 @@ public:
                         if (StatePolicy::isParallelState(exitState)) {
                             if (HierarchicalStateHelper<StatePolicy>::isDescendantOf(t2.source, exitState)) {
                                 hasConflict = true;
-                                LOG_DEBUG("ConflictResolutionHelper: Parallel conflict: t1 exits parallel state {} "
+                                SCE_LOG_DEBUG("ConflictResolutionHelper: Parallel conflict: t1 exits parallel state {} "
                                           "which is ancestor of t2's source {}",
                                           static_cast<int>(exitState), static_cast<int>(t2.source));
                                 break;
@@ -278,7 +278,7 @@ public:
                         if (StatePolicy::isParallelState(exitState)) {
                             if (HierarchicalStateHelper<StatePolicy>::isDescendantOf(t1.source, exitState)) {
                                 hasConflict = true;
-                                LOG_DEBUG("ConflictResolutionHelper: Parallel conflict: t2 exits parallel state {} "
+                                SCE_LOG_DEBUG("ConflictResolutionHelper: Parallel conflict: t2 exits parallel state {} "
                                           "which is ancestor of t1's source {}",
                                           static_cast<int>(exitState), static_cast<int>(t1.source));
                                 break;
@@ -288,7 +288,7 @@ public:
                 }
 
                 if (hasConflict) {
-                    LOG_DEBUG("ConflictResolutionHelper: Conflict detected: {} -> {} vs {} -> {}",
+                    SCE_LOG_DEBUG("ConflictResolutionHelper: Conflict detected: {} -> {} vs {} -> {}",
                               static_cast<int>(t1.source), static_cast<int>(t1.target), static_cast<int>(t2.source),
                               static_cast<int>(t2.target));
 
@@ -296,26 +296,26 @@ public:
                     // If t1 targets the state that t2 originates from, t1 always preempts t2
                     // (transition entering state preempts transition from that state)
                     if (t1.target == t2.source) {
-                        LOG_DEBUG(
+                        SCE_LOG_DEBUG(
                             "ConflictResolutionHelper: {} preempts {} (target/source conflict - entering state wins)",
                             static_cast<int>(t1.source), static_cast<int>(t2.source));
                         transitionsToRemove.push_back(i);
                     }
                     // If t2 targets the state that t1 originates from, t2 preempts t1
                     else if (t2.target == t1.source) {
-                        LOG_DEBUG(
+                        SCE_LOG_DEBUG(
                             "ConflictResolutionHelper: {} preempts {} (target/source conflict - entering state wins)",
                             static_cast<int>(t2.source), static_cast<int>(t1.source));
                         t1Preempted = true;
                     }
                     // W3C SCXML Appendix D.2: If t1's source is descendant of t2's source, t1 preempts t2
                     else if (HierarchicalStateHelper<StatePolicy>::isDescendantOf(t1.source, t2.source)) {
-                        LOG_DEBUG("ConflictResolutionHelper: {} preempts {} (descendant rule)",
+                        SCE_LOG_DEBUG("ConflictResolutionHelper: {} preempts {} (descendant rule)",
                                   static_cast<int>(t1.source), static_cast<int>(t2.source));
                         transitionsToRemove.push_back(i);
                     } else {
                         // W3C SCXML Appendix D.2: Otherwise t2 preempts t1 (document order)
-                        LOG_DEBUG("ConflictResolutionHelper: {} preempts {} (document order)",
+                        SCE_LOG_DEBUG("ConflictResolutionHelper: {} preempts {} (document order)",
                                   static_cast<int>(t2.source), static_cast<int>(t1.source));
                         t1Preempted = true;
                         // W3C SCXML 3.13: Don't break - continue checking against other transitions
@@ -328,17 +328,17 @@ public:
             if (!t1Preempted) {
                 // Remove in reverse order to maintain indices
                 for (auto it = transitionsToRemove.rbegin(); it != transitionsToRemove.rend(); ++it) {
-                    LOG_DEBUG("ConflictResolutionHelper: Removing preempted transition at index {}", *it);
+                    SCE_LOG_DEBUG("ConflictResolutionHelper: Removing preempted transition at index {}", *it);
                     filteredTransitions.erase(filteredTransitions.begin() + *it);
                 }
 
-                LOG_DEBUG("ConflictResolutionHelper: Adding transition {} -> {}", static_cast<int>(t1.source),
+                SCE_LOG_DEBUG("ConflictResolutionHelper: Adding transition {} -> {}", static_cast<int>(t1.source),
                           static_cast<int>(t1.target));
                 filteredTransitions.push_back(t1);
             }
         }
 
-        LOG_DEBUG("ConflictResolutionHelper::removeConflictingTransitions: Filtered to {} transitions",
+        SCE_LOG_DEBUG("ConflictResolutionHelper::removeConflictingTransitions: Filtered to {} transitions",
                   filteredTransitions.size());
 
         return filteredTransitions;
@@ -497,7 +497,7 @@ struct ConflictResolutionHelperString {
                                  IsParallelFunc isParallelState) {
         std::vector<TransitionDescriptor> filteredTransitions;
 
-        LOG_DEBUG("ConflictResolutionHelperString::removeConflictingTransitions: Processing {} transitions",
+        SCE_LOG_DEBUG("ConflictResolutionHelperString::removeConflictingTransitions: Processing {} transitions",
                   enabledTransitions.size());
 
         for (const auto &t1 : enabledTransitions) {
@@ -518,7 +518,7 @@ struct ConflictResolutionHelperString {
                 if (!hasConflict) {
                     if (t1.target == t2.source || t2.target == t1.source) {
                         hasConflict = true;
-                        LOG_DEBUG(
+                        SCE_LOG_DEBUG(
                             "ConflictResolutionHelperString: Target/source conflict: {} -> {} conflicts with {} -> {}",
                             t1.source, t1.target, t2.source, t2.target);
                     }
@@ -530,7 +530,7 @@ struct ConflictResolutionHelperString {
                         if (isParallelState(exitState)) {
                             if (isDescendantOf(t2.source, exitState, getParent)) {
                                 hasConflict = true;
-                                LOG_DEBUG("ConflictResolutionHelperString: Parallel conflict: t1 exits parallel state "
+                                SCE_LOG_DEBUG("ConflictResolutionHelperString: Parallel conflict: t1 exits parallel state "
                                           "{} which is ancestor of t2's source {}",
                                           exitState, t2.source);
                                 break;
@@ -545,7 +545,7 @@ struct ConflictResolutionHelperString {
                         if (isParallelState(exitState)) {
                             if (isDescendantOf(t1.source, exitState, getParent)) {
                                 hasConflict = true;
-                                LOG_DEBUG("ConflictResolutionHelperString: Parallel conflict: t2 exits parallel state "
+                                SCE_LOG_DEBUG("ConflictResolutionHelperString: Parallel conflict: t2 exits parallel state "
                                           "{} which is ancestor of t1's source {}",
                                           exitState, t1.source);
                                 break;
@@ -555,29 +555,29 @@ struct ConflictResolutionHelperString {
                 }
 
                 if (hasConflict) {
-                    LOG_DEBUG("ConflictResolutionHelperString: Conflict detected: {} -> {} vs {} -> {}", t1.source,
+                    SCE_LOG_DEBUG("ConflictResolutionHelperString: Conflict detected: {} -> {} vs {} -> {}", t1.source,
                               t1.target, t2.source, t2.target);
 
                     // W3C SCXML Appendix D.2: Special case for target/source conflicts
                     if (t1.target == t2.source) {
-                        LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (target/source conflict - entering "
+                        SCE_LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (target/source conflict - entering "
                                   "state wins)",
                                   t1.source, t2.source);
                         transitionsToRemove.push_back(i);
                     } else if (t2.target == t1.source) {
-                        LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (target/source conflict - entering "
+                        SCE_LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (target/source conflict - entering "
                                   "state wins)",
                                   t2.source, t1.source);
                         t1Preempted = true;
                     }
                     // If t1's source is descendant of t2's source, t1 preempts t2
                     else if (isDescendantOf(t1.source, t2.source, getParent)) {
-                        LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (descendant rule)", t1.source,
+                        SCE_LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (descendant rule)", t1.source,
                                   t2.source);
                         transitionsToRemove.push_back(i);
                     } else {
                         // Otherwise t2 preempts t1 (document order)
-                        LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (document order)", t2.source,
+                        SCE_LOG_DEBUG("ConflictResolutionHelperString: {} preempts {} (document order)", t2.source,
                                   t1.source);
                         t1Preempted = true;
                     }
@@ -593,7 +593,7 @@ struct ConflictResolutionHelperString {
             }
         }
 
-        LOG_DEBUG("ConflictResolutionHelperString::removeConflictingTransitions: Filtered to {} transitions",
+        SCE_LOG_DEBUG("ConflictResolutionHelperString::removeConflictingTransitions: Filtered to {} transitions",
                   filteredTransitions.size());
 
         return filteredTransitions;

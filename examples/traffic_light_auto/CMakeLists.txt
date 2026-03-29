@@ -10,7 +10,7 @@ sce_add_state_machine(
 )
 
 # Link SCE library (provides StaticExecutionEngine headers)
-target_link_libraries(traffic_light_auto_example PRIVATE sce_unified)
+target_link_libraries(traffic_light_auto_example PRIVATE sce_runtime)
 
 # C++17 required
 target_compile_features(traffic_light_auto_example PRIVATE cxx_std_17)

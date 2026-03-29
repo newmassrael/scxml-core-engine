@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AotTestBase.h"
+#include "common/LogMacros.h"
 #include "AotTestRegistry.h"
 #include <thread>
 
@@ -51,12 +52,12 @@ public:
         if constexpr (requires { Derived::PASS_STATE; }) {
             // Manual test or custom success state
             isPass = (currentState == Derived::PASS_STATE);
-            LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, PASS_STATE={}, isPass={}",
+            SCE_LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, PASS_STATE={}, isPass={}",
                       static_cast<int>(currentState), static_cast<int>(Derived::PASS_STATE), isPass);
         } else {
             // Standard test: success = Pass state
             isPass = (currentState == SM::State::Pass);
-            LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}, isPass={}",
+            SCE_LOG_DEBUG("ScheduledAotTest: After runUntilCompletion, getCurrentState()={}, SM::State::Pass={}, isPass={}",
                       static_cast<int>(currentState), static_cast<int>(SM::State::Pass), isPass);
         }
         bool result = isPass;

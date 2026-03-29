@@ -43,7 +43,7 @@ add_executable(benchmark_event_scheduler
 )
 target_link_libraries(benchmark_event_scheduler
     PRIVATE
-        sce_unified
+        sce_runtime
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads
@@ -55,7 +55,7 @@ add_executable(benchmark_jsengine
 )
 target_link_libraries(benchmark_jsengine
     PRIVATE
-        sce_unified
+        sce_runtime
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads
@@ -67,7 +67,7 @@ add_executable(benchmark_statemachine
 )
 target_link_libraries(benchmark_statemachine
     PRIVATE
-        sce_unified
+        sce_runtime
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads
@@ -79,7 +79,7 @@ add_executable(benchmark_async_dispatcher
 )
 target_link_libraries(benchmark_async_dispatcher
     PRIVATE
-        sce_unified
+        sce_runtime
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads
@@ -91,7 +91,7 @@ add_executable(benchmark_timer_accuracy
 )
 target_link_libraries(benchmark_timer_accuracy
     PRIVATE
-        sce_unified
+        sce_runtime
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads
@@ -103,7 +103,7 @@ add_executable(benchmark_memory_footprint
 )
 target_link_libraries(benchmark_memory_footprint
     PRIVATE
-        sce_unified
+        sce_runtime
         benchmark::benchmark
         benchmark::benchmark_main
         Threads::Threads

@@ -1,5 +1,5 @@
 #include "events/HttpEventCoordinator.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 
 namespace SCE {
@@ -15,7 +15,7 @@ HttpEventCoordinator::HttpEventCoordinator(const HttpCoordinatorConfig &config)
     // Set up receiver callback to handle incoming events
     receiver_->setEventCallback([this](const EventDescriptor &event) -> bool { return handleIncomingEvent(event); });
 
-    LOG_DEBUG("HttpEventCoordinator: Created with webhook endpoint: {}", receiver_->getReceiveEndpoint());
+    SCE_LOG_DEBUG("HttpEventCoordinator: Created with webhook endpoint: {}", receiver_->getReceiveEndpoint());
 }
 
 HttpEventCoordinator::~HttpEventCoordinator() {
@@ -24,37 +24,37 @@ HttpEventCoordinator::~HttpEventCoordinator() {
 
 bool HttpEventCoordinator::start() {
     if (running_) {
-        LOG_WARN("HttpEventCoordinator: Already running");
+        SCE_LOG_WARN("HttpEventCoordinator: Already running");
         return false;
     }
 
     // Validate configuration
     auto validationErrors = validate();
     if (!validationErrors.empty()) {
-        LOG_ERROR("HttpEventCoordinator: Configuration validation failed:");
+        SCE_LOG_ERROR("HttpEventCoordinator: Configuration validation failed:");
         for (const auto &error : validationErrors) {
-            LOG_ERROR("  - {}", error);
+            SCE_LOG_ERROR("  - {}", error);
         }
         return false;
     }
 
-    LOG_INFO("HttpEventCoordinator: Starting HTTP event coordination");
+    SCE_LOG_INFO("HttpEventCoordinator: Starting HTTP event coordination");
 
     // Start receiver if auto-start is enabled
     if (config_.autoStartReceiver) {
         if (!receiver_->startReceiving()) {
-            LOG_ERROR("HttpEventCoordinator: Failed to start HTTP event receiver");
+            SCE_LOG_ERROR("HttpEventCoordinator: Failed to start HTTP event receiver");
             return false;
         }
-        LOG_INFO("HttpEventCoordinator: HTTP event receiver started at: {}", receiver_->getReceiveEndpoint());
+        SCE_LOG_INFO("HttpEventCoordinator: HTTP event receiver started at: {}", receiver_->getReceiveEndpoint());
     }
 
     shutdownRequested_ = false;
     running_ = true;
 
-    LOG_INFO("HttpEventCoordinator: HTTP event coordination started successfully");
-    LOG_INFO("HttpEventCoordinator: W3C compliance: {}", config_.enableW3CCompliance ? "enabled" : "disabled");
-    LOG_INFO("HttpEventCoordinator: Event loopback: {}", config_.enableEventLoopback ? "enabled" : "disabled");
+    SCE_LOG_INFO("HttpEventCoordinator: HTTP event coordination started successfully");
+    SCE_LOG_INFO("HttpEventCoordinator: W3C compliance: {}", config_.enableW3CCompliance ? "enabled" : "disabled");
+    SCE_LOG_INFO("HttpEventCoordinator: Event loopback: {}", config_.enableEventLoopback ? "enabled" : "disabled");
 
     return true;
 }
@@ -64,7 +64,7 @@ bool HttpEventCoordinator::stop() {
         return true;
     }
 
-    LOG_INFO("HttpEventCoordinator: Stopping HTTP event coordination");
+    SCE_LOG_INFO("HttpEventCoordinator: Stopping HTTP event coordination");
 
     shutdownRequested_ = true;
     running_ = false;
@@ -74,7 +74,7 @@ bool HttpEventCoordinator::stop() {
         receiver_->stopReceiving();
     }
 
-    LOG_INFO("HttpEventCoordinator: HTTP event coordination stopped");
+    SCE_LOG_INFO("HttpEventCoordinator: HTTP event coordination stopped");
     return true;
 }
 
@@ -95,7 +95,7 @@ std::future<SendResult> HttpEventCoordinator::sendEvent(const EventDescriptor &e
                 return SendResult::error("Coordinator not running", SendResult::ErrorType::INTERNAL_ERROR);
             }
 
-            LOG_DEBUG("HttpEventCoordinator: Sending event '{}' to '{}'", event.eventName, targetUrl);
+            SCE_LOG_DEBUG("HttpEventCoordinator: Sending event '{}' to '{}'", event.eventName, targetUrl);
 
             // Convert SCXML event to HTTP request using bridge
             HttpRequest httpRequest = bridge_->scxmlToHttpRequest(event, targetUrl);
@@ -124,14 +124,14 @@ std::future<SendResult> HttpEventCoordinator::sendEvent(const EventDescriptor &e
             auto sendFuture = httpTarget->send(httpEvent);
             auto result = sendFuture.get();
 
-            LOG_DEBUG("HttpEventCoordinator: HTTP send result: success={}, sendId='{}'", result.isSuccess,
+            SCE_LOG_DEBUG("HttpEventCoordinator: HTTP send result: success={}, sendId='{}'", result.isSuccess,
                       result.sendId);
 
             return result;
 
         } catch (const std::exception &e) {
             processingErrors_++;
-            LOG_ERROR("HttpEventCoordinator: Exception sending event: {}", e.what());
+            SCE_LOG_ERROR("HttpEventCoordinator: Exception sending event: {}", e.what());
             return SendResult::error("Exception during send: " + std::string(e.what()),
                                      SendResult::ErrorType::INTERNAL_ERROR);
         }
@@ -216,7 +216,7 @@ std::string HttpEventCoordinator::getDebugInfo() const {
 
 bool HttpEventCoordinator::updateConfig(const HttpCoordinatorConfig &config) {
     if (running_) {
-        LOG_ERROR("HttpEventCoordinator: Cannot update configuration while running");
+        SCE_LOG_ERROR("HttpEventCoordinator: Cannot update configuration while running");
         return false;
     }
 
@@ -232,7 +232,7 @@ bool HttpEventCoordinator::updateConfig(const HttpCoordinatorConfig &config) {
         bridge_->updateConfig(config_.bridgeConfig);
     }
 
-    LOG_DEBUG("HttpEventCoordinator: Configuration updated");
+    SCE_LOG_DEBUG("HttpEventCoordinator: Configuration updated");
     return true;
 }
 
@@ -271,7 +271,7 @@ void HttpEventCoordinator::setEventLoopback(bool enabled, const std::string &eve
     config_.enableEventLoopback = enabled;
     config_.loopbackEventPrefix = eventPrefix;
 
-    LOG_DEBUG("HttpEventCoordinator: Event loopback {} with prefix '{}'", enabled ? "enabled" : "disabled",
+    SCE_LOG_DEBUG("HttpEventCoordinator: Event loopback {} with prefix '{}'", enabled ? "enabled" : "disabled",
               eventPrefix);
 }
 
@@ -279,12 +279,12 @@ bool HttpEventCoordinator::handleIncomingEvent(const EventDescriptor &event) {
     eventsReceived_++;
 
     try {
-        LOG_DEBUG("HttpEventCoordinator: Handling incoming event: '{}'", event.eventName);
+        SCE_LOG_DEBUG("HttpEventCoordinator: Handling incoming event: '{}'", event.eventName);
 
         // Check if we should process this event
         if (!shouldProcessEvent(event)) {
             eventsFiltered_++;
-            LOG_DEBUG("HttpEventCoordinator: Event '{}' filtered out", event.eventName);
+            SCE_LOG_DEBUG("HttpEventCoordinator: Event '{}' filtered out", event.eventName);
             return true;  // Filtered events are considered "handled"
         }
 
@@ -304,7 +304,7 @@ bool HttpEventCoordinator::handleIncomingEvent(const EventDescriptor &event) {
 
     } catch (const std::exception &e) {
         processingErrors_++;
-        LOG_ERROR("HttpEventCoordinator: Exception handling incoming event '{}': {}", event.eventName, e.what());
+        SCE_LOG_ERROR("HttpEventCoordinator: Exception handling incoming event '{}': {}", event.eventName, e.what());
         return false;
     }
 }
@@ -312,7 +312,7 @@ bool HttpEventCoordinator::handleIncomingEvent(const EventDescriptor &event) {
 bool HttpEventCoordinator::processEvent(const EventDescriptor &event) {
     // Handle event loopback for testing
     if (config_.enableEventLoopback && event.eventName.starts_with(config_.loopbackEventPrefix)) {
-        LOG_DEBUG("HttpEventCoordinator: Processing loopback event '{}'", event.eventName);
+        SCE_LOG_DEBUG("HttpEventCoordinator: Processing loopback event '{}'", event.eventName);
 
         // For loopback events, we can simulate responses or just log them
         if (eventCallback_) {
@@ -327,7 +327,7 @@ bool HttpEventCoordinator::processEvent(const EventDescriptor &event) {
     }
 
     // No callback configured - this might be an error in production
-    LOG_WARN("HttpEventCoordinator: No event callback configured, cannot process event '{}'", event.eventName);
+    SCE_LOG_WARN("HttpEventCoordinator: No event callback configured, cannot process event '{}'", event.eventName);
     return false;
 }
 
@@ -348,7 +348,7 @@ void HttpEventCoordinator::logEventProcessing(const EventDescriptor &event, bool
     }
 
     // Default logging
-    LOG_DEBUG("HttpEventCoordinator: Event '{}' processed: {}", event.eventName, success ? "success" : "failed");
+    SCE_LOG_DEBUG("HttpEventCoordinator: Event '{}' processed: {}", event.eventName, success ? "success" : "failed");
 }
 
 bool HttpEventCoordinator::validateTypeUri(const std::string &typeUri) const {
@@ -367,7 +367,7 @@ std::shared_ptr<HttpEventTarget> HttpEventCoordinator::createHttpTarget(const st
         return std::make_shared<HttpEventTarget>(targetUrl);
 
     } catch (const std::exception &e) {
-        LOG_ERROR("HttpEventCoordinator: Failed to create HTTP target for '{}': {}", targetUrl, e.what());
+        SCE_LOG_ERROR("HttpEventCoordinator: Failed to create HTTP target for '{}': {}", targetUrl, e.what());
         return nullptr;
     }
 }

@@ -1,6 +1,6 @@
 #include "scripting/JSExecutionEngineImpl.h"
 #include "SCXMLTypes.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "runtime/StateMachine.h"
 #include <chrono>
 #include <cstring>
@@ -9,7 +9,7 @@
 namespace SCE {
 
 JSExecutionEngineImpl::JSExecutionEngineImpl() {
-    LOG_DEBUG("JSExecutionEngineImpl: Constructor started");
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Constructor started");
 }
 
 JSExecutionEngineImpl::~JSExecutionEngineImpl() {
@@ -18,16 +18,16 @@ JSExecutionEngineImpl::~JSExecutionEngineImpl() {
 
 bool JSExecutionEngineImpl::initialize() {
     if (initialized_.load()) {
-        LOG_DEBUG("JSExecutionEngineImpl: Already initialized");
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Already initialized");
         return true;
     }
 
-    LOG_DEBUG("JSExecutionEngineImpl: Starting initialization...");
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Starting initialization...");
 
     // Create QuickJS runtime
     runtime_ = JS_NewRuntime();
     if (!runtime_) {
-        LOG_ERROR("JSExecutionEngineImpl: Failed to create QuickJS runtime");
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Failed to create QuickJS runtime");
         return false;
     }
 
@@ -36,15 +36,15 @@ bool JSExecutionEngineImpl::initialize() {
     executionThread_ = std::thread(&JSExecutionEngineImpl::executionWorker, this);
 
     initialized_ = true;
-    LOG_DEBUG("JSExecutionEngineImpl: Initialization completed");
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Initialization completed");
     return true;
 }
 
 void JSExecutionEngineImpl::shutdown() {
-    LOG_DEBUG("JSExecutionEngineImpl: shutdown() called - shouldStop: {}", shouldStop_.load());
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: shutdown() called - shouldStop: {}", shouldStop_.load());
 
     if (shouldStop_) {
-        LOG_DEBUG("JSExecutionEngineImpl: Already shutting down, returning");
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Already shutting down, returning");
         return;
     }
 
@@ -54,9 +54,9 @@ void JSExecutionEngineImpl::shutdown() {
 
     {
         std::lock_guard<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSExecutionEngineImpl: Queue operation - before enqueue: size={}", requestQueue_.size());
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Queue operation - before enqueue: size={}", requestQueue_.size());
         requestQueue_.push(std::move(request));
-        LOG_DEBUG("JSExecutionEngineImpl: Queue operation - after enqueue: size={}", requestQueue_.size());
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Queue operation - after enqueue: size={}", requestQueue_.size());
     }
     queueCondition_.notify_one();
 
@@ -64,7 +64,7 @@ void JSExecutionEngineImpl::shutdown() {
     try {
         future.get();
     } catch (const std::exception &e) {
-        LOG_ERROR("JSExecutionEngineImpl: Exception during shutdown: {}", e.what());
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Exception during shutdown: {}", e.what());
     }
 
     // Signal thread to stop and wait for it
@@ -72,16 +72,16 @@ void JSExecutionEngineImpl::shutdown() {
     queueCondition_.notify_all();
 
     if (executionThread_.joinable()) {
-        LOG_DEBUG("JSExecutionEngineImpl: Attempting to join worker thread...");
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Attempting to join worker thread...");
         auto start = std::chrono::steady_clock::now();
         executionThread_.join();
         auto duration =
             std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
-        LOG_DEBUG("JSExecutionEngineImpl: Worker thread joined successfully in {}ms", duration);
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker thread joined successfully in {}ms", duration);
     }
 
     initialized_ = false;
-    LOG_DEBUG("JSExecutionEngineImpl: Shutdown complete");
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Shutdown complete");
 }
 
 bool JSExecutionEngineImpl::isInitialized() const {
@@ -184,14 +184,14 @@ std::future<JSResult> JSExecutionEngineImpl::setupSystemVariables(const std::str
 bool JSExecutionEngineImpl::registerGlobalFunction(
     const std::string &functionName, std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) {
     if (functionName.empty() || !callback) {
-        LOG_ERROR("JSExecutionEngineImpl: Invalid function name or callback for global function registration");
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Invalid function name or callback for global function registration");
         return false;
     }
 
     std::lock_guard<std::mutex> lock(globalFunctionsMutex_);
     globalFunctions_[functionName] = std::move(callback);
 
-    LOG_DEBUG("JSExecutionEngineImpl: Registered global function: {}", functionName);
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Registered global function: {}", functionName);
     return true;
 }
 
@@ -219,7 +219,7 @@ void JSExecutionEngineImpl::collectGarbage() {
     try {
         future.get();  // Wait for completion
     } catch (const std::exception &e) {
-        LOG_ERROR("JSExecutionEngineImpl: Exception during garbage collection: {}", e.what());
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Exception during garbage collection: {}", e.what());
     }
 }
 
@@ -251,35 +251,35 @@ bool JSExecutionEngineImpl::isVariablePreInitialized(const std::string &sessionI
 // === ISessionObserver Implementation ===
 
 void JSExecutionEngineImpl::onSessionCreated(const std::string &sessionId, const std::string &parentSessionId) {
-    LOG_DEBUG("JSExecutionEngineImpl: Observer notification - session created: {}", sessionId);
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Observer notification - session created: {}", sessionId);
 
     if (!createSessionContextInternal(sessionId, parentSessionId)) {
-        LOG_ERROR("JSExecutionEngineImpl: Failed to create JavaScript context for session: {}", sessionId);
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Failed to create JavaScript context for session: {}", sessionId);
     }
 }
 
 void JSExecutionEngineImpl::onSessionDestroyed(const std::string &sessionId) {
-    LOG_DEBUG("JSExecutionEngineImpl: Observer notification - session destroyed: {}", sessionId);
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Observer notification - session destroyed: {}", sessionId);
 
     if (!destroySessionContextInternal(sessionId)) {
-        LOG_ERROR("JSExecutionEngineImpl: Failed to cleanup JavaScript context for session: {}", sessionId);
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Failed to cleanup JavaScript context for session: {}", sessionId);
     }
 }
 
 void JSExecutionEngineImpl::onSessionSystemVariablesUpdated(const std::string &sessionId,
                                                             const std::string &sessionName,
                                                             const std::vector<std::string> &ioProcessors) {
-    LOG_DEBUG("JSExecutionEngineImpl: Observer notification - system variables updated for session: {}", sessionId);
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Observer notification - system variables updated for session: {}", sessionId);
 
     // Update internal session info and setup system variables
     auto future = setupSystemVariables(sessionId, sessionName, ioProcessors);
     try {
         auto result = future.get();
         if (!result.isSuccess()) {
-            LOG_ERROR("JSExecutionEngineImpl: Failed to update system variables for session: {}", sessionId);
+            SCE_LOG_ERROR("JSExecutionEngineImpl: Failed to update system variables for session: {}", sessionId);
         }
     } catch (const std::exception &e) {
-        LOG_ERROR("JSExecutionEngineImpl: Exception updating system variables for session {}: {}", sessionId, e.what());
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Exception updating system variables for session {}: {}", sessionId, e.what());
     }
 }
 
@@ -287,67 +287,67 @@ void JSExecutionEngineImpl::onSessionSystemVariablesUpdated(const std::string &s
 
 void JSExecutionEngineImpl::setStateMachine(StateMachine *stateMachine, const std::string &sessionId) {
     if (!stateMachine || sessionId.empty()) {
-        LOG_ERROR("JSExecutionEngineImpl: Invalid parameters for StateMachine registration");
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Invalid parameters for StateMachine registration");
         return;
     }
 
     std::lock_guard<std::mutex> lock(stateMachinesMutex_);
     stateMachines_[sessionId] = stateMachine;
-    LOG_DEBUG("JSExecutionEngineImpl: Registered StateMachine for session: {}", sessionId);
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Registered StateMachine for session: {}", sessionId);
 }
 
 void JSExecutionEngineImpl::removeStateMachine(const std::string &sessionId) {
     std::lock_guard<std::mutex> lock(stateMachinesMutex_);
     auto removed = stateMachines_.erase(sessionId);
     if (removed > 0) {
-        LOG_DEBUG("JSExecutionEngineImpl: Removed StateMachine for session: {}", sessionId);
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Removed StateMachine for session: {}", sessionId);
     }
 }
 
 // === Private Implementation ===
 
 void JSExecutionEngineImpl::executionWorker() {
-    LOG_DEBUG("JSExecutionEngineImpl: Worker LOOP START - Thread ID: {}",
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker LOOP START - Thread ID: {}",
               std::hash<std::thread::id>{}(std::this_thread::get_id()));
 
     if (!runtime_) {
-        LOG_ERROR("JSExecutionEngineImpl: Worker thread started without QuickJS runtime");
+        SCE_LOG_ERROR("JSExecutionEngineImpl: Worker thread started without QuickJS runtime");
         return;
     }
 
-    LOG_DEBUG("JSExecutionEngineImpl: QuickJS runtime ready in worker thread");
-    LOG_DEBUG("JSExecutionEngineImpl: Worker thread initialization complete");
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: QuickJS runtime ready in worker thread");
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker thread initialization complete");
 
     while (!shouldStop_) {
         std::unique_lock<std::mutex> lock(queueMutex_);
-        LOG_DEBUG("JSExecutionEngineImpl: Worker loop iteration - shouldStop: {}, queue size: {}", shouldStop_.load(),
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker loop iteration - shouldStop: {}, queue size: {}", shouldStop_.load(),
                   requestQueue_.size());
 
         queueCondition_.wait(lock, [this] { return !requestQueue_.empty() || shouldStop_; });
 
         if (shouldStop_) {
-            LOG_DEBUG("JSExecutionEngineImpl: Worker woke up - shouldStop: true, queue size: {}", requestQueue_.size());
+            SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker woke up - shouldStop: true, queue size: {}", requestQueue_.size());
             break;
         }
 
         if (!requestQueue_.empty()) {
-            LOG_DEBUG("JSExecutionEngineImpl: Worker woke up - shouldStop: false, queue size: {}",
+            SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker woke up - shouldStop: false, queue size: {}",
                       requestQueue_.size());
             auto request = std::move(requestQueue_.front());
             requestQueue_.pop();
             lock.unlock();
 
-            LOG_DEBUG("JSExecutionEngineImpl: Processing request type: {}", static_cast<int>(request->type));
+            SCE_LOG_DEBUG("JSExecutionEngineImpl: Processing request type: {}", static_cast<int>(request->type));
             try {
                 processExecutionRequest(std::move(request));
-                LOG_DEBUG("JSExecutionEngineImpl: Request processed successfully");
+                SCE_LOG_DEBUG("JSExecutionEngineImpl: Request processed successfully");
             } catch (const std::exception &e) {
-                LOG_ERROR("JSExecutionEngineImpl: Exception processing request: {}", e.what());
+                SCE_LOG_ERROR("JSExecutionEngineImpl: Exception processing request: {}", e.what());
             }
         }
     }
 
-    LOG_DEBUG("JSExecutionEngineImpl: Worker LOOP END - shouldStop: {}", shouldStop_.load());
+    SCE_LOG_DEBUG("JSExecutionEngineImpl: Worker LOOP END - shouldStop: {}", shouldStop_.load());
 }
 
 size_t JSExecutionEngineImpl::getMemoryUsageInternal() const {
@@ -363,7 +363,7 @@ size_t JSExecutionEngineImpl::getMemoryUsageInternal() const {
 void JSExecutionEngineImpl::collectGarbageInternal() {
     if (runtime_) {
         JS_RunGC(runtime_);
-        LOG_DEBUG("JSExecutionEngineImpl: Garbage collection completed");
+        SCE_LOG_DEBUG("JSExecutionEngineImpl: Garbage collection completed");
     }
 }
 

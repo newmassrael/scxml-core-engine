@@ -1,6 +1,6 @@
 // InvokeParser.cpp
 #include "InvokeParser.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
 
@@ -8,17 +8,17 @@
 #endif
 
 SCE::InvokeParser::InvokeParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
-    LOG_DEBUG("Creating invoke parser");
+    SCE_LOG_DEBUG("Creating invoke parser");
 }
 
 SCE::InvokeParser::~InvokeParser() {
-    LOG_DEBUG("Destroying invoke parser");
+    SCE_LOG_DEBUG("Destroying invoke parser");
 }
 
 std::shared_ptr<SCE::IInvokeNode>
 SCE::InvokeParser::parseInvokeNode(const std::shared_ptr<IXMLElement> &invokeElement) {
     if (!invokeElement) {
-        LOG_WARN("Null invoke element");
+        SCE_LOG_WARN("Null invoke element");
         return nullptr;
     }
 
@@ -44,7 +44,7 @@ SCE::InvokeParser::parseInvokeNode(const std::shared_ptr<IXMLElement> &invokeEle
     } else if (invokeElement->hasAttribute("srcexpr")) {
         std::string srcExpr = invokeElement->getAttribute("srcexpr");
         invokeNode->setSrcExpr(srcExpr);
-        LOG_DEBUG("srcexpr attribute set: {}", srcExpr);
+        SCE_LOG_DEBUG("srcexpr attribute set: {}", srcExpr);
     }
 
     // Process idlocation attribute
@@ -74,7 +74,7 @@ SCE::InvokeParser::parseInvokeNode(const std::shared_ptr<IXMLElement> &invokeEle
         parseFinalizeElement(finalizeElement, invokeNode);
     }
 
-    LOG_DEBUG("Invoke node parsed successfully: {}", id);
+    SCE_LOG_DEBUG("Invoke node parsed successfully: {}", id);
     return invokeNode;
 }
 
@@ -83,12 +83,12 @@ SCE::InvokeParser::parseInvokesInState(const std::shared_ptr<IXMLElement> &state
     std::vector<std::shared_ptr<IInvokeNode>> invokeNodes;
 
     if (!stateElement) {
-        LOG_WARN("Null state element");
+        SCE_LOG_WARN("Null state element");
         return invokeNodes;
     }
 
     auto invokeElements = SCE::ParsingCommon::findChildElements(stateElement, "invoke");
-    LOG_DEBUG("Found {} invoke elements", invokeElements.size());
+    SCE_LOG_DEBUG("Found {} invoke elements", invokeElements.size());
 
     for (const auto &invokeElement : invokeElements) {
         auto invokeNode = parseInvokeNode(invokeElement);
@@ -111,7 +111,7 @@ void SCE::InvokeParser::parseFinalizeElement(const std::shared_ptr<IXMLElement> 
     std::string finalizeContent = XmlSerializationHelper::serializeContent(finalizeElement);
     invokeNode->setFinalize(finalizeContent);
 
-    LOG_DEBUG("Finalize element parsed for invoke: {}, content: '{}'", invokeNode->getId(), finalizeContent);
+    SCE_LOG_DEBUG("Finalize element parsed for invoke: {}, content: '{}'", invokeNode->getId(), finalizeContent);
 }
 
 void SCE::InvokeParser::parseParamElements(const std::shared_ptr<IXMLElement> &invokeElement,
@@ -138,7 +138,7 @@ void SCE::InvokeParser::parseParamElements(const std::shared_ptr<IXMLElement> &i
 
         invokeNode->addParam(name, expr, location);
 
-        LOG_DEBUG("Param parsed: name={}", name);
+        SCE_LOG_DEBUG("Param parsed: name={}", name);
     }
 }
 
@@ -175,7 +175,7 @@ SCE::InvokeParser::parseParamElementsAndCreateDataItems(const std::shared_ptr<IX
             }
         }
 
-        LOG_DEBUG("Data item created for param: name={}", name);
+        SCE_LOG_DEBUG("Data item created for param: name={}", name);
     }
 
     return dataItems;
@@ -193,7 +193,7 @@ void SCE::InvokeParser::parseContentElement(const std::shared_ptr<IXMLElement> &
             // W3C SCXML test 530: Store expr for dynamic evaluation during invoke execution
             std::string contentExpr = contentElement->getAttribute("expr");
             invokeNode->setContentExpr(contentExpr);
-            LOG_DEBUG("Content element has expr attribute: '{}'", contentExpr);
+            SCE_LOG_DEBUG("Content element has expr attribute: '{}'", contentExpr);
             return;
         }
 
@@ -201,6 +201,6 @@ void SCE::InvokeParser::parseContentElement(const std::shared_ptr<IXMLElement> &
         // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
         std::string content = XmlSerializationHelper::serializeContent(contentElement);
         invokeNode->setContent(content);
-        LOG_DEBUG("Content element parsed with serialized XML");
+        SCE_LOG_DEBUG("Content element parsed with serialized XML");
     }
 }

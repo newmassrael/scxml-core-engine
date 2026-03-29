@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AotTestBase.h"
+#include "common/LogMacros.h"
 #include "AotTestRegistry.h"
 #include <thread>
 
@@ -46,7 +47,7 @@ public:
             isPass = (finalState == SM::State::Pass);
         }
 
-        LOG_DEBUG("AOT Test {}: isInFinalState={}, currentState={}, isPass={}", TEST_ID, isFinished,
+        SCE_LOG_DEBUG("AOT Test {}: isInFinalState={}, currentState={}, isPass={}", TEST_ID, isFinished,
                   static_cast<int>(finalState), isPass);
         return isFinished && isPass;
     }

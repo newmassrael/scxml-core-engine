@@ -1,5 +1,5 @@
 #include "common/JsonUtils.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <chrono>
 
 namespace SCE {
@@ -18,7 +18,7 @@ std::optional<json> JsonUtils::parseJson(const std::string &jsonString, std::str
         if (errorOut) {
             *errorOut = e.what();
         }
-        LOG_DEBUG("JsonUtils: Failed to parse JSON: {}", e.what());
+        SCE_LOG_DEBUG("JsonUtils: Failed to parse JSON: {}", e.what());
         return std::nullopt;
     }
 }

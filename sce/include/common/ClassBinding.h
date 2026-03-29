@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <functional>
 #include <mutex>
 #include <quickjs.h>
@@ -138,7 +138,7 @@ private:
     void createJSObject() {
         jsObject_ = JS_NewObjectClass(ctx_, getClassID());
         if (JS_IsException(jsObject_)) {
-            LOG_ERROR("Failed to create JS object for class {}", className_);
+            SCE_LOG_ERROR("Failed to create JS object for class {}", className_);
             jsObject_ = JS_UNDEFINED;  // Explicit initialization on error
             return;
         }

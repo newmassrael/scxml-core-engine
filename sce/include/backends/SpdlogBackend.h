@@ -40,12 +40,13 @@ public:
 
     void log(LogLevel level, const std::string &message, const std::source_location &loc) override;
     void setLevel(LogLevel level) override;
+    bool shouldLog(LogLevel level) const override;
     void flush() override;
 
 private:
     std::shared_ptr<spdlog::logger> logger_;
 
-    spdlog::level::level_enum convertLevel(LogLevel level);
+    spdlog::level::level_enum convertLevel(LogLevel level) const;
 };
 
 }  // namespace SCE

@@ -24,7 +24,7 @@ sce_add_state_machine(
 )
 
 # Link with SCE library
-target_link_libraries(my_app PRIVATE sce_unified)
+target_link_libraries(my_app PRIVATE sce_runtime)
 ```
 
 ## Function Parameters

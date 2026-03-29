@@ -1,4 +1,5 @@
 #include "states/ConcurrentRegion.h"
+#include "common/LogMacros.h"
 #include "actions/AssignAction.h"
 #include "actions/ScriptAction.h"
 #include "mocks/MockActionExecutor.h"
@@ -459,7 +460,7 @@ TEST_F(ConcurrentRegionTest, Validate_PassesForValidConfiguration) {
     // Valid configuration should have no validation errors
     if (!errors.empty()) {
         for (const auto &error : errors) {
-            LOG_ERROR("Unexpected validation error: {}", error);
+            SCE_LOG_ERROR("Unexpected validation error: {}", error);
         }
     }
 

@@ -1,18 +1,18 @@
 #include "parsing/DoneDataParser.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "parsing/ParsingCommon.h"
 
 SCE::DoneDataParser::DoneDataParser(std::shared_ptr<NodeFactory> factory) : factory_(factory) {
-    LOG_DEBUG("Creating DoneData parser");
+    SCE_LOG_DEBUG("Creating DoneData parser");
 }
 
 bool SCE::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &doneDataElement, IStateNode *stateNode) {
     if (!doneDataElement || !stateNode) {
-        LOG_ERROR("Null doneData element or state node");
+        SCE_LOG_ERROR("Null doneData element or state node");
         return false;
     }
 
-    LOG_DEBUG("Parsing <donedata> for state {}", stateNode->getId());
+    SCE_LOG_DEBUG("Parsing <donedata> for state {}", stateNode->getId());
 
     bool hasContent = false;
     bool hasParam = false;
@@ -21,7 +21,7 @@ bool SCE::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &done
     auto contentElement = ParsingCommon::findFirstChildElement(doneDataElement, "content");
     if (contentElement) {
         hasContent = parseContent(contentElement, stateNode);
-        LOG_DEBUG("Found <content> element: {}", (hasContent ? "valid" : "invalid"));
+        SCE_LOG_DEBUG("Found <content> element: {}", (hasContent ? "valid" : "invalid"));
     }
 
     // Parse <param> elements
@@ -32,11 +32,11 @@ bool SCE::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &done
         }
     }
 
-    LOG_DEBUG("Found {} <param> elements: {}", paramElements.size(), (hasParam ? "valid" : "invalid"));
+    SCE_LOG_DEBUG("Found {} <param> elements: {}", paramElements.size(), (hasParam ? "valid" : "invalid"));
 
     // <content> and <param> cannot be used together
     if (hasContent && hasParam) {
-        LOG_ERROR("<content> and <param> cannot be used together in <donedata>");
+        SCE_LOG_ERROR("<content> and <param> cannot be used together in <donedata>");
 
         // Clear conflict to satisfy XOR condition
         if (hasContent) {
@@ -57,7 +57,7 @@ bool SCE::DoneDataParser::parseDoneData(const std::shared_ptr<IXMLElement> &done
 
 bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &contentElement, IStateNode *stateNode) {
     if (!contentElement || !stateNode) {
-        LOG_ERROR("Null content element or state node");
+        SCE_LOG_ERROR("Null content element or state node");
         return false;
     }
 
@@ -65,20 +65,20 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
     std::string exprValue;
     if (contentElement->hasAttribute("expr")) {
         exprValue = contentElement->getAttribute("expr");
-        LOG_DEBUG("Found 'expr' attribute: {}", exprValue);
+        SCE_LOG_DEBUG("Found 'expr' attribute: {}", exprValue);
     }
 
     // Check content
     std::string textContent = contentElement->getTextContent();
     textContent = ParsingCommon::trimString(textContent);
     if (!textContent.empty()) {
-        LOG_DEBUG("Found text content: {}",
+        SCE_LOG_DEBUG("Found text content: {}",
                   (textContent.length() > 30 ? textContent.substr(0, 27) + "..." : textContent));
     }
 
     // expr and content cannot be used together
     if (!exprValue.empty() && !textContent.empty()) {
-        LOG_ERROR("<content> cannot have both 'expr' attribute and child content");
+        SCE_LOG_ERROR("<content> cannot have both 'expr' attribute and child content");
         return false;
     }
 
@@ -98,13 +98,13 @@ bool SCE::DoneDataParser::parseContent(const std::shared_ptr<IXMLElement> &conte
 
 bool SCE::DoneDataParser::parseParam(const std::shared_ptr<IXMLElement> &paramElement, IStateNode *stateNode) {
     if (!paramElement || !stateNode) {
-        LOG_ERROR("Null param element or state node");
+        SCE_LOG_ERROR("Null param element or state node");
         return false;
     }
 
     // name attribute (required)
     if (!paramElement->hasAttribute("name")) {
-        LOG_ERROR("<param> element must have 'name' attribute");
+        SCE_LOG_ERROR("<param> element must have 'name' attribute");
         return false;
     }
 
@@ -115,7 +115,7 @@ bool SCE::DoneDataParser::parseParam(const std::shared_ptr<IXMLElement> &paramEl
     bool hasLocation = paramElement->hasAttribute("location");
 
     if (hasExpr && hasLocation) {
-        LOG_ERROR("<param> cannot have both 'expr' and 'location' attributes");
+        SCE_LOG_ERROR("<param> cannot have both 'expr' and 'location' attributes");
         return false;
     }
 
@@ -123,7 +123,7 @@ bool SCE::DoneDataParser::parseParam(const std::shared_ptr<IXMLElement> &paramEl
     if (hasLocation) {
         std::string locationValue = paramElement->getAttribute("location");
         stateNode->addDoneDataParam(nameValue, locationValue);
-        LOG_DEBUG("Added param: {} with location: {}", nameValue, locationValue);
+        SCE_LOG_DEBUG("Added param: {} with location: {}", nameValue, locationValue);
         return true;
     }
 
@@ -131,10 +131,10 @@ bool SCE::DoneDataParser::parseParam(const std::shared_ptr<IXMLElement> &paramEl
     if (hasExpr) {
         std::string exprValue = paramElement->getAttribute("expr");
         stateNode->addDoneDataParam(nameValue, exprValue);
-        LOG_DEBUG("Added param: {} with expr: {}", nameValue, exprValue);
+        SCE_LOG_DEBUG("Added param: {} with expr: {}", nameValue, exprValue);
         return true;
     }
 
-    LOG_ERROR("<param> must have either 'expr' or 'location' attribute");
+    SCE_LOG_ERROR("<param> must have either 'expr' or 'location' attribute");
     return false;
 }

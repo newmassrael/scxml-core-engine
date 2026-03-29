@@ -8,15 +8,15 @@
     auto& jsEngine = ::SCE::JSEngine::instance();
     auto logResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.expr | escape_cpp }}").get();
     if (::SCE::JSEngine::isSuccess(logResult)) {
-        LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::SCE::JSEngine::resultToString(logResult));
+        SCE_LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::SCE::JSEngine::resultToString(logResult));
     } else {
-        LOG_ERROR("Failed to evaluate log expression: {{ action.expr | escape_cpp }}");
+        SCE_LOG_ERROR("Failed to evaluate log expression: {{ action.expr | escape_cpp }}");
     }
 }
 {% else %}
 // Convert JavaScript single quotes to C++ double quotes for string literals
-LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", {{ action.expr | replace("'", '"') }});
+SCE_LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", {{ action.expr | replace("'", '"') }});
 {% endif %}
 {% else %}
-LOG_INFO("{{ action.label }}");
+SCE_LOG_INFO("{{ action.label }}");
 {% endif %}

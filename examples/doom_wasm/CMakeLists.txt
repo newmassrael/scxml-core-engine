@@ -226,7 +226,7 @@ target_include_directories(doom_sce PRIVATE
 )
 
 target_link_libraries(doom_sce PRIVATE
-    sce_unified
+    sce_runtime
 )
 
 # Emscripten settings

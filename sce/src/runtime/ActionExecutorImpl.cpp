@@ -15,7 +15,7 @@
 #include "common/ForeachHelper.h"
 #include "common/ForeachValidator.h"
 #include "common/GuardHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/NamelistHelper.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
@@ -42,7 +42,7 @@ namespace SCE {
 ActionExecutorImpl::ActionExecutorImpl(const std::string &sessionId, std::shared_ptr<IEventDispatcher> eventDispatcher)
     : sessionId_(sessionId), eventDispatcher_(std::move(eventDispatcher)) {
     // EventRaiser will be injected via setEventRaiser() following dependency injection pattern
-    LOG_DEBUG("ActionExecutorImpl created for session: {} at address: {}", sessionId_, static_cast<void *>(this));
+    SCE_LOG_DEBUG("ActionExecutorImpl created for session: {} at address: {}", sessionId_, static_cast<void *>(this));
 }
 
 ActionExecutorImpl::~ActionExecutorImpl() {
@@ -50,23 +50,23 @@ ActionExecutorImpl::~ActionExecutorImpl() {
     if (eventDispatcher_) {
         try {
             JSEngine::instance().unregisterEventDispatcher(sessionId_);
-            LOG_DEBUG("ActionExecutorImpl: Unregistered EventDispatcher for session: {} during destruction",
+            SCE_LOG_DEBUG("ActionExecutorImpl: Unregistered EventDispatcher for session: {} during destruction",
                       sessionId_);
         } catch (const std::exception &e) {
-            LOG_WARN("ActionExecutorImpl: Failed to unregister EventDispatcher during destruction: {}", e.what());
+            SCE_LOG_WARN("ActionExecutorImpl: Failed to unregister EventDispatcher during destruction: {}", e.what());
         }
     }
-    LOG_DEBUG("ActionExecutorImpl destroyed for session: {}", sessionId_);
+    SCE_LOG_DEBUG("ActionExecutorImpl destroyed for session: {}", sessionId_);
 }
 
 bool ActionExecutorImpl::executeScript(const std::string &script) {
     if (script.empty()) {
-        LOG_WARN("Attempted to execute empty script");
+        SCE_LOG_WARN("Attempted to execute empty script");
         return true;  // Empty script is considered successful
     }
 
     if (!isSessionReady()) {
-        LOG_ERROR("Session {} not ready for script execution", sessionId_);
+        SCE_LOG_ERROR("Session {} not ready for script execution", sessionId_);
         return false;
     }
 
@@ -81,7 +81,7 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
             return false;
         }
 
-        LOG_DEBUG("Script executed successfully in session {}", sessionId_);
+        SCE_LOG_DEBUG("Script executed successfully in session {}", sessionId_);
         return true;
 
     } catch (const std::exception &e) {
@@ -94,7 +94,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
     // W3C SCXML 5.3, 5.4: Empty location check (shared with AOT via AssignHelper)
     // ARCHITECTURE.md: Zero Duplication - Use shared AssignHelper for cross-engine consistency
     if (!AssignHelper::isValidLocation(location)) {
-        LOG_ERROR("W3C SCXML 5.3/5.4/B.2: {}", AssignHelper::getInvalidLocationErrorMessage(location));
+        SCE_LOG_ERROR("W3C SCXML 5.3/5.4/B.2: {}", AssignHelper::getInvalidLocationErrorMessage(location));
         // W3C SCXML 5.4: Raise error.execution for invalid location
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", AssignHelper::getInvalidLocationErrorMessage(location));
@@ -105,7 +105,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
     // Implementation-specific: Variable name format validation (Interpreter engine only)
     // Checks regex pattern for valid variable identifiers (not shared with AOT)
     if (!isValidLocation(location)) {
-        LOG_ERROR("Invalid variable location: {}", location);
+        SCE_LOG_ERROR("Invalid variable location: {}", location);
         // W3C SCXML 5.4: Raise error.execution for invalid location
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", "Invalid assignment location: " + location);
@@ -114,7 +114,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
     }
 
     if (!isSessionReady()) {
-        LOG_ERROR("Session {} not ready for variable assignment", sessionId_);
+        SCE_LOG_ERROR("Session {} not ready for variable assignment", sessionId_);
         // W3C SCXML 5.9: Raise error.execution for session not ready
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", "Session not ready for assignment");
@@ -142,7 +142,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
             return false;
         }
 
-        LOG_DEBUG("Variable assigned: {} = {} (JS: {})", location, expr, jsLocation);
+        SCE_LOG_DEBUG("Variable assigned: {} = {} (JS: {})", location, expr, jsLocation);
         return true;
 
     } catch (const std::exception &e) {
@@ -157,16 +157,16 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
 
 std::string ActionExecutorImpl::evaluateExpression(const std::string &expression) {
     if (expression.empty()) {
-        LOG_DEBUG("Empty expression, returning empty string");
+        SCE_LOG_DEBUG("Empty expression, returning empty string");
         return "";
     }
 
-    LOG_DEBUG("Evaluating expression: '{}'", expression);
+    SCE_LOG_DEBUG("Evaluating expression: '{}'", expression);
 
     // CRITICAL: Check session ready state first - return empty string if session not ready
     // This ensures backward compatibility and matches expected behavior in tests
     if (!isSessionReady()) {
-        LOG_DEBUG("Session not ready, returning empty string for expression: '{}'", expression);
+        SCE_LOG_DEBUG("Session not ready, returning empty string for expression: '{}'", expression);
         return "";
     }
 
@@ -174,34 +174,34 @@ std::string ActionExecutorImpl::evaluateExpression(const std::string &expression
     // This follows W3C SCXML specification delegating expression evaluation to native data model
     std::string jsResult;
     if (tryJavaScriptEvaluation(expression, jsResult)) {
-        LOG_DEBUG("JavaScript evaluation succeeded: '{}' -> '{}'", expression, jsResult);
+        SCE_LOG_DEBUG("JavaScript evaluation succeeded: '{}' -> '{}'", expression, jsResult);
         return jsResult;
     }
 
     // W3C SCXML 6.2: If JavaScript evaluation fails (e.g., undefined variable in namelist),
     // throw exception to propagate error up the call stack (test 553)
     // This ensures send actions with invalid namelist are properly aborted
-    LOG_ERROR("JavaScript evaluation failed for expression: '{}'", expression);
+    SCE_LOG_ERROR("JavaScript evaluation failed for expression: '{}'", expression);
     throw std::runtime_error("Failed to evaluate expression: " + expression);
 }
 
 void ActionExecutorImpl::log(const std::string &level, const std::string &message) {
     // Map SCXML log levels to our logging system
     if (level == "error") {
-        LOG_ERROR("SCXML: {}", message);
+        SCE_LOG_ERROR("SCXML: {}", message);
     } else if (level == "warn") {
-        LOG_WARN("SCXML: {}", message);
+        SCE_LOG_WARN("SCXML: {}", message);
     } else if (level == "debug") {
-        LOG_DEBUG("SCXML: {}", message);
+        SCE_LOG_DEBUG("SCXML: {}", message);
     } else {
-        LOG_INFO("SCXML: {}", message);
+        SCE_LOG_INFO("SCXML: {}", message);
     }
 }
 
 bool ActionExecutorImpl::tryJavaScriptEvaluation(const std::string &expression, std::string &result) const {
     // Early return if session not ready - avoid unnecessary operations
     if (!isSessionReady()) {
-        LOG_DEBUG("Session not ready for expression: '{}'", expression);
+        SCE_LOG_DEBUG("Session not ready for expression: '{}'", expression);
         return false;
     }
 
@@ -210,7 +210,7 @@ bool ActionExecutorImpl::tryJavaScriptEvaluation(const std::string &expression, 
         // This is safe to call multiple times due to internal state checking
         const_cast<ActionExecutorImpl *>(this)->ensureCurrentEventSet();
 
-        LOG_DEBUG("Attempting JavaScript evaluation: '{}'", expression);
+        SCE_LOG_DEBUG("Attempting JavaScript evaluation: '{}'", expression);
 
         // IMPORTANT: Do NOT transform variable names here
         // TXMLConverter already transforms numeric IDs to varN format:
@@ -224,7 +224,7 @@ bool ActionExecutorImpl::tryJavaScriptEvaluation(const std::string &expression, 
         auto jsResult = JSEngine::instance().evaluateExpression(sessionId_, jsExpression).get();
 
         if (!jsResult.isSuccess()) {
-            LOG_DEBUG("JavaScript evaluation failed for '{}': not a "
+            SCE_LOG_DEBUG("JavaScript evaluation failed for '{}': not a "
                       "valid expression or runtime error",
                       expression);
             return false;
@@ -232,20 +232,20 @@ bool ActionExecutorImpl::tryJavaScriptEvaluation(const std::string &expression, 
 
         // Convert JavaScript result to string using the integrated API
         result = JSEngine::resultToString(jsResult, sessionId_, jsExpression);
-        LOG_DEBUG("JavaScript evaluation successful: '{}' -> '{}' (JS: '{}')", expression, result, jsExpression);
+        SCE_LOG_DEBUG("JavaScript evaluation successful: '{}' -> '{}' (JS: '{}')", expression, result, jsExpression);
         return true;
 
     } catch (const std::exception &e) {
-        LOG_DEBUG("Exception during JavaScript evaluation: '{}', error: {}", expression, e.what());
+        SCE_LOG_DEBUG("Exception during JavaScript evaluation: '{}', error: {}", expression, e.what());
         return false;
     } catch (...) {
-        LOG_ERROR("Unknown exception during JavaScript evaluation: '{}'", expression);
+        SCE_LOG_ERROR("Unknown exception during JavaScript evaluation: '{}'", expression);
         return false;
     }
 }
 
 std::string ActionExecutorImpl::interpretAsLiteral(const std::string &value) const {
-    LOG_DEBUG("Processing literal value: '{}'", value);
+    SCE_LOG_DEBUG("Processing literal value: '{}'", value);
 
     // Handle quoted string literals according to SCXML specification
     if (value.length() >= 2) {
@@ -255,7 +255,7 @@ std::string ActionExecutorImpl::interpretAsLiteral(const std::string &value) con
         // Check for matching quotes (double or single)
         if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
             std::string unquoted = value.substr(1, value.length() - 2);
-            LOG_DEBUG("Unquoted string literal: '{}' -> '{}'", value, unquoted);
+            SCE_LOG_DEBUG("Unquoted string literal: '{}' -> '{}'", value, unquoted);
             return unquoted;
         }
     }
@@ -263,7 +263,7 @@ std::string ActionExecutorImpl::interpretAsLiteral(const std::string &value) con
     // For all other values, return as-is (numbers, booleans, identifiers, etc.)
     // SCXML Specification: If a value cannot be evaluated as an expression,
     // it should be treated as a literal value
-    LOG_DEBUG("Returning literal as-is: '{}'", value);
+    SCE_LOG_DEBUG("Returning literal as-is: '{}'", value);
     return value;
 }
 
@@ -288,7 +288,7 @@ bool ActionExecutorImpl::hasVariable(const std::string &location) {
         return false;
 
     } catch (const std::exception &e) {
-        LOG_DEBUG("Error checking variable existence: {}", e.what());
+        SCE_LOG_DEBUG("Error checking variable existence: {}", e.what());
         return false;
     }
 }
@@ -298,16 +298,16 @@ std::string ActionExecutorImpl::getSessionId() const {
 }
 
 void ActionExecutorImpl::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
-    LOG_DEBUG("ActionExecutorImpl: Setting EventRaiser - eventRaiser is: {}", eventRaiser ? "VALID" : "NULL");
+    SCE_LOG_DEBUG("ActionExecutorImpl: Setting EventRaiser - eventRaiser is: {}", eventRaiser ? "VALID" : "NULL");
     eventRaiser_ = eventRaiser;
 
     // Use centralized EventRaiserService to eliminate code duplication
     if (eventRaiser) {
         if (EventRaiserService::getInstance().registerEventRaiser(sessionId_, eventRaiser)) {
-            LOG_DEBUG("ActionExecutorImpl: EventRaiser automatically registered via Service for session: {}",
+            SCE_LOG_DEBUG("ActionExecutorImpl: EventRaiser automatically registered via Service for session: {}",
                       sessionId_);
         } else {
-            LOG_DEBUG("ActionExecutorImpl: EventRaiser already registered for session: {}", sessionId_);
+            SCE_LOG_DEBUG("ActionExecutorImpl: EventRaiser already registered for session: {}", sessionId_);
         }
     }
 }
@@ -319,7 +319,7 @@ void ActionExecutorImpl::setImmediateMode(bool immediate) {
         auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
         if (eventRaiserImpl) {
             eventRaiserImpl->setImmediateMode(immediate);
-            LOG_DEBUG("ActionExecutorImpl: Set immediate mode to {}", immediate);
+            SCE_LOG_DEBUG("ActionExecutorImpl: Set immediate mode to {}", immediate);
         }
     }
 }
@@ -366,10 +366,10 @@ void ActionExecutorImpl::clearCurrentEvent() {
             std::shared_ptr<Event> nullEvent;
             auto result = JSEngine::instance().setCurrentEvent(sessionId_, nullEvent).get();
             if (!result.isSuccess()) {
-                LOG_DEBUG("Failed to clear current event");
+                SCE_LOG_DEBUG("Failed to clear current event");
             }
         } catch (const std::exception &e) {
-            LOG_DEBUG("Error clearing current event: {}", e.what());
+            SCE_LOG_DEBUG("Error clearing current event: {}", e.what());
         }
     }
 }
@@ -378,23 +378,23 @@ bool ActionExecutorImpl::isSessionReady() const {
     // SCXML Compliance: Check if JSEngine is available without blocking
     try {
         auto &jsEngine = JSEngine::instance();
-        LOG_DEBUG("ActionExecutorImpl: Using JSEngine at address: {}", static_cast<void *>(&jsEngine));
+        SCE_LOG_DEBUG("ActionExecutorImpl: Using JSEngine at address: {}", static_cast<void *>(&jsEngine));
         // Use a non-blocking check - if JSEngine is not properly initialized,
         // we should not block indefinitely
         bool hasSessionResult = jsEngine.hasSession(sessionId_);
-        LOG_DEBUG("ActionExecutorImpl: hasSession({}) returned: {}", sessionId_, hasSessionResult);
+        SCE_LOG_DEBUG("ActionExecutorImpl: hasSession({}) returned: {}", sessionId_, hasSessionResult);
 
         // Additional verification: check active sessions
         auto activeSessions = jsEngine.getActiveSessions();
-        LOG_DEBUG("ActionExecutorImpl: Active sessions count: {}", activeSessions.size());
+        SCE_LOG_DEBUG("ActionExecutorImpl: Active sessions count: {}", activeSessions.size());
         for (const auto &session : activeSessions) {
-            LOG_DEBUG("ActionExecutorImpl: Active session: {}", session);
+            SCE_LOG_DEBUG("ActionExecutorImpl: Active session: {}", session);
         }
 
         return hasSessionResult;
     } catch (const std::exception &e) {
         // If JSEngine is not available, consider session not ready
-        LOG_WARN("JSEngine not available for session check: {}", e.what());
+        SCE_LOG_WARN("JSEngine not available for session check: {}", e.what());
         return false;
     }
 }
@@ -404,9 +404,9 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     if (eventDispatcher_) {
         try {
             JSEngine::instance().unregisterEventDispatcher(sessionId_);
-            LOG_DEBUG("ActionExecutorImpl: Unregistered previous EventDispatcher for session: {}", sessionId_);
+            SCE_LOG_DEBUG("ActionExecutorImpl: Unregistered previous EventDispatcher for session: {}", sessionId_);
         } catch (const std::exception &e) {
-            LOG_WARN("ActionExecutorImpl: Failed to unregister previous EventDispatcher: {}", e.what());
+            SCE_LOG_WARN("ActionExecutorImpl: Failed to unregister previous EventDispatcher: {}", e.what());
         }
     }
 
@@ -417,13 +417,13 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     if (eventDispatcher_) {
         try {
             JSEngine::instance().registerEventDispatcher(sessionId_, eventDispatcher_);
-            LOG_DEBUG("ActionExecutorImpl: Registered EventDispatcher with JSEngine for session: {}", sessionId_);
+            SCE_LOG_DEBUG("ActionExecutorImpl: Registered EventDispatcher with JSEngine for session: {}", sessionId_);
         } catch (const std::exception &e) {
-            LOG_ERROR("ActionExecutorImpl: Failed to register EventDispatcher with JSEngine: {}", e.what());
+            SCE_LOG_ERROR("ActionExecutorImpl: Failed to register EventDispatcher with JSEngine: {}", e.what());
         }
     }
 
-    LOG_DEBUG("ActionExecutorImpl: Event dispatcher set for session: {}", sessionId_);
+    SCE_LOG_DEBUG("ActionExecutorImpl: Event dispatcher set for session: {}", sessionId_);
 }
 
 bool ActionExecutorImpl::isValidLocation(const std::string &location) const {
@@ -448,7 +448,7 @@ std::string ActionExecutorImpl::transformVariableName(const std::string &name) c
 }
 
 void ActionExecutorImpl::handleJSError(const std::string &operation, const std::string &errorMessage) const {
-    LOG_ERROR("JavaScript {} failed in session {}: {}", operation, sessionId_, errorMessage);
+    SCE_LOG_ERROR("JavaScript {} failed in session {}: {}", operation, sessionId_, errorMessage);
 }
 
 bool ActionExecutorImpl::ensureCurrentEventSet() {
@@ -463,7 +463,7 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
 
         // Skip _event update during assign actions - only update when processing actual events
         if (currentEventName_.empty()) {
-            LOG_DEBUG("Skipping _event update - no current event in context");
+            SCE_LOG_DEBUG("Skipping _event update - no current event in context");
             return true;
         }
 
@@ -493,7 +493,7 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
         return result.isSuccess();
 
     } catch (const std::exception &e) {
-        LOG_DEBUG("Error setting current event: {}", e.what());
+        SCE_LOG_DEBUG("Error setting current event: {}", e.what());
         return false;
     }
 }
@@ -501,17 +501,17 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
 // High-level action execution methods (Command pattern)
 
 bool ActionExecutorImpl::executeScriptAction(const ScriptAction &action) {
-    LOG_DEBUG("Executing script action: {}", action.getId());
+    SCE_LOG_DEBUG("Executing script action: {}", action.getId());
     return executeScript(action.getContent());
 }
 
 bool ActionExecutorImpl::executeAssignAction(const AssignAction &action) {
-    LOG_DEBUG("Executing assign action: {}", action.getId());
+    SCE_LOG_DEBUG("Executing assign action: {}", action.getId());
     return assignVariable(action.getLocation(), action.getExpr());
 }
 
 bool ActionExecutorImpl::executeLogAction(const LogAction &action) {
-    LOG_DEBUG("Executing log action: {}", action.getId());
+    SCE_LOG_DEBUG("Executing log action: {}", action.getId());
 
     try {
         // Evaluate the expression to get the log message
@@ -519,7 +519,7 @@ bool ActionExecutorImpl::executeLogAction(const LogAction &action) {
         if (!action.getExpr().empty()) {
             message = evaluateExpression(action.getExpr());
             if (message.empty()) {
-                LOG_WARN("Log expression evaluated to empty string: {}", action.getExpr());
+                SCE_LOG_WARN("Log expression evaluated to empty string: {}", action.getExpr());
                 message = action.getExpr();  // Fallback to raw expression
             }
         }
@@ -535,7 +535,7 @@ bool ActionExecutorImpl::executeLogAction(const LogAction &action) {
 
         return true;
     } catch (const std::exception &e) {
-        LOG_ERROR("Failed to execute log action: {}", e.what());
+        SCE_LOG_ERROR("Failed to execute log action: {}", e.what());
 
         // W3C SCXML 5.9: Raise error.execution event for expression evaluation failure
         if (eventRaiser_) {
@@ -547,10 +547,10 @@ bool ActionExecutorImpl::executeLogAction(const LogAction &action) {
 }
 
 bool ActionExecutorImpl::executeRaiseAction(const RaiseAction &action) {
-    LOG_DEBUG("ActionExecutorImpl: Executing raise action: {} with event: '{}'", action.getId(), action.getEvent());
+    SCE_LOG_DEBUG("ActionExecutorImpl: Executing raise action: {} with event: '{}'", action.getId(), action.getEvent());
 
     if (action.getEvent().empty()) {
-        LOG_ERROR("Raise action has empty event name");
+        SCE_LOG_ERROR("Raise action has empty event name");
         return false;
     }
 
@@ -560,33 +560,33 @@ bool ActionExecutorImpl::executeRaiseAction(const RaiseAction &action) {
         if (!action.getData().empty()) {
             eventData = evaluateExpression(action.getData());
             if (eventData.empty()) {
-                LOG_WARN("Raise action data expression evaluated to empty: {}", action.getData());
+                SCE_LOG_WARN("Raise action data expression evaluated to empty: {}", action.getData());
                 eventData = action.getData();  // Fallback to raw data
             }
         }
 
-        LOG_DEBUG("ActionExecutorImpl: Calling raiseEvent with event: '{}', data: '{}', EventRaiser instance: {}",
+        SCE_LOG_DEBUG("ActionExecutorImpl: Calling raiseEvent with event: '{}', data: '{}', EventRaiser instance: {}",
                   action.getEvent(), eventData, (void *)eventRaiser_.get());
         if (!eventRaiser_) {
-            LOG_ERROR("ActionExecutorImpl: EventRaiser not available - incomplete setup");
+            SCE_LOG_ERROR("ActionExecutorImpl: EventRaiser not available - incomplete setup");
             return false;
         }
         bool result = eventRaiser_->raiseEvent(action.getEvent(), eventData);
-        LOG_DEBUG("ActionExecutorImpl: eventRaiser returned: {}", result);
+        SCE_LOG_DEBUG("ActionExecutorImpl: eventRaiser returned: {}", result);
         return result;
     } catch (const std::exception &e) {
-        LOG_ERROR("Failed to execute raise action: {}", e.what());
+        SCE_LOG_ERROR("Failed to execute raise action: {}", e.what());
         return false;
     }
 }
 
 bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
-    LOG_DEBUG("Executing if action: {}", action.getId());
+    SCE_LOG_DEBUG("Executing if action: {}", action.getId());
 
     try {
         const auto &branches = action.getBranches();
         if (branches.empty()) {
-            LOG_WARN("If action has no branches");
+            SCE_LOG_WARN("If action has no branches");
             return true;  // Empty if is valid but does nothing
         }
 
@@ -597,13 +597,13 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
             if (branch.isElseBranch) {
                 // Else branch - always execute
                 shouldExecute = true;
-                LOG_DEBUG("Executing else branch");
+                SCE_LOG_DEBUG("Executing else branch");
             } else if (!branch.condition.empty()) {
                 // Evaluate condition
                 shouldExecute = evaluateCondition(branch.condition);
-                LOG_DEBUG("Condition '{}' evaluated to: {}", branch.condition, shouldExecute);
+                SCE_LOG_DEBUG("Condition '{}' evaluated to: {}", branch.condition, shouldExecute);
             } else {
-                LOG_WARN("Branch has empty condition and is not else branch");
+                SCE_LOG_WARN("Branch has empty condition and is not else branch");
                 continue;
             }
 
@@ -617,7 +617,7 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
 
                 for (const auto &branchAction : branch.actions) {
                     if (branchAction && !branchAction->execute(context)) {
-                        LOG_ERROR("Failed to execute action in if branch");
+                        SCE_LOG_ERROR("Failed to execute action in if branch");
                         allSucceeded = false;
                     }
                 }
@@ -626,10 +626,10 @@ bool ActionExecutorImpl::executeIfAction(const IfAction &action) {
         }
 
         // No branch matched
-        LOG_DEBUG("No branch condition matched in if action");
+        SCE_LOG_DEBUG("No branch condition matched in if action");
         return true;
     } catch (const std::exception &e) {
-        LOG_ERROR("Failed to execute if action: {}", e.what());
+        SCE_LOG_ERROR("Failed to execute if action: {}", e.what());
         return false;
     }
 }
@@ -646,7 +646,7 @@ bool ActionExecutorImpl::evaluateCondition(const std::string &condition) {
 
     if (!result.has_value()) {
         // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
-        LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", condition);
+        SCE_LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", condition);
 
         if (eventRaiser_) {
             eventRaiser_->raiseEvent("error.execution", "Guard evaluation failed: " + condition);
@@ -658,7 +658,7 @@ bool ActionExecutorImpl::evaluateCondition(const std::string &condition) {
 }
 
 bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
-    LOG_DEBUG("Executing send action: {}", action.getId());
+    SCE_LOG_DEBUG("Executing send action: {}", action.getId());
 
     try {
         // CRITICAL: Complete ALL JSEngine operations first to avoid deadlock
@@ -690,9 +690,9 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!action.getIdLocation().empty()) {
             try {
                 assignVariable(action.getIdLocation(), "'" + sendId + "'");
-                LOG_DEBUG("ActionExecutorImpl: Stored sendid '{}' in variable '{}'", sendId, action.getIdLocation());
+                SCE_LOG_DEBUG("ActionExecutorImpl: Stored sendid '{}' in variable '{}'", sendId, action.getIdLocation());
             } catch (const std::exception &e) {
-                LOG_ERROR("ActionExecutorImpl: Failed to store sendid in idlocation '{}': {}", action.getIdLocation(),
+                SCE_LOG_ERROR("ActionExecutorImpl: Failed to store sendid in idlocation '{}': {}", action.getIdLocation(),
                           e.what());
             }
         }
@@ -702,7 +702,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (sendType.empty() && !action.getTypeExpr().empty()) {
             // W3C SCXML 6.2: typeexpr uses current datamodel value (not initial value)
             sendType = evaluateExpression(action.getTypeExpr());
-            LOG_DEBUG("ActionExecutorImpl: Evaluated typeexpr '{}' to type: '{}'", action.getTypeExpr(), sendType);
+            SCE_LOG_DEBUG("ActionExecutorImpl: Evaluated typeexpr '{}' to type: '{}'", action.getTypeExpr(), sendType);
         }
 
         // W3C SCXML 5.10.2 (test 577): Check if this is HTTP event processor (needed for validation)
@@ -716,7 +716,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         } else if (!action.getEventExpr().empty()) {
             eventName = evaluateExpression(action.getEventExpr());
             if (eventName.empty()) {
-                LOG_ERROR("Send action eventexpr evaluated to empty: {}", action.getEventExpr());
+                SCE_LOG_ERROR("Send action eventexpr evaluated to empty: {}", action.getEventExpr());
                 // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution",
@@ -731,7 +731,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
             if (!isHttpEventProcessor) {
                 // For non-HTTP processors, event name is required
-                LOG_ERROR("Send action has no event or eventexpr");
+                SCE_LOG_ERROR("Send action has no event or eventexpr");
                 // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution", "Send action has no event or eventexpr", sendId,
@@ -740,7 +740,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 return false;
             }
             // For HTTP processors, leave eventName empty - content will be sent as HTTP body
-            LOG_DEBUG("ActionExecutorImpl: HTTP send without event name - content will be sent as HTTP body");
+            SCE_LOG_DEBUG("ActionExecutorImpl: HTTP send without event name - content will be sent as HTTP body");
         }
 
         // Determine target with W3C SCXML type processing compliance
@@ -753,7 +753,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // Invalid target values (e.g., starting with "!") must raise error.execution
         std::string targetErrorMsg;
         if (!SendHelper::validateTarget(target, targetErrorMsg)) {
-            LOG_ERROR("ActionExecutorImpl: {}", targetErrorMsg);
+            SCE_LOG_ERROR("ActionExecutorImpl: {}", targetErrorMsg);
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution", targetErrorMsg, sendId,
                                          false /* overload discriminator for sendId variant */);
@@ -764,7 +764,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // W3C SCXML C.1 (test 496): Check for unreachable target using SendHelper (ARCHITECTURE.md Zero Duplication)
         // Note: Only applies when targetexpr is explicitly set, not for normal internal sends
         if (!action.getTargetExpr().empty() && SendHelper::isUnreachableTarget(target)) {
-            LOG_ERROR("ActionExecutorImpl: Send target evaluation resulted in invalid target: '{}'", target);
+            SCE_LOG_ERROR("ActionExecutorImpl: Send target evaluation resulted in invalid target: '{}'", target);
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.communication",
                                          "Target session does not exist or is inaccessible: " + action.getTargetExpr(),
@@ -776,7 +776,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // W3C SCXML C.2 (test 577): Validate BasicHTTP send using SendHelper (Zero Duplication)
         std::string errorMsg;
         if (!SendHelper::validateBasicHttpSend(sendType, target, action.getTargetExpr(), errorMsg)) {
-            LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
+            SCE_LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.communication", errorMsg, sendId, false);
             }
@@ -786,7 +786,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // W3C SCXML 6.2 (test 199): Validate send type using SendHelper (Zero Duplication)
         // ARCHITECTURE.md: Single Source of Truth - both Interpreter and AOT use SendHelper
         if (!SendHelper::isSupportedSendType(sendType)) {
-            LOG_ERROR("ActionExecutorImpl: Unsupported send type: {}", sendType);
+            SCE_LOG_ERROR("ActionExecutorImpl: Unsupported send type: {}", sendType);
             // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
             if (eventRaiser_) {
                 eventRaiser_->raiseEvent("error.execution", "Unsupported send type: " + sendType, sendId,
@@ -800,11 +800,11 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // Only explicit target="#_internal" goes to internal queue
         if (target.empty()) {
             // W3C SCXML: send with no target → external queue (regardless of type)
-            LOG_DEBUG("ActionExecutorImpl: [W3C193 DEBUG] Send event '{}' with type '{}' → external queue (no target "
+            SCE_LOG_DEBUG("ActionExecutorImpl: [W3C193 DEBUG] Send event '{}' with type '{}' → external queue (no target "
                       "specified)",
                       action.getEvent(), action.getType());
         } else {
-            LOG_DEBUG("ActionExecutorImpl: [W3C193 DEBUG] Send event '{}' with type '{}' → target '{}' specified",
+            SCE_LOG_DEBUG("ActionExecutorImpl: [W3C193 DEBUG] Send event '{}' with type '{}' → target '{}' specified",
                       action.getEvent(), action.getType(), target);
         }
 
@@ -821,11 +821,11 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // Step 1: Evaluate namelist variables using NamelistHelper (Zero Duplication Principle)
         const std::string &namelist = action.getNamelist();
         if (!namelist.empty()) {
-            LOG_DEBUG("ActionExecutorImpl: Evaluating namelist: '{}'", namelist);
+            SCE_LOG_DEBUG("ActionExecutorImpl: Evaluating namelist: '{}'", namelist);
 
             bool success = NamelistHelper::evaluateNamelist(JSEngine::instance(), sessionId_, namelist, evaluatedParams,
                                                             [this, &sendId](const std::string &errorMsg) {
-                                                                LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
+                                                                SCE_LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
                                                                 // W3C SCXML 6.2: If evaluation of send's arguments
                                                                 // produces an error, the Processor MUST discard the
                                                                 // message without attempting to deliver it (test 553)
@@ -839,14 +839,14 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                 return false;
             }
 
-            LOG_DEBUG("ActionExecutorImpl: Namelist evaluation complete");
+            SCE_LOG_DEBUG("ActionExecutorImpl: Namelist evaluation complete");
         }
 
         // Step 2: Evaluate param elements (W3C SCXML Test 186, 354)
         // Note: params can override namelist values (evaluated after namelist)
         const auto &params = action.getParamsWithExpr();
         if (!params.empty()) {
-            LOG_DEBUG("ActionExecutorImpl: Evaluating {} param elements", params.size());
+            SCE_LOG_DEBUG("ActionExecutorImpl: Evaluating {} param elements", params.size());
 
             size_t paramCount = 0;
             for (const auto &param : params) {
@@ -855,16 +855,16 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                     std::string paramValue = evaluateExpression(param.expr);
                     evaluatedParams[param.name].push_back(
                         paramValue);  // W3C SCXML: Support duplicate param names (Test 178)
-                    LOG_DEBUG("ActionExecutorImpl: Param[{}] {}={} (expr: '{}')", paramCount, param.name, paramValue,
+                    SCE_LOG_DEBUG("ActionExecutorImpl: Param[{}] {}={} (expr: '{}')", paramCount, param.name, paramValue,
                               param.expr);
                 } catch (const std::exception &e) {
-                    LOG_ERROR("ActionExecutorImpl: Failed to evaluate param '{}' expr '{}': {}", param.name, param.expr,
+                    SCE_LOG_ERROR("ActionExecutorImpl: Failed to evaluate param '{}' expr '{}': {}", param.name, param.expr,
                               e.what());
                     // W3C SCXML: Continue with other params despite failures
                 }
             }
 
-            LOG_DEBUG("ActionExecutorImpl: Param evaluation complete: {} params processed", paramCount);
+            SCE_LOG_DEBUG("ActionExecutorImpl: Param evaluation complete: {} params processed", paramCount);
         }
 
         // Parse delay (evaluate delay expression if needed)
@@ -881,7 +881,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // ALL JSEngine operations complete - now safe to call EventDispatcher
 
         if (eventDispatcher_) {
-            LOG_DEBUG("ActionExecutorImpl: Using event dispatcher for send action");
+            SCE_LOG_DEBUG("ActionExecutorImpl: Using event dispatcher for send action");
 
             // Create event descriptor
             EventDescriptor event;
@@ -899,7 +899,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
             // [EVENT ROUTING] Log parent→child and child→parent event sending
             if (target.find("#_invoked") != std::string::npos || target.find("#_parent") != std::string::npos) {
-                LOG_INFO("[EVENT ROUTING] Session '{}' sending event '{}' to target '{}' with data '{}'", sessionId_,
+                SCE_LOG_INFO("[EVENT ROUTING] Session '{}' sending event '{}' to target '{}' with data '{}'", sessionId_,
                          eventName, target, eventData);
             }
 
@@ -910,28 +910,28 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             // CRITICAL: Must call get() to ensure thread cleanup and prevent WASM memory leak
             // The sendId is already set immediately by EventSchedulerImpl, so this won't block
             try {
-                LOG_INFO("ActionExecutorImpl: BEFORE future.get() - event: '{}'", eventName);
+                SCE_LOG_INFO("ActionExecutorImpl: BEFORE future.get() - event: '{}'", eventName);
 
                 auto result = resultFuture.get();
 
-                LOG_INFO("ActionExecutorImpl: AFTER future.get() - event: '{}', success: {}", eventName,
+                SCE_LOG_INFO("ActionExecutorImpl: AFTER future.get() - event: '{}', success: {}", eventName,
                          result.isSuccess);
 
                 if (result.isSuccess) {
-                    LOG_DEBUG("ActionExecutorImpl: Send action queued successfully for event: {} (sendId: {})",
+                    SCE_LOG_DEBUG("ActionExecutorImpl: Send action queued successfully for event: {} (sendId: {})",
                               eventName, result.sendId);
                 } else {
-                    LOG_WARN("ActionExecutorImpl: Send action failed: {}", result.errorMessage);
+                    SCE_LOG_WARN("ActionExecutorImpl: Send action failed: {}", result.errorMessage);
                 }
             } catch (const std::exception &e) {
-                LOG_ERROR("ActionExecutorImpl: Exception while getting send result: {}", e.what());
+                SCE_LOG_ERROR("ActionExecutorImpl: Exception while getting send result: {}", e.what());
             }
 
             // SCXML 6.2.4: "Fire and forget" semantics - event is queued regardless of delivery status
             return true;
         } else {
             // SCXML 3.12.1: Generate error.execution event instead of throwing
-            LOG_ERROR("ActionExecutorImpl: EventDispatcher not available for send action - generating error event");
+            SCE_LOG_ERROR("ActionExecutorImpl: EventDispatcher not available for send action - generating error event");
 
             // W3C SCXML 5.10: Generate error.execution event with sendid for failed send
             if (eventRaiser_) {
@@ -944,13 +944,13 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         }
 
     } catch (const std::exception &e) {
-        LOG_ERROR("Failed to execute send action: {}", e.what());
+        SCE_LOG_ERROR("Failed to execute send action: {}", e.what());
         return false;
     }
 }
 
 bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
-    LOG_DEBUG("Executing cancel action: {} in session: '{}'", action.getId(), sessionId_);
+    SCE_LOG_DEBUG("Executing cancel action: {} in session: '{}'", action.getId(), sessionId_);
 
     try {
         // Determine sendId to cancel
@@ -960,46 +960,46 @@ bool ActionExecutorImpl::executeCancelAction(const CancelAction &action) {
         } else if (!action.getSendIdExpr().empty()) {
             sendId = evaluateExpression(action.getSendIdExpr());
             if (sendId.empty()) {
-                LOG_ERROR("Cancel action sendidexpr evaluated to empty: {}", action.getSendIdExpr());
+                SCE_LOG_ERROR("Cancel action sendidexpr evaluated to empty: {}", action.getSendIdExpr());
                 return false;
             }
         } else {
-            LOG_ERROR("Cancel action has no sendid or sendidexpr");
+            SCE_LOG_ERROR("Cancel action has no sendid or sendidexpr");
             return false;
         }
 
         // SCXML Event System: Use event dispatcher if available
         if (eventDispatcher_) {
-            LOG_DEBUG("ActionExecutorImpl: Using event dispatcher for cancel action - sendId: '{}', session: '{}'",
+            SCE_LOG_DEBUG("ActionExecutorImpl: Using event dispatcher for cancel action - sendId: '{}', session: '{}'",
                       sendId, sessionId_);
 
             bool cancelled = eventDispatcher_->cancelEvent(sendId, sessionId_);
             if (cancelled) {
-                LOG_INFO("ActionExecutorImpl: Successfully cancelled event with sendId: {}", sendId);
+                SCE_LOG_INFO("ActionExecutorImpl: Successfully cancelled event with sendId: {}", sendId);
                 return true;
             } else {
-                LOG_INFO("ActionExecutorImpl: Event with sendId '{}' not found or already executed", sendId);
+                SCE_LOG_INFO("ActionExecutorImpl: Event with sendId '{}' not found or already executed", sendId);
                 // W3C SCXML: Cancelling non-existent events is not an error
                 return true;
             }
         } else {
             // Fallback to basic event raising behavior
-            LOG_INFO("Cancel action for sendId: {} (no event dispatcher available - no-op)", sendId);
+            SCE_LOG_INFO("Cancel action for sendId: {} (no event dispatcher available - no-op)", sendId);
             // Without a dispatcher, we can't cancel anything, but this is not an error
             return true;
         }
 
     } catch (const std::exception &e) {
-        LOG_ERROR("Failed to execute cancel action: {}", e.what());
+        SCE_LOG_ERROR("Failed to execute cancel action: {}", e.what());
         return false;
     }
 }
 
 bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
-    LOG_DEBUG("Executing foreach action: {}", action.getId());
+    SCE_LOG_DEBUG("Executing foreach action: {}", action.getId());
 
     if (!isSessionReady()) {
-        LOG_ERROR("Session {} not ready for foreach action execution", sessionId_);
+        SCE_LOG_ERROR("Session {} not ready for foreach action execution", sessionId_);
         if (eventRaiser_ && eventRaiser_->isReady()) {
             eventRaiser_->raiseEvent("error.execution", "Session not ready");
         }
@@ -1014,7 +1014,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     // W3C SCXML 4.6: Validate array and item attributes
     std::string validationError;
     if (!SCE::Validation::validateForeachAttributes(arrayExpr, itemVar, validationError)) {
-        LOG_ERROR("Foreach validation failed: {}", validationError);
+        SCE_LOG_ERROR("Foreach validation failed: {}", validationError);
         if (eventRaiser_ && eventRaiser_->isReady()) {
             eventRaiser_->raiseEvent("error.execution", validationError);
         }
@@ -1035,7 +1035,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
 
             for (const auto &nestedAction : action.getIterationActions()) {
                 if (nestedAction && !nestedAction->execute(context)) {
-                    LOG_ERROR("Failed to execute action in foreach iteration {}", i);
+                    SCE_LOG_ERROR("Failed to execute action in foreach iteration {}", i);
                     if (eventRaiser_ && eventRaiser_->isReady()) {
                         eventRaiser_->raiseEvent("error.execution", "Failed to execute nested action in foreach");
                     }
@@ -1047,7 +1047,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
 
     // W3C SCXML compliance: Generate error.execution event on failure
     if (!success) {
-        LOG_ERROR("Foreach action execution failed for array expression: {}", arrayExpr);
+        SCE_LOG_ERROR("Foreach action execution failed for array expression: {}", arrayExpr);
         if (eventRaiser_ && eventRaiser_->isReady()) {
             eventRaiser_->raiseEvent("error.execution", "Foreach execution failed");
         }
@@ -1067,15 +1067,15 @@ bool ActionExecutorImpl::setLoopVariable(const std::string &varName, const std::
         bool success = SCE::Common::ForeachHelper::setLoopVariable(JSEngine::instance(), sessionId_, jsVarName, value);
 
         if (success) {
-            LOG_DEBUG("Set foreach variable: {} = {} (JS: {}, iteration {})", varName, value, jsVarName, iteration);
+            SCE_LOG_DEBUG("Set foreach variable: {} = {} (JS: {}, iteration {})", varName, value, jsVarName, iteration);
         } else {
-            LOG_ERROR("Failed to set foreach variable {} = {} at iteration {}", varName, value, iteration);
+            SCE_LOG_ERROR("Failed to set foreach variable {} = {} at iteration {}", varName, value, iteration);
         }
 
         return success;
 
     } catch (const std::exception &e) {
-        LOG_ERROR("Exception setting foreach variable {} at iteration {}: {}", varName, iteration, e.what());
+        SCE_LOG_ERROR("Exception setting foreach variable {} at iteration {}: {}", varName, iteration, e.what());
         return false;
     }
 }

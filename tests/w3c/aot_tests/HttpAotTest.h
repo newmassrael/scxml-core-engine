@@ -1,5 +1,6 @@
 #pragma once
 #include "AotTestBase.h"
+#include "common/LogMacros.h"
 #include "AotTestRegistry.h"
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
@@ -38,7 +39,7 @@ public:
         // See DOCKER_TSAN_README.md for nscd workaround details
         // Skip HTTP tests to avoid TSAN false positives in DNS resolution
         if (SCE::Test::Utils::isInDockerTsan()) {
-            LOG_WARN("HttpAotTest {}: Skipping W3C SCXML C.2 test in Docker TSAN environment (getaddrinfo DNS "
+            SCE_LOG_WARN("HttpAotTest {}: Skipping W3C SCXML C.2 test in Docker TSAN environment (getaddrinfo DNS "
                      "resolution incompatible with TSAN)",
                      TestNum);
             return true;  // Report as PASS (skip, not fail)
@@ -51,16 +52,16 @@ public:
         W3C::W3CHttpTestServer httpServer(8080, "/test");
 
         if (!httpServer.start()) {
-            LOG_ERROR("HttpAotTest {}: Failed to start HTTP server on port 8080", TestNum);
+            SCE_LOG_ERROR("HttpAotTest {}: Failed to start HTTP server on port 8080", TestNum);
             return false;
         }
 
-        LOG_DEBUG("HttpAotTest {}: HTTP server started on localhost:8080/test", TestNum);
+        SCE_LOG_DEBUG("HttpAotTest {}: HTTP server started on localhost:8080/test", TestNum);
 
         // W3C SCXML C.2: Setup HTTP event callback to route responses to state machine
         // When HTTP server receives POST response, it raises event to state machine
         httpServer.setEventCallback([&sm](const std::string &eventName, const std::string &eventData) {
-            LOG_DEBUG("HttpAotTest {}: HTTP callback received event '{}' with data '{}'", TestNum, eventName,
+            SCE_LOG_DEBUG("HttpAotTest {}: HTTP callback received event '{}' with data '{}'", TestNum, eventName,
                       eventData);
 
             // W3C SCXML C.2: Map event name string to Event enum
@@ -78,7 +79,7 @@ public:
                 if (Policy::getEventName(candidateEvent) == eventName) {
                     matchedEvent = candidateEvent;
                     found = true;
-                    LOG_DEBUG("HttpAotTest {}: Mapped '{}' to Event enum value {}", TestNum, eventName, i);
+                    SCE_LOG_DEBUG("HttpAotTest {}: Mapped '{}' to Event enum value {}", TestNum, eventName, i);
                 }
             }
 
@@ -86,13 +87,13 @@ public:
                 typename SM::EventWithMetadata eventMeta(matchedEvent, eventData);
                 sm.raiseExternal(eventMeta);
             } else {
-                LOG_WARN("HttpAotTest {}: Unknown HTTP event: {}", TestNum, eventName);
+                SCE_LOG_WARN("HttpAotTest {}: Unknown HTTP event: {}", TestNum, eventName);
             }
         });
 
         // Initialize state machine
         sm.initialize();
-        LOG_DEBUG("HttpAotTest {}: State machine initialized, starting async event loop", TestNum);
+        SCE_LOG_DEBUG("HttpAotTest {}: State machine initialized, starting async event loop", TestNum);
 
         // W3C SCXML C.2: Async event processing loop
         // HTTP responses come back asynchronously, so we need to poll until final state
@@ -102,7 +103,7 @@ public:
         while (!sm.isInFinalState()) {
             auto elapsed = std::chrono::steady_clock::now() - startTime;
             if (elapsed > timeout) {
-                LOG_ERROR("HttpAotTest {}: Timeout waiting for final state (elapsed: {}ms)", TestNum,
+                SCE_LOG_ERROR("HttpAotTest {}: Timeout waiting for final state (elapsed: {}ms)", TestNum,
                           std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
                 httpServer.stop();
                 return false;
@@ -117,11 +118,11 @@ public:
 
         // Stop HTTP server
         httpServer.stop();
-        LOG_DEBUG("HttpAotTest {}: HTTP server stopped", TestNum);
+        SCE_LOG_DEBUG("HttpAotTest {}: HTTP server stopped", TestNum);
 
         // Check if final state is Pass
         bool isPass = sm.getCurrentState() == SM::State::Pass;
-        LOG_DEBUG("HttpAotTest {}: Final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()), isPass);
+        SCE_LOG_DEBUG("HttpAotTest {}: Final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()), isPass);
 
         return isPass;
 #else
@@ -136,7 +137,7 @@ public:
         // HTTP POST will be sent during initialize() via EmscriptenFetchClient
         // External server processes request and returns response
         sm.initialize();
-        LOG_DEBUG("HttpAotTest {}: WASM state machine initialized", TestNum);
+        SCE_LOG_DEBUG("HttpAotTest {}: WASM state machine initialized", TestNum);
 
         // W3C SCXML C.2: Async event processing loop
         // HTTP responses come back asynchronously via EmscriptenFetchClient + external server
@@ -146,9 +147,9 @@ public:
         while (!sm.isInFinalState()) {
             auto elapsed = std::chrono::steady_clock::now() - startTime;
             if (elapsed > timeout) {
-                LOG_ERROR("HttpAotTest {}: WASM timeout waiting for final state (elapsed: {}ms)", TestNum,
+                SCE_LOG_ERROR("HttpAotTest {}: WASM timeout waiting for final state (elapsed: {}ms)", TestNum,
                           std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
-                LOG_ERROR("HttpAotTest {}: Make sure external HTTP server is running (started by polyfill_pre.js)",
+                SCE_LOG_ERROR("HttpAotTest {}: Make sure external HTTP server is running (started by polyfill_pre.js)",
                           TestNum);
                 return false;
             }
@@ -162,7 +163,7 @@ public:
 
         // Check if final state is Pass
         bool isPass = sm.getCurrentState() == SM::State::Pass;
-        LOG_DEBUG("HttpAotTest {}: WASM final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()),
+        SCE_LOG_DEBUG("HttpAotTest {}: WASM final state={}, isPass={}", TestNum, static_cast<int>(sm.getCurrentState()),
                   isPass);
 
         return isPass;

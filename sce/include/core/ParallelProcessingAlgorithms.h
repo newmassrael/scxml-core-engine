@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <vector>
 
 /**
@@ -58,7 +58,7 @@ public:
      */
     template <typename ParallelStateManager, typename RegionList>
     static void enterAllRegions(ParallelStateManager &parallelManager, const RegionList &regions) {
-        LOG_DEBUG("ParallelProcessingAlgorithms: Entering {} parallel regions", regions.size());
+        SCE_LOG_DEBUG("ParallelProcessingAlgorithms: Entering {} parallel regions", regions.size());
 
         for (const auto &region : regions) {
             parallelManager.enterRegion(region);
@@ -109,7 +109,7 @@ public:
     template <typename ParallelStateManager, typename Event, typename RegionList>
     static bool broadcastEventToRegions(ParallelStateManager &parallelManager, const Event &event,
                                         const RegionList &activeRegions) {
-        LOG_DEBUG("ParallelProcessingAlgorithms: Broadcasting event to {} active regions", activeRegions.size());
+        SCE_LOG_DEBUG("ParallelProcessingAlgorithms: Broadcasting event to {} active regions", activeRegions.size());
 
         bool anyTransition = false;
 
@@ -167,7 +167,7 @@ public:
      */
     template <typename ParallelStateManager, typename RegionList>
     static bool areAllRegionsInFinalState(ParallelStateManager &parallelManager, const RegionList &regions) {
-        LOG_DEBUG("ParallelProcessingAlgorithms: Checking if {} regions are in final state", regions.size());
+        SCE_LOG_DEBUG("ParallelProcessingAlgorithms: Checking if {} regions are in final state", regions.size());
 
         for (const auto &region : regions) {
             if (!parallelManager.isRegionInFinalState(region)) {
@@ -214,7 +214,7 @@ public:
      */
     template <typename ParallelStateManager, typename RegionList>
     static void exitAllRegions(ParallelStateManager &parallelManager, const RegionList &regions) {
-        LOG_DEBUG("ParallelProcessingAlgorithms: Exiting {} parallel regions", regions.size());
+        SCE_LOG_DEBUG("ParallelProcessingAlgorithms: Exiting {} parallel regions", regions.size());
 
         // W3C SCXML: Exit in reverse document order
         for (auto it = regions.rbegin(); it != regions.rend(); ++it) {

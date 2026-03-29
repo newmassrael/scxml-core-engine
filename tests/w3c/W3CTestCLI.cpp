@@ -1,6 +1,6 @@
 #include "W3CTestRegistry.h"
 #include "W3CTestRunner.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/TestSummaryHelper.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -120,7 +120,7 @@ std::string findResourcesPath(const std::string &executablePath) {
                 }
 
                 if (hasTestDirs) {
-                    LOG_DEBUG("W3C CLI: Found resources at: {}", resourcesPath.string());
+                    SCE_LOG_DEBUG("W3C CLI: Found resources at: {}", resourcesPath.string());
                     return resourcesPath.string();
                 }
             }
@@ -134,7 +134,7 @@ std::string findResourcesPath(const std::string &executablePath) {
             currentPath = parentPath;
         }
     } catch (const std::exception &e) {
-        LOG_ERROR("W3C CLI: Error searching for resources: {}", e.what());
+        SCE_LOG_ERROR("W3C CLI: Error searching for resources: {}", e.what());
     }
 
     return "";  // Not found
@@ -170,13 +170,13 @@ int main(int argc, char *argv[]) {
         // WASM: Use NODEFS mounted path
         // Project root is mounted at /project in pre-js
         resourcePath = "/project/resources";
-        LOG_INFO("WASM: Using resources path with NODEFS: {}", resourcePath);
+        SCE_LOG_INFO("WASM: Using resources path with NODEFS: {}", resourcePath);
 #else
         resourcePath = findResourcesPath(executablePath);
 
         // Validate resources path was found (Native only - WASM allows --resources override)
         if (resourcePath.empty()) {
-            LOG_ERROR("W3C CLI: Failed to locate resources directory");
+            SCE_LOG_ERROR("W3C CLI: Failed to locate resources directory");
             fprintf(stderr, "ERROR: Could not find W3C test resources directory.\n");
             fprintf(stderr, "       Searched upward from executable location: %s\n", executablePath.c_str());
             fprintf(stderr, "       Please ensure resources/ directory exists in project root.\n");
@@ -268,7 +268,7 @@ int main(int argc, char *argv[]) {
                 try {
                     upToTestId = std::stoi(numberStr);
                     runUpToMode = true;
-                    LOG_INFO("W3C CLI: Run up to mode enabled - will run tests up to {}", upToTestId);
+                    SCE_LOG_INFO("W3C CLI: Run up to mode enabled - will run tests up to {}", upToTestId);
                 } catch (const std::exception &) {
                     fprintf(stderr, "Invalid ~number format: %s\n", arg.c_str());
                     return 1;
@@ -287,7 +287,7 @@ int main(int argc, char *argv[]) {
                         if (endStr.empty()) {
                             // START~ format: run from START to maximum test ID
                             endId = MAX_W3C_TEST_ID;
-                            LOG_INFO("W3C CLI: Range mode enabled - will run tests from {} to end ({})", startId,
+                            SCE_LOG_INFO("W3C CLI: Range mode enabled - will run tests from {} to end ({})", startId,
                                      endId);
                         } else {
                             // START~END format: run from START to END
@@ -296,7 +296,7 @@ int main(int argc, char *argv[]) {
                                 fprintf(stderr, "Invalid range: start (%d) must be <= end (%d)\n", startId, endId);
                                 return 1;
                             }
-                            LOG_INFO("W3C CLI: Range mode enabled - will run tests {}-{} ({} tests)", startId, endId,
+                            SCE_LOG_INFO("W3C CLI: Range mode enabled - will run tests {}-{} ({} tests)", startId, endId,
                                      endId - startId + 1);
                         }
 
@@ -317,7 +317,7 @@ int main(int argc, char *argv[]) {
 
         // Verify resources exist
         if (!std::filesystem::exists(resourcePath)) {
-            LOG_ERROR("W3C CLI: Test resources not found at: {}", resourcePath);
+            SCE_LOG_ERROR("W3C CLI: Test resources not found at: {}", resourcePath);
             SCE::Logger::error("W3C CLI: Make sure W3C tests are copied to the resources directory");
             return 1;
         }
@@ -325,11 +325,11 @@ int main(int argc, char *argv[]) {
         // Change working directory to project root (parent of resources/)
         // This ensures relative paths like "resources/XXX/metadata.txt" work correctly
         std::filesystem::current_path(projectRoot);
-        LOG_DEBUG("W3C CLI: Changed working directory to: {}", projectRoot.string());
+        SCE_LOG_DEBUG("W3C CLI: Changed working directory to: {}", projectRoot.string());
 
         SCE::Logger::info("W3C CLI: Starting W3C SCXML 1.0 Compliance Test Suite");
-        LOG_INFO("W3C CLI: Resources: {}", resourcePath);
-        LOG_INFO("W3C CLI: Output: {}", outputPath);
+        SCE_LOG_INFO("W3C CLI: Resources: {}", resourcePath);
+        SCE_LOG_INFO("W3C CLI: Output: {}", outputPath);
 
         // SOLID Design: Create all components using factory pattern (Dependency Inversion)
         auto factory = std::make_unique<SCE::W3C::TestComponentFactory>();
@@ -349,7 +349,7 @@ int main(int argc, char *argv[]) {
         // W3C SCXML C.2: HTTP server management for WASM tests
         // External HTTP server started by polyfill_pre.js if HTTP tests detected
         if (needsHttpServer(specificTestIds, runUpToMode, upToTestId)) {
-            LOG_INFO("W3C CLI: HTTP tests detected - waiting for external HTTP server...");
+            SCE_LOG_INFO("W3C CLI: HTTP tests detected - waiting for external HTTP server...");
 
             // Wait for HTTP server to be ready (max 5 seconds)
             int retries = 50;  // 50 * 100ms = 5 seconds
@@ -358,7 +358,7 @@ int main(int argc, char *argv[]) {
             while (retries > 0) {
                 if (useExternalHttpServer()) {
                     serverReady = true;
-                    LOG_INFO("W3C CLI: External HTTP server ready (provided by polyfill_pre.js)");
+                    SCE_LOG_INFO("W3C CLI: External HTTP server ready (provided by polyfill_pre.js)");
                     break;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -366,8 +366,8 @@ int main(int argc, char *argv[]) {
             }
 
             if (!serverReady) {
-                LOG_ERROR("W3C CLI: HTTP server not ready after 5 seconds - HTTP tests will fail");
-                LOG_WARN("W3C CLI: HTTP server should be auto-started by polyfill_pre.js for tests: 201, 518, 519, "
+                SCE_LOG_ERROR("W3C CLI: HTTP server not ready after 5 seconds - HTTP tests will fail");
+                SCE_LOG_WARN("W3C CLI: HTTP server should be auto-started by polyfill_pre.js for tests: 201, 518, 519, "
                          "520, etc.");
             }
         }
@@ -379,9 +379,9 @@ int main(int argc, char *argv[]) {
 
         // Show test suite information
         auto testSuiteInfo = runner.getTestSuite()->getInfo();
-        LOG_INFO("W3C CLI: Test Suite: {}", testSuiteInfo.name);
-        LOG_INFO("W3C CLI: Description: {}", testSuiteInfo.description);
-        LOG_INFO("W3C CLI: Total Tests: {}", testSuiteInfo.totalTests);
+        SCE_LOG_INFO("W3C CLI: Test Suite: {}", testSuiteInfo.name);
+        SCE_LOG_INFO("W3C CLI: Description: {}", testSuiteInfo.description);
+        SCE_LOG_INFO("W3C CLI: Total Tests: {}", testSuiteInfo.totalTests);
 
         // Execute W3C tests
         auto startTime = std::chrono::steady_clock::now();
@@ -395,7 +395,7 @@ int main(int argc, char *argv[]) {
                 upToTestIds.push_back(testId);
             }
 
-            LOG_INFO("W3C CLI: Running tests up to {} ({} tests: 150-{}) (repeat {} times)", upToTestId,
+            SCE_LOG_INFO("W3C CLI: Running tests up to {} ({} tests: 150-{}) (repeat {} times)", upToTestId,
                      upToTestIds.size(), upToTestId, repeatCount);
 
             // Begin test run for consistent reporting
@@ -411,7 +411,7 @@ int main(int argc, char *argv[]) {
 
             for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
                 if (repeatCount > 1) {
-                    LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
+                    SCE_LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
                     printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
                 }
 
@@ -420,7 +420,7 @@ int main(int argc, char *argv[]) {
                         break;
                     }
                     try {
-                        LOG_INFO("W3C CLI: Running test {} (including variants if any)", testId);
+                        SCE_LOG_INFO("W3C CLI: Running test {} (including variants if any)", testId);
                         std::vector<SCE::W3C::TestReport> testReports = runner.runAllMatchingTests(testId);
                         reports.insert(reports.end(), testReports.begin(), testReports.end());
                         allReports.insert(allReports.end(), testReports.begin(), testReports.end());
@@ -443,14 +443,14 @@ int main(int argc, char *argv[]) {
                                 break;
                             }
 
-                            LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
+                            SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
                                      report.executionContext.executionTime.count());
                             if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
-                                LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
+                                SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
 
                                 // Check if we should stop on failure
                                 if (stopOnFailure) {
-                                    LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                    SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
                                     printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
                                     shouldStop = true;
                                     break;
@@ -474,7 +474,7 @@ int main(int argc, char *argv[]) {
                             // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
                             SCE::JSEngine::instance().reset();
 
-                            LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
+                            SCE_LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
                         }
 #endif
 
@@ -482,9 +482,9 @@ int main(int argc, char *argv[]) {
                         std::string errorMsg = e.what();
                         // Test not found is normal for sparse test IDs - log as debug instead of error
                         if (errorMsg.find("not found") != std::string::npos) {
-                            LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
+                            SCE_LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
                         } else {
-                            LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
+                            SCE_LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
                         }
                         // Continue with other tests instead of returning
                     }
@@ -500,7 +500,7 @@ int main(int argc, char *argv[]) {
             runner.getReporter()->endTestRun();
 
         } else if (!specificTestIds.empty()) {
-            LOG_INFO("W3C CLI: Running {} specific W3C tests (repeat {} times)", specificTestIds.size(), repeatCount);
+            SCE_LOG_INFO("W3C CLI: Running {} specific W3C tests (repeat {} times)", specificTestIds.size(), repeatCount);
 
             // Begin test run for consistent reporting
             auto testSuiteInfo = runner.getTestSuite()->getInfo();
@@ -515,7 +515,7 @@ int main(int argc, char *argv[]) {
 
             for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
                 if (repeatCount > 1) {
-                    LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
+                    SCE_LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
                     printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
                 }
 
@@ -537,7 +537,7 @@ int main(int argc, char *argv[]) {
 
                         if (isNumeric) {
                             // Numeric test ID - run all variants (e.g., "403" runs 403a, 403b, 403c)
-                            LOG_INFO("W3C CLI: Running test {} (including all variants)", testId);
+                            SCE_LOG_INFO("W3C CLI: Running test {} (including all variants)", testId);
 
                             if (runInterpreter && runAot) {
                                 // Case 1: Both engines - runAllMatchingTests already runs both
@@ -585,7 +585,7 @@ int main(int argc, char *argv[]) {
                                         aotReport.testId = variantId;
                                         testReports.push_back(aotReport);
                                     } catch (const std::exception &e) {
-                                        LOG_ERROR("W3C CLI: AOT test {} failed: {}", variantId, e.what());
+                                        SCE_LOG_ERROR("W3C CLI: AOT test {} failed: {}", variantId, e.what());
                                         SCE::W3C::TestReport errorReport;
                                         errorReport.testId = variantId;
                                         errorReport.engineType = "aot";
@@ -600,7 +600,7 @@ int main(int argc, char *argv[]) {
                         } else {
                             // Test ID with variant suffix - run exact match only (e.g., "403a" runs only
                             // test403a.scxml)
-                            LOG_INFO("W3C CLI: Running exact test {}", testId);
+                            SCE_LOG_INFO("W3C CLI: Running exact test {}", testId);
                             if (runInterpreter) {
                                 SCE::W3C::TestReport report = runner.runTest(testId);
                                 testReports.push_back(report);
@@ -613,7 +613,7 @@ int main(int argc, char *argv[]) {
                                     aotReport.testId = testId;
                                     testReports.push_back(aotReport);
                                 } catch (const std::exception &e) {
-                                    LOG_ERROR("W3C CLI: AOT test {} failed: {}", testId, e.what());
+                                    SCE_LOG_ERROR("W3C CLI: AOT test {} failed: {}", testId, e.what());
                                     // Create error report for failed AOT test
                                     SCE::W3C::TestReport errorReport;
                                     errorReport.testId = testId;
@@ -647,14 +647,14 @@ int main(int argc, char *argv[]) {
                                 break;
                             }
 
-                            LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
+                            SCE_LOG_INFO("W3C CLI: Test {} ({}): {} ({}ms)", report.testId, report.metadata.specnum, status,
                                      report.executionContext.executionTime.count());
                             if (report.validationResult.finalResult != SCE::W3C::TestResult::PASS) {
-                                LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
+                                SCE_LOG_INFO("W3C CLI: Failure reason: {}", report.validationResult.reason);
 
                                 // Check if we should stop on failure
                                 if (stopOnFailure) {
-                                    LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                    SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
                                     printf("❌ Stopping on failure: Test %s failed\n", report.testId.c_str());
                                     shouldStop = true;
                                     break;
@@ -678,7 +678,7 @@ int main(int argc, char *argv[]) {
                             // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
                             SCE::JSEngine::instance().reset();
 
-                            LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
+                            SCE_LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
                         }
 #endif
 
@@ -686,9 +686,9 @@ int main(int argc, char *argv[]) {
                         std::string errorMsg = e.what();
                         // Test not found is normal for sparse test IDs - log as debug instead of error
                         if (errorMsg.find("not found") != std::string::npos) {
-                            LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
+                            SCE_LOG_DEBUG("W3C CLI: Test {} not found (skipped)", testId);
                         } else {
-                            LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
+                            SCE_LOG_ERROR("W3C CLI: Error running test {}: {}", testId, errorMsg);
                         }
                         // Continue with other tests instead of returning
                     }
@@ -709,7 +709,7 @@ int main(int argc, char *argv[]) {
             runner.getReporter()->endTestRun();
 
         } else {
-            LOG_INFO("W3C CLI: Running all W3C SCXML compliance tests (repeat {} times)...", repeatCount);
+            SCE_LOG_INFO("W3C CLI: Running all W3C SCXML compliance tests (repeat {} times)...", repeatCount);
 
             // Begin test run for consistent reporting
             auto testSuiteInfo = runner.getTestSuite()->getInfo();
@@ -723,7 +723,7 @@ int main(int argc, char *argv[]) {
 
             for (int iteration = 1; iteration <= repeatCount && !shouldStop; iteration++) {
                 if (repeatCount > 1) {
-                    LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
+                    SCE_LOG_INFO("W3C CLI: === Iteration {}/{} ===", iteration, repeatCount);
                     printf("\n=== Iteration %d/%d ===\n", iteration, repeatCount);
                 }
 
@@ -767,7 +767,7 @@ int main(int argc, char *argv[]) {
 
                 // Run AOT engine tests for all test IDs (including variants)
                 if (runAot) {
-                    LOG_INFO("W3C CLI: Running AOT engine tests for all {} tests (including variants)",
+                    SCE_LOG_INFO("W3C CLI: Running AOT engine tests for all {} tests (including variants)",
                              allTestIds.size());
                     for (const std::string &testIdStr : allTestIds) {
                         if (shouldStop) {
@@ -789,14 +789,14 @@ int main(int argc, char *argv[]) {
                             // Check for stop-on-failure (after summary update)
                             if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::FAIL) {
                                 if (stopOnFailure) {
-                                    LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
+                                    SCE_LOG_INFO("W3C CLI: Stopping execution due to test failure (--stop-on-fail)");
                                     printf("❌ Stopping on failure: AOT Test %s failed\n", aotReport.testId.c_str());
                                     shouldStop = true;
                                 }
                             } else if (aotReport.validationResult.finalResult == SCE::W3C::TestResult::ERROR ||
                                        aotReport.validationResult.finalResult == SCE::W3C::TestResult::TIMEOUT) {
                                 if (stopOnFailure) {
-                                    LOG_INFO("W3C CLI: Stopping execution due to test error (--stop-on-fail)");
+                                    SCE_LOG_INFO("W3C CLI: Stopping execution due to test error (--stop-on-fail)");
                                     printf("❌ Stopping on error: AOT Test %s errored\n", aotReport.testId.c_str());
                                     shouldStop = true;
                                 }
@@ -811,12 +811,12 @@ int main(int argc, char *argv[]) {
                             // W3C SCXML: Cleanup order to prevent memory leaks
                             SCE::JSEngine::clearEventRaiserRegistry();
                             SCE::JSEngine::instance().reset();
-                            LOG_INFO("W3C CLI: Cleaned up JSEngine after AOT test {} (Registry cleared → Engine reset)",
+                            SCE_LOG_INFO("W3C CLI: Cleaned up JSEngine after AOT test {} (Registry cleared → Engine reset)",
                                      testIdStr);
 #endif
 
                         } catch (const std::exception &e) {
-                            LOG_ERROR("W3C CLI: AOT engine test {} failed: {}", testIdStr, e.what());
+                            SCE_LOG_ERROR("W3C CLI: AOT engine test {} failed: {}", testIdStr, e.what());
 
                             // Create error report for failed AOT test
                             SCE::W3C::TestReport errorReport;

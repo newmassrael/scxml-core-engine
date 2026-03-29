@@ -17,7 +17,6 @@
 #pragma once
 
 #include "common/ILoggerBackend.h"
-#include <format>
 #include <memory>
 #include <source_location>
 #include <string>
@@ -38,13 +37,13 @@ namespace SCE {
  * Example: Using default logger
  * @code
  * SCE::Logger::initialize();
- * LOG_INFO("State machine started");
+ * SCE_LOG_INFO("State machine started");
  * @endcode
  *
  * Example: Injecting custom logger
  * @code
  * SCE::Logger::setBackend(std::make_unique<MyCustomLogger>());
- * LOG_INFO("State machine started");  // Uses MyCustomLogger
+ * SCE_LOG_INFO("State machine started");  // Uses MyCustomLogger
  * @endcode
  */
 class Logger {
@@ -81,7 +80,14 @@ public:
      */
     static void setLevel(LogLevel level);
 
-    // Legacy interface - keep for runtime string concatenation
+    /**
+     * @brief Check if a given log level is enabled
+     *
+     * Used by SCE_LOG_* macros to avoid std::format evaluation when the level is disabled.
+     */
+    static bool shouldLog(LogLevel level);
+
+    // Logging methods — called by SCE_LOG_* macros in LogMacros.h
     static void trace(const std::string &message, const std::source_location &loc = std::source_location::current());
     static void debug(const std::string &message, const std::source_location &loc = std::source_location::current());
     static void info(const std::string &message, const std::source_location &loc = std::source_location::current());
@@ -100,11 +106,3 @@ private:
 };
 
 }  // namespace SCE
-
-// Macro definitions for std::format support with proper source_location capture
-// Uses C++20 std::format instead of spdlog's fmt::format
-#define LOG_TRACE(...) SCE::Logger::trace(std::format(__VA_ARGS__), std::source_location::current())
-#define LOG_DEBUG(...) SCE::Logger::debug(std::format(__VA_ARGS__), std::source_location::current())
-#define LOG_INFO(...) SCE::Logger::info(std::format(__VA_ARGS__), std::source_location::current())
-#define LOG_WARN(...) SCE::Logger::warn(std::format(__VA_ARGS__), std::source_location::current())
-#define LOG_ERROR(...) SCE::Logger::error(std::format(__VA_ARGS__), std::source_location::current())

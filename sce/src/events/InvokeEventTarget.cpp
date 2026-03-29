@@ -1,6 +1,6 @@
 #include "events/InvokeEventTarget.h"
 #include "common/JsonUtils.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
 #include "runtime/IEventRaiser.h"
@@ -19,11 +19,11 @@ InvokeEventTarget::InvokeEventTarget(const std::string &invokeId, const std::str
         throw std::invalid_argument("InvokeEventTarget: Parent session ID cannot be empty");
     }
 
-    LOG_DEBUG("InvokeEventTarget: Created for invoke ID '{}' from parent session '{}'", invokeId_, parentSessionId_);
+    SCE_LOG_DEBUG("InvokeEventTarget: Created for invoke ID '{}' from parent session '{}'", invokeId_, parentSessionId_);
 }
 
 std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
-    LOG_DEBUG("InvokeEventTarget::send() - ENTRY: event='{}', target='{}', invokeId='{}'", event.eventName,
+    SCE_LOG_DEBUG("InvokeEventTarget::send() - ENTRY: event='{}', target='{}', invokeId='{}'", event.eventName,
               event.target, invokeId_);
 
     std::promise<SendResult> resultPromise;
@@ -31,32 +31,32 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
 
     try {
         // [EVENT ROUTING] Step 1: Find child session ID using JSEngine invoke mapping
-        LOG_INFO("[EVENT ROUTING] InvokeEventTarget looking up child session: parent='{}', invokeId='{}'",
+        SCE_LOG_INFO("[EVENT ROUTING] InvokeEventTarget looking up child session: parent='{}', invokeId='{}'",
                  parentSessionId_, invokeId_);
         std::string childSessionId = JSEngine::instance().getInvokeSessionId(parentSessionId_, invokeId_);
         if (childSessionId.empty()) {
-            LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No child session found for invoke ID '{}' in parent '{}'", invokeId_,
+            SCE_LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No child session found for invoke ID '{}' in parent '{}'", invokeId_,
                       parentSessionId_);
             resultPromise.set_value(SendResult::error("No child session found for invoke ID: " + invokeId_,
                                                       SendResult::ErrorType::TARGET_NOT_FOUND));
             return resultFuture;
         }
 
-        LOG_INFO("[EVENT ROUTING] ✅ Found child session '{}' for invoke ID '{}'", childSessionId, invokeId_);
+        SCE_LOG_INFO("[EVENT ROUTING] ✅ Found child session '{}' for invoke ID '{}'", childSessionId, invokeId_);
 
         // [EVENT ROUTING] Step 2: Get EventRaiser for child session from centralized service
-        LOG_INFO("[EVENT ROUTING] Looking up EventRaiser for child session '{}'", childSessionId);
+        SCE_LOG_INFO("[EVENT ROUTING] Looking up EventRaiser for child session '{}'", childSessionId);
         auto eventRaiser = EventRaiserService::getInstance().getEventRaiser(childSessionId);
         if (!eventRaiser) {
-            LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No EventRaiser found for child session '{}'", childSessionId);
+            SCE_LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No EventRaiser found for child session '{}'", childSessionId);
             resultPromise.set_value(SendResult::error("No EventRaiser found for child session: " + childSessionId,
                                                       SendResult::ErrorType::TARGET_NOT_FOUND));
             return resultFuture;
         }
 
-        LOG_INFO("[EVENT ROUTING] ✅ Found EventRaiser for child session '{}'", childSessionId);
+        SCE_LOG_INFO("[EVENT ROUTING] ✅ Found EventRaiser for child session '{}'", childSessionId);
 
-        LOG_DEBUG("InvokeEventTarget: Routing event '{}' to child session '{}' via invoke ID '{}'", event.eventName,
+        SCE_LOG_DEBUG("InvokeEventTarget: Routing event '{}' to child session '{}' via invoke ID '{}'", event.eventName,
                   childSessionId, invokeId_);
 
         // Prepare event data
@@ -85,24 +85,24 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
         // W3C SCXML 5.10: Raise event with origin tracking and origintype (test 253)
         // Origin is parent session, origintype is SCXML processor
         std::string originType = Constants::SCXML_EVENT_PROCESSOR_TYPE;
-        LOG_DEBUG("InvokeEventTarget::send() - Calling eventRaiser->raiseEvent('{}', '{}', origin: '{}', invokeId: "
+        SCE_LOG_DEBUG("InvokeEventTarget::send() - Calling eventRaiser->raiseEvent('{}', '{}', origin: '{}', invokeId: "
                   "'{}', originType: '{}')",
                   eventName, eventData, parentSessionId_, invokeId_, originType);
         bool raiseResult = eventRaiser->raiseEvent(eventName, eventData, parentSessionId_, invokeId_, originType);
-        LOG_DEBUG("InvokeEventTarget::send() - eventRaiser->raiseEvent() returned: {}", raiseResult);
+        SCE_LOG_DEBUG("InvokeEventTarget::send() - eventRaiser->raiseEvent() returned: {}", raiseResult);
 
         if (!raiseResult) {
-            LOG_WARN("InvokeEventTarget: Failed to raise event '{}' in child session '{}'", eventName, childSessionId);
+            SCE_LOG_WARN("InvokeEventTarget: Failed to raise event '{}' in child session '{}'", eventName, childSessionId);
             resultPromise.set_value(
                 SendResult::error("Failed to raise event in child session", SendResult::ErrorType::INTERNAL_ERROR));
         } else {
-            LOG_DEBUG("InvokeEventTarget: Successfully routed event '{}' to child session '{}'", eventName,
+            SCE_LOG_DEBUG("InvokeEventTarget: Successfully routed event '{}' to child session '{}'", eventName,
                       childSessionId);
             resultPromise.set_value(SendResult::success(event.sendId));
         }
 
     } catch (const std::exception &e) {
-        LOG_ERROR("InvokeEventTarget: Error sending event to invoke: {}", e.what());
+        SCE_LOG_ERROR("InvokeEventTarget: Error sending event to invoke: {}", e.what());
         resultPromise.set_value(SendResult::error("Failed to send event to invoke: " + std::string(e.what()),
                                                   SendResult::ErrorType::INTERNAL_ERROR));
     }

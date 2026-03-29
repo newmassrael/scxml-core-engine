@@ -1,5 +1,5 @@
 #include "runtime/StateHierarchyManager.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "model/IStateNode.h"
 #include "model/ITransitionNode.h"
 #include "model/SCXMLModel.h"
@@ -13,40 +13,40 @@ namespace SCE {
 
 StateHierarchyManager::StateHierarchyManager(std::shared_ptr<SCXMLModel> model)
     : model_(model), historyManager_(nullptr) {
-    LOG_DEBUG("StateHierarchyManager: Initialized with SCXML model");
+    SCE_LOG_DEBUG("StateHierarchyManager: Initialized with SCXML model");
 }
 
 bool StateHierarchyManager::enterState(const std::string &stateId) {
     if (!model_ || stateId.empty()) {
-        LOG_WARN("Invalid parameters");
+        SCE_LOG_WARN("Invalid parameters");
         return false;
     }
 
     auto stateNode = model_->findStateById(stateId);
     if (!stateNode) {
-        LOG_WARN("enterState - State not found: {}", stateId);
+        SCE_LOG_WARN("enterState - State not found: {}", stateId);
         return false;
     }
 
-    LOG_DEBUG("enterState - Entering state: {}", stateId);
+    SCE_LOG_DEBUG("enterState - Entering state: {}", stateId);
 
     // W3C SCXML 3.10: History states must be restored, not entered directly
     if (stateNode->getType() == Type::HISTORY) {
         if (!historyManager_) {
-            LOG_ERROR("enterState - History state {} requires historyManager but it's not set", stateId);
+            SCE_LOG_ERROR("enterState - History state {} requires historyManager but it's not set", stateId);
             return false;
         }
 
-        LOG_DEBUG("enterState - Restoring history state: {}", stateId);
+        SCE_LOG_DEBUG("enterState - Restoring history state: {}", stateId);
 
         // W3C SCXML 3.10: Restore history and enter target states
         auto restorationResult = historyManager_->restoreHistory(stateId);
         if (!restorationResult.success || restorationResult.targetStateIds.empty()) {
-            LOG_ERROR("enterState - History restoration failed for: {}", stateId);
+            SCE_LOG_ERROR("enterState - History restoration failed for: {}", stateId);
             return false;
         }
 
-        LOG_DEBUG("enterState - History restoration successful, entering {} target states",
+        SCE_LOG_DEBUG("enterState - History restoration successful, entering {} target states",
                   restorationResult.targetStateIds.size());
 
         // W3C SCXML 3.10 (test 579): Execute default transition actions ONLY if no stored history
@@ -59,7 +59,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
                     const auto &defaultTransition = transitions[0];
                     const auto &actions = defaultTransition->getActionNodes();
                     if (!actions.empty() && initialTransitionCallback_) {
-                        LOG_DEBUG("enterState - Executing {} default transition actions for history state {}",
+                        SCE_LOG_DEBUG("enterState - Executing {} default transition actions for history state {}",
                                   actions.size(), stateId);
                         initialTransitionCallback_(actions);
                     }
@@ -71,7 +71,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
         bool allEntered = true;
         for (const auto &targetStateId : restorationResult.targetStateIds) {
             if (!enterState(targetStateId)) {
-                LOG_ERROR("enterState - Failed to enter history target state: {}", targetStateId);
+                SCE_LOG_ERROR("enterState - Failed to enter history target state: {}", targetStateId);
                 allEntered = false;
             }
         }
@@ -87,7 +87,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
         auto parallelState = dynamic_cast<ConcurrentStateNode *>(stateNode);
         assert(parallelState && "SCXML violation: PARALLEL type state must be ConcurrentStateNode");
 
-        LOG_DEBUG("enterState - Entering parallel state with region activation: {}", stateId);
+        SCE_LOG_DEBUG("enterState - Entering parallel state with region activation: {}", stateId);
 
         // W3C SCXML 6.4: Set invoke callback for all regions BEFORE activation
         // This is critical because enterParallelState() will activate regions,
@@ -99,7 +99,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
             for (const auto &region : regions) {
                 if (region) {
                     region->setInvokeCallback(invokeDeferCallback_);
-                    LOG_DEBUG("StateHierarchyManager: Set invoke callback for region: {} BEFORE activation",
+                    SCE_LOG_DEBUG("StateHierarchyManager: Set invoke callback for region: {} BEFORE activation",
                               region->getId());
                 }
             }
@@ -111,7 +111,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
             for (const auto &region : regions) {
                 if (region) {
                     region->setConditionEvaluator(conditionEvaluator_);
-                    LOG_DEBUG("StateHierarchyManager: Set condition evaluator for region '{}' BEFORE activation",
+                    SCE_LOG_DEBUG("StateHierarchyManager: Set condition evaluator for region '{}' BEFORE activation",
                               region->getId());
                 }
             }
@@ -122,7 +122,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
 
         auto result = parallelState->enterParallelState();
         if (!result.isSuccess) {
-            LOG_ERROR("enterState - Failed to enter parallel state '{}': {}", stateId, result.errorMessage);
+            SCE_LOG_ERROR("enterState - Failed to enter parallel state '{}': {}", stateId, result.errorMessage);
             return false;
         }
 
@@ -130,9 +130,9 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
         // This handles done.state events that cause immediate transitions during parallel state activation
         std::string currentStateAfterEntry = getCurrentState();
         if (currentStateAfterEntry != stateId && !currentStateAfterEntry.empty()) {
-            LOG_DEBUG("SCXML macrostep: Parallel state entry triggered transition (expected: {}, actual: {})", stateId,
+            SCE_LOG_DEBUG("SCXML macrostep: Parallel state entry triggered transition (expected: {}, actual: {})", stateId,
                       currentStateAfterEntry);
-            LOG_DEBUG(
+            SCE_LOG_DEBUG(
                 "Skipping region activation - parallel state was exited during entry (e.g., done.state transition)");
             return true;  // Exit early - the transition has already completed
         }
@@ -146,7 +146,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
 
             std::string regionStateId = rootState->getId();
             addStateToConfiguration(regionStateId);
-            LOG_DEBUG("enterState - Added region state to configuration: {}", regionStateId);
+            SCE_LOG_DEBUG("enterState - Added region state to configuration: {}", regionStateId);
 
             // SCXML W3C specification: Enter initial child state of each region
             const auto &children = rootState->getChildren();
@@ -161,19 +161,19 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
                 // Check if initial child is a history state - if so, restore history instead
                 auto initialChildNode = model_->findStateById(initialChild);
                 if (initialChildNode && initialChildNode->getType() == Type::HISTORY) {
-                    LOG_DEBUG(
+                    SCE_LOG_DEBUG(
                         "StateHierarchyManager: Initial child '{}' is HISTORY state, performing history restoration "
                         "(W3C SCXML 3.10 compliance)",
                         initialChild);
 
                     // W3C SCXML 3.10: Restore history directly using HistoryManager
                     if (!historyManager_) {
-                        LOG_ERROR("StateHierarchyManager: History state {} requires historyManager but it's not set",
+                        SCE_LOG_ERROR("StateHierarchyManager: History state {} requires historyManager but it's not set",
                                   initialChild);
                     } else {
                         auto restorationResult = historyManager_->restoreHistory(initialChild);
                         if (restorationResult.success && !restorationResult.targetStateIds.empty()) {
-                            LOG_DEBUG(
+                            SCE_LOG_DEBUG(
                                 "StateHierarchyManager: History restoration successful, entering {} target states",
                                 restorationResult.targetStateIds.size());
 
@@ -185,7 +185,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
                                     const auto &defaultTransition = transitions[0];
                                     const auto &actions = defaultTransition->getActionNodes();
                                     if (!actions.empty() && initialTransitionCallback_) {
-                                        LOG_DEBUG("StateHierarchyManager: Executing {} default transition actions for "
+                                        SCE_LOG_DEBUG("StateHierarchyManager: Executing {} default transition actions for "
                                                   "history state {}",
                                                   actions.size(), initialChild);
                                         initialTransitionCallback_(actions);
@@ -196,11 +196,11 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
                             // Add restored states to configuration (not the history state itself)
                             for (const auto &targetStateId : restorationResult.targetStateIds) {
                                 addStateToConfiguration(targetStateId);
-                                LOG_DEBUG("StateHierarchyManager: Added restored state to configuration: {}",
+                                SCE_LOG_DEBUG("StateHierarchyManager: Added restored state to configuration: {}",
                                           targetStateId);
                             }
                         } else {
-                            LOG_ERROR("StateHierarchyManager: History restoration failed for {}: {}", initialChild,
+                            SCE_LOG_ERROR("StateHierarchyManager: History restoration failed for {}: {}", initialChild,
                                       restorationResult.errorMessage);
                         }
                     }
@@ -214,7 +214,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
             }
         }
 
-        LOG_DEBUG("enterState - Successfully activated all regions in parallel state: {}", stateId);
+        SCE_LOG_DEBUG("enterState - Successfully activated all regions in parallel state: {}", stateId);
     } else if (isCompoundState(stateNode)) {
         // SCXML W3C specification: For compound states, add parent to configuration AND enter initial child
         addStateToConfiguration(stateId);
@@ -223,7 +223,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
         // Compound states can have invokes that should be started when the state is entered
         const auto &invokes = stateNode->getInvoke();
         if (!invokes.empty() && invokeDeferCallback_) {
-            LOG_DEBUG("StateHierarchyManager: Deferring {} invokes for compound state: {}", invokes.size(), stateId);
+            SCE_LOG_DEBUG("StateHierarchyManager: Deferring {} invokes for compound state: {}", invokes.size(), stateId);
             invokeDeferCallback_(stateId, invokes);
         }
 
@@ -238,11 +238,11 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
                 const auto &actionNodes = initialTransition->getActionNodes();
                 if (!actionNodes.empty()) {
                     if (!initialTransitionCallback_) {
-                        LOG_WARN("StateHierarchyManager: Initial transition has {} action(s) but callback not set - "
+                        SCE_LOG_WARN("StateHierarchyManager: Initial transition has {} action(s) but callback not set - "
                                  "W3C SCXML 3.13 violation for state: {}",
                                  actionNodes.size(), stateId);
                     } else {
-                        LOG_DEBUG("StateHierarchyManager: Executing {} actions from <initial> transition for state: {}",
+                        SCE_LOG_DEBUG("StateHierarchyManager: Executing {} actions from <initial> transition for state: {}",
                                   actionNodes.size(), stateId);
                         initialTransitionCallback_(actionNodes);
                     }
@@ -260,7 +260,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
             while (issPreprocess >> targetId) {
                 auto targetState = model_->findStateById(targetId);
                 if (!targetState) {
-                    LOG_ERROR("enterState - Initial target state not found: {}", targetId);
+                    SCE_LOG_ERROR("enterState - Initial target state not found: {}", targetId);
                     continue;
                 }
 
@@ -288,7 +288,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
                                     region->getRootState()->getId() == current->getId()) {
                                     // Found the region - set desired initial child
                                     region->setDesiredInitialChild(targetId);
-                                    LOG_DEBUG("StateHierarchyManager: Set region '{}' desiredInitialChild='{}' from "
+                                    SCE_LOG_DEBUG("StateHierarchyManager: Set region '{}' desiredInitialChild='{}' from "
                                               "parent state '{}' initial attribute",
                                               region->getId(), targetId, stateId);
                                     break;
@@ -307,22 +307,22 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
             std::vector<std::string> statesForDeferredOnEntry;
 
             while (iss >> initialChild) {
-                LOG_DEBUG("enterState - Compound state: {} entering initial child: {}", stateId, initialChild);
+                SCE_LOG_DEBUG("enterState - Compound state: {} entering initial child: {}", stateId, initialChild);
 
                 auto childState = model_->findStateById(initialChild);
 
                 // W3C SCXML 3.3: For deep initial targets (not direct children), enter all ancestors
                 if (childState && childState->getParent() != stateNode) {
                     // Deep target - need to enter intermediate ancestors
-                    LOG_DEBUG("enterState - Deep initial target detected, entering ancestors for: {}", initialChild);
+                    SCE_LOG_DEBUG("enterState - Deep initial target detected, entering ancestors for: {}", initialChild);
                     if (!enterStateWithAncestors(initialChild, stateNode, &statesForDeferredOnEntry)) {
-                        LOG_ERROR("enterState - Failed to enter ancestors for: {}", initialChild);
+                        SCE_LOG_ERROR("enterState - Failed to enter ancestors for: {}", initialChild);
                         allEntered = false;
                     }
                 } else {
                     // Direct child - use recursive entry (history states handled by early delegation)
                     if (!enterState(initialChild)) {
-                        LOG_ERROR("enterState - Failed to enter initial child: {}", initialChild);
+                        SCE_LOG_ERROR("enterState - Failed to enter initial child: {}", initialChild);
                         allEntered = false;
                     }
                 }
@@ -340,7 +340,7 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
 
             return allEntered;
         } else {
-            LOG_WARN("enterState - No initial child found for compound state: {}", stateId);
+            SCE_LOG_WARN("enterState - No initial child found for compound state: {}", stateId);
         }
     } else {
         // SCXML W3C specification: Atomic and final states are always added to active configuration
@@ -352,14 +352,14 @@ bool StateHierarchyManager::enterState(const std::string &stateId) {
         if (stateType == Type::ATOMIC || stateType == Type::FINAL) {
             const auto &invokes = stateNode->getInvoke();
             if (!invokes.empty() && invokeDeferCallback_) {
-                LOG_DEBUG("StateHierarchyManager: Deferring {} invokes for {} state: {}", invokes.size(),
+                SCE_LOG_DEBUG("StateHierarchyManager: Deferring {} invokes for {} state: {}", invokes.size(),
                           stateType == Type::ATOMIC ? "atomic" : "final", stateId);
                 invokeDeferCallback_(stateId, invokes);
             }
         }
     }
 
-    LOG_DEBUG("enterState - Successfully entered: {}", stateId);
+    SCE_LOG_DEBUG("enterState - Successfully entered: {}", stateId);
     return true;
 }
 
@@ -368,7 +368,7 @@ std::string StateHierarchyManager::getCurrentState() const {
     std::lock_guard<std::mutex> lock(configurationMutex_);
 
     if (activeStates_.empty()) {
-        LOG_WARN("No active states");
+        SCE_LOG_WARN("No active states");
         return "";
     }
 
@@ -417,7 +417,7 @@ void StateHierarchyManager::exitState(const std::string &stateId, std::shared_pt
         return;
     }
 
-    LOG_DEBUG("exitState - Exiting state: {}", stateId);
+    SCE_LOG_DEBUG("exitState - Exiting state: {}", stateId);
 
     // W3C SCXML 3.13: Parallel states need conditional region deactivation (test 504)
     // Check if regions are already exited (in exit set) to avoid duplicate exit actions
@@ -439,13 +439,13 @@ void StateHierarchyManager::exitState(const std::string &stateId, std::shared_pt
             // Only deactivate regions if they're still active
             // If regions already exited (via exit set), skip to avoid duplicate actions
             if (hasActiveRegions) {
-                LOG_DEBUG("exitState - Deactivating active regions in parallel state: {}", stateId);
+                SCE_LOG_DEBUG("exitState - Deactivating active regions in parallel state: {}", stateId);
                 auto result = parallelState->exitParallelState(executionContext);
                 if (!result.isSuccess) {
-                    LOG_WARN("exitState - Warning during parallel state exit '{}': {}", stateId, result.errorMessage);
+                    SCE_LOG_WARN("exitState - Warning during parallel state exit '{}': {}", stateId, result.errorMessage);
                 }
             } else {
-                LOG_DEBUG("exitState - Parallel state '{}' regions already exited via exit set", stateId);
+                SCE_LOG_DEBUG("exitState - Parallel state '{}' regions already exited via exit set", stateId);
             }
 
             // SCXML W3C: Remove the parallel state and ALL its descendants from active states
@@ -462,7 +462,7 @@ void StateHierarchyManager::reset() {
     // TSAN FIX: Protect configuration access with mutex
     std::lock_guard<std::mutex> lock(configurationMutex_);
 
-    LOG_DEBUG("Clearing all active states");
+    SCE_LOG_DEBUG("Clearing all active states");
     activeStates_.clear();
     activeSet_.clear();
 }
@@ -488,7 +488,7 @@ void StateHierarchyManager::exitParallelStateAndDescendants(const std::string &p
         if (it != activeStates_.end()) {
             statesToRemove.push_back(parallelStateId);
         } else {
-            LOG_WARN("StateHierarchyManager::exitParallelStateAndDescendants - Parallel state '{}' not in active "
+            SCE_LOG_WARN("StateHierarchyManager::exitParallelStateAndDescendants - Parallel state '{}' not in active "
                      "configuration",
                      parallelStateId);
         }
@@ -509,7 +509,7 @@ void StateHierarchyManager::exitParallelStateAndDescendants(const std::string &p
                 }
             }
         } else {
-            LOG_WARN(
+            SCE_LOG_WARN(
                 "StateHierarchyManager::exitParallelStateAndDescendants - Parallel node not found or wrong type: '{}'",
                 parallelStateId);
         }
@@ -537,8 +537,8 @@ void StateHierarchyManager::exitHierarchicalState(const std::string &stateId) {
             }
             activeStatesStr += state;
         }
-        LOG_DEBUG("exitHierarchicalState - Current active states: [{}]", activeStatesStr);
-        LOG_DEBUG("exitHierarchicalState - Requested to exit state: {}", stateId);
+        SCE_LOG_DEBUG("exitHierarchicalState - Current active states: [{}]", activeStatesStr);
+        SCE_LOG_DEBUG("exitHierarchicalState - Requested to exit state: {}", stateId);
 
         bool foundState = false;
         for (auto it = activeStates_.begin(); it != activeStates_.end(); ++it) {
@@ -559,18 +559,18 @@ void StateHierarchyManager::exitHierarchicalState(const std::string &stateId) {
         }
         toRemoveStr += state;
     }
-    LOG_DEBUG("exitHierarchicalState - Will remove {} states: [{}]", statesToRemove.size(), toRemoveStr);
+    SCE_LOG_DEBUG("exitHierarchicalState - Will remove {} states: [{}]", statesToRemove.size(), toRemoveStr);
 
     for (const auto &state : statesToRemove) {
         removeStateFromConfiguration(state);
     }
 
-    LOG_DEBUG("exitHierarchicalState - Removed {} hierarchical states", statesToRemove.size());
+    SCE_LOG_DEBUG("exitHierarchicalState - Removed {} hierarchical states", statesToRemove.size());
 }
 
 // Recursively find all child states of a parent in the active configuration
 void StateHierarchyManager::collectDescendantStates(const std::string &parentId, std::vector<std::string> &collector) {
-    LOG_DEBUG("collectDescendantStates - Collecting descendants for parent: {}", parentId);
+    SCE_LOG_DEBUG("collectDescendantStates - Collecting descendants for parent: {}", parentId);
 
     // TSAN FIX: Access activeStates_ while holding the lock
     {
@@ -580,9 +580,9 @@ void StateHierarchyManager::collectDescendantStates(const std::string &parentId,
         auto it = std::find(activeStates_.begin(), activeStates_.end(), parentId);
         if (it != activeStates_.end()) {
             collector.push_back(parentId);
-            LOG_DEBUG("collectDescendantStates - Added parent state: {}", parentId);
+            SCE_LOG_DEBUG("collectDescendantStates - Added parent state: {}", parentId);
         } else {
-            LOG_DEBUG("collectDescendantStates - Parent state {} not in active states", parentId);
+            SCE_LOG_DEBUG("collectDescendantStates - Parent state {} not in active states", parentId);
         }
     }
 
@@ -591,18 +591,18 @@ void StateHierarchyManager::collectDescendantStates(const std::string &parentId,
         auto parentNode = model_->findStateById(parentId);
         if (parentNode) {
             const auto &children = parentNode->getChildren();
-            LOG_DEBUG("collectDescendantStates - Parent {} has {} children", parentId, children.size());
+            SCE_LOG_DEBUG("collectDescendantStates - Parent {} has {} children", parentId, children.size());
             for (const auto &child : children) {
                 if (child) {
-                    LOG_DEBUG("collectDescendantStates - Processing child: {}", child->getId());
+                    SCE_LOG_DEBUG("collectDescendantStates - Processing child: {}", child->getId());
                     collectDescendantStates(child->getId(), collector);
                 }
             }
         } else {
-            LOG_WARN("collectDescendantStates - Parent node not found: {}", parentId);
+            SCE_LOG_WARN("collectDescendantStates - Parent node not found: {}", parentId);
         }
     } else {
-        LOG_WARN("collectDescendantStates - No model available");
+        SCE_LOG_WARN("collectDescendantStates - No model available");
     }
 
     // Find and add all child states recursively
@@ -651,7 +651,7 @@ void StateHierarchyManager::addStateToConfiguration(const std::string &stateId) 
             return;  // State already removed, don't continue
         }
     } else if (shouldExecuteCallback) {
-        LOG_WARN("StateHierarchyManager::addStateToConfiguration - No onentry callback set for state '{}'", stateId);
+        SCE_LOG_WARN("StateHierarchyManager::addStateToConfiguration - No onentry callback set for state '{}'", stateId);
     }
 }
 
@@ -675,7 +675,7 @@ bool StateHierarchyManager::enterStateWithAncestors(const std::string &targetSta
 
     auto targetState = model_->findStateById(targetStateId);
     if (!targetState) {
-        LOG_ERROR("enterStateWithAncestors - Target state not found: {}", targetStateId);
+        SCE_LOG_ERROR("enterStateWithAncestors - Target state not found: {}", targetStateId);
         return false;
     }
 
@@ -700,7 +700,7 @@ bool StateHierarchyManager::enterStateWithAncestors(const std::string &targetSta
 
         // Skip if already active
         if (isStateActive(stateId)) {
-            LOG_DEBUG("enterStateWithAncestors - State already active, skipping: {}", stateId);
+            SCE_LOG_DEBUG("enterStateWithAncestors - State already active, skipping: {}", stateId);
             continue;
         }
 
@@ -709,7 +709,7 @@ bool StateHierarchyManager::enterStateWithAncestors(const std::string &targetSta
         if (stateType == Type::PARALLEL) {
             // Add parallel state to configuration without onentry
             addStateToConfigurationWithoutOnEntry(stateId);
-            LOG_DEBUG("enterStateWithAncestors - Entered parallel ancestor: {}", stateId);
+            SCE_LOG_DEBUG("enterStateWithAncestors - Entered parallel ancestor: {}", stateId);
 
             // W3C SCXML 3.4: Activate parallel state regions
             // This is essential for event processing to work correctly
@@ -736,7 +736,7 @@ bool StateHierarchyManager::enterStateWithAncestors(const std::string &targetSta
             // Activate regions (but don't enter initial states - deep targets will handle that)
             auto result = parallelState->enterParallelState();
             if (!result.isSuccess) {
-                LOG_ERROR("enterStateWithAncestors - Failed to activate parallel state regions: {}", stateId);
+                SCE_LOG_ERROR("enterStateWithAncestors - Failed to activate parallel state regions: {}", stateId);
                 return false;
             }
 
@@ -745,7 +745,7 @@ bool StateHierarchyManager::enterStateWithAncestors(const std::string &targetSta
         } else {
             // For non-parallel states, just add to configuration
             addStateToConfigurationWithoutOnEntry(stateId);
-            LOG_DEBUG("enterStateWithAncestors - Entered ancestor/target: {}", stateId);
+            SCE_LOG_DEBUG("enterStateWithAncestors - Entered ancestor/target: {}", stateId);
 
             // W3C SCXML: Defer onentry execution
             statesForOnEntry->push_back(stateId);
@@ -754,7 +754,7 @@ bool StateHierarchyManager::enterStateWithAncestors(const std::string &targetSta
             if (stateType == Type::COMPOUND || stateType == Type::ATOMIC || stateType == Type::FINAL) {
                 const auto &invokes = stateToEnter->getInvoke();
                 if (!invokes.empty() && invokeDeferCallback_) {
-                    LOG_DEBUG("enterStateWithAncestors: Deferring {} invokes for {} state: {}", invokes.size(),
+                    SCE_LOG_DEBUG("enterStateWithAncestors: Deferring {} invokes for {} state: {}", invokes.size(),
                               stateType == Type::COMPOUND ? "compound"
                                                           : (stateType == Type::ATOMIC ? "atomic" : "final"),
                               stateId);
@@ -767,11 +767,11 @@ bool StateHierarchyManager::enterStateWithAncestors(const std::string &targetSta
             if (stateType == Type::COMPOUND && stateToEnter == targetState) {
                 std::string initialChild = findInitialChildState(stateToEnter);
                 if (!initialChild.empty()) {
-                    LOG_DEBUG("W3C SCXML 3.3: Target {} is compound, recursively entering initial child: {}", stateId,
+                    SCE_LOG_DEBUG("W3C SCXML 3.3: Target {} is compound, recursively entering initial child: {}", stateId,
                               initialChild);
                     // Recursive call - automatically handles nested compound states
                     if (!enterStateWithAncestors(initialChild, stateToEnter, statesForOnEntry)) {
-                        LOG_ERROR("enterStateWithAncestors - Failed to enter initial child {} of compound target {}",
+                        SCE_LOG_ERROR("enterStateWithAncestors - Failed to enter initial child {} of compound target {}",
                                   initialChild, stateId);
                         return false;
                     }
@@ -781,16 +781,16 @@ bool StateHierarchyManager::enterStateWithAncestors(const std::string &targetSta
             // Parallel states require all child regions to be active simultaneously
             else if (stateType == Type::PARALLEL && stateToEnter == targetState) {
                 const auto &children = stateToEnter->getChildren();
-                LOG_DEBUG("W3C SCXML 3.4: Target {} is parallel, entering all {} children", stateId, children.size());
+                SCE_LOG_DEBUG("W3C SCXML 3.4: Target {} is parallel, entering all {} children", stateId, children.size());
 
                 for (const auto &child : children) {
                     if (child) {
                         const std::string &childId = child->getId();
-                        LOG_DEBUG("W3C SCXML 3.4: Parallel state {} entering child: {}", stateId, childId);
+                        SCE_LOG_DEBUG("W3C SCXML 3.4: Parallel state {} entering child: {}", stateId, childId);
 
                         // Recursive call - each child may itself be compound or parallel
                         if (!enterStateWithAncestors(childId, stateToEnter, statesForOnEntry)) {
-                            LOG_ERROR("enterStateWithAncestors - Failed to enter parallel child {} of target {}",
+                            SCE_LOG_ERROR("enterStateWithAncestors - Failed to enter parallel child {} of target {}",
                                       childId, stateId);
                             return false;
                         }
@@ -833,7 +833,7 @@ void StateHierarchyManager::removeStateFromConfiguration(const std::string &stat
     // Remove from set
     activeSet_.erase(stateId);
 
-    LOG_DEBUG("removeStateFromConfiguration - Removed: {}", stateId);
+    SCE_LOG_DEBUG("removeStateFromConfiguration - Removed: {}", stateId);
 }
 
 std::string StateHierarchyManager::findInitialChildState(IStateNode *stateNode) const {
@@ -844,7 +844,7 @@ std::string StateHierarchyManager::findInitialChildState(IStateNode *stateNode) 
     // 1. Check explicit initial attribute
     std::string explicitInitial = stateNode->getInitialState();
     if (!explicitInitial.empty()) {
-        LOG_DEBUG("findInitialChildState - Found explicit initial: {}", explicitInitial);
+        SCE_LOG_DEBUG("findInitialChildState - Found explicit initial: {}", explicitInitial);
         return explicitInitial;
     }
 
@@ -852,11 +852,11 @@ std::string StateHierarchyManager::findInitialChildState(IStateNode *stateNode) 
     const auto &children = stateNode->getChildren();
     if (!children.empty() && children[0]) {
         std::string defaultInitial = children[0]->getId();
-        LOG_DEBUG("findInitialChildState - Using default initial: {}", defaultInitial);
+        SCE_LOG_DEBUG("findInitialChildState - Using default initial: {}", defaultInitial);
         return defaultInitial;
     }
 
-    LOG_DEBUG("No child states found");
+    SCE_LOG_DEBUG("No child states found");
     return "";
 }
 
@@ -918,7 +918,7 @@ void StateHierarchyManager::synchronizeParallelRegionState(const std::string &st
                         // Check if stateId belongs to this region
                         if (isStateDescendantOf(region->getRootState().get(), stateId)) {
                             region->setCurrentState(stateId);
-                            LOG_DEBUG("W3C SCXML 405: Synchronized region '{}' currentState to '{}'", region->getId(),
+                            SCE_LOG_DEBUG("W3C SCXML 405: Synchronized region '{}' currentState to '{}'", region->getId(),
                                       stateId);
                             break;  // Found the region, no need to check others
                         }
@@ -934,25 +934,25 @@ void StateHierarchyManager::synchronizeParallelRegionState(const std::string &st
 
 void StateHierarchyManager::setOnEntryCallback(std::function<void(const std::string &)> callback) {
     onEntryCallback_ = callback;
-    LOG_DEBUG("OnEntry callback set for StateHierarchyManager");
+    SCE_LOG_DEBUG("OnEntry callback set for StateHierarchyManager");
 }
 
 void StateHierarchyManager::setInvokeDeferCallback(
     std::function<void(const std::string &, const std::vector<std::shared_ptr<IInvokeNode>> &)> callback) {
     invokeDeferCallback_ = callback;
-    LOG_DEBUG("StateHierarchyManager: Invoke defer callback set for W3C SCXML 6.4 compliance");
+    SCE_LOG_DEBUG("StateHierarchyManager: Invoke defer callback set for W3C SCXML 6.4 compliance");
 }
 
 void StateHierarchyManager::setConditionEvaluator(std::function<bool(const std::string &)> evaluator) {
     conditionEvaluator_ = evaluator;
-    LOG_DEBUG("StateHierarchyManager: Condition evaluator callback set for W3C SCXML transition guard compliance");
+    SCE_LOG_DEBUG("StateHierarchyManager: Condition evaluator callback set for W3C SCXML transition guard compliance");
 }
 
 void StateHierarchyManager::setExecutionContext(std::shared_ptr<IExecutionContext> context) {
     executionContext_ = context;
 
     if (!executionContext_) {
-        LOG_WARN("StateHierarchyManager: ExecutionContext set to null - parallel state regions will not be able to "
+        SCE_LOG_WARN("StateHierarchyManager: ExecutionContext set to null - parallel state regions will not be able to "
                  "execute transition actions (W3C SCXML 403c may fail)");
         return;
     }
@@ -971,31 +971,31 @@ void StateHierarchyManager::setExecutionContext(std::shared_ptr<IExecutionContex
         }
     }
 
-    LOG_DEBUG("StateHierarchyManager: ExecutionContext set for concurrent region action execution (W3C SCXML 403c "
+    SCE_LOG_DEBUG("StateHierarchyManager: ExecutionContext set for concurrent region action execution (W3C SCXML 403c "
               "compliance)");
 }
 
 void StateHierarchyManager::setInitialTransitionCallback(
     std::function<void(const std::vector<std::shared_ptr<IActionNode>> &)> callback) {
     initialTransitionCallback_ = callback;
-    LOG_DEBUG("StateHierarchyManager: Initial transition callback set for W3C SCXML 3.13 compliance");
+    SCE_LOG_DEBUG("StateHierarchyManager: Initial transition callback set for W3C SCXML 3.13 compliance");
 }
 
 void StateHierarchyManager::setEnterStateCallback(std::function<bool(const std::string &)> callback) {
     enterStateCallback_ = callback;
-    LOG_DEBUG("StateHierarchyManager: Enter state callback set for W3C SCXML 3.10 history compliance");
+    SCE_LOG_DEBUG("StateHierarchyManager: Enter state callback set for W3C SCXML 3.10 history compliance");
 }
 
 void StateHierarchyManager::setHistoryManager(HistoryManager *historyManager) {
     historyManager_ = historyManager;
-    LOG_DEBUG("StateHierarchyManager: History manager set for W3C SCXML 3.10 direct restoration");
+    SCE_LOG_DEBUG("StateHierarchyManager: History manager set for W3C SCXML 3.10 direct restoration");
 }
 
 void StateHierarchyManager::updateRegionExecutionContexts(ConcurrentStateNode *parallelState) {
     // W3C SCXML 403c: DRY principle - centralized executionContext management for parallel state regions
     if (!parallelState || !executionContext_) {
         if (!executionContext_) {
-            LOG_WARN("StateHierarchyManager: Cannot update region executionContexts - executionContext is null");
+            SCE_LOG_WARN("StateHierarchyManager: Cannot update region executionContexts - executionContext is null");
         }
         return;
     }
@@ -1004,7 +1004,7 @@ void StateHierarchyManager::updateRegionExecutionContexts(ConcurrentStateNode *p
     for (const auto &region : regions) {
         if (region) {
             region->setExecutionContext(executionContext_);
-            LOG_DEBUG(
+            SCE_LOG_DEBUG(
                 "StateHierarchyManager: Set executionContext for region '{}' in parallel state '{}' (W3C SCXML 403c)",
                 region->getId(), parallelState->getId());
         }
@@ -1097,7 +1097,7 @@ void StateHierarchyManager::updateParallelRegionCurrentStates() {
                             const std::string &deepestState = it->second;
                             if (deepestState != region->getCurrentState()) {
                                 region->setCurrentState(deepestState);
-                                LOG_DEBUG("Updated region {} currentState to deep target: {}", regionId, deepestState);
+                                SCE_LOG_DEBUG("Updated region {} currentState to deep target: {}", regionId, deepestState);
                             }
                         }
                     }

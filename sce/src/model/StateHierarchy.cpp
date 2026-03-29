@@ -1,5 +1,5 @@
 #include "model/StateHierarchy.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "model/ITransitionNode.h"
 #include <algorithm>
 #include <iostream>
@@ -8,16 +8,16 @@
 #include <unordered_set>
 
 SCE::StateHierarchy::StateHierarchy() : rootState_(nullptr) {
-    LOG_DEBUG("Creating state hierarchy");
+    SCE_LOG_DEBUG("Creating state hierarchy");
 }
 
 SCE::StateHierarchy::~StateHierarchy() {
-    LOG_DEBUG("Destroying state hierarchy");
+    SCE_LOG_DEBUG("Destroying state hierarchy");
     // Smart pointers handle resource cleanup
 }
 
 void SCE::StateHierarchy::setRootState(std::shared_ptr<SCE::IStateNode> rootState) {
-    LOG_DEBUG("Setting root state: {}", (rootState ? rootState->getId() : "null"));
+    SCE_LOG_DEBUG("Setting root state: {}", (rootState ? rootState->getId() : "null"));
     rootState_ = rootState;
 
     if (rootState_) {
@@ -32,17 +32,17 @@ SCE::IStateNode *SCE::StateHierarchy::getRootState() const {
 
 bool SCE::StateHierarchy::addState(std::shared_ptr<SCE::IStateNode> state, const std::string &parentId) {
     if (!state) {
-        LOG_WARN("Attempt to add null state");
+        SCE_LOG_WARN("Attempt to add null state");
         return false;
     }
 
-    LOG_DEBUG("Adding state: {}", state->getId());
+    SCE_LOG_DEBUG("Adding state: {}", state->getId());
 
     // If parent ID is specified, find the parent and add as child
     if (!parentId.empty()) {
         SCE::IStateNode *parent = findStateById(parentId);
         if (!parent) {
-            LOG_ERROR("Parent state not found: {}", parentId);
+            SCE_LOG_ERROR("Parent state not found: {}", parentId);
             return false;
         }
 
@@ -113,7 +113,7 @@ const std::vector<std::shared_ptr<SCE::IStateNode>> &SCE::StateHierarchy::getAll
 }
 
 bool SCE::StateHierarchy::validateRelationships() const {
-    LOG_INFO("Validating state relationships");
+    SCE_LOG_INFO("Validating state relationships");
 
     // Validate all states
     for (const auto &state : allStates_) {
@@ -130,7 +130,7 @@ bool SCE::StateHierarchy::validateRelationships() const {
             }
 
             if (!foundAsChild) {
-                LOG_ERROR("State '{}' has parent '{}' but is not in parent's children list", state->getId(),
+                SCE_LOG_ERROR("State '{}' has parent '{}' but is not in parent's children list", state->getId(),
                           parent->getId());
                 return false;
             }
@@ -144,19 +144,19 @@ bool SCE::StateHierarchy::validateRelationships() const {
             while (iss >> initialStateId) {
                 // Search in entire state hierarchy (not just direct children)
                 if (!findStateById(initialStateId)) {
-                    LOG_ERROR("State '{}' references non-existent initial state '{}'", state->getId(), initialStateId);
+                    SCE_LOG_ERROR("State '{}' references non-existent initial state '{}'", state->getId(), initialStateId);
                     return false;
                 }
             }
         }
     }
 
-    LOG_INFO("All state relationships are valid");
+    SCE_LOG_INFO("All state relationships are valid");
     return true;
 }
 
 std::vector<std::string> SCE::StateHierarchy::findMissingStateIds() const {
-    LOG_INFO("Looking for missing state IDs");
+    SCE_LOG_INFO("Looking for missing state IDs");
 
     std::vector<std::string> missingIds;
     std::unordered_set<std::string> existingIds;
@@ -171,7 +171,7 @@ std::vector<std::string> SCE::StateHierarchy::findMissingStateIds() const {
         // Check initial state
         if (!state->getInitialState().empty() && existingIds.find(state->getInitialState()) == existingIds.end()) {
             missingIds.push_back(state->getInitialState());
-            LOG_WARN("Missing state ID referenced as initial state: {}", state->getInitialState());
+            SCE_LOG_WARN("Missing state ID referenced as initial state: {}", state->getInitialState());
         }
 
         // Check transition targets
@@ -180,7 +180,7 @@ std::vector<std::string> SCE::StateHierarchy::findMissingStateIds() const {
             for (const auto &target : targets) {
                 if (!target.empty() && existingIds.find(target) == existingIds.end()) {
                     missingIds.push_back(target);
-                    LOG_WARN("Missing state ID referenced as transition target: {}", target);
+                    SCE_LOG_WARN("Missing state ID referenced as transition target: {}", target);
                 }
             }
         }
@@ -190,23 +190,23 @@ std::vector<std::string> SCE::StateHierarchy::findMissingStateIds() const {
     std::sort(missingIds.begin(), missingIds.end());
     missingIds.erase(std::unique(missingIds.begin(), missingIds.end()), missingIds.end());
 
-    LOG_INFO("Found {} missing state IDs", missingIds.size());
+    SCE_LOG_INFO("Found {} missing state IDs", missingIds.size());
     return missingIds;
 }
 
 void SCE::StateHierarchy::printHierarchy() const {
-    LOG_INFO("Printing state hierarchy");
+    SCE_LOG_INFO("Printing state hierarchy");
 
-    LOG_INFO("State Hierarchy:");
-    LOG_INFO("===============");
+    SCE_LOG_INFO("State Hierarchy:");
+    SCE_LOG_INFO("===============");
 
     if (rootState_) {
         printStateHierarchy(rootState_.get(), 0);
     } else {
-        LOG_INFO("  <No root state>");
+        SCE_LOG_INFO("  <No root state>");
     }
 
-    LOG_INFO("State hierarchy printed");
+    SCE_LOG_INFO("State hierarchy printed");
 }
 
 void SCE::StateHierarchy::printStateHierarchy(SCE::IStateNode *state, int depth) const {
@@ -218,56 +218,56 @@ void SCE::StateHierarchy::printStateHierarchy(SCE::IStateNode *state, int depth)
     std::string indent(depth * 2, ' ');
 
     // Output current state information
-    LOG_INFO("{}State: {}", indent, state->getId());
+    SCE_LOG_INFO("{}State: {}", indent, state->getId());
 
     // Output state type
     switch (state->getType()) {
     case Type::ATOMIC:
-        LOG_INFO(" (atomic)");
+        SCE_LOG_INFO(" (atomic)");
         break;
     case Type::COMPOUND:
-        LOG_INFO(" (compound)");
+        SCE_LOG_INFO(" (compound)");
         break;
     case Type::PARALLEL:
-        LOG_INFO(" (parallel)");
+        SCE_LOG_INFO(" (parallel)");
         break;
     case Type::FINAL:
-        LOG_INFO(" (final)");
+        SCE_LOG_INFO(" (final)");
         break;
     case Type::HISTORY:
-        LOG_INFO(" (history)");
+        SCE_LOG_INFO(" (history)");
         break;
     case Type::INITIAL:
-        LOG_INFO(" (initial)");
+        SCE_LOG_INFO(" (initial)");
         break;
     }
 
     // Output initial state information
     if (!state->getInitialState().empty()) {
-        LOG_INFO(" [initial: {}]", state->getInitialState());
+        SCE_LOG_INFO(" [initial: {}]", state->getInitialState());
     }
 
     // Line break handled by previous Logger::info calls
 
     // Output transition information
     for (const auto &transition : state->getTransitions()) {
-        LOG_INFO("{}  Transition: {} -> ", indent,
+        SCE_LOG_INFO("{}  Transition: {} -> ", indent,
                  (transition->getEvent().empty() ? "<no event>" : transition->getEvent()));
 
         const auto &targets = transition->getTargets();
         if (targets.empty()) {
-            LOG_INFO("<no target>");
+            SCE_LOG_INFO("<no target>");
         } else {
             for (size_t i = 0; i < targets.size(); ++i) {
-                LOG_INFO("{}", targets[i]);
+                SCE_LOG_INFO("{}", targets[i]);
                 if (i < targets.size() - 1) {
-                    LOG_INFO(", ");
+                    SCE_LOG_INFO(", ");
                 }
             }
         }
 
         if (!transition->getGuard().empty()) {
-            LOG_INFO(" [guard: {}]", transition->getGuard());
+            SCE_LOG_INFO(" [guard: {}]", transition->getGuard());
         }
 
         // Line break handled by previous Logger::info calls

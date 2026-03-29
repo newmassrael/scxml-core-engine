@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "scripting/JSEngine.h"
 #include <string>
 
@@ -69,7 +69,7 @@ public:
                                          const std::string &eventData, const std::string &sendId = "",
                                          const std::string &origin = "", const std::string &originType = "",
                                          const std::string &invokeId = "") {
-        LOG_DEBUG("FinalizeHelper: Executing finalize for event '{}' with data: '{}'", eventName, eventData);
+        SCE_LOG_DEBUG("FinalizeHelper: Executing finalize for event '{}' with data: '{}'", eventName, eventData);
 
         // W3C SCXML 6.5: Set _event BEFORE finalize execution
         // Finalize scripts need access to _event.data.fieldName (test 233)
@@ -80,11 +80,11 @@ public:
         auto result = jsEngine.executeScript(sessionId, finalizeScript).get();
 
         if (!JSEngine::isSuccess(result)) {
-            LOG_ERROR("FinalizeHelper: Script execution failed: {}", JSEngine::resultToString(result));
+            SCE_LOG_ERROR("FinalizeHelper: Script execution failed: {}", JSEngine::resultToString(result));
             return false;
         }
 
-        LOG_DEBUG("FinalizeHelper: Finalize executed successfully for event '{}'", eventName);
+        SCE_LOG_DEBUG("FinalizeHelper: Finalize executed successfully for event '{}'", eventName);
         return true;
     }
 };

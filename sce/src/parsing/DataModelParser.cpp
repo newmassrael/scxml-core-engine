@@ -1,6 +1,6 @@
 #include "parsing/DataModelParser.h"
 #include "common/FileLoadingHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
@@ -9,11 +9,11 @@
 #endif
 
 SCE::DataModelParser::DataModelParser(std::shared_ptr<NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
-    LOG_DEBUG("Creating data model parser");
+    SCE_LOG_DEBUG("Creating data model parser");
 }
 
 SCE::DataModelParser::~DataModelParser() {
-    LOG_DEBUG("Destroying data model parser");
+    SCE_LOG_DEBUG("Destroying data model parser");
 }
 
 std::vector<std::shared_ptr<SCE::IDataModelItem>>
@@ -22,11 +22,11 @@ SCE::DataModelParser::parseDataModelNode(const std::shared_ptr<IXMLElement> &dat
     std::vector<std::shared_ptr<IDataModelItem>> items;
 
     if (!datamodelNode) {
-        LOG_WARN("Null datamodel node");
+        SCE_LOG_WARN("Null datamodel node");
         return items;
     }
 
-    LOG_DEBUG("Parsing datamodel node");
+    SCE_LOG_DEBUG("Parsing datamodel node");
 
     // Parse data nodes
     auto dataNodes = SCE::ParsingCommon::findChildElements(datamodelNode, "data");
@@ -34,11 +34,11 @@ SCE::DataModelParser::parseDataModelNode(const std::shared_ptr<IXMLElement> &dat
         auto dataItem = parseDataModelItem(dataElement, context);
         if (dataItem) {
             items.push_back(dataItem);
-            LOG_DEBUG("Added data model item: {}", dataItem->getId());
+            SCE_LOG_DEBUG("Added data model item: {}", dataItem->getId());
         }
     }
 
-    LOG_DEBUG("Parsed {} data model items", items.size());
+    SCE_LOG_DEBUG("Parsed {} data model items", items.size());
     return items;
 }
 
@@ -46,12 +46,12 @@ std::shared_ptr<SCE::IDataModelItem>
 SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dataNode,
                                          const SCE::SCXMLContext &context) {
     if (!dataNode) {
-        LOG_WARN("Null data node");
+        SCE_LOG_WARN("Null data node");
         return nullptr;
     }
 
     if (!dataNode->hasAttribute("id")) {
-        LOG_WARN("Data node missing id attribute");
+        SCE_LOG_WARN("Data node missing id attribute");
         return nullptr;
     }
 
@@ -62,7 +62,7 @@ SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dat
         expr = dataNode->getAttribute("expr");
     }
 
-    LOG_DEBUG("Parsing data model item: {}", id);
+    SCE_LOG_DEBUG("Parsing data model item: {}", id);
     auto dataItem = nodeFactory_->createDataModelItem(id, expr);
 
     // Process src attribute
@@ -70,16 +70,16 @@ SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dat
     if (hasSrc) {
         std::string src = dataNode->getAttribute("src");
         dataItem->setSrc(src);
-        LOG_DEBUG("Source URL: {}", src);
+        SCE_LOG_DEBUG("Source URL: {}", src);
 
         loadExternalContent(src, dataItem);
 
         if (!expr.empty()) {
-            LOG_WARN("Data element cannot have both 'src' and 'expr' attributes: {}", id);
+            SCE_LOG_WARN("Data element cannot have both 'src' and 'expr' attributes: {}", id);
         }
 
         if (!dataNode->getTextContent().empty()) {
-            LOG_WARN("Data element cannot have both 'src' attribute and content: {}", id);
+            SCE_LOG_WARN("Data element cannot have both 'src' attribute and content: {}", id);
         }
     }
 
@@ -87,21 +87,21 @@ SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dat
     if (dataNode->hasAttribute("type")) {
         std::string type = dataNode->getAttribute("type");
         dataItem->setType(type);
-        LOG_DEBUG("Type: {}", type);
+        SCE_LOG_DEBUG("Type: {}", type);
     } else if (!context.getDatamodelType().empty()) {
         dataItem->setType(context.getDatamodelType());
-        LOG_DEBUG("Using parent datamodel type: {}", context.getDatamodelType());
+        SCE_LOG_DEBUG("Using parent datamodel type: {}", context.getDatamodelType());
     }
 
     // Process scope attribute
     if (dataNode->hasAttribute("code:scope")) {
         std::string scope = dataNode->getAttribute("code:scope");
         dataItem->setScope(scope);
-        LOG_DEBUG("Scope: {}", scope);
+        SCE_LOG_DEBUG("Scope: {}", scope);
     } else if (dataNode->hasAttribute("scope")) {
         std::string scope = dataNode->getAttribute("scope");
         dataItem->setScope(scope);
-        LOG_DEBUG("Scope: {}", scope);
+        SCE_LOG_DEBUG("Scope: {}", scope);
     }
 
     // Process content only if src doesn't exist with expr or content
@@ -109,7 +109,7 @@ SCE::DataModelParser::parseDataModelItem(const std::shared_ptr<IXMLElement> &dat
         parseDataContent(dataNode, dataItem);
     }
 
-    LOG_DEBUG("Data model item parsed successfully");
+    SCE_LOG_DEBUG("Data model item parsed successfully");
     return dataItem;
 }
 
@@ -125,7 +125,7 @@ void SCE::DataModelParser::parseDataContent(const std::shared_ptr<IXMLElement> &
 
     if (!textContent.empty()) {
         dataItem->setContent(textContent);
-        LOG_DEBUG("Added text content");
+        SCE_LOG_DEBUG("Added text content");
     }
 }
 
@@ -135,11 +135,11 @@ SCE::DataModelParser::parseDataModelInState(const std::shared_ptr<IXMLElement> &
     std::vector<std::shared_ptr<IDataModelItem>> items;
 
     if (!stateNode) {
-        LOG_WARN("Null state node");
+        SCE_LOG_WARN("Null state node");
         return items;
     }
 
-    LOG_DEBUG("Parsing datamodel in state");
+    SCE_LOG_DEBUG("Parsing datamodel in state");
 
     // Find datamodel element
     auto datamodelNode = SCE::ParsingCommon::findFirstChildElement(stateNode, "datamodel");
@@ -148,7 +148,7 @@ SCE::DataModelParser::parseDataModelInState(const std::shared_ptr<IXMLElement> &
         items.insert(items.end(), stateItems.begin(), stateItems.end());
     }
 
-    LOG_DEBUG("Found {} data items in state", items.size());
+    SCE_LOG_DEBUG("Found {} data items in state", items.size());
     return items;
 }
 
@@ -193,7 +193,7 @@ void SCE::DataModelParser::loadExternalContent(const std::string &src, std::shar
     // W3C SCXML 5.2.2: Load data from external sources
     // ARCHITECTURE.MD: Zero Duplication - Use FileLoadingHelper (Single Source of Truth)
 
-    LOG_DEBUG("Loading content from: {}", src);
+    SCE_LOG_DEBUG("Loading content from: {}", src);
 
     // W3C SCXML 5.2.2: Handle file:// or file: URIs
     if (src.find("file://") == 0 || src.find("file:") == 0 || src.find("/") == 0 || src.find("./") == 0) {
@@ -202,16 +202,16 @@ void SCE::DataModelParser::loadExternalContent(const std::string &src, std::shar
 
         if (success) {
             dataItem->setContent(content);
-            LOG_DEBUG("Content loaded from file via FileLoadingHelper");
+            SCE_LOG_DEBUG("Content loaded from file via FileLoadingHelper");
         } else {
-            LOG_ERROR("Failed to load file via FileLoadingHelper: {}", src);
+            SCE_LOG_ERROR("Failed to load file via FileLoadingHelper: {}", src);
         }
     } else if (src.find("http://") == 0 || src.find("https://") == 0) {
         // HTTP requests require more complex implementation and external libraries are recommended
         // Implementation omitted here, log only
-        LOG_WARN("HTTP loading not implemented: {}", src);
+        SCE_LOG_WARN("HTTP loading not implemented: {}", src);
     } else {
         // Handle other protocols or relative paths
-        LOG_WARN("Unsupported URL format: {}", src);
+        SCE_LOG_WARN("Unsupported URL format: {}", src);
     }
 }

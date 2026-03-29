@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <string>
 #include <vector>
 
@@ -75,7 +75,7 @@ public:
 
         // Execute finalize script if present
         if (!finalizeScript.empty()) {
-            LOG_DEBUG("InvokeProcessingAlgorithms: Executing finalize for child session {}", originSessionId);
+            SCE_LOG_DEBUG("InvokeProcessingAlgorithms: Executing finalize for child session {}", originSessionId);
             actionExecutor.executeScript(finalizeScript);
         }
     }
@@ -124,7 +124,7 @@ public:
                                    InvokeManager &invokeManager) {
         // W3C SCXML 6.4.1: Never autoforward platform events
         if (isPlatformEvent(event)) {
-            LOG_DEBUG("InvokeProcessingAlgorithms: Skipping autoforward for platform event");
+            SCE_LOG_DEBUG("InvokeProcessingAlgorithms: Skipping autoforward for platform event");
             return;
         }
 
@@ -133,7 +133,7 @@ public:
 
         // Forward event to all autoforward children
         if (!childSessions.empty()) {
-            LOG_DEBUG("InvokeProcessingAlgorithms: Autoforwarding event to {} child sessions", childSessions.size());
+            SCE_LOG_DEBUG("InvokeProcessingAlgorithms: Autoforwarding event to {} child sessions", childSessions.size());
             for (auto &child : childSessions) {
                 if (child) {
                     child->processEvent(event);

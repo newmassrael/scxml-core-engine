@@ -1,5 +1,5 @@
 #include "common/PlatformExecutionHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "quickjs.h"
 #include <condition_variable>
 #include <mutex>
@@ -21,12 +21,12 @@ private:
 
 public:
     SynchronousExecutionHelper() {
-        LOG_DEBUG("PlatformExecutionHelper: Synchronous executor initialized (WASM mode)");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor initialized (WASM mode)");
 
         // W3C SCXML: Create QuickJS runtime on main thread for WASM
         runtime_ = JS_NewRuntime();
         if (!runtime_) {
-            LOG_ERROR("PlatformExecutionHelper: Failed to create QuickJS runtime");
+            SCE_LOG_ERROR("PlatformExecutionHelper: Failed to create QuickJS runtime");
         }
     }
 
@@ -35,7 +35,7 @@ public:
             JS_FreeRuntime(runtime_);
             runtime_ = nullptr;
         }
-        LOG_DEBUG("PlatformExecutionHelper: Synchronous executor destroyed");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor destroyed");
     }
 
     std::future<JSResult> executeAsync(std::function<JSResult()> operation) override {
@@ -50,16 +50,16 @@ public:
         // WASM: Free runtime during shutdown (not in destructor)
         // QuickJS: All contexts must be freed before freeing runtime
         if (runtime_) {
-            LOG_DEBUG("PlatformExecutionHelper: Synchronous executor - freeing runtime");
+            SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor - freeing runtime");
             JS_FreeRuntime(runtime_);
             runtime_ = nullptr;
         }
-        LOG_DEBUG("PlatformExecutionHelper: Synchronous executor shutdown complete");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor shutdown complete");
     }
 
     void reset() override {
         // WASM: No worker thread to restart
-        LOG_DEBUG("PlatformExecutionHelper: Synchronous executor reset (no-op)");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor reset (no-op)");
     }
 
     JSRuntime *getRuntimePointer() override {
@@ -111,12 +111,12 @@ private:
      * QuickJS Thread Safety: Runtime created on worker thread
      */
     void workerLoop() {
-        LOG_DEBUG("PlatformExecutionHelper: Worker thread started");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Worker thread started");
 
         // W3C SCXML: Create QuickJS runtime on worker thread for thread safety
         runtime_ = JS_NewRuntime();
         if (!runtime_) {
-            LOG_ERROR("PlatformExecutionHelper: Failed to create QuickJS runtime on worker thread");
+            SCE_LOG_ERROR("PlatformExecutionHelper: Failed to create QuickJS runtime on worker thread");
         }
 
         // Signal that runtime is ready
@@ -125,7 +125,7 @@ private:
             runtimeInitialized_ = true;
         }
         runtimeInitCondition_.notify_one();
-        LOG_DEBUG("PlatformExecutionHelper: Runtime created on worker thread");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Runtime created on worker thread");
 
         while (true) {
             std::unique_ptr<QueuedOperation> operation;
@@ -136,7 +136,7 @@ private:
                 queueCondition_.wait(lock, [this] { return !operationQueue_.empty() || shouldStop_.load(); });
 
                 if (shouldStop_.load() && operationQueue_.empty()) {
-                    LOG_DEBUG("PlatformExecutionHelper: Worker thread stopping");
+                    SCE_LOG_DEBUG("PlatformExecutionHelper: Worker thread stopping");
                     break;
                 }
 
@@ -152,10 +152,10 @@ private:
                     JSResult result = operation->operation();
                     operation->promise.set_value(std::move(result));
                 } catch (const std::exception &e) {
-                    LOG_ERROR("PlatformExecutionHelper: Operation failed: {}", e.what());
+                    SCE_LOG_ERROR("PlatformExecutionHelper: Operation failed: {}", e.what());
                     operation->promise.set_value(JSResult::createError(std::string("Exception: ") + e.what()));
                 } catch (...) {
-                    LOG_ERROR("PlatformExecutionHelper: Operation failed with unknown exception");
+                    SCE_LOG_ERROR("PlatformExecutionHelper: Operation failed with unknown exception");
                     operation->promise.set_value(JSResult::createError("Unknown exception"));
                 }
             }
@@ -167,18 +167,18 @@ private:
             runtime_ = nullptr;
         }
 
-        LOG_DEBUG("PlatformExecutionHelper: Worker thread stopped");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Worker thread stopped");
     }
 
 public:
     QueuedExecutionHelper() : shouldStop_(false), runtimeInitialized_(false) {
-        LOG_DEBUG("PlatformExecutionHelper: Queued executor starting worker thread");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Queued executor starting worker thread");
         workerThread_ = std::thread(&QueuedExecutionHelper::workerLoop, this);
     }
 
     ~QueuedExecutionHelper() override {
         shutdown();
-        LOG_DEBUG("PlatformExecutionHelper: Queued executor destroyed");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Queued executor destroyed");
     }
 
     std::future<JSResult> executeAsync(std::function<JSResult()> operation) override {
@@ -195,10 +195,10 @@ public:
     }
 
     void shutdown() override {
-        LOG_DEBUG("PlatformExecutionHelper: Queued executor shutdown requested");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Queued executor shutdown requested");
 
         if (shouldStop_.load()) {
-            LOG_DEBUG("PlatformExecutionHelper: Already shut down");
+            SCE_LOG_DEBUG("PlatformExecutionHelper: Already shut down");
             return;
         }
 
@@ -206,14 +206,14 @@ public:
         queueCondition_.notify_one();
 
         if (workerThread_.joinable()) {
-            LOG_DEBUG("PlatformExecutionHelper: Joining worker thread");
+            SCE_LOG_DEBUG("PlatformExecutionHelper: Joining worker thread");
             workerThread_.join();
-            LOG_DEBUG("PlatformExecutionHelper: Worker thread joined");
+            SCE_LOG_DEBUG("PlatformExecutionHelper: Worker thread joined");
         }
     }
 
     void reset() override {
-        LOG_DEBUG("PlatformExecutionHelper: Queued executor reset");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Queued executor reset");
 
         // Stop existing worker
         if (!shouldStop_.load()) {
@@ -235,7 +235,7 @@ public:
         shouldStop_ = false;
         runtimeInitialized_ = false;
         workerThread_ = std::thread(&QueuedExecutionHelper::workerLoop, this);
-        LOG_DEBUG("PlatformExecutionHelper: Worker thread restarted");
+        SCE_LOG_DEBUG("PlatformExecutionHelper: Worker thread restarted");
     }
 
     JSRuntime *getRuntimePointer() override {
@@ -254,10 +254,10 @@ public:
 // Factory function implementation
 std::unique_ptr<PlatformExecutionHelper> createPlatformExecutor() {
 #ifdef __EMSCRIPTEN__
-    LOG_DEBUG("PlatformExecutionHelper: Creating synchronous executor (WASM)");
+    SCE_LOG_DEBUG("PlatformExecutionHelper: Creating synchronous executor (WASM)");
     return std::make_unique<SynchronousExecutionHelper>();
 #else
-    LOG_DEBUG("PlatformExecutionHelper: Creating queued executor (Native pthread)");
+    SCE_LOG_DEBUG("PlatformExecutionHelper: Creating queued executor (Native pthread)");
     return std::make_unique<QueuedExecutionHelper>();
 #endif
 }

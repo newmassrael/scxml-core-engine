@@ -9,7 +9,7 @@
 #include "actions/SendAction.h"
 #include "common/FileLoadingHelper.h"
 #include "common/LogUtils.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
@@ -19,11 +19,11 @@
 #endif
 
 SCE::ActionParser::ActionParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
-    LOG_DEBUG("Creating action parser");
+    SCE_LOG_DEBUG("Creating action parser");
 }
 
 SCE::ActionParser::~ActionParser() {
-    LOG_DEBUG("Destroying action parser");
+    SCE_LOG_DEBUG("Destroying action parser");
 }
 
 bool SCE::ActionParser::matchNodeName(const std::string &nodeName, const std::string &searchName) const {
@@ -65,7 +65,7 @@ bool SCE::ActionParser::isActionNode(const std::shared_ptr<IXMLElement> &element
     }
 
     std::string nodeName = element->getName();
-    LOG_DEBUG("ActionParser: isActionNode checking element: '{}'", nodeName);
+    SCE_LOG_DEBUG("ActionParser: isActionNode checking element: '{}'", nodeName);
 
     // Custom action tags
     if (matchNodeName(nodeName, "action") || matchNodeName(nodeName, "code:action")) {
@@ -77,7 +77,7 @@ bool SCE::ActionParser::isActionNode(const std::shared_ptr<IXMLElement> &element
                             matchNodeName(nodeName, "script") || matchNodeName(nodeName, "log") ||
                             matchNodeName(nodeName, "send") || matchNodeName(nodeName, "cancel");
 
-    LOG_DEBUG("ActionParser: isActionNode result for '{}': {}", nodeName, isStandardAction);
+    SCE_LOG_DEBUG("ActionParser: isActionNode result for '{}': {}", nodeName, isStandardAction);
     return isStandardAction;
 }
 
@@ -109,16 +109,16 @@ void SCE::ActionParser::parseExternalImplementation(const std::shared_ptr<IXMLEl
         return;
     }
 
-    LOG_DEBUG("Parsing external implementation for action: {}", actionNode->getId());
+    SCE_LOG_DEBUG("Parsing external implementation for action: {}", actionNode->getId());
 
     if (element->hasAttribute("class")) {
         std::string className = element->getAttribute("class");
-        LOG_DEBUG("Class name: {}", className);
+        SCE_LOG_DEBUG("Class name: {}", className);
     }
 
     if (element->hasAttribute("factory")) {
         std::string factory = element->getAttribute("factory");
-        LOG_DEBUG("Factory: {}", factory);
+        SCE_LOG_DEBUG("Factory: {}", factory);
     }
 }
 
@@ -129,7 +129,7 @@ void SCE::ActionParser::parseSpecialExecutableContent(const std::shared_ptr<IXML
     }
 
     std::string nodeName = element->getName();
-    LOG_DEBUG("Parsing special content: {}", nodeName);
+    SCE_LOG_DEBUG("Parsing special content: {}", nodeName);
 
     // Special elements should use parseActionNode for proper parsing
     std::string localName = getLocalName(nodeName);
@@ -152,31 +152,31 @@ SCE::ActionParser::parseActionsInElement(const std::shared_ptr<IXMLElement> &par
     std::vector<std::shared_ptr<SCE::IActionNode>> actions;
 
     if (!parentElement) {
-        LOG_WARN("Null parent element");
+        SCE_LOG_WARN("Null parent element");
         return actions;
     }
 
-    LOG_DEBUG("ActionParser: Parsing actions in element: {}", parentElement->getName());
+    SCE_LOG_DEBUG("ActionParser: Parsing actions in element: {}", parentElement->getName());
 
     // Get direct children in document order
     auto children = parentElement->getChildren();
-    LOG_DEBUG("ActionParser: Found {} child elements in {}", children.size(), parentElement->getName());
+    SCE_LOG_DEBUG("ActionParser: Found {} child elements in {}", children.size(), parentElement->getName());
 
     for (const auto &element : children) {
-        LOG_DEBUG("ActionParser: Processing child element: '{}'", element->getName());
+        SCE_LOG_DEBUG("ActionParser: Processing child element: '{}'", element->getName());
 
         // Check action node
         if (isActionNode(element)) {
-            LOG_DEBUG("ActionParser: '{}' is recognized as action node", element->getName());
+            SCE_LOG_DEBUG("ActionParser: '{}' is recognized as action node", element->getName());
             auto action = parseActionNode(element);
             if (action) {
-                LOG_DEBUG("ActionParser: Successfully parsed action node: '{}'", element->getName());
+                SCE_LOG_DEBUG("ActionParser: Successfully parsed action node: '{}'", element->getName());
                 actions.push_back(action);
             } else {
-                LOG_ERROR("ActionParser: Failed to parse action node: '{}'", element->getName());
+                SCE_LOG_ERROR("ActionParser: Failed to parse action node: '{}'", element->getName());
             }
         } else {
-            LOG_DEBUG("ActionParser: '{}' is NOT recognized as action node", element->getName());
+            SCE_LOG_DEBUG("ActionParser: '{}' is NOT recognized as action node", element->getName());
         }
         // Check external executable action node
         if (isExternalActionNode(element)) {
@@ -192,14 +192,14 @@ SCE::ActionParser::parseActionsInElement(const std::shared_ptr<IXMLElement> &par
         }
     }
 
-    LOG_DEBUG("ActionParser: Parsed {} actions", actions.size());
+    SCE_LOG_DEBUG("ActionParser: Parsed {} actions", actions.size());
     return actions;
 }
 
 std::shared_ptr<SCE::IActionNode>
 SCE::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &externalActionNode) {
     if (!externalActionNode) {
-        LOG_WARN("Null external action node");
+        SCE_LOG_WARN("Null external action node");
         return nullptr;
     }
 
@@ -212,18 +212,18 @@ SCE::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &e
     }
 
     if (id.empty()) {
-        LOG_WARN("External action node missing required name attribute");
+        SCE_LOG_WARN("External action node missing required name attribute");
         return nullptr;
     }
 
-    LOG_DEBUG("Parsing external action: {}", id);
+    SCE_LOG_DEBUG("Parsing external action: {}", id);
 
     // External actions are handled as ScriptAction (extend when external action support is added)
     auto action = std::make_shared<SCE::ScriptAction>("", id);
 
     // Ignore delay time (not supported in current implementation)
     if (externalActionNode->hasAttribute("delay")) {
-        LOG_DEBUG("ActionParser: Delay attribute value: {}", externalActionNode->getAttribute("delay"));
+        SCE_LOG_DEBUG("ActionParser: Delay attribute value: {}", externalActionNode->getAttribute("delay"));
     }
 
     // Parse external implementation element
@@ -237,14 +237,14 @@ SCE::ActionParser::parseExternalActionNode(const std::shared_ptr<IXMLElement> &e
         parseExternalImplementation(implNode, action);
     }
 
-    LOG_DEBUG("External action parsed successfully");
+    SCE_LOG_DEBUG("External action parsed successfully");
     return action;
 }
 
 std::shared_ptr<SCE::IActionNode>
 SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionElement) {
     if (!actionElement) {
-        LOG_WARN("Null action element");
+        SCE_LOG_WARN("Null action element");
         return nullptr;
     }
 
@@ -265,7 +265,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         id = elementName;
     }
 
-    LOG_DEBUG("ActionParser: Processing action with id: {}", id);
+    SCE_LOG_DEBUG("ActionParser: Processing action with id: {}", id);
 
     // Create specific action objects by action type
     if (elementName == "script") {
@@ -280,7 +280,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             // ARCHITECTURE.md Zero Duplication: Use FileLoadingHelper
             // W3C SCXML 5.8: Load external script with security validation
             if (!FileLoadingHelper::loadExternalScript(srcPath, scxmlBasePath_, content, errorMsg)) {
-                LOG_ERROR("ActionParser: {}", errorMsg);
+                SCE_LOG_ERROR("ActionParser: {}", errorMsg);
                 return nullptr;
             }
 
@@ -333,7 +333,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
         SCE::IfAction::ConditionalBranch *currentBranch = nullptr;
 
-        LOG_DEBUG("IF action: found {} children, condition='{}'", children.size(), condition);
+        SCE_LOG_DEBUG("IF action: found {} children, condition='{}'", children.size(), condition);
 
         // Process children sequentially to maintain branch context
         int childIndex = 0;
@@ -345,39 +345,39 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
                 childName = childName.substr(colonPos + 1);
             }
 
-            LOG_DEBUG("  Child {}: name='{}', currentBranch={}", childIndex, childName,
+            SCE_LOG_DEBUG("  Child {}: name='{}', currentBranch={}", childIndex, childName,
                       currentBranch ? "else/elseif" : "if");
 
             if (childName == "elseif") {
                 std::string elseifCondition = element->hasAttribute("cond") ? element->getAttribute("cond") : "";
                 currentBranch = &ifAction->addElseIfBranch(elseifCondition);
-                LOG_DEBUG("    Added elseif branch with condition='{}'", elseifCondition);
+                SCE_LOG_DEBUG("    Added elseif branch with condition='{}'", elseifCondition);
             } else if (childName == "else") {
                 currentBranch = &ifAction->addElseBranch();
-                LOG_DEBUG("    Added else branch");
+                SCE_LOG_DEBUG("    Added else branch");
             } else if (isActionNode(element)) {
                 auto childAction = parseActionNode(element);
                 if (childAction) {
                     if (currentBranch) {
                         // Add to current elseif/else branch
                         currentBranch->actions.push_back(childAction);
-                        LOG_DEBUG("    Added {} action to current branch (size now: {})", childName,
+                        SCE_LOG_DEBUG("    Added {} action to current branch (size now: {})", childName,
                                   currentBranch->actions.size());
                     } else {
                         // Add to main if branch (before any elseif/else)
                         ifAction->addIfAction(childAction);
-                        LOG_DEBUG("    Added {} action to main if branch", childName);
+                        SCE_LOG_DEBUG("    Added {} action to main if branch", childName);
                     }
                 } else {
-                    LOG_WARN("    parseActionNode returned nullptr for '{}'", childName);
+                    SCE_LOG_WARN("    parseActionNode returned nullptr for '{}'", childName);
                 }
             } else {
-                LOG_DEBUG("    Skipping non-action element '{}'", childName);
+                SCE_LOG_DEBUG("    Skipping non-action element '{}'", childName);
             }
             childIndex++;
         }
 
-        LOG_DEBUG("IF action complete: {} branches", ifAction->getBranchCount());
+        SCE_LOG_DEBUG("IF action complete: {} branches", ifAction->getBranchCount());
         return ifAction;
 
     } else if (elementName == "send") {
@@ -440,7 +440,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
                 // Use expr attribute for dynamic content
                 std::string contentExpr = contentElement->getAttribute("expr");
                 sendAction->setContentExpr(contentExpr);
-                LOG_DEBUG("ActionParser: Parsed send content expr: '{}'", contentExpr);
+                SCE_LOG_DEBUG("ActionParser: Parsed send content expr: '{}'", contentExpr);
             } else {
                 // W3C SCXML 5.10: Use child content as literal
                 // ARCHITECTURE.md Zero Duplication: Use XmlSerializationHelper
@@ -448,7 +448,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
 
                 if (!contentText.empty()) {
                     sendAction->setContent(contentText);
-                    LOG_DEBUG("ActionParser: Parsed send content literal: '{}'", contentText);
+                    SCE_LOG_DEBUG("ActionParser: Parsed send content literal: '{}'", contentText);
                 }
             }
         }
@@ -460,9 +460,9 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
                 std::string paramName = paramElement->getAttribute("name");
                 std::string paramExpr = paramElement->getAttribute("expr");
                 sendAction->addParamWithExpr(paramName, paramExpr);
-                LOG_DEBUG("ActionParser: Added send param '{}' with expr '{}'", paramName, paramExpr);
+                SCE_LOG_DEBUG("ActionParser: Added send param '{}' with expr '{}'", paramName, paramExpr);
             } else {
-                LOG_WARN("ActionParser: send param element missing name or expr attribute");
+                SCE_LOG_WARN("ActionParser: send param element missing name or expr attribute");
             }
         }
 
@@ -485,7 +485,7 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
         std::string item = actionElement->hasAttribute("item") ? actionElement->getAttribute("item") : "";
         std::string index = actionElement->hasAttribute("index") ? actionElement->getAttribute("index") : "";
 
-        LOG_DEBUG("Parsing foreach: array='{}', item='{}', index='{}'", array, item, index);
+        SCE_LOG_DEBUG("Parsing foreach: array='{}', item='{}', index='{}'", array, item, index);
 
         auto foreachAction = std::make_shared<SCE::ForeachAction>(array, item, index, id);
 
@@ -497,12 +497,12 @@ SCE::ActionParser::parseActionNode(const std::shared_ptr<IXMLElement> &actionEle
             }
         }
 
-        LOG_DEBUG("Foreach action created with {} child actions", childActions.size());
+        SCE_LOG_DEBUG("Foreach action created with {} child actions", childActions.size());
 
         return foreachAction;
 
     } else {
-        LOG_WARN("Unknown action type: {}, creating ScriptAction", elementName);
+        SCE_LOG_WARN("Unknown action type: {}, creating ScriptAction", elementName);
         return std::make_shared<SCE::ScriptAction>("", id);
     }
 }

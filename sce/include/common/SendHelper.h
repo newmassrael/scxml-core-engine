@@ -345,7 +345,7 @@ public:
      */
     template <typename ParentStateMachine, typename EventType>
     static bool sendToParent(ParentStateMachine *parent, EventType event, const std::string &invokeId) {
-        LOG_DEBUG("SendHelper::sendToParent called - parent={}, event={}, invokeId={}", (void *)parent,
+        SCE_LOG_DEBUG("SendHelper::sendToParent called - parent={}, event={}, invokeId={}", (void *)parent,
                   static_cast<int>(event), invokeId);
         if (parent) {
             // W3C SCXML 6.4.1: Create event with invokeid metadata
@@ -353,12 +353,12 @@ public:
             eventWithMetadata.invokeId = invokeId;
 
             // W3C SCXML 6.2: Send to parent's external event queue
-            LOG_DEBUG("SendHelper::sendToParent - calling parent->raiseExternal()");
+            SCE_LOG_DEBUG("SendHelper::sendToParent - calling parent->raiseExternal()");
             parent->raiseExternal(eventWithMetadata);
-            LOG_DEBUG("SendHelper::sendToParent - parent->raiseExternal() completed");
+            SCE_LOG_DEBUG("SendHelper::sendToParent - parent->raiseExternal() completed");
             return true;
         }
-        LOG_DEBUG("SendHelper::sendToParent - parent is nullptr, not sending event");
+        SCE_LOG_DEBUG("SendHelper::sendToParent - parent is nullptr, not sending event");
         return false;
     }
 
@@ -379,7 +379,7 @@ public:
     template <typename ParentStateMachine, typename EventType>
     static bool sendToParentWithOrigin(ParentStateMachine *parent, EventType event, const std::string &invokeId,
                                        const std::string &childSessionId, const std::string &eventData = "") {
-        LOG_DEBUG("SendHelper::sendToParentWithOrigin called - parent={}, event={}, invokeId={}, childSessionId={}, "
+        SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin called - parent={}, event={}, invokeId={}, childSessionId={}, "
                   "eventData='{}'",
                   (void *)parent, static_cast<int>(event), invokeId, childSessionId, eventData);
         if (parent) {
@@ -393,12 +393,12 @@ public:
                 SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE;  // W3C SCXML C.1: SCXML Event I/O Processor (test 253)
 
             // W3C SCXML 6.2: Send to parent's external event queue
-            LOG_DEBUG("SendHelper::sendToParentWithOrigin - calling parent->raiseExternal()");
+            SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin - calling parent->raiseExternal()");
             parent->raiseExternal(eventWithMetadata);
-            LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent->raiseExternal() completed");
+            SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent->raiseExternal() completed");
             return true;
         }
-        LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent is nullptr, not sending event");
+        SCE_LOG_DEBUG("SendHelper::sendToParentWithOrigin - parent is nullptr, not sending event");
         return false;
     }
 

@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "scripting/JSEngine.h"
 #include <functional>
 #include <regex>
@@ -79,26 +79,26 @@ public:
         // This preserves JavaScript object references (critical for test 329: Var2 = _event)
         if (isSystemVariableReference(expr)) {
             std::string assignScript = location + " = " + expr + ";";
-            LOG_DEBUG("AssignmentExecutionHelper: System variable reference - executing script: {}", assignScript);
+            SCE_LOG_DEBUG("AssignmentExecutionHelper: System variable reference - executing script: {}", assignScript);
             auto scriptResult = jsEngine.executeScript(sessionId, assignScript).get();
             if (!scriptResult.isSuccess()) {
                 std::string errorMsg = "System variable assignment failed: " + location + " = " + expr;
-                LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
+                SCE_LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
                 errorCallback(errorMsg);
                 return false;
             }
-            LOG_DEBUG("AssignmentExecutionHelper: Successfully assigned {} = {} (system variable reference)", location,
+            SCE_LOG_DEBUG("AssignmentExecutionHelper: Successfully assigned {} = {} (system variable reference)", location,
                       expr);
             return true;
         }
 
         // W3C SCXML 5.3: Standard evaluation + assignment strategy
         // Step 1: Evaluate expression
-        LOG_DEBUG("AssignmentExecutionHelper: Evaluating expression: {}", expr);
+        SCE_LOG_DEBUG("AssignmentExecutionHelper: Evaluating expression: {}", expr);
         auto evalResult = jsEngine.evaluateExpression(sessionId, expr).get();
         if (!evalResult.isSuccess()) {
             std::string errorMsg = "Expression evaluation failed: " + expr;
-            LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
+            SCE_LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
             errorCallback(errorMsg);
             return false;
         }
@@ -107,28 +107,28 @@ public:
         // Simple variable names use setVariable, complex paths use executeScript
         if (std::regex_match(location, std::regex("^[a-zA-Z_][a-zA-Z0-9_]*$"))) {
             // Simple variable name - use setVariable (matches Interpreter ActionExecutorImpl.cpp:160-169)
-            LOG_DEBUG("AssignmentExecutionHelper: Simple variable - using setVariable for {}", location);
+            SCE_LOG_DEBUG("AssignmentExecutionHelper: Simple variable - using setVariable for {}", location);
             auto setResult = jsEngine.setVariable(sessionId, location, evalResult.getInternalValue()).get();
             if (!setResult.isSuccess()) {
                 std::string errorMsg = "Variable assignment failed: " + location;
-                LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
+                SCE_LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
                 errorCallback(errorMsg);
                 return false;
             }
-            LOG_DEBUG("AssignmentExecutionHelper: Successfully assigned {} = {}", location, expr);
+            SCE_LOG_DEBUG("AssignmentExecutionHelper: Successfully assigned {} = {}", location, expr);
             return true;
         } else {
             // Complex path (e.g., "data.field") - use executeScript (matches Interpreter ActionExecutorImpl.cpp:174)
             std::string assignScript = location + " = (" + expr + ");";
-            LOG_DEBUG("AssignmentExecutionHelper: Complex path - executing script: {}", assignScript);
+            SCE_LOG_DEBUG("AssignmentExecutionHelper: Complex path - executing script: {}", assignScript);
             auto scriptResult = jsEngine.executeScript(sessionId, assignScript).get();
             if (!scriptResult.isSuccess()) {
                 std::string errorMsg = "Complex path assignment failed: " + location;
-                LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
+                SCE_LOG_ERROR("AssignmentExecutionHelper: {}", errorMsg);
                 errorCallback(errorMsg);
                 return false;
             }
-            LOG_DEBUG("AssignmentExecutionHelper: Successfully assigned {} = {} (complex path)", location, expr);
+            SCE_LOG_DEBUG("AssignmentExecutionHelper: Successfully assigned {} = {} (complex path)", location, expr);
             return true;
         }
     }

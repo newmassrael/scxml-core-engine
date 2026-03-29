@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -72,7 +72,7 @@ public:
     static bool loadFileContent(const std::string &filePath, std::string &content) {
         std::ifstream file(filePath);
         if (!file.is_open()) {
-            LOG_ERROR("FileLoadingHelper: Failed to open file: {}", filePath);
+            SCE_LOG_ERROR("FileLoadingHelper: Failed to open file: {}", filePath);
             return false;
         }
 
@@ -154,7 +154,7 @@ public:
 
         // Security validation: Reject empty paths
         if (actualPath.empty()) {
-            LOG_ERROR("FileLoadingHelper: Empty file path after protocol stripping");
+            SCE_LOG_ERROR("FileLoadingHelper: Empty file path after protocol stripping");
             throw std::runtime_error("Empty SCXML file path");
         }
 
@@ -172,17 +172,17 @@ public:
                 scxmlFile.open(resolvedPath);
                 if (scxmlFile.is_open()) {
                     actualPath = resolvedPath.string();
-                    LOG_DEBUG("FileLoadingHelper: Resolved child SCXML relative to parent: {} (parent: {})", actualPath,
+                    SCE_LOG_DEBUG("FileLoadingHelper: Resolved child SCXML relative to parent: {} (parent: {})", actualPath,
                               parentScxmlPath);
                 }
             } else {
-                LOG_ERROR("FileLoadingHelper: Relative path '{}' requires parent SCXML path for W3C SCXML compliance",
+                SCE_LOG_ERROR("FileLoadingHelper: Relative path '{}' requires parent SCXML path for W3C SCXML compliance",
                           actualPath);
             }
         }
 
         if (!scxmlFile.is_open()) {
-            LOG_ERROR("FileLoadingHelper: Failed to open SCXML file: {}", actualPath);
+            SCE_LOG_ERROR("FileLoadingHelper: Failed to open SCXML file: {}", actualPath);
             throw std::runtime_error("Failed to open SCXML file: " + actualPath);
         }
 
@@ -192,11 +192,11 @@ public:
         scxmlFile.close();
 
         std::string content = buffer.str();
-        LOG_DEBUG("FileLoadingHelper: Loaded {} bytes from SCXML file: {}", content.size(), actualPath);
+        SCE_LOG_DEBUG("FileLoadingHelper: Loaded {} bytes from SCXML file: {}", content.size(), actualPath);
 
         // Validate non-empty content
         if (content.empty()) {
-            LOG_ERROR("FileLoadingHelper: Empty SCXML file content: {}", actualPath);
+            SCE_LOG_ERROR("FileLoadingHelper: Empty SCXML file content: {}", actualPath);
             throw std::runtime_error("Empty SCXML file: " + actualPath);
         }
 
@@ -247,7 +247,7 @@ public:
             }
         } catch (const std::exception &e) {
             errorMsg = "Failed to resolve script path: " + normalizedSrc + ". Error: " + e.what();
-            LOG_ERROR("FileLoadingHelper: {}", errorMsg);
+            SCE_LOG_ERROR("FileLoadingHelper: {}", errorMsg);
             return false;
         }
 
@@ -268,12 +268,12 @@ public:
                 if (relativePath.empty() || relativePath.string().find("..") == 0) {
                     errorMsg = "Security violation: Script path '" + srcPath + "' resolves outside SCXML directory. " +
                                "Resolved to: " + scriptPath.string() + ", SCXML dir: " + scxmlDir.string();
-                    LOG_ERROR("FileLoadingHelper: {}", errorMsg);
+                    SCE_LOG_ERROR("FileLoadingHelper: {}", errorMsg);
                     return false;
                 }
             } catch (const std::exception &e) {
                 errorMsg = "Security validation failed for script path: " + srcPath + ". Error: " + e.what();
-                LOG_ERROR("FileLoadingHelper: {}", errorMsg);
+                SCE_LOG_ERROR("FileLoadingHelper: {}", errorMsg);
                 return false;
             }
         }
@@ -283,11 +283,11 @@ public:
             // W3C SCXML 5.8: Document MUST be rejected if script cannot be loaded
             errorMsg = "W3C SCXML 5.8: External script file not found: '" + srcPath + "' (resolved to " +
                        scriptPath.string() + "). Document is non-conformant and MUST be rejected.";
-            LOG_ERROR("FileLoadingHelper: {}", errorMsg);
+            SCE_LOG_ERROR("FileLoadingHelper: {}", errorMsg);
             return false;
         }
 
-        LOG_INFO("FileLoadingHelper: W3C SCXML 5.8 - Loaded external script: {} (resolved to {})", srcPath,
+        SCE_LOG_INFO("FileLoadingHelper: W3C SCXML 5.8 - Loaded external script: {} (resolved to {})", srcPath,
                  scriptPath.string());
         return true;
     }

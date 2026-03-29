@@ -1,4 +1,5 @@
 #include "states/StateExitExecutor.h"
+#include "common/LogMacros.h"
 #include "actions/IActionNode.h"
 #include "model/IStateNode.h"
 #include "runtime/ActionExecutorImpl.h"
@@ -41,7 +42,7 @@ bool StateExitExecutor::executeStateExitActions(std::shared_ptr<IStateNode> stat
         return actionNodesResult;
 
     } catch (const std::exception &e) {
-        LOG_ERROR("SCXML execution error: {}", e.what());
+        SCE_LOG_ERROR("SCXML execution error: {}", e.what());
         assert(false && "SCXML violation: state exit must not throw exceptions");
         return false;
     }
@@ -84,7 +85,7 @@ bool StateExitExecutor::executeMultipleStateExits(const std::vector<std::string>
 
         // SCXML violation check
         if (!result) {
-            LOG_ERROR("SCXML violation: failed to exit state: {}", activeStateId);
+            SCE_LOG_ERROR("SCXML violation: failed to exit state: {}", activeStateId);
             assert(false && ("SCXML violation: exit must succeed for state " + activeStateId).c_str());
             allSuccessful = false;
         }
@@ -138,7 +139,7 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
                         bool actionResult = exitAction->execute(*executionContext);
 
                         if (!actionResult) {
-                            LOG_WARN("W3C SCXML 3.9: Exit action failed for state: {}, stopping remaining actions in "
+                            SCE_LOG_WARN("W3C SCXML 3.9: Exit action failed for state: {}, stopping remaining actions in "
                                      "THIS block only",
                                      state->getId());
                             break;  // W3C SCXML 3.9: stop remaining actions in this block
@@ -147,7 +148,7 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
                         logExitAction(state->getId(), "Successfully executed SCXML exit action node");
                     } catch (const std::exception &actionException) {
                         // SCXML spec violation: exit actions should not throw
-                        LOG_ERROR("SCXML violation: {}", actionException.what());
+                        SCE_LOG_ERROR("SCXML violation: {}", actionException.what());
                         assert(false && "SCXML violation: exit actions must not throw exceptions");
 
                         // W3C SCXML 3.13: Restore immediate mode even on error
@@ -168,14 +169,14 @@ bool StateExitExecutor::executeActionNodes(std::shared_ptr<IStateNode> state,
         return true;
 
     } catch (const std::exception &e) {
-        LOG_ERROR("SCXML execution error: {}", e.what());
+        SCE_LOG_ERROR("SCXML execution error: {}", e.what());
         assert(false && "SCXML violation: action execution must not throw");
         return false;
     }
 }
 
 void StateExitExecutor::logExitAction(const std::string &stateId, const std::string &actionDescription) const {
-    LOG_DEBUG("{} for state: {}", actionDescription, stateId);
+    SCE_LOG_DEBUG("{} for state: {}", actionDescription, stateId);
 }
 
 }  // namespace SCE

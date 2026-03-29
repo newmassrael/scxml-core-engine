@@ -1,20 +1,20 @@
 #include "parsing/GuardParser.h"
 #include "GuardUtils.h"
 #include "ParsingCommon.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 
 SCE::GuardParser::GuardParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
-    LOG_DEBUG("Creating guard parser");
+    SCE_LOG_DEBUG("Creating guard parser");
 }
 
 SCE::GuardParser::~GuardParser() {
-    LOG_DEBUG("Destroying guard parser");
+    SCE_LOG_DEBUG("Destroying guard parser");
 }
 
 std::shared_ptr<SCE::IGuardNode> SCE::GuardParser::parseGuardNode(const std::shared_ptr<IXMLElement> &guardNode) {
     if (!guardNode) {
-        LOG_WARN("Null guard node");
+        SCE_LOG_WARN("Null guard node");
         return nullptr;
     }
 
@@ -37,8 +37,8 @@ std::shared_ptr<SCE::IGuardNode> SCE::GuardParser::parseGuardNode(const std::sha
     }
 
     if (id.empty() || (target.empty() && condition.empty())) {
-        LOG_WARN("Guard node missing required attributes");
-        LOG_DEBUG("Node name: {}", guardNode->getName());
+        SCE_LOG_WARN("Guard node missing required attributes");
+        SCE_LOG_DEBUG("Node name: {}", guardNode->getName());
         return nullptr;
     }
 
@@ -47,34 +47,34 @@ std::shared_ptr<SCE::IGuardNode> SCE::GuardParser::parseGuardNode(const std::sha
 
     // Process target attribute
     if (!target.empty()) {
-        LOG_DEBUG("Guard: {} with target attribute: {}", id, target);
+        SCE_LOG_DEBUG("Guard: {} with target attribute: {}", id, target);
 
         if (GuardUtils::isConditionExpression(target)) {
             guard->setCondition(target);
-            LOG_DEBUG("Set condition from target: {}", target);
+            SCE_LOG_DEBUG("Set condition from target: {}", target);
         } else {
             guard->setTargetState(target);
-            LOG_DEBUG("Set target state: {}", target);
+            SCE_LOG_DEBUG("Set target state: {}", target);
         }
     }
 
     // Process condition attribute
     if (!condition.empty()) {
         guard->setCondition(condition);
-        LOG_DEBUG("Set condition from attribute: {}", condition);
+        SCE_LOG_DEBUG("Set condition from attribute: {}", condition);
     }
 
     // Process <code:condition> or <condition> element
     auto conditionElement = SCE::ParsingCommon::findFirstChildElement(guardNode, "condition");
     if (conditionElement) {
-        LOG_DEBUG("Found condition element");
+        SCE_LOG_DEBUG("Found condition element");
 
         std::string conditionText = SCE::ParsingCommon::extractTextContent(conditionElement, true);
-        LOG_DEBUG("Raw condition content: '{}'", conditionText);
+        SCE_LOG_DEBUG("Raw condition content: '{}'", conditionText);
 
         if (!conditionText.empty()) {
             guard->setCondition(conditionText);
-            LOG_DEBUG("Set condition from element: {}", conditionText);
+            SCE_LOG_DEBUG("Set condition from element: {}", conditionText);
         }
     }
 
@@ -84,7 +84,7 @@ std::shared_ptr<SCE::IGuardNode> SCE::GuardParser::parseGuardNode(const std::sha
     // Parse external implementation
     parseExternalImplementation(guardNode, guard);
 
-    LOG_DEBUG("Guard parsed successfully");
+    SCE_LOG_DEBUG("Guard parsed successfully");
     return guard;
 }
 
@@ -92,7 +92,7 @@ std::shared_ptr<SCE::IGuardNode>
 SCE::GuardParser::parseGuardFromTransition(const std::shared_ptr<IXMLElement> &transitionNode,
                                            const std::string &targetState) {
     if (!transitionNode) {
-        LOG_WARN("Null transition node");
+        SCE_LOG_WARN("Null transition node");
         return nullptr;
     }
 
@@ -108,7 +108,7 @@ SCE::GuardParser::parseGuardFromTransition(const std::shared_ptr<IXMLElement> &t
         return nullptr;
     }
 
-    LOG_DEBUG("Parsing guard from transition: {} for state: {}", guardId, targetState);
+    SCE_LOG_DEBUG("Parsing guard from transition: {} for state: {}", guardId, targetState);
 
     // Create basic guard node
     auto guard = nodeFactory_->createGuardNode(guardId, "");
@@ -120,10 +120,10 @@ SCE::GuardParser::parseGuardFromTransition(const std::shared_ptr<IXMLElement> &t
     if (transitionNode->hasAttribute("cond")) {
         std::string condition = transitionNode->getAttribute("cond");
         guard->setCondition(condition);
-        LOG_DEBUG("Set condition from cond attribute: {}", condition);
+        SCE_LOG_DEBUG("Set condition from cond attribute: {}", condition);
     }
 
-    LOG_DEBUG("Guard from transition parsed successfully");
+    SCE_LOG_DEBUG("Guard from transition parsed successfully");
     return guard;
 }
 
@@ -132,11 +132,11 @@ SCE::GuardParser::parseGuardsElement(const std::shared_ptr<IXMLElement> &guardsN
     std::vector<std::shared_ptr<SCE::IGuardNode>> guards;
 
     if (!guardsNode) {
-        LOG_WARN("Null guards node");
+        SCE_LOG_WARN("Null guards node");
         return guards;
     }
 
-    LOG_DEBUG("Parsing guards element");
+    SCE_LOG_DEBUG("Parsing guards element");
 
     // Parse guard nodes
     auto guardNodes = SCE::ParsingCommon::findChildElements(guardsNode, "guard");
@@ -145,11 +145,11 @@ SCE::GuardParser::parseGuardsElement(const std::shared_ptr<IXMLElement> &guardsN
         auto guard = parseGuardNode(guardElement);
         if (guard) {
             guards.push_back(guard);
-            LOG_DEBUG("Added guard: {}", guard->getId());
+            SCE_LOG_DEBUG("Added guard: {}", guard->getId());
         }
     }
 
-    LOG_DEBUG("Parsed {} guards", guards.size());
+    SCE_LOG_DEBUG("Parsed {} guards", guards.size());
     return guards;
 }
 
@@ -158,11 +158,11 @@ SCE::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) 
     std::vector<std::shared_ptr<SCE::IGuardNode>> allGuards;
 
     if (!scxmlNode) {
-        LOG_WARN("Null SCXML node");
+        SCE_LOG_WARN("Null SCXML node");
         return allGuards;
     }
 
-    LOG_DEBUG("Parsing all guards in SCXML document");
+    SCE_LOG_DEBUG("Parsing all guards in SCXML document");
 
     // 1. Parse guards within code:guards element
     auto guardsNode = SCE::ParsingCommon::findFirstChildElement(scxmlNode, "guards");
@@ -199,7 +199,7 @@ SCE::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) 
                 auto guard = parseGuardFromTransition(transElement, target);
                 if (guard) {
                     allGuards.push_back(guard);
-                    LOG_DEBUG("Added guard from transition in state {}", stateId);
+                    SCE_LOG_DEBUG("Added guard from transition in state {}", stateId);
                 }
             }
         }
@@ -216,7 +216,7 @@ SCE::GuardParser::parseAllGuards(const std::shared_ptr<IXMLElement> &scxmlNode) 
                                    const std::shared_ptr<SCE::IGuardNode> &b) { return a->getId() == b->getId(); }),
                     allGuards.end());
 
-    LOG_DEBUG("Found {} unique guards", allGuards.size());
+    SCE_LOG_DEBUG("Found {} unique guards", allGuards.size());
     return allGuards;
 }
 
@@ -248,7 +248,7 @@ void SCE::GuardParser::parseDependencies(const std::shared_ptr<IXMLElement> &gua
 
         if (!property.empty()) {
             guardObject->addDependency(property);
-            LOG_DEBUG("Added dependency: {}", property);
+            SCE_LOG_DEBUG("Added dependency: {}", property);
         }
     }
 }
@@ -265,13 +265,13 @@ void SCE::GuardParser::parseExternalImplementation(const std::shared_ptr<IXMLEle
         if (implNode->hasAttribute("class")) {
             std::string className = implNode->getAttribute("class");
             guardObject->setExternalClass(className);
-            LOG_DEBUG("External class: {}", className);
+            SCE_LOG_DEBUG("External class: {}", className);
         }
 
         if (implNode->hasAttribute("factory")) {
             std::string factory = implNode->getAttribute("factory");
             guardObject->setExternalFactory(factory);
-            LOG_DEBUG("External factory: {}", factory);
+            SCE_LOG_DEBUG("External factory: {}", factory);
         }
     }
 }

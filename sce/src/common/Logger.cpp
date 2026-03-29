@@ -66,6 +66,11 @@ void Logger::setLevel(LogLevel level) {
     backend_->setLevel(level);
 }
 
+bool Logger::shouldLog(LogLevel level) {
+    ensureBackend();
+    return backend_->shouldLog(level);
+}
+
 void Logger::trace(const std::string &message, const std::source_location &loc) {
     ensureBackend();
     std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;

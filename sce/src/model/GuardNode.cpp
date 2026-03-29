@@ -1,14 +1,14 @@
 #include "GuardNode.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 
 SCE::GuardNode::GuardNode(const std::string &id, const std::string &target)
     : id_(id), target_(target), condition_(""), targetState_("") {
     // Determine if target is a condition expression or state ID and store in appropriate field
-    LOG_DEBUG("Creating guard node: {} -> {}", id, target);
+    SCE_LOG_DEBUG("Creating guard node: {} -> {}", id, target);
 }
 
 SCE::GuardNode::~GuardNode() {
-    LOG_DEBUG("Destroying guard node: {}", id_);
+    SCE_LOG_DEBUG("Destroying guard node: {}", id_);
 }
 
 const std::string &SCE::GuardNode::getId() const {
@@ -17,7 +17,7 @@ const std::string &SCE::GuardNode::getId() const {
 
 void SCE::GuardNode::setTargetState(const std::string &targetState) {
     targetState_ = targetState;
-    LOG_DEBUG("Setting target state for {}: {}", id_, targetState);
+    SCE_LOG_DEBUG("Setting target state for {}: {}", id_, targetState);
 }
 
 const std::string &SCE::GuardNode::getTargetState() const {
@@ -26,7 +26,7 @@ const std::string &SCE::GuardNode::getTargetState() const {
 
 void SCE::GuardNode::setCondition(const std::string &condition) {
     condition_ = condition;
-    LOG_DEBUG("Setting condition for {}: {}", id_, condition);
+    SCE_LOG_DEBUG("Setting condition for {}: {}", id_, condition);
 }
 
 const std::string &SCE::GuardNode::getCondition() const {
@@ -34,7 +34,7 @@ const std::string &SCE::GuardNode::getCondition() const {
 }
 
 void SCE::GuardNode::addDependency(const std::string &property) {
-    LOG_DEBUG("Adding dependency for {}: {}", id_, property);
+    SCE_LOG_DEBUG("Adding dependency for {}: {}", id_, property);
     dependencies_.push_back(property);
 }
 
@@ -43,7 +43,7 @@ const std::vector<std::string> &SCE::GuardNode::getDependencies() const {
 }
 
 void SCE::GuardNode::setExternalClass(const std::string &className) {
-    LOG_DEBUG("Setting external class for {}: {}", id_, className);
+    SCE_LOG_DEBUG("Setting external class for {}: {}", id_, className);
     externalClass_ = className;
 }
 
@@ -52,7 +52,7 @@ const std::string &SCE::GuardNode::getExternalClass() const {
 }
 
 void SCE::GuardNode::setExternalFactory(const std::string &factoryName) {
-    LOG_DEBUG("Setting external factory for {}: {}", id_, factoryName);
+    SCE_LOG_DEBUG("Setting external factory for {}: {}", id_, factoryName);
     externalFactory_ = factoryName;
 }
 

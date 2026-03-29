@@ -146,7 +146,7 @@ target_include_directories(sce_scxml_tests
 
 target_link_libraries(sce_scxml_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -178,7 +178,7 @@ target_include_directories(js_engine_tests
 
 target_link_libraries(js_engine_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -225,7 +225,7 @@ target_include_directories(state_machine_tests
 
 target_link_libraries(state_machine_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -247,7 +247,7 @@ target_include_directories(states_tests
 
 target_link_libraries(states_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -274,7 +274,7 @@ target_include_directories(action_tests
 
 target_link_libraries(action_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -298,7 +298,7 @@ target_include_directories(history_tests
 
 target_link_libraries(history_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -320,7 +320,7 @@ target_include_directories(ready_scxml_engine_tests
 
 target_link_libraries(ready_scxml_engine_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -348,7 +348,7 @@ target_include_directories(timer_manager_tests
 
 target_link_libraries(timer_manager_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -372,7 +372,7 @@ target_include_directories(game_loop_timer_tests
 
 target_link_libraries(game_loop_timer_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -388,7 +388,7 @@ add_executable(core_parser_tests
     core/SCXMLParserBasicTest.cpp
 )
 
-add_dependencies(core_parser_tests sce_unified)
+add_dependencies(core_parser_tests sce_runtime)
 
 
 target_include_directories(core_parser_tests
@@ -402,7 +402,7 @@ target_include_directories(core_parser_tests
 
 target_link_libraries(core_parser_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
@@ -441,7 +441,7 @@ if(NOT EMSCRIPTEN)
     )
 endif()
 
-add_dependencies(integration_tests sce_unified)
+add_dependencies(integration_tests sce_runtime)
 
 
 target_include_directories(integration_tests
@@ -455,7 +455,7 @@ target_include_directories(integration_tests
 
 target_link_libraries(integration_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         GTest::gmock
         pthread
@@ -486,7 +486,7 @@ add_executable(model_tests
     model/DataModelItemTest.cpp
 )
 
-add_dependencies(model_tests sce_unified)
+add_dependencies(model_tests sce_runtime)
 
 
 target_include_directories(model_tests
@@ -500,7 +500,7 @@ target_include_directories(model_tests
 
 target_link_libraries(model_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
 )
 
@@ -526,7 +526,7 @@ target_include_directories(concurrency_tests
 
 target_link_libraries(concurrency_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         GTest::gmock
         pthread
@@ -630,14 +630,14 @@ target_include_directories(txml_converter_tests
 
 target_link_libraries(txml_converter_tests
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest_main
         pthread
 )
 
 
 
-add_dependencies(txml_converter_tests sce_unified)
+add_dependencies(txml_converter_tests sce_runtime)
 
 
 # ============================================================================
@@ -1055,7 +1055,7 @@ add_executable(w3c_test_cli ${W3C_TEST_CLI_SOURCES})
 
 target_link_libraries(w3c_test_cli
     PRIVATE
-        sce_unified
+        sce_runtime
 )
 
 # WASM: Disable warnings from pre-generated Native AOT headers
@@ -1115,7 +1115,7 @@ target_include_directories(w3c_test_cli
 
 
 
-add_dependencies(w3c_test_cli sce_unified)
+add_dependencies(w3c_test_cli sce_runtime)
 
 # ============================================================================
 # Comprehensive Interactive Debugging Verification Test
@@ -1133,7 +1133,7 @@ add_executable(comprehensive_interactive_test
 
 target_link_libraries(comprehensive_interactive_test
     PRIVATE
-        sce_unified
+        sce_runtime
         GTest::gtest
         spdlog::spdlog
 )
@@ -1181,7 +1181,7 @@ endif()
 
 apply_sce_test_policies(comprehensive_interactive_test)
 
-add_dependencies(comprehensive_interactive_test sce_unified)
+add_dependencies(comprehensive_interactive_test sce_runtime)
 
 
 # ============================================================================
@@ -1327,7 +1327,7 @@ if(EMSCRIPTEN)
 
     target_link_libraries(visualizer
         PRIVATE
-            sce_unified
+            sce_runtime
             spdlog::spdlog
     )
 

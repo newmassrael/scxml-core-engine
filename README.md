@@ -148,7 +148,7 @@ sce_add_state_machine(
 )
 
 # Link SCE library
-target_link_libraries(my_app PRIVATE sce_unified)
+target_link_libraries(my_app PRIVATE sce_runtime)
 ```
 
 **Benefits**:
@@ -173,7 +173,7 @@ FetchContent_MakeAvailable(sce)
 
 add_executable(my_app main.cpp)
 sce_add_state_machine(TARGET my_app SCXML_FILE traffic_light.scxml)
-target_link_libraries(my_app PRIVATE sce_unified)
+target_link_libraries(my_app PRIVATE sce_runtime)
 ```
 
 ### Method 4: Standalone (Learning & Testing)

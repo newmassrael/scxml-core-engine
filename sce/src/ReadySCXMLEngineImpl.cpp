@@ -1,6 +1,6 @@
 #include "ReadySCXMLEngine.h"
 #include "SCXMLEngine.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <atomic>
 #include <filesystem>
 #include <fstream>
@@ -34,12 +34,12 @@ private:
             bool result = scxmlEngine_->setVariableSync(name, value, sessionId_);
             if (!result) {
                 lastError_ = scxmlEngine_->getLastStateMachineError(sessionId_);
-                LOG_WARN("ReadySCXMLEngine: Failed to set variable '{}': {}", name, lastError_);
+                SCE_LOG_WARN("ReadySCXMLEngine: Failed to set variable '{}': {}", name, lastError_);
             }
             return result;
         } catch (const std::exception &e) {
             lastError_ = std::string("Variable setting exception: ") + e.what();
-            LOG_ERROR("ReadySCXMLEngine: Variable '{}' exception: {}", name, e.what());
+            SCE_LOG_ERROR("ReadySCXMLEngine: Variable '{}' exception: {}", name, e.what());
             return false;
         }
     }
@@ -66,31 +66,31 @@ public:
         try {
             if (!scxmlEngine_) {
                 lastError_ = "SCXMLEngine is null";
-                LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+                SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
                 return false;
             }
 
             // Initialize the engine
             if (!scxmlEngine_->initialize()) {
                 lastError_ = "Failed to initialize SCXMLEngine";
-                LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+                SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
                 return false;
             }
 
             // Load SCXML content using the high-level API
             if (!scxmlEngine_->loadSCXMLFromString(scxmlContent, sessionId_)) {
                 lastError_ = "Failed to load SCXML content: " + scxmlEngine_->getLastStateMachineError(sessionId_);
-                LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+                SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
                 return false;
             }
 
             initialized_ = true;
-            LOG_INFO("ReadySCXMLEngine: Initialized successfully with session: {}", sessionId_);
+            SCE_LOG_INFO("ReadySCXMLEngine: Initialized successfully with session: {}", sessionId_);
             return true;
 
         } catch (const std::exception &e) {
             lastError_ = std::string("Initialization failed: ") + e.what();
-            LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+            SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
             return false;
         }
     }
@@ -107,12 +107,12 @@ public:
             bool result = scxmlEngine_->startStateMachine(sessionId_);
             if (!result) {
                 lastError_ = scxmlEngine_->getLastStateMachineError(sessionId_);
-                LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+                SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
             }
             return result;
         } catch (const std::exception &e) {
             lastError_ = std::string("Start failed: ") + e.what();
-            LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+            SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
             return false;
         }
     }
@@ -122,7 +122,7 @@ public:
             try {
                 scxmlEngine_->stopStateMachine(sessionId_);
             } catch (const std::exception &e) {
-                LOG_WARN("ReadySCXMLEngine: Exception during stop: {}", e.what());
+                SCE_LOG_WARN("ReadySCXMLEngine: Exception during stop: {}", e.what());
             }
         }
     }
@@ -142,12 +142,12 @@ public:
             bool result = scxmlEngine_->sendEventSync(eventName, sessionId_, eventData);
             if (!result) {
                 lastError_ = scxmlEngine_->getLastStateMachineError(sessionId_);
-                LOG_WARN("ReadySCXMLEngine: Event '{}' failed: {}", eventName, lastError_);
+                SCE_LOG_WARN("ReadySCXMLEngine: Event '{}' failed: {}", eventName, lastError_);
             }
             return result;
         } catch (const std::exception &e) {
             lastError_ = std::string("Event processing exception: ") + e.what();
-            LOG_ERROR("ReadySCXMLEngine: Event '{}' exception: {}", eventName, e.what());
+            SCE_LOG_ERROR("ReadySCXMLEngine: Event '{}' exception: {}", eventName, e.what());
             return false;
         }
     }
@@ -201,7 +201,7 @@ public:
         try {
             return scxmlEngine_->getVariableSync(name, sessionId_);
         } catch (const std::exception &e) {
-            LOG_WARN("ReadySCXMLEngine: Failed to get variable '{}': {}", name, e.what());
+            SCE_LOG_WARN("ReadySCXMLEngine: Failed to get variable '{}': {}", name, e.what());
             return "";
         }
     }
@@ -231,14 +231,14 @@ public:
 std::unique_ptr<ReadySCXMLEngine> ReadySCXMLEngine::fromFile(const std::string &scxmlFile) {
     // Check if file exists
     if (!std::filesystem::exists(scxmlFile)) {
-        LOG_ERROR("ReadySCXMLEngine: SCXML file not found: {}", scxmlFile);
+        SCE_LOG_ERROR("ReadySCXMLEngine: SCXML file not found: {}", scxmlFile);
         return nullptr;
     }
 
     // Read file content
     std::ifstream file(scxmlFile);
     if (!file.is_open()) {
-        LOG_ERROR("ReadySCXMLEngine: Cannot open SCXML file: {}", scxmlFile);
+        SCE_LOG_ERROR("ReadySCXMLEngine: Cannot open SCXML file: {}", scxmlFile);
         return nullptr;
     }
 
@@ -249,14 +249,14 @@ std::unique_ptr<ReadySCXMLEngine> ReadySCXMLEngine::fromFile(const std::string &
 
 std::unique_ptr<ReadySCXMLEngine> ReadySCXMLEngine::fromString(const std::string &scxmlContent) {
     if (scxmlContent.empty()) {
-        LOG_ERROR("ReadySCXMLEngine: Empty SCXML content");
+        SCE_LOG_ERROR("ReadySCXMLEngine: Empty SCXML content");
         return nullptr;
     }
 
     auto engine = std::make_unique<ReadySCXMLEngineImpl>();
 
     if (!engine->initialize(scxmlContent)) {
-        LOG_ERROR("ReadySCXMLEngine: Failed to initialize with SCXML content");
+        SCE_LOG_ERROR("ReadySCXMLEngine: Failed to initialize with SCXML content");
         return nullptr;
     }
 

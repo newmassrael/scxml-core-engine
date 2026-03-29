@@ -1,5 +1,6 @@
-# SCE Unified Module
-# Complete SCE implementation with domain models, runtime engine, and scripting
+# SCE Module: sce_core (header-only) + sce_runtime (compiled)
+# sce_core: Header-only library for AOT standalone usage (no Logger.cpp dependency)
+# sce_runtime: Full compiled library with Interpreter, Parser, JSEngine, Logger
 
 # Build options
 option(SCE_ENABLE_HTTP "Enable HTTP/BasicHTTPEventProcessor support (requires cpp-httplib)" ON)
@@ -51,7 +52,37 @@ endif()
 # Modern C++ JSON library with full C++20 support
 set(NLOHMANN_JSON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/nlohmann_json/include)
 
-add_library(sce_unified
+# ============================================================================
+# sce_core: Header-only core library for AOT standalone usage
+# ============================================================================
+# Contains: StaticExecutionEngine, Helper classes, core algorithms, model interfaces
+# No .cpp files, no Logger.cpp dependency
+# All SCE_LOG_* macros are no-ops when using sce_core standalone
+add_library(sce_core INTERFACE)
+
+target_include_directories(sce_core
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/model>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/runtime>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/factory>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/parsing>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/actions>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/events>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/states>
+        $<BUILD_INTERFACE:${NLOHMANN_JSON_INCLUDE_DIR}>
+        $<BUILD_INTERFACE:${PUGIXML_INCLUDE_DIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
+
+target_compile_features(sce_core INTERFACE cxx_std_20)
+
+# ============================================================================
+# sce_runtime: Full compiled library with Interpreter, Parser, JSEngine, Logger
+# ============================================================================
+add_library(sce_runtime
     # Model implementation
     src/model/SCXMLModel.cpp
     src/model/StateNode.cpp
@@ -160,7 +191,7 @@ add_library(sce_unified
 # XInclude processing (platform-independent with different implementations)
 # XIncludeProcessor stub delegates to PugiXMLDocument::processXInclude()  
 # WASM: XIncludeProcessor stub delegates to IXMLDocument::processXInclude()
-target_sources(sce_unified PRIVATE
+target_sources(sce_runtime PRIVATE
     src/parsing/XIncludeProcessor.cpp
 )
 
@@ -168,7 +199,7 @@ target_sources(sce_unified PRIVATE
 # W3C SCXML C.2: BasicHTTP Event I/O Processor requires native sockets
 if(SCE_ENABLE_HTTP)
     if(NOT EMSCRIPTEN)
-        target_sources(sce_unified PRIVATE
+        target_sources(sce_runtime PRIVATE
             src/common/HttpResponseUtils.cpp
             src/common/UrlEncodingHelper.cpp
             src/events/HttpEventTarget.cpp
@@ -178,7 +209,7 @@ if(SCE_ENABLE_HTTP)
             src/events/CppHttplibClient.cpp
         )
     else()
-        target_sources(sce_unified PRIVATE
+        target_sources(sce_runtime PRIVATE
             src/common/UrlEncodingHelper.cpp
             src/events/HttpEventTarget.cpp
             src/events/HttpClientFactory.cpp
@@ -189,38 +220,20 @@ endif()
 
 # XML Parser implementation (Unified)
 # All platforms: PugiXMLParser (pugixml wrapper)
-target_sources(sce_unified PRIVATE
+target_sources(sce_runtime PRIVATE
     src/parsing/PugiXMLParser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
 )
 
-# Include directories with proper BUILD_INTERFACE/INSTALL_INTERFACE for export
-# BUILD_INTERFACE: Paths used when building from source (development)
-# INSTALL_INTERFACE: Paths used when installed (find_package usage)
-target_include_directories(sce_unified
-    PUBLIC
-        # Main include directories
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/model>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/runtime>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/factory>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/parsing>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/actions>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/events>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/states>
-        # Third-party headers
-        $<BUILD_INTERFACE:${NLOHMANN_JSON_INCLUDE_DIR}>
-        $<BUILD_INTERFACE:${PUGIXML_INCLUDE_DIR}>
-        # Installed include path (all headers installed to single directory)
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+# sce_runtime include directories are inherited from sce_core (PUBLIC link)
+# backends/ is runtime-only (Logger.cpp, DefaultBackend.cpp, SpdlogBackend.cpp)
+target_include_directories(sce_runtime PRIVATE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
 )
 
-# Optional spdlog includes (header-only)
+# spdlog includes (runtime-only dependency)
 if(SCE_USE_SPDLOG)
-    target_include_directories(sce_unified PUBLIC
+    target_include_directories(sce_runtime PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include>
     )
 endif()
@@ -231,18 +244,24 @@ endif()
 
 # Conditional spdlog support (compile definition)
 if(SCE_USE_SPDLOG)
-    target_compile_definitions(sce_unified PUBLIC SCE_USE_SPDLOG)
+    target_compile_definitions(sce_runtime PUBLIC SCE_USE_SPDLOG)
 endif()
 
-# Force include DisableStdOut.h globally
-target_compile_options(sce_unified
+# Enable runtime logging for sce_runtime and all consumers
+# Header-only code uses SCE_LOG_* macros from LogMacros.h which resolve to
+# real Logger calls when this is defined, or no-ops when using sce_core standalone
+target_compile_definitions(sce_runtime PUBLIC SCE_ENABLE_RUNTIME_LOGGING)
+
+# Force include DisableStdOut.h for sce_runtime source files only
+target_compile_options(sce_runtime
     PRIVATE
         -include common/DisableStdOut.h
 )
 
-target_link_libraries(sce_unified
+target_link_libraries(sce_runtime
     PUBLIC
-        qjs  # QuickJS library
+        sce_core  # Header-only core (include directories propagated)
+        qjs       # QuickJS library
         # nlohmann/json is header-only, no linking required
         # spdlog is header-only, no linking required
     PRIVATE
@@ -256,11 +275,11 @@ target_link_libraries(sce_unified
 # ARCHITECTURE.md: JSEngine uses SynchronousExecutionHelper, but EventDispatcherImpl needs pthread
 # Note: PROXY_TO_PTHREAD removed to reduce overhead while keeping pthread support
 if(EMSCRIPTEN)
-    target_compile_options(sce_unified PRIVATE
+    target_compile_options(sce_runtime PRIVATE
         -pthread
         -sUSE_PTHREADS=1
     )
-    target_link_options(sce_unified PRIVATE
+    target_link_options(sce_runtime PRIVATE
         -pthread
         -sUSE_PTHREADS=1
         -sPTHREAD_POOL_SIZE=15         # Worker thread pool (for ConcurrentEventBroadcaster + EventDispatcherImpl)
@@ -280,14 +299,13 @@ endif()
 
 # HTTP support (optional feature)
 if(SCE_ENABLE_HTTP)
-    target_compile_definitions(sce_unified PUBLIC SCE_ENABLE_HTTP)
+    target_compile_definitions(sce_runtime PUBLIC SCE_ENABLE_HTTP)
     if(NOT EMSCRIPTEN)
-        target_link_libraries(sce_unified PUBLIC httplib::httplib)
+        target_link_libraries(sce_runtime PUBLIC httplib::httplib)
     endif()
 endif()
 
-# Set C++20 standard
-target_compile_features(sce_unified
-    PUBLIC cxx_std_20
-)
+# C++20 standard inherited from sce_core INTERFACE, but set explicitly for sce_runtime too
+target_compile_features(sce_runtime PUBLIC cxx_std_20)
+
 

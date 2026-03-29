@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common/Logger.h"
 #include "states/IStateExitHandler.h"
 
 namespace SCE {

@@ -224,7 +224,7 @@ option(SCE_THREAD_SAFE "Enable thread-safe event queues" OFF)
 
 if(SCE_THREAD_SAFE)
     message(STATUS "SCE: Thread-safe event queues enabled")
-    target_compile_definitions(sce_unified PUBLIC SCE_THREAD_SAFE)
+    target_compile_definitions(sce_runtime PUBLIC SCE_THREAD_SAFE)
 else()
     message(STATUS "SCE: Thread-safe event queues disabled (zero overhead)")
 endif()
@@ -293,7 +293,7 @@ endif()
 # Creates SCE::sce alias for external usage
 
 # Create alias target for external usage (SCE::sce)
-add_library(SCE::sce ALIAS sce_unified)
+add_library(SCE::sce ALIAS sce_runtime)
 
 # =============================================================================
 # Installation Configuration
@@ -303,8 +303,8 @@ add_library(SCE::sce ALIAS sce_unified)
 set(SCE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SCE")
 set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
 
-# Install main library with export
-install(TARGETS sce_unified
+# Install main library with export (sce_runtime is the compiled target)
+install(TARGETS sce_runtime sce_core
     EXPORT SCETargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

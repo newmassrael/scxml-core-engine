@@ -1,5 +1,5 @@
 #include "scripting/XMLDOMWrapper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <cstring>
 
 namespace SCE {
@@ -72,7 +72,7 @@ XMLDocument::XMLDocument(const std::string &xmlContent) {
     if (!parseResult) {
         errorMessage_ = "Failed to parse XML content: ";
         errorMessage_ += parseResult.description();
-        LOG_ERROR("XMLDocument: {}", errorMessage_);
+        SCE_LOG_ERROR("XMLDocument: {}", errorMessage_);
     }
 }
 

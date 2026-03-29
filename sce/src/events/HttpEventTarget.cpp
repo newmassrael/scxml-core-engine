@@ -1,5 +1,5 @@
 #include "events/HttpEventTarget.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/SendHelper.h"
 #include "common/UrlEncodingHelper.h"
 #include <algorithm>
@@ -22,10 +22,10 @@ namespace SCE {
 HttpEventTarget::HttpEventTarget(const std::string &targetUri, std::chrono::milliseconds timeoutMs, int maxRetries)
     : targetUri_(targetUri), port_(80), timeoutMs_(timeoutMs), maxRetries_(maxRetries), sslVerification_(true) {
     if (!parseTargetUri()) {
-        LOG_ERROR("HttpEventTarget: Invalid target URI: {}", targetUri_);
+        SCE_LOG_ERROR("HttpEventTarget: Invalid target URI: {}", targetUri_);
     }
 
-    LOG_DEBUG("HttpEventTarget: Created for URI '{}' with timeout {}ms, {} retries", targetUri_, timeoutMs_.count(),
+    SCE_LOG_DEBUG("HttpEventTarget: Created for URI '{}' with timeout {}ms, {} retries", targetUri_, timeoutMs_.count(),
               maxRetries_);
 }
 
@@ -34,7 +34,7 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
 
     return std::async(std::launch::async, [self, event]() -> SendResult {
         try {
-            LOG_DEBUG("HttpEventTarget: Sending event '{}' to '{}'", event.eventName, self->targetUri_);
+            SCE_LOG_DEBUG("HttpEventTarget: Sending event '{}' to '{}'", event.eventName, self->targetUri_);
 
             std::string payload;
             std::string contentType;
@@ -48,17 +48,17 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
                 // ARCHITECTURE.md: Zero Duplication - use SendHelper for HTTP POST body generation
                 payload = SendHelper::buildHttpPostBody(event.eventName, event.params);
                 contentType = "application/x-www-form-urlencoded";
-                LOG_DEBUG("HttpEventTarget: Form-encoded payload: {}", payload);
+                SCE_LOG_DEBUG("HttpEventTarget: Form-encoded payload: {}", payload);
             } else {
                 // W3C SCXML C.2: Determine content type based on whether content is present
                 payload = self->createJsonPayload(event);
                 contentType = event.content.empty() ? "application/json" : "text/plain";
-                LOG_DEBUG("HttpEventTarget: JSON payload: {}", payload);
+                SCE_LOG_DEBUG("HttpEventTarget: JSON payload: {}", payload);
             }
 
 #ifdef __EMSCRIPTEN__
             // WASM: Use IHttpClient abstraction (EmscriptenFetchClient via HttpClientFactory)
-            LOG_DEBUG("HttpEventTarget: Using WASM HTTP client (EmscriptenFetchClient)");
+            SCE_LOG_DEBUG("HttpEventTarget: Using WASM HTTP client (EmscriptenFetchClient)");
 
             auto httpClient = createHttpClient();
             httpClient->setTimeout(self->timeoutMs_);
@@ -78,21 +78,21 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
 
             // W3C SCXML C.2: External HTTP server mode (polyfill_pre.js manages standalone_http_server.js)
             // Response JSON contains event data that must be delivered to state machine
-            LOG_DEBUG("HttpEventTarget: Waiting for HTTP response from external server");
+            SCE_LOG_DEBUG("HttpEventTarget: Waiting for HTTP response from external server");
 
             // W3C SCXML C.2: EM_ASYNC_JS automatically pauses execution until Promise resolves
             // ASYNCIFY handles pause/resume transparently - future is already ready when returned
             auto response = future.get();
 
             if (!response.success || response.statusCode < 200 || response.statusCode >= 300) {
-                LOG_ERROR("HttpEventTarget: HTTP request failed: status {}", response.statusCode);
+                SCE_LOG_ERROR("HttpEventTarget: HTTP request failed: status {}", response.statusCode);
                 return SendResult::error("HTTP request failed: status " + std::to_string(response.statusCode),
                                          SendResult::ErrorType::NETWORK_ERROR);
             }
 
             // W3C SCXML C.2: Parse response JSON to extract event name and data
             // Expected format: {"status":"success","event":"eventName","sendId":"...","timestamp":...}
-            LOG_DEBUG("HttpEventTarget: HTTP response body: {}", response.body);
+            SCE_LOG_DEBUG("HttpEventTarget: HTTP response body: {}", response.body);
 
             std::string responseEventName;
             std::string responseEventData;
@@ -114,17 +114,17 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
             }
 
             if (responseEventName.empty()) {
-                LOG_WARN("HttpEventTarget: No event name in HTTP response, using original event name");
+                SCE_LOG_WARN("HttpEventTarget: No event name in HTTP response, using original event name");
                 responseEventName = event.eventName;
             }
 
-            LOG_INFO("HttpEventTarget: Delivering HTTP response as event '{}' to state machine", responseEventName);
+            SCE_LOG_INFO("HttpEventTarget: Delivering HTTP response as event '{}' to state machine", responseEventName);
 
             // W3C SCXML 5.10: Deliver HTTP response as external event
             // Use EventRaiserService to get session-specific EventRaiser
             auto eventRaiser = SCE::EventRaiserService::getInstance().getEventRaiser(event.sessionId);
             if (!eventRaiser) {
-                LOG_ERROR("HttpEventTarget: No EventRaiser for session '{}' - cannot deliver HTTP response event",
+                SCE_LOG_ERROR("HttpEventTarget: No EventRaiser for session '{}' - cannot deliver HTTP response event",
                           event.sessionId);
                 return SendResult::error("No EventRaiser for session: " + event.sessionId,
                                          SendResult::ErrorType::INTERNAL_ERROR);
@@ -133,7 +133,7 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
             // Deliver event to state machine external queue
             eventRaiser->raiseExternalEvent(responseEventName, responseEventData);
 
-            LOG_INFO("HttpEventTarget: HTTP response delivered successfully for event '{}'", event.eventName);
+            SCE_LOG_INFO("HttpEventTarget: HTTP response delivered successfully for event '{}'", event.eventName);
             return SendResult::success(event.sendId);
 #else
             // Native: Use httplib directly
@@ -151,10 +151,10 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
 #endif  // __EMSCRIPTEN__
 
         } catch (const std::exception &e) {
-            LOG_ERROR("HttpEventTarget: Exception during send: {}", e.what());
+            SCE_LOG_ERROR("HttpEventTarget: Exception during send: {}", e.what());
 #ifdef __EMSCRIPTEN__
             // WASM memory investigation: Log thread completion (exception path)
-            LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (exception) for event '{}'",
+            SCE_LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (exception) for event '{}'",
                      event.eventName);
 #endif
             return SendResult::error("HTTP send exception: " + std::string(e.what()),
@@ -162,7 +162,7 @@ std::future<SendResult> HttpEventTarget::send(const EventDescriptor &event) {
         }
 #ifdef __EMSCRIPTEN__
         // WASM memory investigation: Log thread completion (success path)
-        LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (success) for event '{}'", event.eventName);
+        SCE_LOG_INFO("HttpEventTarget: EXITING std::async - Thread completing (success) for event '{}'", event.eventName);
 #endif
     });
 }
@@ -229,22 +229,22 @@ std::string HttpEventTarget::getDebugInfo() const {
 
 void HttpEventTarget::setCustomHeaders(const std::map<std::string, std::string> &headers) {
     customHeaders_ = headers;
-    LOG_DEBUG("HttpEventTarget: Set {} custom headers", headers.size());
+    SCE_LOG_DEBUG("HttpEventTarget: Set {} custom headers", headers.size());
 }
 
 void HttpEventTarget::setTimeout(std::chrono::milliseconds timeoutMs) {
     timeoutMs_ = timeoutMs;
-    LOG_DEBUG("HttpEventTarget: Set timeout to {}ms", timeoutMs_.count());
+    SCE_LOG_DEBUG("HttpEventTarget: Set timeout to {}ms", timeoutMs_.count());
 }
 
 void HttpEventTarget::setMaxRetries(int maxRetries) {
     maxRetries_ = maxRetries;
-    LOG_DEBUG("HttpEventTarget: Set max retries to {}", maxRetries_);
+    SCE_LOG_DEBUG("HttpEventTarget: Set max retries to {}", maxRetries_);
 }
 
 void HttpEventTarget::setSSLVerification(bool verify) {
     sslVerification_ = verify;
-    LOG_DEBUG("HttpEventTarget: SSL verification {}", verify ? "enabled" : "disabled");
+    SCE_LOG_DEBUG("HttpEventTarget: SSL verification {}", verify ? "enabled" : "disabled");
 }
 
 bool HttpEventTarget::parseTargetUri() {
@@ -275,7 +275,7 @@ bool HttpEventTarget::parseTargetUri() {
     // Parse path
     path_ = match[4].matched ? match[4].str() : "/";
 
-    LOG_DEBUG("HttpEventTarget: Parsed URI - scheme='{}', host='{}', port={}, path='{}'", scheme_, host_, port_, path_);
+    SCE_LOG_DEBUG("HttpEventTarget: Parsed URI - scheme='{}', host='{}', port={}, path='{}'", scheme_, host_, port_, path_);
 
     return true;
 }
@@ -306,11 +306,11 @@ std::unique_ptr<httplib::Client> HttpEventTarget::createHttpClient() const {
             client->set_default_headers({{header.first, header.second}});
         }
 
-        LOG_DEBUG("HttpEventTarget: Created HTTP client for '{}'", baseUrl);
+        SCE_LOG_DEBUG("HttpEventTarget: Created HTTP client for '{}'", baseUrl);
         return client;
 
     } catch (const std::exception &e) {
-        LOG_ERROR("HttpEventTarget: Failed to create HTTP client: {}", e.what());
+        SCE_LOG_ERROR("HttpEventTarget: Failed to create HTTP client: {}", e.what());
         return nullptr;
     }
 }
@@ -319,7 +319,7 @@ std::unique_ptr<httplib::Client> HttpEventTarget::createHttpClient() const {
 std::string HttpEventTarget::createJsonPayload(const EventDescriptor &event) const {
     // W3C SCXML C.2: If content is provided, use it as the HTTP body directly
     if (!event.content.empty()) {
-        LOG_DEBUG("HttpEventTarget: Using content as HTTP body: '{}'", event.content);
+        SCE_LOG_DEBUG("HttpEventTarget: Using content as HTTP body: '{}'", event.content);
         return event.content;
     }
 
@@ -400,29 +400,29 @@ httplib::Result HttpEventTarget::performRequestWithRetry(httplib::Client &client
     while (attempts <= maxRetries_) {
         attempts++;
 
-        LOG_DEBUG("HttpEventTarget: HTTP POST attempt {} to '{}' with payload: {}", attempts, path, payload);
+        SCE_LOG_DEBUG("HttpEventTarget: HTTP POST attempt {} to '{}' with payload: {}", attempts, path, payload);
 
         // W3C SCXML C.2: Use appropriate Content-Type (passed as parameter)
-        LOG_DEBUG("HttpEventTarget: Executing client.Post('{}', payload, '{}')", path, contentType);
+        SCE_LOG_DEBUG("HttpEventTarget: Executing client.Post('{}', payload, '{}')", path, contentType);
         result = client.Post(path, payload, contentType);
 
         if (result) {
-            LOG_DEBUG("HttpEventTarget: HTTP POST completed, status: {}, response body: {}", result->status,
+            SCE_LOG_DEBUG("HttpEventTarget: HTTP POST completed, status: {}, response body: {}", result->status,
                       result->body);
         } else {
-            LOG_ERROR("HttpEventTarget: HTTP POST failed, error: {}", static_cast<int>(result.error()));
+            SCE_LOG_ERROR("HttpEventTarget: HTTP POST failed, error: {}", static_cast<int>(result.error()));
         }
 
         if (result && result->status >= 200 && result->status < 300) {
             // Success
-            LOG_DEBUG("HttpEventTarget: HTTP POST successful, status {}", result->status);
+            SCE_LOG_DEBUG("HttpEventTarget: HTTP POST successful, status {}", result->status);
             break;
         }
 
         if (attempts <= maxRetries_) {
             // Wait before retry (exponential backoff)
             auto waitTime = std::chrono::milliseconds(100 * attempts);
-            LOG_DEBUG("HttpEventTarget: Retrying in {}ms (attempt {} of {})", waitTime.count(), attempts,
+            SCE_LOG_DEBUG("HttpEventTarget: Retrying in {}ms (attempt {} of {})", waitTime.count(), attempts,
                       maxRetries_ + 1);
             std::this_thread::sleep_for(waitTime);
         }
@@ -471,13 +471,13 @@ SendResult HttpEventTarget::convertHttpResponse(const httplib::Result &result, c
             break;
         }
 
-        LOG_ERROR("HttpEventTarget: {}", errorMsg);
+        SCE_LOG_ERROR("HttpEventTarget: {}", errorMsg);
         return SendResult::error(errorMsg, errorType);
     }
 
     // Check HTTP status code
     if (result->status >= 200 && result->status < 300) {
-        LOG_INFO("HttpEventTarget: Event '{}' sent successfully to '{}', status {}", event.eventName, targetUri_,
+        SCE_LOG_INFO("HttpEventTarget: Event '{}' sent successfully to '{}', status {}", event.eventName, targetUri_,
                  result->status);
         return SendResult::success(event.sendId);
     } else {
@@ -491,7 +491,7 @@ SendResult HttpEventTarget::convertHttpResponse(const httplib::Result &result, c
             errorType = SendResult::ErrorType::NETWORK_ERROR;
         }
 
-        LOG_ERROR("HttpEventTarget: HTTP error for event '{}': {}", event.eventName, errorMsg);
+        SCE_LOG_ERROR("HttpEventTarget: HTTP error for event '{}': {}", event.eventName, errorMsg);
         return SendResult::error(errorMsg, errorType);
     }
 }

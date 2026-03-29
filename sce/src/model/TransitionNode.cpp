@@ -1,12 +1,12 @@
 // TransitionNode.cpp
 #include "TransitionNode.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 #include <sstream>
 
 SCE::TransitionNode::TransitionNode(const std::string &event, const std::string &target)
     : event_(event), target_(target), guard_(""), internal_(false), targetsDirty_(true) {
-    LOG_DEBUG("Creating transition node: {} -> {}", (event.empty() ? "<no event>" : event), target);
+    SCE_LOG_DEBUG("Creating transition node: {} -> {}", (event.empty() ? "<no event>" : event), target);
 
     if (!event.empty()) {
         events_.push_back(event);
@@ -14,7 +14,7 @@ SCE::TransitionNode::TransitionNode(const std::string &event, const std::string 
 }
 
 SCE::TransitionNode::~TransitionNode() {
-    LOG_DEBUG("Destroying transition node: {} -> {}", (event_.empty() ? "<no event>" : event_), target_);
+    SCE_LOG_DEBUG("Destroying transition node: {} -> {}", (event_.empty() ? "<no event>" : event_), target_);
 }
 
 const std::string &SCE::TransitionNode::getEvent() const {
@@ -31,7 +31,7 @@ std::vector<std::string> SCE::TransitionNode::getTargets() const {
 }
 
 void SCE::TransitionNode::addTarget(const std::string &target) {
-    LOG_DEBUG("Adding target to transition {}: {}", (event_.empty() ? "<no event>" : event_), target);
+    SCE_LOG_DEBUG("Adding target to transition {}: {}", (event_.empty() ? "<no event>" : event_), target);
 
     if (target.empty()) {
         return;  // Do not add empty target
@@ -46,7 +46,7 @@ void SCE::TransitionNode::addTarget(const std::string &target) {
 }
 
 void SCE::TransitionNode::clearTargets() {
-    LOG_DEBUG("Clearing targets for transition {}", (event_.empty() ? "<no event>" : event_));
+    SCE_LOG_DEBUG("Clearing targets for transition {}", (event_.empty() ? "<no event>" : event_));
 
     target_.clear();
     cachedTargets_.clear();
@@ -75,7 +75,7 @@ void SCE::TransitionNode::parseTargets() const {
 }
 
 void SCE::TransitionNode::setGuard(const std::string &guard) {
-    LOG_DEBUG("Setting guard for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_, guard);
+    SCE_LOG_DEBUG("Setting guard for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_, guard);
     guard_ = guard;
 }
 
@@ -84,7 +84,7 @@ const std::string &SCE::TransitionNode::getGuard() const {
 }
 
 void SCE::TransitionNode::addActionNode(std::shared_ptr<SCE::IActionNode> actionNode) {
-    LOG_DEBUG("Adding ActionNode to transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
+    SCE_LOG_DEBUG("Adding ActionNode to transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
               (actionNode ? actionNode->getActionType() : "null"));
     if (actionNode) {
         actionNodes_.push_back(actionNode);
@@ -96,7 +96,7 @@ const std::vector<std::shared_ptr<SCE::IActionNode>> &SCE::TransitionNode::getAc
 }
 
 void SCE::TransitionNode::setInternal(bool internal) {
-    LOG_DEBUG("Setting internal flag for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
+    SCE_LOG_DEBUG("Setting internal flag for transition {} -> {}: {}", (event_.empty() ? "<no event>" : event_), target_,
               (internal ? "true" : "false"));
     internal_ = internal;
 }
@@ -106,7 +106,7 @@ bool SCE::TransitionNode::isInternal() const {
 }
 
 void SCE::TransitionNode::setAttribute(const std::string &name, const std::string &value) {
-    LOG_DEBUG("Setting attribute for transition {} -> {}: {}={}", (event_.empty() ? "<no event>" : event_), target_,
+    SCE_LOG_DEBUG("Setting attribute for transition {} -> {}: {}={}", (event_.empty() ? "<no event>" : event_), target_,
               name, value);
     attributes_[name] = value;
 }
@@ -121,7 +121,7 @@ std::string SCE::TransitionNode::getAttribute(const std::string &name) const {
 
 void SCE::TransitionNode::addEvent(const std::string &event) {
     if (std::find(events_.begin(), events_.end(), event) == events_.end()) {
-        LOG_DEBUG("Adding event to transition: {}", event);
+        SCE_LOG_DEBUG("Adding event to transition: {}", event);
         events_.push_back(event);
     }
 }

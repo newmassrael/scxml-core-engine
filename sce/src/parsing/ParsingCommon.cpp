@@ -1,5 +1,5 @@
 #include "parsing/ParsingCommon.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 #include <cctype>
 

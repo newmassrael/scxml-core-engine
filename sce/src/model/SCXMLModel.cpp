@@ -1,5 +1,5 @@
 #include "model/SCXMLModel.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "model/ITransitionNode.h"
 #include <algorithm>
 #include <iostream>
@@ -7,16 +7,16 @@
 #include <unordered_set>
 
 SCE::SCXMLModel::SCXMLModel() : rootState_(nullptr) {
-    LOG_DEBUG("Creating SCXML model");
+    SCE_LOG_DEBUG("Creating SCXML model");
 }
 
 SCE::SCXMLModel::~SCXMLModel() {
-    LOG_DEBUG("Destroying SCXML model");
+    SCE_LOG_DEBUG("Destroying SCXML model");
     // Smart pointers handle resource cleanup
 }
 
 void SCE::SCXMLModel::setRootState(std::shared_ptr<SCE::IStateNode> rootState) {
-    LOG_DEBUG("Setting root state: {}", (rootState ? rootState->getId() : "null"));
+    SCE_LOG_DEBUG("Setting root state: {}", (rootState ? rootState->getId() : "null"));
     rootState_ = rootState;
     // Rebuild the complete state list to include all nested children
     rebuildAllStatesList();
@@ -35,7 +35,7 @@ const std::string &SCE::SCXMLModel::getName() const {
 }
 
 void SCE::SCXMLModel::setInitialState(const std::string &initialState) {
-    LOG_DEBUG("Setting initial state: {}", initialState);
+    SCE_LOG_DEBUG("Setting initial state: {}", initialState);
 
     // W3C SCXML 3.3: Parse space-separated initial state IDs
     initialStates_.clear();
@@ -46,7 +46,7 @@ void SCE::SCXMLModel::setInitialState(const std::string &initialState) {
         initialStates_.push_back(stateId);
     }
 
-    LOG_DEBUG("Parsed {} initial state(s)", initialStates_.size());
+    SCE_LOG_DEBUG("Parsed {} initial state(s)", initialStates_.size());
 }
 
 const std::vector<std::string> &SCE::SCXMLModel::getInitialStates() const {
@@ -59,7 +59,7 @@ std::string SCE::SCXMLModel::getInitialState() const {
 }
 
 void SCE::SCXMLModel::setDatamodel(const std::string &datamodel) {
-    LOG_DEBUG("Setting datamodel: {}", datamodel);
+    SCE_LOG_DEBUG("Setting datamodel: {}", datamodel);
     datamodel_ = datamodel;
 }
 
@@ -68,7 +68,7 @@ const std::string &SCE::SCXMLModel::getDatamodel() const {
 }
 
 void SCE::SCXMLModel::addContextProperty(const std::string &name, const std::string &type) {
-    LOG_DEBUG("Adding context property: {} ({})", name, type);
+    SCE_LOG_DEBUG("Adding context property: {} ({})", name, type);
     contextProperties_[name] = type;
 }
 
@@ -77,7 +77,7 @@ const std::unordered_map<std::string, std::string> &SCE::SCXMLModel::getContextP
 }
 
 void SCE::SCXMLModel::addInjectPoint(const std::string &name, const std::string &type) {
-    LOG_DEBUG("Adding inject point: {} ({})", name, type);
+    SCE_LOG_DEBUG("Adding inject point: {} ({})", name, type);
     injectPoints_[name] = type;
 }
 
@@ -87,7 +87,7 @@ const std::unordered_map<std::string, std::string> &SCE::SCXMLModel::getInjectPo
 
 void SCE::SCXMLModel::addGuard(std::shared_ptr<SCE::IGuardNode> guard) {
     if (guard) {
-        LOG_DEBUG("Adding guard: {}", guard->getId());
+        SCE_LOG_DEBUG("Adding guard: {}", guard->getId());
         guards_.push_back(guard);
     }
 }
@@ -98,7 +98,7 @@ const std::vector<std::shared_ptr<SCE::IGuardNode>> &SCE::SCXMLModel::getGuards(
 
 void SCE::SCXMLModel::addState(std::shared_ptr<SCE::IStateNode> state) {
     if (state) {
-        LOG_DEBUG("Adding state: {}", state->getId());
+        SCE_LOG_DEBUG("Adding state: {}", state->getId());
         allStates_.push_back(state);
         stateIdMap_[state->getId()] = state.get();
         // Rebuild the complete state list to include all nested children
@@ -164,7 +164,7 @@ SCE::IStateNode *SCE::SCXMLModel::findStateByIdRecursive(SCE::IStateNode *state,
 
 void SCE::SCXMLModel::addDataModelItem(std::shared_ptr<SCE::IDataModelItem> dataItem) {
     if (dataItem) {
-        LOG_DEBUG("Adding data model item: {}", dataItem->getId());
+        SCE_LOG_DEBUG("Adding data model item: {}", dataItem->getId());
         dataModelItems_.push_back(dataItem);
     }
 }
@@ -174,7 +174,7 @@ const std::vector<std::shared_ptr<SCE::IDataModelItem>> &SCE::SCXMLModel::getDat
 }
 
 bool SCE::SCXMLModel::validateStateRelationships() const {
-    LOG_INFO("Validating state relationships");
+    SCE_LOG_INFO("Validating state relationships");
 
     // Validate all states
     for (const auto &state : allStates_) {
@@ -191,7 +191,7 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
             }
 
             if (!foundAsChild) {
-                LOG_ERROR("State '{}' has parent '{}' but is not in parent's children list", state->getId(),
+                SCE_LOG_ERROR("State '{}' has parent '{}' but is not in parent's children list", state->getId(),
                           parent->getId());
                 return false;
             }
@@ -203,7 +203,7 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
             for (const auto &target : targets) {
                 SCE::IStateNode *targetState = findStateById(target);
                 if (!targetState) {
-                    LOG_ERROR("Transition in state '{}' references non-existent target state '{}'", state->getId(),
+                    SCE_LOG_ERROR("Transition in state '{}' references non-existent target state '{}'", state->getId(),
                               target);
                     return false;
                 }
@@ -213,7 +213,7 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
         // Check if initial state exists
         if (!state->getInitialState().empty()) {
             if (state->getChildren().empty()) {
-                LOG_WARN("State '{}' has initialState but no children", state->getId());
+                SCE_LOG_WARN("State '{}' has initialState but no children", state->getId());
             } else {
                 // W3C SCXML 3.3: Validate space-separated initial state list
                 std::istringstream iss(state->getInitialState());
@@ -222,7 +222,7 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
                 while (iss >> initialStateId) {
                     // Search in entire model (not just direct children)
                     if (!findStateById(initialStateId)) {
-                        LOG_ERROR("State '{}' references non-existent initial state '{}'", state->getId(),
+                        SCE_LOG_ERROR("State '{}' references non-existent initial state '{}'", state->getId(),
                                   initialStateId);
                         return false;
                     }
@@ -231,12 +231,12 @@ bool SCE::SCXMLModel::validateStateRelationships() const {
         }
     }
 
-    LOG_INFO("All state relationships are valid");
+    SCE_LOG_INFO("All state relationships are valid");
     return true;
 }
 
 std::vector<std::string> SCE::SCXMLModel::findMissingStateIds() const {
-    LOG_INFO("Looking for missing state IDs");
+    SCE_LOG_INFO("Looking for missing state IDs");
 
     std::vector<std::string> missingIds;
     std::unordered_set<std::string> existingIds;
@@ -251,7 +251,7 @@ std::vector<std::string> SCE::SCXMLModel::findMissingStateIds() const {
         // Check initial state
         if (!state->getInitialState().empty() && existingIds.find(state->getInitialState()) == existingIds.end()) {
             missingIds.push_back(state->getInitialState());
-            LOG_WARN("Missing state ID referenced as initial state: {}", state->getInitialState());
+            SCE_LOG_WARN("Missing state ID referenced as initial state: {}", state->getInitialState());
         }
 
         // Check transition targets
@@ -260,7 +260,7 @@ std::vector<std::string> SCE::SCXMLModel::findMissingStateIds() const {
             for (const auto &target : targets) {
                 if (!target.empty() && existingIds.find(target) == existingIds.end()) {
                     missingIds.push_back(target);
-                    LOG_WARN("Missing state ID referenced as transition target: {}", target);
+                    SCE_LOG_WARN("Missing state ID referenced as transition target: {}", target);
                 }
             }
         }
@@ -270,7 +270,7 @@ std::vector<std::string> SCE::SCXMLModel::findMissingStateIds() const {
     std::sort(missingIds.begin(), missingIds.end());
     missingIds.erase(std::unique(missingIds.begin(), missingIds.end()), missingIds.end());
 
-    LOG_INFO("Found {} missing state IDs", missingIds.size());
+    SCE_LOG_INFO("Found {} missing state IDs", missingIds.size());
     return missingIds;
 }
 
@@ -287,9 +287,9 @@ std::set<std::string> SCE::SCXMLModel::getDataModelVariableNames() const {
 }
 
 void SCE::SCXMLModel::printModelStructure() const {
-    LOG_INFO("Printing model structure");
-    LOG_INFO("SCXML Model Structure:\n");
-    LOG_INFO("======================\n");
+    SCE_LOG_INFO("Printing model structure");
+    SCE_LOG_INFO("SCXML Model Structure:\n");
+    SCE_LOG_INFO("======================\n");
     std::string initialStateStr;
     for (size_t i = 0; i < initialStates_.size(); ++i) {
         if (i > 0) {
@@ -297,47 +297,47 @@ void SCE::SCXMLModel::printModelStructure() const {
         }
         initialStateStr += initialStates_[i];
     }
-    LOG_INFO("Initial State(s): {}", initialStateStr);
-    LOG_INFO("Datamodel: {}", datamodel_);
+    SCE_LOG_INFO("Initial State(s): {}", initialStateStr);
+    SCE_LOG_INFO("Datamodel: {}", datamodel_);
 
-    LOG_INFO("Context Properties:\n");
+    SCE_LOG_INFO("Context Properties:\n");
     for (const auto &[name, type] : contextProperties_) {
-        LOG_INFO("  {}: {}", name, type);
+        SCE_LOG_INFO("  {}: {}", name, type);
     }
 
-    LOG_INFO("\nInject Points:\n");
+    SCE_LOG_INFO("\nInject Points:\n");
     for (const auto &[name, type] : injectPoints_) {
-        LOG_INFO("  {}: {}", name, type);
+        SCE_LOG_INFO("  {}: {}", name, type);
     }
 
-    LOG_INFO("\nGuards:\n");
+    SCE_LOG_INFO("\nGuards:\n");
     for (const auto &guard : guards_) {
-        LOG_INFO("  {}:", guard->getId());
+        SCE_LOG_INFO("  {}:", guard->getId());
 
         if (!guard->getCondition().empty()) {
-            LOG_INFO("    Condition: {}", guard->getCondition());
+            SCE_LOG_INFO("    Condition: {}", guard->getCondition());
         }
 
         if (!guard->getTargetState().empty()) {
-            LOG_INFO("    Target State: {}", guard->getTargetState());
+            SCE_LOG_INFO("    Target State: {}", guard->getTargetState());
         }
 
-        LOG_INFO("    Dependencies:\n");
+        SCE_LOG_INFO("    Dependencies:\n");
         for (const auto &dep : guard->getDependencies()) {
-            LOG_INFO("      {}", dep);
+            SCE_LOG_INFO("      {}", dep);
         }
 
         if (!guard->getExternalClass().empty()) {
-            LOG_INFO("    External Class: {}", guard->getExternalClass());
+            SCE_LOG_INFO("    External Class: {}", guard->getExternalClass());
         }
     }
 
-    LOG_INFO("\nState Hierarchy:\n");
+    SCE_LOG_INFO("\nState Hierarchy:\n");
     if (rootState_) {
         printStateHierarchy(rootState_.get(), 0);
     }
 
-    LOG_INFO("Model structure printed");
+    SCE_LOG_INFO("Model structure printed");
 }
 
 void SCE::SCXMLModel::printStateHierarchy(SCE::IStateNode *state, int depth) const {
@@ -349,7 +349,7 @@ void SCE::SCXMLModel::printStateHierarchy(SCE::IStateNode *state, int depth) con
     std::string indent(depth * 2, ' ');
 
     // Print current state information
-    LOG_INFO("{}State: {}", indent, state->getId());
+    SCE_LOG_INFO("{}State: {}", indent, state->getId());
 
     // Print child states recursively
     for (const auto &child : state->getChildren()) {
@@ -358,7 +358,7 @@ void SCE::SCXMLModel::printStateHierarchy(SCE::IStateNode *state, int depth) con
 }
 
 void SCE::SCXMLModel::setBinding(const std::string &binding) {
-    LOG_DEBUG("Setting binding mode: {}", binding);
+    SCE_LOG_DEBUG("Setting binding mode: {}", binding);
     binding_ = binding;
 }
 
@@ -368,7 +368,7 @@ const std::string &SCE::SCXMLModel::getBinding() const {
 
 void SCE::SCXMLModel::addSystemVariable(std::shared_ptr<SCE::IDataModelItem> systemVar) {
     if (systemVar) {
-        LOG_DEBUG("Adding system variable: {}", systemVar->getId());
+        SCE_LOG_DEBUG("Adding system variable: {}", systemVar->getId());
         systemVariables_.push_back(systemVar);
     }
 }
@@ -379,7 +379,7 @@ const std::vector<std::shared_ptr<SCE::IDataModelItem>> &SCE::SCXMLModel::getSys
 
 void SCE::SCXMLModel::addTopLevelScript(std::shared_ptr<SCE::IActionNode> script) {
     if (script) {
-        LOG_DEBUG("Adding top-level script (W3C SCXML 5.8)");
+        SCE_LOG_DEBUG("Adding top-level script (W3C SCXML 5.8)");
         topLevelScripts_.push_back(script);
     }
 }

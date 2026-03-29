@@ -1,4 +1,5 @@
 #include "runtime/ActionExecutorImpl.h"
+#include "common/LogMacros.h"
 #include "actions/AssignAction.h"
 #include "actions/ForeachAction.h"
 #include "actions/IfAction.h"
@@ -639,7 +640,7 @@ TEST_F(ActionExecutorImplTest, W3C_ForeachAction_NumericArrayVariableAccess) {
 // ============================================================================
 
 TEST_F(ActionExecutorImplTest, SCXML_ConditionalExecutor_ShortCircuitEvaluation) {
-    LOG_DEBUG("=== SCXML 3.13: Conditional Execution (if/elseif/else) Test ===");
+    SCE_LOG_DEBUG("=== SCXML 3.13: Conditional Execution (if/elseif/else) Test ===");
 
     // W3C SCXML 3.13: Only the first matching branch in an if/elseif/else construct should execute
     // This test verifies proper short-circuit evaluation similar to W3C test 147
@@ -767,7 +768,7 @@ TEST_F(ActionExecutorImplTest, SCXML_ConditionalExecutor_ShortCircuitEvaluation)
         EXPECT_EQ(counterValue, "0") << "Counter should remain unchanged when no conditions match and no else";
     }
 
-    LOG_DEBUG("=== SCXML 3.13: Conditional Execution Test Complete - All tests passed ===");
+    SCE_LOG_DEBUG("=== SCXML 3.13: Conditional Execution Test Complete - All tests passed ===");
 }
 
 // ============================================================================

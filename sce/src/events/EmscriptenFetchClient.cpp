@@ -4,7 +4,7 @@
 #ifdef __EMSCRIPTEN__
 
 #include "events/EmscriptenFetchClient.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <cstring>
 #include <emscripten.h>
 #include <emscripten/fetch.h>
@@ -119,14 +119,14 @@ EM_ASYNC_JS(int, em_nodejs_http_request_async,
 namespace SCE {
 
 EmscriptenFetchClient::EmscriptenFetchClient() {
-    LOG_DEBUG("EmscriptenFetchClient: Created WASM HTTP client");
+    SCE_LOG_DEBUG("EmscriptenFetchClient: Created WASM HTTP client");
 }
 
 std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpClient::Request &request) {
     auto promise = std::make_shared<std::promise<HttpClient::Response>>();
     auto future = promise->get_future();
 
-    LOG_DEBUG("EmscriptenFetchClient: {} {} (timeout={}ms)", request.method, request.url, timeout_.count());
+    SCE_LOG_DEBUG("EmscriptenFetchClient: {} {} (timeout={}ms)", request.method, request.url, timeout_.count());
 
     // Detect runtime environment: Node.js vs browser
     bool isNodeJs = em_is_nodejs();
@@ -134,7 +134,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
     if (isNodeJs) {
         // W3C SCXML C.2: Use Node.js HTTP module via EM_ASYNC_JS
         // ASYNCIFY automatically pauses execution until Promise resolves
-        LOG_DEBUG("EmscriptenFetchClient: Using Node.js http module (EM_ASYNC_JS)");
+        SCE_LOG_DEBUG("EmscriptenFetchClient: Using Node.js http module (EM_ASYNC_JS)");
 
         // Build headers JSON
         std::ostringstream headersJson;
@@ -164,20 +164,20 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
         static std::vector<char> responseBuffer(MAX_RESPONSE_SIZE);
         int statusCode = 0;
 
-        LOG_DEBUG("EmscriptenFetchClient: Calling EM_ASYNC_JS (will pause until HTTP response)");
+        SCE_LOG_DEBUG("EmscriptenFetchClient: Calling EM_ASYNC_JS (will pause until HTTP response)");
 
         int result = em_nodejs_http_request_async(request.method.c_str(), request.url.c_str(),
                                                   headersJson.str().c_str(), request.body.c_str(), request.body.size(),
                                                   responseBuffer.data(), responseBuffer.size(), &statusCode);
 
-        LOG_DEBUG("EmscriptenFetchClient: EM_ASYNC_JS returned (HTTP complete)");
+        SCE_LOG_DEBUG("EmscriptenFetchClient: EM_ASYNC_JS returned (HTTP complete)");
 
         // Build response from EM_ASYNC_JS output
         HttpClient::Response response;
 
         if (result == 0) {
             // Buffer overflow error (response too large)
-            LOG_ERROR("EmscriptenFetchClient: Response buffer overflow (response > 4KB)");
+            SCE_LOG_ERROR("EmscriptenFetchClient: Response buffer overflow (response > 4KB)");
             response.success = false;
             response.statusCode = 500;
         } else {
@@ -186,7 +186,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
             response.body = std::string(responseBuffer.data());  // Copy from stack buffer to std::string
         }
 
-        LOG_DEBUG("EmscriptenFetchClient (Node.js): {} {} → {} (body {} bytes)", request.method, request.url,
+        SCE_LOG_DEBUG("EmscriptenFetchClient (Node.js): {} {} → {} (body {} bytes)", request.method, request.url,
                   response.statusCode, response.body.size());
 
         promise->set_value(std::move(response));
@@ -194,7 +194,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
     }
 
     // Browser environment: use emscripten_fetch (callback-based, requires context)
-    LOG_DEBUG("EmscriptenFetchClient: Using browser Fetch API");
+    SCE_LOG_DEBUG("EmscriptenFetchClient: Using browser Fetch API");
 
     // W3C SCXML C.2: Browser-only context for emscripten_fetch callbacks
     struct BrowserFetchContext {
@@ -294,7 +294,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
             }
         }
 
-        LOG_DEBUG("EmscriptenFetchClient: {} {} → {} (body {} bytes)", ctx->requestMethod, ctx->requestUrl,
+        SCE_LOG_DEBUG("EmscriptenFetchClient: {} {} → {} (body {} bytes)", ctx->requestMethod, ctx->requestUrl,
                   response.statusCode, response.body.size());
 
         ctx->promise->set_value(std::move(response));
@@ -318,7 +318,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
         response.success = false;
         response.statusCode = fetch->status;
 
-        LOG_ERROR("EmscriptenFetchClient: {} {} → FAILED (status {})", ctx->requestMethod, ctx->requestUrl,
+        SCE_LOG_ERROR("EmscriptenFetchClient: {} {} → FAILED (status {})", ctx->requestMethod, ctx->requestUrl,
                   fetch->status);
 
         ctx->promise->set_value(std::move(response));
@@ -344,7 +344,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
         HttpClient::Response response;
         response.success = false;
         response.statusCode = 0;
-        LOG_ERROR("EmscriptenFetchClient: {} {} → FAILED (fetch returned null)", request.method, request.url);
+        SCE_LOG_ERROR("EmscriptenFetchClient: {} {} → FAILED (fetch returned null)", request.method, request.url);
         context->promise->set_value(std::move(response));
         delete context;
     }
@@ -354,7 +354,7 @@ std::future<HttpClient::Response> EmscriptenFetchClient::sendRequest(const HttpC
 
 void EmscriptenFetchClient::setTimeout(std::chrono::milliseconds timeout) {
     timeout_ = timeout;
-    LOG_DEBUG("EmscriptenFetchClient: Set timeout to {}ms", timeout.count());
+    SCE_LOG_DEBUG("EmscriptenFetchClient: Set timeout to {}ms", timeout.count());
 }
 
 }  // namespace SCE

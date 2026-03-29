@@ -1,11 +1,11 @@
 #include "runtime/ExecutionContextImpl.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 
 namespace SCE {
 
 ExecutionContextImpl::ExecutionContextImpl(std::shared_ptr<IActionExecutor> executor, const std::string &sessionId)
     : executor_(executor), sessionId_(sessionId) {
-    LOG_DEBUG("ExecutionContextImpl created for session: {}", sessionId_);
+    SCE_LOG_DEBUG("ExecutionContextImpl created for session: {}", sessionId_);
 }
 
 IActionExecutor &ExecutionContextImpl::getActionExecutor() {
@@ -39,18 +39,18 @@ void ExecutionContextImpl::setCurrentEvent(const std::string &eventName, const s
     currentEventName_ = eventName;
     currentEventData_ = eventData;
 
-    LOG_DEBUG("Current event set: {} with data: {}", eventName, eventData);
+    SCE_LOG_DEBUG("Current event set: {} with data: {}", eventName, eventData);
 }
 
 void ExecutionContextImpl::setCurrentStateId(const std::string &stateId) {
     currentStateId_ = stateId;
-    LOG_DEBUG("Current state set: {}", stateId);
+    SCE_LOG_DEBUG("Current state set: {}", stateId);
 }
 
 void ExecutionContextImpl::clearCurrentEvent() {
     currentEventName_.clear();
     currentEventData_.clear();
-    LOG_DEBUG("{}", "$1");
+    SCE_LOG_DEBUG("{}", "$1");
 }
 
 }  // namespace SCE

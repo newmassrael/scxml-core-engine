@@ -11,4 +11,4 @@ sce_add_state_machine(
 )
 
 # Link SCE library
-target_link_libraries(traffic_light_example PRIVATE sce_unified)
+target_link_libraries(traffic_light_example PRIVATE sce_runtime)

@@ -11,7 +11,7 @@ sce_add_state_machine(
 )
 
 # Link SCE library
-target_link_libraries(async_dispatcher_example PRIVATE sce_unified)
+target_link_libraries(async_dispatcher_example PRIVATE sce_runtime)
 
 # C++20 required for concepts and other features
 target_compile_features(async_dispatcher_example PRIVATE cxx_std_20)

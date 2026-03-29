@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ITestMetadataParser.h"
+#include "common/LogMacros.h"
 #include <chrono>
 #include <memory>
 #include <string>
@@ -59,7 +60,7 @@ public:
     virtual TestExecutionContext executeTest(const std::string &scxml, const TestMetadata &metadata,
                                              const std::string &sourceFilePath) {
         // Default implementation calls the original method (for backward compatibility)
-        LOG_DEBUG("ITestExecutor: executeTest called with sourceFilePath: '{}'", sourceFilePath);
+        SCE_LOG_DEBUG("ITestExecutor: executeTest called with sourceFilePath: '{}'", sourceFilePath);
         return executeTest(scxml, metadata);
     }
 

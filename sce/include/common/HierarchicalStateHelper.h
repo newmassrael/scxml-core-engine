@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 #include <optional>
 #include <stdexcept>
@@ -49,23 +49,23 @@ private:
     template <typename T = StatePolicy>
     static auto addParallelRegionsImpl(std::vector<State> &chain, State leafState, int)
         -> decltype(T::isParallelState(leafState), void()) {
-        LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Checking if leafState {} is parallel",
+        SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Checking if leafState {} is parallel",
                   static_cast<int>(leafState));
         if (T::isParallelState(leafState)) {
-            LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - leafState {} IS parallel, adding regions",
+            SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - leafState {} IS parallel, adding regions",
                       static_cast<int>(leafState));
             auto regions = T::getParallelRegions(leafState);
-            LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Found {} regions", regions.size());
+            SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Found {} regions", regions.size());
             for (const auto &region : regions) {
-                LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding region {}", static_cast<int>(region));
+                SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding region {}", static_cast<int>(region));
                 chain.push_back(region);
 
                 if (T::isCompoundState(region)) {
                     State regionInitialChild = T::getInitialChild(region);
-                    LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Region {} initial child: {}",
+                    SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Region {} initial child: {}",
                               static_cast<int>(region), static_cast<int>(regionInitialChild));
                     if (regionInitialChild != region) {
-                        LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding initial child {}",
+                        SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding initial child {}",
                                   static_cast<int>(regionInitialChild));
                         chain.push_back(regionInitialChild);
                     }
@@ -163,7 +163,7 @@ public:
 
         // Safety check: detect cyclic parent relationships
         if (depth >= MAX_DEPTH) {
-            LOG_ERROR("HierarchicalStateHelper::buildEntryChain() - Maximum depth ({}) exceeded for state. "
+            SCE_LOG_ERROR("HierarchicalStateHelper::buildEntryChain() - Maximum depth ({}) exceeded for state. "
                       "Cyclic parent relationship detected in state machine definition. "
                       "This indicates a bug in the code generator or corrupted SCXML.",
                       MAX_DEPTH);
@@ -235,7 +235,7 @@ public:
         }
 
         if (depth >= MAX_DEPTH) {
-            LOG_ERROR("HierarchicalStateHelper::buildEntryChain() - Maximum depth ({}) exceeded", MAX_DEPTH);
+            SCE_LOG_ERROR("HierarchicalStateHelper::buildEntryChain() - Maximum depth ({}) exceeded", MAX_DEPTH);
             throw std::runtime_error("Cyclic parent relationship detected");
         }
 
@@ -305,7 +305,7 @@ public:
      * @code
      * auto parent = HierarchicalStateHelper<Policy>::getParent(State::S01);
      * if (parent.has_value()) {
-     *     LOG_INFO("Parent of S01 is {}", parent.value());
+     *     SCE_LOG_INFO("Parent of S01 is {}", parent.value());
      * }
      * @endcode
      */

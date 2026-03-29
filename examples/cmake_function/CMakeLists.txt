@@ -35,9 +35,9 @@ sce_add_state_machine(
 )
 
 # Link with SCE library
-# In-tree: use sce_unified directly
+# In-tree: use sce_runtime directly
 # Installed: use SCE::sce (available after find_package(SCE))
-target_link_libraries(light_example PRIVATE sce_unified)
+target_link_libraries(light_example PRIVATE sce_runtime)
 
 # Add SCE include directories (in-tree usage)
 target_include_directories(light_example PRIVATE
@@ -58,7 +58,7 @@ target_include_directories(light_example PRIVATE
 # )
 #
 # add_executable(another_app another_main.cpp)
-# target_link_libraries(another_app PRIVATE simple_light_sm sce_unified)
+# target_link_libraries(another_app PRIVATE simple_light_sm sce_runtime)
 
 # =============================================================================
 # Method 3: sce_add_state_machines_from_dir() - Batch generation

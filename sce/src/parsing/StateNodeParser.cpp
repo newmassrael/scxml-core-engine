@@ -1,7 +1,7 @@
 #include "parsing/StateNodeParser.h"
 #include "actions/AssignAction.h"
 #include "actions/ScriptAction.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "parsing/ActionParser.h"
 #include "parsing/DataModelParser.h"
 #include "parsing/DoneDataParser.h"
@@ -10,11 +10,11 @@
 #include "parsing/TransitionParser.h"
 
 SCE::StateNodeParser::StateNodeParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
-    LOG_DEBUG("Creating state node parser");
+    SCE_LOG_DEBUG("Creating state node parser");
 }
 
 SCE::StateNodeParser::~StateNodeParser() {
-    LOG_DEBUG("Destroying state node parser");
+    SCE_LOG_DEBUG("Destroying state node parser");
 }
 
 void SCE::StateNodeParser::setRelatedParsers(std::shared_ptr<TransitionParser> transitionParser,
@@ -28,14 +28,14 @@ void SCE::StateNodeParser::setRelatedParsers(std::shared_ptr<TransitionParser> t
     invokeParser_ = invokeParser;
     doneDataParser_ = doneDataParser;
 
-    LOG_DEBUG("Related parsers set");
+    SCE_LOG_DEBUG("Related parsers set");
 }
 
 std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std::shared_ptr<IXMLElement> &stateElement,
                                                                       std::shared_ptr<SCE::IStateNode> parentState,
                                                                       const SCE::SCXMLContext &context) {
     if (!stateElement) {
-        LOG_WARN("Null state element");
+        SCE_LOG_WARN("Null state element");
         return nullptr;
     }
 
@@ -46,12 +46,12 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
     } else {
         // Auto-generate if ID is missing
         stateId = "state_" + std::to_string(reinterpret_cast<uintptr_t>(stateElement.get()));
-        LOG_WARN("State has no ID, generated: {}", stateId);
+        SCE_LOG_WARN("State has no ID, generated: {}", stateId);
     }
 
     // Determine state type
     Type stateType = determineStateType(stateElement);
-    LOG_DEBUG("Parsing state: {} ({})", stateId,
+    SCE_LOG_DEBUG("Parsing state: {} ({})", stateId,
               (stateType == Type::PARALLEL  ? "parallel"
                : stateType == Type::FINAL   ? "final"
                : stateType == Type::HISTORY ? "history"
@@ -60,14 +60,14 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
     // Create state node
     auto stateNode = nodeFactory_->createStateNode(stateId, stateType);
     if (!stateNode) {
-        LOG_ERROR("Failed to create state node");
+        SCE_LOG_ERROR("Failed to create state node");
         return nullptr;
     }
 
     // Set parent state
     stateNode->setParent(parentState.get());
     if (!parentState) {
-        LOG_DEBUG("No parent state (root)");
+        SCE_LOG_DEBUG("No parent state (root)");
     }
 
     // Additional processing for history states
@@ -81,7 +81,7 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
         if (transitionParser_) {
             parseTransitions(stateElement, stateNode);
         } else {
-            LOG_WARN("TransitionParser not set, skipping transitions");
+            SCE_LOG_WARN("TransitionParser not set, skipping transitions");
         }
     }
 
@@ -90,10 +90,10 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
         auto dataItems = dataModelParser_->parseDataModelInState(stateElement, context);
         for (const auto &item : dataItems) {
             stateNode->addDataItem(item);
-            LOG_DEBUG("Added data item: {}", item->getId());
+            SCE_LOG_DEBUG("Added data item: {}", item->getId());
         }
     } else {
-        LOG_WARN("DataModelParser not set, skipping data model");
+        SCE_LOG_WARN("DataModelParser not set, skipping data model");
     }
 
     // Parse child states (for compound and parallel states) - pass context
@@ -105,7 +105,7 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
     if (invokeParser_) {
         parseInvokeElements(stateElement, stateNode);
     } else {
-        LOG_WARN("InvokeParser not set, skipping invoke elements");
+        SCE_LOG_WARN("InvokeParser not set, skipping invoke elements");
     }
 
     // Parse <donedata> element in <final> state
@@ -114,9 +114,9 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
         if (doneDataElement) {
             bool success = doneDataParser_->parseDoneData(doneDataElement, stateNode.get());
             if (!success) {
-                LOG_WARN("Failed to parse <donedata> in final state: {}", stateId);
+                SCE_LOG_WARN("Failed to parse <donedata> in final state: {}", stateId);
             } else {
-                LOG_DEBUG("Successfully parsed <donedata> in final state: {}", stateId);
+                SCE_LOG_DEBUG("Successfully parsed <donedata> in final state: {}", stateId);
             }
         }
     }
@@ -127,22 +127,22 @@ std::shared_ptr<SCE::IStateNode> SCE::StateNodeParser::parseStateNode(const std:
         auto initialElement = SCE::ParsingCommon::findFirstChildElement(stateElement, "initial");
         if (initialElement) {
             parseInitialElement(initialElement, stateNode);
-            LOG_DEBUG("Parsed <initial> element for state: {}", stateId);
+            SCE_LOG_DEBUG("Parsed <initial> element for state: {}", stateId);
         } else {
             // Set initial state from initial attribute
             if (stateElement->hasAttribute("initial")) {
                 std::string initialAttr = stateElement->getAttribute("initial");
                 stateNode->setInitialState(initialAttr);
-                LOG_DEBUG("StateNodeParser: State '{}' initial attribute='{}'", stateId, initialAttr);
+                SCE_LOG_DEBUG("StateNodeParser: State '{}' initial attribute='{}'", stateId, initialAttr);
             } else if (!stateNode->getChildren().empty()) {
                 // Use first child if initial state is not specified
                 stateNode->setInitialState(stateNode->getChildren().front()->getId());
-                LOG_DEBUG("Set default initial state: {}", stateNode->getChildren().front()->getId());
+                SCE_LOG_DEBUG("Set default initial state: {}", stateNode->getChildren().front()->getId());
             }
         }
     }
 
-    LOG_DEBUG("State {} parsed successfully with {} child states", stateId, stateNode->getChildren().size());
+    SCE_LOG_DEBUG("State {} parsed successfully with {} child states", stateId, stateNode->getChildren().size());
     return stateNode;
 }
 
@@ -179,7 +179,7 @@ SCE::Type SCE::StateNodeParser::determineStateType(const std::shared_ptr<IXMLEle
     hasChildStates =
         !stateChildren.empty() || !parallelChildren.empty() || !finalChildren.empty() || !historyChildren.empty();
 
-    LOG_DEBUG("State type: {}", (hasChildStates ? "Compound" : "Standard"));
+    SCE_LOG_DEBUG("State type: {}", (hasChildStates ? "Compound" : "Standard"));
     return hasChildStates ? Type::COMPOUND : Type::ATOMIC;
 }
 
@@ -197,13 +197,13 @@ void SCE::StateNodeParser::parseTransitions(const std::shared_ptr<IXMLElement> &
         }
     }
 
-    LOG_DEBUG("Parsed {} transitions", state->getTransitions().size());
+    SCE_LOG_DEBUG("Parsed {} transitions", state->getTransitions().size());
 }
 
 void SCE::StateNodeParser::parseChildStates(const std::shared_ptr<IXMLElement> &stateElement,
                                             std::shared_ptr<SCE::IStateNode> parentState,
                                             const SCE::SCXMLContext &context) {
-    LOG_DEBUG("Parsing child states");
+    SCE_LOG_DEBUG("Parsing child states");
 
     // Search for child elements like state, parallel, final, history
     std::vector<std::shared_ptr<IXMLElement>> childStateElements;
@@ -228,7 +228,7 @@ void SCE::StateNodeParser::parseChildStates(const std::shared_ptr<IXMLElement> &
         }
     }
 
-    LOG_DEBUG("Found {} child states", childStateElements.size());
+    SCE_LOG_DEBUG("Found {} child states", childStateElements.size());
 }
 
 void SCE::StateNodeParser::parseInvokeElements(const std::shared_ptr<IXMLElement> &parentElement,
@@ -246,18 +246,18 @@ void SCE::StateNodeParser::parseInvokeElements(const std::shared_ptr<IXMLElement
 
             // Add invoke node to state
             state->addInvoke(invokeNode);
-            LOG_DEBUG("Added invoke: {}", invokeNode->getId());
+            SCE_LOG_DEBUG("Added invoke: {}", invokeNode->getId());
 
             // Create and add data model items from param elements
             auto dataItems = invokeParser_->parseParamElementsAndCreateDataItems(invokeElement, invokeNode);
             for (const auto &dataItem : dataItems) {
                 state->addDataItem(dataItem);
-                LOG_DEBUG("Added data item from param: {}", dataItem->getId());
+                SCE_LOG_DEBUG("Added data item from param: {}", dataItem->getId());
             }
         }
     }
 
-    LOG_DEBUG("Parsed {} invoke elements", state->getInvoke().size());
+    SCE_LOG_DEBUG("Parsed {} invoke elements", state->getInvoke().size());
 }
 
 void SCE::StateNodeParser::parseHistoryType(const std::shared_ptr<IXMLElement> &historyElement,
@@ -277,7 +277,7 @@ void SCE::StateNodeParser::parseHistoryType(const std::shared_ptr<IXMLElement> &
     // Set history type
     state->setHistoryType(isDeep);
 
-    LOG_DEBUG("History state {} type: {}", state->getId(), (isDeep ? "deep" : "shallow"));
+    SCE_LOG_DEBUG("History state {} type: {}", state->getId(), (isDeep ? "deep" : "shallow"));
 
     // Parse default transition for history state
     if (transitionParser_) {
@@ -291,7 +291,7 @@ void SCE::StateNodeParser::parseInitialElement(const std::shared_ptr<IXMLElement
         return;
     }
 
-    LOG_DEBUG("Parsing initial element for state: {}", state->getId());
+    SCE_LOG_DEBUG("Parsing initial element for state: {}", state->getId());
 
     // Find <transition> elements
     auto transitionElement = SCE::ParsingCommon::findFirstChildElement(initialElement, "transition");
@@ -312,10 +312,10 @@ void SCE::StateNodeParser::parseInitialElement(const std::shared_ptr<IXMLElement
                     allTargets += transition->getTargets()[i];
                 }
                 state->setInitialState(allTargets);
-                LOG_DEBUG("StateNodeParser: State '{}' <initial> transition targets='{}'", state->getId(), allTargets);
+                SCE_LOG_DEBUG("StateNodeParser: State '{}' <initial> transition targets='{}'", state->getId(), allTargets);
             }
 
-            LOG_DEBUG("Initial transition set for state: {}", state->getId());
+            SCE_LOG_DEBUG("Initial transition set for state: {}", state->getId());
         }
     }
 }
@@ -334,7 +334,7 @@ void SCE::StateNodeParser::parseEntryExitActionNodes(const std::shared_ptr<IXMLE
 
         if (!actionBlock.empty()) {
             state->addEntryActionBlock(actionBlock);
-            LOG_DEBUG("W3C SCXML 3.8: Added entry action block with {} actions", actionBlock.size());
+            SCE_LOG_DEBUG("W3C SCXML 3.8: Added entry action block with {} actions", actionBlock.size());
         }
     }
 
@@ -346,7 +346,7 @@ void SCE::StateNodeParser::parseEntryExitActionNodes(const std::shared_ptr<IXMLE
 
         if (!actionBlock.empty()) {
             state->addExitActionBlock(actionBlock);
-            LOG_DEBUG("W3C SCXML 3.9: Added exit action block with {} actions", actionBlock.size());
+            SCE_LOG_DEBUG("W3C SCXML 3.9: Added exit action block with {} actions", actionBlock.size());
         }
     }
 }
@@ -358,7 +358,7 @@ void SCE::StateNodeParser::parseExecutableContentBlock(const std::shared_ptr<IXM
     }
 
     if (!actionParser_) {
-        LOG_WARN("SCE::StateNodeParser::parseExecutableContentBlock() - ActionParser not available");
+        SCE_LOG_WARN("SCE::StateNodeParser::parseExecutableContentBlock() - ActionParser not available");
         return;
     }
 
@@ -376,10 +376,10 @@ void SCE::StateNodeParser::parseExecutableContentBlock(const std::shared_ptr<IXM
                 elementName = elementName.substr(colonPos + 1);
             }
 
-            LOG_DEBUG("Parsed executable content '{}' into action block", elementName);
+            SCE_LOG_DEBUG("Parsed executable content '{}' into action block", elementName);
         } else {
             std::string elementName = element->getName();
-            LOG_DEBUG("Element '{}' not recognized as executable content by ActionParser", elementName);
+            SCE_LOG_DEBUG("Element '{}' not recognized as executable content by ActionParser", elementName);
         }
     }
 }

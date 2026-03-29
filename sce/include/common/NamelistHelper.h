@@ -77,7 +77,7 @@ public:
      *     jsEngine, sessionId_.value(), "{{ action.namelist }}",
      *     params,
      *     [&engine](const std::string& msg) {
-     *         LOG_ERROR("Failed to evaluate namelist: {}", msg);
+     *         SCE_LOG_ERROR("Failed to evaluate namelist: {}", msg);
      *         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
      *     }
      * );

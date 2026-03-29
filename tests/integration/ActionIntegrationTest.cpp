@@ -4,7 +4,7 @@
 #include <memory>
 #include <thread>
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/TestUtils.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/StateMachine.h"

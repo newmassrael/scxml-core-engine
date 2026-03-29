@@ -1,5 +1,5 @@
 #include "events/PlatformEventRaiserHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "events/EventSchedulerImpl.h"
 #include "runtime/EventRaiserImpl.h"
 #include <atomic>
@@ -28,23 +28,23 @@ private:
 public:
     explicit SynchronousEventRaiserHelper(EventRaiserImpl *raiser, std::shared_ptr<IEventScheduler> scheduler)
         : raiser_(raiser), scheduler_(scheduler) {
-        LOG_DEBUG("PlatformEventRaiserHelper: Synchronous helper initialized (WASM mode)");
+        SCE_LOG_DEBUG("PlatformEventRaiserHelper: Synchronous helper initialized (WASM mode)");
     }
 
     ~SynchronousEventRaiserHelper() override {
-        LOG_DEBUG("PlatformEventRaiserHelper: Synchronous helper destroyed");
+        SCE_LOG_DEBUG("PlatformEventRaiserHelper: Synchronous helper destroyed");
     }
 
     void start() override {
         // WASM: Enable immediate mode and set isRunning_ flag
         raiser_->isRunning_.store(true);
         raiser_->setImmediateMode(true);
-        LOG_DEBUG("PlatformEventRaiserHelper: WASM immediate mode enabled, isRunning set to true");
+        SCE_LOG_DEBUG("PlatformEventRaiserHelper: WASM immediate mode enabled, isRunning set to true");
     }
 
     void shutdown() override {
         // WASM: No worker thread to stop
-        LOG_DEBUG("PlatformEventRaiserHelper: Synchronous helper shutdown (no-op)");
+        SCE_LOG_DEBUG("PlatformEventRaiserHelper: Synchronous helper shutdown (no-op)");
     }
 
     void notifyNewEvent() override {
@@ -68,7 +68,7 @@ public:
 #ifdef __EMSCRIPTEN__
             size_t processedCount = static_cast<EventSchedulerImpl *>(scheduler_.get())->poll();
             if (processedCount > 0) {
-                LOG_DEBUG("PlatformEventRaiserHelper: Scheduler polled, processed {} delayed events", processedCount);
+                SCE_LOG_DEBUG("PlatformEventRaiserHelper: Scheduler polled, processed {} delayed events", processedCount);
             }
 #endif
         }
@@ -103,19 +103,19 @@ public:
                             std::atomic<bool> *shutdownRequested, std::atomic<bool> *isRunning)
         : raiser_(raiser), queueCondition_(queueCondition), queueMutex_(queueMutex),
           shutdownRequested_(shutdownRequested), isRunning_(isRunning) {
-        LOG_DEBUG("PlatformEventRaiserHelper: Queued helper initialized (Native pthread mode)");
+        SCE_LOG_DEBUG("PlatformEventRaiserHelper: Queued helper initialized (Native pthread mode)");
     }
 
     ~QueuedEventRaiserHelper() override {
         shutdown();
-        LOG_DEBUG("PlatformEventRaiserHelper: Queued helper destroyed");
+        SCE_LOG_DEBUG("PlatformEventRaiserHelper: Queued helper destroyed");
     }
 
     void start() override {
         // Native: Start worker thread for async event processing
         isRunning_->store(true);
         processingThread_ = std::thread(&EventRaiserImpl::eventProcessingWorker, raiser_);
-        LOG_DEBUG("PlatformEventRaiserHelper: Worker thread started");
+        SCE_LOG_DEBUG("PlatformEventRaiserHelper: Worker thread started");
     }
 
     void shutdown() override {
@@ -123,7 +123,7 @@ public:
             return;  // Already shut down
         }
 
-        LOG_DEBUG("PlatformEventRaiserHelper: Shutting down worker thread");
+        SCE_LOG_DEBUG("PlatformEventRaiserHelper: Shutting down worker thread");
 
         // Signal shutdown
         shutdownRequested_->store(true);
@@ -132,7 +132,7 @@ public:
         // Wait for worker thread to complete
         if (processingThread_.joinable()) {
             processingThread_.join();
-            LOG_DEBUG("PlatformEventRaiserHelper: Worker thread joined");
+            SCE_LOG_DEBUG("PlatformEventRaiserHelper: Worker thread joined");
         }
     }
 
@@ -164,12 +164,12 @@ public:
 std::unique_ptr<PlatformEventRaiserHelper>
 createPlatformEventRaiserHelper(EventRaiserImpl *raiser, [[maybe_unused]] std::shared_ptr<IEventScheduler> scheduler) {
 #ifdef __EMSCRIPTEN__
-    LOG_DEBUG("PlatformEventRaiserHelper: Creating synchronous helper (WASM) with scheduler polling");
+    SCE_LOG_DEBUG("PlatformEventRaiserHelper: Creating synchronous helper (WASM) with scheduler polling");
     return std::make_unique<SynchronousEventRaiserHelper>(raiser, scheduler);
 #else
     // Native: scheduler not used (background timer thread handles scheduling)
 
-    LOG_DEBUG("PlatformEventRaiserHelper: Creating queued helper (Native pthread)");
+    SCE_LOG_DEBUG("PlatformEventRaiserHelper: Creating queued helper (Native pthread)");
 
     // Native helper needs access to EventRaiserImpl's synchronization primitives
     // We'll pass pointers to these members (they're public in EventRaiserImpl.h)

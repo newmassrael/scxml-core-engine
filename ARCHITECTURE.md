@@ -156,7 +156,7 @@ class GeneratedStateMachine {
 
 ## Current State
 
-### Dynamic Runtime (sce_unified)
+### Dynamic Runtime (sce_runtime)
 - **W3C Compliance**: 202/202 tests PASSED ✅
 - **Role**: Completeness guarantee - supports ALL SCXML features
 - **Performance**: Interpreter-based, suitable for most applications

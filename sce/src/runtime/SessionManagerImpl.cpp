@@ -1,5 +1,5 @@
 #include "runtime/SessionManagerImpl.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "runtime/ISessionObserver.h"
 #include <algorithm>
 
@@ -13,12 +13,12 @@ bool SessionManagerImpl::hasSession(const std::string &sessionId) const {
 bool SessionManagerImpl::createSession(const std::string &sessionId, const std::string &parentSessionId) {
     // Validate input parameters
     if (!isValidSessionId(sessionId)) {
-        LOG_ERROR("SessionManagerImpl: Invalid session ID: '{}'", sessionId);
+        SCE_LOG_ERROR("SessionManagerImpl: Invalid session ID: '{}'", sessionId);
         return false;
     }
 
     if (!isValidParentSession(parentSessionId)) {
-        LOG_ERROR("SessionManagerImpl: Invalid parent session ID: '{}'", parentSessionId);
+        SCE_LOG_ERROR("SessionManagerImpl: Invalid parent session ID: '{}'", parentSessionId);
         return false;
     }
 
@@ -26,7 +26,7 @@ bool SessionManagerImpl::createSession(const std::string &sessionId, const std::
 
     // Check if session already exists
     if (sessions_.find(sessionId) != sessions_.end()) {
-        LOG_DEBUG("SessionManagerImpl: Session '{}' already exists", sessionId);
+        SCE_LOG_DEBUG("SessionManagerImpl: Session '{}' already exists", sessionId);
         return false;
     }
 
@@ -34,7 +34,7 @@ bool SessionManagerImpl::createSession(const std::string &sessionId, const std::
     SessionInfo sessionInfo(sessionId, parentSessionId);
     sessions_[sessionId] = sessionInfo;
 
-    LOG_DEBUG("SessionManagerImpl: Created session '{}' with parent '{}' (total sessions: {})", sessionId,
+    SCE_LOG_DEBUG("SessionManagerImpl: Created session '{}' with parent '{}' (total sessions: {})", sessionId,
               parentSessionId.empty() ? "none" : parentSessionId, sessions_.size());
 
     // Notify observers after successful creation
@@ -45,7 +45,7 @@ bool SessionManagerImpl::createSession(const std::string &sessionId, const std::
 
 bool SessionManagerImpl::destroySession(const std::string &sessionId) {
     if (sessionId.empty()) {
-        LOG_ERROR("SessionManagerImpl: Cannot destroy session with empty ID");
+        SCE_LOG_ERROR("SessionManagerImpl: Cannot destroy session with empty ID");
         return false;
     }
 
@@ -53,7 +53,7 @@ bool SessionManagerImpl::destroySession(const std::string &sessionId) {
 
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
-        LOG_DEBUG("SessionManagerImpl: Session '{}' does not exist for destruction", sessionId);
+        SCE_LOG_DEBUG("SessionManagerImpl: Session '{}' does not exist for destruction", sessionId);
         return false;
     }
 
@@ -61,7 +61,7 @@ bool SessionManagerImpl::destroySession(const std::string &sessionId) {
     SessionInfo sessionInfo = it->second;
     sessions_.erase(it);
 
-    LOG_DEBUG("SessionManagerImpl: Destroyed session '{}' (remaining sessions: {})", sessionId, sessions_.size());
+    SCE_LOG_DEBUG("SessionManagerImpl: Destroyed session '{}' (remaining sessions: {})", sessionId, sessions_.size());
 
     // Notify observers after successful destruction
     notifySessionDestroyed(sessionId);
@@ -71,27 +71,27 @@ bool SessionManagerImpl::destroySession(const std::string &sessionId) {
 
 void SessionManagerImpl::addObserver(ISessionObserver *observer) {
     if (!observer) {
-        LOG_ERROR("SessionManagerImpl: Cannot add null observer");
+        SCE_LOG_ERROR("SessionManagerImpl: Cannot add null observer");
         return;
     }
 
     std::lock_guard<std::mutex> lock(observersMutex_);
     observers_.insert(observer);
-    LOG_DEBUG("SessionManagerImpl: Added session observer (total observers: {})", observers_.size());
+    SCE_LOG_DEBUG("SessionManagerImpl: Added session observer (total observers: {})", observers_.size());
 }
 
 void SessionManagerImpl::removeObserver(ISessionObserver *observer) {
     if (!observer) {
-        LOG_ERROR("SessionManagerImpl: Cannot remove null observer");
+        SCE_LOG_ERROR("SessionManagerImpl: Cannot remove null observer");
         return;
     }
 
     std::lock_guard<std::mutex> lock(observersMutex_);
     auto removed = observers_.erase(observer);
     if (removed > 0) {
-        LOG_DEBUG("SessionManagerImpl: Removed session observer (remaining observers: {})", observers_.size());
+        SCE_LOG_DEBUG("SessionManagerImpl: Removed session observer (remaining observers: {})", observers_.size());
     } else {
-        LOG_DEBUG("SessionManagerImpl: Observer not found for removal");
+        SCE_LOG_DEBUG("SessionManagerImpl: Observer not found for removal");
     }
 }
 
@@ -122,7 +122,7 @@ std::string SessionManagerImpl::getParentSessionId(const std::string &sessionId)
 bool SessionManagerImpl::updateSessionSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                       const std::vector<std::string> &ioProcessors) {
     if (sessionId.empty()) {
-        LOG_ERROR("SessionManagerImpl: Cannot update system variables for empty session ID");
+        SCE_LOG_ERROR("SessionManagerImpl: Cannot update system variables for empty session ID");
         return false;
     }
 
@@ -130,7 +130,7 @@ bool SessionManagerImpl::updateSessionSystemVariables(const std::string &session
 
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) {
-        LOG_ERROR("SessionManagerImpl: Cannot update system variables for non-existent session: '{}'", sessionId);
+        SCE_LOG_ERROR("SessionManagerImpl: Cannot update system variables for non-existent session: '{}'", sessionId);
         return false;
     }
 
@@ -138,7 +138,7 @@ bool SessionManagerImpl::updateSessionSystemVariables(const std::string &session
     it->second.sessionName = sessionName;
     it->second.ioProcessors = ioProcessors;
 
-    LOG_DEBUG("SessionManagerImpl: Updated system variables for session '{}': name='{}', {} I/O processors", sessionId,
+    SCE_LOG_DEBUG("SessionManagerImpl: Updated system variables for session '{}': name='{}', {} I/O processors", sessionId,
               sessionName, ioProcessors.size());
 
     // Notify observers after successful update
@@ -178,9 +178,9 @@ void SessionManagerImpl::notifySessionCreated(const std::string &sessionId, cons
         try {
             observer->onSessionCreated(sessionId, parentSessionId);
         } catch (const std::exception &e) {
-            LOG_ERROR("SessionManagerImpl: Observer exception during session creation notification: {}", e.what());
+            SCE_LOG_ERROR("SessionManagerImpl: Observer exception during session creation notification: {}", e.what());
         } catch (...) {
-            LOG_ERROR("SessionManagerImpl: Unknown observer exception during session creation notification");
+            SCE_LOG_ERROR("SessionManagerImpl: Unknown observer exception during session creation notification");
         }
     }
 }
@@ -192,9 +192,9 @@ void SessionManagerImpl::notifySessionDestroyed(const std::string &sessionId) {
         try {
             observer->onSessionDestroyed(sessionId);
         } catch (const std::exception &e) {
-            LOG_ERROR("SessionManagerImpl: Observer exception during session destruction notification: {}", e.what());
+            SCE_LOG_ERROR("SessionManagerImpl: Observer exception during session destruction notification: {}", e.what());
         } catch (...) {
-            LOG_ERROR("SessionManagerImpl: Unknown observer exception during session destruction notification");
+            SCE_LOG_ERROR("SessionManagerImpl: Unknown observer exception during session destruction notification");
         }
     }
 }
@@ -208,10 +208,10 @@ void SessionManagerImpl::notifySessionSystemVariablesUpdated(const std::string &
         try {
             observer->onSessionSystemVariablesUpdated(sessionId, sessionName, ioProcessors);
         } catch (const std::exception &e) {
-            LOG_ERROR("SessionManagerImpl: Observer exception during system variables update notification: {}",
+            SCE_LOG_ERROR("SessionManagerImpl: Observer exception during system variables update notification: {}",
                       e.what());
         } catch (...) {
-            LOG_ERROR("SessionManagerImpl: Unknown observer exception during system variables update notification");
+            SCE_LOG_ERROR("SessionManagerImpl: Unknown observer exception during system variables update notification");
         }
     }
 }

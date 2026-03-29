@@ -6,7 +6,7 @@
 
 #include "actions/RaiseAction.h"
 #include "actions/SendAction.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
@@ -51,12 +51,12 @@ protected:
                     RaiseAction raiseAction(event.eventName);
                     raiseAction.setData(event.data);
                     bool result = actionExecutor_->executeRaiseAction(raiseAction);
-                    LOG_DEBUG("DeadlockTest: executeRaiseAction result: {}", result);
+                    SCE_LOG_DEBUG("DeadlockTest: executeRaiseAction result: {}", result);
                     return result;
                 }
                 return false;
             } catch (const std::exception &e) {
-                LOG_ERROR("DeadlockTest: Exception in callback: {}", e.what());
+                SCE_LOG_ERROR("DeadlockTest: Exception in callback: {}", e.what());
                 return false;
             }
         };
@@ -146,13 +146,13 @@ TEST_F(DeadlockReproductionTest, ReproduceJSEngineEventSchedulerDeadlock) {
             // 3. Timer thread callback tries to lock JSEngine queueMutex_ -> DEADLOCK
             bool success = sendAction.execute(context);
 
-            LOG_DEBUG("DeadlockTest: Send action completed successfully: {}", success);
+            SCE_LOG_DEBUG("DeadlockTest: Send action completed successfully: {}", success);
             testCompleted.store(true);
 
             return success;
 
         } catch (const std::exception &e) {
-            LOG_ERROR("DeadlockTest: Exception in main task: {}", e.what());
+            SCE_LOG_ERROR("DeadlockTest: Exception in main task: {}", e.what());
             testCompleted.store(true);
             return false;
         }
@@ -167,7 +167,7 @@ TEST_F(DeadlockReproductionTest, ReproduceJSEngineEventSchedulerDeadlock) {
     } else {
         try {
             bool result = mainTask.get();
-            LOG_DEBUG("DeadlockTest: Main task completed with result: {}", result);
+            SCE_LOG_DEBUG("DeadlockTest: Main task completed with result: {}", result);
         } catch (...) {
             Logger::error("DeadlockTest: Main task threw exception");
         }
@@ -198,21 +198,21 @@ TEST_F(DeadlockReproductionTest, JSEngineMutexBehavior) {
             auto result1Future = jsEngine.evaluateExpression("deadlock_test_session", "1 + 1");
             auto result1 = result1Future.get();
             if (result1.isSuccess()) {
-                LOG_DEBUG("DeadlockTest: First evaluation result: {}", result1.getValue<double>());
+                SCE_LOG_DEBUG("DeadlockTest: First evaluation result: {}", result1.getValue<double>());
             }
 
             // Second JSEngine call from same thread (should work if mutex is recursive)
             auto result2Future = jsEngine.evaluateExpression("deadlock_test_session", "2 + 2");
             auto result2 = result2Future.get();
             if (result2.isSuccess()) {
-                LOG_DEBUG("DeadlockTest: Second evaluation result: {}", result2.getValue<double>());
+                SCE_LOG_DEBUG("DeadlockTest: Second evaluation result: {}", result2.getValue<double>());
             }
 
             nestedCallCompleted.store(true);
             return true;
 
         } catch (const std::exception &e) {
-            LOG_ERROR("DeadlockTest: JSEngine nested call failed: {}", e.what());
+            SCE_LOG_ERROR("DeadlockTest: JSEngine nested call failed: {}", e.what());
             return false;
         }
     });

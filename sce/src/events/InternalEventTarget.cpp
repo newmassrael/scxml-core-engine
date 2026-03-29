@@ -1,7 +1,7 @@
 #include "events/InternalEventTarget.h"
 #include "common/EventDataHelper.h"
 #include "common/JsonUtils.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
@@ -15,9 +15,9 @@ InternalEventTarget::InternalEventTarget(std::shared_ptr<IEventRaiser> eventRais
     : eventRaiser_(eventRaiser), isExternal_(isExternal), sessionId_(sessionId) {}
 
 std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) {
-    LOG_DEBUG("InternalEventTarget::send() - ENTRY: event='{}', target='{}'", event.eventName, event.target);
+    SCE_LOG_DEBUG("InternalEventTarget::send() - ENTRY: event='{}', target='{}'", event.eventName, event.target);
 
-    LOG_DEBUG("InternalEventTarget: Processing event - sessionId='{}', event='{}', isExternal={}", event.sessionId,
+    SCE_LOG_DEBUG("InternalEventTarget: Processing event - sessionId='{}', event='{}', isExternal={}", event.sessionId,
               event.eventName, isExternal_);
 
     std::promise<SendResult> promise;
@@ -66,7 +66,7 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
                 timestampNs = std::chrono::duration_cast<std::chrono::nanoseconds>(event.logicalExecuteTime).count();
             }
 
-            LOG_DEBUG("InternalEventTarget::send() - Calling raiseEventWithPriority('{}', '{}', {}, "
+            SCE_LOG_DEBUG("InternalEventTarget::send() - Calling raiseEventWithPriority('{}', '{}', {}, "
                       "originSessionId='{}', sendid='{}', origintype='{}', logicalTime={}ms, timestampNs={})",
                       eventName, eventData, (isExternal_ ? "EXTERNAL" : "INTERNAL"), sessionId_, event.sendId,
                       originType, event.logicalExecuteTime.count(), timestampNs);
@@ -74,13 +74,13 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
                                                                    event.sendId, "", originType, timestampNs);
         } else {
             // Fallback: Use new 5-parameter raiseEvent with origintype
-            LOG_DEBUG("InternalEventTarget::send() - Calling eventRaiser_->raiseEvent('{}', '{}', sendid='{}', "
+            SCE_LOG_DEBUG("InternalEventTarget::send() - Calling eventRaiser_->raiseEvent('{}', '{}', sendid='{}', "
                       "origintype='{}')",
                       eventName, eventData, event.sendId, originType);
             queueSuccess = eventRaiser_->raiseEvent(eventName, eventData, event.sendId, false);
         }
 
-        LOG_DEBUG("InternalEventTarget::send() - raiseEvent result: {}", queueSuccess);
+        SCE_LOG_DEBUG("InternalEventTarget::send() - raiseEvent result: {}", queueSuccess);
 
         if (queueSuccess) {
             // Generate send ID for tracking (internal events get immediate IDs)
@@ -88,17 +88,17 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
                                                                   std::chrono::steady_clock::now().time_since_epoch())
                                                                   .count());
 
-            LOG_DEBUG("InternalEventTarget: Successfully sent internal event '{}' with sendId '{}'", eventName, sendId);
+            SCE_LOG_DEBUG("InternalEventTarget: Successfully sent internal event '{}' with sendId '{}'", eventName, sendId);
             promise.set_value(SendResult::success(sendId));
         } else {
             // Only fails if EventRaiser is not ready (shutdown, etc.)
-            LOG_ERROR("InternalEventTarget: Failed to queue internal event '{}' - EventRaiser not ready", eventName);
+            SCE_LOG_ERROR("InternalEventTarget: Failed to queue internal event '{}' - EventRaiser not ready", eventName);
             promise.set_value(
                 SendResult::error("EventRaiser not ready for internal event", SendResult::ErrorType::INTERNAL_ERROR));
         }
 
     } catch (const std::exception &e) {
-        LOG_ERROR("InternalEventTarget: Exception while sending event: {}", e.what());
+        SCE_LOG_ERROR("InternalEventTarget: Exception while sending event: {}", e.what());
         promise.set_value(
             SendResult::error("Exception: " + std::string(e.what()), SendResult::ErrorType::INTERNAL_ERROR));
     }
@@ -139,7 +139,7 @@ std::string InternalEventTarget::resolveEventName(const EventDescriptor &event) 
     // If eventExpr is provided, we would need to evaluate it through the ActionExecutor
     // For now, we'll support only literal event names
     if (!event.eventExpr.empty()) {
-        LOG_WARN("InternalEventTarget: eventExpr not yet supported, using literal name");
+        SCE_LOG_WARN("InternalEventTarget: eventExpr not yet supported, using literal name");
     }
 
     return event.eventName;

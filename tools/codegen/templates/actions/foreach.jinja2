@@ -32,7 +32,7 @@
     std::string validationError;
     if (!::SCE::Validation::validateForeachAttributes("{{ action.array }}", "{{ action.item }}", validationError)) {
         // Validation failed (invalid item/array attribute)
-        LOG_ERROR("Foreach validation failed: {}", validationError);
+        SCE_LOG_ERROR("Foreach validation failed: {}", validationError);
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, validationError));
     }
 }
@@ -80,7 +80,7 @@
     );
     // W3C SCXML 4.6: Check foreach execution result and raise error.execution on failure
     if (!foreachSuccess) {
-        LOG_ERROR("Foreach execution failed for array: {{ action.array }}");
+        SCE_LOG_ERROR("Foreach execution failed for array: {{ action.array }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Foreach execution failed"));
     }
 }
@@ -94,7 +94,7 @@
     );
     // W3C SCXML 4.6: Check foreach execution result and raise error.execution on failure
     if (!foreachSuccess) {
-        LOG_ERROR("Foreach execution failed for array: {{ action.array }}");
+        SCE_LOG_ERROR("Foreach execution failed for array: {{ action.array }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Foreach execution failed"));
     }
 }

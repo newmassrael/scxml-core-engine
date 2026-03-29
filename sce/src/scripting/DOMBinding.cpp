@@ -1,5 +1,5 @@
 #include "scripting/DOMBinding.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -167,7 +167,7 @@ JSValue DOMBinding::createDOMObject(JSContext *ctx, const std::string &xmlConten
     // Parse XML
     auto document = std::make_shared<XMLDocument>(xmlContent);
     if (!document->isValid()) {
-        LOG_ERROR("DOMBinding: Failed to parse XML - {}", document->getErrorMessage());
+        SCE_LOG_ERROR("DOMBinding: Failed to parse XML - {}", document->getErrorMessage());
         return JS_ThrowSyntaxError(ctx, "Failed to parse XML content");
     }
 

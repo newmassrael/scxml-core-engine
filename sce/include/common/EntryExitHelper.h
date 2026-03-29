@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <functional>
 #include <vector>
 
@@ -118,15 +118,15 @@ public:
                                    const std::string &stateId = "") {
         // W3C SCXML 3.8: Log block execution for debugging
         if (!stateId.empty()) {
-            LOG_DEBUG("W3C SCXML 3.8: Executing {} onentry blocks for state: {}", blocks.size(), stateId);
+            SCE_LOG_DEBUG("W3C SCXML 3.8: Executing {} onentry blocks for state: {}", blocks.size(), stateId);
         } else {
-            LOG_DEBUG("W3C SCXML 3.8: Executing {} onentry blocks", blocks.size());
+            SCE_LOG_DEBUG("W3C SCXML 3.8: Executing {} onentry blocks", blocks.size());
         }
 
         // W3C SCXML 3.8: Execute each block independently
         // Block order: Document order (W3C SCXML 3.13)
         for (size_t i = 0; i < blocks.size(); ++i) {
-            LOG_DEBUG("W3C SCXML 3.8: Executing onentry block {}/{}", i + 1, blocks.size());
+            SCE_LOG_DEBUG("W3C SCXML 3.8: Executing onentry block {}/{}", i + 1, blocks.size());
 
             // W3C SCXML 3.8: Block lambda handles error isolation
             // If block raises error.execution and returns, next block still executes
@@ -138,7 +138,7 @@ public:
         }
 
         if (!stateId.empty()) {
-            LOG_DEBUG("W3C SCXML 3.8: Completed {} onentry blocks for state: {}", blocks.size(), stateId);
+            SCE_LOG_DEBUG("W3C SCXML 3.8: Completed {} onentry blocks for state: {}", blocks.size(), stateId);
         }
     }
 
@@ -181,15 +181,15 @@ public:
                                   const std::string &stateId = "") {
         // W3C SCXML 3.9: Log block execution for debugging
         if (!stateId.empty()) {
-            LOG_DEBUG("W3C SCXML 3.9: Executing {} onexit blocks for state: {}", blocks.size(), stateId);
+            SCE_LOG_DEBUG("W3C SCXML 3.9: Executing {} onexit blocks for state: {}", blocks.size(), stateId);
         } else {
-            LOG_DEBUG("W3C SCXML 3.9: Executing {} onexit blocks", blocks.size());
+            SCE_LOG_DEBUG("W3C SCXML 3.9: Executing {} onexit blocks", blocks.size());
         }
 
         // W3C SCXML 3.9: Execute each block independently
         // Same logic as onentry blocks (W3C SCXML 3.8)
         for (size_t i = 0; i < blocks.size(); ++i) {
-            LOG_DEBUG("W3C SCXML 3.9: Executing onexit block {}/{}", i + 1, blocks.size());
+            SCE_LOG_DEBUG("W3C SCXML 3.9: Executing onexit block {}/{}", i + 1, blocks.size());
 
             // W3C SCXML 3.9: Block lambda handles error isolation
             blocks[i]();
@@ -198,7 +198,7 @@ public:
         }
 
         if (!stateId.empty()) {
-            LOG_DEBUG("W3C SCXML 3.9: Completed {} onexit blocks for state: {}", blocks.size(), stateId);
+            SCE_LOG_DEBUG("W3C SCXML 3.9: Completed {} onexit blocks for state: {}", blocks.size(), stateId);
         }
     }
 };

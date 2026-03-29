@@ -5,7 +5,7 @@
 #include <string>
 
 // Include parsing components
-#include "../../include/Logger.h"
+#include "../../include/common/LogMacros.h"
 #include "../../include/common/TypeRegistry.h"
 #include "../../include/events/EventRaiserService.h"
 #include "../../include/factory/NodeFactory.h"
@@ -15,21 +15,21 @@
 namespace fs = std::filesystem;
 
 void printUsage(const char *programName) {
-    SCE::LOG_INFO("SCXML Code Generator\n");
-    SCE::LOG_INFO("Usage: {} [options] <input.scxml>\n", programName);
-    SCE::LOG_INFO("Options:");
-    SCE::LOG_INFO("  -o, --output <file>    Output file path (default: generated.cpp)");
-    SCE::LOG_INFO("  -h, --help            Show this help message");
-    SCE::LOG_INFO("  -v, --verbose         Enable verbose logging\n");
-    SCE::LOG_INFO("Examples:");
-    SCE::LOG_INFO("  {} state_machine.scxml", programName);
-    SCE::LOG_INFO("  {} -o my_sm.cpp input.scxml", programName);
-    SCE::LOG_INFO("  {} --verbose --output=generated.hpp input.scxml", programName);
+    SCE_LOG_INFO("SCXML Code Generator\n");
+    SCE_LOG_INFO("Usage: {} [options] <input.scxml>\n", programName);
+    SCE_LOG_INFO("Options:");
+    SCE_LOG_INFO("  -o, --output <file>    Output file path (default: generated.cpp)");
+    SCE_LOG_INFO("  -h, --help            Show this help message");
+    SCE_LOG_INFO("  -v, --verbose         Enable verbose logging\n");
+    SCE_LOG_INFO("Examples:");
+    SCE_LOG_INFO("  {} state_machine.scxml", programName);
+    SCE_LOG_INFO("  {} -o my_sm.cpp input.scxml", programName);
+    SCE_LOG_INFO("  {} --verbose --output=generated.hpp input.scxml", programName);
 }
 
 void printVersion() {
-    SCE::LOG_INFO("scxml-codegen version 1.0.0");
-    SCE::LOG_INFO("SCXML-to-C++ Code Generator");
+    SCE_LOG_INFO("scxml-codegen version 1.0.0");
+    SCE_LOG_INFO("SCXML-to-C++ Code Generator");
 }
 
 int main(int argc, char *argv[]) {
@@ -53,20 +53,20 @@ int main(int argc, char *argv[]) {
             if (i + 1 < argc) {
                 outputFile = argv[++i];
             } else {
-                SCE::LOG_ERROR("Error: --output requires a file path");
+                SCE_LOG_ERROR("Error: --output requires a file path");
                 return 1;
             }
         } else if (arg.starts_with("--output=")) {
             outputFile = arg.substr(9);
         } else if (arg.starts_with("-")) {
-            SCE::LOG_ERROR("Error: Unknown option {}", arg);
+            SCE_LOG_ERROR("Error: Unknown option {}", arg);
             printUsage(argv[0]);
             return 1;
         } else {
             if (inputFile.empty()) {
                 inputFile = arg;
             } else {
-                SCE::LOG_ERROR("Error: Multiple input files specified");
+                SCE_LOG_ERROR("Error: Multiple input files specified");
                 return 1;
             }
         }
@@ -74,26 +74,26 @@ int main(int argc, char *argv[]) {
 
     // Validate arguments
     if (inputFile.empty()) {
-        SCE::LOG_ERROR("Error: No input file specified");
+        SCE_LOG_ERROR("Error: No input file specified");
         printUsage(argv[0]);
         return 1;
     }
 
     if (!fs::exists(inputFile)) {
-        SCE::LOG_ERROR("Error: Input file '{}' does not exist", inputFile);
+        SCE_LOG_ERROR("Error: Input file '{}' does not exist", inputFile);
         return 1;
     }
 
     // Set logging level
     if (verbose) {
         // Logger has no static level setting, so currently ignored
-        LOG_INFO("Verbose mode enabled");
+        SCE_LOG_INFO("Verbose mode enabled");
     }
 
     try {
-        LOG_INFO("Starting SCXML code generation...");
-        LOG_INFO("Input file: " + inputFile);
-        LOG_INFO("Output file: " + outputFile);
+        SCE_LOG_INFO("Starting SCXML code generation...");
+        SCE_LOG_INFO("Input file: " + inputFile);
+        SCE_LOG_INFO("Output file: " + outputFile);
 
         // Parse SCXML file
         auto nodeFactory = std::make_shared<SCE::NodeFactory>();
@@ -101,16 +101,16 @@ int main(int argc, char *argv[]) {
         auto model = parser.parseFile(inputFile);
 
         if (!model) {
-            SCE::LOG_ERROR("Error: Failed to parse SCXML file");
+            SCE_LOG_ERROR("Error: Failed to parse SCXML file");
             return 1;
         }
 
-        LOG_INFO("SCXML parsing completed successfully");
+        SCE_LOG_INFO("SCXML parsing completed successfully");
 
         // Generate C++ code
         std::ofstream outFile(outputFile);
         if (!outFile.is_open()) {
-            SCE::LOG_ERROR("Error: Cannot create output file '{}'", outputFile);
+            SCE_LOG_ERROR("Error: Cannot create output file '{}'", outputFile);
             return 1;
         }
 
@@ -155,13 +155,13 @@ int main(int argc, char *argv[]) {
 
         outFile.close();
 
-        LOG_INFO("Code generation completed successfully");
-        SCE::LOG_INFO("Generated: {}", outputFile);
+        SCE_LOG_INFO("Code generation completed successfully");
+        SCE_LOG_INFO("Generated: {}", outputFile);
 
         return 0;
 
     } catch (const std::exception &e) {
-        SCE::LOG_ERROR("Error: {}", e.what());
+        SCE_LOG_ERROR("Error: {}", e.what());
         return 1;
     }
 }

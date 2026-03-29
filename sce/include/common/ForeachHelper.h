@@ -15,7 +15,7 @@
 // Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "scripting/JSEngine.h"
 #include <optional>
 #include <stdexcept>
@@ -63,11 +63,11 @@ public:
             if (!variableExists) {
                 // Declare and assign new variable - W3C compliance
                 script = "var " + varName + " = " + value + ";";
-                LOG_DEBUG("W3C FOREACH: Creating NEW variable '{}' = {}", varName, value);
+                SCE_LOG_DEBUG("W3C FOREACH: Creating NEW variable '{}' = {}", varName, value);
             } else {
                 // Assign value to existing variable
                 script = varName + " = " + value + ";";
-                LOG_DEBUG("W3C FOREACH: Updating EXISTING variable '{}' = {}", varName, value);
+                SCE_LOG_DEBUG("W3C FOREACH: Updating EXISTING variable '{}' = {}", varName, value);
             }
 
             auto setResult = jsEngine.executeScript(sessionId, script).get();
@@ -84,16 +84,16 @@ public:
 
                 auto fallbackResult = jsEngine.executeScript(sessionId, fallbackScript).get();
                 if (!JSEngine::isSuccess(fallbackResult)) {
-                    LOG_ERROR("Failed to set foreach variable {} = {}", varName, value);
+                    SCE_LOG_ERROR("Failed to set foreach variable {} = {}", varName, value);
                     return false;
                 }
             }
 
-            LOG_DEBUG("Set foreach variable: {} = {}", varName, value);
+            SCE_LOG_DEBUG("Set foreach variable: {} = {}", varName, value);
             return true;
 
         } catch (const std::exception &e) {
-            LOG_ERROR("Exception setting foreach variable {}: {}", varName, e.what());
+            SCE_LOG_ERROR("Exception setting foreach variable {}: {}", varName, e.what());
             return false;
         }
     }
@@ -115,7 +115,7 @@ public:
         auto arrayResult = jsEngine.evaluateExpression(sessionId, arrayExpr).get();
 
         if (!JSEngine::isSuccess(arrayResult)) {
-            LOG_ERROR("Failed to evaluate array expression: {}", arrayExpr);
+            SCE_LOG_ERROR("Failed to evaluate array expression: {}", arrayExpr);
             return std::nullopt;  // Return failure instead of throwing
         }
 
@@ -126,7 +126,7 @@ public:
         if (!JSEngine::isSuccess(arrayCheckResult) ||
             !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
             !std::get<bool>(arrayCheckResult.getInternalValue())) {
-            LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr);
+            SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr);
             return std::nullopt;  // Return failure instead of throwing
         }
 
@@ -152,14 +152,14 @@ public:
                                                     const std::string &indexVar, size_t indexValue) {
         // Set item variable using shared logic
         if (!setLoopVariable(jsEngine, sessionId, itemVar, itemValue)) {
-            LOG_ERROR("Failed to set foreach item variable: {}", itemVar);
+            SCE_LOG_ERROR("Failed to set foreach item variable: {}", itemVar);
             return false;  // Return failure instead of throwing
         }
 
         // Set index variable (if provided)
         if (!indexVar.empty()) {
             if (!setLoopVariable(jsEngine, sessionId, indexVar, std::to_string(indexValue))) {
-                LOG_ERROR("Failed to set foreach index variable: {}", indexVar);
+                SCE_LOG_ERROR("Failed to set foreach index variable: {}", indexVar);
                 return false;  // Return failure instead of throwing
             }
         }
@@ -190,13 +190,13 @@ public:
 
         // W3C SCXML 4.6: Declare item and index variables even for empty arrays
         if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
-            LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
+            SCE_LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
             return false;  // Return failure instead of throwing
         }
 
         if (!indexVar.empty()) {
             if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
-                LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
+                SCE_LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
                 return false;  // Return failure instead of throwing
             }
         }
@@ -255,7 +255,7 @@ public:
      *         // Custom C++ generated code
      *         auto result = jsEngine.evaluateExpression(sessionId_.value(), "Var1 + 1").get();
      *         if (!::SCE::JSEngine::isSuccess(result)) {
-     *             LOG_ERROR("Expression evaluation failed");
+     *             SCE_LOG_ERROR("Expression evaluation failed");
      *             return false;  // Stop loop on error (W3C 4.6)
      *         }
      *         jsEngine.setVariable(sessionId_.value(), "Var1", result.getInternalValue());
@@ -278,13 +278,13 @@ public:
         // W3C SCXML 4.6: Declare item and index variables BEFORE iteration
         // Variables MUST be declared even for empty arrays
         if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
-            LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
+            SCE_LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
             return false;  // Return failure instead of throwing
         }
 
         if (!indexVar.empty()) {
             if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
-                LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
+                SCE_LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
                 return false;  // Return failure instead of throwing
             }
         }
@@ -299,7 +299,7 @@ public:
             // Execute body actions for this iteration
             // W3C SCXML 4.6: If body returns false (error), stop loop execution
             if (!executeBody(i)) {
-                LOG_DEBUG("Foreach loop stopped at iteration {} due to error (W3C SCXML 4.6)", i);
+                SCE_LOG_DEBUG("Foreach loop stopped at iteration {} due to error (W3C SCXML 4.6)", i);
                 return false;  // Single Source of Truth for W3C 4.6 compliance
             }
         }

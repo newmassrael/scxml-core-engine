@@ -40,7 +40,7 @@ std::string dynamicType;
     auto& jsEngine = ::SCE::JSEngine::instance();
     auto typeResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.typeexpr | escape_cpp }}").get();
     if (!::SCE::JSEngine::isSuccess(typeResult)) {
-        LOG_ERROR("Failed to evaluate typeexpr: {{ action.typeexpr }}");
+        SCE_LOG_ERROR("Failed to evaluate typeexpr: {{ action.typeexpr }}");
         // W3C SCXML 6.2: Invalid typeexpr → use default SCXMLEventProcessor
         dynamicType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
     } else {
@@ -71,7 +71,7 @@ this->ensureJSEngine();
 auto& jsEngine = ::SCE::JSEngine::instance();
 auto targetResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.targetexpr | escape_cpp }}").get();
 if (!::SCE::JSEngine::isSuccess(targetResult)) {
-    LOG_ERROR("Failed to evaluate targetexpr: {{ action.targetexpr }}");
+    SCE_LOG_ERROR("Failed to evaluate targetexpr: {{ action.targetexpr }}");
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
 }
 dynamicTarget = ::SCE::JSEngine::resultToString(targetResult, sessionId_.value(), "{{ action.targetexpr | escape_cpp }}");
@@ -93,7 +93,7 @@ if (::SCE::SendHelper::isInvalidTarget(dynamicTarget)) {
 
 // W3C SCXML C.1 (test 496): Check for unreachable target using SendHelper (ARCHITECTURE.md Zero Duplication)
 if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
-    LOG_ERROR("Send target evaluation resulted in invalid target: '{}'", dynamicTarget);
+    SCE_LOG_ERROR("Send target evaluation resulted in invalid target: '{}'", dynamicTarget);
     engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
     return;  // W3C SCXML 5.10: Stop execution of subsequent executable content
 }
@@ -130,7 +130,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
         );
         AOT_DEBUG("Scheduled delayed send to parent: event={{ action.event }}, delay={{ action.delay if action.delay else action.delayexpr }}, sendId={}", sendId);
     } else {
-        LOG_ERROR("Cannot send to parent: parent pointer is null");
+        SCE_LOG_ERROR("Cannot send to parent: parent pointer is null");
     }
 }
 {% else %}
@@ -156,7 +156,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
         if (::SCE::JSEngine::isSuccess(paramResult)) {
             params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
         } else {
-            LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
             params["{{ param.name }}"].push_back("");
         }
     }
@@ -195,11 +195,11 @@ if (child_{{ invoke_id }}_) {
     child_{{ invoke_id }}_->step();
     AOT_DEBUG("Child {{ invoke_id }} processing complete, isInFinalState={}", child_{{ invoke_id }}_->isInFinalState());
 } else {
-    LOG_WARN("Child {{ invoke_id }} not initialized, cannot send event");
+    SCE_LOG_WARN("Child {{ invoke_id }} not initialized, cannot send event");
 }
 {% else %}
 // No static invokes found - this should not happen for #_child target
-LOG_ERROR("Cannot send to #_child: no static invokes in model");
+SCE_LOG_ERROR("Cannot send to #_child: no static invokes in model");
 {% endif %}
 {% elif action.target.startswith('#_') and action.target not in ['#_parent', '#_internal', '#_child'] %}
 // W3C SCXML 6.4: Send to child invoke via #_<invokeid> target (test192)
@@ -220,7 +220,7 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
             child_{{ invoke.invoke_id }}_->step();
             AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
         } else {
-            LOG_WARN("Child {} not initialized, cannot send event", invokeId);
+            SCE_LOG_WARN("Child {} not initialized, cannot send event", invokeId);
         }
 {% else %}
     } else if (invokeId == "{{ invoke.invoke_id }}") {
@@ -231,18 +231,18 @@ if (::SCE::SendHelper::isChildInvokeTarget("{{ action.target }}")) {
             child_{{ invoke.invoke_id }}_->step();
             AOT_DEBUG("Child {} processing complete, isInFinalState={}", invokeId, child_{{ invoke.invoke_id }}_->isInFinalState());
         } else {
-            LOG_WARN("Child {} not initialized, cannot send event", invokeId);
+            SCE_LOG_WARN("Child {} not initialized, cannot send event", invokeId);
         }
 {% endif %}
 {% endfor %}
     } else {
-        LOG_ERROR("Child invoke target #{} not found in static invokes", invokeId);
+        SCE_LOG_ERROR("Child invoke target #{} not found in static invokes", invokeId);
     }
 {% else %}
-    LOG_ERROR("Cannot send to child invoke: no static invokes in model");
+    SCE_LOG_ERROR("Cannot send to child invoke: no static invokes in model");
 {% endif %}
 } else {
-    LOG_ERROR("Invalid child invoke target: {{ action.target }}");
+    SCE_LOG_ERROR("Invalid child invoke target: {{ action.target }}");
 }
 {% else %}
 // W3C SCXML 6.2 (tests 159, 194): Validate send target using SendHelper
@@ -279,7 +279,7 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
     auto& jsEngine = ::SCE::JSEngine::instance();
     auto eventResult = jsEngine.getVariable(sessionId_.value(), "{{ action.eventexpr }}").get();
     if (!::SCE::JSEngine::isSuccess(eventResult)) {
-        LOG_ERROR("Failed to get variable for eventexpr: {{ action.eventexpr }}");
+        SCE_LOG_ERROR("Failed to get variable for eventexpr: {{ action.eventexpr }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
     } else {
     std::string eventName = ::SCE::JSEngine::resultToString(eventResult);
@@ -331,7 +331,7 @@ params["{{ param.name }}"].push_back("{{ param.static_value }}");
     if (::SCE::JSEngine::isSuccess(paramResult)) {
         params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
     } else {
-        LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+        SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
         params["{{ param.name }}"].push_back("");
     }
 }
@@ -361,7 +361,7 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
             jsEngine, sessionId_.value(), "{{ action.namelist }}",
             params,
             [&engine](const std::string& msg) {
-                LOG_ERROR("Namelist evaluation failed: {}", msg);
+                SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
             }
         );
@@ -380,7 +380,7 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
         if (::SCE::JSEngine::isSuccess(paramResult)) {
             params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
         } else {
-            LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+            SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
             params["{{ param.name }}"].push_back("");
         }
     }
@@ -428,7 +428,7 @@ std::map<std::string, std::vector<std::string>> params;
         jsEngine, sessionId_.value(), "{{ action.namelist }}",
         params,
         [&engine](const std::string& msg) {
-            LOG_ERROR("Namelist evaluation failed: {}", msg);
+            SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
         }
     );
@@ -447,7 +447,7 @@ std::map<std::string, std::vector<std::string>> params;
     if (::SCE::JSEngine::isSuccess(paramResult)) {
         params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
     } else {
-        LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
+        SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
         params["{{ param.name }}"].push_back("");
     }
 }
@@ -559,7 +559,7 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
     if (::SCE::JSEngine::isSuccess(contentResult)) {
         eventData = ::SCE::JSEngine::resultToString(contentResult);
     } else {
-        LOG_ERROR("Failed to evaluate content expr: {{ action.contentexpr }}");
+        SCE_LOG_ERROR("Failed to evaluate content expr: {{ action.contentexpr }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
         eventData = "";
     }

@@ -1,5 +1,5 @@
 #include "events/EventSchedulerImpl.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include <algorithm>
 #include <chrono>
@@ -17,9 +17,9 @@ EventSchedulerImpl::EventSchedulerImpl(EventExecutionCallback executionCallback)
     running_ = true;
 
 #ifdef __EMSCRIPTEN__
-    LOG_DEBUG("EventSchedulerImpl: Scheduler started in WASM polling mode");
+    SCE_LOG_DEBUG("EventSchedulerImpl: Scheduler started in WASM polling mode");
 #else
-    LOG_DEBUG("EventSchedulerImpl: Scheduler started with timer thread and {} callback threads",
+    SCE_LOG_DEBUG("EventSchedulerImpl: Scheduler started with timer thread and {} callback threads",
               CALLBACK_THREAD_POOL_SIZE);
 #endif
 }
@@ -100,7 +100,7 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
     if (mode_.load(std::memory_order_acquire) == SchedulerMode::MANUAL) {
         auto currentLogicalTime = std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
         scheduledEvent->logicalExecuteTime = currentLogicalTime + delay;
-        LOG_DEBUG("EventSchedulerImpl: Scheduled event '{}' at logical time {}ms (current: {}ms, delay: {}ms)",
+        SCE_LOG_DEBUG("EventSchedulerImpl: Scheduled event '{}' at logical time {}ms (current: {}ms, delay: {}ms)",
                   event.eventName, scheduledEvent->logicalExecuteTime.count(), currentLogicalTime.count(),
                   delay.count());
     }
@@ -115,7 +115,7 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
         // Cancel existing event with same sendId - ACTUAL removal, not lazy marking!
         auto existingIt = sendIdIndex_.find(actualSendId);
         if (existingIt != sendIdIndex_.end()) {
-            LOG_DEBUG("EventSchedulerImpl: Cancelling existing event with sendId: {}", actualSendId);
+            SCE_LOG_DEBUG("EventSchedulerImpl: Cancelling existing event with sendId: {}", actualSendId);
             executionQueue_.erase(existingIt->second);  // ACTUAL removal from queue!
             sendIdIndex_.erase(existingIt);
             queueSize_.fetch_sub(1, std::memory_order_release);
@@ -135,7 +135,7 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
         }
     }
 
-    LOG_DEBUG("EventSchedulerImpl: Scheduled event '{}' with sendId '{}' for {}ms delay in session '{}'",
+    SCE_LOG_DEBUG("EventSchedulerImpl: Scheduled event '{}' with sendId '{}' for {}ms delay in session '{}'",
               event.eventName, actualSendId, delay.count(), sessionId);
 
 #ifndef __EMSCRIPTEN__
@@ -147,7 +147,7 @@ std::future<std::string> EventSchedulerImpl::scheduleEvent(const EventDescriptor
 
 bool EventSchedulerImpl::cancelEvent(const std::string &sendId, const std::string &sessionId) {
     if (sendId.empty()) {
-        LOG_WARN("EventSchedulerImpl: Cannot cancel event with empty sendId");
+        SCE_LOG_WARN("EventSchedulerImpl: Cannot cancel event with empty sendId");
         return false;
     }
 
@@ -157,12 +157,12 @@ bool EventSchedulerImpl::cancelEvent(const std::string &sendId, const std::strin
     if (it != sendIdIndex_.end()) {
         // W3C SCXML 6.3: Cross-session isolation
         if (!sessionId.empty() && it->second->second->sessionId != sessionId) {
-            LOG_DEBUG("EventSchedulerImpl: Cross-session cancel blocked - event from '{}', cancel from '{}'",
+            SCE_LOG_DEBUG("EventSchedulerImpl: Cross-session cancel blocked - event from '{}', cancel from '{}'",
                       it->second->second->sessionId, sessionId);
             return false;
         }
 
-        LOG_DEBUG("EventSchedulerImpl: Cancelling event with sendId: {}", sendId);
+        SCE_LOG_DEBUG("EventSchedulerImpl: Cancelling event with sendId: {}", sendId);
 
         // W3C SCXML 6.3: ACTUAL removal (Zero Duplication pattern)
         executionQueue_.erase(it->second);  // ACTUAL removal from queue!
@@ -175,13 +175,13 @@ bool EventSchedulerImpl::cancelEvent(const std::string &sendId, const std::strin
         return true;
     }
 
-    LOG_DEBUG("EventSchedulerImpl: Event with sendId '{}' not found", sendId);
+    SCE_LOG_DEBUG("EventSchedulerImpl: Event with sendId '{}' not found", sendId);
     return false;
 }
 
 size_t EventSchedulerImpl::cancelEventsForSession(const std::string &sessionId) {
     if (sessionId.empty()) {
-        LOG_WARN("EventSchedulerImpl: Cannot cancel events for empty sessionId");
+        SCE_LOG_WARN("EventSchedulerImpl: Cannot cancel events for empty sessionId");
         return 0;
     }
 
@@ -201,7 +201,7 @@ size_t EventSchedulerImpl::cancelEventsForSession(const std::string &sessionId) 
     for (const auto &sendId : sendIdsToCancel) {
         auto indexIt = sendIdIndex_.find(sendId);
         if (indexIt != sendIdIndex_.end()) {
-            LOG_DEBUG("EventSchedulerImpl: Cancelling event with sendId '{}' for session '{}'", sendId, sessionId);
+            SCE_LOG_DEBUG("EventSchedulerImpl: Cancelling event with sendId '{}' for session '{}'", sendId, sessionId);
             executionQueue_.erase(indexIt->second);  // ACTUAL removal!
             sendIdIndex_.erase(indexIt);
             queueSize_.fetch_sub(1, std::memory_order_release);
@@ -210,7 +210,7 @@ size_t EventSchedulerImpl::cancelEventsForSession(const std::string &sessionId) 
     }
 
     if (cancelledCount > 0) {
-        LOG_DEBUG("EventSchedulerImpl: Cancelled {} events for session '{}'", cancelledCount, sessionId);
+        SCE_LOG_DEBUG("EventSchedulerImpl: Cancelled {} events for session '{}'", cancelledCount, sessionId);
 #ifndef __EMSCRIPTEN__
         timerCondition_.notify_one();
 #endif
@@ -237,7 +237,7 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
     bool alreadyShutdown = !running_.exchange(false);
 
     if (!alreadyShutdown) {
-        LOG_DEBUG("EventSchedulerImpl: Shutting down scheduler (waitForCompletion={})", waitForCompletion);
+        SCE_LOG_DEBUG("EventSchedulerImpl: Shutting down scheduler (waitForCompletion={})", waitForCompletion);
     }
 
     shutdownRequested_ = true;
@@ -275,7 +275,7 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
         sessionExecuting_.clear();
 
         if (cancelledCount > 0) {
-            LOG_DEBUG("EventSchedulerImpl: Cancelled {} pending events during shutdown", cancelledCount);
+            SCE_LOG_DEBUG("EventSchedulerImpl: Cancelled {} pending events during shutdown", cancelledCount);
         }
     }
 
@@ -288,7 +288,7 @@ void EventSchedulerImpl::shutdown(bool waitForCompletion) {
     }
 #endif
 
-    LOG_DEBUG("EventSchedulerImpl: Scheduler shutdown complete");
+    SCE_LOG_DEBUG("EventSchedulerImpl: Scheduler shutdown complete");
 }
 
 bool EventSchedulerImpl::isRunning() const {
@@ -299,16 +299,16 @@ void EventSchedulerImpl::executeSessionEventsSync(
     const std::unordered_map<std::string, std::vector<ScheduledEventPtr>> &sessionEventGroups,
     const std::string &context) {
     for (auto &[sessionId, sessionEvents] : sessionEventGroups) {
-        LOG_DEBUG("EventSchedulerImpl: {} processing {} events for session '{}'", context, sessionEvents.size(),
+        SCE_LOG_DEBUG("EventSchedulerImpl: {} processing {} events for session '{}'", context, sessionEvents.size(),
                   sessionId);
 
         for (auto &eventPtr : sessionEvents) {
             if (!eventPtr) {
-                LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
+                SCE_LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
                 continue;
             }
             try {
-                LOG_DEBUG("EventSchedulerImpl: {} executing event '{}' in session '{}' at logical time {}ms", context,
+                SCE_LOG_DEBUG("EventSchedulerImpl: {} executing event '{}' in session '{}' at logical time {}ms", context,
                           eventPtr->event.eventName, sessionId, eventPtr->logicalExecuteTime.count());
 
                 EventDescriptor eventWithTimestamp = std::move(eventPtr->event);
@@ -317,13 +317,13 @@ void EventSchedulerImpl::executeSessionEventsSync(
                 bool success = executionCallback_(eventWithTimestamp, eventPtr->target, eventPtr->sendId);
 
                 if (success) {
-                    LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
+                    SCE_LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully", eventPtr->event.eventName);
                 } else {
-                    LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
+                    SCE_LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
                 }
 
             } catch (const std::exception &e) {
-                LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName, e.what());
+                SCE_LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName, e.what());
             }
         }
     }
@@ -348,12 +348,12 @@ size_t EventSchedulerImpl::processReadyEvents() {
         } else {
             auto currentLogicalTime = std::chrono::milliseconds(logicalTime_.load(std::memory_order_acquire));
             if (scheduledEvent->logicalExecuteTime > currentLogicalTime) {
-                LOG_DEBUG("EventSchedulerImpl: Event '{}' not ready - logical time {}ms < scheduled {}ms",
+                SCE_LOG_DEBUG("EventSchedulerImpl: Event '{}' not ready - logical time {}ms < scheduled {}ms",
                           scheduledEvent->event.eventName, currentLogicalTime.count(),
                           scheduledEvent->logicalExecuteTime.count());
                 break;
             }
-            LOG_DEBUG("EventSchedulerImpl: Event '{}' ready - logical time {}ms >= scheduled {}ms",
+            SCE_LOG_DEBUG("EventSchedulerImpl: Event '{}' ready - logical time {}ms >= scheduled {}ms",
                       scheduledEvent->event.eventName, currentLogicalTime.count(),
                       scheduledEvent->logicalExecuteTime.count());
         }
@@ -385,15 +385,15 @@ size_t EventSchedulerImpl::processReadyEvents() {
             }
 
             auto sessionTask = [this, sessionId, sessionEvents]() {
-                LOG_DEBUG("EventSchedulerImpl: Processing {} events for session '{}'", sessionEvents.size(), sessionId);
+                SCE_LOG_DEBUG("EventSchedulerImpl: Processing {} events for session '{}'", sessionEvents.size(), sessionId);
 
                 for (auto &eventPtr : sessionEvents) {
                     if (!eventPtr) {
-                        LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
+                        SCE_LOG_ERROR("EventSchedulerImpl: NULL shared_ptr in session '{}'", sessionId);
                         continue;
                     }
                     try {
-                        LOG_DEBUG("EventSchedulerImpl: Executing event '{}' sequentially in session '{}' at logical "
+                        SCE_LOG_DEBUG("EventSchedulerImpl: Executing event '{}' sequentially in session '{}' at logical "
                                   "time {}ms",
                                   eventPtr->event.eventName, sessionId, eventPtr->logicalExecuteTime.count());
 
@@ -403,14 +403,14 @@ size_t EventSchedulerImpl::processReadyEvents() {
                         bool success = executionCallback_(eventWithTimestamp, eventPtr->target, eventPtr->sendId);
 
                         if (success) {
-                            LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully",
+                            SCE_LOG_DEBUG("EventSchedulerImpl: Event '{}' executed successfully",
                                       eventPtr->event.eventName);
                         } else {
-                            LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
+                            SCE_LOG_WARN("EventSchedulerImpl: Event '{}' execution failed", eventPtr->event.eventName);
                         }
 
                     } catch (const std::exception &e) {
-                        LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName,
+                        SCE_LOG_ERROR("EventSchedulerImpl: Error executing event '{}': {}", eventPtr->event.eventName,
                                   e.what());
                     }
                 }
@@ -434,7 +434,7 @@ size_t EventSchedulerImpl::processReadyEvents() {
 void EventSchedulerImpl::timerThreadMain() {
     isInSchedulerThread_ = true;
 
-    LOG_DEBUG("EventSchedulerImpl: Timer thread started");
+    SCE_LOG_DEBUG("EventSchedulerImpl: Timer thread started");
 
     while (!shutdownRequested_) {
         std::unique_lock<std::shared_mutex> lock(mutex_);
@@ -448,13 +448,13 @@ void EventSchedulerImpl::timerThreadMain() {
         auto nextExecutionTime = nextEventTime_;
 
         if (nextExecutionTime == std::chrono::steady_clock::time_point::max()) {
-            LOG_DEBUG("EventSchedulerImpl: No events scheduled, waiting for notification");
+            SCE_LOG_DEBUG("EventSchedulerImpl: No events scheduled, waiting for notification");
             timerCondition_.wait(lock, [&] { return shutdownRequested_.load() || !executionQueue_.empty(); });
         } else {
             auto now = std::chrono::steady_clock::now();
             if (nextExecutionTime > now) {
                 auto waitTime = std::chrono::duration_cast<std::chrono::milliseconds>(nextExecutionTime - now);
-                LOG_DEBUG("EventSchedulerImpl: Waiting {}ms for next event", waitTime.count());
+                SCE_LOG_DEBUG("EventSchedulerImpl: Waiting {}ms for next event", waitTime.count());
 
                 timerCondition_.wait_until(lock, nextExecutionTime, [&] {
                     return shutdownRequested_.load() || nextEventTime_ < nextExecutionTime;
@@ -470,16 +470,16 @@ void EventSchedulerImpl::timerThreadMain() {
 
         size_t processedCount = processReadyEvents();
         if (processedCount > 0) {
-            LOG_DEBUG("EventSchedulerImpl: Processed {} ready events", processedCount);
+            SCE_LOG_DEBUG("EventSchedulerImpl: Processed {} ready events", processedCount);
         }
     }
 
-    LOG_DEBUG("EventSchedulerImpl: Timer thread stopped");
+    SCE_LOG_DEBUG("EventSchedulerImpl: Timer thread stopped");
 }
 
 void EventSchedulerImpl::ensureThreadsStarted() {
     std::call_once(threadsStartedFlag_, [this]() {
-        LOG_DEBUG("EventSchedulerImpl: Starting threads lazily to prevent constructor deadlock");
+        SCE_LOG_DEBUG("EventSchedulerImpl: Starting threads lazily to prevent constructor deadlock");
 
         for (size_t i = 0; i < CALLBACK_THREAD_POOL_SIZE; ++i) {
             callbackThreads_.emplace_back(&EventSchedulerImpl::callbackWorker, this);
@@ -487,14 +487,14 @@ void EventSchedulerImpl::ensureThreadsStarted() {
 
         timerThread_ = std::thread(&EventSchedulerImpl::timerThreadMain, this);
 
-        LOG_DEBUG("EventSchedulerImpl: All threads started successfully");
+        SCE_LOG_DEBUG("EventSchedulerImpl: All threads started successfully");
     });
 }
 
 void EventSchedulerImpl::callbackWorker() {
     isInSchedulerThread_ = true;
 
-    LOG_DEBUG("EventSchedulerImpl: Callback worker thread started");
+    SCE_LOG_DEBUG("EventSchedulerImpl: Callback worker thread started");
 
     while (!callbackShutdownRequested_) {
         std::unique_lock<std::mutex> lock(callbackQueueMutex_);
@@ -513,14 +513,14 @@ void EventSchedulerImpl::callbackWorker() {
             try {
                 task();
             } catch (const std::exception &e) {
-                LOG_ERROR("EventSchedulerImpl: Exception in callback worker: {}", e.what());
+                SCE_LOG_ERROR("EventSchedulerImpl: Exception in callback worker: {}", e.what());
             } catch (...) {
-                LOG_ERROR("EventSchedulerImpl: Unknown exception in callback worker");
+                SCE_LOG_ERROR("EventSchedulerImpl: Unknown exception in callback worker");
             }
         }
     }
 
-    LOG_DEBUG("EventSchedulerImpl: Callback worker thread stopped");
+    SCE_LOG_DEBUG("EventSchedulerImpl: Callback worker thread stopped");
 }
 
 thread_local bool EventSchedulerImpl::isInSchedulerThread_ = false;
@@ -573,7 +573,7 @@ std::vector<ScheduledEventInfo> EventSchedulerImpl::getScheduledEvents() const {
 
 void EventSchedulerImpl::setMode(SchedulerMode mode) {
     mode_.store(mode, std::memory_order_release);
-    LOG_INFO("EventSchedulerImpl: Scheduler mode set to {}", mode == SchedulerMode::AUTOMATIC ? "AUTOMATIC" : "MANUAL");
+    SCE_LOG_INFO("EventSchedulerImpl: Scheduler mode set to {}", mode == SchedulerMode::AUTOMATIC ? "AUTOMATIC" : "MANUAL");
 }
 
 SchedulerMode EventSchedulerImpl::getMode() const {
@@ -593,15 +593,15 @@ size_t EventSchedulerImpl::forcePoll() {
             auto newLogicalTime = nextEvent->logicalExecuteTime.count();
             auto oldLogicalTime = logicalTime_.exchange(newLogicalTime, std::memory_order_release);
 
-            LOG_DEBUG("EventSchedulerImpl: MANUAL mode - advanced logical time from {}ms to {}ms (next event: '{}')",
+            SCE_LOG_DEBUG("EventSchedulerImpl: MANUAL mode - advanced logical time from {}ms to {}ms (next event: '{}')",
                       oldLogicalTime, newLogicalTime, nextEvent->event.eventName);
         } else {
-            LOG_DEBUG("EventSchedulerImpl: MANUAL mode - no scheduled events, logical time unchanged at {}ms",
+            SCE_LOG_DEBUG("EventSchedulerImpl: MANUAL mode - no scheduled events, logical time unchanged at {}ms",
                       logicalTime_.load(std::memory_order_acquire));
         }
     }
 
-    LOG_DEBUG("EventSchedulerImpl: forcePoll() called - processing ready events");
+    SCE_LOG_DEBUG("EventSchedulerImpl: forcePoll() called - processing ready events");
     return processReadyEvents();
 }
 
@@ -611,7 +611,7 @@ std::chrono::milliseconds EventSchedulerImpl::getLogicalTime() const {
 
 void EventSchedulerImpl::setLogicalTime(std::chrono::milliseconds timeMs) {
     auto oldTime = logicalTime_.exchange(timeMs.count(), std::memory_order_release);
-    LOG_DEBUG("EventSchedulerImpl: Logical time set from {}ms to {}ms (snapshot restoration)", oldTime, timeMs.count());
+    SCE_LOG_DEBUG("EventSchedulerImpl: Logical time set from {}ms to {}ms (snapshot restoration)", oldTime, timeMs.count());
 }
 
 }  // namespace SCE

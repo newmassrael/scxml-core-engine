@@ -6,7 +6,7 @@
 
 #include "SimpleMockHttpServer.h"
 #include "actions/SendAction.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/TestUtils.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "events/HttpEventTarget.h"
@@ -32,7 +32,7 @@ protected:
         mockServerUrl_ = mockServer_->start();
         ASSERT_FALSE(mockServerUrl_.empty()) << "Failed to start mock HTTP server";
 
-        LOG_INFO("HttpEventTargetTest: Mock server started at {}", mockServerUrl_);
+        SCE_LOG_INFO("HttpEventTargetTest: Mock server started at {}", mockServerUrl_);
 
         // Create basic infrastructure with MockEventRaiser
         auto mockEventRaiser =
@@ -179,7 +179,7 @@ TEST_F(HttpEventTargetTest, BasicHttpEventSending) {
     EXPECT_EQ(result.sendId, "test_001");
     EXPECT_TRUE(result.errorMessage.empty());
 
-    LOG_INFO("HTTP test successful - sent event to mock server at {}", mockServerUrl_);
+    SCE_LOG_INFO("HTTP test successful - sent event to mock server at {}", mockServerUrl_);
 }
 
 /**
@@ -232,7 +232,7 @@ TEST_F(HttpEventTargetTest, HttpErrorHandling) {
     EXPECT_FALSE(result.errorMessage.empty());
     EXPECT_EQ(result.errorType, SendResult::ErrorType::NETWORK_ERROR);
 
-    LOG_DEBUG("Expected error for non-existent server: {}", result.errorMessage);
+    SCE_LOG_DEBUG("Expected error for non-existent server: {}", result.errorMessage);
 }
 
 /**

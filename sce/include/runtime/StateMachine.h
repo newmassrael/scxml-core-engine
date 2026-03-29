@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/ClassBinding.h"  // C++ class binding infrastructure
+#include "common/LogMacros.h"
 #include "common/HierarchicalStateHelper.h"
 #include "common/InvokeHelper.h"  // W3C SCXML 6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "events/IEventDispatcher.h"
@@ -182,7 +183,7 @@ public:
         auto sm = sessionId.empty() ? std::make_shared<StateMachine>() : std::make_shared<StateMachine>(sessionId);
 
         if (!sm->loadSCXMLFromString(scxmlContent)) {
-            LOG_ERROR("StateMachine::createFromSCXMLString: Failed to load SCXML from string");
+            SCE_LOG_ERROR("StateMachine::createFromSCXMLString: Failed to load SCXML from string");
             return nullptr;
         }
 
@@ -810,14 +811,14 @@ void StateMachine::bindObject(const std::string &name, T *object, RegisterFunc r
 
     // Ensure JavaScript environment is initialized
     if (!ensureJSEnvironment()) {
-        LOG_ERROR("StateMachine::bindObject: Failed to initialize JS environment");
+        SCE_LOG_ERROR("StateMachine::bindObject: Failed to initialize JS environment");
         return;
     }
 
     // Get QuickJS context via JSEngine
     JSContext *ctx = JSEngine::instance().getContextForBinding(sessionId_);
     if (!ctx) {
-        LOG_ERROR("StateMachine::bindObject: Failed to get JSContext for session {}", sessionId_);
+        SCE_LOG_ERROR("StateMachine::bindObject: Failed to get JSContext for session {}", sessionId_);
         return;
     }
 
@@ -831,7 +832,7 @@ void StateMachine::bindObject(const std::string &name, T *object, RegisterFunc r
     JS_SetPropertyStr(ctx, global, name.c_str(), jsObject);  // Takes ownership of jsObject
     JS_FreeValue(ctx, global);
 
-    LOG_DEBUG("StateMachine::bindObject: Bound object '{}' to JavaScript", name);
+    SCE_LOG_DEBUG("StateMachine::bindObject: Bound object '{}' to JavaScript", name);
 }
 
 }  // namespace SCE

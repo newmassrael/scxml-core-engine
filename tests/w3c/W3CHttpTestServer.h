@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -35,7 +35,7 @@ public:
 
         // Deliver any pending events that arrived before callback was set
         if (eventCallback_ && !pendingEvents_.empty()) {
-            LOG_DEBUG("W3CHttpTestServer: Delivering {} pending events", pendingEvents_.size());
+            SCE_LOG_DEBUG("W3CHttpTestServer: Delivering {} pending events", pendingEvents_.size());
             for (const auto &[eventName, eventData] : pendingEvents_) {
                 eventCallback_(eventName, eventData);
             }

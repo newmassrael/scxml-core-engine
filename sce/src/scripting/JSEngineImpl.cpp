@@ -1,5 +1,5 @@
 #include "common/DataModelInitHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "quickjs.h"
 #include "scripting/DOMBinding.h"
 #include "scripting/JSEngine.h"
@@ -50,38 +50,38 @@ JSResult JSEngine::executeScriptInternal(const std::string &sessionId, const std
     JSContext *ctx = session->jsContext;
 
     // Execute script with QuickJS global evaluation
-    LOG_DEBUG("JSEngine: Executing script with QuickJS...");
+    SCE_LOG_DEBUG("JSEngine: Executing script with QuickJS...");
 
     ::JSValue result = JS_Eval(ctx, script.c_str(), script.length(), "<script>", JS_EVAL_TYPE_GLOBAL);
 
-    LOG_DEBUG("JSEngine: JS_Eval completed, checking result...");
+    SCE_LOG_DEBUG("JSEngine: JS_Eval completed, checking result...");
 
     if (JS_IsException(result)) {
-        LOG_DEBUG("JSEngine: Exception occurred in script execution");
+        SCE_LOG_DEBUG("JSEngine: Exception occurred in script execution");
         JSResult error = createErrorFromException(ctx);
-        LOG_ERROR("JSEngine::executeScriptInternal - QuickJS exception: {}", error.getErrorMessage());
+        SCE_LOG_ERROR("JSEngine::executeScriptInternal - QuickJS exception: {}", error.getErrorMessage());
         JS_FreeValue(ctx, result);
         return error;
     }
 
-    LOG_DEBUG("JSEngine: Script execution successful, converting result...");
+    SCE_LOG_DEBUG("JSEngine: Script execution successful, converting result...");
     ScriptValue jsResult = quickJSToJSValue(ctx, result);
     JS_FreeValue(ctx, result);
-    LOG_DEBUG("JSEngine: Result conversion completed, returning success");
+    SCE_LOG_DEBUG("JSEngine: Result conversion completed, returning success");
     return JSResult::createSuccess(jsResult);
 }
 
 JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, const std::string &expression) {
-    LOG_DEBUG("JSEngine::evaluateExpressionInternal - Evaluating expression '{}' in session '{}'", expression,
+    SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - Evaluating expression '{}' in session '{}'", expression,
               sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        LOG_ERROR("JSEngine::evaluateExpressionInternal - Session not found: {}", sessionId);
+        SCE_LOG_ERROR("JSEngine::evaluateExpressionInternal - Session not found: {}", sessionId);
         return JSResult::createError("Session not found: " + sessionId);
     }
 
-    LOG_DEBUG("JSEngine::evaluateExpressionInternal - Session found, context valid");
+    SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - Session found, context valid");
 
     JSContext *ctx = session->jsContext;
 
@@ -90,7 +90,7 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
 
     // If it failed and the expression starts with '{', try wrapping in parentheses for object literals
     if (JS_IsException(result) && !expression.empty() && expression[0] == '{') {
-        LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
+        SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
                   "object literal");
         JS_FreeValue(ctx, result);  // Free the exception
 
@@ -103,7 +103,7 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
     // W3C SCXML B.2: If it failed and the expression starts with 'function', try wrapping in parentheses for function
     // expressions Test 453: ECMAScript function literals must be accepted as value expressions
     if (JS_IsException(result) && DataModelInitHelper::isFunctionExpression(expression)) {
-        LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
+        SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - First evaluation failed, trying wrapped expression for "
                   "function literal");
         JS_FreeValue(ctx, result);  // Free the exception
 
@@ -113,33 +113,33 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
     }
 
     if (JS_IsException(result)) {
-        LOG_ERROR("JSEngine::evaluateExpressionInternal - Final JS_Eval failed for expression '{}'", expression);
+        SCE_LOG_ERROR("JSEngine::evaluateExpressionInternal - Final JS_Eval failed for expression '{}'", expression);
 
         // Root cause analysis: Check _event object state when _event.data.aParam fails
         if (expression.find("_event.data") != std::string::npos) {
-            LOG_ERROR("JSEngine: _event.data access failed - debugging info:");
+            SCE_LOG_ERROR("JSEngine: _event.data access failed - debugging info:");
 
             // Check _event object existence
             ::JSValue eventCheck = JS_Eval(ctx, "_event", 6, "<debug>", JS_EVAL_TYPE_GLOBAL);
             if (JS_IsException(eventCheck)) {
-                LOG_ERROR("JSEngine: _event object does not exist");
+                SCE_LOG_ERROR("JSEngine: _event object does not exist");
                 JS_FreeValue(ctx, eventCheck);
             } else if (JS_IsUndefined(eventCheck)) {
-                LOG_ERROR("JSEngine: _event is undefined");
+                SCE_LOG_ERROR("JSEngine: _event is undefined");
                 JS_FreeValue(ctx, eventCheck);
             } else {
-                LOG_DEBUG("JSEngine: _event object exists");
+                SCE_LOG_DEBUG("JSEngine: _event object exists");
 
                 // Check _event.data
                 ::JSValue dataCheck = JS_Eval(ctx, "_event.data", 11, "<debug>", JS_EVAL_TYPE_GLOBAL);
                 if (JS_IsException(dataCheck)) {
-                    LOG_ERROR("JSEngine: _event.data access failed");
+                    SCE_LOG_ERROR("JSEngine: _event.data access failed");
                     JS_FreeValue(ctx, dataCheck);
                 } else if (JS_IsUndefined(dataCheck)) {
-                    LOG_ERROR("JSEngine: _event.data is undefined");
+                    SCE_LOG_ERROR("JSEngine: _event.data is undefined");
                     JS_FreeValue(ctx, dataCheck);
                 } else {
-                    LOG_DEBUG("JSEngine: _event.data exists");
+                    SCE_LOG_DEBUG("JSEngine: _event.data exists");
                 }
                 JS_FreeValue(ctx, dataCheck);
                 JS_FreeValue(ctx, eventCheck);
@@ -147,12 +147,12 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
         }
 
         JSResult error = createErrorFromException(ctx);
-        LOG_ERROR("JSEngine::evaluateExpressionInternal - QuickJS exception: {}", error.getErrorMessage());
+        SCE_LOG_ERROR("JSEngine::evaluateExpressionInternal - QuickJS exception: {}", error.getErrorMessage());
         JS_FreeValue(ctx, result);
         return error;
     }
 
-    LOG_DEBUG("JSEngine::evaluateExpressionInternal - JS_Eval succeeded for expression '{}'", expression);
+    SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - JS_Eval succeeded for expression '{}'", expression);
 
     ScriptValue jsResult = quickJSToJSValue(ctx, result);
     JS_FreeValue(ctx, result);
@@ -180,7 +180,7 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
         debug_value = "\"" + std::get<std::string>(jsResult) + "\"";
     }
 
-    LOG_TRACE("JSEngine::evaluateExpressionInternal - Expression='{}', type={}, value={}", expression, debug_type,
+    SCE_LOG_TRACE("JSEngine::evaluateExpressionInternal - Expression='{}', type={}, value={}", expression, debug_type,
               debug_value);
 
     return JSResult::createSuccess(jsResult);
@@ -210,11 +210,11 @@ JSResult JSEngine::validateExpressionInternal(const std::string &sessionId, cons
 
 JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::string &name,
                                        const ScriptValue &value) {
-    LOG_DEBUG("JSEngine::setVariableInternal - Setting variable '{}' in session '{}'", name, sessionId);
+    SCE_LOG_DEBUG("JSEngine::setVariableInternal - Setting variable '{}' in session '{}'", name, sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        LOG_ERROR("JSEngine::setVariableInternal - Session not found: {}", sessionId);
+        SCE_LOG_ERROR("JSEngine::setVariableInternal - Session not found: {}", sessionId);
         return JSResult::createError("Session not found: " + sessionId);
     }
 
@@ -247,13 +247,13 @@ JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::
         },
         value);
 
-    LOG_DEBUG("JSEngine::setVariableInternal - Variable '{}' value: {}", name, valueStr);
+    SCE_LOG_DEBUG("JSEngine::setVariableInternal - Variable '{}' value: {}", name, valueStr);
 
     ::JSValue qjsValue = jsValueToQuickJS(ctx, value);
 
     // Check if conversion was successful
     if (JS_IsException(qjsValue)) {
-        LOG_ERROR("JSEngine::setVariableInternal - Failed to convert ScriptValue to QuickJS value for variable '{}'",
+        SCE_LOG_ERROR("JSEngine::setVariableInternal - Failed to convert ScriptValue to QuickJS value for variable '{}'",
                   name);
         JS_FreeValue(ctx, global);
         return createErrorFromException(ctx);
@@ -272,12 +272,12 @@ JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::
             JS_FreeCString(ctx, errStr);
             JS_FreeValue(ctx, exc);
 
-            LOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}': {}", name, errorMsg);
+            SCE_LOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}': {}", name, errorMsg);
             JS_FreeValue(ctx, global);
             return JSResult::createError("Failed to set variable " + name + ": " + errorMsg);
         }
 
-        LOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}' in global object", name);
+        SCE_LOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}' in global object", name);
         JS_FreeValue(ctx, global);
         return JSResult::createError("Failed to set variable: " + name);
     }
@@ -291,20 +291,20 @@ JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::
         session->preInitializedVars.insert(name);
     }
 
-    LOG_DEBUG("JSEngine::setVariableInternal - Successfully set variable '{}' in session '{}'", name, sessionId);
+    SCE_LOG_DEBUG("JSEngine::setVariableInternal - Successfully set variable '{}' in session '{}'", name, sessionId);
     return JSResult::createSuccess();
 }
 
 JSResult JSEngine::getVariableInternal(const std::string &sessionId, const std::string &name) {
-    LOG_DEBUG("JSEngine::getVariableInternal - Getting variable '{}' from session '{}'", name, sessionId);
+    SCE_LOG_DEBUG("JSEngine::getVariableInternal - Getting variable '{}' from session '{}'", name, sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        LOG_ERROR("JSEngine::getVariableInternal - Session not found: {}", sessionId);
+        SCE_LOG_ERROR("JSEngine::getVariableInternal - Session not found: {}", sessionId);
         return JSResult::createError("Session not found: " + sessionId);
     }
 
-    LOG_DEBUG("JSEngine::getVariableInternal - Session found, context valid");
+    SCE_LOG_DEBUG("JSEngine::getVariableInternal - Session found, context valid");
 
     JSContext *ctx = session->jsContext;
     ::JSValue global = JS_GetGlobalObject(ctx);
@@ -312,45 +312,45 @@ JSResult JSEngine::getVariableInternal(const std::string &sessionId, const std::
     // First check if the property exists before getting it
     JSAtom atom = JS_NewAtom(ctx, name.c_str());
     [[maybe_unused]] int hasProperty = JS_HasProperty(ctx, global, atom);
-    LOG_DEBUG("JSEngine::getVariableInternal - JS_HasProperty('{}') returned: {}", name, hasProperty);
+    SCE_LOG_DEBUG("JSEngine::getVariableInternal - JS_HasProperty('{}') returned: {}", name, hasProperty);
     JS_FreeAtom(ctx, atom);
 
     ::JSValue qjsValue = JS_GetPropertyStr(ctx, global, name.c_str());
 
     if (JS_IsException(qjsValue)) {
-        LOG_ERROR("JSEngine::getVariableInternal - JS_GetPropertyStr failed for variable '{}'", name);
+        SCE_LOG_ERROR("JSEngine::getVariableInternal - JS_GetPropertyStr failed for variable '{}'", name);
         JS_FreeValue(ctx, global);
         return createErrorFromException(ctx);
     }
 
     // Check if the property actually exists (not just undefined)
     if (JS_IsUndefined(qjsValue)) {
-        LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' is undefined, checking if property exists", name);
+        SCE_LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' is undefined, checking if property exists", name);
         // Use JS_HasProperty to distinguish between "not set" and "set to
         // undefined"
         JSAtom atom2 = JS_NewAtom(ctx, name.c_str());
         int hasProperty2 = JS_HasProperty(ctx, global, atom2);
         JS_FreeAtom(ctx, atom2);  // Free the atom to prevent memory leak
-        LOG_DEBUG("JSEngine::getVariableInternal - Second JS_HasProperty('{}') returned: {}", name, hasProperty2);
+        SCE_LOG_DEBUG("JSEngine::getVariableInternal - Second JS_HasProperty('{}') returned: {}", name, hasProperty2);
         if (hasProperty2 <= 0) {
             // Property doesn't exist - this is not an error, caller will handle
-            LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' does not exist in global context", name);
+            SCE_LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' does not exist in global context", name);
             JS_FreeValue(ctx, qjsValue);
             JS_FreeValue(ctx, global);
             return JSResult::createError("Variable not found: " + name);
         }
         // Property exists but is undefined - this is valid, continue with existing
         // qjsValue
-        LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' exists but is set to undefined", name);
+        SCE_LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' exists but is set to undefined", name);
     } else {
-        LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' found with value", name);
+        SCE_LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' found with value", name);
     }
 
     ScriptValue result = quickJSToJSValue(ctx, qjsValue);
     JS_FreeValue(ctx, qjsValue);
     JS_FreeValue(ctx, global);
 
-    LOG_DEBUG("JSEngine::getVariableInternal - Successfully retrieved variable '{}'", name);
+    SCE_LOG_DEBUG("JSEngine::getVariableInternal - Successfully retrieved variable '{}'", name);
     return JSResult::createSuccess(result);
 }
 
@@ -429,7 +429,7 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
                 JS_SetPropertyStr(ctx, eventObj, "data", dataValue);
             } else {
                 JS_SetPropertyStr(ctx, eventObj, "data", JS_UNDEFINED);
-                LOG_ERROR("JSEngine: Failed to parse event data for eventObj");
+                SCE_LOG_ERROR("JSEngine: Failed to parse event data for eventObj");
             }
         } else {
             JS_SetPropertyStr(ctx, eventObj, "data", JS_UNDEFINED);
@@ -453,7 +453,7 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
     // W3C SCXML 5.10: Lazy initialization of _event on first event
     ::JSValue eventDataProperty;
     if (!session->eventObjectInitialized) {
-        LOG_DEBUG("JSEngine: First event detected - initializing _event object per W3C SCXML 5.10 for session: {}",
+        SCE_LOG_DEBUG("JSEngine: First event detected - initializing _event object per W3C SCXML 5.10 for session: {}",
                   sessionId);
         // Setup _event object now that first event is being processed
         setupEventObject(ctx, sessionId);
@@ -464,10 +464,10 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
             JS_FreeValue(ctx, eventDataProperty);
             JS_FreeValue(ctx, eventObj);
             JS_FreeValue(ctx, global);
-            LOG_ERROR("JSEngine: Failed to initialize _event object on first event - sessionId: {}", sessionId);
+            SCE_LOG_ERROR("JSEngine: Failed to initialize _event object on first event - sessionId: {}", sessionId);
             return JSResult::createError("Failed to create __eventData object for session: " + sessionId);
         }
-        LOG_DEBUG("JSEngine: _event object successfully initialized for session: {}", sessionId);
+        SCE_LOG_DEBUG("JSEngine: _event object successfully initialized for session: {}", sessionId);
     } else {
         eventDataProperty = JS_GetPropertyStr(ctx, global, "__eventData");
         if (!JS_IsObject(eventDataProperty)) {
@@ -490,14 +490,14 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
         // Parse and set event data as JSON or DOM object for XML
         if (event->hasData()) {
             std::string dataStr = event->getDataAsString();
-            LOG_DEBUG("JSEngine: Setting event data from string: '{}'", dataStr);
+            SCE_LOG_DEBUG("JSEngine: Setting event data from string: '{}'", dataStr);
             ::JSValue dataValue = parseEventData(ctx, dataStr);
             if (!JS_IsException(dataValue)) {
                 JS_SetPropertyStr(ctx, eventDataProperty, "data", dataValue);
-                LOG_DEBUG("JSEngine: Successfully set event data");
+                SCE_LOG_DEBUG("JSEngine: Successfully set event data");
             } else {
                 JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
-                LOG_ERROR("JSEngine: Failed to parse event data for eventDataProperty");
+                SCE_LOG_ERROR("JSEngine: Failed to parse event data for eventDataProperty");
             }
 
             // W3C SCXML testing extension: _event.raw for manual inspection
@@ -505,9 +505,9 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
             // Contains raw event data string (pre-parsing) for debugging and test validation
             // Not part of W3C SCXML 5.10 specification - implementation-specific extension
             JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, dataStr.c_str()));
-            LOG_DEBUG("JSEngine: Set _event.raw = '{}'", dataStr);
+            SCE_LOG_DEBUG("JSEngine: Set _event.raw = '{}'", dataStr);
         } else {
-            LOG_DEBUG("JSEngine: Event has no data, setting _event.data to undefined");
+            SCE_LOG_DEBUG("JSEngine: Event has no data, setting _event.data to undefined");
             JS_SetPropertyStr(ctx, eventDataProperty, "data", JS_UNDEFINED);
             // W3C SCXML testing extension: Set _event.raw as empty string when no data
             JS_SetPropertyStr(ctx, eventDataProperty, "raw", JS_NewString(ctx, ""));
@@ -619,11 +619,11 @@ JSResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, co
     ::JSValue result =
         JS_Eval(ctx, setupCode.c_str(), setupCode.length(), "<system_variables_setup>", JS_EVAL_TYPE_GLOBAL);
     if (JS_IsException(result)) {
-        LOG_ERROR("JSEngine: Failed to setup read-only system variables");
+        SCE_LOG_ERROR("JSEngine: Failed to setup read-only system variables");
         ::JSValue exception = JS_GetException(ctx);
         const char *errorStr = JS_ToCString(ctx, exception);
         if (errorStr) {
-            LOG_ERROR("JSEngine: System variables setup error: {}", errorStr);
+            SCE_LOG_ERROR("JSEngine: System variables setup error: {}", errorStr);
             JS_FreeCString(ctx, errorStr);
         }
         JS_FreeValue(ctx, exception);
@@ -656,17 +656,17 @@ ScriptValue JSEngine::quickJSToJSValue(JSContext *ctx, JSValue qjsValue) {
         double d;
         JS_ToFloat64(ctx, &d, qjsValue);
 
-        LOG_TRACE("JSEngine::quickJSToJSValue - JS_IsNumber=true, extracted double={}", d);
+        SCE_LOG_TRACE("JSEngine::quickJSToJSValue - JS_IsNumber=true, extracted double={}", d);
 
         // SCXML W3C compliance: Return as int64_t if it's a whole number within range
         const double llong_min_d = static_cast<double>(LLONG_MIN);
         const double llong_max_d = static_cast<double>(LLONG_MAX);
         if (d == floor(d) && d >= llong_min_d && d <= llong_max_d) {
             int64_t int_result = static_cast<int64_t>(d);
-            LOG_TRACE("JSEngine::quickJSToJSValue - Converting to int64_t={}", int_result);
+            SCE_LOG_TRACE("JSEngine::quickJSToJSValue - Converting to int64_t={}", int_result);
             return int_result;
         }
-        LOG_TRACE("JSEngine::quickJSToJSValue - Returning as double={}", d);
+        SCE_LOG_TRACE("JSEngine::quickJSToJSValue - Returning as double={}", d);
         return d;
     } else if (JS_IsString(qjsValue)) {
         const char *str = JS_ToCString(ctx, qjsValue);

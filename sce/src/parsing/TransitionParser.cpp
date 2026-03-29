@@ -1,35 +1,35 @@
 #include "parsing/TransitionParser.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
 #include <cassert>
 #include <sstream>
 
 SCE::TransitionParser::TransitionParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {
-    LOG_DEBUG("Creating transition parser");
+    SCE_LOG_DEBUG("Creating transition parser");
 }
 
 SCE::TransitionParser::~TransitionParser() {
-    LOG_DEBUG("Destroying transition parser");
+    SCE_LOG_DEBUG("Destroying transition parser");
 }
 
 void SCE::TransitionParser::setActionParser(std::shared_ptr<SCE::ActionParser> actionParser) {
     actionParser_ = actionParser;
-    LOG_DEBUG("Action parser set");
+    SCE_LOG_DEBUG("Action parser set");
 }
 
 std::shared_ptr<SCE::ITransitionNode>
 SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &transElement,
                                            SCE::IStateNode *stateNode) {
     if (!transElement || !stateNode) {
-        LOG_WARN("Null transition element or state node");
+        SCE_LOG_WARN("Null transition element or state node");
         return nullptr;
     }
 
     std::string event = transElement->hasAttribute("event") ? transElement->getAttribute("event") : "";
     std::string target = transElement->hasAttribute("target") ? transElement->getAttribute("target") : "";
 
-    LOG_DEBUG("Parsing transition: {} -> {}", (event.empty() ? "<no event>" : event),
+    SCE_LOG_DEBUG("Parsing transition: {} -> {}", (event.empty() ? "<no event>" : event),
               (target.empty() ? "<internal>" : target));
 
     // Treat as internal transition if target is empty
@@ -39,7 +39,7 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
     std::shared_ptr<SCE::ITransitionNode> transition;
 
     if (isInternal) {
-        LOG_DEBUG("Internal transition detected (no target)");
+        SCE_LOG_DEBUG("Internal transition detected (no target)");
 
         // Create transition with empty target
         transition = nodeFactory_->createTransitionNode(event, "");
@@ -47,7 +47,7 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
         // Explicitly clear target list
         transition->clearTargets();
 
-        LOG_DEBUG("After clearTargets() - targets count: {}", transition->getTargets().size());
+        SCE_LOG_DEBUG("After clearTargets() - targets count: {}", transition->getTargets().size());
     } else {
         // Create with empty string on initialization
         transition = nodeFactory_->createTransitionNode(event, "");
@@ -63,7 +63,7 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
         while (ss >> targetId) {
             if (!targetId.empty()) {
                 transition->addTarget(targetId);
-                LOG_DEBUG("Added target: {}", targetId);
+                SCE_LOG_DEBUG("Added target: {}", targetId);
             }
         }
     }
@@ -75,7 +75,7 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
     if (transElement->hasAttribute("type")) {
         std::string type = transElement->getAttribute("type");
         transition->setAttribute("type", type);
-        LOG_DEBUG("Type: {}", type);
+        SCE_LOG_DEBUG("Type: {}", type);
 
         // Set as internal transition if type is "internal"
         if (type == "internal") {
@@ -89,14 +89,14 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
         std::string cond = transElement->getAttribute("cond");
         transition->setAttribute("cond", cond);
         transition->setGuard(cond);
-        LOG_DEBUG("Condition: {}", cond);
+        SCE_LOG_DEBUG("Condition: {}", cond);
     }
 
     // Process guard attribute
     if (transElement->hasAttribute("guard")) {
         std::string guard = transElement->getAttribute("guard");
         transition->setGuard(guard);
-        LOG_DEBUG("Guard: {}", guard);
+        SCE_LOG_DEBUG("Guard: {}", guard);
     }
 
     // Parse event list
@@ -104,40 +104,40 @@ SCE::TransitionParser::parseTransitionNode(const std::shared_ptr<IXMLElement> &t
         auto events = parseEventList(event);
         for (const auto &eventName : events) {
             transition->addEvent(eventName);
-            LOG_DEBUG("Added event: {}", eventName);
+            SCE_LOG_DEBUG("Added event: {}", eventName);
         }
     }
 
     // Parse actions
     parseActions(transElement, transition);
 
-    LOG_DEBUG("Transition parsed successfully with {} ActionNodes", transition->getActionNodes().size());
+    SCE_LOG_DEBUG("Transition parsed successfully with {} ActionNodes", transition->getActionNodes().size());
     return transition;
 }
 
 std::shared_ptr<SCE::ITransitionNode>
 SCE::TransitionParser::parseInitialTransition(const std::shared_ptr<IXMLElement> &initialElement) {
     if (!initialElement) {
-        LOG_WARN("Null initial element");
+        SCE_LOG_WARN("Null initial element");
         return nullptr;
     }
 
-    LOG_DEBUG("Parsing initial transition");
+    SCE_LOG_DEBUG("Parsing initial transition");
 
     // Find transition element within initial element
     auto transElement = ParsingCommon::findFirstChildElement(initialElement, "transition");
     if (!transElement) {
-        LOG_WARN("No transition element found in initial");
+        SCE_LOG_WARN("No transition element found in initial");
         return nullptr;
     }
 
     if (!transElement->hasAttribute("target")) {
-        LOG_WARN("Initial transition missing target attribute");
+        SCE_LOG_WARN("Initial transition missing target attribute");
         return nullptr;
     }
 
     std::string target = transElement->getAttribute("target");
-    LOG_DEBUG("Initial transition target: {}", target);
+    SCE_LOG_DEBUG("Initial transition target: {}", target);
 
     // Create initial transition - no event
     auto transition = nodeFactory_->createTransitionNode("", target);
@@ -148,7 +148,7 @@ SCE::TransitionParser::parseInitialTransition(const std::shared_ptr<IXMLElement>
     // Parse actions
     parseActions(transElement, transition);
 
-    LOG_DEBUG("Initial transition parsed successfully");
+    SCE_LOG_DEBUG("Initial transition parsed successfully");
     return transition;
 }
 
@@ -158,11 +158,11 @@ SCE::TransitionParser::parseTransitionsInState(const std::shared_ptr<IXMLElement
     std::vector<std::shared_ptr<SCE::ITransitionNode>> transitions;
 
     if (!stateElement || !stateNode) {
-        LOG_WARN("Null state element or node");
+        SCE_LOG_WARN("Null state element or node");
         return transitions;
     }
 
-    LOG_DEBUG("Parsing transitions in state: {}", stateNode->getId());
+    SCE_LOG_DEBUG("Parsing transitions in state: {}", stateNode->getId());
 
     // Find all transition elements
     auto transElements = ParsingCommon::findChildElements(stateElement, "transition");
@@ -173,7 +173,7 @@ SCE::TransitionParser::parseTransitionsInState(const std::shared_ptr<IXMLElement
         }
     }
 
-    LOG_DEBUG("Found {} transitions", transitions.size());
+    SCE_LOG_DEBUG("Found {} transitions", transitions.size());
     return transitions;
 }
 
@@ -204,7 +204,7 @@ void SCE::TransitionParser::parseActions(const std::shared_ptr<IXMLElement> &tra
         for (const auto &actionNode : actionNodes) {
             if (actionNode) {
                 transition->addActionNode(actionNode);
-                LOG_DEBUG("Added ActionNode: {}", actionNode->getActionType());
+                SCE_LOG_DEBUG("Added ActionNode: {}", actionNode->getActionType());
             }
         }
     }

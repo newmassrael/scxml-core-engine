@@ -75,7 +75,7 @@
 
 // Conditional debug logging for generated code
 #ifndef NDEBUG
-    #define AOT_DEBUG(...)  LOG_DEBUG(__VA_ARGS__)
+    #define AOT_DEBUG(...)  SCE_LOG_DEBUG(__VA_ARGS__)
 #else
     // Debug logging disabled in release builds
     #define AOT_DEBUG(...)

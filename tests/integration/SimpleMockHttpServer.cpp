@@ -14,7 +14,7 @@
 #include <sstream>
 #include <thread>
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 
 namespace SCE {
 
@@ -62,7 +62,7 @@ std::string SimpleMockHttpServer::start() {
     serverAddr.sin_port = htons(port_);
 
     if (bind(serverSocket_, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
-        LOG_ERROR("SimpleMockHttpServer: Failed to bind to port {}", port_);
+        SCE_LOG_ERROR("SimpleMockHttpServer: Failed to bind to port {}", port_);
         close(serverSocket_);
         serverSocket_ = -1;
         return "";
@@ -70,7 +70,7 @@ std::string SimpleMockHttpServer::start() {
 
     // Start listening
     if (listen(serverSocket_, 5) < 0) {
-        LOG_ERROR("SimpleMockHttpServer: Failed to listen on port {}", port_);
+        SCE_LOG_ERROR("SimpleMockHttpServer: Failed to listen on port {}", port_);
         close(serverSocket_);
         serverSocket_ = -1;
         return "";
@@ -83,7 +83,7 @@ std::string SimpleMockHttpServer::start() {
     running_ = true;
     serverThread_ = std::make_unique<std::thread>(&SimpleMockHttpServer::serverLoop, this);
 
-    LOG_DEBUG("SimpleMockHttpServer: Started on {}", serverUrl_);
+    SCE_LOG_DEBUG("SimpleMockHttpServer: Started on {}", serverUrl_);
     return serverUrl_;
 }
 
@@ -144,7 +144,7 @@ void SimpleMockHttpServer::serverLoop() {
                 std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
                 continue;
             } else if (running_) {
-                LOG_WARN("SimpleMockHttpServer: Accept failed: {}", strerror(errno));
+                SCE_LOG_WARN("SimpleMockHttpServer: Accept failed: {}", strerror(errno));
                 break;
             } else {
                 // Server is shutting down
@@ -169,7 +169,7 @@ void SimpleMockHttpServer::handleRequest(int clientSocket) {
     buffer[bytesRead] = '\0';
     std::string request(buffer);
 
-    LOG_DEBUG("SimpleMockHttpServer: Received request: {}", request.substr(0, request.find('\n')));
+    SCE_LOG_DEBUG("SimpleMockHttpServer: Received request: {}", request.substr(0, request.find('\n')));
 
     // Generate mock response (simulates successful HTTP POST)
     std::string jsonResponse = R"({

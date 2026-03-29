@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -71,7 +71,7 @@ public:
     static void deferInvoke(PendingContainer &pending, const InvokeInfo &invokeInfo) {
         pending.push_back(invokeInfo);
         // Note: state logging omitted - enum (AOT) not fmt-formattable, string (Interpreter) handled separately
-        LOG_DEBUG("InvokeHelper: Deferred invoke {}", invokeInfo.invokeId);
+        SCE_LOG_DEBUG("InvokeHelper: Deferred invoke {}", invokeInfo.invokeId);
     }
 
     /**
@@ -106,7 +106,7 @@ public:
         if (it != pending.end()) {
             // Log cancellations for debugging (state omitted - not fmt-formattable for AOT enums)
             for (auto i = it; i != pending.end(); ++i) {
-                LOG_DEBUG("InvokeHelper: Cancelled pending invoke {}", i->invokeId);
+                SCE_LOG_DEBUG("InvokeHelper: Cancelled pending invoke {}", i->invokeId);
             }
             pending.erase(it, pending.end());
         }
@@ -159,7 +159,7 @@ public:
             return;
         }
 
-        LOG_DEBUG("InvokeHelper: Executing {} pending invokes", pending.size());
+        SCE_LOG_DEBUG("InvokeHelper: Executing {} pending invokes", pending.size());
 
         // W3C SCXML 6.4: Copy pending list to prevent iterator invalidation
         // Child state machines may raise events during initialization
@@ -169,11 +169,11 @@ public:
         // Execute each pending invoke
         for (const auto &invokeInfo : invokesToExecute) {
             // Note: state logging omitted - enum (AOT) not fmt-formattable, string (Interpreter) logged separately
-            LOG_DEBUG("InvokeHelper: Starting invoke {}", invokeInfo.invokeId);
+            SCE_LOG_DEBUG("InvokeHelper: Starting invoke {}", invokeInfo.invokeId);
             try {
                 executor(invokeInfo);
             } catch (const std::exception &e) {
-                LOG_ERROR("InvokeHelper: Failed to execute invoke {}: {}", invokeInfo.invokeId, e.what());
+                SCE_LOG_ERROR("InvokeHelper: Failed to execute invoke {}: {}", invokeInfo.invokeId, e.what());
                 // Continue with remaining invokes (don't fail entire macrostep)
             }
         }

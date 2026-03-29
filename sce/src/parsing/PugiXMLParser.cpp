@@ -1,5 +1,5 @@
 #include "parsing/PugiXMLParser.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "parsing/IXMLElement.h"
 #include <cstring>
 #include <filesystem>
@@ -121,7 +121,7 @@ bool PugiXMLElement::importNode(const std::shared_ptr<IXMLElement> &source) {
 
     auto *pugiSource = dynamic_cast<PugiXMLElement *>(source.get());
     if (!pugiSource) {
-        LOG_ERROR("PugiXMLElement::importNode - Source is not PugiXMLElement");
+        SCE_LOG_ERROR("PugiXMLElement::importNode - Source is not PugiXMLElement");
         return false;
     }
 
@@ -133,7 +133,7 @@ bool PugiXMLElement::importNode(const std::shared_ptr<IXMLElement> &source) {
         }
         return true;
     } catch (const std::exception &ex) {
-        LOG_ERROR("PugiXMLElement::importNode - {}", ex.what());
+        SCE_LOG_ERROR("PugiXMLElement::importNode - {}", ex.what());
         return false;
     }
 }
@@ -152,7 +152,7 @@ bool PugiXMLElement::remove() {
         }
         return false;
     } catch (const std::exception &ex) {
-        LOG_ERROR("PugiXMLElement::remove - {}", ex.what());
+        SCE_LOG_ERROR("PugiXMLElement::remove - {}", ex.what());
         return false;
     }
 }
@@ -222,20 +222,20 @@ bool PugiXMLDocument::processXInclude() {
 
         bool success = processXIncludeRecursive(root, 0);
         if (success) {
-            LOG_DEBUG("PugiXMLDocument: XInclude processing successful");
+            SCE_LOG_DEBUG("PugiXMLDocument: XInclude processing successful");
         }
         return success;
 
     } catch (const std::exception &ex) {
         errorMessage_ = "XInclude processing failed: " + std::string(ex.what());
-        LOG_WARN("PugiXMLDocument: {}", errorMessage_);
+        SCE_LOG_WARN("PugiXMLDocument: {}", errorMessage_);
         return false;
     }
 }
 
 bool PugiXMLDocument::processXIncludeRecursive(pugi::xml_node node, int depth) {
     if (depth >= MAX_XINCLUDE_DEPTH) {
-        LOG_WARN("PugiXMLDocument: Maximum XInclude depth reached");
+        SCE_LOG_WARN("PugiXMLDocument: Maximum XInclude depth reached");
         return false;
     }
 
@@ -255,31 +255,31 @@ bool PugiXMLDocument::processXIncludeRecursive(pugi::xml_node node, int depth) {
     for (auto includeNode : includeNodes) {
         auto hrefAttr = includeNode.attribute("href");
         if (!hrefAttr) {
-            LOG_WARN("PugiXMLDocument: xi:include missing href attribute");
+            SCE_LOG_WARN("PugiXMLDocument: xi:include missing href attribute");
             continue;
         }
 
         std::string href = hrefAttr.value();
         if (href.empty()) {
-            LOG_WARN("PugiXMLDocument: xi:include href is empty");
+            SCE_LOG_WARN("PugiXMLDocument: xi:include href is empty");
             continue;
         }
 
         // Resolve file path
         std::string fullPath = resolveFilePath(href);
         if (fullPath.empty()) {
-            LOG_ERROR("PugiXMLDocument: Could not resolve file path: {}", href);
+            SCE_LOG_ERROR("PugiXMLDocument: Could not resolve file path: {}", href);
             continue;
         }
 
-        LOG_DEBUG("PugiXMLDocument: Loading XInclude: {}", fullPath);
+        SCE_LOG_DEBUG("PugiXMLDocument: Loading XInclude: {}", fullPath);
 
         // Load included document
         auto includedDoc = std::make_shared<pugi::xml_document>();
         pugi::xml_parse_result result = includedDoc->load_file(fullPath.c_str());
 
         if (!result) {
-            LOG_ERROR("PugiXMLDocument: Failed to parse included file: {} - {}", fullPath, result.description());
+            SCE_LOG_ERROR("PugiXMLDocument: Failed to parse included file: {} - {}", fullPath, result.description());
             continue;
         }
 
@@ -347,11 +347,11 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
         // Check if file exists
         if (!std::filesystem::exists(filename)) {
             lastError_ = "File not found: " + filename;
-            LOG_ERROR("PugiXMLParser: {}", lastError_);
+            SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
             return nullptr;
         }
 
-        LOG_INFO("PugiXMLParser: Parsing file: {}", filename);
+        SCE_LOG_INFO("PugiXMLParser: Parsing file: {}", filename);
 
         // Parse file using pugixml
         auto doc = std::make_shared<pugi::xml_document>();
@@ -359,7 +359,7 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
 
         if (!result) {
             lastError_ = "Parse error: " + std::string(result.description());
-            LOG_ERROR("PugiXMLParser: {}", lastError_);
+            SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
             return nullptr;
         }
 
@@ -372,14 +372,14 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseFile(const std::string &filena
 
     } catch (const std::exception &ex) {
         lastError_ = "Exception while parsing file: " + std::string(ex.what());
-        LOG_ERROR("PugiXMLParser: {}", lastError_);
+        SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
         return nullptr;
     }
 }
 
 std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &content) {
     try {
-        LOG_INFO("PugiXMLParser: Parsing content");
+        SCE_LOG_INFO("PugiXMLParser: Parsing content");
 
         // Parse from string using pugixml
         auto doc = std::make_shared<pugi::xml_document>();
@@ -387,7 +387,7 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &con
 
         if (!result) {
             lastError_ = "Parse error: " + std::string(result.description());
-            LOG_ERROR("PugiXMLParser: {}", lastError_);
+            SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
             return nullptr;
         }
 
@@ -395,7 +395,7 @@ std::shared_ptr<IXMLDocument> PugiXMLParser::parseContent(const std::string &con
 
     } catch (const std::exception &ex) {
         lastError_ = "Exception while parsing content: " + std::string(ex.what());
-        LOG_ERROR("PugiXMLParser: {}", lastError_);
+        SCE_LOG_ERROR("PugiXMLParser: {}", lastError_);
         return nullptr;
     }
 }

@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "InteractiveTestRunner.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "impl/SnapshotComparator.h"
 #include "runtime/StateSnapshot.h"
 
@@ -282,7 +282,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
     for (int step = 0; step < maxSteps; step++) {
         // Capture snapshot at current state
         auto snapshot = captureCurrentSnapshot(runner);
-        LOG_DEBUG("Phase 1: step={}, captured snapshot with stepNumber={}", step, snapshot.stepNumber);
+        SCE_LOG_DEBUG("Phase 1: step={}, captured snapshot with stepNumber={}", step, snapshot.stepNumber);
         forwardSnapshots.push_back(snapshot);
 
         // Step forward
@@ -293,7 +293,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
             totalSteps = step + 1;
             // Capture final snapshot
             auto finalSnapshot = captureCurrentSnapshot(runner);
-            LOG_DEBUG("Phase 1: FINAL_STATE/NO_EVENTS_AVAILABLE, captured final snapshot with stepNumber={}",
+            SCE_LOG_DEBUG("Phase 1: FINAL_STATE/NO_EVENTS_AVAILABLE, captured final snapshot with stepNumber={}",
                       finalSnapshot.stepNumber);
             forwardSnapshots.push_back(finalSnapshot);
             break;
@@ -303,7 +303,7 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
             // Scheduled events waiting - consider this end of execution
             totalSteps = step + 1;
             auto finalSnapshot = captureCurrentSnapshot(runner);
-            LOG_DEBUG("Phase 1: NO_EVENTS_READY, captured final snapshot with stepNumber={}", finalSnapshot.stepNumber);
+            SCE_LOG_DEBUG("Phase 1: NO_EVENTS_READY, captured final snapshot with stepNumber={}", finalSnapshot.stepNumber);
             forwardSnapshots.push_back(finalSnapshot);
             break;
         }
@@ -344,9 +344,9 @@ TEST_P(ComprehensiveInteractiveTest, ForwardBackwardDeterminism) {
     // W3C SCXML 3.13: Always reset before Phase 3 for deterministic replay
     // When totalSteps=1, Phase 2 skips all backward steps, leaving scheduler logical time advanced
     // Reset ensures both currentStep_ and scheduler logical time are restored to initial state
-    LOG_DEBUG("Before reset, getCurrentStep()={}", runner.getCurrentStep());
+    SCE_LOG_DEBUG("Before reset, getCurrentStep()={}", runner.getCurrentStep());
     runner.reset();
-    LOG_DEBUG("After reset, getCurrentStep()={}", runner.getCurrentStep());
+    SCE_LOG_DEBUG("After reset, getCurrentStep()={}", runner.getCurrentStep());
 
     // Phase 3: Step forward again and verify determinism (replay)
     for (int step = 0; step < totalSteps; step++) {

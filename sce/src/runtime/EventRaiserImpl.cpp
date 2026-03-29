@@ -1,6 +1,6 @@
 #include "runtime/EventRaiserImpl.h"
 #include "common/EventTypeHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/StringUtils.h"
 #include "events/IEventDispatcher.h"
 #include "events/PlatformEventRaiserHelper.h"
@@ -27,7 +27,7 @@ thread_local std::string EventRaiserImpl::currentEventType_;
 EventRaiserImpl::EventRaiserImpl(EventCallback callback)
     : eventCallback_(std::move(callback)), scheduler_(nullptr), shutdownRequested_(false), isRunning_(false),
       immediateMode_(false) {
-    LOG_DEBUG("EventRaiserImpl: Created with callback: {} (instance: {})", (eventCallback_ ? "set" : "none"),
+    SCE_LOG_DEBUG("EventRaiserImpl: Created with callback: {} (instance: {})", (eventCallback_ ? "set" : "none"),
               (void *)this);
 
     // Zero Duplication Principle: Platform-specific initialization through Helper
@@ -35,7 +35,7 @@ EventRaiserImpl::EventRaiserImpl(EventCallback callback)
     platformHelper_ = createPlatformEventRaiserHelper(this, scheduler_);
     platformHelper_->start();
 
-    LOG_DEBUG("EventRaiserImpl: Platform-specific initialization complete");
+    SCE_LOG_DEBUG("EventRaiserImpl: Platform-specific initialization complete");
 }
 
 EventRaiserImpl::~EventRaiserImpl() {
@@ -43,7 +43,7 @@ EventRaiserImpl::~EventRaiserImpl() {
 }
 
 void EventRaiserImpl::setScheduler(std::shared_ptr<IEventScheduler> scheduler) {
-    LOG_DEBUG("EventRaiserImpl: Setting EventScheduler for delayed event polling (WASM support)");
+    SCE_LOG_DEBUG("EventRaiserImpl: Setting EventScheduler for delayed event polling (WASM support)");
     scheduler_ = scheduler;
 
     // Recreate platform helper with scheduler support
@@ -53,7 +53,7 @@ void EventRaiserImpl::setScheduler(std::shared_ptr<IEventScheduler> scheduler) {
     platformHelper_ = createPlatformEventRaiserHelper(this, scheduler_);
     platformHelper_->start();
 
-    LOG_DEBUG("EventRaiserImpl: EventScheduler set and platform helper reinitialized");
+    SCE_LOG_DEBUG("EventRaiserImpl: EventScheduler set and platform helper reinitialized");
 }
 
 std::shared_ptr<IEventScheduler> EventRaiserImpl::getScheduler() const {
@@ -62,7 +62,7 @@ std::shared_ptr<IEventScheduler> EventRaiserImpl::getScheduler() const {
 
 size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionId) {
     if (originSessionId.empty()) {
-        LOG_WARN("EventRaiserImpl: Cannot cancel events for empty originSessionId");
+        SCE_LOG_WARN("EventRaiserImpl: Cannot cancel events for empty originSessionId");
         return 0;
     }
 
@@ -81,7 +81,7 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
         // Check if this event originated from the cancelled session
         if (event.origin == originSessionId) {
             cancelledCount++;
-            LOG_DEBUG("EventRaiserImpl: Cancelled queued event '{}' from session: {}", event.eventName,
+            SCE_LOG_DEBUG("EventRaiserImpl: Cancelled queued event '{}' from session: {}", event.eventName,
                       originSessionId);
         } else {
             // Keep events from other sessions
@@ -95,7 +95,7 @@ size_t EventRaiserImpl::cancelEventsForSession(const std::string &originSessionI
     }
 
     if (cancelledCount > 0) {
-        LOG_INFO("EventRaiserImpl: Cancelled {} queued event(s) from session: {}", cancelledCount, originSessionId);
+        SCE_LOG_INFO("EventRaiserImpl: Cancelled {} queued event(s) from session: {}", cancelledCount, originSessionId);
     }
 
     return cancelledCount;
@@ -106,7 +106,7 @@ void EventRaiserImpl::shutdown() {
         return;  // Already shut down
     }
 
-    LOG_DEBUG("EventRaiserImpl: Shutting down async processing");
+    SCE_LOG_DEBUG("EventRaiserImpl: Shutting down async processing");
 
     // Signal shutdown
     shutdownRequested_.store(true);
@@ -132,7 +132,7 @@ void EventRaiserImpl::shutdown() {
     }
 
     isRunning_.store(false);
-    LOG_DEBUG("EventRaiserImpl: Shutdown complete");
+    SCE_LOG_DEBUG("EventRaiserImpl: Shutdown complete");
 }
 
 void EventRaiserImpl::setEventCallback(EventCallback callback) {
@@ -140,7 +140,7 @@ void EventRaiserImpl::setEventCallback(EventCallback callback) {
     bool hadCallback = (eventCallback_ != nullptr);
     eventCallback_ = std::move(callback);
     bool hasCallback = (eventCallback_ != nullptr);
-    LOG_DEBUG(
+    SCE_LOG_DEBUG(
         "EventRaiserImpl: Callback status changed - EventRaiser: {}, previous: {}, current: {}, immediateMode: {}",
         (void *)this, hadCallback ? "set" : "none", hasCallback ? "set" : "none", immediateMode_.load());
 }
@@ -148,7 +148,7 @@ void EventRaiserImpl::setEventCallback(EventCallback callback) {
 void EventRaiserImpl::clearEventCallback() {
     std::lock_guard<std::mutex> lock(callbackMutex_);
     eventCallback_ = nullptr;
-    LOG_DEBUG("EventRaiserImpl: Event callback cleared");
+    SCE_LOG_DEBUG("EventRaiserImpl: Event callback cleared");
 }
 
 bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string &eventData) {
@@ -163,7 +163,7 @@ bool EventRaiserImpl::raiseInternalEvent(const std::string &eventName, const std
 
 bool EventRaiserImpl::raiseExternalEvent(const std::string &eventName, const std::string &eventData) {
     // [EVENT ROUTING] Log when external event is raised (child receives event from parent)
-    LOG_INFO("[EVENT ROUTING] EventRaiser receiving EXTERNAL event '{}' with data '{}'", eventName, eventData);
+    SCE_LOG_INFO("[EVENT ROUTING] EventRaiser receiving EXTERNAL event '{}' with data '{}'", eventName, eventData);
 
     // W3C SCXML 5.10: External events have lower priority than internal events (test 510)
     return raiseEventWithPriority(eventName, eventData, EventPriority::EXTERNAL, "", "", "");
@@ -191,7 +191,7 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
                                  const std::string &originSessionId, const std::string &invokeId,
                                  const std::string &originType) {
     // [EVENT ROUTING] Entry point logging - track calls from InvokeEventTarget
-    LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() ENTRY - event='{}', origin='{}', invokeId='{}', "
+    SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() ENTRY - event='{}', origin='{}', invokeId='{}', "
              "originType='{}', EventRaiser instance={}",
              eventName, originSessionId, invokeId, originType, (void *)this);
 
@@ -208,7 +208,7 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
         priority = EventPriority::EXTERNAL;
     }
 
-    LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() calling raiseEventWithPriority() - priority={}",
+    SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEvent() calling raiseEventWithPriority() - priority={}",
              (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
 
     return raiseEventWithPriority(eventName, eventData, priority, originSessionId, "", invokeId, originType);
@@ -218,22 +218,22 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                                              EventPriority priority, const std::string &originSessionId,
                                              const std::string &sendId, const std::string &invokeId,
                                              const std::string &originType, int64_t timestampNs) {
-    LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
+    SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
              "immediateMode={}, EventRaiser instance={}",
              eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), isRunning_.load(),
              immediateMode_.load(), (void *)this);
 
-    LOG_DEBUG("EventRaiserImpl::raiseEventWithPriority called - event: '{}', data: '{}', priority: {}, EventRaiser "
+    SCE_LOG_DEBUG("EventRaiserImpl::raiseEventWithPriority called - event: '{}', data: '{}', priority: {}, EventRaiser "
               "instance: {}",
               eventName, eventData, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), (void *)this);
 
     if (!isRunning_.load()) {
-        LOG_ERROR("[EVENT ROUTING] FAILED: EventRaiser is NOT RUNNING - cannot raise event '{}'", eventName);
-        LOG_WARN("EventRaiserImpl: Cannot raise event '{}' - processor is shut down", eventName);
+        SCE_LOG_ERROR("[EVENT ROUTING] FAILED: EventRaiser is NOT RUNNING - cannot raise event '{}'", eventName);
+        SCE_LOG_WARN("EventRaiserImpl: Cannot raise event '{}' - processor is shut down", eventName);
         return false;
     }
 
-    LOG_INFO("[EVENT ROUTING] EventRaiser IS RUNNING - proceeding with event routing");
+    SCE_LOG_INFO("[EVENT ROUTING] EventRaiser IS RUNNING - proceeding with event routing");
 
     // W3C SCXML compliance: Check if immediate mode is enabled
     // W3C SCXML Test 230: Platform events (done.*, error.*) must ALWAYS be queued
@@ -259,7 +259,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                 std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
                 queueSize = synchronousQueue_.size();
             }
-            LOG_DEBUG("EventRaiserImpl: Processing {} event '{}' immediately (SCXML mode, hasInternalEvents={}, "
+            SCE_LOG_DEBUG("EventRaiserImpl: Processing {} event '{}' immediately (SCXML mode, hasInternalEvents={}, "
                       "queueSize={})",
                       (isInternal ? "INTERNAL" : "EXTERNAL"), eventName, hasInternalEvents, queueSize);
 
@@ -295,7 +295,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
 
                     return result;
                 } catch (const std::exception &e) {
-                    LOG_ERROR("EventRaiserImpl: Exception in immediate processing: {}", e.what());
+                    SCE_LOG_ERROR("EventRaiserImpl: Exception in immediate processing: {}", e.what());
                     currentOriginSessionId_.clear();  // Ensure cleanup on exception
                     currentSendId_.clear();
                     currentInvokeId_.clear();
@@ -303,7 +303,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                     return false;
                 }
             } else {
-                LOG_WARN(
+                SCE_LOG_WARN(
                     "EventRaiserImpl: No callback set for immediate event: {} - EventRaiser: {}, immediateMode: {}",
                     eventName, (void *)this, immediateMode_.load());
                 return false;
@@ -341,11 +341,11 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
             }
         }
 
-        LOG_DEBUG("EventRaiserImpl: Event '{}' queued with priority {} (reason: {}) - queue size now: {}", eventName,
+        SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' queued with priority {} (reason: {}) - queue size now: {}", eventName,
                   (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), reason, synchronousQueue_.size());
-        LOG_DEBUG("EventRaiserImpl: Event '{}' queued for synchronous processing (SCXML compliance) with {} priority",
+        SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' queued for synchronous processing (SCXML compliance) with {} priority",
                   eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
-        LOG_DEBUG("EventRaiserImpl: Synchronous queue size after queueing: {}", synchronousQueue_.size());
+        SCE_LOG_DEBUG("EventRaiserImpl: Synchronous queue size after queueing: {}", synchronousQueue_.size());
     }
 
     // SCXML "fire and forget" - always return true for queuing
@@ -358,7 +358,7 @@ bool EventRaiserImpl::isReady() const {
 }
 
 void EventRaiserImpl::eventProcessingWorker() {
-    LOG_DEBUG("EventRaiserImpl: Worker thread started");
+    SCE_LOG_DEBUG("EventRaiserImpl: Worker thread started");
 
     while (platformHelper_->shouldProcessEvents()) {
         // Zero Duplication Principle: Platform-specific wait logic through Helper
@@ -382,7 +382,7 @@ void EventRaiserImpl::eventProcessingWorker() {
         }
     }
 
-    LOG_DEBUG("EventRaiserImpl: Worker thread stopped");
+    SCE_LOG_DEBUG("EventRaiserImpl: Worker thread stopped");
 }
 
 void EventRaiserImpl::processEvent(const QueuedEvent &event) {
@@ -394,12 +394,12 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
     }
 
     if (!callback) {
-        LOG_WARN("EventRaiserImpl: No callback set for event: {}", event.eventName);
+        SCE_LOG_WARN("EventRaiserImpl: No callback set for event: {}", event.eventName);
         return;
     }
 
     try {
-        LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data: {}", event.eventName, event.eventData);
+        SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data: {}", event.eventName, event.eventData);
 
         // W3C SCXML 6.4 & 5.10: Set thread-local metadata before callback execution
         currentOriginSessionId_ = event.origin;
@@ -418,10 +418,10 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
 
         // SCXML "fire and forget": Log result but don't propagate failures
         // Event processing failures don't affect the async queue operation
-        LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
+        SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
 
     } catch (const std::exception &e) {
-        LOG_ERROR("EventRaiserImpl: Exception while processing event '{}': {}", event.eventName, e.what());
+        SCE_LOG_ERROR("EventRaiserImpl: Exception while processing event '{}': {}", event.eventName, e.what());
         // Ensure cleanup on exception
         currentOriginSessionId_.clear();
         currentSendId_.clear();
@@ -432,11 +432,11 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
 
 void EventRaiserImpl::setImmediateMode(bool immediate) {
     immediateMode_.store(immediate);
-    LOG_DEBUG("EventRaiserImpl: Immediate mode {}", immediate ? "enabled" : "disabled");
+    SCE_LOG_DEBUG("EventRaiserImpl: Immediate mode {}", immediate ? "enabled" : "disabled");
 }
 
 void EventRaiserImpl::processQueuedEvents() {
-    LOG_DEBUG("EventRaiserImpl: Processing all queued events synchronously");
+    SCE_LOG_DEBUG("EventRaiserImpl: Processing all queued events synchronously");
 
     // W3C SCXML 6.2: Poll EventScheduler for ready delayed events (platform-transparent)
     // Platform-specific behavior: WASM polls, Native no-op (background thread handles it)
@@ -450,7 +450,7 @@ void EventRaiserImpl::processQueuedEvents() {
     // Move all synchronous queued events to local vector under lock
     {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
-        LOG_DEBUG("EventRaiserImpl: Synchronous queue size before processing: {}", synchronousQueue_.size());
+        SCE_LOG_DEBUG("EventRaiserImpl: Synchronous queue size before processing: {}", synchronousQueue_.size());
 
         // W3C SCXML compliance: priority_queue already maintains priority order
         // Extract all events in priority order
@@ -459,33 +459,33 @@ void EventRaiserImpl::processQueuedEvents() {
             synchronousQueue_.pop();
         }
 
-        LOG_DEBUG("EventRaiserImpl: Events extracted in priority order for processing: {}", eventsToProcess.size());
+        SCE_LOG_DEBUG("EventRaiserImpl: Events extracted in priority order for processing: {}", eventsToProcess.size());
     }
 
     // Events are already in correct priority order from priority_queue
-    LOG_DEBUG("EventRaiserImpl: Events already sorted by W3C SCXML priority (INTERNAL first, then EXTERNAL)");
+    SCE_LOG_DEBUG("EventRaiserImpl: Events already sorted by W3C SCXML priority (INTERNAL first, then EXTERNAL)");
 
     // [W3C193 DEBUG] Log the event processing order
     for (size_t i = 0; i < eventsToProcess.size(); ++i) {
         const auto &event = eventsToProcess[i];
-        LOG_DEBUG("EventRaiserImpl: [W3C193 DEBUG] Event processing order[{}]: '{}' with priority {}", i,
+        SCE_LOG_DEBUG("EventRaiserImpl: [W3C193 DEBUG] Event processing order[{}]: '{}' with priority {}", i,
                   event.eventName, (event.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
     }
 
     // Process events without holding the queue lock
     for (const auto &event : eventsToProcess) {
-        LOG_DEBUG("EventRaiserImpl: Synchronously processing queued event '{}' with {} priority", event.eventName,
+        SCE_LOG_DEBUG("EventRaiserImpl: Synchronously processing queued event '{}' with {} priority", event.eventName,
                   (event.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"));
 
         // Use common callback execution method
         executeEventCallback(event);
     }
 
-    LOG_DEBUG("EventRaiserImpl: Finished processing all queued events");
+    SCE_LOG_DEBUG("EventRaiserImpl: Finished processing all queued events");
 }
 
 bool EventRaiserImpl::processNextQueuedEvent() {
-    LOG_DEBUG("EventRaiserImpl: Processing ONE queued event (W3C SCXML compliance)");
+    SCE_LOG_DEBUG("EventRaiserImpl: Processing ONE queued event (W3C SCXML compliance)");
 
     // W3C SCXML 6.4: Get event from queue but DON'T remove yet
     // Finalize handler must execute BEFORE removing event from queue
@@ -496,7 +496,7 @@ bool EventRaiserImpl::processNextQueuedEvent() {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
 
         if (synchronousQueue_.empty()) {
-            LOG_DEBUG("EventRaiserImpl: No queued events to process");
+            SCE_LOG_DEBUG("EventRaiserImpl: No queued events to process");
             return false;
         }
 
@@ -504,7 +504,7 @@ bool EventRaiserImpl::processNextQueuedEvent() {
         eventToProcess = synchronousQueue_.top();
         hasEvent = true;
 
-        LOG_DEBUG(
+        SCE_LOG_DEBUG(
             "EventRaiserImpl: Selected event '{}' with priority {} - {} events in queue", eventToProcess.eventName,
             (eventToProcess.priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), synchronousQueue_.size());
     }
@@ -521,7 +521,7 @@ bool EventRaiserImpl::processNextQueuedEvent() {
         std::lock_guard<std::mutex> lock(synchronousQueueMutex_);
         if (!synchronousQueue_.empty() && synchronousQueue_.top().eventName == eventToProcess.eventName) {
             synchronousQueue_.pop();
-            LOG_DEBUG("EventRaiserImpl: Event '{}' removed from queue after processing", eventToProcess.eventName);
+            SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' removed from queue after processing", eventToProcess.eventName);
         }
     }
 
@@ -537,12 +537,12 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
     }
 
     if (!callback) {
-        LOG_WARN("EventRaiserImpl: No callback set for event: {}", event.eventName);
+        SCE_LOG_WARN("EventRaiserImpl: No callback set for event: {}", event.eventName);
         return false;
     }
 
     try {
-        LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data '{}' from origin '{}'", event.eventName,
+        SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data '{}' from origin '{}'", event.eventName,
                   event.eventData, event.origin);
 
         // W3C SCXML 5.10.1: Store originSessionId in thread-local for StateMachine to access (_event.origin)
@@ -577,10 +577,10 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         currentInvokeId_.clear();
         currentOriginType_.clear();
         currentEventType_.clear();
-        LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
+        SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
         return result;  // Return actual callback result (transition success/failure)
     } catch (const std::exception &e) {
-        LOG_ERROR("EventRaiserImpl: Exception processing event '{}': {}", event.eventName, e.what());
+        SCE_LOG_ERROR("EventRaiserImpl: Exception processing event '{}': {}", event.eventName, e.what());
         currentOriginSessionId_.clear();
         currentSendId_.clear();
         currentInvokeId_.clear();
@@ -648,7 +648,7 @@ void EventRaiserImpl::getEventQueues(std::vector<EventSnapshot> &outInternal,
         }
     }
 
-    LOG_DEBUG("EventRaiserImpl: Queue snapshot retrieved - internal: {}, external: {}", outInternal.size(),
+    SCE_LOG_DEBUG("EventRaiserImpl: Queue snapshot retrieved - internal: {}, external: {}", outInternal.size(),
               outExternal.size());
 }
 
@@ -668,7 +668,7 @@ void EventRaiserImpl::clearQueue() {
     std::priority_queue<QueuedEvent, std::vector<QueuedEvent>, QueuedEventComparator> emptyQueue;
     synchronousQueue_.swap(emptyQueue);
 
-    LOG_DEBUG("EventRaiserImpl: Cleared {} queued events for state restoration", clearedCount);
+    SCE_LOG_DEBUG("EventRaiserImpl: Cleared {} queued events for state restoration", clearedCount);
 }
 
 bool EventRaiserImpl::getLastProcessedEvent(std::string &outEventName, std::string &outEventData) const {

@@ -1,7 +1,7 @@
 #include "events/HttpEventBridge.h"
 #include "common/HttpResponseUtils.h"
 #include "common/JsonUtils.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include <iomanip>
 
@@ -28,7 +28,7 @@ std::unique_ptr<IEventBridgeConfig> HttpBridgeConfig::clone() const {
 }
 
 HttpEventBridge::HttpEventBridge(const HttpBridgeConfig &config) : config_(config) {
-    LOG_DEBUG("HttpEventBridge: Created (simplified for W3C test 201)");
+    SCE_LOG_DEBUG("HttpEventBridge: Created (simplified for W3C test 201)");
 }
 
 EventDescriptor HttpEventBridge::httpToScxmlEvent(const HttpRequest &request) {
@@ -93,7 +93,7 @@ EventDescriptor HttpEventBridge::httpToScxmlEvent(const HttpRequest &request) {
             if (bodyJson.has_value()) {
                 eventData["data"] = bodyJson.value();
             } else {
-                LOG_DEBUG("HttpEventBridge: Failed to parse JSON body: {}", parseErrors);
+                SCE_LOG_DEBUG("HttpEventBridge: Failed to parse JSON body: {}", parseErrors);
                 eventData["data"] = request.body;
                 eventData["parseError"] = parseErrors;
             }
@@ -124,7 +124,7 @@ EventDescriptor HttpEventBridge::httpToScxmlEvent(const HttpRequest &request) {
 
     event.data = JsonUtils::toCompactString(eventData);
 
-    LOG_DEBUG("HttpEventBridge: HTTP->SCXML: event='{}', sendId='{}', dataSize={}", event.eventName, event.sendId,
+    SCE_LOG_DEBUG("HttpEventBridge: HTTP->SCXML: event='{}', sendId='{}', dataSize={}", event.eventName, event.sendId,
               event.data.length());
     return event;
 }
@@ -164,7 +164,7 @@ HttpResponse HttpEventBridge::scxmlToHttpResponse(const EventDescriptor &event) 
     HttpResponseUtils::setJsonHeaders(response);
     HttpResponseUtils::setNoCacheHeaders(response);
 
-    LOG_DEBUG("HttpEventBridge: SCXML->HTTP response: status={}, body={}", response.statusCode, response.body);
+    SCE_LOG_DEBUG("HttpEventBridge: SCXML->HTTP response: status={}, body={}", response.statusCode, response.body);
     return response;
 }
 
@@ -206,7 +206,7 @@ HttpRequest HttpEventBridge::scxmlToHttpRequest(const EventDescriptor &event, co
 
     request.body = JsonUtils::toCompactString(jsonRequest);
 
-    LOG_DEBUG("HttpEventBridge: SCXML->HTTP request: url={}, event={}, body={}", targetUrl, event.eventName,
+    SCE_LOG_DEBUG("HttpEventBridge: SCXML->HTTP request: url={}, event={}, body={}", targetUrl, event.eventName,
               request.body);
     return request;
 }
@@ -247,7 +247,7 @@ EventDescriptor HttpEventBridge::httpToScxmlResponse(const HttpResponse &respons
 
     event.data = JsonUtils::toCompactString(responseData);
 
-    LOG_DEBUG("HttpEventBridge: HTTP->SCXML response: event={}, sendId={}, status={}", event.eventName, event.sendId,
+    SCE_LOG_DEBUG("HttpEventBridge: HTTP->SCXML response: event={}, sendId={}, status={}", event.eventName, event.sendId,
               response.statusCode);
     return event;
 }

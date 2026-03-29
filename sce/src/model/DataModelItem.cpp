@@ -1,5 +1,5 @@
 #include "DataModelItem.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "parsing/IXMLDocument.h"
 #include "parsing/IXMLElement.h"
 #include "parsing/IXMLParser.h"
@@ -7,11 +7,11 @@
 
 SCE::DataModelItem::DataModelItem(const std::string &id, const std::string &expr)
     : id_(id), expr_(expr), scope_("global") {
-    LOG_DEBUG("Creating data model item: {}", id);
+    SCE_LOG_DEBUG("Creating data model item: {}", id);
 }
 
 SCE::DataModelItem::~DataModelItem() {
-    LOG_DEBUG("Destroying data model item: {}", id_);
+    SCE_LOG_DEBUG("Destroying data model item: {}", id_);
     // unique_ptr automatically manages memory - no manual delete needed
 }
 
@@ -20,7 +20,7 @@ const std::string &SCE::DataModelItem::getId() const {
 }
 
 void SCE::DataModelItem::setExpr(const std::string &expr) {
-    LOG_DEBUG("Setting expression for {}: {}", id_, expr);
+    SCE_LOG_DEBUG("Setting expression for {}: {}", id_, expr);
     expr_ = expr;
 }
 
@@ -29,7 +29,7 @@ const std::string &SCE::DataModelItem::getExpr() const {
 }
 
 void SCE::DataModelItem::setType(const std::string &type) {
-    LOG_DEBUG("Setting type for {}: {}", id_, type);
+    SCE_LOG_DEBUG("Setting type for {}: {}", id_, type);
     type_ = type;
 }
 
@@ -38,7 +38,7 @@ const std::string &SCE::DataModelItem::getType() const {
 }
 
 void SCE::DataModelItem::setScope(const std::string &scope) {
-    LOG_DEBUG("Setting scope for {}: {}", id_, scope);
+    SCE_LOG_DEBUG("Setting scope for {}: {}", id_, scope);
     scope_ = scope;
 }
 
@@ -47,7 +47,7 @@ const std::string &SCE::DataModelItem::getScope() const {
 }
 
 void SCE::DataModelItem::setContent(const std::string &content) {
-    LOG_DEBUG("Setting content for {}", id_);
+    SCE_LOG_DEBUG("Setting content for {}", id_);
 
     // Try XML parsing if data model is xpath or xml type
     if (type_ == "xpath" || type_ == "xml") {
@@ -64,7 +64,7 @@ void SCE::DataModelItem::setContent(const std::string &content) {
 }
 
 void SCE::DataModelItem::addContent(const std::string &content) {
-    LOG_DEBUG("Adding content for {}", id_);
+    SCE_LOG_DEBUG("Adding content for {}", id_);
 
     // Always add to contentItems_
     contentItems_.push_back(content);
@@ -89,7 +89,7 @@ void SCE::DataModelItem::addContent(const std::string &content) {
                     }
                 }
             } catch (const std::exception &ex) {
-                LOG_ERROR("Failed to parse XML content: {}", ex.what());
+                SCE_LOG_ERROR("Failed to parse XML content: {}", ex.what());
             }
         } else {
             // Create new if xmlContent_ doesn't exist
@@ -118,7 +118,7 @@ const std::string &SCE::DataModelItem::getContent() const {
                 serialized = root->serializeChildContent();
             }
         } catch (const std::exception &ex) {
-            LOG_ERROR("Failed to serialize XML: {}", ex.what());
+            SCE_LOG_ERROR("Failed to serialize XML: {}", ex.what());
         }
 
         return serialized;
@@ -128,7 +128,7 @@ const std::string &SCE::DataModelItem::getContent() const {
 }
 
 void SCE::DataModelItem::setSrc(const std::string &src) {
-    LOG_DEBUG("Setting source URL for {}: {}", id_, src);
+    SCE_LOG_DEBUG("Setting source URL for {}: {}", id_, src);
     src_ = src;
 }
 
@@ -137,7 +137,7 @@ const std::string &SCE::DataModelItem::getSrc() const {
 }
 
 void SCE::DataModelItem::setAttribute(const std::string &name, const std::string &value) {
-    LOG_DEBUG("Setting attribute for {}: {} = {}", id_, name, value);
+    SCE_LOG_DEBUG("Setting attribute for {}: {} = {}", id_, name, value);
     attributes_[name] = value;
 }
 
@@ -154,7 +154,7 @@ const std::unordered_map<std::string, std::string> &SCE::DataModelItem::getAttri
 }
 
 void SCE::DataModelItem::setXmlContent(const std::string &content) {
-    LOG_DEBUG("Setting XML content for {}", id_);
+    SCE_LOG_DEBUG("Setting XML content for {}", id_);
 
     // Reset existing XML document
     xmlContent_.reset();
@@ -168,14 +168,14 @@ void SCE::DataModelItem::setXmlContent(const std::string &content) {
             // Clear content_ if parsing succeeds (regenerate in getContent() if needed)
             content_ = "";
         } else {
-            LOG_ERROR("Failed to parse XML content: {}",
+            SCE_LOG_ERROR("Failed to parse XML content: {}",
                       xmlContent_ ? xmlContent_->getErrorMessage() : "Parser returned null");
             xmlContent_.reset();
             // Store as plain string if parsing fails
             content_ = content;
         }
     } catch (const std::exception &ex) {
-        LOG_ERROR("Failed to parse XML content: {}", ex.what());
+        SCE_LOG_ERROR("Failed to parse XML content: {}", ex.what());
         xmlContent_.reset();
         // Store as plain string if parsing fails
         content_ = content;
@@ -207,8 +207,8 @@ std::optional<std::string> SCE::DataModelItem::queryXPath(const std::string &xpa
     // WASM: Basic pugixml XPath support (subset of XPath 1.0)
     // TODO: Add IXMLElement::queryXPath() interface method for unified XPath support
 
-    LOG_WARN("XPath queries are currently limited. Full XPath support requires interface extension.");
-    LOG_DEBUG("XPath query requested: {}", xpath);
+    SCE_LOG_WARN("XPath queries are currently limited. Full XPath support requires interface extension.");
+    SCE_LOG_DEBUG("XPath query requested: {}", xpath);
 
     // For now, return nullopt as XPath is not exposed through IXMLElement interface
     // Full implementation requires adding queryXPath() to IXMLElement interface

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "common/Logger.h"
 #include "parsing/IXMLElement.h"
 #include <string>
 #include <unordered_map>

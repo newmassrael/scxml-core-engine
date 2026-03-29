@@ -78,6 +78,16 @@ public:
     virtual void setLevel(LogLevel level) = 0;
 
     /**
+     * @brief Check if a given log level is enabled
+     *
+     * Used by LOG_* macros to skip std::format evaluation when the level is disabled.
+     *
+     * @param level Log level to check
+     * @return true if messages at this level would be logged
+     */
+    virtual bool shouldLog(LogLevel level) const = 0;
+
+    /**
      * @brief Flush log buffers
      *
      * Ensures all pending log messages are written.

@@ -1,7 +1,7 @@
 #include "events/HttpEventReceiver.h"
 #include "common/HttpResponseUtils.h"
 #include "common/JsonUtils.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include "scripting/JSEngine.h"
 #include <httplib.h>
@@ -75,7 +75,7 @@ std::unique_ptr<IEventReceiverConfig> HttpReceiverConfig::clone() const {
 
 HttpEventReceiver::HttpEventReceiver(const HttpReceiverConfig &config)
     : config_(config), server_(std::make_unique<httplib::Server>()) {
-    LOG_DEBUG("HttpEventReceiver: Created with host='{}', port={}, basePath='{}'", config_.getSettings().host,
+    SCE_LOG_DEBUG("HttpEventReceiver: Created with host='{}', port={}, basePath='{}'", config_.getSettings().host,
               config_.getSettings().port, config_.getSettings().basePath);
 }
 
@@ -85,25 +85,25 @@ HttpEventReceiver::~HttpEventReceiver() {
 
 bool HttpEventReceiver::startReceiving() {
     if (receiving_) {
-        LOG_WARN("HttpEventReceiver: Already receiving events");
+        SCE_LOG_WARN("HttpEventReceiver: Already receiving events");
         return false;
     }
 
     auto validationErrors = validate();
     if (!validationErrors.empty()) {
-        LOG_ERROR("HttpEventReceiver: Configuration validation failed:");
+        SCE_LOG_ERROR("HttpEventReceiver: Configuration validation failed:");
         for (const auto &error : validationErrors) {
-            LOG_ERROR("  - {}", error);
+            SCE_LOG_ERROR("  - {}", error);
         }
         return false;
     }
 
     if (!eventCallback_) {
-        LOG_ERROR("HttpEventReceiver: Event callback not set");
+        SCE_LOG_ERROR("HttpEventReceiver: Event callback not set");
         return false;
     }
 
-    LOG_INFO("HttpEventReceiver: Starting HTTP webhook server on {}:{}{}", config_.getSettings().host,
+    SCE_LOG_INFO("HttpEventReceiver: Starting HTTP webhook server on {}:{}{}", config_.getSettings().host,
              config_.getSettings().port, config_.getSettings().basePath);
 
     // Configure server
@@ -146,11 +146,11 @@ bool HttpEventReceiver::startReceiving() {
 
     if (serverStarted_) {
         receiving_ = true;
-        LOG_INFO("HttpEventReceiver: HTTP webhook server started successfully");
-        LOG_INFO("HttpEventReceiver: Webhook endpoint available at: {}", getReceiveEndpoint());
+        SCE_LOG_INFO("HttpEventReceiver: HTTP webhook server started successfully");
+        SCE_LOG_INFO("HttpEventReceiver: Webhook endpoint available at: {}", getReceiveEndpoint());
         return true;
     } else {
-        LOG_ERROR("HttpEventReceiver: Failed to start HTTP webhook server");
+        SCE_LOG_ERROR("HttpEventReceiver: Failed to start HTTP webhook server");
         return false;
     }
 }
@@ -160,14 +160,14 @@ bool HttpEventReceiver::stopReceiving() {
         return true;
     }
 
-    LOG_INFO("HttpEventReceiver: Stopping HTTP webhook server");
+    SCE_LOG_INFO("HttpEventReceiver: Stopping HTTP webhook server");
 
     shutdownRequested_ = true;
     receiving_ = false;
 
     stopServerThread();
 
-    LOG_INFO("HttpEventReceiver: HTTP webhook server stopped");
+    SCE_LOG_INFO("HttpEventReceiver: HTTP webhook server stopped");
     return true;
 }
 
@@ -232,7 +232,7 @@ std::unordered_map<std::string, std::string> HttpEventReceiver::getStatistics() 
 
 bool HttpEventReceiver::updateConfig(const HttpReceiverConfig &config) {
     if (receiving_) {
-        LOG_ERROR("HttpEventReceiver: Cannot update configuration while receiving");
+        SCE_LOG_ERROR("HttpEventReceiver: Cannot update configuration while receiving");
         return false;
     }
 
@@ -243,7 +243,7 @@ bool HttpEventReceiver::updateConfig(const HttpReceiverConfig &config) {
 void HttpEventReceiver::handleRequest(const httplib::Request &request, httplib::Response &response) {
     requestCount_++;
 
-    LOG_DEBUG("HttpEventReceiver: Received {} request to {}", request.method, request.path);
+    SCE_LOG_DEBUG("HttpEventReceiver: Received {} request to {}", request.method, request.path);
 
     const auto &settings = config_.getSettings();
 
@@ -259,7 +259,7 @@ void HttpEventReceiver::handleRequest(const httplib::Request &request, httplib::
 
         // Validate authentication
         if (!validateAuthentication(request)) {
-            LOG_WARN("HttpEventReceiver: Authentication failed for request from {}", request.get_header_value("Host"));
+            SCE_LOG_WARN("HttpEventReceiver: Authentication failed for request from {}", request.get_header_value("Host"));
             HttpResponseUtils::setErrorResponse(response, "Authentication required", 401);
             errorCount_++;
             return;
@@ -268,7 +268,7 @@ void HttpEventReceiver::handleRequest(const httplib::Request &request, httplib::
         // Convert request to SCXML event
         EventDescriptor event = convertRequestToEvent(request);
         if (event.eventName.empty()) {
-            LOG_ERROR("HttpEventReceiver: Failed to convert request to event");
+            SCE_LOG_ERROR("HttpEventReceiver: Failed to convert request to event");
             response.status = 400;
             response.set_content(settings.errorResponse, settings.defaultResponseContentType);
             errorCount_++;
@@ -282,17 +282,17 @@ void HttpEventReceiver::handleRequest(const httplib::Request &request, httplib::
         }
 
         if (success) {
-            LOG_DEBUG("HttpEventReceiver: Successfully processed event '{}'", event.eventName);
+            SCE_LOG_DEBUG("HttpEventReceiver: Successfully processed event '{}'", event.eventName);
             HttpResponseUtils::setSuccessResponse(response, settings.successResponse);
             successCount_++;
         } else {
-            LOG_ERROR("HttpEventReceiver: Failed to process event '{}'", event.eventName);
+            SCE_LOG_ERROR("HttpEventReceiver: Failed to process event '{}'", event.eventName);
             HttpResponseUtils::setErrorResponse(response, settings.errorResponse, 500);
             errorCount_++;
         }
 
     } catch (const std::exception &e) {
-        LOG_ERROR("HttpEventReceiver: Exception handling request: {}", e.what());
+        SCE_LOG_ERROR("HttpEventReceiver: Exception handling request: {}", e.what());
         HttpResponseUtils::setErrorResponse(response, settings.errorResponse, 500);
         errorCount_++;
     }
@@ -363,11 +363,11 @@ EventDescriptor HttpEventReceiver::convertRequestToEvent(const httplib::Request 
         // Metadata is handled by the HttpEventBridge, not stored directly
         // The bridge will include metadata in event.data
 
-        LOG_DEBUG("HttpEventReceiver: Converted request to event: name='{}', data_size={}, sendId='{}'",
+        SCE_LOG_DEBUG("HttpEventReceiver: Converted request to event: name='{}', data_size={}, sendId='{}'",
                   event.eventName, event.data.size(), event.sendId);
 
     } catch (const std::exception &e) {
-        LOG_ERROR("HttpEventReceiver: Exception converting request to event: {}", e.what());
+        SCE_LOG_ERROR("HttpEventReceiver: Exception converting request to event: {}", e.what());
         return {};  // Return empty event on error
     }
 
@@ -400,26 +400,26 @@ void HttpEventReceiver::startServerThread() {
     serverThread_ = std::thread([this]() {
         const auto &settings = config_.getSettings();
 
-        LOG_DEBUG("HttpEventReceiver: Server thread starting on {}:{}", settings.host, settings.port);
+        SCE_LOG_DEBUG("HttpEventReceiver: Server thread starting on {}:{}", settings.host, settings.port);
 
         try {
             bool started = false;
             if (settings.enableHttps) {
                 // For HTTPS, we would need httplib::SSLServer, but for simplicity use HTTP
-                LOG_WARN("HttpEventReceiver: HTTPS requested but using HTTP for simplicity");
+                SCE_LOG_WARN("HttpEventReceiver: HTTPS requested but using HTTP for simplicity");
                 started = server_->listen(settings.host, settings.port);
             } else {
                 started = server_->listen(settings.host, settings.port);
             }
 
             if (!started && !shutdownRequested_) {
-                LOG_ERROR("HttpEventReceiver: Failed to start server on {}:{}", settings.host, settings.port);
+                SCE_LOG_ERROR("HttpEventReceiver: Failed to start server on {}:{}", settings.host, settings.port);
             }
         } catch (const std::exception &e) {
-            LOG_ERROR("HttpEventReceiver: Server thread exception: {}", e.what());
+            SCE_LOG_ERROR("HttpEventReceiver: Server thread exception: {}", e.what());
         }
 
-        LOG_DEBUG("HttpEventReceiver: Server thread ended");
+        SCE_LOG_DEBUG("HttpEventReceiver: Server thread ended");
     });
 
     // Wait briefly and check if server started

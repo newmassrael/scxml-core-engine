@@ -1,4 +1,5 @@
 #include "runtime/HistoryManager.h"
+#include "common/LogMacros.h"
 #include "runtime/StateMachine.h"
 #include "scripting/JSEngine.h"
 #include <atomic>
@@ -851,9 +852,9 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                           .get();
     EXPECT_TRUE(initResult.isSuccess());
     if (initResult.isSuccess()) {
-        LOG_DEBUG("DEBUG: Initial step_count = {}", initResult.getValue<int64_t>());
+        SCE_LOG_DEBUG("DEBUG: Initial step_count = {}", initResult.getValue<int64_t>());
     } else {
-        LOG_DEBUG("DEBUG: Initial script FAILED");
+        SCE_LOG_DEBUG("DEBUG: Initial script FAILED");
     }
 
     // Step 1: Initialize workflow
@@ -864,9 +865,9 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
             .get();
     EXPECT_TRUE(startWorkflow.isSuccess());
     if (startWorkflow.isSuccess()) {
-        LOG_DEBUG("DEBUG: After step 1, step_count = {}", startWorkflow.getValue<int64_t>());
+        SCE_LOG_DEBUG("DEBUG: After step 1, step_count = {}", startWorkflow.getValue<int64_t>());
     } else {
-        LOG_DEBUG("DEBUG: Step 1 script FAILED");
+        SCE_LOG_DEBUG("DEBUG: Step 1 script FAILED");
     }
 
     // Step 2: Processing
@@ -876,9 +877,9 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                        .get();
     EXPECT_TRUE(proceed.isSuccess());
     if (proceed.isSuccess()) {
-        LOG_DEBUG("DEBUG: After step 2, step_count = {}", proceed.getValue<int64_t>());
+        SCE_LOG_DEBUG("DEBUG: After step 2, step_count = {}", proceed.getValue<int64_t>());
     } else {
-        LOG_DEBUG("DEBUG: Step 2 script FAILED");
+        SCE_LOG_DEBUG("DEBUG: Step 2 script FAILED");
     }
 
     // Step 3: Validation
@@ -888,9 +889,9 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                         .get();
     EXPECT_TRUE(validate.isSuccess());
     if (validate.isSuccess()) {
-        LOG_DEBUG("DEBUG: After step 3, step_count = {}", validate.getValue<int64_t>());
+        SCE_LOG_DEBUG("DEBUG: After step 3, step_count = {}", validate.getValue<int64_t>());
     } else {
-        LOG_DEBUG("DEBUG: Step 3 script FAILED");
+        SCE_LOG_DEBUG("DEBUG: Step 3 script FAILED");
     }
 
     // Step 4: Completion
@@ -900,9 +901,9 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                         .get();
     EXPECT_TRUE(complete.isSuccess());
     if (complete.isSuccess()) {
-        LOG_DEBUG("DEBUG: After step 4, step_count = {}", complete.getValue<int64_t>());
+        SCE_LOG_DEBUG("DEBUG: After step 4, step_count = {}", complete.getValue<int64_t>());
     } else {
-        LOG_DEBUG("DEBUG: Step 4 script FAILED");
+        SCE_LOG_DEBUG("DEBUG: Step 4 script FAILED");
     }
 
     // Pause workflow
@@ -911,7 +912,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
                              .get();
     EXPECT_TRUE(pauseWorkflow.isSuccess());
     if (pauseWorkflow.isSuccess()) {
-        LOG_DEBUG("DEBUG: After pause, workflow_state = {}", pauseWorkflow.getValue<std::string>());
+        SCE_LOG_DEBUG("DEBUG: After pause, workflow_state = {}", pauseWorkflow.getValue<std::string>());
     }
 
     // Resume workflow - should return to completion state
@@ -923,7 +924,7 @@ TEST_F(HistoryStateIntegrationTest, W3C_HistoryState_ComplexWorkflow_PauseAndRes
             .get();
     EXPECT_TRUE(resumeWorkflow.isSuccess());
     if (resumeWorkflow.isSuccess()) {
-        LOG_DEBUG("DEBUG: After resume, workflow_state = {}", resumeWorkflow.getValue<std::string>());
+        SCE_LOG_DEBUG("DEBUG: After resume, workflow_state = {}", resumeWorkflow.getValue<std::string>());
     }
 
     // Debug: Check step_count value after each major operation

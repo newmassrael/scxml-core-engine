@@ -9,4 +9,4 @@ sce_add_state_machine(
 )
 
 # Link with SCE library
-target_link_libraries(smart_light_example PRIVATE sce_unified)
+target_link_libraries(smart_light_example PRIVATE sce_runtime)

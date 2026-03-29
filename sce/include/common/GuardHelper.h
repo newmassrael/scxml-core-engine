@@ -15,7 +15,7 @@
 // Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "scripting/JSEngine.h"
 #include <optional>
 #include <string>
@@ -42,7 +42,7 @@ inline std::optional<bool> evaluateGuard(JSEngine &jsEngine, const std::string &
 
     if (!JSEngine::isSuccess(guardResult)) {
         // W3C SCXML 5.9: Evaluation errors → caller must raise error.execution
-        LOG_WARN("W3C SCXML 5.9: Guard evaluation failed: {}", guardExpr);
+        SCE_LOG_WARN("W3C SCXML 5.9: Guard evaluation failed: {}", guardExpr);
         return std::nullopt;  // Signal evaluation failure
     }
 

@@ -1,6 +1,6 @@
 #include "common/DataModelInitHelper.h"
 #include "common/FileLoadingHelper.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "runtime/DataContentHelpers.h"
 #include "scripting/JSEngine.h"
 #include <algorithm>
@@ -20,7 +20,7 @@ std::string SCE::DataModelInitHelper::resolveExecutableBasePath(const std::strin
         fs::path absolutePath = (cwd / "build/tests" / relativePath).lexically_normal();
 
         std::string result = absolutePath.string();
-        LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath (WASM): '{}' -> '{}'", relativePath, result);
+        SCE_LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath (WASM): '{}' -> '{}'", relativePath, result);
         return result;
 #else
         // Native: Get executable path (Linux-specific: /proc/self/exe)
@@ -34,12 +34,12 @@ std::string SCE::DataModelInitHelper::resolveExecutableBasePath(const std::strin
         fs::path absolutePath = exeDir / relativePath;
 
         std::string result = absolutePath.string();
-        LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath (Native): '{}' -> '{}'", relativePath, result);
+        SCE_LOG_DEBUG("DataModelInitHelper::resolveExecutableBasePath (Native): '{}' -> '{}'", relativePath, result);
         return result;
 #endif
 
     } catch (const std::exception &e) {
-        LOG_ERROR("DataModelInitHelper::resolveExecutableBasePath failed for '{}': {}", relativePath, e.what());
+        SCE_LOG_ERROR("DataModelInitHelper::resolveExecutableBasePath failed for '{}': {}", relativePath, e.what());
         // Fallback: return original relative path
         return relativePath;
     }
@@ -91,7 +91,7 @@ bool SCE::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std:
             errorCallback("Failed to create unbound variable " + varId + ": " + jsResult.getErrorMessage());
             return false;
         }
-        LOG_DEBUG("DataModelInitHelper: Created unbound variable {} (undefined)", varId);
+        SCE_LOG_DEBUG("DataModelInitHelper: Created unbound variable {} (undefined)", varId);
         return true;
     }
 
@@ -112,7 +112,7 @@ bool SCE::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std:
             return false;
         }
 
-        LOG_DEBUG("DataModelInitHelper: Initialized {} with XML DOM content", varId);
+        SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} with XML DOM content", varId);
         return true;
     }
 
@@ -133,7 +133,7 @@ bool SCE::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std:
             return false;
         }
 
-        LOG_DEBUG("DataModelInitHelper: Initialized {} with evaluated content", varId);
+        SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} with evaluated content", varId);
         return true;
     }
 
@@ -150,7 +150,7 @@ bool SCE::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std:
         return false;
     }
 
-    LOG_DEBUG("DataModelInitHelper: Initialized {} with whitespace-normalized string: '{}'", varId, normalized);
+    SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} with whitespace-normalized string: '{}'", varId, normalized);
     return true;
 }
 
@@ -173,7 +173,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(JSEngine &jsEngine, con
     // Initialize with loaded content
     bool initSuccess = initializeVariable(jsEngine, sessionId, varId, content, errorCallback);
     if (initSuccess) {
-        LOG_DEBUG("DataModelInitHelper: Loaded {} from external file: {}", varId, src);
+        SCE_LOG_DEBUG("DataModelInitHelper: Loaded {} from external file: {}", varId, src);
     }
     return initSuccess;
 }
@@ -205,6 +205,6 @@ bool SCE::DataModelInitHelper::initializeVariableFromExpr(JSEngine &jsEngine, co
         return false;
     }
 
-    LOG_DEBUG("DataModelInitHelper: Initialized {} from expr: '{}'", varId, expr);
+    SCE_LOG_DEBUG("DataModelInitHelper: Initialized {} from expr: '{}'", varId, expr);
     return true;
 }

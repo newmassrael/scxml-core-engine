@@ -4,14 +4,14 @@
 #ifndef __EMSCRIPTEN__
 
 #include "events/CppHttplibClient.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include <algorithm>
 #include <httplib.h>
 
 namespace SCE {
 
 CppHttplibClient::CppHttplibClient() {
-    LOG_DEBUG("CppHttplibClient: Created Native HTTP client");
+    SCE_LOG_DEBUG("CppHttplibClient: Created Native HTTP client");
 }
 
 std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient::Request &request) {
@@ -26,7 +26,7 @@ std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient
             std::smatch match;
 
             if (!std::regex_match(request.url, match, uriPattern)) {
-                LOG_ERROR("CppHttplibClient: Invalid URL: {}", request.url);
+                SCE_LOG_ERROR("CppHttplibClient: Invalid URL: {}", request.url);
                 return HttpClient::Response{false, 0, "", {}};
             }
 
@@ -40,7 +40,7 @@ std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient
                 try {
                     port = std::stoi(match[3].str());
                 } catch (const std::exception &) {
-                    LOG_ERROR("CppHttplibClient: Invalid port in URL: {}", request.url);
+                    SCE_LOG_ERROR("CppHttplibClient: Invalid port in URL: {}", request.url);
                     return HttpClient::Response{false, 0, "", {}};
                 }
             } else {
@@ -55,7 +55,7 @@ std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient
                 baseUrl += ":" + std::to_string(port);
             }
 
-            LOG_DEBUG("CppHttplibClient: {} {} (timeout={}ms)", request.method, baseUrl + path, timeout.count());
+            SCE_LOG_DEBUG("CppHttplibClient: {} {} (timeout={}ms)", request.method, baseUrl + path, timeout.count());
 
             // Create cpp-httplib client
             httplib::Client client(baseUrl);
@@ -92,7 +92,7 @@ std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient
             } else if (request.method == "DELETE") {
                 result = client.Delete(path.c_str());
             } else {
-                LOG_ERROR("CppHttplibClient: Unsupported HTTP method: {}", request.method);
+                SCE_LOG_ERROR("CppHttplibClient: Unsupported HTTP method: {}", request.method);
                 return HttpClient::Response{false, 0, "", {}};
             }
 
@@ -107,19 +107,19 @@ std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient
                     response.headers[key] = value;
                 }
 
-                LOG_DEBUG("CppHttplibClient: Response {} {} (body {} bytes)", result->status,
+                SCE_LOG_DEBUG("CppHttplibClient: Response {} {} (body {} bytes)", result->status,
                           response.success ? "OK" : "ERROR", response.body.size());
             } else {
                 response.success = false;
                 response.statusCode = 0;
                 auto err = result.error();
-                LOG_ERROR("CppHttplibClient: Request failed - error code {}", static_cast<int>(err));
+                SCE_LOG_ERROR("CppHttplibClient: Request failed - error code {}", static_cast<int>(err));
             }
 
             return response;
 
         } catch (const std::exception &e) {
-            LOG_ERROR("CppHttplibClient: Exception: {}", e.what());
+            SCE_LOG_ERROR("CppHttplibClient: Exception: {}", e.what());
             return HttpClient::Response{false, 0, "", {}};
         }
     });
@@ -127,17 +127,17 @@ std::future<HttpClient::Response> CppHttplibClient::sendRequest(const HttpClient
 
 void CppHttplibClient::setTimeout(std::chrono::milliseconds timeout) {
     timeout_ = timeout;
-    LOG_DEBUG("CppHttplibClient: Set timeout to {}ms", timeout.count());
+    SCE_LOG_DEBUG("CppHttplibClient: Set timeout to {}ms", timeout.count());
 }
 
 void CppHttplibClient::setSSLVerification(bool verify) {
     sslVerification_ = verify;
-    LOG_DEBUG("CppHttplibClient: SSL verification {}", verify ? "enabled" : "disabled");
+    SCE_LOG_DEBUG("CppHttplibClient: SSL verification {}", verify ? "enabled" : "disabled");
 }
 
 void CppHttplibClient::setCustomHeaders(const std::map<std::string, std::string> &headers) {
     customHeaders_ = headers;
-    LOG_DEBUG("CppHttplibClient: Set {} custom headers", headers.size());
+    SCE_LOG_DEBUG("CppHttplibClient: Set {} custom headers", headers.size());
 }
 
 std::tuple<std::string, std::string, int, std::string> CppHttplibClient::parseUrl(const std::string &url) const {

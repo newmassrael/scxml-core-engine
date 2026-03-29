@@ -1,5 +1,5 @@
 #include "runtime/StateMachineFactory.h"
-#include "common/Logger.h"
+#include "common/LogMacros.h"
 #include "scripting/IScriptEngine.h"
 #include "scripting/JSEngine.h"
 #include <random>
@@ -43,7 +43,7 @@ StateMachineFactory::CreationResult StateMachineFactory::createInternal(const st
             }
         }
 
-        LOG_DEBUG("StateMachineFactory: Successfully created StateMachine instance");
+        SCE_LOG_DEBUG("StateMachineFactory: Successfully created StateMachine instance");
         return CreationResult(std::move(stateMachine));
 
     } catch (const std::exception &e) {

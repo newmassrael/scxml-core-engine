@@ -2,7 +2,6 @@
 
 #include "EventRaiserImpl.h"
 #include "IActionExecutor.h"
-#include "common/Logger.h"
 #include "common/TypeRegistry.h"
 #include "core/EventMetadata.h"
 #include "scripting/JSEngine.h"
