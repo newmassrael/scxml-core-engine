@@ -3,7 +3,7 @@
 #include "core/ConflictResolutionHelper.h"
 #include "states/ConcurrentStateTypes.h"
 
-using SCE::Core::ConflictResolutionHelperString;
+using SCE::Core::ConflictResolutionAlgorithms;
 #include "common/DataModelInitHelper.h"
 #include "common/DoneDataHelper.h"
 #include "core/EntryExitHelper.h"
@@ -814,10 +814,10 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             SCE_LOG_DEBUG("StateMachine: Applying W3C SCXML Appendix D.2 conflict resolution to {} enabled transitions",
                       allEnabledTransitions.size());
 
-            // Convert to ConflictResolutionHelperString::TransitionDescriptor format
-            std::vector<ConflictResolutionHelperString::TransitionDescriptor> descriptors;
+            // Convert to ConflictResolutionAlgorithms::TransitionDescriptor format
+            std::vector<ConflictResolutionAlgorithms::TransitionDescriptor<std::string>> descriptors;
             for (const auto &t : allEnabledTransitions) {
-                ConflictResolutionHelperString::TransitionDescriptor desc;
+                ConflictResolutionAlgorithms::TransitionDescriptor<std::string> desc;
                 desc.source = t.source;
                 desc.target = t.target;
                 desc.exitSet = t.exitSet;
@@ -843,7 +843,7 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
             };
 
             descriptors =
-                ConflictResolutionHelperString::removeConflictingTransitions(descriptors, getParent, isParallelState);
+                ConflictResolutionAlgorithms::removeConflictingTransitions(descriptors, getParent, isParallelState);
 
             SCE_LOG_DEBUG("StateMachine: After conflict resolution: {} transitions in optimal set", descriptors.size());
 
@@ -2977,13 +2977,13 @@ bool StateMachine::checkEventlessTransitions() {
     // W3C SCXML Appendix D.2: Apply conflict resolution using shared Helper
     // ARCHITECTURE.MD: Zero Duplication - use ConflictResolutionHelper (Single Source of Truth)
     {
-        using Helper = SCE::Core::ConflictResolutionHelperString;
-        std::vector<Helper::TransitionDescriptor> descriptors;
+        using Helper = SCE::Core::ConflictResolutionAlgorithms;
+        std::vector<Helper::TransitionDescriptor<std::string>> descriptors;
         descriptors.reserve(enabledTransitions.size());
 
         // Convert to Helper format with exit sets
         for (const auto &trans : enabledTransitions) {
-            Helper::TransitionDescriptor desc;
+            Helper::TransitionDescriptor<std::string> desc;
             desc.source = trans.sourceState->getId();
             desc.target = trans.targetState;
             desc.transitionIndex = static_cast<int>(descriptors.size());
@@ -4532,8 +4532,8 @@ std::string StateMachine::findLCA(const std::string &sourceStateId, const std::s
         return node->getParent()->getId();
     };
 
-    // Use shared Helper implementation (Single Source of Truth)
-    return SCE::Core::HierarchicalStateHelperString::findLCA(sourceStateId, targetStateId, getParent);
+    // Use shared unified algorithm (Single Source of Truth)
+    return SCE::Core::HierarchicalAlgorithms::findLCA(sourceStateId, targetStateId, getParent).value_or("");
 }
 
 // Helper: Build exit set for descendants of an ancestor state

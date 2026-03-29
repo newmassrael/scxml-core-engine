@@ -15,7 +15,7 @@ namespace SCE {
  * Used to collect all enabled transitions before applying W3C SCXML Appendix D.2 conflict resolution.
  *
  * ARCHITECTURE.md Compliance:
- * - Zero Duplication: Compatible with ConflictResolutionHelperString::TransitionDescriptor
+ * - Zero Duplication: Compatible with ConflictResolutionAlgorithms::TransitionDescriptor<std::string>
  * - W3C SCXML Appendix D.2: Optimal transition set selection
  */
 struct TransitionDescriptorString {
@@ -58,7 +58,7 @@ struct ConcurrentOperationResult {
 
     // W3C SCXML Appendix D.2: Enabled transitions for conflict resolution
     // Region collects all enabled transitions and returns them to StateMachine
-    // StateMachine applies ConflictResolutionHelperString to select optimal transition set
+    // StateMachine applies ConflictResolutionAlgorithms to select optimal transition set
     std::vector<TransitionDescriptorString> enabledTransitions;
 
     static ConcurrentOperationResult success(const std::string &regionId) {

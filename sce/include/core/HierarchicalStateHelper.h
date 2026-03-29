@@ -24,8 +24,146 @@
 
 namespace SCE::Core {
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Unified Hierarchical Algorithms (Single Source of Truth)
+// W3C SCXML 3.3/3.12: Shared by AOT engine (enum states) and Interpreter (string states)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
- * @brief Helper for hierarchical state operations (W3C SCXML 3.3)
+ * @brief Generic hierarchical state algorithms parameterized by state type
+ *
+ * @details
+ * Eliminates duplication between AOT (enum-based StatePolicy) and Interpreter
+ * (string-based lambda injection). Both engines delegate to these algorithms.
+ *
+ * ARCHITECTURE.md Compliance:
+ * - Zero Duplication: Single implementation for all state types
+ * - Single Source of Truth: All hierarchical algorithms centralized here
+ */
+struct HierarchicalAlgorithms {
+
+    /**
+     * @brief Find Least Common Ancestor of two states (W3C SCXML 3.12)
+     *
+     * @tparam StateType State identifier type (enum for AOT, std::string for Interpreter)
+     * @tparam GetParentFn Callable: (const StateType&) -> std::optional<StateType>
+     * @return LCA state, or std::nullopt if no common ancestor
+     */
+    template <typename StateType, typename GetParentFn>
+    [[nodiscard]] static std::optional<StateType> findLCA(const StateType &state1, const StateType &state2,
+                                                           GetParentFn getParent) {
+        if (state1 == state2) {
+            return state1;
+        }
+
+        // W3C SCXML 3.13: Build ancestor chain starting from state1's parent (test 504)
+        std::vector<StateType> ancestors1;
+        ancestors1.reserve(8);
+
+        auto parent1 = getParent(state1);
+        if (parent1.has_value()) {
+            StateType current = parent1.value();
+            while (true) {
+                ancestors1.push_back(current);
+                auto parent = getParent(current);
+                if (!parent.has_value()) {
+                    break;
+                }
+                current = parent.value();
+            }
+        }
+
+        // Walk up from state2 to find intersection with state1's ancestors
+        StateType current = state2;
+        while (true) {
+            for (const auto &ancestor : ancestors1) {
+                if (current == ancestor) {
+                    return current;
+                }
+            }
+            auto parent = getParent(current);
+            if (!parent.has_value()) {
+                break;
+            }
+            current = parent.value();
+        }
+
+        return std::nullopt;
+    }
+
+    /**
+     * @brief Build exit chain from state up to ancestor (W3C SCXML 3.12)
+     *
+     * @return Exit chain in child → parent order (excluding stopBeforeState)
+     */
+    template <typename StateType, typename GetParentFn>
+    [[nodiscard]] static std::vector<StateType> buildExitChain(const StateType &fromState,
+                                                                const StateType &stopBeforeState,
+                                                                GetParentFn getParent) {
+        std::vector<StateType> chain;
+        chain.reserve(8);
+
+        StateType current = fromState;
+        while (!(current == stopBeforeState)) {
+            chain.push_back(current);
+            auto parent = getParent(current);
+            if (!parent.has_value()) {
+                break;
+            }
+            current = parent.value();
+        }
+
+        return chain;
+    }
+
+    /**
+     * @brief Build entry chain from ancestor down to target (W3C SCXML 3.12)
+     *
+     * @return Entry chain in parent → child order (excluding ancestorState)
+     */
+    template <typename StateType, typename GetParentFn>
+    [[nodiscard]] static std::vector<StateType> buildEntryChainFromAncestor(const StateType &targetState,
+                                                                             const StateType &ancestorState,
+                                                                             GetParentFn getParent) {
+        std::vector<StateType> chain;
+        chain.reserve(8);
+
+        StateType current = targetState;
+        while (!(current == ancestorState)) {
+            chain.push_back(current);
+            auto parent = getParent(current);
+            if (!parent.has_value()) {
+                break;
+            }
+            current = parent.value();
+        }
+
+        std::reverse(chain.begin(), chain.end());
+        return chain;
+    }
+
+    /**
+     * @brief Check if descendant is a child/grandchild of ancestor (W3C SCXML Appendix D.2)
+     */
+    template <typename StateType, typename GetParentFn>
+    [[nodiscard]] static bool isDescendantOf(const StateType &descendant, const StateType &ancestor,
+                                              GetParentFn getParent) {
+        StateType current = descendant;
+        while (true) {
+            auto parent = getParent(current);
+            if (!parent.has_value()) {
+                return false;
+            }
+            if (parent.value() == ancestor) {
+                return true;
+            }
+            current = parent.value();
+        }
+    }
+};
+
+/**
+ * @brief AOT engine wrapper for hierarchical state operations (W3C SCXML 3.3)
  *
  * Single Source of Truth for hierarchical state logic shared between:
  * - StaticExecutionEngine (AOT engine)
@@ -350,25 +488,8 @@ public:
      * - Used for external transitions with proper LCA calculation
      */
     static std::vector<State> buildExitChain(State fromState, State stopBeforeState) {
-        std::vector<State> chain;
-        chain.reserve(8);
-
-        State current = fromState;
-
-        // Build exit chain from current state up to (but not including) stopBeforeState
-        while (current != stopBeforeState) {
-            chain.push_back(current);
-
-            auto parent = StatePolicy::getParent(current);
-            if (!parent.has_value()) {
-                break;  // Reached root
-            }
-
-            current = parent.value();
-        }
-
-        // Return in child → parent order (already correct, no reverse needed)
-        return chain;
+        return HierarchicalAlgorithms::buildExitChain(
+            fromState, stopBeforeState, [](State s) { return StatePolicy::getParent(s); });
     }
 
     /**
@@ -409,31 +530,8 @@ public:
      * Matches Interpreter's hierarchical entry after LCA calculation.
      */
     static std::vector<State> buildEntryChainFromParent(State targetState, State parentState) {
-        std::vector<State> chain;
-        chain.reserve(8);
-
-        State current = targetState;
-
-        // Build chain from target up to (but not including) parent
-        while (current != parentState) {
-            chain.push_back(current);
-
-            auto parent = StatePolicy::getParent(current);
-            if (!parent.has_value()) {
-                break;  // Reached root
-            }
-
-            current = parent.value();
-        }
-
-        // Reverse to get parent → child order (entry order per W3C SCXML 3.3)
-        std::reverse(chain.begin(), chain.end());
-
-        // W3C SCXML 3.3/3.4: Do NOT add compound initial children or parallel regions here
-        // Let executeEntryActions() handle them automatically for consistent behavior
-        // This avoids duplication between buildEntryChain and executeEntryActions
-
-        return chain;
+        return HierarchicalAlgorithms::buildEntryChainFromAncestor(
+            targetState, parentState, [](State s) { return StatePolicy::getParent(s); });
     }
 
     /**
@@ -471,49 +569,8 @@ public:
      * Matches Interpreter's findLCA() behavior for external transitions.
      */
     static std::optional<State> findLCA(State state1, State state2) {
-        // Same state is its own LCA
-        if (state1 == state2) {
-            return state1;
-        }
-
-        // Build ancestor chain for state1 (W3C SCXML 3.13: exclude state1 itself, start from parent)
-        // This matches the original Interpreter behavior before commit d0c3ab2
-        std::vector<State> ancestors1;
-        ancestors1.reserve(8);
-
-        // Start from state1's parent, not state1 itself (W3C SCXML test 504)
-        auto parent1 = StatePolicy::getParent(state1);
-        if (parent1.has_value()) {
-            State current = parent1.value();
-            while (true) {
-                ancestors1.push_back(current);
-                auto parent = StatePolicy::getParent(current);
-                if (!parent.has_value()) {
-                    break;
-                }
-                current = parent.value();
-            }
-        }
-
-        // Walk up from state2 and check if we find any ancestor of state1
-        State current = state2;
-        while (true) {
-            // Check if current is in state1's ancestor chain
-            for (const auto &ancestor : ancestors1) {
-                if (current == ancestor) {
-                    return current;  // Found LCA
-                }
-            }
-
-            auto parent = StatePolicy::getParent(current);
-            if (!parent.has_value()) {
-                break;  // Reached root without finding LCA
-            }
-            current = parent.value();
-        }
-
-        // No common ancestor (shouldn't happen in valid SCXML)
-        return std::nullopt;
+        return HierarchicalAlgorithms::findLCA(
+            state1, state2, [](State s) { return StatePolicy::getParent(s); });
     }
 
     static std::optional<State> getParent(State state) {
@@ -554,148 +611,8 @@ public:
      * - Otherwise → t2 preempts t1 (document order)
      */
     static bool isDescendantOf(State descendant, State ancestor) {
-        State current = descendant;
-        while (true) {
-            auto parent = StatePolicy::getParent(current);
-            if (!parent.has_value()) {
-                return false;  // Reached root without finding ancestor
-            }
-            if (parent.value() == ancestor) {
-                return true;  // Found ancestor in parent chain
-            }
-            current = parent.value();
-        }
-    }
-};
-
-/**
- * @brief String-based hierarchical state helpers for Interpreter engine
- *
- * @details
- * Non-template utility class for string-based state ID operations.
- * Used by Interpreter engine which uses string state IDs instead of enums.
- *
- * ARCHITECTURE.md Compliance:
- * - Zero Duplication: Same algorithms as template version
- * - Single Source of Truth: Interpreter delegates to shared logic
- */
-struct HierarchicalStateHelperString {
-    /**
-     * @brief Find Least Common Ancestor (LCA) for string-based state IDs
-     *
-     * @tparam GetParentFunc Lambda/function: std::optional<std::string>(const std::string&)
-     * @param state1 First state ID
-     * @param state2 Second state ID
-     * @param getParent Function to get parent state ID from child state ID
-     * @return LCA state ID, or empty string if no common ancestor
-     */
-    template <typename GetParentFunc>
-    [[nodiscard]] static std::string findLCA(const std::string &state1, const std::string &state2,
-                                             GetParentFunc getParent) {
-        // W3C SCXML 3.12: Same state is its own LCA
-        if (state1 == state2) {
-            return state1;
-        }
-
-        // Build ancestor chain for state1 (W3C SCXML 3.13: exclude state1 itself, start from parent)
-        // This matches the original Interpreter behavior before commit d0c3ab2
-        std::vector<std::string> ancestors1;
-        ancestors1.reserve(8);
-
-        // Start from state1's parent, not state1 itself (W3C SCXML test 504)
-        auto parent1 = getParent(state1);
-        if (parent1.has_value()) {
-            std::string current = parent1.value();
-            while (true) {
-                ancestors1.push_back(current);
-                auto parent = getParent(current);
-                if (!parent.has_value()) {
-                    break;  // Reached root
-                }
-                current = parent.value();
-            }
-        }
-
-        // Walk up from state2 and check if we find any ancestor of state1
-        std::string current = state2;
-        while (true) {
-            // Check if current is in state1's ancestor chain
-            for (const auto &ancestor : ancestors1) {
-                if (current == ancestor) {
-                    return current;  // Found LCA
-                }
-            }
-
-            auto parent = getParent(current);
-            if (!parent.has_value()) {
-                break;  // Reached root without finding LCA
-            }
-            current = parent.value();
-        }
-
-        // No common ancestor (shouldn't happen in valid SCXML)
-        return "";
-    }
-
-    /**
-     * @brief Build exit chain from fromState up to (but not including) stopBeforeState
-     *
-     * @tparam GetParentFunc Lambda/function: std::optional<std::string>(const std::string&)
-     * @param fromState State to start exiting from
-     * @param stopBeforeState State to stop before (excluded from chain)
-     * @param getParent Function to get parent state ID
-     * @return Exit chain in child → parent order (execution order per W3C SCXML 3.8)
-     */
-    template <typename GetParentFunc>
-    [[nodiscard]] static std::vector<std::string>
-    buildExitChain(const std::string &fromState, const std::string &stopBeforeState, GetParentFunc getParent) {
-        std::vector<std::string> chain;
-        chain.reserve(8);
-
-        std::string current = fromState;
-        while (current != stopBeforeState) {
-            chain.push_back(current);
-
-            auto parent = getParent(current);
-            if (!parent.has_value()) {
-                break;  // Reached root
-            }
-            current = parent.value();
-        }
-
-        return chain;  // Already in exit order (child → parent)
-    }
-
-    /**
-     * @brief Build entry chain from parentState down to targetState
-     *
-     * @tparam GetParentFunc Lambda/function: std::optional<std::string>(const std::string&)
-     * @param targetState Final target state (leaf)
-     * @param parentState Starting parent state (excluded from chain)
-     * @param getParent Function to get parent state ID
-     * @return Entry chain in parent → child order (execution order per W3C SCXML 3.7)
-     */
-    template <typename GetParentFunc>
-    [[nodiscard]] static std::vector<std::string>
-    buildEntryChain(const std::string &targetState, const std::string &parentState, GetParentFunc getParent) {
-        std::vector<std::string> chain;
-        chain.reserve(8);
-
-        // Build chain from targetState up to parentState (reversed order)
-        std::string current = targetState;
-        while (current != parentState) {
-            chain.push_back(current);
-
-            auto parent = getParent(current);
-            if (!parent.has_value()) {
-                break;  // Reached root
-            }
-            current = parent.value();
-        }
-
-        // Reverse to get parent → child order (entry order per W3C SCXML 3.7)
-        std::reverse(chain.begin(), chain.end());
-        return chain;
+        return HierarchicalAlgorithms::isDescendantOf(
+            descendant, ancestor, [](State s) { return StatePolicy::getParent(s); });
     }
 };
 
