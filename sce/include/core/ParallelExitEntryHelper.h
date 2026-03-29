@@ -17,6 +17,7 @@
 #pragma once
 
 #include "core/HierarchicalStateHelper.h"
+#include "core/StatePolicyConcepts.h"
 #include <algorithm>
 #include <unordered_set>
 #include <vector>
@@ -48,7 +49,7 @@ public:
      * @param targetStates Target states of transition
      * @return Vector of states in exit order
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<StateType> computeExitOrder(const std::vector<StateType> &activeStates,
                                                    const std::vector<StateType> &targetStates) {
         std::vector<StateType> exitSet;
@@ -128,7 +129,7 @@ public:
      * @param currentStates Currently active states
      * @return Vector of states in entry order
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<StateType> computeEntryOrder(const std::vector<StateType> &targetStates,
                                                     const std::vector<StateType> &currentStates) {
         std::vector<StateType> entrySet;
@@ -192,7 +193,7 @@ public:
      * @param activeRegionStates Currently active states in each region
      * @return Vector of states in exit order (reverse document order)
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<StateType> computeParallelExitOrder(StateType parallelState,
                                                            const std::vector<StateType> &activeRegionStates) {
         std::vector<StateType> exitOrder = activeRegionStates;
@@ -211,7 +212,7 @@ private:
      *
      * W3C SCXML 3.3: Traverse parent chain of state2 to check if state1 appears
      */
-    template <typename StateType, typename PolicyType> static bool isAncestor(StateType state1, StateType state2) {
+    template <typename StateType, ParallelStatePolicy PolicyType> static bool isAncestor(StateType state1, StateType state2) {
         auto current = state2;
         while (true) {
             auto parent = PolicyType::getParent(current);

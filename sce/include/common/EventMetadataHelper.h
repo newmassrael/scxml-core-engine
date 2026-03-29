@@ -17,11 +17,12 @@
 #pragma once
 
 #include "SCXMLTypes.h"
+#include "core/StatePolicyConcepts.h"
 #include <string>
 
 // Forward declaration to avoid circular dependency
 namespace SCE::Static {
-template <typename StatePolicy> class StaticExecutionEngine;
+template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine;
 }
 
 namespace SCE::Common {

@@ -21,6 +21,7 @@
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
 #include "core/LogMacros.h"
+#include "core/StatePolicyConcepts.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"
@@ -56,11 +57,24 @@ namespace SCE::Static {
  * - Entry/exit action execution (W3C SCXML 3.7, 3.8)
  * - Event processing loop (W3C SCXML D.1)
  *
- * @tparam StatePolicy Policy class providing state-specific implementations
- *         Must provide: State, Event enums, transition logic, action execution
+ * @tparam StatePolicy Policy class providing state-specific implementations.
+ *         Must satisfy SCE::Core::EventNamingPolicy concept.
+ *         See core/StatePolicyConcepts.h for the full interface contract.
  */
-template <typename StatePolicy> class StaticExecutionEngine {
+template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine {
     friend StatePolicy;
+
+    // ── Compile-time verification of required member variables ──
+    // Concepts cannot verify member variable existence through friend access,
+    // so we use static_assert for these checks.
+    static_assert(requires(StatePolicy p) { { p.lastTransitionIsInternal_ } -> std::convertible_to<bool>; },
+                  "StatePolicy must have member: mutable bool lastTransitionIsInternal_");
+    static_assert(requires(StatePolicy p) { { p.lastTransitionIsTargetless_ } -> std::convertible_to<bool>; },
+                  "StatePolicy must have member: mutable bool lastTransitionIsTargetless_");
+    static_assert(requires(StatePolicy p) {
+                      { p.lastTransitionSourceState_ } -> std::convertible_to<typename StatePolicy::State>;
+                  },
+                  "StatePolicy must have member: mutable State lastTransitionSourceState_");
 
 public:
     using State = typename StatePolicy::State;
@@ -335,7 +349,7 @@ public:
             EventWithMetadata(event, eventData, origin, "", "external", SCE::Constants::SCXML_EVENT_PROCESSOR_TYPE));
 
         // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
-        if constexpr (requires { policy_.nextEventIsExternal_; }) {
+        if constexpr (SCE::Core::HasExternalEventFlag<StatePolicy>) {
             policy_.nextEventIsExternal_ = true;
         }
     }
@@ -384,11 +398,7 @@ public:
         // W3C SCXML 6.4.6: Autoforward - forward external events to children with autoforward=true
         // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
         SCE_LOG_DEBUG("AOT raiseExternal: About to check autoforward capability");
-        if constexpr (requires {
-                          policy_.forwardToAutoforwardChildren(
-                              std::declval<const std::string &>(),
-                              std::declval<StaticExecutionEngine<StatePolicy> &>());
-                      }) {
+        if constexpr (SCE::Core::HasAutoforward<StatePolicy, StaticExecutionEngine>) {
             SCE_LOG_DEBUG("AOT raiseExternal: Policy has autoforward capability");
             const std::string eventName = policy_.getEventName(eventWithMetadata.event);
             policy_.forwardToAutoforwardChildren(eventName, *this);
@@ -399,7 +409,7 @@ public:
         externalQueue_.raise(eventWithMetadata);
 
         // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
-        if constexpr (requires { policy_.nextEventIsExternal_; }) {
+        if constexpr (SCE::Core::HasExternalEventFlag<StatePolicy>) {
             policy_.nextEventIsExternal_ = true;
         }
     }
@@ -652,11 +662,8 @@ protected:
                 // W3C SCXML 6.5: Execute finalize BEFORE processing child events
                 // Finalize runs when child sends event to parent
                 // _event is set inside executeFinalizeForChildEvent (matches Interpreter pattern)
-                if constexpr (requires {
-                                  policy_.executeFinalizeForChildEvent(
-                                      std::declval<const EventWithMetadata &>(),
-                                      std::declval<StaticExecutionEngine<StatePolicy> &>());
-                              }) {
+                if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata,
+                                                     StaticExecutionEngine<StatePolicy>>) {
                     policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
                 }
 
@@ -819,7 +826,7 @@ public:
 
         // W3C SCXML 5.3: Initialize datamodel before any state entry
         // This ensures error.execution events are raised immediately if initialization fails
-        if constexpr (requires { policy_.initializeDataModel(*this); }) {
+        if constexpr (SCE::Core::HasDataModelInit<StatePolicy, StaticExecutionEngine>) {
             policy_.initializeDataModel(*this);
         }
 
@@ -851,7 +858,7 @@ public:
 
         // W3C SCXML 6.4: Execute pending invokes after macrostep completes (ARCHITECTURE.md Zero Duplication)
         // Only invokes in entered-and-not-exited states execute (cancellation handled during state exits)
-        if constexpr (requires { policy_.executePendingInvokes(*this); }) {
+        if constexpr (SCE::Core::HasInvokeSupport<StatePolicy, StaticExecutionEngine>) {
             policy_.executePendingInvokes(*this);
 
             // W3C SCXML 6.4: Process done.invoke events raised by immediately-completed children
@@ -1007,12 +1014,9 @@ public:
      */
     std::vector<State> getActiveStates() const {
         // W3C SCXML 3.4: For parallel state machines, use policy's activeStates_ tracking
-        if constexpr (requires { StatePolicy::HAS_PARALLEL_STATES; }) {
-            if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
-                // Parallel state machine - use policy's activeStates_ (tracks all parallel regions)
-                if constexpr (requires { policy_.getActiveStates(); }) {
-                    return policy_.getActiveStates();
-                }
+        if constexpr (StatePolicy::HAS_PARALLEL_STATES) {
+            if constexpr (SCE::Core::HasActiveStates<StatePolicy>) {
+                return policy_.getActiveStates();
             }
         }
 
@@ -1079,7 +1083,7 @@ public:
 
         // W3C SCXML 6.4: Tick child state machines to process their events
         // Children need to run independently during parent's event loop
-        if constexpr (requires { policy_.tickChildren(*this); }) {
+        if constexpr (SCE::Core::HasChildTick<StatePolicy, StaticExecutionEngine>) {
             policy_.tickChildren(*this);
         }
 
@@ -1089,7 +1093,7 @@ public:
 
         // W3C SCXML 6.4: Execute pending invokes after stable configuration is reached
         // Macrostep has completed - entered-and-not-exited states ready for invoke execution
-        if constexpr (requires { policy_.executePendingInvokes(*this); }) {
+        if constexpr (SCE::Core::HasInvokeSupport<StatePolicy, StaticExecutionEngine>) {
             policy_.executePendingInvokes(*this);
         }
     }

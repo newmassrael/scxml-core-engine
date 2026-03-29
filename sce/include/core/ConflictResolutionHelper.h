@@ -19,6 +19,7 @@
 #include "core/HierarchicalStateHelper.h"
 #include "core/LogMacros.h"
 #include "core/ParallelTransitionHelper.h"
+#include "core/StatePolicyConcepts.h"
 #include <algorithm>
 #include <optional>
 #include <type_traits>
@@ -194,7 +195,7 @@ struct ConflictResolutionAlgorithms {
  * - Single Source of Truth: All conflict resolution logic in ConflictResolutionAlgorithms
  * - W3C SCXML Perfect Compliance: Full implementation of Appendix D.2 algorithm
  */
-template <typename StatePolicy> class ConflictResolutionHelper {
+template <ParallelStatePolicy StatePolicy> class ConflictResolutionHelper {
 public:
     using State = typename StatePolicy::State;
     using TransitionDescriptor = ConflictResolutionAlgorithms::TransitionDescriptor<State>;

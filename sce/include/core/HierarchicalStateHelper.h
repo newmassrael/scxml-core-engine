@@ -17,6 +17,7 @@
 #pragma once
 
 #include "core/LogMacros.h"
+#include "core/StatePolicyConcepts.h"
 #include <algorithm>
 #include <optional>
 #include <stdexcept>
@@ -178,56 +179,41 @@ struct HierarchicalAlgorithms {
  *
  * Ensures zero duplication per ARCHITECTURE.md principles.
  */
-template <typename StatePolicy> class HierarchicalStateHelper {
+template <HierarchyPolicy StatePolicy> class HierarchicalStateHelper {
 public:
     using State = typename StatePolicy::State;
 
 private:
-    // SFINAE helper: addParallelRegions if method exists
-    template <typename T = StatePolicy>
-    static auto addParallelRegionsImpl(std::vector<State> &chain, State leafState, int)
-        -> decltype(T::isParallelState(leafState), void()) {
-        SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Checking if leafState {} is parallel",
-                  static_cast<int>(leafState));
-        if (T::isParallelState(leafState)) {
-            SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - leafState {} IS parallel, adding regions",
+    // W3C SCXML 3.4: Add parallel region children to entry chain if StatePolicy supports parallel states
+    static void addParallelRegions(std::vector<State> &chain, State leafState) {
+        if constexpr (ParallelStatePolicy<StatePolicy>) {
+            SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Checking if leafState {} is parallel",
                       static_cast<int>(leafState));
-            auto regions = T::getParallelRegions(leafState);
-            SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Found {} regions", regions.size());
-            for (const auto &region : regions) {
-                SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding region {}", static_cast<int>(region));
-                chain.push_back(region);
+            if (StatePolicy::isParallelState(leafState)) {
+                SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - leafState {} IS parallel, adding regions",
+                          static_cast<int>(leafState));
+                auto regions = StatePolicy::getParallelRegions(leafState);
+                SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Found {} regions", regions.size());
+                for (const auto &region : regions) {
+                    SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding region {}", static_cast<int>(region));
+                    chain.push_back(region);
 
-                if (T::isCompoundState(region)) {
-                    State regionInitialChild = T::getInitialChild(region);
-                    SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Region {} initial child: {}",
-                              static_cast<int>(region), static_cast<int>(regionInitialChild));
-                    if (regionInitialChild != region) {
-                        SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding initial child {}",
-                                  static_cast<int>(regionInitialChild));
-                        chain.push_back(regionInitialChild);
+                    if (StatePolicy::isCompoundState(region)) {
+                        State regionInitialChild = StatePolicy::getInitialChild(region);
+                        SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Region {} initial child: {}",
+                                  static_cast<int>(region), static_cast<int>(regionInitialChild));
+                        if (regionInitialChild != region) {
+                            SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Adding initial child {}",
+                                      static_cast<int>(regionInitialChild));
+                            chain.push_back(regionInitialChild);
+                        }
                     }
                 }
             }
         }
     }
 
-    template <typename T = StatePolicy> static void addParallelRegionsImpl(std::vector<State> &, State, ...) {
-        // No-op if isParallelState doesn't exist
-    }
-
-    static void addParallelRegions(std::vector<State> &chain, State leafState) {
-        addParallelRegionsImpl(chain, leafState, 0);
-    }
-
 public:
-    // Static assertions to validate StatePolicy interface at compile-time
-    static_assert(std::is_same_v<decltype(StatePolicy::getParent(std::declval<State>())), std::optional<State>>,
-                  "StatePolicy::getParent() must return std::optional<State>");
-    static_assert(std::is_same_v<decltype(StatePolicy::isCompoundState(std::declval<State>())), bool>,
-                  "StatePolicy::isCompoundState() must return bool");
-    static_assert(std::is_same_v<decltype(StatePolicy::getInitialChild(std::declval<State>())), State>,
-                  "StatePolicy::getInitialChild() must return State");
 
     /**
      * @brief Build entry chain from leaf state to root

@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "core/StatePolicyConcepts.h"
 #include <algorithm>
 #include <vector>
 
@@ -58,7 +59,7 @@ public:
      * @param activeStates Vector of currently active states
      * @return true if all regions have at least one active final state, false otherwise
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static bool areAllRegionsInFinal(StateType parallelState, const std::vector<StateType> &activeStates) {
         // W3C SCXML 3.4: Get all child regions of this parallel state
         auto regions = PolicyType::getParallelRegions(parallelState);

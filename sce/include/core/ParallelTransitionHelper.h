@@ -17,6 +17,7 @@
 #pragma once
 
 #include "core/HierarchicalStateHelper.h"
+#include "core/StatePolicyConcepts.h"
 #include <optional>
 #include <unordered_set>
 #include <vector>
@@ -70,7 +71,7 @@ public:
      * @param transition Transition to compute exit set for
      * @return Set of states that will be exited
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition) {
         std::unordered_set<StateType> exitSet;
 
@@ -161,7 +162,7 @@ public:
      * @param t2 Second transition
      * @return true if transitions conflict
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static bool hasConflict(const Transition<StateType> &t1, const Transition<StateType> &t2) {
         // Check if exit sets intersect
         for (const auto &state : t1.exitSet) {
@@ -209,7 +210,7 @@ public:
      * @param enabledTransitions All enabled transitions for current event
      * @return Non-conflicting subset of transitions to execute
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<Transition<StateType>>
     selectOptimalTransitions(std::vector<Transition<StateType>> &enabledTransitions) {
         // Compute exit sets for all transitions
@@ -256,7 +257,7 @@ public:
      * @param state State to get depth for
      * @return Depth (0 = root)
      */
-    template <typename StateType, typename PolicyType> static int getDepth(StateType state) {
+    template <typename StateType, ParallelStatePolicy PolicyType> static int getDepth(StateType state) {
         int depth = 0;
         auto current = state;
 
@@ -301,7 +302,7 @@ public:
      * @param activeStates Current active states
      * @return States to exit in reverse document order
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<StateType> computeStatesToExit(const std::vector<Transition<StateType>> &transitions,
                                                       const std::vector<StateType> &activeStates) {
         std::vector<StateType> statesToExit;
@@ -439,7 +440,7 @@ public:
      * @param transitions Transitions to sort
      * @return Sorted transitions (by source state document order)
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<Transition<StateType>> sortTransitionsBySource(std::vector<Transition<StateType>> transitions) {
         std::sort(transitions.begin(), transitions.end(),
                   [](const Transition<StateType> &a, const Transition<StateType> &b) {
@@ -460,7 +461,7 @@ public:
      * @param transitions Transitions to sort
      * @return Sorted transitions (by target state document order)
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<Transition<StateType>> sortTransitionsByTarget(std::vector<Transition<StateType>> transitions) {
         std::sort(transitions.begin(), transitions.end(),
                   [](const Transition<StateType> &a, const Transition<StateType> &b) {

@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "core/StatePolicyConcepts.h"
 #include <algorithm>
 #include <optional>
 #include <vector>
@@ -38,7 +39,7 @@ public:
      * @param state State to check
      * @return true if state is parallel, false otherwise
      */
-    template <typename StateType, typename PolicyType> static bool isParallelState(StateType state) {
+    template <typename StateType, ParallelStatePolicy PolicyType> static bool isParallelState(StateType state) {
         return PolicyType::isParallelState(state);
     }
 
@@ -52,7 +53,7 @@ public:
      * @param parallelState The parallel state
      * @return Vector of child region states in document order
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<StateType> getParallelRegions(StateType parallelState) {
         return PolicyType::getParallelRegions(parallelState);
     }
@@ -68,7 +69,7 @@ public:
      * @param state State to get document order for
      * @return Document order index (0-based)
      */
-    template <typename StateType, typename PolicyType> static int getDocumentOrder(StateType state) {
+    template <typename StateType, ParallelStatePolicy PolicyType> static int getDocumentOrder(StateType state) {
         return PolicyType::getDocumentOrder(state);
     }
 
@@ -83,7 +84,7 @@ public:
      * @param state2 Second state
      * @return true if state1 appears before state2 in document order
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static bool compareDocumentOrder(StateType state1, StateType state2) {
         return getDocumentOrder<StateType, PolicyType>(state1) < getDocumentOrder<StateType, PolicyType>(state2);
     }
@@ -99,7 +100,7 @@ public:
      * @param parallelState The parallel state
      * @return Vector of initial states (one per region) in document order
      */
-    template <typename StateType, typename PolicyType>
+    template <typename StateType, ParallelStatePolicy PolicyType>
     static std::vector<StateType> getParallelInitialStates(StateType parallelState) {
         auto regions = getParallelRegions<StateType, PolicyType>(parallelState);
         std::vector<StateType> initialStates;
@@ -131,7 +132,7 @@ public:
      * @param configuration Current configuration
      * @return true if all regions are in final states
      */
-    template <typename StateType, typename PolicyType, typename ConfigurationType>
+    template <typename StateType, ParallelStatePolicy PolicyType, typename ConfigurationType>
     static bool areAllRegionsFinal(StateType parallelState, const ConfigurationType &configuration) {
         auto regions = getParallelRegions<StateType, PolicyType>(parallelState);
 

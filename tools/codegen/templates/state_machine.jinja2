@@ -596,4 +596,17 @@ public:
 {% endif %}
 };
 
+// W3C SCXML: Compile-time StatePolicy interface verification
+// Ensures generated policy satisfies required concepts (see core/StatePolicyConcepts.h)
+{% if model.user_context_objects or model.has_parent_communication or model.static_invokes %}
+// Template class — concept verified at instantiation (cannot static_assert uninstantiated templates)
+{% else %}
+static_assert(::SCE::Core::EventNamingPolicy<{{ model.name }}Policy>,
+    "Generated {{ model.name }}Policy must satisfy EventNamingPolicy concept");
+{% if model.has_parallel_states %}
+static_assert(::SCE::Core::ParallelStatePolicy<{{ model.name }}Policy>,
+    "Generated {{ model.name }}Policy must satisfy ParallelStatePolicy concept (HAS_PARALLEL_STATES=true)");
+{% endif %}
+{% endif %}
+
 } // namespace SCE::Generated::{{ model.name }}
