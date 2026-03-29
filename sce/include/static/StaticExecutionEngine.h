@@ -26,7 +26,7 @@
 #include "common/SendSchedulingHelper.h"
 #include "core/EventMetadata.h"
 #include "core/EventProcessingAlgorithms.h"
-#include "core/EventQueueAdapters.h"
+#include "core/AOTEventQueue.h"
 #include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
 #ifdef SCE_ENABLE_HTTP

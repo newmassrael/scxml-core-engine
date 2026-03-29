@@ -9,7 +9,7 @@
  * @file InvokeManagerAdapters.h
  * @brief Adapter pattern for Invoke management (W3C SCXML 6.4)
  *
- * Design principles (same as EventQueueAdapters):
+ * Design principles (same as AOTEventQueue):
  * 1. Minimal interface for InvokeProcessingAlgorithms
  * 2. Engine-specific implementations hidden behind uniform API
  * 3. Zero overhead through inline methods

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "common/LogMacros.h"
+#include "core/EventQueueConcept.h"
 #include <functional>
 
 namespace SCE::Core {
@@ -50,7 +51,7 @@ public:
      * });
      * @endcode
      */
-    template <typename EventQueue, typename EventHandler>
+    template <EventQueueAdapter EventQueue, typename EventHandler>
     static void processInternalEventQueue(EventQueue &queue, EventHandler &&handler) {
         // W3C SCXML 3.12.1: Process all internal events in FIFO order
         while (queue.hasEvents()) {
@@ -85,7 +86,7 @@ public:
      * @param maxIterations Maximum iteration count (default 100)
      * @return true if any eventless transition occurred, false otherwise
      */
-    template <typename StateMachine, typename EventQueue, typename InternalEventProcessor>
+    template <typename StateMachine, EventQueueAdapter EventQueue, typename InternalEventProcessor>
     static bool checkEventlessTransitions(StateMachine &sm, EventQueue &queue,
                                           InternalEventProcessor &&processInternalEvent, int maxIterations = 100) {
         bool anyTransition = false;
@@ -143,7 +144,7 @@ public:
      * @param processInternalEvent Internal event processing function
      * @param checkEventless Whether to check eventless transitions (default true)
      */
-    template <typename StateMachine, typename Event, typename EventQueue, typename InternalEventProcessor>
+    template <typename StateMachine, typename Event, EventQueueAdapter EventQueue, typename InternalEventProcessor>
     static void processMacrostep(StateMachine &sm, const Event &event, EventQueue &queue,
                                  InternalEventProcessor &&processInternalEvent, bool checkEventless = true) {
         auto oldState = sm.getCurrentState();

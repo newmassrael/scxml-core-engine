@@ -17,7 +17,7 @@ using SCE::Common::ConflictResolutionHelperString;
 #include "common/SystemVariableHelper.h"
 #include "common/TransitionHelper.h"
 #include "core/EventProcessingAlgorithms.h"
-#include "core/EventQueueAdapters.h"
+#include "runtime/InterpreterEventQueue.h"
 #include "events/EventRaiserService.h"
 
 #include "factory/NodeFactory.h"
