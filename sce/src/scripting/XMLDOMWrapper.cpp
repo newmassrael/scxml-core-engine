@@ -47,7 +47,7 @@ void XMLElement::findElementsByTagNameStatic(pugi::xml_node node, const std::str
     }
 
     // Recursively check children
-    for (pugi::xml_node child : node.children()) {
+    for (const auto &child : node.children()) {
         findElementsByTagNameStatic(child, tagName, result);
     }
 }
@@ -56,7 +56,7 @@ std::vector<std::shared_ptr<XMLElement>> XMLElement::getElementsByTagName(const 
     std::vector<std::shared_ptr<XMLElement>> result;
 
     // Search starting from this element's children
-    for (pugi::xml_node child : node_.children()) {
+    for (const auto &child : node_.children()) {
         findElementsByTagNameStatic(child, tagName, result);
     }
 

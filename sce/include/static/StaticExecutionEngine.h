@@ -162,7 +162,7 @@ private:
         if (lca.has_value()) {
             // W3C SCXML 3.13: First exit any active descendants of oldState (deepest first)
             std::vector<State> descendantsToExit;
-            for (State activeState : preTransitionStates) {
+            for (const auto &activeState : preTransitionStates) {
                 if (activeState != oldState &&
                     SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(activeState, oldState)) {
                     descendantsToExit.push_back(activeState);
@@ -172,7 +172,7 @@ private:
             std::sort(descendantsToExit.begin(), descendantsToExit.end(),
                       [](State a, State b) { return static_cast<int>(a) > static_cast<int>(b); });
 
-            for (State descendant : descendantsToExit) {
+            for (const auto &descendant : descendantsToExit) {
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Exit descendant {} of oldState {}",
                           static_cast<int>(descendant), static_cast<int>(oldState));
                 executeOnExit(descendant, preTransitionStates);
@@ -210,7 +210,7 @@ private:
                           static_cast<int>(newState));
                 // Build full entry chain from root, then keep only states at/below LCA
                 auto fullChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
-                for (State s : fullChain) {
+                for (const auto &s : fullChain) {
                     // Include state if it's at or below LCA (check if LCA is ancestor of s or s == LCA)
                     if (s == lca.value() ||
                         SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(s, lca.value())) {

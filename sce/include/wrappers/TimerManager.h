@@ -357,7 +357,7 @@ public:
             }
         }
 
-        for (TimerID timerID : timersToStop) {
+        for (const auto &timerID : timersToStop) {
             stopTimer(timerID);
         }
     }
