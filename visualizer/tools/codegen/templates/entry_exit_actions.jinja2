@@ -213,7 +213,7 @@
                         params,
                         eventData,
                         [&engine](const std::string& msg) {
-                            LOG_WARN("Donedata param evaluation failed: {}", msg);
+                            SCE_LOG_WARN("Donedata param evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
                         }
                     );
@@ -233,7 +233,7 @@
                         "{{ state.donedata.contentexpr }}",
                         eventData,
                         [&engine](const std::string& msg) {
-                            LOG_WARN("Donedata content evaluation failed: {}", msg);
+                            SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
                         }
                     );
@@ -247,7 +247,7 @@
                         "{{ state.donedata.content | escape_cpp }}",
                         eventData,
                         [&engine](const std::string& msg) {
-                            LOG_WARN("Donedata content evaluation failed: {}", msg);
+                            SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
                         }
                     );
@@ -550,7 +550,7 @@
                                 "{{ invoke_info.namelist }}",
                                 namelistParams,
                                 [&engine](const std::string& errorMsg) {
-                                    LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
+                                    SCE_LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
                                     // W3C SCXML 6.4.1: Raise error.execution on namelist error
                                     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
                                 }
@@ -694,7 +694,7 @@
                         auto child = ::SCE::StateMachine::createFromSCXMLString(scxmlContent, pending.invokeId);
                         {% endif %}
                         if (!child) {
-                            LOG_ERROR("Failed to create child state machine from contentexpr for invoke {{ invoke_info.invoke_id }}");
+                            SCE_LOG_ERROR("Failed to create child state machine from contentexpr for invoke {{ invoke_info.invoke_id }}");
                             return;
                         }
 
@@ -725,7 +725,7 @@
                 {% endfor %}
 
                 // No matching static or hybrid invoke found
-                LOG_ERROR("Pending invoke not found: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
+                SCE_LOG_ERROR("Pending invoke not found: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
             }
         );
         

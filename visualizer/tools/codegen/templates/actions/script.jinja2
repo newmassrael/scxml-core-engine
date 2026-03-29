@@ -10,12 +10,12 @@
     auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ action.content | escape_cpp }}").get();
     if (!::SCE::JSEngine::isSuccess(scriptResult)) {
         std::string errorMsg = "Script execution failed";
-        LOG_ERROR("{}", errorMsg);
+        SCE_LOG_ERROR("{}", errorMsg);
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
     }
     {% elif action.src %}
     // External script loading not implemented
-    LOG_WARN("External script loading (src attribute) not supported");
+    SCE_LOG_WARN("External script loading (src attribute) not supported");
     {% endif %}
 }
 {% endif %}

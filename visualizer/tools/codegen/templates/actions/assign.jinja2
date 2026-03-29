@@ -44,7 +44,7 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
     success = ::SCE::AssignmentExecutionHelper::executeAssignment(
         jsEngine, sessionId_.value(), "{{ action.location }}", expr,
         [&engine](const std::string& error) {
-            LOG_ERROR("AOT assign: {}", error);
+            SCE_LOG_ERROR("AOT assign: {}", error);
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));
         }
     );
@@ -52,9 +52,9 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
     if (!success) [[unlikely]] {
         // Assignment failed, error.execution already raised by callback
         {% if action.content %}
-        LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = content");
+        SCE_LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = content");
         {% else %}
-        LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = {{ action.expr.rstrip(';') }}");
+        SCE_LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = {{ action.expr.rstrip(';') }}");
         {% endif %}
     } else {
         {% if action.content %}
@@ -66,7 +66,7 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
 } else {
     // W3C SCXML 5.3/5.4/B.2: Invalid or read-only location
     std::string errorMsg = ::SCE::AssignHelper::getInvalidLocationErrorMessage("{{ action.location }}");
-    LOG_ERROR("W3C SCXML 5.3: {}", errorMsg);
+    SCE_LOG_ERROR("W3C SCXML 5.3: {}", errorMsg);
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
 }
 {% if not in_foreach %}{{ '}' }}{% endif %}

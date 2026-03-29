@@ -9,7 +9,7 @@
 
         if (!result.has_value()) {
             // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
-            LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", guardExpr);
+            SCE_LOG_ERROR("W3C SCXML 5.9: Guard evaluation failed: '{}'", guardExpr);
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "Guard evaluation failed"));
             return false;
         }
@@ -26,7 +26,7 @@
         if (::SCE::JSEngine::isSuccess(valueResult)) {
             jsEngine.setVariable(sessionId_.value(), paramName, valueResult.getInternalValue());
         } else {
-            LOG_ERROR("Failed to evaluate param expression for {}: {}", paramName, paramExpr);
+            SCE_LOG_ERROR("Failed to evaluate param expression for {}: {}", paramName, paramExpr);
         }
     }
 {% endif %}
@@ -90,7 +90,7 @@
                 );
 {% else %}
                 // Pure Static: finalize script should be empty (no ECMAScript expressions)
-                LOG_WARN("AOT finalize: Finalize script present but JSEngine not available for invoke '{}'", invokeId);
+                SCE_LOG_WARN("AOT finalize: Finalize script present but JSEngine not available for invoke '{}'", invokeId);
 {% endif %}
                 
                 return;  // Found and executed
@@ -123,7 +123,7 @@
             stateId
         );
         
-        LOG_TRACE("AOT isStateActive: '{}' {} in activeStates_ (size={})", 
+        SCE_LOG_TRACE("AOT isStateActive: '{}' {} in activeStates_ (size={})", 
                   stateId, result ? "found" : "not found", activeStates_.size());
         return result;
     }
