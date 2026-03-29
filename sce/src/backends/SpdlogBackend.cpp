@@ -95,13 +95,83 @@ void SpdlogBackend::setLevel(LogLevel level) {
 }
 
 bool SpdlogBackend::shouldLog(LogLevel level) const {
-    return logger_ && logger_->should_log(convertLevel(level));
+    if (!logger_) {
+        return false;
+    }
+    // During capture, allow debug+ messages so SCE_LOG_DEBUG macros generate output
+    if (capturing_ && convertLevel(level) >= spdlog::level::debug) {
+        return true;
+    }
+    return logger_->should_log(convertLevel(level));
 }
 
 void SpdlogBackend::flush() {
     if (logger_) {
         logger_->flush();
     }
+}
+
+void SpdlogBackend::startCapture() {
+    if (!logger_) {
+        return;
+    }
+
+    // Remove existing capture sink if any
+    stopCapture();
+
+    // Save the current logger level and lower it to debug so that
+    // debug messages pass through the logger to reach the capture sink.
+    // Existing sinks get their level set to the original level so
+    // console/file output remains unchanged.
+    preCaptureLevel_ = logger_->level();
+    capturing_ = true;
+
+    if (preCaptureLevel_ > spdlog::level::debug) {
+        // Set existing sinks to filter at the original level
+        for (auto &sink : logger_->sinks()) {
+            sink->set_level(preCaptureLevel_);
+        }
+        // Lower logger level to debug to let messages through
+        logger_->set_level(spdlog::level::debug);
+    }
+
+    // Create a new capture sink that captures at debug level
+    captureSink_ = std::make_shared<CaptureSinkMt>();
+    captureSink_->set_level(spdlog::level::debug);
+    captureSink_->set_pattern("[%H:%M:%S.%e] [%l] %v");
+
+    logger_->sinks().push_back(captureSink_);
+}
+
+void SpdlogBackend::stopCapture() {
+    if (!logger_ || !capturing_) {
+        return;
+    }
+
+    // Remove capture sink
+    if (captureSink_) {
+        auto &sinks = logger_->sinks();
+        sinks.erase(std::remove(sinks.begin(), sinks.end(), captureSink_), sinks.end());
+    }
+
+    // Restore original logger level and reset sink levels to trace (default)
+    logger_->set_level(preCaptureLevel_);
+    for (auto &sink : logger_->sinks()) {
+        sink->set_level(spdlog::level::trace);
+    }
+
+    capturing_ = false;
+}
+
+std::string SpdlogBackend::getCapturedLogs() {
+    if (!captureSink_) {
+        return {};
+    }
+
+    std::string logs = captureSink_->getBuffer();
+    captureSink_->clearBuffer();
+    captureSink_.reset();
+    return logs;
 }
 
 spdlog::level::level_enum SpdlogBackend::convertLevel(LogLevel level) const {

@@ -106,6 +106,21 @@ void Logger::flush() {
     backend_->flush();
 }
 
+void Logger::startCapture() {
+    ensureBackend();
+    backend_->startCapture();
+}
+
+void Logger::stopCapture() {
+    ensureBackend();
+    backend_->stopCapture();
+}
+
+std::string Logger::getCapturedLogs() {
+    ensureBackend();
+    return backend_->getCapturedLogs();
+}
+
 void Logger::ensureBackend() {
     if (!backend_) {
         initialize();

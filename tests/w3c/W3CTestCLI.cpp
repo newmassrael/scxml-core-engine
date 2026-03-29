@@ -198,6 +198,7 @@ int main(int argc, char *argv[]) {
         bool stopOnFailure = false;                // stop execution on first failure
         bool runInterpreter = true;                // run Interpreter engine tests (default: true)
         bool runAot = true;                        // run AOT engine tests (default: true)
+        bool saveFailedLogs = true;                // save debug logs for failed tests (default: true)
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -230,6 +231,8 @@ int main(int argc, char *argv[]) {
             } else if (arg == "--interpreter-only") {
                 runInterpreter = true;
                 runAot = false;
+            } else if (arg == "--no-save-failed-logs") {
+                saveFailedLogs = false;
             } else if (arg == "--help" || arg == "-h") {
                 printf("Usage: %s [options] [test_ids...]\n", argv[0]);
                 printf("\n");
@@ -243,6 +246,7 @@ int main(int argc, char *argv[]) {
                 printf("  --fail-on-failure      Alias for --stop-on-fail\n");
                 printf("  --aot-only             Run only AOT engine tests (skip Interpreter)\n");
                 printf("  --interpreter-only     Run only Interpreter engine tests (skip AOT)\n");
+                printf("  --no-save-failed-logs  Disable saving debug logs for failed tests\n");
                 printf("  -h, --help             Show this help message\n");
                 printf("\n");
                 printf("Test Selection:\n");
@@ -376,6 +380,19 @@ int main(int argc, char *argv[]) {
         // Dependency Injection: All dependencies are injected (Inversion of Control)
         SCE::W3C::W3CTestRunner runner(std::move(converter), std::move(metadataParser), std::move(executor),
                                        std::move(validator), std::move(testSuite), std::move(reporter));
+
+        // Configure failed test log directory
+        if (saveFailedLogs) {
+            std::string failedLogDir = (projectRoot / "w3c_failed_test_logs").string();
+
+            // Clean up previous failed test logs
+            if (std::filesystem::exists(failedLogDir)) {
+                std::filesystem::remove_all(failedLogDir);
+            }
+
+            runner.setFailedLogDir(failedLogDir);
+            SCE_LOG_INFO("W3C CLI: Failed test logs will be saved to: {}", failedLogDir);
+        }
 
         // Show test suite information
         auto testSuiteInfo = runner.getTestSuite()->getInfo();
@@ -1028,6 +1045,14 @@ int main(int argc, char *argv[]) {
 
         printf("\n");
         printf("📊 Detailed results written to: %s\n", outputPath.c_str());
+
+        // Show failed test log directory if any tests failed
+        if (saveFailedLogs && (summary.failedTests > 0 || summary.errorTests > 0)) {
+            std::string failedLogDir = (projectRoot / "w3c_failed_test_logs").string();
+            if (std::filesystem::exists(failedLogDir) && !std::filesystem::is_empty(failedLogDir)) {
+                printf("📋 Failed test logs saved to: %s\n", failedLogDir.c_str());
+            }
+        }
 
         // Return appropriate exit code
         int exitCode = (summary.errorTests == 0 && summary.passRate > 0) ? 0 : 1;

@@ -2,6 +2,7 @@
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
 #endif
+#include "common/Logger.h"
 #include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
@@ -1012,6 +1013,57 @@ static std::unordered_map<std::string, W3CTestRunner::VerificationInfo> loadVeri
     return verified;
 }
 
+/**
+ * @brief Save captured debug logs to a file for a failed test
+ *
+ * @param logDir Directory to save the log file
+ * @param testId Test ID (e.g., "446", "403a")
+ * @param engineType Engine type ("interpreter" or "aot")
+ * @param report The test report with result details
+ * @param capturedLogs The captured log buffer
+ */
+static void saveFailedTestLog(const std::string &logDir, const std::string &testId, const std::string &engineType,
+                              const TestReport &report, const std::string &capturedLogs) {
+    if (logDir.empty() || capturedLogs.empty()) {
+        return;
+    }
+
+    try {
+        std::filesystem::create_directories(logDir);
+
+        std::string filename = "Test_" + testId + "_" + engineType + ".log";
+        std::filesystem::path logPath = std::filesystem::path(logDir) / filename;
+
+        std::ofstream file(logPath);
+        if (!file.is_open()) {
+            SCE_LOG_WARN("Failed to open log file for writing: {}", logPath.string());
+            return;
+        }
+
+        // Write header with test metadata
+        file << "=== Failed Test Log ===" << "\n";
+        file << "Test ID:     " << testId << "\n";
+        file << "Engine:      " << engineType << "\n";
+        file << "Test Type:   " << report.testType << "\n";
+        file << "Result:      " << testResultToString(report.validationResult.finalResult) << "\n";
+        file << "Reason:      " << report.validationResult.reason << "\n";
+        file << "Final State: " << report.executionContext.finalState << "\n";
+        file << "Duration:    " << report.executionContext.executionTime.count() << "ms" << "\n";
+        if (!report.metadata.description.empty()) {
+            file << "Description: " << report.metadata.description << "\n";
+        }
+        if (!report.metadata.specnum.empty()) {
+            file << "Spec:        " << report.metadata.specnum << "\n";
+        }
+        file << "\n=== Debug Logs ===" << "\n";
+        file << capturedLogs;
+
+        SCE_LOG_INFO("Saved failed test log: {}", logPath.string());
+    } catch (const std::exception &e) {
+        SCE_LOG_WARN("Failed to save test log for test {}: {}", testId, e.what());
+    }
+}
+
 W3CTestRunner::W3CTestRunner(std::unique_ptr<ITestConverter> converter,
                              std::unique_ptr<ITestMetadataParser> metadataParser,
                              std::unique_ptr<ITestExecutor> executor, std::unique_ptr<ITestResultValidator> validator,
@@ -1172,6 +1224,11 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
     report.engineType = "interpreter";  // Interpreter engine execution
     report.testType = "interpreter";    // Interpreter runtime execution
 
+    // Start log capture for failure diagnostics
+    if (!failedLogDir_.empty()) {
+        SCE::Logger::startCapture();
+    }
+
     try {
         // Parse metadata
         std::string metadataPath = testSuite_->getMetadataPath(testDirectory);
@@ -1194,6 +1251,8 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
         // W3C SCXML 6.2: Special handling for Test 178 (manual duplicate param verification)
         if (report.metadata.id == 178 && report.metadata.manual) {
             SCE_LOG_INFO("W3C Test 178: Running manual verification for duplicate param keys");
+            SCE::Logger::stopCapture();
+            SCE::Logger::getCapturedLogs();  // Discard
             return runManualTest178(testDirectory, report);
         }
 
@@ -1201,6 +1260,8 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
         if (validator_->shouldSkipTest(report.metadata)) {
             SCE_LOG_DEBUG("W3C Single Test: Skipping test {} (manual test)", report.testId);
             report.validationResult = ValidationResult(true, TestResult::PASS, "Test skipped");
+            SCE::Logger::stopCapture();
+            SCE::Logger::getCapturedLogs();  // Discard
             return report;
         }
 
@@ -1296,9 +1357,26 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
             }
         }
 
+        // Save captured logs on failure
+        if (!failedLogDir_.empty()) {
+            SCE::Logger::stopCapture();
+            if (report.validationResult.finalResult != TestResult::PASS) {
+                saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report, SCE::Logger::getCapturedLogs());
+            } else {
+                SCE::Logger::getCapturedLogs();  // Discard
+            }
+        }
+
         return report;
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("W3C Single Test: Exception in test {}: {}", testDirectory, e.what());
+
+        // Save captured logs on exception
+        if (!failedLogDir_.empty()) {
+            SCE::Logger::stopCapture();
+            saveFailedTestLog(failedLogDir_, report.testId, "interpreter", report, SCE::Logger::getCapturedLogs());
+        }
+
         throw;  // Re-throw to be caught by runAllTests
     }
 }
@@ -1970,6 +2048,11 @@ TestReport W3CTestRunner::runAotTest(int testId) {
         report.engineType = "aot";
         report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_JSENGINE
 
+        // Start log capture for failure diagnostics
+        if (!failedLogDir_.empty()) {
+            SCE::Logger::startCapture();
+        }
+
         auto startTime = std::chrono::steady_clock::now();
 
         try {
@@ -2002,6 +2085,17 @@ TestReport W3CTestRunner::runAotTest(int testId) {
                 }
             }
 
+            // Save captured logs on failure
+            if (!failedLogDir_.empty()) {
+                SCE::Logger::stopCapture();
+                if (report.validationResult.finalResult != TestResult::PASS) {
+                    saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report,
+                                      SCE::Logger::getCapturedLogs());
+                } else {
+                    SCE::Logger::getCapturedLogs();  // Discard
+                }
+            }
+
             return report;
 
         } catch (const std::exception &e) {
@@ -2012,6 +2106,14 @@ TestReport W3CTestRunner::runAotTest(int testId) {
             report.validationResult = ValidationResult(false, TestResult::ERROR, e.what());
             report.executionContext.finalState = "error";
             report.executionContext.executionTime = duration;
+
+            // Save captured logs on exception
+            if (!failedLogDir_.empty()) {
+                SCE::Logger::stopCapture();
+                saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report,
+                                  SCE::Logger::getCapturedLogs());
+            }
+
             return report;
         }
     }
@@ -2096,6 +2198,11 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
         report.engineType = "aot";
         report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_JSENGINE
 
+        // Start log capture for failure diagnostics
+        if (!failedLogDir_.empty()) {
+            SCE::Logger::startCapture();
+        }
+
         auto startTime = std::chrono::steady_clock::now();
 
         try {
@@ -2128,6 +2235,17 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
                 }
             }
 
+            // Save captured logs on failure
+            if (!failedLogDir_.empty()) {
+                SCE::Logger::stopCapture();
+                if (report.validationResult.finalResult != TestResult::PASS) {
+                    saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report,
+                                      SCE::Logger::getCapturedLogs());
+                } else {
+                    SCE::Logger::getCapturedLogs();  // Discard
+                }
+            }
+
             return report;
 
         } catch (const std::exception &e) {
@@ -2138,6 +2256,14 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
             report.validationResult = ValidationResult(false, TestResult::ERROR, e.what());
             report.executionContext.finalState = "error";
             report.executionContext.executionTime = duration;
+
+            // Save captured logs on exception
+            if (!failedLogDir_.empty()) {
+                SCE::Logger::stopCapture();
+                saveFailedTestLog(failedLogDir_, report.testId, report.engineType, report,
+                                  SCE::Logger::getCapturedLogs());
+            }
+
             return report;
         }
     }

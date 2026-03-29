@@ -139,6 +139,9 @@ private:
     mutable std::unordered_map<std::string, VerificationInfo> verifiedTests_;
     mutable std::mutex verificationMutex_;
 
+    // Failed test log directory (empty = disabled)
+    std::string failedLogDir_;
+
     /**
      * @brief Run a single test
      */
@@ -281,6 +284,18 @@ public:
      */
     ITestReporter *getReporter() const {
         return reporter_.get();
+    }
+
+    /**
+     * @brief Enable saving debug logs for failed tests
+     *
+     * When set, debug-level logs are captured during each test execution.
+     * If a test fails, the captured logs are written to a file in the specified directory.
+     *
+     * @param dir Directory path for failed test log files
+     */
+    void setFailedLogDir(const std::string &dir) {
+        failedLogDir_ = dir;
     }
 };
 

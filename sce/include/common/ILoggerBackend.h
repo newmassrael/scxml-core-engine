@@ -93,6 +93,26 @@ public:
      * Ensures all pending log messages are written.
      */
     virtual void flush() = 0;
+
+    /**
+     * @brief Start capturing log messages to an internal buffer
+     *
+     * Captured logs are stored independently of the current log level,
+     * always at debug level. Used for saving diagnostic logs on test failure.
+     */
+    virtual void startCapture() {}
+
+    /**
+     * @brief Stop capturing log messages
+     */
+    virtual void stopCapture() {}
+
+    /**
+     * @brief Retrieve captured log messages and clear the buffer
+     *
+     * @return All log messages captured since the last startCapture() call
+     */
+    virtual std::string getCapturedLogs() { return {}; }
 };
 
 }  // namespace SCE

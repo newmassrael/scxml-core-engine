@@ -99,6 +99,26 @@ public:
      */
     static void flush();
 
+    /**
+     * @brief Start capturing log messages to an internal buffer
+     *
+     * Captured logs are stored at debug level regardless of the active log level.
+     * Used for saving diagnostic output when a test fails.
+     */
+    static void startCapture();
+
+    /**
+     * @brief Stop capturing log messages
+     */
+    static void stopCapture();
+
+    /**
+     * @brief Retrieve and clear captured log messages
+     *
+     * @return All log messages captured since the last startCapture() call
+     */
+    static std::string getCapturedLogs();
+
 private:
     static std::unique_ptr<ILoggerBackend> backend_;
     static void ensureBackend();
