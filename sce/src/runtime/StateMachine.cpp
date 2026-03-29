@@ -14,7 +14,6 @@ using SCE::Core::ConflictResolutionHelperString;
 #endif
 #include "core/ParallelTransitionHelper.h"
 #include "common/StringUtils.h"
-#include "common/SystemVariableHelper.h"
 #include "core/TransitionHelper.h"
 #include "core/EventProcessingAlgorithms.h"
 #include "runtime/InterpreterEventQueue.h"
@@ -3351,10 +3350,9 @@ bool StateMachine::setupJSEnvironment() {
     }
 
     // W3C SCXML 5.10: Set up read-only system variables (_sessionid, _name, _ioprocessors)
-    // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
     std::string sessionName = model_ && !model_->getName().empty() ? model_->getName() : "StateMachine";
     std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-    auto setupResult = SCE::SystemVariableHelper::setupSystemVariables(SCE::JSEngine::instance(), sessionId_, sessionName, ioProcessors).get();
+    auto setupResult = SCE::JSEngine::instance().setupSystemVariables(sessionId_, sessionName, ioProcessors).get();
     if (!setupResult.isSuccess()) {
         SCE_LOG_ERROR("StateMachine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         return false;

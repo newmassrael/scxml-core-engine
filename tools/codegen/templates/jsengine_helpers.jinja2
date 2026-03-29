@@ -14,10 +14,9 @@
         auto& jsEngine = ::SCE::JSEngine::instance();
         jsEngine.createSession(sessionId_.value());
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors) using SystemVariableHelper
-        // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-        auto setupResult = ::SCE::SystemVariableHelper::setupSystemVariables(jsEngine, sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        auto setupResult = jsEngine.setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             SCE_LOG_ERROR("AOT ensureJSEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
@@ -73,10 +72,9 @@
         auto& jsEngine = ::SCE::JSEngine::instance();
         jsEngine.createSession(sessionId_.value());
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors) using SystemVariableHelper
-        // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-        auto setupResult = ::SCE::SystemVariableHelper::setupSystemVariables(jsEngine, sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        auto setupResult = jsEngine.setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             SCE_LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }

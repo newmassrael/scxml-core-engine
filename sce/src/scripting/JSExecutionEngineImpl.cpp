@@ -223,21 +223,6 @@ void JSExecutionEngineImpl::collectGarbage() {
     }
 }
 
-// === Session Context Management ===
-
-bool JSExecutionEngineImpl::initializeSessionContext(const std::string &sessionId, const std::string &parentSessionId) {
-    return createSessionContextInternal(sessionId, parentSessionId);
-}
-
-bool JSExecutionEngineImpl::cleanupSessionContext(const std::string &sessionId) {
-    return destroySessionContextInternal(sessionId);
-}
-
-bool JSExecutionEngineImpl::hasSessionContext(const std::string &sessionId) const {
-    std::lock_guard<std::mutex> lock(contextsMutex_);
-    return contexts_.find(sessionId) != contexts_.end();
-}
-
 bool JSExecutionEngineImpl::isVariablePreInitialized(const std::string &sessionId,
                                                      const std::string &variableName) const {
     std::lock_guard<std::mutex> lock(contextsMutex_);

@@ -89,14 +89,6 @@ public:
         return initialized_.load();
     }
 
-    // === IJSExecutionEngine Session Context (delegates to ISessionManager) ===
-
-    bool initializeSessionContext(const std::string &sessionId, const std::string &parentSessionId = "") override {
-        return createSession(sessionId, parentSessionId);
-    }
-    bool cleanupSessionContext(const std::string &sessionId) override { return destroySession(sessionId); }
-    bool hasSessionContext(const std::string &sessionId) const override { return hasSession(sessionId); }
-
     // === Session Management ===
 
     /**

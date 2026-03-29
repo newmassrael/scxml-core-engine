@@ -53,6 +53,7 @@ public:
     std::future<JSResult> setVariable(const std::string &sessionId, const std::string &name,
                                       const ScriptValue &value) override;
     std::future<JSResult> getVariable(const std::string &sessionId, const std::string &name) override;
+    bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
     std::future<JSResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                const std::vector<std::string> &ioProcessors) override;
@@ -63,11 +64,6 @@ public:
     std::string getEngineInfo() const override;
     size_t getMemoryUsage() const override;
     void collectGarbage() override;
-
-    bool initializeSessionContext(const std::string &sessionId, const std::string &parentSessionId = "") override;
-    bool cleanupSessionContext(const std::string &sessionId) override;
-    bool hasSessionContext(const std::string &sessionId) const override;
-    bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
     bool initialize() override;
     void shutdown() override;

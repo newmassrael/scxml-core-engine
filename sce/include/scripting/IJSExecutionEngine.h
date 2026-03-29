@@ -76,6 +76,14 @@ public:
     virtual std::future<JSResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
                                                    const std::string &xmlContent) = 0;
 
+    /**
+     * @brief Check if a variable was pre-initialized (set before datamodel initialization)
+     * @param sessionId Session identifier
+     * @param variableName Variable name to check
+     * @return true if variable was pre-initialized (e.g., by invoke data)
+     */
+    virtual bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const = 0;
+
     // === SCXML-specific Features ===
 
     /**
@@ -136,38 +144,6 @@ public:
      * @brief Trigger garbage collection
      */
     virtual void collectGarbage() = 0;
-
-    // === Session Context Management ===
-
-    /**
-     * @brief Initialize JavaScript context for a session
-     * @param sessionId Session identifier
-     * @param parentSessionId Optional parent session for hierarchical contexts
-     * @return true if context created successfully
-     */
-    virtual bool initializeSessionContext(const std::string &sessionId, const std::string &parentSessionId = "") = 0;
-
-    /**
-     * @brief Cleanup JavaScript context for a session
-     * @param sessionId Session identifier
-     * @return true if context cleaned up successfully
-     */
-    virtual bool cleanupSessionContext(const std::string &sessionId) = 0;
-
-    /**
-     * @brief Check if JavaScript context exists for session
-     * @param sessionId Session identifier
-     * @return true if context exists
-     */
-    virtual bool hasSessionContext(const std::string &sessionId) const = 0;
-
-    /**
-     * @brief Check if a variable was pre-initialized (set before datamodel initialization)
-     * @param sessionId Session identifier
-     * @param variableName Variable name to check
-     * @return true if variable was pre-initialized (e.g., by invoke data)
-     */
-    virtual bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const = 0;
 
     // === Engine Lifecycle ===
 
