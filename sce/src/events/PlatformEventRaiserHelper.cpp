@@ -125,8 +125,15 @@ public:
 
         SCE_LOG_DEBUG("PlatformEventRaiserHelper: Shutting down worker thread");
 
-        // Signal shutdown
-        shutdownRequested_->store(true);
+        // W3C SCXML: Must hold queueMutex_ when setting shutdownRequested_ to prevent
+        // lost notification race with condition_variable::wait() predicate check.
+        // Without the mutex, the worker thread can check the predicate (seeing false),
+        // then the main thread sets the flag and notifies, then the worker enters wait()
+        // and blocks forever because the notification was already sent.
+        {
+            std::lock_guard<std::mutex> lock(*queueMutex_);
+            shutdownRequested_->store(true);
+        }
         queueCondition_->notify_all();
 
         // Wait for worker thread to complete

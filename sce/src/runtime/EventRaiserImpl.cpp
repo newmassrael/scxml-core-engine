@@ -50,6 +50,10 @@ void EventRaiserImpl::setScheduler(std::shared_ptr<IEventScheduler> scheduler) {
     if (platformHelper_) {
         platformHelper_->shutdown();
     }
+
+    // Reset shutdown flag so the new worker thread will run
+    shutdownRequested_.store(false);
+
     platformHelper_ = createPlatformEventRaiserHelper(this, scheduler_);
     platformHelper_->start();
 
