@@ -1108,6 +1108,7 @@ target_include_directories(w3c_test_cli
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
         ${CMAKE_SOURCE_DIR}/tests
+        ${CMAKE_SOURCE_DIR}/tests/common  # TestSummaryHelper.h
         ${CMAKE_SOURCE_DIR}/tests/w3c  # AOT test registry headers
         ${CMAKE_CURRENT_BINARY_DIR}/w3c  # Generated W3CTestRegistry.cpp
         ${STATIC_W3C_OUTPUT_DIR}  # Include generated static test headers

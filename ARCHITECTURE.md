@@ -904,7 +904,7 @@ class EventQueueManager {
 **SCE::PlatformExecutionHelper (Synchronous/Queued Executors)**:
 - W3C SCXML 5.3: Platform-specific execution strategy abstraction (WASM synchronous vs Native pthread)
 - Single Source of Truth for platform-dependent JSEngine execution logic
-- Location: `sce/include/common/PlatformExecutionHelper.h`, `sce/src/common/PlatformExecutionHelper.cpp`
+- Location: `sce/include/scripting/PlatformExecutionHelper.h`, `sce/src/scripting/PlatformExecutionHelper.cpp`
 - Used by: JSEngine (unified execution interface for both Native and WASM platforms)
 - Features:
   - **Abstract Interface**: executeAsync(), shutdown(), reset(), getRuntimePointer(), waitForRuntimeInitialization()

@@ -1,5 +1,5 @@
 #include "runtime/StateMachine.h"
-#include "common/BindingHelper.h"
+#include "runtime/BindingHelper.h"
 #include "core/ConflictResolutionHelper.h"
 #include "states/ConcurrentStateTypes.h"
 

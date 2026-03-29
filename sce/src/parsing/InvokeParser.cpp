@@ -1,7 +1,7 @@
 // InvokeParser.cpp
 #include "InvokeParser.h"
 #include "common/LogMacros.h"
-#include "common/XmlSerializationHelper.h"
+#include "parsing/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
 
 #ifndef __EMSCRIPTEN__

@@ -1,7 +1,7 @@
 #include "parsing/DataModelParser.h"
 #include "common/FileLoadingHelper.h"
 #include "common/LogMacros.h"
-#include "common/XmlSerializationHelper.h"
+#include "parsing/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
 

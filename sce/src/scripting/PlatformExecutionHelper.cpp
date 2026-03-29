@@ -1,4 +1,4 @@
-#include "common/PlatformExecutionHelper.h"
+#include "scripting/PlatformExecutionHelper.h"
 #include "common/LogMacros.h"
 #include "quickjs.h"
 #include <condition_variable>

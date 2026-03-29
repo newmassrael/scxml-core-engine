@@ -1,7 +1,7 @@
 #include "actions/CancelAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
-#include "common/JsonUtils.h"
+#include "runtime/JsonUtils.h"
 #include "common/SendSchedulingHelper.h"
 #include "common/TestUtils.h"
 #include "events/EventDispatcherImpl.h"

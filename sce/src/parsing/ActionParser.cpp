@@ -8,9 +8,9 @@
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
 #include "common/FileLoadingHelper.h"
-#include "common/LogUtils.h"
+#include "backends/LogUtils.h"
 #include "common/LogMacros.h"
-#include "common/XmlSerializationHelper.h"
+#include "parsing/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
 #include <sstream>

@@ -1,5 +1,5 @@
-#include "common/HttpResponseUtils.h"
-#include "common/JsonUtils.h"
+#include "events/HttpResponseUtils.h"
+#include "runtime/JsonUtils.h"
 #include "common/LogMacros.h"
 #include "events/IEventBridge.h"  // For HttpResponse struct
 

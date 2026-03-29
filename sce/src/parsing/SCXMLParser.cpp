@@ -1,6 +1,6 @@
 #include "parsing/SCXMLParser.h"
 #include "GuardUtils.h"
-#include "common/LogUtils.h"
+#include "backends/LogUtils.h"
 #include "common/LogMacros.h"
 #include "parsing/IXMLParser.h"
 #include "parsing/ParsingCommon.h"

@@ -99,12 +99,14 @@ add_library(sce_runtime
     src/backends/DefaultBackend.cpp  # Always compiled
     $<$<BOOL:${SCE_USE_SPDLOG}>:src/backends/SpdlogBackend.cpp>
     src/common/NodeFactory.cpp
-    src/common/PlatformExecutionHelper.cpp
-    src/common/TypeRegistry.cpp
     src/common/UniqueIdGenerator.cpp
-    src/common/JsonUtils.cpp
     src/common/DataModelInitHelper.cpp
-    src/common/XmlSerializationHelper.cpp
+
+    # Moved to their natural subsystem directories
+    src/scripting/PlatformExecutionHelper.cpp
+    src/runtime/TypeRegistry.cpp
+    src/runtime/JsonUtils.cpp
+    src/parsing/XmlSerializationHelper.cpp
 
     # Runtime implementation
     src/runtime/SCXMLEngineImpl.cpp
@@ -196,7 +198,7 @@ target_sources(sce_runtime PRIVATE
 if(SCE_ENABLE_HTTP)
     if(NOT EMSCRIPTEN)
         target_sources(sce_runtime PRIVATE
-            src/common/HttpResponseUtils.cpp
+            src/events/HttpResponseUtils.cpp
             src/common/UrlEncodingHelper.cpp
             src/events/HttpEventTarget.cpp
             src/events/HttpEventReceiver.cpp

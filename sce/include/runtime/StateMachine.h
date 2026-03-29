@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/ClassBinding.h"  // C++ class binding infrastructure
+#include "scripting/ClassBinding.h"  // C++ class binding infrastructure
 #include "common/LogMacros.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/InvokeHelper.h"  // W3C SCXML 6.4: Shared invoke lifecycle logic (Zero Duplication)

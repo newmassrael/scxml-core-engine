@@ -1,6 +1,6 @@
 #include "runtime/InvokeExecutor.h"
 #include "SCXMLTypes.h"
-#include "common/Constants.h"
+#include "common/SCXMLConstants.h"
 #include "common/DatamodelValidationHelper.h"
 #include "core/InvokeHelper.h"
 #include "common/LogMacros.h"

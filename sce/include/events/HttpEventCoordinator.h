@@ -3,7 +3,7 @@
 #include "HttpEventBridge.h"
 #include "HttpEventReceiver.h"
 #include "HttpEventTarget.h"
-#include "common/TypeRegistry.h"
+#include "runtime/TypeRegistry.h"
 #include <atomic>
 #include <functional>
 #include <memory>

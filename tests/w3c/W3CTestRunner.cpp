@@ -32,7 +32,7 @@
 #include "W3CTestRegistry.h"
 
 // Test Summary Helper (Single Source of Truth for summary calculation)
-#include "common/TestSummaryHelper.h"
+#include "TestSummaryHelper.h"
 
 namespace SCE::W3C {
 

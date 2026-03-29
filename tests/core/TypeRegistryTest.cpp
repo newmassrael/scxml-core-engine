@@ -1,4 +1,4 @@
-#include "common/TypeRegistry.h"
+#include "runtime/TypeRegistry.h"
 #include <atomic>
 #include <chrono>
 #include <future>

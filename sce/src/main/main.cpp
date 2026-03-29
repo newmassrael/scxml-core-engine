@@ -6,7 +6,7 @@
 
 // Include parsing components
 #include "../../include/common/LogMacros.h"
-#include "../../include/common/TypeRegistry.h"
+#include "../../include/runtime/TypeRegistry.h"
 #include "../../include/events/EventRaiserService.h"
 #include "../../include/factory/NodeFactory.h"
 #include "../../include/model/SCXMLModel.h"

@@ -1,5 +1,5 @@
 #include "W3CHttpTestServer.h"
-#include "common/JsonUtils.h"
+#include "runtime/JsonUtils.h"
 #include "common/LogMacros.h"
 #include "common/TestUtils.h"
 #include "events/HttpEventBridge.h"

@@ -1,7 +1,7 @@
 #include "W3CTestRegistry.h"
 #include "W3CTestRunner.h"
 #include "common/LogMacros.h"
-#include "common/TestSummaryHelper.h"
+#include "TestSummaryHelper.h"
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
