@@ -31,14 +31,9 @@
 #include "events/EventDescriptor.h"
 // W3C SCXML C.2: BasicHTTP Event I/O Processor support
 // SCE_ENABLE_HTTP is defined only by sce_runtime (PUBLIC), never by sce_core standalone.
-// These headers require sce_runtime linkage (CppHttplibClient.cpp / EmscriptenFetchClient.cpp).
+// HttpSendHelper.h requires sce_runtime linkage (CppHttplibClient.cpp / EmscriptenFetchClient.cpp).
 #ifdef SCE_ENABLE_HTTP
-  #ifndef __EMSCRIPTEN__
-  #include "events/CppHttplibClient.h"
-  #else
-  #include "events/EmscriptenFetchClient.h"
-  #endif
-  #include <nlohmann/json.hpp>
+#include "static/HttpSendHelper.h"
 #endif
 #include <chrono>
 #include <cstdint>
@@ -374,166 +369,38 @@ public:
      */
     void raiseExternal(const EventWithMetadata &eventWithMetadata) {
 #ifdef SCE_ENABLE_HTTP
-        // W3C SCXML C.2: Check if this is a BasicHTTP Event I/O Processor send
-        bool isHttpSend = !eventWithMetadata.originType.empty() &&
-                          (eventWithMetadata.originType.find("BasicHTTPEventProcessor") != std::string::npos);
-
-        if (isHttpSend && !eventWithMetadata.target.empty()) {
-            // W3C SCXML C.2: Send actual HTTP POST via HttpEventTarget
-            SCE_LOG_DEBUG("AOT raiseExternal: Sending HTTP POST (event={}, target={})",
-                      static_cast<int>(eventWithMetadata.event), eventWithMetadata.target);
-
-            // Create EventDescriptor for HTTP POST
-            SCE::EventDescriptor descriptor;
-            descriptor.eventName = policy_.getEventName(eventWithMetadata.event);
-            descriptor.target = eventWithMetadata.target;
-            descriptor.sendId = eventWithMetadata.sendId;
-            descriptor.type = "http";
-
-            // W3C SCXML C.2: For content-only sends (empty event name),
-            // the data IS the content to be sent as HTTP POST body
-            if (descriptor.eventName.empty()) {
-                descriptor.content = eventWithMetadata.data;
-            } else {
-                descriptor.data = eventWithMetadata.data;
-
-                // W3C SCXML C.2: Parse JSON eventData to params for form-encoded POST (test 519)
-                // When send has <param> elements, eventData contains JSON like {"param1":"1"}
-                // HTTP POST requires params map for application/x-www-form-urlencoded format
-                if (!eventWithMetadata.data.empty() && eventWithMetadata.data.front() == '{') {
-                    try {
-                        using json = nlohmann::json;
-                        json dataObj = json::parse(eventWithMetadata.data);
-                        for (const auto &[key, value] : dataObj.items()) {
-                            // W3C SCXML C.2: Avoid duplicate _scxmleventname in HTTP POST body
-                            // Event name already extracted to descriptor.eventName from eventWithMetadata.event
-                            // W3C requires "single instance" of _scxmleventname parameter
-                            // Only skip if eventName is present (same logic as HttpEventTarget - Zero Duplication)
-                            if (key == "_scxmleventname" && !descriptor.eventName.empty()) {
-                                continue;
-                            }
-
-                            std::string valueStr;
-                            if (value.is_string()) {
-                                valueStr = value.template get<std::string>();
-                            } else if (value.is_number_integer()) {
-                                valueStr = std::to_string(value.template get<int>());
-                            } else if (value.is_number_float()) {
-                                valueStr = std::to_string(value.template get<double>());
-                            } else {
-                                valueStr = value.dump();
-                            }
-                            descriptor.params[key].push_back(valueStr);
-                        }
-                        SCE_LOG_DEBUG("AOT raiseExternal: Parsed {} params from JSON eventData", descriptor.params.size());
-                    } catch (const nlohmann::json::exception &e) {
-                        SCE_LOG_ERROR("Failed to parse eventData as JSON: {}", e.what());
-                    }
-                }
-            }
-
-            // W3C SCXML C.2: Build HTTP request body and content type
-            std::string requestBody;
-            std::string contentType;
-
-            if (!descriptor.eventName.empty() || !descriptor.params.empty()) {
-                // W3C SCXML C.2: Form-encoded format (test 518, 519)
-                contentType = "application/x-www-form-urlencoded";
-                // ARCHITECTURE.md: Zero Duplication - use SendHelper for HTTP POST body generation
-                requestBody = SendHelper::buildHttpPostBody(descriptor.eventName, descriptor.params);
-            } else if (!descriptor.content.empty()) {
-                // W3C SCXML C.2: Content-only send (test 520)
-                requestBody = descriptor.content;
-                contentType = "text/plain";
-            } else {
-                // JSON format
-                requestBody = descriptor.data;
-                contentType = "application/json";
-            }
-
-            // W3C SCXML C.2: Create platform-specific HTTP client (Native + WASM)
-#ifndef __EMSCRIPTEN__
-            // Native: Use CppHttplibClient
-            auto httpClient = std::make_unique<SCE::CppHttplibClient>();
-#else
-            // WASM: Use EmscriptenFetchClient
-            auto httpClient = std::make_unique<SCE::EmscriptenFetchClient>();
+        // W3C SCXML C.2: Delegate BasicHTTP sends to HttpSendHelper
+        if (HttpSendHelper::isHttpSend(eventWithMetadata.originType, eventWithMetadata.target)) {
+            HttpSendHelper::sendHttpPost(policy_.getEventName(eventWithMetadata.event), eventWithMetadata.data,
+                                         eventWithMetadata.target, eventWithMetadata.sendId, *this);
+            return;
+        }
 #endif
 
-            auto resultFuture = httpClient->sendRequest({.method = "POST",
-                                                         .url = eventWithMetadata.target,
-                                                         .body = requestBody,
-                                                         .contentType = contentType,
-                                                         .headers = {}});
+        // Normal internal/external queue processing
+        SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
+                  static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
 
-            // W3C SCXML C.2: Handle platform-specific response processing
-#ifndef __EMSCRIPTEN__
-            // Native: Fire and forget - HTTP response handled by W3CHttpTestServer callback
-            // Server callback will call raiseExternal() when response arrives
-            (void)resultFuture;  // Suppress unused variable warning
-#else
-            // WASM: Parse HTTP response body to extract event (cross-process communication)
-            // WASM client + Native server → must parse response JSON for event data
-            try {
-                auto response = resultFuture.get();
+        // W3C SCXML 6.4.6: Autoforward - forward external events to children with autoforward=true
+        // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
+        SCE_LOG_DEBUG("AOT raiseExternal: About to check autoforward capability");
+        if constexpr (requires {
+                          policy_.forwardToAutoforwardChildren(
+                              std::declval<const std::string &>(),
+                              std::declval<StaticExecutionEngine<StatePolicy> &>());
+                      }) {
+            SCE_LOG_DEBUG("AOT raiseExternal: Policy has autoforward capability");
+            const std::string eventName = policy_.getEventName(eventWithMetadata.event);
+            policy_.forwardToAutoforwardChildren(eventName, *this);
+        } else {
+            SCE_LOG_DEBUG("AOT raiseExternal: Policy does NOT have autoforward capability");
+        }
 
-                if (response.success && !response.body.empty() && response.body.front() == '{') {
-                    // Parse JSON response to extract event name
-                    using json = nlohmann::json;
-                    json responseObj = json::parse(response.body);
+        externalQueue_.raise(eventWithMetadata);
 
-                    SCE_LOG_DEBUG("AOT raiseExternal WASM: HTTP response body: {}", response.body);
-                    SCE_LOG_DEBUG("AOT raiseExternal WASM: responseObj contains 'data': {}", responseObj.contains("data"));
-
-                    if (responseObj.contains("event")) {
-                        std::string eventName = responseObj["event"].template get<std::string>();
-                        SCE_LOG_DEBUG("AOT raiseExternal WASM: Received HTTP response event '{}' from server", eventName);
-
-                        // W3C SCXML C.2: Extract event data from HTTP response
-                        std::string eventData;
-                        if (responseObj.contains("data")) {
-                            eventData = responseObj["data"].dump();
-                            SCE_LOG_DEBUG("AOT raiseExternal WASM: Extracted eventData: {}", eventData);
-                        } else {
-                            SCE_LOG_DEBUG("AOT raiseExternal WASM: No 'data' field in response, eventData empty");
-                        }
-                        raiseExternal(eventName, eventData);
-                    }
-                } else if (!response.success) {
-                    SCE_LOG_ERROR("AOT raiseExternal WASM: HTTP POST failed (status {})", response.statusCode);
-                }
-            } catch (const std::exception &e) {
-                SCE_LOG_ERROR("AOT raiseExternal WASM: Exception while getting HTTP result: {}", e.what());
-            }
-#endif
-        } else
-#endif // SCE_ENABLE_HTTP
-        {
-            // Normal internal/external queue processing
-            SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
-                      static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);
-
-            // W3C SCXML 6.4.6: Autoforward - forward external events to children with autoforward=true
-            // ARCHITECTURE.md Zero Duplication: Policy handles child forwarding (forwardToAutoforwardChildren)
-            SCE_LOG_DEBUG("AOT raiseExternal: About to check autoforward capability");
-            if constexpr (requires {
-                              policy_.forwardToAutoforwardChildren(
-                                  std::declval<const std::string &>(),
-                                  std::declval<StaticExecutionEngine<StatePolicy> &>());
-                          }) {
-                SCE_LOG_DEBUG("AOT raiseExternal: Policy has autoforward capability");
-                const std::string eventName = policy_.getEventName(eventWithMetadata.event);
-                policy_.forwardToAutoforwardChildren(eventName, *this);
-            } else {
-                SCE_LOG_DEBUG("AOT raiseExternal: Policy does NOT have autoforward capability");
-            }
-
-            externalQueue_.raise(eventWithMetadata);
-
-            // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
-            if constexpr (requires { policy_.nextEventIsExternal_; }) {
-                policy_.nextEventIsExternal_ = true;
-            }
+        // W3C SCXML 5.10.1: Mark next event as external for _event.type (test331)
+        if constexpr (requires { policy_.nextEventIsExternal_; }) {
+            policy_.nextEventIsExternal_ = true;
         }
     }
 
