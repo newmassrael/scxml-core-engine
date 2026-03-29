@@ -58,20 +58,16 @@ set(NLOHMANN_JSON_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/nlohman
 # Contains: StaticExecutionEngine, Helper classes, core algorithms, model interfaces
 # No .cpp files, no Logger.cpp dependency
 # All SCE_LOG_* macros are no-ops when using sce_core standalone
+#
+# Include scope: Only the root include/ directory is exposed.
+# All sce_core headers use qualified includes (e.g., "common/Foo.h", "core/Bar.h")
+# which resolve via this single root path. Runtime-only subdirectory flat paths
+# (model/, runtime/, scripting/, etc.) are provided by sce_runtime for its consumers.
 add_library(sce_core INTERFACE)
 
 target_include_directories(sce_core
     INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/model>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/runtime>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/factory>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/parsing>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/actions>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/events>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/states>
         $<BUILD_INTERFACE:${NLOHMANN_JSON_INCLUDE_DIR}>
         $<BUILD_INTERFACE:${PUGIXML_INCLUDE_DIR}>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -225,10 +221,24 @@ target_sources(sce_runtime PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
 )
 
-# sce_runtime include directories are inherited from sce_core (PUBLIC link)
-# backends/ is runtime-only (Logger.cpp, DefaultBackend.cpp, SpdlogBackend.cpp)
-target_include_directories(sce_runtime PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
+# Runtime-specific include directories for short (unqualified) includes
+# sce_core only exposes the root include/ for qualified paths ("common/Foo.h").
+# sce_runtime adds subdirectory flat paths so that runtime headers can use
+# cross-directory short includes (e.g., #include "IEventTarget.h" in events/).
+target_include_directories(sce_runtime
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/model>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/runtime>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/factory>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/parsing>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/actions>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/events>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/states>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/dispatchers>
+    PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
 )
 
 # spdlog includes (runtime-only dependency)

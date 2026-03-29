@@ -29,6 +29,9 @@
 #include "core/AOTEventQueue.h"
 #include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
+// W3C SCXML C.2: BasicHTTP Event I/O Processor support
+// SCE_ENABLE_HTTP is defined only by sce_runtime (PUBLIC), never by sce_core standalone.
+// These headers require sce_runtime linkage (CppHttplibClient.cpp / EmscriptenFetchClient.cpp).
 #ifdef SCE_ENABLE_HTTP
   #ifndef __EMSCRIPTEN__
   #include "events/CppHttplibClient.h"
