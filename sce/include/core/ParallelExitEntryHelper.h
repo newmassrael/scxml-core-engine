@@ -55,11 +55,11 @@ public:
         std::unordered_set<StateType> targetSet(targetStates.begin(), targetStates.end());
 
         // Collect all states to exit (those not ancestors of any target)
-        for (auto activeState : activeStates) {
+        for (const auto &activeState : activeStates) {
             bool shouldExit = true;
 
             // Check if this state is ancestor of any target (if so, don't exit)
-            for (auto targetState : targetStates) {
+            for (const auto &targetState : targetStates) {
                 if (isAncestor<StateType, PolicyType>(activeState, targetState)) {
                     shouldExit = false;
                     break;
@@ -81,7 +81,7 @@ public:
 
                     // Stop if we reach a target state's ancestor
                     bool isTargetAncestor = false;
-                    for (auto targetState : targetStates) {
+                    for (const auto &targetState : targetStates) {
                         if (isAncestor<StateType, PolicyType>(parent.value(), targetState)) {
                             isTargetAncestor = true;
                             break;
@@ -135,7 +135,7 @@ public:
         std::unordered_set<StateType> currentSet(currentStates.begin(), currentStates.end());
 
         // Collect all states to enter (targets and their ancestors)
-        for (auto targetState : targetStates) {
+        for (const auto &targetState : targetStates) {
             auto current = targetState;
 
             // Add target and all ancestors that are not already active

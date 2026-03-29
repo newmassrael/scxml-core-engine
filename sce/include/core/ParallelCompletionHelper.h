@@ -69,11 +69,11 @@ public:
         }
 
         // Check each region for completion
-        for (auto region : regions) {
+        for (const auto &region : regions) {
             bool regionHasFinalState = false;
 
             // Check if any final state child of this region is currently active
-            for (StateType activeState : activeStates) {
+            for (const auto &activeState : activeStates) {
                 // W3C SCXML 3.4: A region is complete if any of its final children are active
                 if (PolicyType::getParent(activeState) == region && PolicyType::isFinalState(activeState)) {
                     regionHasFinalState = true;

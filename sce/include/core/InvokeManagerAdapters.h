@@ -84,7 +84,7 @@ public:
     std::vector<std::shared_ptr<StateMachine>> getAutoforwardSessions(const std::string &parentSessionId) {
         std::vector<std::shared_ptr<StateMachine>> result;
 
-        for (auto &[sessionId, session] : policy_.activeInvokes_) {
+        for (const auto &[sessionId, session] : policy_.activeInvokes_) {
             if (session.autoforward && session.parentSessionId == parentSessionId && session.stateMachine) {
                 result.push_back(session.stateMachine);
             }

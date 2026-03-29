@@ -47,7 +47,7 @@ std::unordered_map<std::string, std::string> PugiXMLElement::getAttributes() con
         return result;
     }
 
-    for (auto attr : node_.attributes()) {
+    for (const auto &attr : node_.attributes()) {
         result[attr.name()] = attr.value();
     }
 
@@ -72,7 +72,7 @@ std::vector<std::shared_ptr<IXMLElement>> PugiXMLElement::getChildren() const {
         return result;
     }
 
-    for (auto child : node_.children()) {
+    for (const auto &child : node_.children()) {
         if (child.type() == pugi::node_element) {
             result.push_back(std::make_shared<PugiXMLElement>(child, doc_));
         }
@@ -88,7 +88,7 @@ std::vector<std::shared_ptr<IXMLElement>> PugiXMLElement::getChildrenByTagName(c
         return result;
     }
 
-    for (auto child : node_.children(tagName.c_str())) {
+    for (const auto &child : node_.children(tagName.c_str())) {
         result.push_back(std::make_shared<PugiXMLElement>(child, doc_));
     }
 
@@ -108,7 +108,7 @@ std::string PugiXMLElement::getTextContent() const {
 
     // If no direct text, get inner XML (handles <cpp>...</cpp> etc.)
     std::ostringstream ss;
-    for (auto child : node_.children()) {
+    for (const auto &child : node_.children()) {
         child.print(ss, "", pugi::format_raw);
     }
     return ss.str();
@@ -128,7 +128,7 @@ bool PugiXMLElement::importNode(const std::shared_ptr<IXMLElement> &source) {
     try {
         // pugixml: append_copy returns the new node
         auto sourceNode = pugiSource->getRawNode();
-        for (auto child : sourceNode.children()) {
+        for (const auto &child : sourceNode.children()) {
             node_.append_copy(child);
         }
         return true;
@@ -179,7 +179,7 @@ std::string PugiXMLElement::serializeChildContent() const {
     // Use pugixml's print() to serialize all child nodes
     std::ostringstream oss;
 
-    for (auto child : node_.children()) {
+    for (const auto &child : node_.children()) {
         // pugi::format_raw: No indentation, no line breaks (compact serialization)
         child.print(oss, "", pugi::format_raw);
     }
@@ -241,7 +241,7 @@ bool PugiXMLDocument::processXIncludeRecursive(pugi::xml_node node, int depth) {
 
     // Find all xi:include elements
     std::vector<pugi::xml_node> includeNodes;
-    for (auto child : node.children()) {
+    for (const auto &child : node.children()) {
         std::string nodeName = child.name();
         if (nodeName == "include" || nodeName == "xi:include") {
             includeNodes.push_back(child);
@@ -252,7 +252,7 @@ bool PugiXMLDocument::processXIncludeRecursive(pugi::xml_node node, int depth) {
     }
 
     // Process each xi:include
-    for (auto includeNode : includeNodes) {
+    for (const auto &includeNode : includeNodes) {
         auto hrefAttr = includeNode.attribute("href");
         if (!hrefAttr) {
             SCE_LOG_WARN("PugiXMLDocument: xi:include missing href attribute");
@@ -292,7 +292,7 @@ bool PugiXMLDocument::processXIncludeRecursive(pugi::xml_node node, int depth) {
         // Import all children of included root into parent
         auto parent = includeNode.parent();
         if (includedRoot) {
-            for (auto child : includedRoot.children()) {
+            for (const auto &child : includedRoot.children()) {
                 parent.insert_copy_before(child, includeNode);
             }
         }

@@ -105,7 +105,7 @@ public:
         std::vector<StateType> initialStates;
         initialStates.reserve(regions.size());
 
-        for (auto region : regions) {
+        for (const auto &region : regions) {
             // Get initial child of each region
             if (PolicyType::isCompoundState(region)) {
                 initialStates.push_back(PolicyType::getInitialChild(region));
@@ -135,7 +135,7 @@ public:
     static bool areAllRegionsFinal(StateType parallelState, const ConfigurationType &configuration) {
         auto regions = getParallelRegions<StateType, PolicyType>(parallelState);
 
-        for (auto region : regions) {
+        for (const auto &region : regions) {
             // Get active state in this region
             auto activeState = configuration.getRegionState(region);
             if (!activeState.has_value() || !PolicyType::isFinalState(activeState.value())) {

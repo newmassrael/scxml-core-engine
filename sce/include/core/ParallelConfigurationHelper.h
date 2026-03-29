@@ -131,7 +131,7 @@ public:
     static void enterParallelState(StateType parallelState, Configuration<StateType> &configuration) {
         auto regions = PolicyType::getParallelRegions(parallelState);
 
-        for (auto region : regions) {
+        for (const auto &region : regions) {
             // Get initial state for this region
             StateType initialState;
             if (PolicyType::isCompoundState(region)) {
@@ -160,7 +160,7 @@ public:
     static void exitParallelState(StateType parallelState, Configuration<StateType> &configuration) {
         auto regions = PolicyType::getParallelRegions(parallelState);
 
-        for (auto region : regions) {
+        for (const auto &region : regions) {
             configuration.removeRegion(region);
         }
     }

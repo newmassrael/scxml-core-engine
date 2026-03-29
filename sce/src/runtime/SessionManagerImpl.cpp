@@ -174,7 +174,7 @@ std::vector<std::string> SessionManagerImpl::getSessionIOProcessors(const std::s
 void SessionManagerImpl::notifySessionCreated(const std::string &sessionId, const std::string &parentSessionId) {
     std::lock_guard<std::mutex> lock(observersMutex_);
 
-    for (auto observer : observers_) {
+    for (const auto &observer : observers_) {
         try {
             observer->onSessionCreated(sessionId, parentSessionId);
         } catch (const std::exception &e) {
@@ -188,7 +188,7 @@ void SessionManagerImpl::notifySessionCreated(const std::string &sessionId, cons
 void SessionManagerImpl::notifySessionDestroyed(const std::string &sessionId) {
     std::lock_guard<std::mutex> lock(observersMutex_);
 
-    for (auto observer : observers_) {
+    for (const auto &observer : observers_) {
         try {
             observer->onSessionDestroyed(sessionId);
         } catch (const std::exception &e) {
@@ -204,7 +204,7 @@ void SessionManagerImpl::notifySessionSystemVariablesUpdated(const std::string &
                                                              const std::vector<std::string> &ioProcessors) {
     std::lock_guard<std::mutex> lock(observersMutex_);
 
-    for (auto observer : observers_) {
+    for (const auto &observer : observers_) {
         try {
             observer->onSessionSystemVariablesUpdated(sessionId, sessionName, ioProcessors);
         } catch (const std::exception &e) {
