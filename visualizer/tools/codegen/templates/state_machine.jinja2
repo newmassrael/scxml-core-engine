@@ -22,12 +22,12 @@
 {% endfor %}
 {% endif %}
 {% if model.static_invokes %}
-#include "common/InvokeHelper.h"
+#include "core/InvokeHelper.h"
 {% endif %}
 {% if model.hybrid_invokes %}
 // W3C SCXML 6.4: Hybrid invoke support (AOT parent + Interpreter child)
 #include "runtime/StateMachine.h"
-#include "common/InvokeHelper.h"
+#include "core/InvokeHelper.h"
 #include "common/FileLoadingHelper.h"
 {% endif %}
 {% if model.needs_send_helper %}
@@ -41,18 +41,18 @@
 {% if model.needs_event_scheduler %}
 #include "common/SendSchedulingHelper.h"
 {% endif %}
-#include "common/TransitionHelper.h"
-#include "common/HistoryHelper.h"
-#include "common/StateEntryHelper.h"
-#include "common/EntryExitHelper.h"
-#include "common/EventMatchingHelper.h"
+#include "core/TransitionHelper.h"
+#include "core/HistoryHelper.h"
+#include "core/StateEntryHelper.h"
+#include "core/EntryExitHelper.h"
+#include "core/EventMatchingHelper.h"
 {% if model.has_parallel_states %}
-#include "common/ParallelStateHelper.h"
-#include "common/ParallelExitEntryHelper.h"
-#include "common/ParallelTransitionHelper.h"
-#include "common/HierarchicalStateHelper.h"
-#include "common/ConflictResolutionHelper.h"
-#include "common/ParallelCompletionHelper.h"
+#include "core/ParallelStateHelper.h"
+#include "core/ParallelExitEntryHelper.h"
+#include "core/ParallelTransitionHelper.h"
+#include "core/HierarchicalStateHelper.h"
+#include "core/ConflictResolutionHelper.h"
+#include "core/ParallelCompletionHelper.h"
 {% endif %}
 #include "common/EventDataHelper.h"
 {% if model.needs_donedata_helper %}
@@ -62,14 +62,14 @@
 {% if model.needs_jsengine %}
 #include "common/DataModelInitHelper.h"
 #include "common/EventTypeHelper.h"
-#include "common/SystemVariableHelper.h"
 #include <optional>
 #include "common/Logger.h"
 #include "scripting/JSEngine.h"
+#include "scripting/ScriptResultUtils.h"
 #include "common/AssignHelper.h"
 #include "common/AssignmentExecutionHelper.h"
 #include "common/ForeachValidator.h"
-#include "common/ForeachHelper.h"
+#include "core/ForeachHelper.h"
 #include "common/GuardHelper.h"
 {% endif %}
 
@@ -351,7 +351,7 @@ struct {{ model.name }}Policy {
         {% endif %}
         {% if model.needs_jsengine or model.static_invokes %}
         if (sessionId_.has_value()) {
-            auto& jsEngine = ::SCE::JSEngine::instance();
+            auto& jsEngine = getScriptEngine();
             jsEngine.destroySession(sessionId_.value());
         }
         {% endif %}
@@ -465,7 +465,7 @@ struct {{ model.name }}Policy {
         auto targets = getInitialChildren(State::{{ state_id | capitalize }});
         
         // W3C SCXML 3.6: Use StateEntryHelper as Single Source of Truth
-        ::SCE::StateEntryHelper::enterDeepTargets<State>(
+        ::SCE::Core::StateEntryHelper::enterDeepTargets<State>(
             State::{{ state_id | capitalize }},
             targets,
             [](State s) -> std::optional<State> { return {{ model.name }}Policy::getParent(s); },
@@ -505,7 +505,7 @@ struct {{ model.name }}Policy {
     // W3C SCXML 3.4: Check if descendant is a descendant of ancestor
     // ARCHITECTURE.MD: Zero Duplication - delegates to HierarchicalStateHelper
     static bool isDescendantOf(State descendant, State ancestor) {
-        return ::SCE::Common::HierarchicalStateHelper<{{ model.name }}Policy>::isDescendantOf(descendant, ancestor);
+        return ::SCE::Core::HierarchicalStateHelper<{{ model.name }}Policy>::isDescendantOf(descendant, ancestor);
     }
 
     // W3C SCXML 3.13: Get document order for exit order tie-breaking

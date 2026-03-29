@@ -361,7 +361,7 @@ private:
         AOT_DEBUG("AOT executeMicrostep: Executing {} transitions as atomic microstep", transitions.size());
 
         // Convert TransitionInfo to ParallelTransitionHelper::Transition
-        ::std::vector<::SCE::ParallelTransitionHelper::Transition<State>> helperTransitions;
+        ::std::vector<::SCE::Core::ParallelTransitionHelper::Transition<State>> helperTransitions;
         helperTransitions.reserve(transitions.size());  // Pre-allocate capacity
         // W3C SCXML Appendix D: Construct transitions directly in vector to avoid GCC -Warray-bounds false positive
         for (const auto& trans : transitions) {
@@ -376,7 +376,7 @@ private:
         }
 
         // W3C SCXML Appendix D.2 Step 1 & 2: Compute and exit states (Helper)
-        auto statesToExit = ::SCE::ParallelTransitionHelper::computeStatesToExit<State, {{ model.name }}Policy>(
+        auto statesToExit = ::SCE::Core::ParallelTransitionHelper::computeStatesToExit<State, {{ model.name }}Policy>(
             helperTransitions, activeStates_
         );
 
@@ -395,7 +395,7 @@ private:
         }
 
         // W3C SCXML Appendix D.2 Step 3: Execute transition content in document order (Helper)
-        auto sortedBySource = ::SCE::ParallelTransitionHelper::sortTransitionsBySource<State, {{ model.name }}Policy>(
+        auto sortedBySource = ::SCE::Core::ParallelTransitionHelper::sortTransitionsBySource<State, {{ model.name }}Policy>(
             helperTransitions
         );
 
@@ -421,7 +421,7 @@ private:
         }
 
         // W3C SCXML Appendix D.2 Step 4-5: Enter target states with hierarchical entry (Helper)
-        auto sortedByTarget = ::SCE::ParallelTransitionHelper::sortTransitionsByTarget<State, {{ model.name }}Policy>(
+        auto sortedByTarget = ::SCE::Core::ParallelTransitionHelper::sortTransitionsByTarget<State, {{ model.name }}Policy>(
             helperTransitions
         );
 
@@ -442,7 +442,7 @@ private:
                 
                 // W3C SCXML 3.13: Build hierarchical entry chain from root to target
                 // This ensures parallel parents are re-entered with all their regions
-                auto entryChain = ::SCE::Common::HierarchicalStateHelper<{{ model.name }}Policy>::buildEntryChain(target);
+                auto entryChain = ::SCE::Core::HierarchicalStateHelper<{{ model.name }}Policy>::buildEntryChain(target);
                 
                 for (State state : entryChain) {
                     // Skip if already active (parallel states may have entered this via recursive entry)
@@ -554,18 +554,18 @@ private:
 {# Generate event matching condition using prefix matching #}
 {% if trans.event in ['*', '.*', '_*'] or trans.event.find('.*') != -1 or ' ' in trans.event %}
             // W3C SCXML 5.9.3: Event descriptor matching (wildcards, patterns, multiple events)
-            if (event != Event::NONE && ::SCE::EventMatchingHelper::matchesEventDescriptor(
+            if (event != Event::NONE && ::SCE::Core::EventMatchingHelper::matchesEventDescriptor(
                 {{ model.name }}Policy::getEventName(event), "{{ trans.event }}")) {
 {% else %}
             // W3C SCXML 5.9.3: Event descriptor matching with prefix matching
             // Descriptor "{{ trans.event }}" matches "{{ trans.event }}" exactly or "{{ trans.event }}.*" prefix
-            if (event != Event::NONE && ::SCE::EventMatchingHelper::matchesEventDescriptor(
+            if (event != Event::NONE && ::SCE::Core::EventMatchingHelper::matchesEventDescriptor(
                 {{ model.name }}Policy::getEventName(event), "{{ trans.event }}")) {
 {% endif %}
 {# Initialize JSEngine if needed (only once per transition) #}
 {% if model.needs_jsengine %}
                 this->ensureJSEngine();
-                [[maybe_unused]] auto& jsEngine = ::SCE::JSEngine::instance();
+                [[maybe_unused]] auto& jsEngine = getScriptEngine();
 {% endif %}
 {# Process single transition with its condition #}
 {% if trans.cond %}
@@ -629,7 +629,7 @@ private:
 {% if first_uses_jsengine %}
             {
                 this->ensureJSEngine();
-                [[maybe_unused]] auto& jsEngine = ::SCE::JSEngine::instance();
+                [[maybe_unused]] auto& jsEngine = getScriptEngine();
 {% endif %}
 {% set first_trans = namespace(value=True) %}
 {% for transition in eventless_transitions %}
@@ -744,7 +744,7 @@ public:
                         AOT_DEBUG("AOT executeTransitionActions: Executing transition {{ loop.index0 }} actions");
 {% if model.needs_jsengine %}
                         this->ensureJSEngine();
-                        [[maybe_unused]] auto& jsEngine = ::SCE::JSEngine::instance();
+                        [[maybe_unused]] auto& jsEngine = getScriptEngine();
 {% endif %}
 {% for action in trans.actions %}
 {% include 'actions/' + action.type + '.jinja2' %}

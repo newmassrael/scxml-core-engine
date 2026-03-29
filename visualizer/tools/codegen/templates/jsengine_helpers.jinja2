@@ -6,18 +6,22 @@
     }
 
 {% if model.needs_jsengine %}
+    // Script engine accessor (pluggable: override for alternative engines like Lua)
+    static ::SCE::IScriptEngine& getScriptEngine() {
+        return ::SCE::JSEngine::instance();
+    }
+
     // Helper: Ensure JSEngine is initialized (lazy initialization)
     void ensureJSEngine() const {
         if (jsEngineInitialized_) return;
         ensureSessionId();
         if (!sessionId_.has_value()) return;
-        auto& jsEngine = ::SCE::JSEngine::instance();
+        auto& jsEngine = getScriptEngine();
         jsEngine.createSession(sessionId_.value());
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors) using SystemVariableHelper
-        // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-        auto setupResult = ::SCE::SystemVariableHelper::setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        auto setupResult = jsEngine.setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             SCE_LOG_ERROR("AOT ensureJSEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
@@ -25,21 +29,21 @@
 {% for var in model.variables %}
 {% if var.expr %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), "{{ var.expr | escape_cpp }}").get();
-        if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
+        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
             SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
         }
 {% elif var.content %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), R"({{ var.content | escape_cpp }})").get();
-        if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
+        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
             SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
         }
 {% elif var.type == 'runtime' %}
         auto initExpr_{{ var.id }} = jsEngine.evaluateExpression(sessionId_.value(), "undefined").get();
-        if (!::SCE::JSEngine::isSuccess(initExpr_{{ var.id }})) {
+        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
             SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
         } else {
             jsEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
@@ -70,13 +74,12 @@
         if (jsEngineInitialized_) return;
         ensureSessionId();
         if (!sessionId_.has_value()) return;
-        auto& jsEngine = ::SCE::JSEngine::instance();
+        auto& jsEngine = getScriptEngine();
         jsEngine.createSession(sessionId_.value());
 
-        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors) using SystemVariableHelper
-        // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-        auto setupResult = ::SCE::SystemVariableHelper::setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        auto setupResult = jsEngine.setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
         if (!setupResult.isSuccess()) {
             SCE_LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
         }
@@ -104,7 +107,7 @@
         // ARCHITECTURE.md Zero Duplication: Matches Interpreter behavior (StateMachine.cpp:1615-1635)
         {
             auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ var.id }} = {{ var.expr | escape_cpp }}").get();
-            if (!::SCE::JSEngine::isSuccess(scriptResult)) {
+            if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
                 std::string errorMsg = "Failed to assign function expression for '{{ var.id }}'";
                 SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
@@ -163,7 +166,7 @@
 {% for script in model.global_scripts %}
         {
             auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ script.content | escape_cpp }}").get();
-            if (!::SCE::JSEngine::isSuccess(scriptResult)) {
+            if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
                 std::string errorMsg = "Global script execution failed";
                 SCE_LOG_ERROR("W3C SCXML 5.8: {}", errorMsg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));

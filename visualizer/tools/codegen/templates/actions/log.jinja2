@@ -5,10 +5,10 @@
 {% elif model.needs_jsengine %}
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     auto logResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.expr | escape_cpp }}").get();
-    if (::SCE::JSEngine::isSuccess(logResult)) {
-        SCE_LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::SCE::JSEngine::resultToString(logResult));
+    if (::SCE::ScriptResultUtils::isSuccess(logResult)) {
+        SCE_LOG_INFO("{% if action.label %}{{ action.label }}: {% endif %}{}", ::SCE::ScriptResultUtils::resultToString(logResult));
     } else {
         SCE_LOG_ERROR("Failed to evaluate log expression: {{ action.expr | escape_cpp }}");
     }
