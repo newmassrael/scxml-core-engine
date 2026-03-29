@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../SCXMLTypes.h"
+#include "IJSExecutionEngine.h"
 #include "ISessionManager.h"
 #include "JSResult.h"
 #include "events/IEventRaiserRegistry.h"
@@ -38,7 +39,7 @@ class StateMachine;
  * Each session has its own variable space, event context, and system variables.
  * All JavaScript execution happens in a single background thread for QuickJS thread safety.
  */
-class JSEngine : public ISessionManager {
+class JSEngine : public ISessionManager, public IJSExecutionEngine {
 public:
     // W3C SCXML 5.9.2: State query callback for In() predicate (static AOT engines)
     // ARCHITECTURE.md All-or-Nothing Strategy: Static engines use callback mechanism
@@ -74,23 +75,27 @@ public:
     /**
      * @brief Shutdown the JavaScript engine and cleanup all sessions
      */
-    void shutdown();
+    void shutdown() override;
 
     // === Lifecycle Management ===
 
-    /**
-     * @brief Initialize JSEngine with worker thread (SOLID: Single Responsibility)
-     * @return true if initialization successful
-     */
-    bool initialize();
+    bool initialize() override { return true; }
 
     /**
      * @brief Check if engine is properly initialized
      * @return true if ready for operations
      */
-    bool isInitialized() const {
+    bool isInitialized() const override {
         return initialized_.load();
     }
+
+    // === IJSExecutionEngine Session Context (delegates to ISessionManager) ===
+
+    bool initializeSessionContext(const std::string &sessionId, const std::string &parentSessionId = "") override {
+        return createSession(sessionId, parentSessionId);
+    }
+    bool cleanupSessionContext(const std::string &sessionId) override { return destroySession(sessionId); }
+    bool hasSessionContext(const std::string &sessionId) const override { return hasSession(sessionId); }
 
     // === Session Management ===
 
@@ -151,7 +156,7 @@ public:
      * @param script JavaScript code to execute
      * @return Future with execution result
      */
-    std::future<JSResult> executeScript(const std::string &sessionId, const std::string &script);
+    std::future<JSResult> executeScript(const std::string &sessionId, const std::string &script) override;
 
     /**
      * @brief Evaluate JavaScript expression in the specified session
@@ -159,7 +164,7 @@ public:
      * @param expression JavaScript expression to evaluate
      * @return Future with evaluation result
      */
-    std::future<JSResult> evaluateExpression(const std::string &sessionId, const std::string &expression);
+    std::future<JSResult> evaluateExpression(const std::string &sessionId, const std::string &expression) override;
 
     // === Session-specific Variable Management ===
 
@@ -170,7 +175,7 @@ public:
      * @param value Variable value
      * @return Future indicating success/failure
      */
-    std::future<JSResult> setVariable(const std::string &sessionId, const std::string &name, const ScriptValue &value);
+    std::future<JSResult> setVariable(const std::string &sessionId, const std::string &name, const ScriptValue &value) override;
 
     /**
      * @brief Set a variable to an XML DOM object (W3C SCXML B.2)
@@ -180,7 +185,7 @@ public:
      * @return Future indicating success/failure
      */
     std::future<JSResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
-                                           const std::string &xmlContent);
+                                           const std::string &xmlContent) override;
 
     /**
      * @brief Get a variable from the specified session
@@ -188,7 +193,7 @@ public:
      * @param name Variable name
      * @return Future with variable value or error
      */
-    std::future<JSResult> getVariable(const std::string &sessionId, const std::string &name);
+    std::future<JSResult> getVariable(const std::string &sessionId, const std::string &name) override;
 
     /**
      * @brief Check if a variable was pre-initialized (set before datamodel initialization)
@@ -196,7 +201,7 @@ public:
      * @param variableName Variable name to check
      * @return true if variable was pre-initialized (e.g., by invoke data)
      */
-    bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const;
+    bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
     // === SCXML-specific Features ===
 
@@ -226,7 +231,7 @@ public:
     std::future<JSResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
                                           const std::string &eventData = "", const std::string &eventType = "internal",
                                           const std::string &sendId = "", const std::string &origin = "",
-                                          const std::string &originType = "", const std::string &invokeId = "");
+                                          const std::string &originType = "", const std::string &invokeId = "") override;
 
     /**
      * @brief Setup SCXML system variables for a session
@@ -236,7 +241,7 @@ public:
      * @return Future indicating success/failure
      */
     std::future<JSResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
-                                               const std::vector<std::string> &ioProcessors);
+                                               const std::vector<std::string> &ioProcessors) override;
 
     /**
      * @brief Register a native function accessible from JavaScript
@@ -245,7 +250,7 @@ public:
      * @return true if registration successful
      */
     bool registerGlobalFunction(const std::string &functionName,
-                                std::function<ScriptValue(const std::vector<ScriptValue> &)> callback);
+                                std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) override;
 
     /**
      * @brief Set the StateMachine instance for In() function integration
@@ -383,17 +388,17 @@ public:
     /**
      * @brief Get engine name and version
      */
-    std::string getEngineInfo() const;
+    std::string getEngineInfo() const override;
 
     /**
      * @brief Get current memory usage in bytes
      */
-    size_t getMemoryUsage() const;
+    size_t getMemoryUsage() const override;
 
     /**
      * @brief Trigger garbage collection
      */
-    void collectGarbage();
+    void collectGarbage() override;
 
     /**
      * @brief Validate JavaScript expression syntax without executing it
@@ -401,7 +406,7 @@ public:
      * @param expression JavaScript expression to validate
      * @return Future with validation result (true if syntax is valid)
      */
-    std::future<JSResult> validateExpression(const std::string &sessionId, const std::string &expression);
+    std::future<JSResult> validateExpression(const std::string &sessionId, const std::string &expression) override;
 
     // === INTEGRATED RESULT PROCESSING API ===
 

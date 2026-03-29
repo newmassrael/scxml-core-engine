@@ -2,7 +2,6 @@
 #include "common/FileLoadingHelper.h"
 #include "common/LogMacros.h"
 #include "runtime/DataContentHelpers.h"
-#include "scripting/JSEngine.h"
 #include <algorithm>
 #include <filesystem>
 
@@ -75,7 +74,7 @@ bool SCE::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
     return false;
 }
 
-bool SCE::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariable(IJSExecutionEngine &jsEngine, const std::string &sessionId,
                                                   const std::string &varId, const std::string &content,
                                                   std::function<void(const std::string &)> errorCallback) {
     // W3C SCXML 5.2.2 & B.2: Initialize datamodel variable with inline content or expression
@@ -154,7 +153,7 @@ bool SCE::DataModelInitHelper::initializeVariable(JSEngine &jsEngine, const std:
     return true;
 }
 
-bool SCE::DataModelInitHelper::initializeVariableFromSrc(JSEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariableFromSrc(IJSExecutionEngine &jsEngine, const std::string &sessionId,
                                                          const std::string &varId, const std::string &src,
                                                          const std::string &basePath,
                                                          std::function<void(const std::string &)> errorCallback) {
@@ -178,7 +177,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(JSEngine &jsEngine, con
     return initSuccess;
 }
 
-bool SCE::DataModelInitHelper::initializeVariableFromExpr(JSEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariableFromExpr(IJSExecutionEngine &jsEngine, const std::string &sessionId,
                                                           const std::string &varId, const std::string &expr,
                                                           std::function<void(const std::string &)> errorCallback) {
     // W3C SCXML 5.2/5.3: Evaluate expr attribute and assign to variable

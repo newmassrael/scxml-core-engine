@@ -66,6 +66,16 @@ public:
      */
     virtual std::future<JSResult> getVariable(const std::string &sessionId, const std::string &name) = 0;
 
+    /**
+     * @brief Set a variable to an XML DOM object (W3C SCXML B.2)
+     * @param sessionId Target session context
+     * @param name Variable name
+     * @param xmlContent XML string to parse as DOM
+     * @return Future indicating success/failure
+     */
+    virtual std::future<JSResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
+                                                   const std::string &xmlContent) = 0;
+
     // === SCXML-specific Features ===
 
     /**
@@ -77,6 +87,25 @@ public:
      */
     virtual std::future<JSResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                        const std::vector<std::string> &ioProcessors) = 0;
+
+    /**
+     * @brief Set current event object in JavaScript context (W3C SCXML 5.10)
+     * @param sessionId Target session context
+     * @param eventName Event name
+     * @param eventData Event data as JSON string
+     * @param eventType Event type ("internal" or "external")
+     * @param sendId Send ID (W3C SCXML 5.10.1)
+     * @param origin Origin URL (W3C SCXML 5.10.1)
+     * @param originType Origin type (W3C SCXML 5.10.1)
+     * @param invokeId Invoke ID (W3C SCXML 6.4.1)
+     * @return Future indicating success/failure
+     */
+    virtual std::future<JSResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
+                                                  const std::string &eventData = "",
+                                                  const std::string &eventType = "internal",
+                                                  const std::string &sendId = "", const std::string &origin = "",
+                                                  const std::string &originType = "",
+                                                  const std::string &invokeId = "") = 0;
 
     // === Global Function Management ===
 

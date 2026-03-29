@@ -3354,7 +3354,7 @@ bool StateMachine::setupJSEnvironment() {
     // ARCHITECTURE.md Zero Duplication: SystemVariableHelper provides Single Source of Truth
     std::string sessionName = model_ && !model_->getName().empty() ? model_->getName() : "StateMachine";
     std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-    auto setupResult = SCE::SystemVariableHelper::setupSystemVariables(sessionId_, sessionName, ioProcessors).get();
+    auto setupResult = SCE::SystemVariableHelper::setupSystemVariables(SCE::JSEngine::instance(), sessionId_, sessionName, ioProcessors).get();
     if (!setupResult.isSuccess()) {
         SCE_LOG_ERROR("StateMachine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         return false;

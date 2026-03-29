@@ -17,7 +17,7 @@
 #pragma once
 
 #include "common/LogMacros.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IJSExecutionEngine.h"
 #include <string>
 
 namespace SCE {
@@ -64,7 +64,7 @@ public:
      * @param invokeId Event invokeid for _event.invokeid
      * @return true if successful, false on error
      */
-    static bool executeFinalizeWithEvent(JSEngine &jsEngine, const std::string &sessionId,
+    static bool executeFinalizeWithEvent(IJSExecutionEngine &jsEngine, const std::string &sessionId,
                                          const std::string &finalizeScript, const std::string &eventName,
                                          const std::string &eventData, const std::string &sendId = "",
                                          const std::string &origin = "", const std::string &originType = "",
@@ -79,8 +79,8 @@ public:
         // Execute finalize script
         auto result = jsEngine.executeScript(sessionId, finalizeScript).get();
 
-        if (!JSEngine::isSuccess(result)) {
-            SCE_LOG_ERROR("FinalizeHelper: Script execution failed: {}", JSEngine::resultToString(result));
+        if (!result.isSuccess()) {
+            SCE_LOG_ERROR("FinalizeHelper: Script execution failed: {}", result.getErrorMessage());
             return false;
         }
 

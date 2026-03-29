@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "scripting/JSEngine.h"
+#include "scripting/IJSExecutionEngine.h"
 #include <functional>
 #include <sstream>
 #include <string>
@@ -67,7 +67,7 @@ public:
      *     [&engine](const std::string& msg) { engine.raise(Event::Error_execution); });
      * ```
      */
-    static bool evaluateContent(JSEngine &jsEngine, const std::string &sessionId, const std::string &contentExpr,
+    static bool evaluateContent(IJSExecutionEngine &jsEngine, const std::string &sessionId, const std::string &contentExpr,
                                 std::string &outEventData, std::function<void(const std::string &)> onError = nullptr) {
         if (contentExpr.empty()) {
             outEventData = "";
@@ -78,7 +78,7 @@ public:
         auto future = jsEngine.evaluateExpression(sessionId, contentExpr);
         auto result = future.get();
 
-        if (JSEngine::isSuccess(result)) {
+        if (result.isSuccess()) {
             const auto &value = result.getInternalValue();
             outEventData = convertScriptValueToJson(value, false);
 
@@ -133,7 +133,7 @@ public:
      *     [&engine](const std::string& msg) { engine.raise(Event::Error_execution); });
      * ```
      */
-    static bool evaluateParams(JSEngine &jsEngine, const std::string &sessionId,
+    static bool evaluateParams(IJSExecutionEngine &jsEngine, const std::string &sessionId,
                                const std::vector<std::pair<std::string, std::string>> &params,
                                std::string &outEventData, std::function<void(const std::string &)> onError = nullptr) {
         if (params.empty()) {
@@ -164,7 +164,7 @@ public:
             auto future = jsEngine.evaluateExpression(sessionId, paramExpr);
             auto result = future.get();
 
-            if (JSEngine::isSuccess(result)) {
+            if (result.isSuccess()) {
                 // W3C SCXML 5.7: Successfully evaluated param
                 if (!first) {
                     jsonBuilder << ",";

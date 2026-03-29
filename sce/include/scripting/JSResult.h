@@ -222,6 +222,34 @@ public:
             value_internal);
     }
 
+    /**
+     * @brief ECMAScript truthy conversion (ECMA-262 7.1.2 ToBoolean)
+     *
+     * Converts the result value to boolean using JavaScript truthiness rules:
+     * - bool: direct value
+     * - int64_t: true if non-zero
+     * - double: true if non-zero
+     * - string: true if non-empty
+     * - undefined/null/error: false
+     *
+     * @return false if result is an error or value is falsy
+     */
+    bool toBool() const {
+        if (!success_internal) {
+            return false;
+        }
+        if (std::holds_alternative<bool>(value_internal)) {
+            return std::get<bool>(value_internal);
+        } else if (std::holds_alternative<int64_t>(value_internal)) {
+            return std::get<int64_t>(value_internal) != 0;
+        } else if (std::holds_alternative<double>(value_internal)) {
+            return std::get<double>(value_internal) != 0.0;
+        } else if (std::holds_alternative<std::string>(value_internal)) {
+            return !std::get<std::string>(value_internal).empty();
+        }
+        return false;
+    }
+
     // Internal value accessor for friend classes only
     const ScriptValue &getInternalValue() const {
         return value_internal;

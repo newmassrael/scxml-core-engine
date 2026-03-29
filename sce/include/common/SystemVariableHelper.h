@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "scripting/JSEngine.h"
+#include "scripting/IJSExecutionEngine.h"
 #include <future>
 #include <string>
 #include <vector>
@@ -60,9 +60,10 @@ public:
      * @param ioProcessors List of I/O processor types (e.g., ["scxml"])
      * @return Future with JSResult indicating success/failure
      */
-    static std::future<JSResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
+    static std::future<JSResult> setupSystemVariables(IJSExecutionEngine &jsEngine, const std::string &sessionId,
+                                                      const std::string &sessionName,
                                                       const std::vector<std::string> &ioProcessors) {
-        return JSEngine::instance().setupSystemVariables(sessionId, sessionName, ioProcessors);
+        return jsEngine.setupSystemVariables(sessionId, sessionName, ioProcessors);
     }
 };
 
