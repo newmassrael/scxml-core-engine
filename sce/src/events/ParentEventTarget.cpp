@@ -6,6 +6,7 @@
 #include "events/IEventDispatcher.h"
 #include "runtime/IEventRaiser.h"
 #include "scripting/JSEngine.h"
+#include "scripting/SessionRegistry.h"
 #include <sstream>
 #include <thread>
 
@@ -132,8 +133,7 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
         }
 
         // W3C SCXML 5.10 test 338: Get invoke ID for this child session
-        JSEngine &jsEngine = JSEngine::instance();
-        std::string invokeId = jsEngine.getInvokeIdForChildSession(actualChildSessionId);
+        std::string invokeId = SessionRegistry::instance().getInvokeIdForChildSession(actualChildSessionId);
 
         // Raise event in parent session using parent's EventRaiser with origin and invoke tracking
         // W3C SCXML 6.4: Pass child session ID as originSessionId for finalize support

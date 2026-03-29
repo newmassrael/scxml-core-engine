@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "scripting/IJSExecutionEngine.h"
+#include "scripting/IScriptEngine.h"
 #include <functional>
 #include <sstream>
 #include <string>
@@ -67,7 +67,7 @@ public:
      *     [&engine](const std::string& msg) { engine.raise(Event::Error_execution); });
      * ```
      */
-    static bool evaluateContent(IJSExecutionEngine &jsEngine, const std::string &sessionId, const std::string &contentExpr,
+    static bool evaluateContent(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &contentExpr,
                                 std::string &outEventData, std::function<void(const std::string &)> onError = nullptr) {
         if (contentExpr.empty()) {
             outEventData = "";
@@ -133,7 +133,7 @@ public:
      *     [&engine](const std::string& msg) { engine.raise(Event::Error_execution); });
      * ```
      */
-    static bool evaluateParams(IJSExecutionEngine &jsEngine, const std::string &sessionId,
+    static bool evaluateParams(IScriptEngine &jsEngine, const std::string &sessionId,
                                const std::vector<std::pair<std::string, std::string>> &params,
                                std::string &outEventData, std::function<void(const std::string &)> onError = nullptr) {
         if (params.empty()) {

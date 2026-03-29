@@ -74,7 +74,7 @@ bool SCE::DataModelInitHelper::isFunctionExpression(const std::string &expr) {
     return false;
 }
 
-bool SCE::DataModelInitHelper::initializeVariable(IJSExecutionEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariable(IScriptEngine &jsEngine, const std::string &sessionId,
                                                   const std::string &varId, const std::string &content,
                                                   std::function<void(const std::string &)> errorCallback) {
     // W3C SCXML 5.2.2 & B.2: Initialize datamodel variable with inline content or expression
@@ -153,7 +153,7 @@ bool SCE::DataModelInitHelper::initializeVariable(IJSExecutionEngine &jsEngine, 
     return true;
 }
 
-bool SCE::DataModelInitHelper::initializeVariableFromSrc(IJSExecutionEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariableFromSrc(IScriptEngine &jsEngine, const std::string &sessionId,
                                                          const std::string &varId, const std::string &src,
                                                          const std::string &basePath,
                                                          std::function<void(const std::string &)> errorCallback) {
@@ -177,7 +177,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromSrc(IJSExecutionEngine &jsE
     return initSuccess;
 }
 
-bool SCE::DataModelInitHelper::initializeVariableFromExpr(IJSExecutionEngine &jsEngine, const std::string &sessionId,
+bool SCE::DataModelInitHelper::initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId,
                                                           const std::string &varId, const std::string &expr,
                                                           std::function<void(const std::string &)> errorCallback) {
     // W3C SCXML 5.2/5.3: Evaluate expr attribute and assign to variable

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ISessionLifecycle.h"
 #include <string>
 #include <vector>
 
@@ -9,39 +10,14 @@ namespace SCE {
 class ISessionObserver;
 
 /**
- * @brief Interface for session management operations (SOLID: Interface Segregation + Observer Pattern)
+ * @brief Extended session management with observer support
  *
- * Extended interface that provides session management with observer support
- * for decoupled notification of session lifecycle events.
+ * Extends ISessionLifecycle with observer pattern and session query capabilities.
+ * Used by EventRaiserService for session validation.
  */
-class ISessionManager {
+class ISessionManager : public virtual ISessionLifecycle {
 public:
     virtual ~ISessionManager() = default;
-
-    /**
-     * @brief Check if a session exists
-     *
-     * @param sessionId Session identifier to check
-     * @return true if session exists, false otherwise
-     */
-    virtual bool hasSession(const std::string &sessionId) const = 0;
-
-    /**
-     * @brief Create a new session
-     *
-     * @param sessionId New session identifier
-     * @param parentSessionId Parent session identifier (optional)
-     * @return true if session created successfully
-     */
-    virtual bool createSession(const std::string &sessionId, const std::string &parentSessionId = "") = 0;
-
-    /**
-     * @brief Destroy an existing session
-     *
-     * @param sessionId Session identifier to destroy
-     * @return true if session destroyed successfully
-     */
-    virtual bool destroySession(const std::string &sessionId) = 0;
 
     // === Observer Pattern Support ===
 

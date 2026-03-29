@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "scripting/IJSExecutionEngine.h"
+#include "scripting/IScriptEngine.h"
 #include <functional>
 #include <string>
 
@@ -81,7 +81,7 @@ public:
      *
      * W3C SCXML 5.3: Raises error.execution if initialization fails
      */
-    static bool initializeVariable(IJSExecutionEngine &jsEngine, const std::string &sessionId, const std::string &varId,
+    static bool initializeVariable(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
                                    const std::string &content, std::function<void(const std::string &)> errorCallback);
 
     /**
@@ -96,7 +96,7 @@ public:
      *
      * W3C SCXML 5.2.2: Load content from external source and initialize
      */
-    static bool initializeVariableFromSrc(IJSExecutionEngine &jsEngine, const std::string &sessionId, const std::string &varId,
+    static bool initializeVariableFromSrc(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
                                           const std::string &src, const std::string &basePath,
                                           std::function<void(const std::string &)> errorCallback);
 
@@ -112,7 +112,7 @@ public:
      *
      * W3C SCXML 5.2.2: Evaluate expr and assign to variable
      */
-    static bool initializeVariableFromExpr(IJSExecutionEngine &jsEngine, const std::string &sessionId, const std::string &varId,
+    static bool initializeVariableFromExpr(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &varId,
                                            const std::string &expr,
                                            std::function<void(const std::string &)> errorCallback);
 };

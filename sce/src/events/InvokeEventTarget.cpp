@@ -4,7 +4,7 @@
 #include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
 #include "runtime/IEventRaiser.h"
-#include "scripting/JSEngine.h"
+#include "scripting/SessionRegistry.h"
 #include <sstream>
 
 namespace SCE {
@@ -33,7 +33,7 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
         // [EVENT ROUTING] Step 1: Find child session ID using JSEngine invoke mapping
         SCE_LOG_INFO("[EVENT ROUTING] InvokeEventTarget looking up child session: parent='{}', invokeId='{}'",
                  parentSessionId_, invokeId_);
-        std::string childSessionId = JSEngine::instance().getInvokeSessionId(parentSessionId_, invokeId_);
+        std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId_, invokeId_);
         if (childSessionId.empty()) {
             SCE_LOG_ERROR("[EVENT ROUTING] ❌ FAILED: No child session found for invoke ID '{}' in parent '{}'", invokeId_,
                       parentSessionId_);
@@ -135,7 +135,7 @@ std::vector<std::string> InvokeEventTarget::validate() const {
     }
 
     // Check if child session exists
-    std::string childSessionId = JSEngine::instance().getInvokeSessionId(parentSessionId_, invokeId_);
+    std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId_, invokeId_);
     if (childSessionId.empty()) {
         errors.push_back("No child session found for invoke ID: " + invokeId_);
     } else {
@@ -150,7 +150,7 @@ std::vector<std::string> InvokeEventTarget::validate() const {
 }
 
 std::string InvokeEventTarget::getDebugInfo() const {
-    std::string childSessionId = JSEngine::instance().getInvokeSessionId(parentSessionId_, invokeId_);
+    std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId_, invokeId_);
     return "invoke target (invoke: " + invokeId_ + ", parent: " + parentSessionId_ + ", child: " + childSessionId + ")";
 }
 

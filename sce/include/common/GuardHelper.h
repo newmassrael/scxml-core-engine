@@ -16,7 +16,7 @@
 
 #pragma once
 #include "core/LogMacros.h"
-#include "scripting/IJSExecutionEngine.h"
+#include "scripting/IScriptEngine.h"
 #include <optional>
 #include <string>
 
@@ -30,13 +30,13 @@ namespace SCE::GuardHelper {
  * treat the expression as if it evaluated to 'false' AND place error.execution in
  * the internal event queue.
  *
- * @param jsEngine Reference to IJSExecutionEngine instance
+ * @param jsEngine Reference to IScriptEngine instance
  * @param sessionId Session ID
  * @param guardExpr Guard expression to evaluate (e.g., "typeof Var4 !== 'undefined'")
  * @return std::optional<bool> - std::nullopt if evaluation failed (caller must raise error.execution),
  *                                true/false if evaluation succeeded
  */
-inline std::optional<bool> evaluateGuard(IJSExecutionEngine &jsEngine, const std::string &sessionId,
+inline std::optional<bool> evaluateGuard(IScriptEngine &jsEngine, const std::string &sessionId,
                                          const std::string &guardExpr) {
     auto guardResult = jsEngine.evaluateExpression(sessionId, guardExpr).get();
 

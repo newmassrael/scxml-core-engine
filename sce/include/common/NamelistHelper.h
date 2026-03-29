@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "scripting/ScriptResultUtils.h"
 #include <map>
 #include <sstream>
 #include <string>
@@ -97,7 +98,7 @@ public:
             // Evaluate variable in JSEngine context
             auto varResult = jsEngine.getVariable(sessionId, varName).get();
 
-            if (!JSEngineType::isSuccess(varResult)) {
+            if (!ScriptResultUtils::isSuccess(varResult)) {
                 // W3C SCXML 6.2: Evaluation error → raise error.execution
                 std::string errorMsg = "Failed to evaluate namelist variable '" + varName + "'";
                 errorHandler(errorMsg);
@@ -105,7 +106,7 @@ public:
             }
 
             // Store variable value in params map
-            std::string varValue = JSEngineType::resultToString(varResult);
+            std::string varValue = ScriptResultUtils::resultToString(varResult);
             params[varName].push_back(varValue);
         }
 

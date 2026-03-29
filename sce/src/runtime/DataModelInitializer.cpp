@@ -6,6 +6,8 @@
 #include "runtime/BindingHelper.h"
 #include "runtime/DataContentHelpers.h"
 #include "scripting/JSEngine.h"
+#include "scripting/ScriptResultUtils.h"
+#include "scripting/SessionRegistry.h"
 #include <string>
 
 namespace SCE {
@@ -79,7 +81,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
         auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
         auto setResult = setVarFuture.get();
 
-        if (!SCE::JSEngine::isSuccess(setResult)) {
+        if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
             SCE_LOG_ERROR("DataModelInitializer: Failed to create unbound variable '{}': {}", id,
                       setResult.getErrorMessage());
             if (eventRaiser_) {
@@ -107,7 +109,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             auto scriptFuture = SCE::JSEngine::instance().executeScript(sessionId_, assignmentScript);
             auto scriptResult = scriptFuture.get();
 
-            if (!SCE::JSEngine::isSuccess(scriptResult)) {
+            if (!SCE::ScriptResultUtils::isSuccess(scriptResult)) {
                 SCE_LOG_ERROR(
                     "DataModelInitializer: Failed to assign function expression '{}' to variable '{}': {}", expr, id,
                     scriptResult.getErrorMessage());
@@ -146,7 +148,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
 
         // Resolve relative path based on SCXML file location
         if (filePath[0] != '/') {  // Relative path
-            std::string scxmlFilePath = SCE::JSEngine::instance().getSessionFilePath(sessionId_);
+            std::string scxmlFilePath = SCE::SessionRegistry::instance().getSessionFilePath(sessionId_);
             if (!scxmlFilePath.empty()) {
                 // Extract directory from SCXML file path
                 size_t lastSlash = scxmlFilePath.find_last_of("/");
@@ -179,7 +181,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             auto setVarFuture = SCE::JSEngine::instance().setVariableAsDOM(sessionId_, id, fileContent);
             auto setResult = setVarFuture.get();
 
-            if (!SCE::JSEngine::isSuccess(setResult)) {
+            if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
                 SCE_LOG_ERROR(
                     "DataModelInitializer: Failed to set XML content from file '{}' for variable '{}': {}", filePath,
                     id, setResult.getErrorMessage());
@@ -197,13 +199,13 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             auto future = SCE::JSEngine::instance().evaluateExpression(sessionId_, fileContent);
             auto result = future.get();
 
-            if (SCE::JSEngine::isSuccess(result)) {
+            if (SCE::ScriptResultUtils::isSuccess(result)) {
                 // Successfully evaluated as JSON/JS expression
                 auto setVarFuture =
                     SCE::JSEngine::instance().setVariable(sessionId_, id, result.getInternalValue());
                 auto setResult = setVarFuture.get();
 
-                if (!SCE::JSEngine::isSuccess(setResult)) {
+                if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
                     SCE_LOG_ERROR("DataModelInitializer: Failed to set variable '{}' from file '{}': {}", id, filePath,
                               setResult.getErrorMessage());
                     if (eventRaiser_) {
@@ -223,7 +225,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
                     SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{normalized});
                 auto setResult = setVarFuture.get();
 
-                if (!SCE::JSEngine::isSuccess(setResult)) {
+                if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
                     SCE_LOG_ERROR(
                         "DataModelInitializer: Failed to set normalized text from file '{}' for variable '{}': {}",
                         filePath, id, setResult.getErrorMessage());
@@ -260,7 +262,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
         auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
         auto setResult = setVarFuture.get();
 
-        if (!SCE::JSEngine::isSuccess(setResult)) {
+        if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
             SCE_LOG_ERROR("DataModelInitializer: Failed to create undefined variable '{}': {}", id,
                       setResult.getErrorMessage());
             if (eventRaiser_) {

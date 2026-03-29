@@ -16,6 +16,7 @@
 
 #pragma once
 #include "core/LogMacros.h"
+#include "scripting/ScriptResultUtils.h"
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -143,7 +144,7 @@ public:
             return std::nullopt;  // Return failure instead of throwing
         }
 
-        return JSEngineType::resultToStringArray(arrayResult, sessionId, arrayExpr);
+        return ScriptResultUtils::resultToStringArray(arrayResult, &jsEngine, sessionId, arrayExpr);
     }
 
     /**

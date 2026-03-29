@@ -2,7 +2,7 @@
 
 #include "SCXMLTypes.h"
 #include "runtime/ISessionObserver.h"
-#include "scripting/IJSExecutionEngine.h"
+#include "scripting/IScriptEngine.h"
 #include "scripting/JSResult.h"
 #include <atomic>
 #include <condition_variable>
@@ -33,7 +33,7 @@ class StateMachine;
  * SOLID Architecture: Single Responsibility for JavaScript execution only.
  * Implements Observer pattern to synchronize with session lifecycle.
  */
-class JSExecutionEngineImpl : public IJSExecutionEngine, public ISessionObserver {
+class JSExecutionEngineImpl : public IScriptEngine, public ISessionObserver {
 public:
     JSExecutionEngineImpl();
     ~JSExecutionEngineImpl() override;
@@ -44,7 +44,7 @@ public:
     JSExecutionEngineImpl(JSExecutionEngineImpl &&) = delete;
     JSExecutionEngineImpl &operator=(JSExecutionEngineImpl &&) = delete;
 
-    // === IJSExecutionEngine Implementation ===
+    // === IScriptEngine Implementation ===
 
     std::future<JSResult> executeScript(const std::string &sessionId, const std::string &script) override;
     std::future<JSResult> evaluateExpression(const std::string &sessionId, const std::string &expression) override;

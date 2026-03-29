@@ -20,6 +20,7 @@
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineContext.h"
 #include "scripting/JSEngine.h"
+#include "scripting/SessionRegistry.h"
 #include "tests/w3c/W3CHttpTestServer.h"
 #include <httplib.h>
 
@@ -1055,7 +1056,7 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
     auto parentInvokeid = JSEngine::instance().getVariable(parentSessionId, "parent_invokeid").get().getValueAsString();
     auto parentData = JSEngine::instance().getVariable(parentSessionId, "parent_data").get().getValueAsString();
 
-    std::string childSessionId = JSEngine::instance().getInvokeSessionId(parentSessionId, "childInvokeId");
+    std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId, "childInvokeId");
     ASSERT_FALSE(childSessionId.empty()) << "Child session should exist";
 
     auto childName = JSEngine::instance().getVariable(childSessionId, "child_name").get().getValueAsString();
@@ -1197,7 +1198,7 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
 
     // Get child session ID to verify onexit handler execution
     std::string parentSessionId = parentStateMachine->getSessionId();
-    std::string childSessionId = JSEngine::instance().getInvokeSessionId(parentSessionId, "childInvokeId");
+    std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId, "childInvokeId");
 
     // W3C SCXML 3.13: Child session should exist before cancellation
     // After cancellation, session may be destroyed but onexit should have executed

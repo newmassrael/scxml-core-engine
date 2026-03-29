@@ -30,6 +30,8 @@
 #include "events/ParentEventTarget.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "scripting/JSEngine.h"
+#include "scripting/ScriptResultUtils.h"
+#include "scripting/SessionRegistry.h"
 #include <atomic>
 #include <cassert>
 #include <chrono>
@@ -48,7 +50,7 @@ ActionExecutorImpl::~ActionExecutorImpl() {
     // W3C SCXML 6.2: Unregister from JSEngine EventDispatcher registry for proper cleanup
     if (eventDispatcher_) {
         try {
-            JSEngine::instance().unregisterEventDispatcher(sessionId_);
+            SessionRegistry::instance().unregisterEventDispatcher(sessionId_);
             SCE_LOG_DEBUG("ActionExecutorImpl: Unregistered EventDispatcher for session: {} during destruction",
                       sessionId_);
         } catch (const std::exception &e) {
@@ -230,7 +232,7 @@ bool ActionExecutorImpl::tryJavaScriptEvaluation(const std::string &expression, 
         }
 
         // Convert JavaScript result to string using the integrated API
-        result = JSEngine::resultToString(jsResult, sessionId_, jsExpression);
+        result = ScriptResultUtils::resultToString(jsResult, &JSEngine::instance(), sessionId_, jsExpression);
         SCE_LOG_DEBUG("JavaScript evaluation successful: '{}' -> '{}' (JS: '{}')", expression, result, jsExpression);
         return true;
 
@@ -399,7 +401,7 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     // W3C SCXML 6.2: Unregister old EventDispatcher if one exists
     if (eventDispatcher_) {
         try {
-            JSEngine::instance().unregisterEventDispatcher(sessionId_);
+            SessionRegistry::instance().unregisterEventDispatcher(sessionId_);
             SCE_LOG_DEBUG("ActionExecutorImpl: Unregistered previous EventDispatcher for session: {}", sessionId_);
         } catch (const std::exception &e) {
             SCE_LOG_WARN("ActionExecutorImpl: Failed to unregister previous EventDispatcher: {}", e.what());
@@ -412,7 +414,7 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     // W3C SCXML 6.2: Register new EventDispatcher with JSEngine for automatic delayed event cancellation
     if (eventDispatcher_) {
         try {
-            JSEngine::instance().registerEventDispatcher(sessionId_, eventDispatcher_);
+            SessionRegistry::instance().registerEventDispatcher(sessionId_, eventDispatcher_);
             SCE_LOG_DEBUG("ActionExecutorImpl: Registered EventDispatcher with JSEngine for session: {}", sessionId_);
         } catch (const std::exception &e) {
             SCE_LOG_ERROR("ActionExecutorImpl: Failed to register EventDispatcher with JSEngine: {}", e.what());

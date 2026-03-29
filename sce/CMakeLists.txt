@@ -167,6 +167,8 @@ add_library(sce_runtime
     src/scripting/JSEngine.cpp
     src/scripting/JSEngineImpl.cpp
     src/scripting/JSExecutionEngineImpl.cpp
+    src/scripting/ScriptResultUtils.cpp
+    src/scripting/SessionRegistry.cpp
     src/scripting/XMLDOMWrapper.cpp  # W3C SCXML B.2: XML DOM (pugixml for all platforms)
     src/scripting/DOMBinding.cpp      # QuickJS bindings for XML DOM API
 

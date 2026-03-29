@@ -24,7 +24,7 @@ if (!::SCE::SendHelper::isSupportedSendType("{{ action.send_type }}")) {
 // W3C SCXML 6.2.4: Store sendid in idlocation (test183, test332)
 {% if model.needs_jsengine or model.needs_event_origin %}
 this->ensureJSEngine();
-auto& jsEngine = ::SCE::JSEngine::instance();
+auto& jsEngine = getScriptEngine();
 ::SCE::SendHelper::storeInIdLocation(jsEngine, sessionId_.value(), "{{ action.idlocation }}", sendId);
 {% else %}
 {{ action.idlocation }} = sendId;
@@ -37,14 +37,14 @@ std::string dynamicType;
 {
 {% if model.needs_jsengine or model.needs_event_origin %}
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     auto typeResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.typeexpr | escape_cpp }}").get();
-    if (!::SCE::JSEngine::isSuccess(typeResult)) {
+    if (!::SCE::ScriptResultUtils::isSuccess(typeResult)) {
         SCE_LOG_ERROR("Failed to evaluate typeexpr: {{ action.typeexpr }}");
         // W3C SCXML 6.2: Invalid typeexpr → use default SCXMLEventProcessor
         dynamicType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor";
     } else {
-        dynamicType = ::SCE::JSEngine::resultToString(typeResult, sessionId_.value(), "{{ action.typeexpr | escape_cpp }}");
+        dynamicType = ::SCE::ScriptResultUtils::resultToString(typeResult, &jsEngine, sessionId_.value(), "{{ action.typeexpr | escape_cpp }}");
         AOT_DEBUG("Evaluated typeexpr='{{ action.typeexpr }}' → type='{}'", dynamicType);
     }
 {% else %}
@@ -68,13 +68,13 @@ if (!::SCE::SendHelper::isSupportedSendType(dynamicType)) {
 std::string dynamicTarget;
 {% if model.needs_jsengine or model.needs_event_origin %}
 this->ensureJSEngine();
-auto& jsEngine = ::SCE::JSEngine::instance();
+auto& jsEngine = getScriptEngine();
 auto targetResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.targetexpr | escape_cpp }}").get();
-if (!::SCE::JSEngine::isSuccess(targetResult)) {
+if (!::SCE::ScriptResultUtils::isSuccess(targetResult)) {
     SCE_LOG_ERROR("Failed to evaluate targetexpr: {{ action.targetexpr }}");
     engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
 }
-dynamicTarget = ::SCE::JSEngine::resultToString(targetResult, sessionId_.value(), "{{ action.targetexpr | escape_cpp }}");
+dynamicTarget = ::SCE::ScriptResultUtils::resultToString(targetResult, &jsEngine, sessionId_.value(), "{{ action.targetexpr | escape_cpp }}");
 {% else %}
 {% if action.targetexpr == '_event.origin' %}
 dynamicTarget = pendingEventOrigin_;
@@ -106,10 +106,10 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     std::string delayStr;
 {% if model.needs_jsengine or model.needs_event_origin %}
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     auto delayResult = jsEngine.getVariable(sessionId_.value(), "{{ action.delayexpr }}").get();
-    if (::SCE::JSEngine::isSuccess(delayResult)) {
-        delayStr = ::SCE::JSEngine::resultToString(delayResult);
+    if (::SCE::ScriptResultUtils::isSuccess(delayResult)) {
+        delayStr = ::SCE::ScriptResultUtils::resultToString(delayResult);
     }
 {% else %}
     delayStr = {{ action.delayexpr }};
@@ -143,7 +143,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 {% set needs_jsengine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
 {% if needs_jsengine %}
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
 {% endif %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
@@ -153,8 +153,8 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     // W3C SCXML 5.10: Dynamic param expr evaluation
     {
         auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
-        if (::SCE::JSEngine::isSuccess(paramResult)) {
-            params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
+        if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+            params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
         } else {
             SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
             params["{{ param.name }}"].push_back("");
@@ -276,13 +276,13 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 {
 {% if model.needs_jsengine or model.needs_event_origin %}
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     auto eventResult = jsEngine.getVariable(sessionId_.value(), "{{ action.eventexpr }}").get();
-    if (!::SCE::JSEngine::isSuccess(eventResult)) {
+    if (!::SCE::ScriptResultUtils::isSuccess(eventResult)) {
         SCE_LOG_ERROR("Failed to get variable for eventexpr: {{ action.eventexpr }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
     } else {
-    std::string eventName = ::SCE::JSEngine::resultToString(eventResult);
+    std::string eventName = ::SCE::ScriptResultUtils::resultToString(eventResult);
 {% else %}
     std::string eventName = {{ action.eventexpr }};
 {% endif %}
@@ -318,7 +318,7 @@ std::map<std::string, std::vector<std::string>> params;
 {% if needs_jsengine %}
 // W3C SCXML C.2: Dynamic param expr requires JSEngine evaluation (Static Hybrid)
 this->ensureJSEngine();
-auto& jsEngine = ::SCE::JSEngine::instance();
+auto& jsEngine = getScriptEngine();
 {% endif %}
 {% for param in action.params %}
 {% if param.is_static_literal %}
@@ -328,8 +328,8 @@ params["{{ param.name }}"].push_back("{{ param.static_value }}");
 // W3C SCXML C.2: Dynamic param expr evaluation
 {
     auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
-    if (::SCE::JSEngine::isSuccess(paramResult)) {
-        params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
+    if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+        params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
     } else {
         SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
         params["{{ param.name }}"].push_back("");
@@ -356,7 +356,7 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
 {% if model.needs_jsengine or model.needs_event_origin %}
     {
         this->ensureJSEngine();
-        auto& jsEngine = ::SCE::JSEngine::instance();
+        auto& jsEngine = getScriptEngine();
         bool success = ::SCE::NamelistHelper::evaluateNamelist(
             jsEngine, sessionId_.value(), "{{ action.namelist }}",
             params,
@@ -375,10 +375,10 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
 {% if model.needs_jsengine or model.needs_event_origin %}
     {
         this->ensureJSEngine();
-        auto& jsEngine = ::SCE::JSEngine::instance();
+        auto& jsEngine = getScriptEngine();
         auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
-        if (::SCE::JSEngine::isSuccess(paramResult)) {
-            params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
+        if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+            params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
         } else {
             SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
             params["{{ param.name }}"].push_back("");
@@ -394,10 +394,10 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
     std::string delayStr;
 {% if model.needs_jsengine or model.needs_event_origin %}
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     auto delayResult = jsEngine.getVariable(sessionId_.value(), "{{ action.delayexpr }}").get();
-    if (::SCE::JSEngine::isSuccess(delayResult)) {
-        delayStr = ::SCE::JSEngine::resultToString(delayResult);
+    if (::SCE::ScriptResultUtils::isSuccess(delayResult)) {
+        delayStr = ::SCE::ScriptResultUtils::resultToString(delayResult);
     }
 {% else %}
     delayStr = {{ action.delayexpr }};
@@ -423,7 +423,7 @@ std::map<std::string, std::vector<std::string>> params;
 {% if model.needs_jsengine or model.needs_event_origin %}
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     bool success = ::SCE::NamelistHelper::evaluateNamelist(
         jsEngine, sessionId_.value(), "{{ action.namelist }}",
         params,
@@ -442,10 +442,10 @@ std::map<std::string, std::vector<std::string>> params;
 {% if model.needs_jsengine or model.needs_event_origin %}
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     auto paramResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
-    if (::SCE::JSEngine::isSuccess(paramResult)) {
-        params["{{ param.name }}"].push_back(::SCE::JSEngine::resultToString(paramResult));
+    if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+        params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
     } else {
         SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
         params["{{ param.name }}"].push_back("");
@@ -553,11 +553,11 @@ if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
 // W3C SCXML 5.10: Evaluate content expression
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     auto contentResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ action.contentexpr | escape_cpp }}").get();
     std::string eventData;
-    if (::SCE::JSEngine::isSuccess(contentResult)) {
-        eventData = ::SCE::JSEngine::resultToString(contentResult);
+    if (::SCE::ScriptResultUtils::isSuccess(contentResult)) {
+        eventData = ::SCE::ScriptResultUtils::resultToString(contentResult);
     } else {
         SCE_LOG_ERROR("Failed to evaluate content expr: {{ action.contentexpr }}");
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));

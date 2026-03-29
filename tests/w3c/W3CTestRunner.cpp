@@ -13,6 +13,7 @@
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineBuilder.h"
 #include "runtime/StateMachineContext.h"
+#include "scripting/SessionRegistry.h"
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -257,7 +258,7 @@ std::unique_ptr<ITestExecutor> TestComponentFactory::createExecutor() {
                 auto *stateMachine = smContext->get();
 
                 // Register source file path for relative path resolution before loading SCXML
-                SCE::JSEngine::instance().registerSessionFilePath(stateMachine->getSessionId(), sourceFilePath);
+                SCE::SessionRegistry::instance().registerSessionFilePath(stateMachine->getSessionId(), sourceFilePath);
                 SCE_LOG_DEBUG("StateMachineTestExecutor: Registered source file path '{}' for session '{}'", sourceFilePath,
                           stateMachine->getSessionId());
 

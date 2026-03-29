@@ -17,7 +17,7 @@
 #pragma once
 
 #include "core/LogMacros.h"
-#include "scripting/IJSExecutionEngine.h"
+#include "scripting/IScriptEngine.h"
 #include <functional>
 #include <regex>
 #include <string>
@@ -73,7 +73,7 @@ public:
      * @param errorCallback Called on error with error message
      * @return true if assignment succeeded, false otherwise
      */
-    static bool executeAssignment(IJSExecutionEngine &jsEngine, const std::string &sessionId, const std::string &location,
+    static bool executeAssignment(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &location,
                                   const std::string &expr, std::function<void(const std::string &)> errorCallback) {
         // W3C SCXML 5.10: System variable references require direct script execution
         // This preserves JavaScript object references (critical for test 329: Var2 = _event)

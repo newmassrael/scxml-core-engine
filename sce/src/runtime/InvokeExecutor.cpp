@@ -16,6 +16,8 @@
 #include "runtime/StateMachineBuilder.h"
 #include "runtime/StateMachineContext.h"
 #include "scripting/JSEngine.h"
+#include "scripting/ScriptResultUtils.h"
+#include "scripting/SessionRegistry.h"
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
@@ -75,7 +77,7 @@ std::string SCXMLInvokeHandler::startInvoke(const std::shared_ptr<IInvokeNode> &
     }
 
     // Generate unique child session ID
-    std::string childSessionId = JSEngine::instance().generateSessionIdString("session_");
+    std::string childSessionId = SessionRegistry::instance().generateSessionIdString("session_");
 
     SCE_LOG_DEBUG("SCXMLInvokeHandler: startInvoke called with parent session: {}, generated child session: {}",
               parentSessionId, childSessionId);
@@ -208,7 +210,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
     // W3C SCXML 6.2 compliance: Register EventDispatcher for delayed event cancellation
     if (eventDispatcher) {
-        JSEngine::instance().registerEventDispatcher(childSessionId, eventDispatcher);
+        SessionRegistry::instance().registerEventDispatcher(childSessionId, eventDispatcher);
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Registered EventDispatcher for child session: {}", childSessionId);
     } else {
         SCE_LOG_WARN("SCXMLInvokeHandler: No EventDispatcher provided for session: {}", childSessionId);
@@ -409,7 +411,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             auto future = JSEngine::instance().getVariable(parentSessionId, varName);
             auto result = future.get();
 
-            if (!JSEngine::isSuccess(result)) {
+            if (!ScriptResultUtils::isSuccess(result)) {
                 SCE_LOG_ERROR(
                     "SCXMLInvokeHandler: Failed to evaluate namelist variable '{}' in parent session: invoke cancelled",
                     varName);
@@ -445,7 +447,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             auto future = JSEngine::instance().evaluateExpression(parentSessionId, expr);
             auto result = future.get();
 
-            if (!JSEngine::isSuccess(result)) {
+            if (!ScriptResultUtils::isSuccess(result)) {
                 SCE_LOG_ERROR(
                     "SCXMLInvokeHandler: Failed to evaluate param expression '{}' in parent session: invoke cancelled",
                     expr);
@@ -472,7 +474,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
              sessionAlreadyExists, isRestoration, parentSessionId, invokeid, childSessionId);
 
     if (!sessionAlreadyExists) {
-        JSEngine::instance().registerInvokeMapping(parentSessionId, invokeid, childSessionId);
+        SessionRegistry::instance().registerInvokeMapping(parentSessionId, invokeid, childSessionId);
         SCE_LOG_INFO("[INVOKE MAPPING REGISTERED] parent={}, invoke={} -> child={}", parentSessionId, invokeid,
                  childSessionId);
     } else {
@@ -495,7 +497,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
             activeSessions_.erase(invokeid);
             // Unregister mapping if we registered it above
             if (!sessionAlreadyExists) {
-                JSEngine::instance().unregisterInvokeMapping(parentSessionId, invokeid);
+                SessionRegistry::instance().unregisterInvokeMapping(parentSessionId, invokeid);
             }
             // Remove finalize script if registered
             {
@@ -588,7 +590,7 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
 
     // With weak_ptr callbacks, no synchronization needed - callbacks safely check weak_ptr::lock()
     // Unregister invoke mapping from JSEngine
-    JSEngine::instance().unregisterInvokeMapping(session.parentSessionId, invokeid);
+    SessionRegistry::instance().unregisterInvokeMapping(session.parentSessionId, invokeid);
 
     // Destroy the child session (RAII cleanup with thread-safe weak_ptr callbacks)
     // Callbacks use weak_ptr::lock() which returns nullptr if StateMachine is destroyed
@@ -745,7 +747,7 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
                           jsResult.getErrorMessage());
                 return "";
             }
-            invokeType = JSEngine::resultToString(jsResult, sessionId, invoke->getTypeExpr());
+            invokeType = ScriptResultUtils::resultToString(jsResult, &JSEngine::instance(), sessionId, invoke->getTypeExpr());
             SCE_LOG_DEBUG("InvokeExecutor: Evaluated typeexpr '{}' to type: '{}'", invoke->getTypeExpr(), invokeType);
         } catch (const std::exception &e) {
             SCE_LOG_ERROR("InvokeExecutor: Failed to evaluate typeexpr '{}': {}", invoke->getTypeExpr(), e.what());
@@ -793,8 +795,8 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
     invokeHandlers_[invokeid] = handler;
     SCE_LOG_DEBUG("InvokeExecutor: Pre-registered handler for invoke: {}", invokeid);
 
-    std::string childSessionId = JSEngine::instance().generateSessionIdString("session_");
-    JSEngine::instance().registerInvokeMapping(sessionId, invokeid, childSessionId);
+    std::string childSessionId = SessionRegistry::instance().generateSessionIdString("session_");
+    SessionRegistry::instance().registerInvokeMapping(sessionId, invokeid, childSessionId);
     SCE_LOG_DEBUG("InvokeExecutor: Pre-registered invoke mapping - parent: {}, invoke: {}, child: {}", sessionId, invokeid,
               childSessionId);
 
@@ -806,7 +808,7 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
 
         // Cleanup: Remove both handler registration and invoke mapping
         invokeHandlers_.erase(invokeid);
-        JSEngine::instance().unregisterInvokeMapping(sessionId, invokeid);
+        SessionRegistry::instance().unregisterInvokeMapping(sessionId, invokeid);
 
         return "";
     }
@@ -1039,7 +1041,7 @@ std::string SCXMLInvokeHandler::loadSCXMLFromFile(const std::string &filepath, c
     std::filesystem::path resolvedPath;
     if (std::filesystem::path(cleanPath).is_relative()) {
         // Get parent session's file path for relative resolution
-        std::string parentFilePath = SCE::JSEngine::instance().getSessionFilePath(parentSessionId);
+        std::string parentFilePath = SCE::SessionRegistry::instance().getSessionFilePath(parentSessionId);
 
         if (!parentFilePath.empty()) {
             // Resolve relative to parent SCXML file directory

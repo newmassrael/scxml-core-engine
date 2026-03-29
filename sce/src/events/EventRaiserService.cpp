@@ -17,8 +17,11 @@ void EventRaiserService::initialize(std::shared_ptr<IEventRaiserRegistry> regist
         throw std::invalid_argument("EventRaiserService: registry cannot be null");
     }
 
-    if (!sessionManager) {
-        throw std::invalid_argument("EventRaiserService: sessionManager cannot be null");
+    if (instance_) {
+        // Already initialized (possibly auto-initialized) — update session manager only
+        instance_->sessionManager_ = std::move(sessionManager);
+        SCE_LOG_DEBUG("EventRaiserService: Updated session manager on existing instance");
+        return;
     }
 
     instance_ = std::unique_ptr<EventRaiserService>(new EventRaiserService(registry, sessionManager));
@@ -29,7 +32,11 @@ EventRaiserService &EventRaiserService::getInstance() {
     std::lock_guard<std::mutex> lock(initMutex_);
 
     if (!instance_) {
-        throw std::runtime_error("EventRaiserService: Not initialized. Call initialize() first.");
+        // Auto-initialize with default registry (no session manager dependency)
+        // This enables EventRaiserService to work independently of any script engine
+        SCE_LOG_DEBUG("EventRaiserService: Auto-initializing with default EventRaiserRegistry");
+        auto registry = std::make_shared<EventRaiserRegistry>();
+        instance_ = std::unique_ptr<EventRaiserService>(new EventRaiserService(registry, nullptr));
     }
 
     return *instance_;
@@ -66,13 +73,15 @@ bool EventRaiserService::registerEventRaiser(const std::string &sessionId, std::
         return false;
     }
 
-    // Check if session exists before registration
-    bool sessionExists = sessionManager_->hasSession(sessionId);
-    SCE_LOG_DEBUG("EventRaiserService: Session '{}' exists: {}", sessionId, sessionExists);
+    // Check if session exists before registration (skip if no session manager)
+    if (sessionManager_) {
+        bool sessionExists = sessionManager_->hasSession(sessionId);
+        SCE_LOG_DEBUG("EventRaiserService: Session '{}' exists: {}", sessionId, sessionExists);
 
-    if (!sessionExists) {
-        SCE_LOG_DEBUG("EventRaiserService: Session '{}' does not exist yet, deferring EventRaiser registration", sessionId);
-        return false;  // Not an error, just deferred
+        if (!sessionExists) {
+            SCE_LOG_DEBUG("EventRaiserService: Session '{}' does not exist yet, deferring EventRaiser registration", sessionId);
+            return false;  // Not an error, just deferred
+        }
     }
 
     // Check if already registered to avoid duplicates

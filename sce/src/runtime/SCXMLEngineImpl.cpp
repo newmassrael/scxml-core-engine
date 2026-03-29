@@ -2,6 +2,7 @@
 #include "SCXMLEngineImpl.h"
 #include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
+#include "scripting/ScriptResultUtils.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/StateMachineFactory.h"
 #include <fstream>
@@ -381,7 +382,7 @@ bool SCXMLEngineImpl::setVariableSyncImpl(const std::string &name, const ScriptV
         auto future = jsEngine.setVariable(smSessionId, name, value);
         auto result = future.get();
 
-        if (!JSEngine::isSuccess(result)) {
+        if (!ScriptResultUtils::isSuccess(result)) {
             sessionErrors_[actualSessionId] = "Failed to set variable: " + result.getErrorMessage();
             SCE_LOG_WARN("SCXMLEngine: Failed to set variable '{}': {}", name, result.getErrorMessage());
             return false;
@@ -424,10 +425,10 @@ std::string SCXMLEngineImpl::getVariableSync(const std::string &name,
         auto future = jsEngine.getVariable(smSessionId, name);
         auto result = future.get();
 
-        if (!JSEngine::isSuccess(result)) {
+        if (!ScriptResultUtils::isSuccess(result)) {
             return "";
         }
-        return JSEngine::resultToString(result);
+        return ScriptResultUtils::resultToString(result);
 
     } catch (const std::exception &e) {
         SCE_LOG_WARN("SCXMLEngine: Failed to get variable '{}': {}", name, e.what());

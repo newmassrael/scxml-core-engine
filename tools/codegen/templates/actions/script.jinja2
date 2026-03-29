@@ -5,10 +5,10 @@
 // W3C SCXML 3.8.6: <script> via JSEngine
 {
     this->ensureJSEngine();
-    auto& jsEngine = ::SCE::JSEngine::instance();
+    auto& jsEngine = getScriptEngine();
     {% if action.content %}
     auto scriptResult = jsEngine.executeScript(sessionId_.value(), "{{ action.content | escape_cpp }}").get();
-    if (!::SCE::JSEngine::isSuccess(scriptResult)) {
+    if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
         std::string errorMsg = "Script execution failed";
         SCE_LOG_ERROR("{}", errorMsg);
         engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));

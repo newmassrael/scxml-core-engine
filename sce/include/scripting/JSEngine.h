@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../SCXMLTypes.h"
-#include "IJSExecutionEngine.h"
+#include "IScriptEngine.h"
 #include "ISessionManager.h"
 #include "JSResult.h"
 #include "events/IEventRaiserRegistry.h"
@@ -39,14 +39,8 @@ class StateMachine;
  * Each session has its own variable space, event context, and system variables.
  * All JavaScript execution happens in a single background thread for QuickJS thread safety.
  */
-class JSEngine : public ISessionManager, public IJSExecutionEngine {
+class JSEngine : public IScriptEngine, public ISessionManager {
 public:
-    // W3C SCXML 5.9.2: State query callback for In() predicate (static AOT engines)
-    // ARCHITECTURE.md All-or-Nothing Strategy: Static engines use callback mechanism
-    // because they cannot hold StateMachine pointers (no dynamic polymorphism at compile-time).
-    // InPredicateHelper provides shared In() logic, callback provides state query capability.
-    using StateQueryCallback = std::function<bool(const std::string &)>;
-
     /**
      * @brief Get the global JSEngine instance
      */
@@ -256,7 +250,7 @@ public:
      * @param callback Function that checks if a state is active
      * @param sessionId Session ID to associate with this callback
      */
-    void setStateQueryCallback(StateQueryCallback callback, const std::string &sessionId);
+    void setStateQueryCallback(StateQueryCallback callback, const std::string &sessionId) override;
 
     /**
      * @brief Get JSContext for C++ object binding (thread-safe)
@@ -268,112 +262,6 @@ public:
      * @return JSContext pointer or nullptr if session not found
      */
     JSContext *getContextForBinding(const std::string &sessionId);
-
-    // === Session ID Generation ===
-
-    /**
-     * @brief Generate unique session ID
-     * @return Unique session ID number
-     */
-    uint64_t generateSessionId() const;
-
-    /**
-     * @brief Generate unique session ID string with prefix
-     * @param prefix Prefix for session ID (e.g., "sm_", "session_")
-     * @return Unique session ID string
-     */
-    std::string generateSessionIdString(const std::string &prefix = "session_") const;
-
-    // === Session Cleanup Hooks ===
-
-    /**
-     * @brief Register EventDispatcher for session-aware delayed event cancellation
-     *
-     * W3C SCXML 6.2: When invoke sessions terminate, delayed events must be cancelled.
-     * This method enables automatic cancellation by registering EventDispatchers
-     * that should be notified when sessions are destroyed.
-     *
-     * @param sessionId Session identifier
-     * @param eventDispatcher EventDispatcher instance to register
-     */
-    void registerEventDispatcher(const std::string &sessionId, std::shared_ptr<class IEventDispatcher> eventDispatcher);
-
-    /**
-     * @brief Unregister EventDispatcher for session cleanup
-     *
-     * @param sessionId Session identifier
-     */
-    void unregisterEventDispatcher(const std::string &sessionId);
-
-    // === Invoke Session Management (W3C SCXML #_invokeid support) ===
-
-    /**
-     * @brief Register invoke mapping for session communication
-     *
-     * W3C SCXML: Enables #_invokeid target routing by mapping invoke IDs
-     * to their corresponding child sessions.
-     *
-     * @param parentSessionId Parent session that created the invoke
-     * @param invokeId Invoke identifier from the invoke element
-     * @param childSessionId Child session created by the invoke
-     */
-    void registerInvokeMapping(const std::string &parentSessionId, const std::string &invokeId,
-                               const std::string &childSessionId);
-
-    /**
-     * @brief Get child session ID for an invoke ID
-     *
-     * @param parentSessionId Parent session to search in
-     * @param invokeId Invoke identifier to lookup
-     * @return Child session ID or empty string if not found
-     */
-    std::string getInvokeSessionId(const std::string &parentSessionId, const std::string &invokeId) const;
-
-    /**
-     * @brief Unregister invoke mapping during session cleanup
-     *
-     * @param parentSessionId Parent session
-     * @param invokeId Invoke identifier to remove
-     */
-    void unregisterInvokeMapping(const std::string &parentSessionId, const std::string &invokeId);
-
-    /**
-     * @brief Get invoke ID for a child session (reverse lookup)
-     *
-     * W3C SCXML 5.10 test 338: Enables setting invokeid field on events from invoked children
-     *
-     * @param childSessionId Child session ID to lookup
-     * @return Invoke ID that created this child session, or empty string if not found
-     */
-    std::string getInvokeIdForChildSession(const std::string &childSessionId) const;
-
-    // === Session File Path Management (W3C SCXML relative path resolution) ===
-
-    /**
-     * @brief Register file path for session-based relative path resolution
-     *
-     * W3C SCXML: Enables proper relative path resolution for srcexpr attributes
-     * by tracking the source file path of each session.
-     *
-     * @param sessionId Session identifier
-     * @param filePath Absolute path to the SCXML file for this session
-     */
-    void registerSessionFilePath(const std::string &sessionId, const std::string &filePath);
-
-    /**
-     * @brief Get the source file path for a session
-     *
-     * @param sessionId Session to get file path for
-     * @return Absolute file path or empty string if not found
-     */
-    std::string getSessionFilePath(const std::string &sessionId) const;
-
-    /**
-     * @brief Unregister session file path during cleanup
-     *
-     * @param sessionId Session identifier to remove
-     */
-    void unregisterSessionFilePath(const std::string &sessionId);
 
     // === Engine Information ===
 
@@ -562,20 +450,8 @@ private:
     std::unordered_map<std::string, SessionContext> sessions_;
     mutable std::mutex sessionsMutex_;
 
-    // === Session Cleanup Management ===
-    // W3C SCXML 6.2: EventDispatcher registry for automatic delayed event cancellation
-    std::unordered_map<std::string, std::weak_ptr<class IEventDispatcher>> eventDispatchers_;
-    mutable std::mutex eventDispatchersMutex_;
-
-    // === Invoke Session Management (SOLID: Single Responsibility) ===
-    // W3C SCXML: Maps parent_session_id -> (invoke_id -> child_session_id)
-    std::unordered_map<std::string, std::unordered_map<std::string, std::string>> invokeMappings_;
-    mutable std::mutex invokeMappingsMutex_;
-
-    // === Session File Path Management ===
-    // W3C SCXML: Maps session_id -> absolute_file_path for relative path resolution
-    std::unordered_map<std::string, std::string> sessionFilePaths_;
-    mutable std::mutex sessionFilePathsMutex_;
+    // Session registry operations delegated to SessionRegistry singleton
+    // (invoke mappings, file paths, event dispatchers moved to SessionRegistry)
 
     // === Platform-Specific Execution ===
     // Zero Duplication Principle: Platform logic abstracted through PlatformExecutionHelper

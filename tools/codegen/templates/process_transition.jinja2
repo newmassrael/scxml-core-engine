@@ -565,7 +565,7 @@ private:
 {# Initialize JSEngine if needed (only once per transition) #}
 {% if model.needs_jsengine %}
                 this->ensureJSEngine();
-                [[maybe_unused]] auto& jsEngine = ::SCE::JSEngine::instance();
+                [[maybe_unused]] auto& jsEngine = getScriptEngine();
 {% endif %}
 {# Process single transition with its condition #}
 {% if trans.cond %}
@@ -629,7 +629,7 @@ private:
 {% if first_uses_jsengine %}
             {
                 this->ensureJSEngine();
-                [[maybe_unused]] auto& jsEngine = ::SCE::JSEngine::instance();
+                [[maybe_unused]] auto& jsEngine = getScriptEngine();
 {% endif %}
 {% set first_trans = namespace(value=True) %}
 {% for transition in eventless_transitions %}
@@ -744,7 +744,7 @@ public:
                         AOT_DEBUG("AOT executeTransitionActions: Executing transition {{ loop.index0 }} actions");
 {% if model.needs_jsengine %}
                         this->ensureJSEngine();
-                        [[maybe_unused]] auto& jsEngine = ::SCE::JSEngine::instance();
+                        [[maybe_unused]] auto& jsEngine = getScriptEngine();
 {% endif %}
 {% for action in trans.actions %}
 {% include 'actions/' + action.type + '.jinja2' %}

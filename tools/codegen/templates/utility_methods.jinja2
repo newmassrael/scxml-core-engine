@@ -2,7 +2,7 @@
     // W3C SCXML 5.9: Safe guard evaluation with error.execution on failure
     // ARCHITECTURE.md: Zero Duplication - Wraps shared GuardHelper with AOT-specific error handling
     template<typename Engine>
-    bool safeEvaluateGuard(::SCE::JSEngine& jsEngine, const std::string& sessionId,
+    bool safeEvaluateGuard(::SCE::IScriptEngine& jsEngine, const std::string& sessionId,
                            const std::string& guardExpr, Engine& engine) const {
         AOT_DEBUG("AOT safeEvaluateGuard: Evaluating guard: '{}'", guardExpr);
         auto result = ::SCE::GuardHelper::evaluateGuard(jsEngine, sessionId, guardExpr);
@@ -21,9 +21,9 @@
     // Helper: Set param in JSEngine for static invoke (W3C SCXML 6.4)
     void setParamInJSEngine(const std::string& paramName, const std::string& paramExpr) {
         ensureJSEngine();
-        auto& jsEngine = ::SCE::JSEngine::instance();
+        auto& jsEngine = getScriptEngine();
         auto valueResult = jsEngine.evaluateExpression(sessionId_.value(), paramExpr).get();
-        if (::SCE::JSEngine::isSuccess(valueResult)) {
+        if (::SCE::ScriptResultUtils::isSuccess(valueResult)) {
             jsEngine.setVariable(sessionId_.value(), paramName, valueResult.getInternalValue());
         } else {
             SCE_LOG_ERROR("Failed to evaluate param expression for {}: {}", paramName, paramExpr);
@@ -75,7 +75,7 @@
                 std::string eventName = this->getEventName(eventWithMeta.event);
                 
                 this->ensureJSEngine();
-                auto& jsEngine = ::SCE::JSEngine::instance();
+                auto& jsEngine = getScriptEngine();
                 
                 ::SCE::FinalizeHelper::executeFinalizeWithEvent(
                     jsEngine,
@@ -155,7 +155,7 @@ public:
         AOT_DEBUG("AOT setCurrentEventInJSEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
                   eventName, eventData, actualType, sendId, origin, originType, invokeId);
         // W3C SCXML 5.10: Wait for setCurrentEvent to complete before proceeding (synchronous)
-        ::SCE::JSEngine::instance().setCurrentEvent(sessionId_.value(), eventName, eventData,
+        getScriptEngine().setCurrentEvent(sessionId_.value(), eventName, eventData,
                                                     actualType, sendId, origin, originType, invokeId).get();
 {% else %}
         // No-op: This state machine doesn't use JSEngine
@@ -169,7 +169,7 @@ public:
 {% if model.needs_jsengine %}
         if (!jsEngineInitialized_) return;
         if (!sessionId_.has_value()) return;
-        auto& jsEngine = ::SCE::JSEngine::instance();
+        auto& jsEngine = getScriptEngine();
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML: Unregister state query callback before destroying session
         // This prevents stack-use-after-return when JSEngine tries to call callback

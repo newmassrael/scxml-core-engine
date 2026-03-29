@@ -1,6 +1,8 @@
 #include "scripting/JSEngine.h"
 #include "core/LogMacros.h"
 #include "scripting/PlatformExecutionHelper.h"
+#include "scripting/ScriptResultUtils.h"
+#include "scripting/SessionRegistry.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventRaiserRegistry.h"
 #include "events/EventRaiserService.h"
@@ -139,6 +141,9 @@ void JSEngine::reset() {
     // Clear EventRaiser registry
     clearEventRaiserRegistry();
 
+    // Clear SessionRegistry (invoke mappings, file paths, event dispatchers)
+    SessionRegistry::instance().reset();
+
     // W3C SCXML B.2: Reset DOM class ID for new QuickJS runtime
     DOMBinding::resetClassId();
 
@@ -231,41 +236,6 @@ std::string JSEngine::getParentSessionId(const std::string &sessionId) const {
     }
 
     return "";  // Session not found or no parent
-}
-
-// === Session ID Generation ===
-
-uint64_t JSEngine::generateSessionId() const {
-    // REFACTOR: Use centralized UniqueIdGenerator for consistency
-    return UniqueIdGenerator::generateNumericSessionId();
-}
-
-std::string JSEngine::generateSessionIdString(const std::string &prefix) const {
-    // REFACTOR: Use centralized UniqueIdGenerator instead of duplicate logic
-    return UniqueIdGenerator::generateSessionId(prefix);
-}
-
-// === Session Cleanup Hooks ===
-
-void JSEngine::registerEventDispatcher(const std::string &sessionId,
-                                       std::shared_ptr<IEventDispatcher> eventDispatcher) {
-    if (!eventDispatcher) {
-        SCE_LOG_WARN("JSEngine: Attempted to register null EventDispatcher for session: {}", sessionId);
-        return;
-    }
-
-    std::lock_guard<std::mutex> lock(eventDispatchersMutex_);
-    eventDispatchers_[sessionId] = eventDispatcher;
-    SCE_LOG_DEBUG("JSEngine: Registered EventDispatcher for session: {}", sessionId);
-}
-
-void JSEngine::unregisterEventDispatcher(const std::string &sessionId) {
-    std::lock_guard<std::mutex> lock(eventDispatchersMutex_);
-    auto it = eventDispatchers_.find(sessionId);
-    if (it != eventDispatchers_.end()) {
-        eventDispatchers_.erase(it);
-        SCE_LOG_DEBUG("JSEngine: Unregistered EventDispatcher for session: {}", sessionId);
-    }
 }
 
 // === JavaScript Execution ===
@@ -457,23 +427,8 @@ bool JSEngine::destroySessionInternal(const std::string &sessionId) {
         return false;
     }
 
-    // W3C SCXML 6.2: Cancel delayed events for terminating session
-    {
-        std::lock_guard<std::mutex> lock(eventDispatchersMutex_);
-        auto dispatcherIt = eventDispatchers_.find(sessionId);
-        if (dispatcherIt != eventDispatchers_.end()) {
-            auto eventDispatcher = dispatcherIt->second.lock();
-            if (eventDispatcher) {
-                size_t cancelledCount = eventDispatcher->cancelEventsForSession(sessionId);
-                SCE_LOG_DEBUG("JSEngine: Cancelled {} delayed events for session: {}", cancelledCount, sessionId);
-            }
-            // Remove the registry entry regardless of dispatcher availability
-            eventDispatchers_.erase(dispatcherIt);
-        }
-    }
-
-    // Clean up session file path mapping
-    unregisterSessionFilePath(sessionId);
+    // W3C SCXML 6.2: Delegate session cleanup to SessionRegistry
+    SessionRegistry::instance().cleanupSession(sessionId);
 
     if (it->second.jsContext) {
         SCE_LOG_DEBUG("JSEngine: destroySessionInternal() - Freeing JSContext for session: {}", sessionId);
@@ -923,215 +878,29 @@ JSContext *JSEngine::getContextForBinding(const std::string &sessionId) {
 // ===================================================================
 
 bool JSEngine::resultToBool(const JSResult &result) {
-    if (!result.success_internal) {
-        return false;
-    }
-
-    // REUSE: Proven boolean conversion logic from ActionExecutorImpl
-    if (std::holds_alternative<bool>(result.value_internal)) {
-        return std::get<bool>(result.value_internal);
-    } else if (std::holds_alternative<int64_t>(result.value_internal)) {
-        return std::get<int64_t>(result.value_internal) != 0;
-    } else if (std::holds_alternative<double>(result.value_internal)) {
-        return std::get<double>(result.value_internal) != 0.0;
-    } else if (std::holds_alternative<std::string>(result.value_internal)) {
-        return !std::get<std::string>(result.value_internal).empty();
-    }
-    return false;
+    return ScriptResultUtils::resultToBool(result);
 }
 
 std::string JSEngine::resultToString(const JSResult &result, const std::string &sessionId,
                                      const std::string &originalExpression) {
-    if (!result.success_internal) {
-        return "";
-    }
-
-    if (std::holds_alternative<std::string>(result.value_internal)) {
-        return result.getValue<std::string>();
-    } else if (std::holds_alternative<double>(result.value_internal)) {
-        double val = result.getValue<double>();
-        // Check if it's an integer value
-        if (val == std::floor(val)) {
-            return std::to_string(static_cast<int64_t>(val));
-        } else {
-            // SCXML W3C Compliance: Use ECMAScript-compatible number formatting
-            std::ostringstream oss;
-            oss << std::noshowpoint << val;
-            std::string str = oss.str();
-
-            // Remove trailing zeros after decimal point (JavaScript behavior)
-            if (str.find('.') != std::string::npos) {
-                str.erase(str.find_last_not_of('0') + 1, std::string::npos);
-                if (str.back() == '.') {
-                    str.pop_back();
-                }
-            }
-            return str;
-        }
-    } else if (std::holds_alternative<int64_t>(result.value_internal)) {
-        return std::to_string(result.getValue<int64_t>());
-    } else if (std::holds_alternative<bool>(result.value_internal)) {
-        return result.getValue<bool>() ? "true" : "false";
-    } else if (!sessionId.empty() && !originalExpression.empty()) {
-        // REUSE: Proven JSON.stringify fallback logic
-        std::string stringifyExpr = "JSON.stringify(" + originalExpression + ")";
-        auto stringifyResult = SCE::JSEngine::instance().evaluateExpression(sessionId, stringifyExpr).get();
-        if (stringifyResult.isSuccess()) {
-            return stringifyResult.getValue<std::string>();
-        }
-        return "[object]";
-    }
-    return "[conversion_error]";
+    return ScriptResultUtils::resultToString(result, &JSEngine::instance(), sessionId, originalExpression);
 }
 
 std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, const std::string &sessionId) {
-    // SOLID: Delegate to expression-aware version (Single Responsibility)
-    return resultToStringArray(result, sessionId, "");
+    return ScriptResultUtils::resultToStringArray(result, &JSEngine::instance(), sessionId, "");
 }
 
 std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, const std::string &sessionId,
                                                        const std::string &originalExpression) {
-    std::vector<std::string> arrayValues;
-
-    SCE_LOG_DEBUG("resultToStringArray: Starting with sessionId='{}', originalExpression='{}'", sessionId,
-              originalExpression);
-
-    if (!result.success_internal) {
-        SCE_LOG_DEBUG("resultToStringArray: Result not successful, returning empty array");
-        return arrayValues;
-    }
-
-    std::string arrayStr;
-
-    // SOLID: Handle all ScriptValue types internally (Single Responsibility)
-    if (std::holds_alternative<std::string>(result.value_internal)) {
-        arrayStr = std::get<std::string>(result.value_internal);
-        SCE_LOG_DEBUG("resultToStringArray: Got string result: '{}'", arrayStr);
-    } else {
-        SCE_LOG_DEBUG("resultToStringArray: Result is not string type, attempting JSON.stringify conversion");
-        // SOLID: For non-string types, convert to JSON string using proven logic
-        // This handles array objects, numbers, booleans, etc.
-        if (!sessionId.empty() && !originalExpression.empty()) {
-            // Use JSON.stringify for reliable array conversion
-            std::string stringifyExpr = "JSON.stringify(" + originalExpression + ")";
-            SCE_LOG_DEBUG("resultToStringArray: Evaluating stringify expression: '{}'", stringifyExpr);
-            auto stringifyResult = SCE::JSEngine::instance().evaluateExpression(sessionId, stringifyExpr).get();
-            if (stringifyResult.isSuccess() && std::holds_alternative<std::string>(stringifyResult.value_internal)) {
-                arrayStr = std::get<std::string>(stringifyResult.value_internal);
-                SCE_LOG_DEBUG("resultToStringArray: JSON.stringify succeeded, result: '{}'", arrayStr);
-            } else {
-                SCE_LOG_DEBUG("resultToStringArray: JSON.stringify failed or returned non-string");
-                return arrayValues;  // Failed to convert to JSON string
-            }
-        } else {
-            SCE_LOG_DEBUG("resultToStringArray: Missing sessionId or originalExpression for non-string type");
-            return arrayValues;  // Cannot process non-string types without session context
-        }
-    }
-
-    SCE_LOG_DEBUG("resultToStringArray: Final arrayStr before processing: '{}'", arrayStr);
-
-    // SOLID: Use JSON-based approach for reliable array parsing
-    // This correctly handles nested arrays like [[1,2],[3,4]] and all JavaScript types
-    if (!arrayStr.empty() && !sessionId.empty()) {
-        SCE_LOG_DEBUG("resultToStringArray: Processing array using JSON approach");
-
-        try {
-            // W3C SCXML B.2 (test 457): Validate that value is actually an array
-            // Must check instanceof Array before attempting to iterate
-            std::string arrayCheckExpr = originalExpression + " instanceof Array";
-            SCE_LOG_DEBUG("resultToStringArray: Validating array type with expression: '{}'", arrayCheckExpr);
-            auto arrayCheckResult = SCE::JSEngine::instance().evaluateExpression(sessionId, arrayCheckExpr).get();
-
-            if (!arrayCheckResult.isSuccess() || !std::holds_alternative<bool>(arrayCheckResult.value_internal) ||
-                !std::get<bool>(arrayCheckResult.value_internal)) {
-                SCE_LOG_DEBUG(
-                    "resultToStringArray: Value is not an array (instanceof Array check failed), returning empty");
-                return arrayValues;  // Not an array, caller should check and raise error.execution
-            }
-
-            // SCXML W3C Compliance: Use original expression to preserve null/undefined distinction
-            std::string setVarExpr = "var _tempArray = " + originalExpression + "; _tempArray.length";
-            SCE_LOG_DEBUG("resultToStringArray: Evaluating temp variable length expression: '{}'", setVarExpr);
-            auto lengthResult = SCE::JSEngine::instance().evaluateExpression(sessionId, setVarExpr).get();
-
-            SCE_LOG_DEBUG("resultToStringArray: Length result type index: {}", lengthResult.value_internal.index());
-
-            int64_t arrayLength = 0;
-            bool lengthValid = false;
-
-            if (lengthResult.isSuccess()) {
-                if (std::holds_alternative<int64_t>(lengthResult.value_internal)) {
-                    arrayLength = std::get<int64_t>(lengthResult.value_internal);
-                    lengthValid = true;
-                    SCE_LOG_DEBUG("resultToStringArray: Got int64_t array length: {}", arrayLength);
-                } else if (std::holds_alternative<double>(lengthResult.value_internal)) {
-                    double doubleLength = std::get<double>(lengthResult.value_internal);
-                    arrayLength = static_cast<int64_t>(doubleLength);
-                    lengthValid = true;
-                    SCE_LOG_DEBUG("resultToStringArray: Got double array length: {} -> {}", doubleLength, arrayLength);
-                }
-            }
-
-            if (lengthValid) {
-                // Iterate through array elements using temporary variable approach
-                for (int64_t i = 0; i < arrayLength; ++i) {
-                    // SCXML W3C: Check for undefined first, then use JSON.stringify for other types
-                    std::string typeCheckExpr = "typeof _tempArray[" + std::to_string(i) + "]";
-                    auto typeResult = SCE::JSEngine::instance().evaluateExpression(sessionId, typeCheckExpr).get();
-
-                    if (typeResult.isSuccess() && std::holds_alternative<std::string>(typeResult.value_internal)) {
-                        std::string typeStr = std::get<std::string>(typeResult.value_internal);
-
-                        if (typeStr == "undefined") {
-                            // Preserve undefined values exactly
-                            arrayValues.push_back("undefined");
-                            SCE_LOG_DEBUG("resultToStringArray: Element {} is undefined", i);
-                            continue;
-                        }
-                    }
-
-                    // For non-undefined values, use JSON.stringify
-                    std::string elementExpr = "JSON.stringify(_tempArray[" + std::to_string(i) + "])";
-                    SCE_LOG_DEBUG("resultToStringArray: Element {} expression: '{}'", i, elementExpr);
-                    auto elementResult = SCE::JSEngine::instance().evaluateExpression(sessionId, elementExpr).get();
-
-                    if (elementResult.isSuccess() &&
-                        std::holds_alternative<std::string>(elementResult.value_internal)) {
-                        std::string elementStr = std::get<std::string>(elementResult.value_internal);
-                        SCE_LOG_DEBUG("resultToStringArray: Element {} result: '{}'", i, elementStr);
-                        // Remove quotes for primitive types, keep JSON for complex types
-                        if (elementStr.length() >= 2 && elementStr.front() == '"' && elementStr.back() == '"') {
-                            // String value - remove quotes
-                            arrayValues.push_back(elementStr.substr(1, elementStr.length() - 2));
-                        } else {
-                            // Non-string value (number, boolean, array, object) - keep as JSON
-                            arrayValues.push_back(elementStr);
-                        }
-                    }
-                }
-            } else {
-                SCE_LOG_DEBUG("resultToStringArray: Length evaluation failed - success: {}, error: '{}'",
-                          lengthResult.isSuccess(),
-                          lengthResult.isSuccess() ? "no error" : lengthResult.errorMessage_internal);
-            }
-        } catch (const std::exception &e) {
-            SCE_LOG_ERROR("resultToStringArray: Exception during JSON processing: {}", e.what());
-        }
-    }
-
-    SCE_LOG_DEBUG("resultToStringArray: Returning {} elements", arrayValues.size());
-    return arrayValues;
+    return ScriptResultUtils::resultToStringArray(result, &JSEngine::instance(), sessionId, originalExpression);
 }
 
 void JSEngine::requireSuccess(const JSResult &result, const std::string &operation) {
-    if (!result.success_internal) {
-        throw std::runtime_error("JSEngine operation failed: " + operation + " - " + result.errorMessage_internal);
-    }
+    ScriptResultUtils::requireSuccess(result, operation);
 }
 
 bool JSEngine::isSuccess(const JSResult &result) noexcept {
-    return result.success_internal;
+    return ScriptResultUtils::isSuccess(result);
 }
 
 bool JSEngine::isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const {
@@ -1144,98 +913,6 @@ bool JSEngine::isVariablePreInitialized(const std::string &sessionId, const std:
 }
 
 // === Invoke Session Management Implementation ===
-
-void JSEngine::registerInvokeMapping(const std::string &parentSessionId, const std::string &invokeId,
-                                     const std::string &childSessionId) {
-    std::lock_guard<std::mutex> lock(invokeMappingsMutex_);
-    invokeMappings_[parentSessionId][invokeId] = childSessionId;
-    SCE_LOG_DEBUG("JSEngine: Registered invoke mapping - parent: {}, invoke: {}, child: {}", parentSessionId, invokeId,
-              childSessionId);
-}
-
-std::string JSEngine::getInvokeSessionId(const std::string &parentSessionId, const std::string &invokeId) const {
-    std::lock_guard<std::mutex> lock(invokeMappingsMutex_);
-
-    auto parentIt = invokeMappings_.find(parentSessionId);
-    if (parentIt == invokeMappings_.end()) {
-        SCE_LOG_DEBUG("JSEngine: No invoke mappings found for parent session: {}", parentSessionId);
-        return "";
-    }
-
-    auto invokeIt = parentIt->second.find(invokeId);
-    if (invokeIt == parentIt->second.end()) {
-        SCE_LOG_DEBUG("JSEngine: Invoke ID '{}' not found in parent session: {}", invokeId, parentSessionId);
-        return "";
-    }
-
-    SCE_LOG_DEBUG("JSEngine: Found invoke mapping - parent: {}, invoke: {}, child: {}", parentSessionId, invokeId,
-              invokeIt->second);
-    return invokeIt->second;
-}
-
-void JSEngine::unregisterInvokeMapping(const std::string &parentSessionId, const std::string &invokeId) {
-    std::lock_guard<std::mutex> lock(invokeMappingsMutex_);
-
-    auto parentIt = invokeMappings_.find(parentSessionId);
-    if (parentIt != invokeMappings_.end()) {
-        parentIt->second.erase(invokeId);
-
-        // Clean up empty parent entries
-        if (parentIt->second.empty()) {
-            invokeMappings_.erase(parentIt);
-        }
-
-        SCE_LOG_DEBUG("JSEngine: Unregistered invoke mapping - parent: {}, invoke: {}", parentSessionId, invokeId);
-    }
-}
-
-std::string JSEngine::getInvokeIdForChildSession(const std::string &childSessionId) const {
-    std::lock_guard<std::mutex> lock(invokeMappingsMutex_);
-
-    // W3C SCXML 5.10 test 338: Reverse lookup childSessionId -> invokeId
-    // Iterate through all parent sessions to find the invokeId that created this child
-    for (const auto &parentEntry : invokeMappings_) {
-        for (const auto &invokeEntry : parentEntry.second) {
-            if (invokeEntry.second == childSessionId) {
-                SCE_LOG_DEBUG("JSEngine: Found invokeId '{}' for child session '{}' in parent '{}'", invokeEntry.first,
-                          childSessionId, parentEntry.first);
-                return invokeEntry.first;
-            }
-        }
-    }
-
-    SCE_LOG_DEBUG("JSEngine: No invokeId found for child session: {}", childSessionId);
-    return "";
-}
-
-void JSEngine::registerSessionFilePath(const std::string &sessionId, const std::string &filePath) {
-    std::lock_guard<std::mutex> lock(sessionFilePathsMutex_);
-    sessionFilePaths_[sessionId] = filePath;
-    SCE_LOG_DEBUG("JSEngine: Registered session file path - session: {}, path: {}", sessionId, filePath);
-}
-
-std::string JSEngine::getSessionFilePath(const std::string &sessionId) const {
-    std::lock_guard<std::mutex> lock(sessionFilePathsMutex_);
-
-    auto it = sessionFilePaths_.find(sessionId);
-    if (it == sessionFilePaths_.end()) {
-        SCE_LOG_DEBUG("JSEngine: No file path found for session: {}", sessionId);
-        return "";
-    }
-
-    SCE_LOG_DEBUG("JSEngine: Found session file path - session: {}, path: {}", sessionId, it->second);
-    return it->second;
-}
-
-void JSEngine::unregisterSessionFilePath(const std::string &sessionId) {
-    std::lock_guard<std::mutex> lock(sessionFilePathsMutex_);
-
-    auto it = sessionFilePaths_.find(sessionId);
-    if (it != sessionFilePaths_.end()) {
-        sessionFilePaths_.erase(it);
-        SCE_LOG_DEBUG("JSEngine: Unregistered session file path - session: {}", sessionId);
-    }
-}
 
 void JSEngine::initializeEventRaiserService() {
     try {

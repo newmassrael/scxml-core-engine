@@ -72,7 +72,7 @@
                 // ARCHITECTURE.md DRY Principle: Uses datamodel_macros.jinja2
                 // ============================================================
                 ensureJSEngine();
-                auto& jsEngine = ::SCE::JSEngine::instance();
+                auto& jsEngine = getScriptEngine();
 {% import 'datamodel_macros.jinja2' as dm %}
 {{ dm.initialize_state_datamodel(state, state_id, "AOT executeEntryActions: Late binding initialized", base_path) }}
 
@@ -92,7 +92,7 @@
                 // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
                 {
                     ensureJSEngine();
-                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    auto& jsEngine = getScriptEngine();
                     jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
                     AOT_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
                 }
@@ -119,7 +119,7 @@
                 // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
                 {
                     ensureJSEngine();
-                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    auto& jsEngine = getScriptEngine();
                     jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
                     AOT_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
                 }
@@ -198,7 +198,7 @@
 {% if state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements
                     this->ensureJSEngine();
-                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    auto& jsEngine = getScriptEngine();
                     std::vector<std::pair<std::string, std::string>> params = {
 {% for param in state.donedata.params %}
                         {"{{ param.name }}", "{{ param.location if param.location else param.expr }}"}{{ "," if not loop.last }}
@@ -226,7 +226,7 @@
 {% elif state.donedata.contentexpr %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     this->ensureJSEngine();
-                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    auto& jsEngine = getScriptEngine();
                     ::SCE::DoneDataHelper::evaluateContent(
                         jsEngine,
                         sessionId_.value(),
@@ -240,7 +240,7 @@
 {% elif state.donedata.content %}
                     // W3C SCXML 5.5: Evaluate <content> expression
                     this->ensureJSEngine();
-                    auto& jsEngine = ::SCE::JSEngine::instance();
+                    auto& jsEngine = getScriptEngine();
                     ::SCE::DoneDataHelper::evaluateContent(
                         jsEngine,
                         sessionId_.value(),
@@ -542,7 +542,7 @@
                         // Step 1: Validate namelist variables before creating child
                         {
                             ensureJSEngine();
-                            auto& jsEngine = ::SCE::JSEngine::instance();
+                            auto& jsEngine = getScriptEngine();
 
                             bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
                                 jsEngine,
@@ -669,7 +669,7 @@
 
                         // Evaluate srcexpr via JSEngine to get file path
                         ensureJSEngine();
-                        auto& jsEngine = ::SCE::JSEngine::instance();
+                        auto& jsEngine = getScriptEngine();
                         auto pathResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.srcexpr }}").get();
                         std::string filePath = pathResult.getValue<std::string>();
 
@@ -684,7 +684,7 @@
 
                         // Evaluate contentexpr via JSEngine
                         ensureJSEngine();
-                        auto& jsEngine = ::SCE::JSEngine::instance();
+                        auto& jsEngine = getScriptEngine();
                         auto contentResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.contentexpr }}").get();
                         std::string scxmlContent = contentResult.getValue<std::string>();
 

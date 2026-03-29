@@ -1,5 +1,7 @@
 #include "runtime/StateMachine.h"
 #include "core/ConflictResolutionHelper.h"
+#include "scripting/ScriptResultUtils.h"
+#include "scripting/SessionRegistry.h"
 #include "states/ConcurrentStateTypes.h"
 
 using SCE::Core::ConflictResolutionAlgorithms;
@@ -70,7 +72,7 @@ private:
 }  // anonymous namespace
 
 StateMachine::StateMachine() : jsEnvironmentReady_(false) {
-    sessionId_ = JSEngine::instance().generateSessionIdString("sm_");
+    sessionId_ = SessionRegistry::instance().generateSessionIdString("sm_");
     // JS environment changed to lazy initialization
     // ActionExecutor and ExecutionContext initialized in setupJSEnvironment
 
@@ -151,7 +153,7 @@ bool StateMachine::loadSCXML(const std::string &filename) {
         }
 
         // Register file path for this session to enable relative path resolution
-        SCE::JSEngine::instance().registerSessionFilePath(sessionId_, filename);
+        SCE::SessionRegistry::instance().registerSessionFilePath(sessionId_, filename);
         SCE_LOG_DEBUG("StateMachine: Registered file path '{}' for session '{}'", filename, sessionId_);
 
         return initializeFromModel();
@@ -2146,7 +2148,7 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
         auto future = SCE::JSEngine::instance().evaluateExpression(sessionId_, condition);
         auto result = future.get();
 
-        if (!SCE::JSEngine::isSuccess(result)) {
+        if (!SCE::ScriptResultUtils::isSuccess(result)) {
             // W3C SCXML 5.9: Condition evaluation error must raise error.execution
             SCE_LOG_ERROR("W3C SCXML 5.9: Failed to evaluate condition '{}': {}", condition, result.getErrorMessage());
 
@@ -2157,7 +2159,7 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
         }
 
         // Convert result to boolean using integrated JSEngine method
-        bool conditionResult = SCE::JSEngine::resultToBool(result);
+        bool conditionResult = SCE::ScriptResultUtils::resultToBool(result);
         SCE_LOG_DEBUG("Condition '{}' evaluated to: {}", condition, conditionResult ? "true" : "false");
 
         return conditionResult;
@@ -3944,7 +3946,7 @@ std::vector<std::shared_ptr<StateMachine>> StateMachine::getInvokedChildren() {
 
 void StateMachine::setSessionFilePath(const std::string &filePath) {
     // JSEngine is a singleton, accessed via instance()
-    JSEngine::instance().registerSessionFilePath(sessionId_, filePath);
+    SessionRegistry::instance().registerSessionFilePath(sessionId_, filePath);
     SCE_LOG_DEBUG("StateMachine: Registered session file path: {} for session: {}", filePath, sessionId_);
 }
 
