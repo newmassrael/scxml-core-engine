@@ -83,6 +83,10 @@ void MockEventRaiser::setImmediateMode(bool /* immediate */) {
     // Could be extended to track mode changes if needed
 }
 
+bool MockEventRaiser::isImmediateModeEnabled() const {
+    return false;
+}
+
 void MockEventRaiser::processQueuedEvents() {
     // Mock implementation - no actual queue to process
     // Could be extended to simulate queue processing if needed

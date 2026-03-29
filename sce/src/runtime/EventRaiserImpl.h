@@ -162,7 +162,7 @@ public:
      * @brief Check if immediate mode is currently enabled
      * @return true if immediate mode is enabled, false otherwise
      */
-    bool isImmediateModeEnabled() const {
+    bool isImmediateModeEnabled() const override {
         return immediateMode_.load();
     }
 

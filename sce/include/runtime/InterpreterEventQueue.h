@@ -1,6 +1,6 @@
 #pragma once
 
-#include "runtime/EventRaiserImpl.h"
+#include "runtime/IEventRaiser.h"
 #include <memory>
 
 namespace SCE::Core {
@@ -8,17 +8,17 @@ namespace SCE::Core {
 /**
  * @brief Internal event queue adapter for Interpreter engine
  *
- * Wraps EventRaiserImpl with unified interface
+ * Wraps IEventRaiser with unified interface
  * usable by EventProcessingAlgorithms.
  * Satisfies EventQueueAdapter concept (core/EventQueueConcept.h).
  *
- * @note Since EventRaiserImpl's processNextQueuedEvent() processes
+ * @note Since IEventRaiser's processNextQueuedEvent() processes
  *       events internally via callback, popNext() returns only
  *       processing success status, not actual event value.
  *
  * @example
  * @code
- * std::shared_ptr<EventRaiserImpl> eventRaiser_;
+ * std::shared_ptr<IEventRaiser> eventRaiser_;
  * InterpreterEventQueue adapter(eventRaiser_);
  *
  * EventProcessingAlgorithms::processInternalEventQueue(
@@ -31,9 +31,9 @@ class InterpreterEventQueue {
 public:
     /**
      * @brief Constructor
-     * @param raiser EventRaiserImpl shared_ptr
+     * @param raiser IEventRaiser shared_ptr
      */
-    explicit InterpreterEventQueue(std::shared_ptr<EventRaiserImpl> raiser) : raiser_(raiser) {}
+    explicit InterpreterEventQueue(std::shared_ptr<IEventRaiser> raiser) : raiser_(raiser) {}
 
     /**
      * @brief Check if queue has events
@@ -46,7 +46,7 @@ public:
     /**
      * @brief Process next event from queue
      *
-     * Calls EventRaiserImpl::processNextQueuedEvent() to
+     * Calls IEventRaiser::processNextQueuedEvent() to
      * process events internally via callback.
      *
      * @return Processing success status (does not return actual event value)
@@ -56,7 +56,7 @@ public:
     }
 
 private:
-    std::shared_ptr<EventRaiserImpl> raiser_;
+    std::shared_ptr<IEventRaiser> raiser_;
 };
 
 }  // namespace SCE::Core

@@ -315,11 +315,8 @@ void ActionExecutorImpl::setImmediateMode(bool immediate) {
     // W3C SCXML 3.13: Control immediate mode for event raising (test 404)
     // Exit actions should queue events, not process them immediately
     if (eventRaiser_) {
-        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
-        if (eventRaiserImpl) {
-            eventRaiserImpl->setImmediateMode(immediate);
-            SCE_LOG_DEBUG("ActionExecutorImpl: Set immediate mode to {}", immediate);
-        }
+        eventRaiser_->setImmediateMode(immediate);
+        SCE_LOG_DEBUG("ActionExecutorImpl: Set immediate mode to {}", immediate);
     }
 }
 

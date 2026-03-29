@@ -241,6 +241,10 @@ target_include_directories(sce_runtime
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/dispatchers>
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
+        # Implementation headers (Impl classes) — private to sce_runtime, not installed
+        # Only the root src/ is exposed, so Impl headers require qualified includes
+        # (e.g., "runtime/EventRaiserImpl.h") preventing accidental unqualified usage
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
 
 # spdlog includes (runtime-only dependency)

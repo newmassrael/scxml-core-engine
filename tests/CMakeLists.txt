@@ -173,6 +173,7 @@ target_include_directories(js_engine_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
         ${CMAKE_SOURCE_DIR}/tests
 )
 
@@ -242,6 +243,7 @@ target_include_directories(states_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
         ${CMAKE_SOURCE_DIR}/tests
 )
 
@@ -269,6 +271,7 @@ target_include_directories(action_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
         ${CMAKE_SOURCE_DIR}/tests
 )
 
@@ -448,6 +451,7 @@ target_include_directories(integration_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
         ${CMAKE_SOURCE_DIR}/tests
 )
 
@@ -521,6 +525,7 @@ target_include_directories(concurrency_tests
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
         ${CMAKE_SOURCE_DIR}/tests
 )
 
@@ -1107,6 +1112,7 @@ target_include_directories(w3c_test_cli
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
         ${CMAKE_SOURCE_DIR}/tests
         ${CMAKE_SOURCE_DIR}/tests/common  # TestSummaryHelper.h
         ${CMAKE_SOURCE_DIR}/tests/w3c  # AOT test registry headers
@@ -1143,6 +1149,7 @@ target_include_directories(comprehensive_interactive_test
     PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
         ${CMAKE_SOURCE_DIR}/tests
         ${CMAKE_SOURCE_DIR}/tests/w3c
 )

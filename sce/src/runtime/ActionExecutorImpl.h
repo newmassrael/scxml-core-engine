@@ -1,7 +1,7 @@
 #pragma once
 
-#include "EventRaiserImpl.h"
 #include "IActionExecutor.h"
+#include "IEventRaiser.h"
 #include "runtime/TypeRegistry.h"
 #include "core/EventMetadata.h"
 #include "scripting/JSEngine.h"

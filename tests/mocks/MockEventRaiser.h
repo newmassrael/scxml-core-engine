@@ -42,6 +42,7 @@ public:
     bool raiseExternalEvent(const std::string &eventName, const std::string &eventData) override;
     bool isReady() const override;
     void setImmediateMode(bool immediate) override;
+    bool isImmediateModeEnabled() const override;
     void processQueuedEvents() override;
     bool processNextQueuedEvent() override;
     bool hasQueuedEvents() const override;

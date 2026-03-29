@@ -41,6 +41,10 @@ endif()
 add_executable(benchmark_event_scheduler
     EventSchedulerBenchmark.cpp
 )
+target_include_directories(benchmark_event_scheduler
+    PRIVATE
+        ${CMAKE_SOURCE_DIR}/sce/src
+)
 target_link_libraries(benchmark_event_scheduler
     PRIVATE
         sce_runtime

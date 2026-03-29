@@ -15,6 +15,7 @@
 #include "events/InternalEventTarget.h"
 #include "mocks/MockEventRaiser.h"
 #include "runtime/ActionExecutorImpl.h"
+#include "runtime/EventRaiserImpl.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineContext.h"

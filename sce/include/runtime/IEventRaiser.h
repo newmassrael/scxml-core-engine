@@ -108,6 +108,12 @@ public:
     virtual void setImmediateMode(bool immediate) = 0;
 
     /**
+     * @brief Check if immediate mode is currently enabled
+     * @return true if immediate mode is enabled, false otherwise
+     */
+    virtual bool isImmediateModeEnabled() const = 0;
+
+    /**
      * @brief Process all queued events synchronously (for SCXML compliance)
      * This method processes queued events in order and returns when all are processed
      */

@@ -1,7 +1,6 @@
 #ifndef SCE_IMMEDIATE_MODE_GUARD_H
 #define SCE_IMMEDIATE_MODE_GUARD_H
 
-#include "EventRaiserImpl.h"
 #include "IEventRaiser.h"
 #include <memory>
 
@@ -33,7 +32,7 @@ public:
      * @param enabled Desired immediate mode state
      */
     explicit ImmediateModeGuard(std::shared_ptr<IEventRaiser> raiser, bool enabled)
-        : raiser_(std::dynamic_pointer_cast<EventRaiserImpl>(raiser)), previousState_(false) {
+        : raiser_(raiser), previousState_(false) {
         if (raiser_) {
             previousState_ = raiser_->isImmediateModeEnabled();
             raiser_->setImmediateMode(enabled);
@@ -57,7 +56,7 @@ public:
     ImmediateModeGuard &operator=(ImmediateModeGuard &&) = delete;
 
 private:
-    std::shared_ptr<EventRaiserImpl> raiser_;
+    std::shared_ptr<IEventRaiser> raiser_;
     bool previousState_;
 };
 
