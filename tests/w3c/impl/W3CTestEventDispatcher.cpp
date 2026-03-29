@@ -1,5 +1,5 @@
 #include "W3CTestEventDispatcher.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/EventDescriptor.h"
 #include "events/EventSchedulerImpl.h"
 #include <atomic>

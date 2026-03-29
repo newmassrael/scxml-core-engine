@@ -731,6 +731,22 @@ class EventQueueManager {
 
 ### Shared Helper Functions
 
+Shared helpers are distributed across two directories within `sce/include/`:
+
+**`core/`** — W3C SCXML algorithm helpers (state entry/exit, event processing, conflict resolution, parallel orchestration). All header-only templates with no external dependencies. `core/LogMacros.h` provides conditional logging (no-ops when `sce_core` used standalone).
+
+**`common/`** — W3C SCXML action/data primitive helpers. Categorized as:
+
+| Category | Files | Dependency |
+|----------|-------|------------|
+| Pure validators | AssignHelper, ForeachValidator, DatamodelValidationHelper | stdlib only |
+| Shared computation | StringUtils, SCXMLConstants, EventTypeHelper, InPredicateHelper, EventMetadataHelper, SendHelper, SendSchedulingHelper, NamelistHelper, LogicalTimeScheduler | stdlib + core/LogMacros |
+| JSEngine-dependent | GuardHelper, DoneDataHelper, AssignmentExecutionHelper, FinalizeHelper, DataModelInitHelper | scripting/IJSExecutionEngine |
+| Runtime infrastructure | UniqueIdGenerator, UrlEncodingHelper, EventDataHelper, FileLoadingHelper | have .cpp in sce_runtime |
+| Logging infrastructure | Logger, ILoggerBackend, DisableStdOut | Logger has .cpp in sce_runtime |
+
+Both directories are accessible through `sce_core`'s include root (`"common/Foo.h"`, `"core/Bar.h"`). The distinction is: `core/` = algorithms (template policy pattern), `common/` = action primitives and infrastructure.
+
 **StaticCodeGenerator::groupTransitionsByEventPreservingOrder()**:
 - W3C SCXML 3.5.1: Transitions evaluated in document order
 - Mirrors interpreter engine's simple for-loop logic
@@ -740,7 +756,7 @@ class EventQueueManager {
 **SCE::Core::ForeachHelper::setLoopVariable()**:
 - W3C SCXML 4.6: Foreach variable declaration and type preservation
 - Single Source of Truth for foreach variable setting logic
-- Location: `sce/include/common/ForeachHelper.h`
+- Location: `sce/include/core/ForeachHelper.h`
 - Used by: Interpreter engine (ActionExecutorImpl), AOT engine (generated code)
 - Features:
   - Variable existence check (`'var' in this`)
@@ -832,7 +848,7 @@ class EventQueueManager {
 **SCE::InvokeHelper::deferInvoke() / cancelInvokesForState() / executePendingInvokes()**:
 - W3C SCXML 6.4: Invoke lifecycle management (defer/cancel/execute pattern)
 - Single Source of Truth for invoke execution timing shared between engines
-- Location: `sce/include/common/InvokeHelper.h`
+- Location: `sce/include/core/InvokeHelper.h`
 - Used by: Interpreter engine (InvokeManager), AOT engine (generated code from entry_exit_actions.jinja2)
 - Features:
   - **deferInvoke()**: Add invoke to pending list during state entry (W3C SCXML 6.4)
@@ -860,7 +876,7 @@ class EventQueueManager {
 **SCE::Core::HierarchicalStateHelper / HierarchicalStateHelperString**:
 - W3C SCXML 3.12, 3.7, 3.8: Hierarchical state transition logic (LCA calculation, entry/exit chains)
 - Single Source of Truth for hierarchical state operations shared between engines
-- Location: `sce/include/common/HierarchicalStateHelper.h`
+- Location: `sce/include/core/HierarchicalStateHelper.h`
 - Used by: Interpreter engine (StateMachine::findLCA), AOT engine (StaticExecutionEngine::handleHierarchicalTransition)
 - Features:
   - **findLCA()**: Least Common Ancestor calculation for external transitions

@@ -28,7 +28,7 @@
  *
  * Usage in header-only code:
  * @code
- * #include "common/LogMacros.h"
+ * #include "core/LogMacros.h"
  * SCE_LOG_DEBUG("Transition {} -> {}", static_cast<int>(src), static_cast<int>(tgt));
  * @endcode
  */

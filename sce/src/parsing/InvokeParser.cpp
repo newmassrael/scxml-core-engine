@@ -1,6 +1,6 @@
 // InvokeParser.cpp
 #include "InvokeParser.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
 

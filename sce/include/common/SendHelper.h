@@ -18,6 +18,7 @@
 
 #include "common/SCXMLConstants.h"
 #include "common/UniqueIdGenerator.h"
+#include "core/LogMacros.h"
 #ifdef SCE_ENABLE_HTTP
 #include "common/UrlEncodingHelper.h"
 #endif

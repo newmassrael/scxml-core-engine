@@ -1,5 +1,5 @@
 #include "events/EventTargetFactoryImpl.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/SendHelper.h"
 #include "events/EventRaiserService.h"
 #include "events/InternalEventTarget.h"

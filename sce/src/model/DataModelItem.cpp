@@ -1,5 +1,5 @@
 #include "DataModelItem.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/IXMLDocument.h"
 #include "parsing/IXMLElement.h"
 #include "parsing/IXMLParser.h"

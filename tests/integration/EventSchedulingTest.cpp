@@ -7,7 +7,7 @@
 
 #include "actions/CancelAction.h"
 #include "actions/SendAction.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/TestUtils.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"

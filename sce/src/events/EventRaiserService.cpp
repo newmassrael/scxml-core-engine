@@ -1,5 +1,5 @@
 #include "events/EventRaiserService.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/EventRaiserRegistry.h"
 #include "runtime/IEventRaiser.h"
 #include <stdexcept>

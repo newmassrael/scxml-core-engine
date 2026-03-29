@@ -1,5 +1,5 @@
 #include "states/ConcurrentRegion.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "actions/AssignAction.h"
 #include "actions/ScriptAction.h"
 #include "mocks/MockActionExecutor.h"

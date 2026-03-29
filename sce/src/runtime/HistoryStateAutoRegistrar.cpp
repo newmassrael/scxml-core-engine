@@ -1,5 +1,5 @@
 #include "runtime/HistoryStateAutoRegistrar.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "model/IStateNode.h"
 #include "model/ITransitionNode.h"
 #include "model/SCXMLModel.h"

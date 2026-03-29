@@ -1,7 +1,7 @@
 #include "events/InternalEventTarget.h"
 #include "common/EventDataHelper.h"
 #include "runtime/JsonUtils.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"

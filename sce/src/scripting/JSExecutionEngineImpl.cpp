@@ -1,6 +1,6 @@
 #include "scripting/JSExecutionEngineImpl.h"
 #include "SCXMLTypes.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "runtime/StateMachine.h"
 #include <chrono>
 #include <cstring>

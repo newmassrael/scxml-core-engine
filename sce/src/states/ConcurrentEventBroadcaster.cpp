@@ -1,5 +1,5 @@
 #include "states/ConcurrentEventBroadcaster.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
 #include <algorithm>

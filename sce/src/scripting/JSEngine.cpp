@@ -1,5 +1,5 @@
 #include "scripting/JSEngine.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "scripting/PlatformExecutionHelper.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventRaiserRegistry.h"

@@ -1,5 +1,5 @@
 #include "runtime/ActionExecutorImpl.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "actions/AssignAction.h"
 #include "actions/ForeachAction.h"
 #include "actions/IfAction.h"

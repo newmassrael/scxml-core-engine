@@ -3,7 +3,7 @@
 #include "common/SCXMLConstants.h"
 #include "common/DatamodelValidationHelper.h"
 #include "core/InvokeHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
 #include "events/EventDispatcherImpl.h"

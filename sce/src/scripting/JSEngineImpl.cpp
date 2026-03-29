@@ -1,5 +1,5 @@
 #include "common/DataModelInitHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "quickjs.h"
 #include "scripting/DOMBinding.h"
 #include "scripting/JSEngine.h"

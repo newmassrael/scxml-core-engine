@@ -1,7 +1,7 @@
 #include "events/HttpEventBridge.h"
 #include "events/HttpResponseUtils.h"
 #include "runtime/JsonUtils.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include <iomanip>
 

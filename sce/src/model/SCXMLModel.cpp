@@ -1,5 +1,5 @@
 #include "model/SCXMLModel.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "model/ITransitionNode.h"
 #include <algorithm>
 #include <iostream>

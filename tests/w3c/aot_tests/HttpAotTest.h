@@ -1,6 +1,6 @@
 #pragma once
 #include "AotTestBase.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "AotTestRegistry.h"
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"

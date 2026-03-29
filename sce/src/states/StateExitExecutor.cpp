@@ -1,5 +1,5 @@
 #include "states/StateExitExecutor.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "actions/IActionNode.h"
 #include "model/IStateNode.h"
 #include "runtime/ActionExecutorImpl.h"

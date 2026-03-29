@@ -1,5 +1,5 @@
 #include "scripting/PlatformExecutionHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "quickjs.h"
 #include <condition_variable>
 #include <mutex>

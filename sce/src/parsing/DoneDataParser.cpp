@@ -1,5 +1,5 @@
 #include "parsing/DoneDataParser.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/ParsingCommon.h"
 
 SCE::DoneDataParser::DoneDataParser(std::shared_ptr<NodeFactory> factory) : factory_(factory) {

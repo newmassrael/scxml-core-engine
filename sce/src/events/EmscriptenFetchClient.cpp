@@ -4,7 +4,7 @@
 #ifdef __EMSCRIPTEN__
 
 #include "events/EmscriptenFetchClient.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <cstring>
 #include <emscripten.h>
 #include <emscripten/fetch.h>

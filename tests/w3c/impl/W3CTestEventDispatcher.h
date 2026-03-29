@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/IEventDispatcher.h"
 #include <future>
 #include <memory>

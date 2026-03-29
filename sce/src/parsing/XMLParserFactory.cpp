@@ -1,4 +1,4 @@
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/IXMLParser.h"
 #include "parsing/PugiXMLParser.h"
 

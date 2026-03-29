@@ -1,5 +1,5 @@
 #include "parsing/TransitionParser.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
 #include <cassert>

@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/SendHelper.h"
 #include "events/EventDescriptor.h"
 #ifndef __EMSCRIPTEN__

@@ -1,5 +1,5 @@
 #include "events/PlatformEventRaiserHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/EventSchedulerImpl.h"
 #include "runtime/EventRaiserImpl.h"
 #include <atomic>

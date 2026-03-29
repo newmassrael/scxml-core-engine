@@ -1,5 +1,5 @@
 #include "scripting/XMLDOMWrapper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <cstring>
 
 namespace SCE {

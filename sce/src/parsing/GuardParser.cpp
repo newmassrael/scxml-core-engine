@@ -1,7 +1,7 @@
 #include "parsing/GuardParser.h"
 #include "GuardUtils.h"
 #include "ParsingCommon.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <algorithm>
 
 SCE::GuardParser::GuardParser(std::shared_ptr<SCE::NodeFactory> nodeFactory) : nodeFactory_(nodeFactory) {

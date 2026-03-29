@@ -1,5 +1,5 @@
 #include "GuardNode.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 
 SCE::GuardNode::GuardNode(const std::string &id, const std::string &target)
     : id_(id), target_(target), condition_(""), targetState_("") {

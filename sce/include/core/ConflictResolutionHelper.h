@@ -17,7 +17,7 @@
 #pragma once
 
 #include "core/HierarchicalStateHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "core/ParallelTransitionHelper.h"
 #include <algorithm>
 #include <optional>

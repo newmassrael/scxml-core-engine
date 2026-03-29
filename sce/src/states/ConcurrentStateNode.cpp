@@ -1,5 +1,5 @@
 #include "states/ConcurrentStateNode.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "model/DoneData.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/IExecutionContext.h"

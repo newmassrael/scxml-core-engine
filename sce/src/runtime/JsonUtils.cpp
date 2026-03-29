@@ -1,5 +1,5 @@
 #include "runtime/JsonUtils.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <chrono>
 
 namespace SCE {

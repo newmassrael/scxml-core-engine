@@ -1,6 +1,6 @@
 #include "runtime/HistoryManager.h"
 #include "core/HistoryHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "model/IStateNode.h"
 #include "runtime/HistoryValidator.h"
 

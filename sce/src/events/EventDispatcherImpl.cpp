@@ -1,5 +1,5 @@
 #include "events/EventDispatcherImpl.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/StringUtils.h"
 #include <sstream>
 #include <stdexcept>

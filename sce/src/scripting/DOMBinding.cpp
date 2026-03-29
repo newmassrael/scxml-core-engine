@@ -1,5 +1,5 @@
 #include "scripting/DOMBinding.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>

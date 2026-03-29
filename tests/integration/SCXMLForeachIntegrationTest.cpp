@@ -1,5 +1,5 @@
 #include "actions/AssignAction.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "actions/ForeachAction.h"
 #include "actions/LogAction.h"
 #include "actions/ScriptAction.h"

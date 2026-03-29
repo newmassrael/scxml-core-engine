@@ -1,5 +1,5 @@
 #include "model/StateHierarchy.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "model/ITransitionNode.h"
 #include <algorithm>
 #include <iostream>

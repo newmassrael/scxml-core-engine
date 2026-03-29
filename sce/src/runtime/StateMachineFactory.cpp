@@ -1,5 +1,5 @@
 #include "runtime/StateMachineFactory.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "scripting/IScriptEngine.h"
 #include "scripting/JSEngine.h"
 #include <random>

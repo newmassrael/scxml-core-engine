@@ -1,5 +1,5 @@
 #include "model/StateNode.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 
 SCE::StateNode::StateNode(const std::string &id, Type type) : id_(id), type_(type), parent_(nullptr) {
     SCE_LOG_DEBUG("Creating state node: {}, type: {}", id, static_cast<int>(type));

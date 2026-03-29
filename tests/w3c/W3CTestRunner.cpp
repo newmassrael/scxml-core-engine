@@ -2,7 +2,7 @@
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
 #endif
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"

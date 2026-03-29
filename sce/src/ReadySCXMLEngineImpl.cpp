@@ -1,6 +1,6 @@
 #include "ReadySCXMLEngine.h"
 #include "SCXMLEngine.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <atomic>
 #include <filesystem>
 #include <fstream>

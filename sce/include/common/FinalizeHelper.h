@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "scripting/IJSExecutionEngine.h"
 #include <string>
 

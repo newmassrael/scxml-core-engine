@@ -1,6 +1,6 @@
 #pragma once
 
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <functional>
 #include <mutex>
 #include <quickjs.h>

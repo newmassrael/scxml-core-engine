@@ -1,6 +1,6 @@
 #include "events/HttpResponseUtils.h"
 #include "runtime/JsonUtils.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/IEventBridge.h"  // For HttpResponse struct
 
 namespace SCE {

@@ -1,7 +1,7 @@
 #include "states/ConcurrentRegion.h"
 #include "actions/AssignAction.h"
 #include "actions/ScriptAction.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/EventDescriptor.h"
 #include "model/IStateNode.h"
 #include "model/ITransitionNode.h"

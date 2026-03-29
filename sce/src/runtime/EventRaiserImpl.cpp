@@ -1,6 +1,6 @@
 #include "runtime/EventRaiserImpl.h"
 #include "common/EventTypeHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/StringUtils.h"
 #include "events/IEventDispatcher.h"
 #include "events/PlatformEventRaiserHelper.h"

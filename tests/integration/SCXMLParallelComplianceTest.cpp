@@ -1,5 +1,5 @@
 #include "factory/NodeFactory.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/SCXMLParser.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/StateMachine.h"

@@ -1,5 +1,5 @@
 #include "runtime/SessionManagerImpl.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "runtime/ISessionObserver.h"
 #include <algorithm>
 

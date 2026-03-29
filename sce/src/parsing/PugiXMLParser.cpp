@@ -1,5 +1,5 @@
 #include "parsing/PugiXMLParser.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/IXMLElement.h"
 #include <cstring>
 #include <filesystem>

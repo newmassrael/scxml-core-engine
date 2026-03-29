@@ -1,5 +1,5 @@
 #include "common/UniqueIdGenerator.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 
 #include <iomanip>
 #include <sstream>

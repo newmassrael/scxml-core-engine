@@ -1,5 +1,5 @@
 #include "states/ParallelRegionOrchestrator.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/EventDescriptor.h"
 #include <algorithm>
 #include <format>

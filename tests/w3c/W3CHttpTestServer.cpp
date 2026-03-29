@@ -1,6 +1,6 @@
 #include "W3CHttpTestServer.h"
 #include "runtime/JsonUtils.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/TestUtils.h"
 #include "events/HttpEventBridge.h"
 #include <chrono>

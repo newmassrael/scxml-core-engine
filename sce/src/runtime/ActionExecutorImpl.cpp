@@ -14,7 +14,7 @@
 #include "core/ForeachHelper.h"
 #include "common/ForeachValidator.h"
 #include "common/GuardHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/NamelistHelper.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"

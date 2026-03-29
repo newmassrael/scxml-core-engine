@@ -20,7 +20,7 @@
 #include "common/EventTypeHelper.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/HistoryHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
 #include "common/SendSchedulingHelper.h"

@@ -9,7 +9,7 @@
 #include "actions/SendAction.h"
 #include "common/FileLoadingHelper.h"
 #include "backends/LogUtils.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/XmlSerializationHelper.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>

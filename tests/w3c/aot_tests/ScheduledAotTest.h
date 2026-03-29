@@ -1,7 +1,7 @@
 #pragma once
 
 #include "AotTestBase.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "AotTestRegistry.h"
 #include <thread>
 

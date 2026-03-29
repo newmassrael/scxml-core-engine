@@ -1,6 +1,6 @@
 #include "common/DataModelInitHelper.h"
 #include "common/FileLoadingHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "runtime/DataContentHelpers.h"
 #include <algorithm>
 #include <filesystem>

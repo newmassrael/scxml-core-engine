@@ -1,5 +1,5 @@
 #include "runtime/StateMachine.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "runtime/StateMachineFactory.h"
 #include <fstream>
 #include <gtest/gtest.h>

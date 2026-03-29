@@ -1,5 +1,5 @@
 #include "events/HttpEventTarget.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/SendHelper.h"
 #include "common/UrlEncodingHelper.h"
 #include <algorithm>

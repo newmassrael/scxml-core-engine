@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ITestMetadataParser.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <chrono>
 #include <memory>
 #include <string>

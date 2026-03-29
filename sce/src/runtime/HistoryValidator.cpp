@@ -1,5 +1,5 @@
 #include "runtime/HistoryValidator.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "model/IStateNode.h"
 
 namespace SCE {

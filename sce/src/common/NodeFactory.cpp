@@ -6,7 +6,7 @@
 #include "actions/RaiseAction.h"
 #include "actions/ScriptAction.h"
 #include "actions/SendAction.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "states/ConcurrentStateNode.h"
 
 std::shared_ptr<SCE::IStateNode> SCE::NodeFactory::createStateNode(const std::string &id, const Type type) {

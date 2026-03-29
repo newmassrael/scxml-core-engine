@@ -15,7 +15,7 @@
 // Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <optional>
 #include <stdexcept>
 #include <string>

@@ -1,5 +1,5 @@
 #include "events/EventSchedulerImpl.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include <algorithm>
 #include <chrono>

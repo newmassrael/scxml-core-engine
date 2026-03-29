@@ -1,5 +1,5 @@
 #include "parsing/XIncludeProcessor.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 
 // ============================================================================
 // Unified stub implementation: XInclude processing delegated to IXMLDocument

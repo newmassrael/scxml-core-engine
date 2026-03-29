@@ -4,7 +4,7 @@
 #include "InteractiveTestRunner.h"
 
 #include "RestorationModeScope.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"

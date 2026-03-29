@@ -1,6 +1,6 @@
 #include "events/ParentEventTarget.h"
 #include "runtime/JsonUtils.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"

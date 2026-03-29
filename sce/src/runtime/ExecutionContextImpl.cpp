@@ -1,5 +1,5 @@
 #include "runtime/ExecutionContextImpl.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 
 namespace SCE {
 

@@ -1,5 +1,5 @@
 #include "parsing/XmlSerializationHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/ParsingCommon.h"
 #include <algorithm>
 

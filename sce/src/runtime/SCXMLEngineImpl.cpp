@@ -1,6 +1,6 @@
 #define SCXML_ENGINE_EXPORTS
 #include "SCXMLEngineImpl.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/StateMachineFactory.h"

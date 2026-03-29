@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "InteractiveTestRunner.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "impl/SnapshotComparator.h"
 #include "runtime/StateSnapshot.h"
 

@@ -6,7 +6,7 @@
 
 #include "SimpleMockHttpServer.h"
 #include "actions/SendAction.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/TestUtils.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "events/HttpEventTarget.h"

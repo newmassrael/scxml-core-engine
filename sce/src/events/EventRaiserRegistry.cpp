@@ -1,5 +1,5 @@
 #include "events/EventRaiserRegistry.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include <algorithm>
 
 namespace SCE {

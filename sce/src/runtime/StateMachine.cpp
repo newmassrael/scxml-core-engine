@@ -8,7 +8,7 @@ using SCE::Core::ConflictResolutionHelperString;
 #include "common/DoneDataHelper.h"
 #include "core/EntryExitHelper.h"
 #include "common/FileLoadingHelper.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #ifdef SCE_USE_SPDLOG
 #include <spdlog/spdlog.h>
 #endif

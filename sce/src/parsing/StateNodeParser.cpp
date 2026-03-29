@@ -1,7 +1,7 @@
 #include "parsing/StateNodeParser.h"
 #include "actions/AssignAction.h"
 #include "actions/ScriptAction.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "parsing/ActionParser.h"
 #include "parsing/DataModelParser.h"
 #include "parsing/DoneDataParser.h"

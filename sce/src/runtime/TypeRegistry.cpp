@@ -1,5 +1,5 @@
 #include "runtime/TypeRegistry.h"
-#include "common/LogMacros.h"
+#include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include <algorithm>
 #include <cctype>
