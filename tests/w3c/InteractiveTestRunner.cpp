@@ -39,9 +39,6 @@ InteractiveTestRunner::InteractiveTestRunner()
     : stateMachine_(std::make_shared<StateMachine>()), snapshotManager_(1000)  // 1000 step history
       ,
       currentStep_(0) {
-    // Initialize logger with Debug level by default (can be changed via setSpdlogLevel)
-    Logger::setLevel(LogLevel::Debug);
-
     // W3C SCXML 6.2: Create event infrastructure for send/invoke support
     // Event callback: For visualization, we don't auto-process scheduled events
     // User manually steps forward via stepForward()
