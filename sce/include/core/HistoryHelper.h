@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace SCE::HistoryHelper {
+namespace SCE::Core::HistoryHelper {
 
 /**
  * @brief W3C SCXML 3.11: Filter states for shallow history recording
@@ -240,4 +240,4 @@ std::vector<StateType> getActiveHierarchy(StateType currentState, GetParentFunc 
     return activeStates;
 }
 
-}  // namespace SCE::HistoryHelper
+}  // namespace SCE::Core::HistoryHelper

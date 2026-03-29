@@ -19,7 +19,7 @@
 #include <algorithm>
 #include <vector>
 
-namespace SCE {
+namespace SCE::Core {
 
 /**
  * @brief Helper for parallel state completion detection (W3C SCXML 3.4, 3.7.1)
@@ -92,4 +92,4 @@ public:
     }
 };
 
-}  // namespace SCE
+}  // namespace SCE::Core

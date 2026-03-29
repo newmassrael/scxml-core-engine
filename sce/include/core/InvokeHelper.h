@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-namespace SCE {
+namespace SCE::Core {
 
 /**
  * @brief Single Source of Truth for W3C SCXML 6.4 invoke lifecycle management
@@ -276,4 +276,4 @@ public:
     }
 };
 
-}  // namespace SCE
+}  // namespace SCE::Core

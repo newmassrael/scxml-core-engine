@@ -20,7 +20,7 @@
 #include <functional>
 #include <vector>
 
-namespace SCE {
+namespace SCE::Core {
 
 /**
  * @brief Helper for onentry/onexit block execution (W3C SCXML 3.8/3.9)
@@ -203,4 +203,4 @@ public:
     }
 };
 
-}  // namespace SCE
+}  // namespace SCE::Core

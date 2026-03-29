@@ -21,7 +21,7 @@
 #include <set>
 #include <vector>
 
-namespace SCE {
+namespace SCE::Core {
 
 /**
  * @brief W3C SCXML 3.6: Deep initial state entry logic (Zero Duplication Principle)
@@ -214,4 +214,4 @@ public:
     }
 };
 
-}  // namespace SCE
+}  // namespace SCE::Core

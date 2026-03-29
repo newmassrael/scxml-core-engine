@@ -16,12 +16,12 @@
 
 #pragma once
 
-#include "common/HierarchicalStateHelper.h"
+#include "core/HierarchicalStateHelper.h"
 #include <algorithm>
 #include <unordered_set>
 #include <vector>
 
-namespace SCE {
+namespace SCE::Core {
 
 /**
  * @brief Helper functions for parallel state exit/entry order computation
@@ -226,4 +226,4 @@ private:
     }
 };
 
-}  // namespace SCE
+}  // namespace SCE::Core

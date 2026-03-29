@@ -2,8 +2,8 @@
 
 #include "common/ClassBinding.h"  // C++ class binding infrastructure
 #include "common/LogMacros.h"
-#include "common/HierarchicalStateHelper.h"
-#include "common/InvokeHelper.h"  // W3C SCXML 6.4: Shared invoke lifecycle logic (Zero Duplication)
+#include "core/HierarchicalStateHelper.h"
+#include "core/InvokeHelper.h"  // W3C SCXML 6.4: Shared invoke lifecycle logic (Zero Duplication)
 #include "events/IEventDispatcher.h"
 #include "model/IStateNode.h"
 #include "model/SCXMLModel.h"

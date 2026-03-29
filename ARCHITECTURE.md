@@ -737,7 +737,7 @@ class EventQueueManager {
 - Used in: Main state transitions, parallel region transitions
 - Benefits: Compliance guarantee, zero code duplication
 
-**SCE::Common::ForeachHelper::setLoopVariable()**:
+**SCE::Core::ForeachHelper::setLoopVariable()**:
 - W3C SCXML 4.6: Foreach variable declaration and type preservation
 - Single Source of Truth for foreach variable setting logic
 - Location: `sce/include/common/ForeachHelper.h`
@@ -857,7 +857,7 @@ class EventQueueManager {
 - Test coverage: test239 (static invoke with child SCXML), test240 (invoke with namelist/param), test422 (macrostep timing)
 - Benefits: Zero code duplication, guaranteed W3C SCXML 6.4 compliance across engines, eliminates invoke timing bugs
 
-**SCE::Common::HierarchicalStateHelper / HierarchicalStateHelperString**:
+**SCE::Core::HierarchicalStateHelper / HierarchicalStateHelperString**:
 - W3C SCXML 3.12, 3.7, 3.8: Hierarchical state transition logic (LCA calculation, entry/exit chains)
 - Single Source of Truth for hierarchical state operations shared between engines
 - Location: `sce/include/common/HierarchicalStateHelper.h`

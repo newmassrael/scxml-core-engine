@@ -18,8 +18,8 @@
 
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
-#include "common/HierarchicalStateHelper.h"
-#include "common/HistoryHelper.h"
+#include "core/HierarchicalStateHelper.h"
+#include "core/HistoryHelper.h"
 #include "common/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "common/SendHelper.h"
@@ -137,7 +137,7 @@ private:
             bool isSelfTransition = (oldState == newState);
             bool isProperDescendant =
                 !isSelfTransition &&
-                SCE::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(newState, oldState);
+                SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(newState, oldState);
 
             // W3C SCXML 3.13: Check if source is compound state (test 533)
             // Parallel states and atomic states are NOT compound - internal transitions from them behave as external
@@ -153,7 +153,7 @@ private:
             } else {
                 // W3C SCXML 3.13/5.9.2: Non-compound source or non-descendant - behaves as external
                 // Use normal LCA calculation, then target==LCA check handles exit/re-entry
-                lca = SCE::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
+                lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Internal transition (non-compound source or "
                           "non-descendant) - behaves as "
                           "external, LCA={}",
@@ -161,7 +161,7 @@ private:
             }
         } else {
             // W3C SCXML 3.12: External transition - find LCA normally
-            lca = SCE::Common::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
+            lca = SCE::Core::HierarchicalStateHelper<StatePolicy>::findLCA(oldState, newState);
         }
 
         if (lca.has_value()) {
@@ -169,7 +169,7 @@ private:
             std::vector<State> descendantsToExit;
             for (State activeState : preTransitionStates) {
                 if (activeState != oldState &&
-                    SCE::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(activeState, oldState)) {
+                    SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(activeState, oldState)) {
                     descendantsToExit.push_back(activeState);
                 }
             }
@@ -184,7 +184,7 @@ private:
             }
 
             // W3C SCXML 3.13: Exit states from oldState up to (but not including) LCA
-            auto exitChain = SCE::Common::HierarchicalStateHelper<StatePolicy>::buildExitChain(oldState, lca.value());
+            auto exitChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildExitChain(oldState, lca.value());
             for (const auto &state : exitChain) {
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Hierarchical exit state {}", static_cast<int>(state));
                 executeOnExit(state, preTransitionStates);
@@ -214,18 +214,18 @@ private:
                           "initial children (W3C 3.10)",
                           static_cast<int>(newState));
                 // Build full entry chain from root, then keep only states at/below LCA
-                auto fullChain = SCE::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
+                auto fullChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
                 for (State s : fullChain) {
                     // Include state if it's at or below LCA (check if LCA is ancestor of s or s == LCA)
                     if (s == lca.value() ||
-                        SCE::Common::HierarchicalStateHelper<StatePolicy>::isDescendantOf(s, lca.value())) {
+                        SCE::Core::HierarchicalStateHelper<StatePolicy>::isDescendantOf(s, lca.value())) {
                         entryChain.push_back(s);
                     }
                 }
             } else {
                 // Normal case: enter from LCA's child down to newState
                 entryChain =
-                    SCE::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChainFromParent(newState, lca.value());
+                    SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChainFromParent(newState, lca.value());
             }
 
             for (const auto &state : entryChain) {
@@ -260,7 +260,7 @@ private:
             transitionAction();
 
             // Enter full hierarchy from root to newState
-            auto entryChain = SCE::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
+            auto entryChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(newState, policy_);
             for (const auto &state : entryChain) {
                 SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Entry state {} (from root)", static_cast<int>(state));
                 executeOnEntry(state);
@@ -957,7 +957,7 @@ public:
         }
 
         // W3C SCXML 3.3: Use HierarchicalStateHelper for correct entry order
-        auto entryChain = SCE::Common::HierarchicalStateHelper<StatePolicy>::buildEntryChain(currentState_);
+        auto entryChain = SCE::Core::HierarchicalStateHelper<StatePolicy>::buildEntryChain(currentState_);
 
         // Execute entry actions from root to leaf (ancestor first)
         for (const auto &state : entryChain) {
@@ -1151,7 +1151,7 @@ public:
 
         // W3C SCXML 3.11: For non-parallel, use shared HistoryHelper for full active hierarchy (Zero Duplication
         // Principle) Returns [currentState, parent, grandparent, ...] for proper history recording
-        return ::SCE::HistoryHelper::getActiveHierarchy(currentState_,
+        return ::SCE::Core::HistoryHelper::getActiveHierarchy(currentState_,
                                                         [](State s) { return StatePolicy::getParent(s); });
     }
 

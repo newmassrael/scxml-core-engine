@@ -12,7 +12,7 @@
 #include "common/Constants.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
-#include "common/ForeachHelper.h"
+#include "core/ForeachHelper.h"
 #include "common/ForeachValidator.h"
 #include "common/GuardHelper.h"
 #include "common/LogMacros.h"
@@ -1026,7 +1026,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
 
     // W3C SCXML 4.6: Use ForeachHelper as Single Source of Truth
     // ARCHITECTURE.md: Zero Duplication Principle - shared logic between Interpreter and AOT engines
-    bool success = Common::ForeachHelper::executeForeachWithActions(
+    bool success = Core::ForeachHelper::executeForeachWithActions(
         JSEngine::instance(), sessionId_, jsArrayExpr, transformVariableName(itemVar),
         indexVar.empty() ? "" : transformVariableName(indexVar), [&](size_t i) -> bool {
             // Execute nested actions for this iteration
@@ -1064,7 +1064,7 @@ bool ActionExecutorImpl::setLoopVariable(const std::string &varName, const std::
         std::string jsVarName = transformVariableName(varName);
 
         // Use shared ForeachHelper logic (eliminates code duplication with AOT engine)
-        bool success = SCE::Common::ForeachHelper::setLoopVariable(JSEngine::instance(), sessionId_, jsVarName, value);
+        bool success = SCE::Core::ForeachHelper::setLoopVariable(JSEngine::instance(), sessionId_, jsVarName, value);
 
         if (success) {
             SCE_LOG_DEBUG("Set foreach variable: {} = {} (JS: {}, iteration {})", varName, value, jsVarName, iteration);

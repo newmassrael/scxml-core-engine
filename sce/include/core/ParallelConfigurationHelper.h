@@ -21,7 +21,7 @@
 #include <unordered_set>
 #include <vector>
 
-namespace SCE {
+namespace SCE::Core {
 
 /**
  * @brief Helper functions for parallel state configuration tracking
@@ -205,4 +205,4 @@ public:
     }
 };
 
-}  // namespace SCE
+}  // namespace SCE::Core

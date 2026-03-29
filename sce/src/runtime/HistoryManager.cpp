@@ -1,5 +1,5 @@
 #include "runtime/HistoryManager.h"
-#include "common/HistoryHelper.h"
+#include "core/HistoryHelper.h"
 #include "common/LogMacros.h"
 #include "model/IStateNode.h"
 #include "runtime/HistoryValidator.h"
@@ -102,9 +102,9 @@ bool HistoryManager::recordHistory(const std::string &parentStateId, const std::
         // Call shared HistoryHelper filtering logic
         std::vector<std::string> filteredStates;
         if (historyInfo.type == HistoryType::SHALLOW) {
-            filteredStates = ::SCE::HistoryHelper::filterShallowHistory(activeStateIds, parentStateId, getParent);
+            filteredStates = ::SCE::Core::HistoryHelper::filterShallowHistory(activeStateIds, parentStateId, getParent);
         } else {
-            filteredStates = ::SCE::HistoryHelper::filterDeepHistory(activeStateIds, parentStateId, getParent);
+            filteredStates = ::SCE::Core::HistoryHelper::filterDeepHistory(activeStateIds, parentStateId, getParent);
         }
 
         // W3C SCXML Section 3.6: Record history even if empty (valid scenario)

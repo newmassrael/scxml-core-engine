@@ -16,19 +16,28 @@
 
 #pragma once
 #include "common/LogMacros.h"
-#include "scripting/JSEngine.h"
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
-namespace SCE::Common {
+namespace SCE::Core {
 
 /**
  * @brief Helper for W3C SCXML 4.6 foreach loop variable handling
  *
  * Single Source of Truth for foreach variable setting logic shared between engines.
  * Ensures proper variable declaration and type preservation.
+ *
+ * @note All methods are templatized on JSEngineType to avoid concrete JSEngine
+ * dependency. This keeps ForeachHelper usable from sce_core (header-only)
+ * without pulling in scripting/JSEngine.h and its transitive dependencies
+ * (QuickJS, threading, etc.). JSEngineType is deduced automatically at call sites.
+ *
+ * JSEngineType contract (satisfied by SCE::JSEngine):
+ * - auto evaluateExpression(sessionId, expr).get() → result with isSuccess(), getInternalValue()
+ * - auto executeScript(sessionId, script).get()    → result with isSuccess()
+ * - static resultToStringArray(result, sessionId, expr) → std::vector<std::string>
  */
 class ForeachHelper {
 public:
@@ -40,13 +49,15 @@ public:
      * This is the Single Source of Truth for foreach variable setting logic,
      * shared between Interpreter and AOT engines.
      *
-     * @param jsEngine Reference to JSEngine instance
-     * @param sessionId JSEngine session ID
+     * @tparam JSEngineType Script engine type (deduced from jsEngine argument)
+     * @param jsEngine Reference to script engine instance
+     * @param sessionId Script engine session ID
      * @param varName Variable name to set
      * @param value JavaScript literal value (e.g., "1", "undefined", "null")
      * @return true if successful, false otherwise
      */
-    static inline bool setLoopVariable(JSEngine &jsEngine, const std::string &sessionId, const std::string &varName,
+    template <typename JSEngineType>
+    static inline bool setLoopVariable(JSEngineType &jsEngine, const std::string &sessionId, const std::string &varName,
                                        const std::string &value) {
         try {
             // W3C SCXML 4.6: Check if variable already exists
@@ -55,7 +66,7 @@ public:
             auto checkResult = jsEngine.evaluateExpression(sessionId, checkExpression).get();
 
             bool variableExists = false;
-            if (JSEngine::isSuccess(checkResult) && std::holds_alternative<bool>(checkResult.getInternalValue())) {
+            if (checkResult.isSuccess() && std::holds_alternative<bool>(checkResult.getInternalValue())) {
                 variableExists = std::get<bool>(checkResult.getInternalValue());
             }
 
@@ -72,7 +83,7 @@ public:
 
             auto setResult = jsEngine.executeScript(sessionId, script).get();
 
-            if (!JSEngine::isSuccess(setResult)) {
+            if (!setResult.isSuccess()) {
                 // Fallback: Treat as string literal
                 std::string stringLiteral = "\"" + value + "\"";
                 std::string fallbackScript;
@@ -83,7 +94,7 @@ public:
                 }
 
                 auto fallbackResult = jsEngine.executeScript(sessionId, fallbackScript).get();
-                if (!JSEngine::isSuccess(fallbackResult)) {
+                if (!fallbackResult.isSuccess()) {
                     SCE_LOG_ERROR("Failed to set foreach variable {} = {}", varName, value);
                     return false;
                 }
@@ -99,22 +110,24 @@ public:
     }
 
     /**
-     * @brief Evaluates a foreach array expression using JSEngine
+     * @brief Evaluates a foreach array expression using script engine
      *
      * W3C SCXML 5.4: The 'array' attribute must evaluate to an iterable collection,
      * specifically objects that satisfy instanceof(Array) in ECMAScript.
      * Non-array values (numbers, strings, booleans, objects) must raise error.execution.
      *
-     * @param jsEngine Reference to JSEngine instance
-     * @param sessionId JSEngine session ID
+     * @tparam JSEngineType Script engine type (deduced from jsEngine argument)
+     * @param jsEngine Reference to script engine instance
+     * @param sessionId Script engine session ID
      * @param arrayExpr Array expression to evaluate (e.g., "Var3", "[1,2,3]")
      * @return std::optional<std::vector<std::string>> Array values as strings, or std::nullopt on failure
      */
+    template <typename JSEngineType>
     static inline std::optional<std::vector<std::string>>
-    evaluateForeachArray(JSEngine &jsEngine, const std::string &sessionId, const std::string &arrayExpr) {
+    evaluateForeachArray(JSEngineType &jsEngine, const std::string &sessionId, const std::string &arrayExpr) {
         auto arrayResult = jsEngine.evaluateExpression(sessionId, arrayExpr).get();
 
-        if (!JSEngine::isSuccess(arrayResult)) {
+        if (!arrayResult.isSuccess()) {
             SCE_LOG_ERROR("Failed to evaluate array expression: {}", arrayExpr);
             return std::nullopt;  // Return failure instead of throwing
         }
@@ -123,14 +136,14 @@ public:
         std::string arrayCheckExpr = "(" + arrayExpr + ") instanceof Array";
         auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, arrayCheckExpr).get();
 
-        if (!JSEngine::isSuccess(arrayCheckResult) ||
+        if (!arrayCheckResult.isSuccess() ||
             !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
             !std::get<bool>(arrayCheckResult.getInternalValue())) {
             SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr);
             return std::nullopt;  // Return failure instead of throwing
         }
 
-        return JSEngine::resultToStringArray(arrayResult, sessionId, arrayExpr);
+        return JSEngineType::resultToStringArray(arrayResult, sessionId, arrayExpr);
     }
 
     /**
@@ -139,15 +152,17 @@ public:
      * Uses the shared setLoopVariable logic to ensure consistency between
      * Interpreter and AOT engines (ARCHITECTURE.md: Logic Commonization).
      *
-     * @param jsEngine Reference to JSEngine instance
-     * @param sessionId JSEngine session ID
+     * @tparam JSEngineType Script engine type (deduced from jsEngine argument)
+     * @param jsEngine Reference to script engine instance
+     * @param sessionId Script engine session ID
      * @param itemVar Item variable name (e.g., "Var1")
      * @param itemValue Current iteration value (JavaScript literal)
      * @param indexVar Index variable name (empty string if not used)
      * @param indexValue Current iteration index
      * @return true if successful, false on failure
      */
-    static inline bool setForeachIterationVariables(JSEngine &jsEngine, const std::string &sessionId,
+    template <typename JSEngineType>
+    static inline bool setForeachIterationVariables(JSEngineType &jsEngine, const std::string &sessionId,
                                                     const std::string &itemVar, const std::string &itemValue,
                                                     const std::string &indexVar, size_t indexValue) {
         // Set item variable using shared logic
@@ -172,14 +187,16 @@ public:
      * Used when foreach is used solely for declaring variables without executing actions
      * (W3C SCXML 4.6 allows empty foreach for variable declaration)
      *
-     * @param jsEngine Reference to JSEngine instance
-     * @param sessionId JSEngine session ID
+     * @tparam JSEngineType Script engine type (deduced from jsEngine argument)
+     * @param jsEngine Reference to script engine instance
+     * @param sessionId Script engine session ID
      * @param arrayExpr Array expression to evaluate
      * @param itemVar Item variable name
      * @param indexVar Index variable name (empty if not used)
      * @return true if successful, false on failure
      */
-    static inline bool executeForeachWithoutBody(JSEngine &jsEngine, const std::string &sessionId,
+    template <typename JSEngineType>
+    static inline bool executeForeachWithoutBody(JSEngineType &jsEngine, const std::string &sessionId,
                                                  const std::string &arrayExpr, const std::string &itemVar,
                                                  const std::string &indexVar) {
         auto arrayValuesOpt = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
@@ -219,10 +236,11 @@ public:
      * "If the evaluation of any child element of foreach causes an error,
      * the processor MUST cease execution of the foreach element and the block that contains it."
      *
+     * @tparam JSEngineType Script engine type (deduced from jsEngine argument)
      * @tparam BodyFunc Callable type (lambda, function pointer, functor) that takes (size_t iteration)
      *                  and returns bool (true = continue, false = stop loop due to error)
-     * @param jsEngine Reference to JSEngine instance
-     * @param sessionId JSEngine session ID
+     * @param jsEngine Reference to script engine instance
+     * @param sessionId Script engine session ID
      * @param arrayExpr Array expression to evaluate (e.g., "Var3", "[1,2,3]")
      * @param itemVar Item variable name (e.g., "Var2")
      * @param indexVar Index variable name (empty string if not used)
@@ -249,12 +267,12 @@ public:
      *
      * @example AOT Engine usage (generated code):
      * @code
-     * bool success = ::SCE::ForeachHelper::executeForeachWithActions(
+     * bool success = ::SCE::Core::ForeachHelper::executeForeachWithActions(
      *     jsEngine, sessionId_.value(), "Var3", "Var2", "",
      *     [&](size_t i) {
      *         // Custom C++ generated code
      *         auto result = jsEngine.evaluateExpression(sessionId_.value(), "Var1 + 1").get();
-     *         if (!::SCE::JSEngine::isSuccess(result)) {
+     *         if (!result.isSuccess()) {
      *             SCE_LOG_ERROR("Expression evaluation failed");
      *             return false;  // Stop loop on error (W3C 4.6)
      *         }
@@ -264,8 +282,8 @@ public:
      * );
      * @endcode
      */
-    template <typename BodyFunc>
-    static inline bool executeForeachWithActions(JSEngine &jsEngine, const std::string &sessionId,
+    template <typename JSEngineType, typename BodyFunc>
+    static inline bool executeForeachWithActions(JSEngineType &jsEngine, const std::string &sessionId,
                                                  const std::string &arrayExpr, const std::string &itemVar,
                                                  const std::string &indexVar, BodyFunc &&executeBody) {
         // Evaluate array expression
@@ -308,4 +326,4 @@ public:
     }
 };
 
-}  // namespace SCE::Common
+}  // namespace SCE::Core

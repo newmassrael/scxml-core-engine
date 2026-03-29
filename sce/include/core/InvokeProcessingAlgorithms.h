@@ -44,6 +44,7 @@ public:
      *
      * @example Interpreter usage:
      * @code
+     * // #include "runtime/InterpreterInvokeManager.h"
      * SCE::Core::InterpreterInvokeManager adapter(invokeExecutor_);
      * SCE::Core::InvokeProcessingAlgorithms::processFinalize(
      *     event.originSessionId,
@@ -54,6 +55,7 @@ public:
      *
      * @example AOT usage:
      * @code
+     * // #include "core/InvokeManagerAdapters.h"
      * SCE::Core::AOTInvokeManager<Policy> adapter(policy_);
      * SCE::Core::InvokeProcessingAlgorithms::processFinalize(
      *     getOriginSessionId(event),
@@ -101,6 +103,7 @@ public:
      *
      * @example Interpreter usage:
      * @code
+     * // #include "runtime/InterpreterInvokeManager.h"
      * SCE::Core::InterpreterInvokeManager adapter(invokeExecutor_);
      * SCE::Core::InvokeProcessingAlgorithms::processAutoforward(
      *     event,
@@ -111,6 +114,7 @@ public:
      *
      * @example AOT usage:
      * @code
+     * // #include "core/InvokeManagerAdapters.h"
      * SCE::Core::AOTInvokeManager<Policy> adapter(policy_);
      * SCE::Core::InvokeProcessingAlgorithms::processAutoforward(
      *     event,

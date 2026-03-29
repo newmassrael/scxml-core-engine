@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-namespace SCE::EventMatchingHelper {
+namespace SCE::Core::EventMatchingHelper {
 
 /**
  * @brief W3C SCXML 5.9.3: Event descriptor matching algorithm
@@ -101,4 +101,4 @@ inline bool matchesEventDescriptor(const std::string &eventName, const std::stri
     return false;
 }
 
-}  // namespace SCE::EventMatchingHelper
+}  // namespace SCE::Core::EventMatchingHelper

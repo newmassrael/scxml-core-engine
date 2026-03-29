@@ -2,7 +2,7 @@
 #include "SCXMLTypes.h"
 #include "common/Constants.h"
 #include "common/DatamodelValidationHelper.h"
-#include "common/InvokeHelper.h"
+#include "core/InvokeHelper.h"
 #include "common/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include "events/EventDescriptor.h"
@@ -288,7 +288,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
         // W3C SCXML 6.5: Generate done.invoke.id event
         // ARCHITECTURE.md: Use InvokeHelper for Single Source of Truth (Zero Duplication with AOT)
-        std::string doneEvent = InvokeHelper::createDoneInvokeEventName(invokeid);
+        std::string doneEvent = SCE::Core::InvokeHelper::createDoneInvokeEventName(invokeid);
 
         // W3C SCXML 3.7/6.4: done.invoke is NOT a <send> element - automatic platform event
         // ARCHITECTURE.md Zero Duplication: Match AOT raiseExternal() (bypasses EventScheduler)

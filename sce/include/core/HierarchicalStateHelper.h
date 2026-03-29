@@ -22,7 +22,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace SCE::Common {
+namespace SCE::Core {
 
 /**
  * @brief Helper for hierarchical state operations (W3C SCXML 3.3)
@@ -699,4 +699,4 @@ struct HierarchicalStateHelperString {
     }
 };
 
-}  // namespace SCE::Common
+}  // namespace SCE::Core

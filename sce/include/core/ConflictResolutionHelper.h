@@ -16,14 +16,14 @@
 
 #pragma once
 
-#include "common/HierarchicalStateHelper.h"
+#include "core/HierarchicalStateHelper.h"
 #include "common/LogMacros.h"
-#include "common/ParallelTransitionHelper.h"
+#include "core/ParallelTransitionHelper.h"
 #include <algorithm>
 #include <optional>
 #include <vector>
 
-namespace SCE::Common {
+namespace SCE::Core {
 
 /**
  * @brief W3C SCXML Appendix D.2 Conflict Resolution Helper
@@ -600,4 +600,4 @@ struct ConflictResolutionHelperString {
     }
 };
 
-}  // namespace SCE::Common
+}  // namespace SCE::Core

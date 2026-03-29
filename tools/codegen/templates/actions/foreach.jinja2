@@ -42,7 +42,7 @@
     this->ensureJSEngine();
     auto& jsEngine = ::SCE::JSEngine::instance();
     // W3C SCXML 4.6: Use ForeachHelper for centralized error handling
-    bool foreachSuccess = ::SCE::Common::ForeachHelper::executeForeachWithActions(
+    bool foreachSuccess = ::SCE::Core::ForeachHelper::executeForeachWithActions(
         jsEngine, sessionId_.value(),
         "{{ action.array }}", "{{ action.item }}", "{{ action.index }}",
         [&]([[maybe_unused]] size_t i) -> bool {
@@ -88,7 +88,7 @@
 {
     this->ensureJSEngine();
     auto& jsEngine = ::SCE::JSEngine::instance();
-    bool foreachSuccess = ::SCE::Common::ForeachHelper::executeForeachWithoutBody(
+    bool foreachSuccess = ::SCE::Core::ForeachHelper::executeForeachWithoutBody(
         jsEngine, sessionId_.value(),
         "{{ action.array }}", "{{ action.item }}", "{{ action.index }}"
     );

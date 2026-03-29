@@ -20,7 +20,7 @@
 #include <optional>
 #include <vector>
 
-namespace SCE {
+namespace SCE::Core {
 
 /**
  * @brief Helper functions for parallel state operations (W3C SCXML 3.4)
@@ -147,4 +147,4 @@ public:
     }
 };
 
-}  // namespace SCE
+}  // namespace SCE::Core

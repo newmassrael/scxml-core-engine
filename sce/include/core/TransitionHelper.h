@@ -15,7 +15,7 @@
 // Full terms: https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE
 
 #pragma once
-#include "common/EventMatchingHelper.h"
+#include "core/EventMatchingHelper.h"
 #include <string>
 #include <vector>
 
@@ -38,7 +38,7 @@
  * - Both Interpreter and AOT engines use same underlying logic (Zero Duplication)
  */
 
-namespace SCE::TransitionHelper {
+namespace SCE::Core::TransitionHelper {
 
 /**
  * @brief Check if an event descriptor matches an event name
@@ -133,4 +133,4 @@ inline bool isWildcardDescriptor(const std::string &descriptor) {
     return descriptor == "*";
 }
 
-}  // namespace SCE::TransitionHelper
+}  // namespace SCE::Core::TransitionHelper

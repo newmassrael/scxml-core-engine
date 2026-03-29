@@ -1,21 +1,21 @@
 #include "runtime/StateMachine.h"
 #include "common/BindingHelper.h"
-#include "common/ConflictResolutionHelper.h"
+#include "core/ConflictResolutionHelper.h"
 #include "states/ConcurrentStateTypes.h"
 
-using SCE::Common::ConflictResolutionHelperString;
+using SCE::Core::ConflictResolutionHelperString;
 #include "common/DataModelInitHelper.h"
 #include "common/DoneDataHelper.h"
-#include "common/EntryExitHelper.h"
+#include "core/EntryExitHelper.h"
 #include "common/FileLoadingHelper.h"
 #include "common/LogMacros.h"
 #ifdef SCE_USE_SPDLOG
 #include <spdlog/spdlog.h>
 #endif
-#include "common/ParallelTransitionHelper.h"
+#include "core/ParallelTransitionHelper.h"
 #include "common/StringUtils.h"
 #include "common/SystemVariableHelper.h"
-#include "common/TransitionHelper.h"
+#include "core/TransitionHelper.h"
 #include "core/EventProcessingAlgorithms.h"
 #include "runtime/InterpreterEventQueue.h"
 #include "events/EventRaiserService.h"
@@ -1289,7 +1289,7 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
         } else {
             // W3C SCXML 3.12: Check if ANY descriptor matches the event
             // Use TransitionHelper for Single Source of Truth (Zero Duplication with AOT engine)
-            eventMatches = SCE::TransitionHelper::matchesAnyEventDescriptor(eventDescriptors, eventName);
+            eventMatches = SCE::Core::TransitionHelper::matchesAnyEventDescriptor(eventDescriptors, eventName);
         }
 
         if (!eventMatches) {
@@ -2978,7 +2978,7 @@ bool StateMachine::checkEventlessTransitions() {
     // W3C SCXML Appendix D.2: Apply conflict resolution using shared Helper
     // ARCHITECTURE.MD: Zero Duplication - use ConflictResolutionHelper (Single Source of Truth)
     {
-        using Helper = SCE::Common::ConflictResolutionHelperString;
+        using Helper = SCE::Core::ConflictResolutionHelperString;
         std::vector<Helper::TransitionDescriptor> descriptors;
         descriptors.reserve(enabledTransitions.size());
 
@@ -3155,7 +3155,7 @@ bool StateMachine::executeTransitionMicrostep(const std::vector<TransitionInfo> 
         positionCache[stateId] = getStateDocumentPosition(stateId);
     }
 
-    allStatesToExit = ParallelTransitionHelper::sortStatesForExit<std::string>(
+    allStatesToExit = SCE::Core::ParallelTransitionHelper::sortStatesForExit<std::string>(
         allStatesToExit, [&depthCache](const std::string &stateId) { return depthCache.at(stateId); },
         [&positionCache](const std::string &stateId) { return positionCache.at(stateId); });
 
@@ -3784,7 +3784,7 @@ bool StateMachine::executeExitActions(const std::string &stateId) {
             }
 
             // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
-            EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeExitBlocks(exitLambdas, *eventRaiser_, stateId);
+            SCE::Core::EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeExitBlocks(exitLambdas, *eventRaiser_, stateId);
         }
 
         return true;
@@ -3809,7 +3809,7 @@ bool StateMachine::executeExitActions(const std::string &stateId) {
         }
 
         // W3C SCXML 3.9: Delegate to EntryExitHelper (Single Source of Truth)
-        EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeExitBlocks(exitLambdas, *eventRaiser_, stateId);
+        SCE::Core::EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeExitBlocks(exitLambdas, *eventRaiser_, stateId);
 
         // W3C SCXML: State exit succeeds even if some action blocks fail
         return true;
@@ -4108,7 +4108,7 @@ void StateMachine::executeOnEntryActions(const std::string &stateId) {
 
     // W3C SCXML 3.8: Delegate to EntryExitHelper (Single Source of Truth)
     // ARCHITECTURE.md Zero Duplication: Shared block orchestration between Interpreter and AOT
-    EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeEntryBlocks(lambdaBlocks, *eventRaiser_, stateId);
+    SCE::Core::EntryExitHelper<InterpreterPolicy, IEventRaiser>::executeEntryBlocks(lambdaBlocks, *eventRaiser_, stateId);
 
     // W3C SCXML compliance: Restore immediate mode (but DON'T process queued events yet)
     // Interactive mode: Keep immediate mode false to prevent auto-processing of queued events
@@ -4289,7 +4289,7 @@ void StateMachine::executePendingInvokes() {
 
     SCE_LOG_DEBUG("StateMachine: Found {} pending invokes to execute for session: {}", pendingInvokes_.size(), sessionId_);
 
-    InvokeHelper::executePendingInvokes(pendingInvokes_, [this](const PendingInvoke &pending) {
+    SCE::Core::InvokeHelper::executePendingInvokes(pendingInvokes_, [this](const PendingInvoke &pending) {
         // W3C SCXML Test 252: Only execute if state is still active (entered-and-not-exited)
         if (!isStateActive(pending.state)) {
             SCE_LOG_DEBUG("StateMachine: Skipping invoke '{}' for inactive state: {}", pending.invokeId, pending.state);
@@ -4535,7 +4535,7 @@ std::string StateMachine::findLCA(const std::string &sourceStateId, const std::s
     };
 
     // Use shared Helper implementation (Single Source of Truth)
-    return SCE::Common::HierarchicalStateHelperString::findLCA(sourceStateId, targetStateId, getParent);
+    return SCE::Core::HierarchicalStateHelperString::findLCA(sourceStateId, targetStateId, getParent);
 }
 
 // Helper: Build exit set for descendants of an ancestor state
