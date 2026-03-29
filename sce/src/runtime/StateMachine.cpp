@@ -1308,13 +1308,7 @@ StateMachine::TransitionResult StateMachine::processStateTransitions(IStateNode 
         std::string targetState = targets.empty() ? "" : targets[0];
         std::string condition = transitionNode->getGuard();
 
-        // Performance optimization: Only build debug string when DEBUG logging is enabled
-#ifdef SCE_USE_SPDLOG
-        if constexpr (SPDLOG_ACTIVE_LEVEL <= SPDLOG_LEVEL_DEBUG) {
-#else
-        // DefaultBackend: always build debug string (no compile-time level check)
-        {
-#endif
+        if (SCE::Logger::shouldLog(SCE::LogLevel::Debug)) {
             std::string eventDescStr;
             for (size_t i = 0; i < eventDescriptors.size(); ++i) {
                 if (i > 0) {
