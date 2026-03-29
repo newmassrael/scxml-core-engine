@@ -167,7 +167,7 @@ void SCXMLEngineImpl::collectGarbage() {
     SCE::JSEngine::instance().collectGarbage();
 }
 
-ExecutionResult SCXMLEngineImpl::convertResult(const JSResult &jsResult) const {
+ExecutionResult SCXMLEngineImpl::convertResult(const ScriptResult &jsResult) const {
     ExecutionResult result;
     result.success = jsResult.isSuccess();
     // Direct access to value through internal member (friend class access)

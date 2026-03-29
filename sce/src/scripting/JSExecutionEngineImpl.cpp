@@ -90,7 +90,7 @@ bool JSExecutionEngineImpl::isInitialized() const {
 
 // === Core JavaScript Execution ===
 
-std::future<JSResult> JSExecutionEngineImpl::executeScript(const std::string &sessionId, const std::string &script) {
+std::future<ScriptResult> JSExecutionEngineImpl::executeScript(const std::string &sessionId, const std::string &script) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::EXECUTE_SCRIPT, sessionId);
     request->code = script;
     auto future = request->promise.get_future();
@@ -104,7 +104,7 @@ std::future<JSResult> JSExecutionEngineImpl::executeScript(const std::string &se
     return future;
 }
 
-std::future<JSResult> JSExecutionEngineImpl::evaluateExpression(const std::string &sessionId,
+std::future<ScriptResult> JSExecutionEngineImpl::evaluateExpression(const std::string &sessionId,
                                                                 const std::string &expression) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::EVALUATE_EXPRESSION, sessionId);
     request->code = expression;
@@ -119,7 +119,7 @@ std::future<JSResult> JSExecutionEngineImpl::evaluateExpression(const std::strin
     return future;
 }
 
-std::future<JSResult> JSExecutionEngineImpl::validateExpression(const std::string &sessionId,
+std::future<ScriptResult> JSExecutionEngineImpl::validateExpression(const std::string &sessionId,
                                                                 const std::string &expression) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::VALIDATE_EXPRESSION, sessionId);
     request->code = expression;
@@ -134,7 +134,7 @@ std::future<JSResult> JSExecutionEngineImpl::validateExpression(const std::strin
     return future;
 }
 
-std::future<JSResult> JSExecutionEngineImpl::setVariable(const std::string &sessionId, const std::string &name,
+std::future<ScriptResult> JSExecutionEngineImpl::setVariable(const std::string &sessionId, const std::string &name,
                                                          const ScriptValue &value) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SET_VARIABLE, sessionId);
     request->variableName = name;
@@ -150,7 +150,7 @@ std::future<JSResult> JSExecutionEngineImpl::setVariable(const std::string &sess
     return future;
 }
 
-std::future<JSResult> JSExecutionEngineImpl::getVariable(const std::string &sessionId, const std::string &name) {
+std::future<ScriptResult> JSExecutionEngineImpl::getVariable(const std::string &sessionId, const std::string &name) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::GET_VARIABLE, sessionId);
     request->variableName = name;
     auto future = request->promise.get_future();
@@ -164,7 +164,7 @@ std::future<JSResult> JSExecutionEngineImpl::getVariable(const std::string &sess
     return future;
 }
 
-std::future<JSResult> JSExecutionEngineImpl::setupSystemVariables(const std::string &sessionId,
+std::future<ScriptResult> JSExecutionEngineImpl::setupSystemVariables(const std::string &sessionId,
                                                                   const std::string &sessionName,
                                                                   const std::vector<std::string> &ioProcessors) {
     auto request = std::make_unique<ExecutionRequest>(ExecutionRequest::SETUP_SYSTEM_VARIABLES, sessionId);

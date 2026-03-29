@@ -62,12 +62,12 @@ void JSEngine::shutdown() {
     // Destroy each session via executeAsync
     // WASM: Executes immediately on main thread (synchronous)
     // Native: Executes on worker thread (queued)
-    std::vector<std::future<JSResult>> futures;
+    std::vector<std::future<ScriptResult>> futures;
     for (const auto &sessionId : sessionIds) {
         SCE_LOG_DEBUG("JSEngine: shutdown() - Destroying session: {}", sessionId);
         auto future = platformExecutor_->executeAsync([this, sessionId]() {
             destroySessionInternal(sessionId);
-            return JSResult::createSuccess();
+            return ScriptResult::createSuccess();
         });
         futures.push_back(std::move(future));
     }
@@ -109,11 +109,11 @@ void JSEngine::reset() {
 
     // Destroy each session via executeAsync (executes on worker thread)
     if (platformExecutor_) {
-        std::vector<std::future<JSResult>> futures;
+        std::vector<std::future<ScriptResult>> futures;
         for (const auto &sessionId : sessionIds) {
             auto future = platformExecutor_->executeAsync([this, sessionId]() {
                 destroySessionInternal(sessionId);
-                return JSResult::createSuccess();
+                return ScriptResult::createSuccess();
             });
             futures.push_back(std::move(future));
         }
@@ -183,7 +183,7 @@ bool JSEngine::createSession(const std::string &sessionId, const std::string &pa
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     auto future = platformExecutor_->executeAsync([this, sessionId, parentSessionId]() {
         bool success = createSessionInternal(sessionId, parentSessionId);
-        return success ? JSResult::createSuccess() : JSResult::createError("Failed to create session");
+        return success ? ScriptResult::createSuccess() : ScriptResult::createError("Failed to create session");
     });
     auto result = future.get();
     return result.isSuccess();
@@ -199,7 +199,7 @@ bool JSEngine::destroySession(const std::string &sessionId) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     auto future = platformExecutor_->executeAsync([this, sessionId]() {
         bool success = destroySessionInternal(sessionId);
-        return success ? JSResult::createSuccess() : JSResult::createError("Failed to destroy session");
+        return success ? ScriptResult::createSuccess() : ScriptResult::createError("Failed to destroy session");
     });
     auto result = future.get();
     return result.isSuccess();
@@ -210,7 +210,7 @@ bool JSEngine::hasSession(const std::string &sessionId) const {
     auto future = const_cast<JSEngine *>(this)->platformExecutor_->executeAsync([this, sessionId]() {
         std::lock_guard<std::mutex> lock(sessionsMutex_);
         bool exists = sessions_.find(sessionId) != sessions_.end();
-        return exists ? JSResult::createSuccess() : JSResult::createError("Session not found");
+        return exists ? ScriptResult::createSuccess() : ScriptResult::createError("Session not found");
     });
     auto result = future.get();
     return result.isSuccess();
@@ -240,39 +240,39 @@ std::string JSEngine::getParentSessionId(const std::string &sessionId) const {
 
 // === JavaScript Execution ===
 
-std::future<JSResult> JSEngine::executeScript(const std::string &sessionId, const std::string &script) {
+std::future<ScriptResult> JSEngine::executeScript(const std::string &sessionId, const std::string &script) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync(
         [this, sessionId, script]() { return executeScriptInternal(sessionId, script); });
 }
 
-std::future<JSResult> JSEngine::evaluateExpression(const std::string &sessionId, const std::string &expression) {
+std::future<ScriptResult> JSEngine::evaluateExpression(const std::string &sessionId, const std::string &expression) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync(
         [this, sessionId, expression]() { return evaluateExpressionInternal(sessionId, expression); });
 }
 
-std::future<JSResult> JSEngine::validateExpression(const std::string &sessionId, const std::string &expression) {
+std::future<ScriptResult> JSEngine::validateExpression(const std::string &sessionId, const std::string &expression) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync(
         [this, sessionId, expression]() { return validateExpressionInternal(sessionId, expression); });
 }
 
-std::future<JSResult> JSEngine::setVariable(const std::string &sessionId, const std::string &name,
+std::future<ScriptResult> JSEngine::setVariable(const std::string &sessionId, const std::string &name,
                                             const ScriptValue &value) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync(
         [this, sessionId, name, value]() { return setVariableInternal(sessionId, name, value); });
 }
 
-std::future<JSResult> JSEngine::setVariableAsDOM(const std::string &sessionId, const std::string &name,
+std::future<ScriptResult> JSEngine::setVariableAsDOM(const std::string &sessionId, const std::string &name,
                                                  const std::string &xmlContent) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync([this, sessionId, name, xmlContent]() {
         // W3C SCXML B.2: Set variable to XML DOM object
         SessionContext *session = getSession(sessionId);
         if (!session || !session->jsContext) {
-            return JSResult::createError("Session not found");
+            return ScriptResult::createError("Session not found");
         }
 
         JSContext *ctx = session->jsContext;
@@ -286,22 +286,22 @@ std::future<JSResult> JSEngine::setVariableAsDOM(const std::string &sessionId, c
         int setResult = JS_SetPropertyStr(ctx, global, name.c_str(), domObject);
         JS_FreeValue(ctx, global);
 
-        return (setResult == 0) ? JSResult::createSuccess() : JSResult::createError("Failed to set DOM variable");
+        return (setResult == 0) ? ScriptResult::createSuccess() : ScriptResult::createError("Failed to set DOM variable");
     });
 }
 
-std::future<JSResult> JSEngine::getVariable(const std::string &sessionId, const std::string &name) {
+std::future<ScriptResult> JSEngine::getVariable(const std::string &sessionId, const std::string &name) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync([this, sessionId, name]() { return getVariableInternal(sessionId, name); });
 }
 
-std::future<JSResult> JSEngine::setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event) {
+std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync(
         [this, sessionId, event]() { return setCurrentEventInternal(sessionId, event); });
 }
 
-std::future<JSResult> JSEngine::setCurrentEvent(const std::string &sessionId, const std::string &eventName,
+std::future<ScriptResult> JSEngine::setCurrentEvent(const std::string &sessionId, const std::string &eventName,
                                                 const std::string &eventData, const std::string &eventType,
                                                 const std::string &sendId, const std::string &origin,
                                                 const std::string &originType, const std::string &invokeId) {
@@ -331,7 +331,7 @@ std::future<JSResult> JSEngine::setCurrentEvent(const std::string &sessionId, co
     return setCurrentEvent(sessionId, event);
 }
 
-std::future<JSResult> JSEngine::setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
+std::future<ScriptResult> JSEngine::setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                      const std::vector<std::string> &ioProcessors) {
     // Zero Duplication Principle: Platform-agnostic execution through Helper
     return platformExecutor_->executeAsync([this, sessionId, sessionName, ioProcessors]() {
@@ -351,9 +351,9 @@ size_t JSEngine::getMemoryUsage() const {
         if (runtime_) {
             JSMemoryUsage usage;
             JS_ComputeMemoryUsage(runtime_, &usage);
-            return JSResult::createSuccess(static_cast<int64_t>(usage.memory_used_size));
+            return ScriptResult::createSuccess(static_cast<int64_t>(usage.memory_used_size));
         }
-        return JSResult::createSuccess(static_cast<int64_t>(0));
+        return ScriptResult::createSuccess(static_cast<int64_t>(0));
     });
 
     auto result = future.get();
@@ -369,7 +369,7 @@ void JSEngine::collectGarbage() {
         if (runtime_) {
             JS_RunGC(runtime_);
         }
-        return JSResult::createSuccess();
+        return ScriptResult::createSuccess();
     });
 
     // Wait for completion but ignore result
@@ -877,29 +877,29 @@ JSContext *JSEngine::getContextForBinding(const std::string &sessionId) {
 // INTEGRATED RESULT PROCESSING IMPLEMENTATION
 // ===================================================================
 
-bool JSEngine::resultToBool(const JSResult &result) {
+bool JSEngine::resultToBool(const ScriptResult &result) {
     return ScriptResultUtils::resultToBool(result);
 }
 
-std::string JSEngine::resultToString(const JSResult &result, const std::string &sessionId,
+std::string JSEngine::resultToString(const ScriptResult &result, const std::string &sessionId,
                                      const std::string &originalExpression) {
     return ScriptResultUtils::resultToString(result, &JSEngine::instance(), sessionId, originalExpression);
 }
 
-std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, const std::string &sessionId) {
+std::vector<std::string> JSEngine::resultToStringArray(const ScriptResult &result, const std::string &sessionId) {
     return ScriptResultUtils::resultToStringArray(result, &JSEngine::instance(), sessionId, "");
 }
 
-std::vector<std::string> JSEngine::resultToStringArray(const JSResult &result, const std::string &sessionId,
+std::vector<std::string> JSEngine::resultToStringArray(const ScriptResult &result, const std::string &sessionId,
                                                        const std::string &originalExpression) {
     return ScriptResultUtils::resultToStringArray(result, &JSEngine::instance(), sessionId, originalExpression);
 }
 
-void JSEngine::requireSuccess(const JSResult &result, const std::string &operation) {
+void JSEngine::requireSuccess(const ScriptResult &result, const std::string &operation) {
     ScriptResultUtils::requireSuccess(result, operation);
 }
 
-bool JSEngine::isSuccess(const JSResult &result) noexcept {
+bool JSEngine::isSuccess(const ScriptResult &result) noexcept {
     return ScriptResultUtils::isSuccess(result);
 }
 

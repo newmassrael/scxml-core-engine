@@ -74,8 +74,8 @@ private:
     // Internal helper for setVariableSync overloads (Zero Duplication)
     bool setVariableSyncImpl(const std::string &name, const ScriptValue &value, const std::string &sessionId);
 
-    // Convert internal JSResult to public ExecutionResult
-    ExecutionResult convertResult(const JSResult &jsResult) const;
+    // Convert internal ScriptResult to public ExecutionResult
+    ExecutionResult convertResult(const ScriptResult &jsResult) const;
 
     // Convert public Event to internal Event
     std::shared_ptr<Event> convertEvent(std::shared_ptr<Event> publicEvent) const;

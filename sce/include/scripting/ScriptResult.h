@@ -15,7 +15,7 @@ namespace SCE {
 /**
  * @brief JavaScript execution result
  */
-struct JSResult {
+struct ScriptResult {
 private:
     // PRIVATE: Legacy API completely blocked - no direct access
     bool success_internal = false;
@@ -25,15 +25,15 @@ private:
 public:
     // ONLY ALLOW: Access only through integrated API
     // Constructors only used through static factory methods
-    static JSResult createSuccess(const ScriptValue &val = ScriptUndefined{}) {
-        JSResult result;
+    static ScriptResult createSuccess(const ScriptValue &val = ScriptUndefined{}) {
+        ScriptResult result;
         result.success_internal = true;
         result.value_internal = val;
         return result;
     }
 
-    static JSResult createError(const std::string &error) {
-        JSResult result;
+    static ScriptResult createError(const std::string &error) {
+        ScriptResult result;
         result.success_internal = false;
         result.errorMessage_internal = error;
         return result;

@@ -2,7 +2,7 @@
 
 #include "SCXMLTypes.h"
 #include "scripting/ISessionLifecycle.h"
-#include "scripting/JSResult.h"
+#include "scripting/ScriptResult.h"
 #include <functional>
 #include <future>
 #include <memory>
@@ -29,7 +29,7 @@ public:
      * @param script script code to execute
      * @return Future with execution result
      */
-    virtual std::future<JSResult> executeScript(const std::string &sessionId, const std::string &script) = 0;
+    virtual std::future<ScriptResult> executeScript(const std::string &sessionId, const std::string &script) = 0;
 
     /**
      * @brief Evaluate expression in the specified session
@@ -37,7 +37,7 @@ public:
      * @param expression expression to evaluate
      * @return Future with evaluation result
      */
-    virtual std::future<JSResult> evaluateExpression(const std::string &sessionId, const std::string &expression) = 0;
+    virtual std::future<ScriptResult> evaluateExpression(const std::string &sessionId, const std::string &expression) = 0;
 
     /**
      * @brief Validate expression syntax without executing
@@ -45,7 +45,7 @@ public:
      * @param expression expression to validate
      * @return Future with validation result (true if syntax is valid)
      */
-    virtual std::future<JSResult> validateExpression(const std::string &sessionId, const std::string &expression) = 0;
+    virtual std::future<ScriptResult> validateExpression(const std::string &sessionId, const std::string &expression) = 0;
 
     // === Variable Management ===
 
@@ -56,7 +56,7 @@ public:
      * @param value Variable value
      * @return Future indicating success/failure
      */
-    virtual std::future<JSResult> setVariable(const std::string &sessionId, const std::string &name,
+    virtual std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name,
                                               const ScriptValue &value) = 0;
 
     /**
@@ -65,7 +65,7 @@ public:
      * @param name Variable name
      * @return Future with variable value or error
      */
-    virtual std::future<JSResult> getVariable(const std::string &sessionId, const std::string &name) = 0;
+    virtual std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) = 0;
 
     /**
      * @brief Set a variable to an XML DOM object (W3C SCXML B.2)
@@ -74,7 +74,7 @@ public:
      * @param xmlContent XML string to parse as DOM
      * @return Future indicating success/failure
      */
-    virtual std::future<JSResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
+    virtual std::future<ScriptResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
                                                    const std::string &xmlContent) = 0;
 
     /**
@@ -94,7 +94,7 @@ public:
      * @param ioProcessors List of available I/O processors
      * @return Future indicating success/failure
      */
-    virtual std::future<JSResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
+    virtual std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                        const std::vector<std::string> &ioProcessors) = 0;
 
     /**
@@ -109,7 +109,7 @@ public:
      * @param invokeId Invoke ID (W3C SCXML 6.4.1)
      * @return Future indicating success/failure
      */
-    virtual std::future<JSResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
+    virtual std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
                                                   const std::string &eventData = "",
                                                   const std::string &eventType = "internal",
                                                   const std::string &sendId = "", const std::string &origin = "",

@@ -17,7 +17,7 @@
 #pragma once
 
 #include "quickjs.h"
-#include "scripting/JSResult.h"
+#include "scripting/ScriptResult.h"
 #include <functional>
 #include <future>
 #include <memory>
@@ -43,7 +43,7 @@ namespace SCE {
  * Usage Example:
  * @code
  * // JSEngine method (platform-agnostic)
- * std::future<JSResult> JSEngine::executeScript(const std::string& sessionId, const std::string& script) {
+ * std::future<ScriptResult> JSEngine::executeScript(const std::string& sessionId, const std::string& script) {
  *     return platformExecutor_->executeAsync([this, sessionId, script]() {
  *         return executeScriptInternal(sessionId, script);
  *     });
@@ -61,12 +61,12 @@ public:
      * - WASM: Execute immediately and wrap result in promise
      * - Native: Queue operation for worker thread execution
      *
-     * @param operation Lambda function returning JSResult
-     * @return std::future<JSResult> Future that will contain operation result
+     * @param operation Lambda function returning ScriptResult
+     * @return std::future<ScriptResult> Future that will contain operation result
      *
      * W3C SCXML: Asynchronous execution for non-blocking state machine operations
      */
-    virtual std::future<JSResult> executeAsync(std::function<JSResult()> operation) = 0;
+    virtual std::future<ScriptResult> executeAsync(std::function<ScriptResult()> operation) = 0;
 
     /**
      * @brief Shutdown platform-specific execution infrastructure

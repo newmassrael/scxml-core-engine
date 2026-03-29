@@ -41,10 +41,10 @@ static std::string encodeURIComponent(const std::string &str) {
 
 // === Internal JavaScript Execution Methods ===
 
-JSResult JSEngine::executeScriptInternal(const std::string &sessionId, const std::string &script) {
+ScriptResult JSEngine::executeScriptInternal(const std::string &sessionId, const std::string &script) {
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        return JSResult::createError("Session not found: " + sessionId);
+        return ScriptResult::createError("Session not found: " + sessionId);
     }
 
     JSContext *ctx = session->jsContext;
@@ -58,7 +58,7 @@ JSResult JSEngine::executeScriptInternal(const std::string &sessionId, const std
 
     if (JS_IsException(result)) {
         SCE_LOG_DEBUG("JSEngine: Exception occurred in script execution");
-        JSResult error = createErrorFromException(ctx);
+        ScriptResult error = createErrorFromException(ctx);
         SCE_LOG_ERROR("JSEngine::executeScriptInternal - QuickJS exception: {}", error.getErrorMessage());
         JS_FreeValue(ctx, result);
         return error;
@@ -68,17 +68,17 @@ JSResult JSEngine::executeScriptInternal(const std::string &sessionId, const std
     ScriptValue jsResult = quickJSToJSValue(ctx, result);
     JS_FreeValue(ctx, result);
     SCE_LOG_DEBUG("JSEngine: Result conversion completed, returning success");
-    return JSResult::createSuccess(jsResult);
+    return ScriptResult::createSuccess(jsResult);
 }
 
-JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, const std::string &expression) {
+ScriptResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, const std::string &expression) {
     SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - Evaluating expression '{}' in session '{}'", expression,
               sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
         SCE_LOG_ERROR("JSEngine::evaluateExpressionInternal - Session not found: {}", sessionId);
-        return JSResult::createError("Session not found: " + sessionId);
+        return ScriptResult::createError("Session not found: " + sessionId);
     }
 
     SCE_LOG_DEBUG("JSEngine::evaluateExpressionInternal - Session found, context valid");
@@ -146,7 +146,7 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
             }
         }
 
-        JSResult error = createErrorFromException(ctx);
+        ScriptResult error = createErrorFromException(ctx);
         SCE_LOG_ERROR("JSEngine::evaluateExpressionInternal - QuickJS exception: {}", error.getErrorMessage());
         JS_FreeValue(ctx, result);
         return error;
@@ -183,13 +183,13 @@ JSResult JSEngine::evaluateExpressionInternal(const std::string &sessionId, cons
     SCE_LOG_TRACE("JSEngine::evaluateExpressionInternal - Expression='{}', type={}, value={}", expression, debug_type,
               debug_value);
 
-    return JSResult::createSuccess(jsResult);
+    return ScriptResult::createSuccess(jsResult);
 }
 
-JSResult JSEngine::validateExpressionInternal(const std::string &sessionId, const std::string &expression) {
+ScriptResult JSEngine::validateExpressionInternal(const std::string &sessionId, const std::string &expression) {
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        return JSResult::createError("Session not found: " + sessionId);
+        return ScriptResult::createError("Session not found: " + sessionId);
     }
 
     JSContext *ctx = session->jsContext;
@@ -199,23 +199,23 @@ JSResult JSEngine::validateExpressionInternal(const std::string &sessionId, cons
                                "<validation>", JS_EVAL_FLAG_COMPILE_ONLY);
 
     if (JS_IsException(result)) {
-        JSResult error = createErrorFromException(ctx);
+        ScriptResult error = createErrorFromException(ctx);
         JS_FreeValue(ctx, result);
         return error;
     }
 
     JS_FreeValue(ctx, result);
-    return JSResult::createSuccess();
+    return ScriptResult::createSuccess();
 }
 
-JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::string &name,
+ScriptResult JSEngine::setVariableInternal(const std::string &sessionId, const std::string &name,
                                        const ScriptValue &value) {
     SCE_LOG_DEBUG("JSEngine::setVariableInternal - Setting variable '{}' in session '{}'", name, sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
         SCE_LOG_ERROR("JSEngine::setVariableInternal - Session not found: {}", sessionId);
-        return JSResult::createError("Session not found: " + sessionId);
+        return ScriptResult::createError("Session not found: " + sessionId);
     }
 
     JSContext *ctx = session->jsContext;
@@ -274,12 +274,12 @@ JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::
 
             SCE_LOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}': {}", name, errorMsg);
             JS_FreeValue(ctx, global);
-            return JSResult::createError("Failed to set variable " + name + ": " + errorMsg);
+            return ScriptResult::createError("Failed to set variable " + name + ": " + errorMsg);
         }
 
         SCE_LOG_ERROR("JSEngine::setVariableInternal - Failed to set property '{}' in global object", name);
         JS_FreeValue(ctx, global);
-        return JSResult::createError("Failed to set variable: " + name);
+        return ScriptResult::createError("Failed to set variable: " + name);
     }
 
     JS_FreeValue(ctx, global);
@@ -292,16 +292,16 @@ JSResult JSEngine::setVariableInternal(const std::string &sessionId, const std::
     }
 
     SCE_LOG_DEBUG("JSEngine::setVariableInternal - Successfully set variable '{}' in session '{}'", name, sessionId);
-    return JSResult::createSuccess();
+    return ScriptResult::createSuccess();
 }
 
-JSResult JSEngine::getVariableInternal(const std::string &sessionId, const std::string &name) {
+ScriptResult JSEngine::getVariableInternal(const std::string &sessionId, const std::string &name) {
     SCE_LOG_DEBUG("JSEngine::getVariableInternal - Getting variable '{}' from session '{}'", name, sessionId);
 
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
         SCE_LOG_ERROR("JSEngine::getVariableInternal - Session not found: {}", sessionId);
-        return JSResult::createError("Session not found: " + sessionId);
+        return ScriptResult::createError("Session not found: " + sessionId);
     }
 
     SCE_LOG_DEBUG("JSEngine::getVariableInternal - Session found, context valid");
@@ -337,7 +337,7 @@ JSResult JSEngine::getVariableInternal(const std::string &sessionId, const std::
             SCE_LOG_DEBUG("JSEngine::getVariableInternal - Variable '{}' does not exist in global context", name);
             JS_FreeValue(ctx, qjsValue);
             JS_FreeValue(ctx, global);
-            return JSResult::createError("Variable not found: " + name);
+            return ScriptResult::createError("Variable not found: " + name);
         }
         // Property exists but is undefined - this is valid, continue with existing
         // qjsValue
@@ -351,7 +351,7 @@ JSResult JSEngine::getVariableInternal(const std::string &sessionId, const std::
     JS_FreeValue(ctx, global);
 
     SCE_LOG_DEBUG("JSEngine::getVariableInternal - Successfully retrieved variable '{}'", name);
-    return JSResult::createSuccess(result);
+    return ScriptResult::createSuccess(result);
 }
 
 // W3C SCXML B.2: Helper function to parse event data as JSON, XML DOM, or space-normalized string
@@ -402,10 +402,10 @@ static ::JSValue parseEventData(JSContext *ctx, const std::string &dataStr) {
     return JS_NewString(ctx, normalized.c_str());
 }
 
-JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event) {
+ScriptResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event) {
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        return JSResult::createError("Session not found: " + sessionId);
+        return ScriptResult::createError("Session not found: " + sessionId);
     }
 
     JSContext *ctx = session->jsContext;
@@ -465,7 +465,7 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
             JS_FreeValue(ctx, eventObj);
             JS_FreeValue(ctx, global);
             SCE_LOG_ERROR("JSEngine: Failed to initialize _event object on first event - sessionId: {}", sessionId);
-            return JSResult::createError("Failed to create __eventData object for session: " + sessionId);
+            return ScriptResult::createError("Failed to create __eventData object for session: " + sessionId);
         }
         SCE_LOG_DEBUG("JSEngine: _event object successfully initialized for session: {}", sessionId);
     } else {
@@ -474,7 +474,7 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
             JS_FreeValue(ctx, eventDataProperty);
             JS_FreeValue(ctx, eventObj);
             JS_FreeValue(ctx, global);
-            return JSResult::createError("__eventData object not found for session: " + sessionId);
+            return ScriptResult::createError("__eventData object not found for session: " + sessionId);
         }
     }
 
@@ -527,14 +527,14 @@ JSResult JSEngine::setCurrentEventInternal(const std::string &sessionId, const s
     JS_FreeValue(ctx, eventObj);
     JS_FreeValue(ctx, global);
 
-    return JSResult::createSuccess();
+    return ScriptResult::createSuccess();
 }
 
-JSResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
+ScriptResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
                                                 const std::vector<std::string> &ioProcessors) {
     SessionContext *session = getSession(sessionId);
     if (!session || !session->jsContext) {
-        return JSResult::createError("Session not found: " + sessionId);
+        return ScriptResult::createError("Session not found: " + sessionId);
     }
 
     JSContext *ctx = session->jsContext;
@@ -629,7 +629,7 @@ JSResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, co
         JS_FreeValue(ctx, exception);
         JS_FreeValue(ctx, result);
         JS_FreeValue(ctx, global);
-        return JSResult::createError("Failed to setup read-only system variables");
+        return ScriptResult::createError("Failed to setup read-only system variables");
     }
     JS_FreeValue(ctx, result);
     JS_FreeValue(ctx, global);
@@ -638,7 +638,7 @@ JSResult JSEngine::setupSystemVariablesInternal(const std::string &sessionId, co
     session->sessionName = sessionName;
     session->ioProcessors = ioProcessors;
 
-    return JSResult::createSuccess();
+    return ScriptResult::createSuccess();
 }
 
 // === Type Conversion ===
@@ -753,10 +753,10 @@ JSValue JSEngine::jsValueToQuickJS(JSContext *ctx, const ScriptValue &value) {
 
 // === Error Handling ===
 
-JSResult JSEngine::createErrorFromException(JSContext *ctx) {
+ScriptResult JSEngine::createErrorFromException(JSContext *ctx) {
     ::JSValue exception = JS_GetException(ctx);
     if (JS_IsNull(exception)) {
-        return JSResult::createError("JavaScript error: Exception is null");
+        return ScriptResult::createError("JavaScript error: Exception is null");
     }
     const char *errorStr = JS_ToCString(ctx, exception);
     std::string errorMessage;
@@ -777,6 +777,6 @@ JSResult JSEngine::createErrorFromException(JSContext *ctx) {
     }
     JS_FreeValue(ctx, stack);
     JS_FreeValue(ctx, exception);
-    return JSResult::createError(errorMessage);
+    return ScriptResult::createError(errorMessage);
 }
 }  // namespace SCE

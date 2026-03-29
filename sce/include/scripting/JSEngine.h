@@ -3,7 +3,7 @@
 #include "../SCXMLTypes.h"
 #include "IScriptEngine.h"
 #include "ISessionManager.h"
-#include "JSResult.h"
+#include "ScriptResult.h"
 #include "events/IEventRaiserRegistry.h"
 #include "quickjs.h"
 #include "runtime/ISessionObserver.h"
@@ -142,7 +142,7 @@ public:
      * @param script JavaScript code to execute
      * @return Future with execution result
      */
-    std::future<JSResult> executeScript(const std::string &sessionId, const std::string &script) override;
+    std::future<ScriptResult> executeScript(const std::string &sessionId, const std::string &script) override;
 
     /**
      * @brief Evaluate JavaScript expression in the specified session
@@ -150,7 +150,7 @@ public:
      * @param expression JavaScript expression to evaluate
      * @return Future with evaluation result
      */
-    std::future<JSResult> evaluateExpression(const std::string &sessionId, const std::string &expression) override;
+    std::future<ScriptResult> evaluateExpression(const std::string &sessionId, const std::string &expression) override;
 
     // === Session-specific Variable Management ===
 
@@ -161,7 +161,7 @@ public:
      * @param value Variable value
      * @return Future indicating success/failure
      */
-    std::future<JSResult> setVariable(const std::string &sessionId, const std::string &name, const ScriptValue &value) override;
+    std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name, const ScriptValue &value) override;
 
     /**
      * @brief Set a variable to an XML DOM object (W3C SCXML B.2)
@@ -170,7 +170,7 @@ public:
      * @param xmlContent XML string to parse as DOM
      * @return Future indicating success/failure
      */
-    std::future<JSResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
+    std::future<ScriptResult> setVariableAsDOM(const std::string &sessionId, const std::string &name,
                                            const std::string &xmlContent) override;
 
     /**
@@ -179,7 +179,7 @@ public:
      * @param name Variable name
      * @return Future with variable value or error
      */
-    std::future<JSResult> getVariable(const std::string &sessionId, const std::string &name) override;
+    std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) override;
 
     /**
      * @brief Check if a variable was pre-initialized (set before datamodel initialization)
@@ -199,7 +199,7 @@ public:
      * @param event Event object with full metadata (name, type, data, sendid, origin, etc.)
      * @return Future indicating success/failure
      */
-    std::future<JSResult> setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event);
+    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event);
 
     /**
      * @brief Set current event object in JavaScript context (W3C SCXML 5.10)
@@ -214,7 +214,7 @@ public:
      * @param invokeId Invoke ID for child-to-parent events (W3C SCXML 6.4.1, test338)
      * @return Future indicating success/failure
      */
-    std::future<JSResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
+    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::string &eventName,
                                           const std::string &eventData = "", const std::string &eventType = "internal",
                                           const std::string &sendId = "", const std::string &origin = "",
                                           const std::string &originType = "", const std::string &invokeId = "") override;
@@ -226,7 +226,7 @@ public:
      * @param ioProcessors List of available I/O processors
      * @return Future indicating success/failure
      */
-    std::future<JSResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
+    std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                const std::vector<std::string> &ioProcessors) override;
 
     /**
@@ -286,12 +286,12 @@ public:
      * @param expression JavaScript expression to validate
      * @return Future with validation result (true if syntax is valid)
      */
-    std::future<JSResult> validateExpression(const std::string &sessionId, const std::string &expression) override;
+    std::future<ScriptResult> validateExpression(const std::string &sessionId, const std::string &expression) override;
 
     // === INTEGRATED RESULT PROCESSING API ===
 
     /**
-     * @brief Convert JSResult to boolean with W3C SCXML semantics
+     * @brief Convert ScriptResult to boolean with W3C SCXML semantics
      *
      * ARCHITECTURAL DECISION: Integrated directly into JSEngine to eliminate
      * scattered type conversion logic across the codebase.
@@ -300,10 +300,10 @@ public:
      * @return Boolean value following W3C SCXML conversion rules
      * @throws std::runtime_error on conversion failure
      */
-    static bool resultToBool(const JSResult &result);
+    static bool resultToBool(const ScriptResult &result);
 
     /**
-     * @brief Convert JSResult to string with JSON.stringify fallback
+     * @brief Convert ScriptResult to string with JSON.stringify fallback
      *
      * Integrates the proven conversion logic from ActionExecutorImpl
      * directly into the engine for consistent access.
@@ -313,20 +313,20 @@ public:
      * @param originalExpression Original expression for complex objects (optional)
      * @return String representation or error message
      */
-    static std::string resultToString(const JSResult &result, const std::string &sessionId = "",
+    static std::string resultToString(const ScriptResult &result, const std::string &sessionId = "",
                                       const std::string &originalExpression = "");
 
     /**
-     * @brief Convert JSResult to string array for SCXML foreach actions
+     * @brief Convert ScriptResult to string array for SCXML foreach actions
      *
      * @param result JSEngine evaluation result of array expression
      * @param sessionId Session for additional evaluation if needed
      * @return Vector of string representations
      */
-    static std::vector<std::string> resultToStringArray(const JSResult &result, const std::string &sessionId);
+    static std::vector<std::string> resultToStringArray(const ScriptResult &result, const std::string &sessionId);
 
     /**
-     * @brief Convert JSResult to string array with original expression context
+     * @brief Convert ScriptResult to string array with original expression context
      *
      * SOLID: Expression-aware version that can re-evaluate with JSON.stringify
      * This maintains Single Responsibility while providing complete functionality
@@ -336,11 +336,11 @@ public:
      * @param originalExpression Original expression for JSON.stringify fallback
      * @return Vector of string representations
      */
-    static std::vector<std::string> resultToStringArray(const JSResult &result, const std::string &sessionId,
+    static std::vector<std::string> resultToStringArray(const ScriptResult &result, const std::string &sessionId,
                                                         const std::string &originalExpression);
 
     /**
-     * @brief Extract typed value from JSResult safely
+     * @brief Extract typed value from ScriptResult safely
      *
      * @tparam T Target type (bool, int64_t, double, std::string)
      * @param result JSEngine execution result
@@ -354,7 +354,7 @@ public:
      * @param operation Operation context for error message
      * @throws std::runtime_error if result indicates failure
      */
-    static void requireSuccess(const JSResult &result, const std::string &operation);
+    static void requireSuccess(const ScriptResult &result, const std::string &operation);
 
     /**
      * @brief Check if result represents successful operation
@@ -362,16 +362,16 @@ public:
      * @param result JSEngine execution result
      * @return true if operation succeeded
      */
-    static bool isSuccess(const JSResult &result) noexcept;
+    static bool isSuccess(const ScriptResult &result) noexcept;
 
     /**
-     * @brief Extract typed value from JSResult safely (template implementation)
+     * @brief Extract typed value from ScriptResult safely (template implementation)
      *
      * @tparam T Target type (bool, int64_t, double, std::string)
      * @param result JSEngine execution result
      * @return Optional typed value (nullopt on type mismatch or failure)
      */
-    template <typename T> static std::optional<T> resultToValue(const JSResult &result) {
+    template <typename T> static std::optional<T> resultToValue(const ScriptResult &result) {
         static_assert(std::is_same_v<T, bool> || std::is_same_v<T, int64_t> || std::is_same_v<T, double> ||
                           std::is_same_v<T, std::string>,
                       "Supported types: bool, int64_t, double, std::string");
@@ -440,7 +440,7 @@ private:
         std::string sessionName;                // for SETUP_SYSTEM_VARIABLES
         std::vector<std::string> ioProcessors;  // for SETUP_SYSTEM_VARIABLES
         std::string parentSessionId;            // for CREATE_SESSION
-        std::promise<JSResult> promise;
+        std::promise<ScriptResult> promise;
 
         ExecutionRequest(Type t, const std::string &sid) : type(t), sessionId(sid) {}
     };
@@ -501,13 +501,13 @@ private:
     void initializeEventRaiserService();  // EventRaiserService initialization
 
     // QuickJS helpers
-    JSResult executeScriptInternal(const std::string &sessionId, const std::string &script);
-    JSResult evaluateExpressionInternal(const std::string &sessionId, const std::string &expression);
-    JSResult validateExpressionInternal(const std::string &sessionId, const std::string &expression);
-    JSResult setVariableInternal(const std::string &sessionId, const std::string &name, const ScriptValue &value);
-    JSResult getVariableInternal(const std::string &sessionId, const std::string &name);
-    JSResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
-    JSResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
+    ScriptResult executeScriptInternal(const std::string &sessionId, const std::string &script);
+    ScriptResult evaluateExpressionInternal(const std::string &sessionId, const std::string &expression);
+    ScriptResult validateExpressionInternal(const std::string &sessionId, const std::string &expression);
+    ScriptResult setVariableInternal(const std::string &sessionId, const std::string &name, const ScriptValue &value);
+    ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
+    ScriptResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
+    ScriptResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
                                           const std::vector<std::string> &ioProcessors);
 
     // Context management
@@ -544,7 +544,7 @@ private:
     JSValue jsValueToQuickJS(JSContext *ctx, const ScriptValue &value);
 
     // Error handling
-    JSResult createErrorFromException(JSContext *ctx);
+    ScriptResult createErrorFromException(JSContext *ctx);
 
     // === Internal EventRaiser Management (Private) ===
     /**

@@ -6,11 +6,11 @@
 
 namespace SCE::ScriptResultUtils {
 
-bool resultToBool(const JSResult &result) {
+bool resultToBool(const ScriptResult &result) {
     return result.toBool();
 }
 
-std::string resultToString(const JSResult &result, IScriptEngine *engine, const std::string &sessionId,
+std::string resultToString(const ScriptResult &result, IScriptEngine *engine, const std::string &sessionId,
                            const std::string &originalExpression) {
     if (!result.isSuccess()) {
         return "";
@@ -54,7 +54,7 @@ std::string resultToString(const JSResult &result, IScriptEngine *engine, const 
     return "[conversion_error]";
 }
 
-std::vector<std::string> resultToStringArray(const JSResult &result, IScriptEngine *engine,
+std::vector<std::string> resultToStringArray(const ScriptResult &result, IScriptEngine *engine,
                                              const std::string &sessionId, const std::string &originalExpression) {
     std::vector<std::string> arrayValues;
 
@@ -178,11 +178,11 @@ std::vector<std::string> resultToStringArray(const JSResult &result, IScriptEngi
     return arrayValues;
 }
 
-bool isSuccess(const JSResult &result) noexcept {
+bool isSuccess(const ScriptResult &result) noexcept {
     return result.isSuccess();
 }
 
-void requireSuccess(const JSResult &result, const std::string &operation) {
+void requireSuccess(const ScriptResult &result, const std::string &operation) {
     if (!result.isSuccess()) {
         throw std::runtime_error("Script operation failed: " + operation + " - " + result.getErrorMessage());
     }

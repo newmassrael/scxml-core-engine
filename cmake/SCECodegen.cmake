@@ -78,12 +78,16 @@ function(sce_add_state_machine)
     # Create output directory
     file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
 
+    # Collect Jinja2 template dependencies for incremental rebuild
+    get_filename_component(_SCE_CODEGEN_DIR "${SCE_CODEGEN_SCRIPT}" DIRECTORY)
+    file(GLOB _SCE_TEMPLATES "${_SCE_CODEGEN_DIR}/templates/*.jinja2" "${_SCE_CODEGEN_DIR}/templates/actions/*.jinja2")
+
     # Add custom command to generate state machine header
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
         COMMAND "${Python3_EXECUTABLE}" "${SCE_CODEGEN_SCRIPT}"
                 "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
-        DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN_SCRIPT}"
+        DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN_SCRIPT}" ${_SCE_TEMPLATES}
         COMMENT "SCE: Generating ${SCXML_NAME}_sm.h from SCXML"
         VERBATIM
     )
@@ -198,12 +202,16 @@ function(sce_create_state_machine_library)
     # Create output directory
     file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
 
+    # Collect Jinja2 template dependencies for incremental rebuild
+    get_filename_component(_SCE_CODEGEN_DIR "${SCE_CODEGEN_SCRIPT}" DIRECTORY)
+    file(GLOB _SCE_TEMPLATES "${_SCE_CODEGEN_DIR}/templates/*.jinja2" "${_SCE_CODEGEN_DIR}/templates/actions/*.jinja2")
+
     # Add custom command to generate state machine header
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
         COMMAND "${Python3_EXECUTABLE}" "${SCE_CODEGEN_SCRIPT}"
                 "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
-        DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN_SCRIPT}"
+        DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN_SCRIPT}" ${_SCE_TEMPLATES}
         COMMENT "SCE: Generating ${SCXML_NAME}_sm.h library"
         VERBATIM
     )

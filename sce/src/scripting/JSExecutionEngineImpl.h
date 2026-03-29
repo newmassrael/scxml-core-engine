@@ -3,7 +3,7 @@
 #include "SCXMLTypes.h"
 #include "runtime/ISessionObserver.h"
 #include "scripting/IScriptEngine.h"
-#include "scripting/JSResult.h"
+#include "scripting/ScriptResult.h"
 #include <atomic>
 #include <condition_variable>
 #include <functional>
@@ -46,16 +46,16 @@ public:
 
     // === IScriptEngine Implementation ===
 
-    std::future<JSResult> executeScript(const std::string &sessionId, const std::string &script) override;
-    std::future<JSResult> evaluateExpression(const std::string &sessionId, const std::string &expression) override;
-    std::future<JSResult> validateExpression(const std::string &sessionId, const std::string &expression) override;
+    std::future<ScriptResult> executeScript(const std::string &sessionId, const std::string &script) override;
+    std::future<ScriptResult> evaluateExpression(const std::string &sessionId, const std::string &expression) override;
+    std::future<ScriptResult> validateExpression(const std::string &sessionId, const std::string &expression) override;
 
-    std::future<JSResult> setVariable(const std::string &sessionId, const std::string &name,
+    std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name,
                                       const ScriptValue &value) override;
-    std::future<JSResult> getVariable(const std::string &sessionId, const std::string &name) override;
+    std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) override;
     bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
-    std::future<JSResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
+    std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,
                                                const std::vector<std::string> &ioProcessors) override;
 
     bool registerGlobalFunction(const std::string &functionName,
@@ -131,7 +131,7 @@ private:
         std::shared_ptr<Event> event;           // for SET_CURRENT_EVENT
         std::string sessionName;                // for SETUP_SYSTEM_VARIABLES
         std::vector<std::string> ioProcessors;  // for SETUP_SYSTEM_VARIABLES
-        std::promise<JSResult> promise;
+        std::promise<ScriptResult> promise;
 
         ExecutionRequest(Type t, const std::string &sid) : type(t), sessionId(sid) {}
     };
@@ -163,13 +163,13 @@ private:
     void processExecutionRequest(std::unique_ptr<ExecutionRequest> request);
 
     // QuickJS helpers
-    JSResult executeScriptInternal(const std::string &sessionId, const std::string &script);
-    JSResult evaluateExpressionInternal(const std::string &sessionId, const std::string &expression);
-    JSResult validateExpressionInternal(const std::string &sessionId, const std::string &expression);
-    JSResult setVariableInternal(const std::string &sessionId, const std::string &name, const ScriptValue &value);
-    JSResult getVariableInternal(const std::string &sessionId, const std::string &name);
-    JSResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
-    JSResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
+    ScriptResult executeScriptInternal(const std::string &sessionId, const std::string &script);
+    ScriptResult evaluateExpressionInternal(const std::string &sessionId, const std::string &expression);
+    ScriptResult validateExpressionInternal(const std::string &sessionId, const std::string &expression);
+    ScriptResult setVariableInternal(const std::string &sessionId, const std::string &name, const ScriptValue &value);
+    ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
+    ScriptResult setCurrentEventInternal(const std::string &sessionId, const std::shared_ptr<Event> &event);
+    ScriptResult setupSystemVariablesInternal(const std::string &sessionId, const std::string &sessionName,
                                           const std::vector<std::string> &ioProcessors);
 
     // Context management
@@ -198,7 +198,7 @@ private:
     JSValue jsValueToQuickJS(JSContext *ctx, const ScriptValue &value);
 
     // Error handling
-    JSResult createErrorFromException(JSContext *ctx);
+    ScriptResult createErrorFromException(JSContext *ctx);
 
     // Internal event system
     void queueInternalEvent(const std::string &sessionId, const std::string &eventName);

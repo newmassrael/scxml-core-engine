@@ -38,10 +38,10 @@ public:
         SCE_LOG_DEBUG("PlatformExecutionHelper: Synchronous executor destroyed");
     }
 
-    std::future<JSResult> executeAsync(std::function<JSResult()> operation) override {
+    std::future<ScriptResult> executeAsync(std::function<ScriptResult()> operation) override {
         // WASM: Execute immediately (no worker thread)
-        JSResult result = operation();
-        std::promise<JSResult> promise;
+        ScriptResult result = operation();
+        std::promise<ScriptResult> promise;
         promise.set_value(std::move(result));
         return promise.get_future();
     }
@@ -88,10 +88,10 @@ public:
 class QueuedExecutionHelper : public PlatformExecutionHelper {
 private:
     struct QueuedOperation {
-        std::function<JSResult()> operation;
-        std::promise<JSResult> promise;
+        std::function<ScriptResult()> operation;
+        std::promise<ScriptResult> promise;
 
-        QueuedOperation(std::function<JSResult()> op) : operation(std::move(op)) {}
+        QueuedOperation(std::function<ScriptResult()> op) : operation(std::move(op)) {}
     };
 
     JSRuntime *runtime_ = nullptr;
@@ -149,14 +149,14 @@ private:
             // Execute operation outside of lock
             if (operation) {
                 try {
-                    JSResult result = operation->operation();
+                    ScriptResult result = operation->operation();
                     operation->promise.set_value(std::move(result));
                 } catch (const std::exception &e) {
                     SCE_LOG_ERROR("PlatformExecutionHelper: Operation failed: {}", e.what());
-                    operation->promise.set_value(JSResult::createError(std::string("Exception: ") + e.what()));
+                    operation->promise.set_value(ScriptResult::createError(std::string("Exception: ") + e.what()));
                 } catch (...) {
                     SCE_LOG_ERROR("PlatformExecutionHelper: Operation failed with unknown exception");
-                    operation->promise.set_value(JSResult::createError("Unknown exception"));
+                    operation->promise.set_value(ScriptResult::createError("Unknown exception"));
                 }
             }
         }
@@ -181,7 +181,7 @@ public:
         SCE_LOG_DEBUG("PlatformExecutionHelper: Queued executor destroyed");
     }
 
-    std::future<JSResult> executeAsync(std::function<JSResult()> operation) override {
+    std::future<ScriptResult> executeAsync(std::function<ScriptResult()> operation) override {
         auto queuedOp = std::make_unique<QueuedOperation>(std::move(operation));
         auto future = queuedOp->promise.get_future();
 
@@ -227,7 +227,7 @@ public:
                 auto op = std::move(operationQueue_.front());
                 operationQueue_.pop();
                 // Set error for pending operations
-                op->promise.set_value(JSResult::createError("JSEngine reset"));
+                op->promise.set_value(ScriptResult::createError("JSEngine reset"));
             }
         }
 
