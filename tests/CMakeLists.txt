@@ -1329,6 +1329,7 @@ if(EMSCRIPTEN)
 
     target_include_directories(visualizer PRIVATE
         ${CMAKE_SOURCE_DIR}/sce/include
+        ${CMAKE_SOURCE_DIR}/sce/src
         ${CMAKE_SOURCE_DIR}/third_party/quickjs
         ${CMAKE_CURRENT_SOURCE_DIR}/w3c
     )
