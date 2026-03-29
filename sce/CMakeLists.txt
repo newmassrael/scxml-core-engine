@@ -121,7 +121,9 @@ add_library(sce_runtime
     src/runtime/InvokeExecutor.cpp
     src/runtime/SessionManagerImpl.cpp
     src/runtime/DataContentHelpers.cpp
-    
+    src/runtime/TransitionDomainCalculator.cpp
+    src/runtime/DataModelInitializer.cpp
+
     # History state management (W3C SCXML 3.11)
     src/runtime/HistoryManager.cpp
     src/runtime/HistoryStateAutoRegistrar.cpp

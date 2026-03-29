@@ -7,6 +7,7 @@
 #include "events/IEventDispatcher.h"
 #include "model/IStateNode.h"
 #include "model/SCXMLModel.h"
+#include "runtime/DataModelInitializer.h"
 #include "runtime/HistoryManager.h"
 #include "runtime/HistoryStateAutoRegistrar.h"
 #include "runtime/IActionExecutor.h"
@@ -14,6 +15,7 @@
 #include "runtime/InvokeExecutor.h"
 #include "runtime/StateHierarchyManager.h"
 #include "runtime/StateMachineEventRaiser.h"
+#include "runtime/TransitionDomainCalculator.h"
 #include "scripting/JSEngine.h"
 #include "states/ConcurrentStateTypes.h"  // W3C SCXML Appendix D.2: TransitionDescriptorString
 #include <atomic>
@@ -93,16 +95,9 @@ public:
     /**
      * @brief W3C SCXML 3.13: Exit set computation result
      *
-     * Returns both the exit set and the LCA to avoid duplicate computation.
+     * Type alias to TransitionDomainCalculator::ExitSetResult (Single Source of Truth).
      */
-    struct ExitSetResult {
-        std::vector<std::string> states;  // States to exit (in order)
-        std::string lca;                  // Least Common Compound Ancestor
-
-        ExitSetResult() = default;
-
-        ExitSetResult(const std::vector<std::string> &s, const std::string &l) : states(s), lca(l) {}
-    };
+    using ExitSetResult = TransitionDomainCalculator::ExitSetResult;
 
     /**
      * @brief Default constructor - generates random session ID
@@ -673,30 +668,9 @@ private:
 
     // Helper methods
 
-    // W3C SCXML 5.3: Data model initialization with binding mode support
-    struct DataItemInfo {
-        std::string stateId;  // Empty for top-level datamodel, state ID for state-level data
-        std::shared_ptr<IDataModelItem> dataItem;
-    };
-
-    /**
-     * @brief Collect all data items from document (top-level + all states)
-     * @return Vector of all data items with their containing state IDs
-     */
-    std::vector<DataItemInfo> collectAllDataItems() const;
-
-    /**
-     * @brief Initialize a single data item (create variable and optionally assign value)
-     * @param item Data item to initialize
-     * @param assignValue Whether to assign the initial value (false for late binding variable creation)
-     */
-    void initializeDataItem(const std::shared_ptr<IDataModelItem> &item, bool assignValue);
-
-    // W3C SCXML 5.3: Track which states have initialized their data (for late binding)
-    // Thread-safety: Not required - enterState() follows W3C SCXML run-to-completion
-    // semantics and is protected by isEnteringState_ guard. All event processing
-    // happens sequentially on the same thread via processQueuedEvents().
-    std::set<std::string> initializedStates_;
+    // W3C SCXML 5.3: Data model initialization (delegated to DataModelInitializer)
+    using DataItemInfo = DataModelInitializer::DataItemInfo;
+    std::unique_ptr<DataModelInitializer> dataModelInit_;
 
     bool initializeFromModel();
     void initializeHistoryManager();
@@ -775,15 +749,14 @@ private:
     TransitionResult processStateTransitions(IStateNode *stateNode, const std::string &eventName,
                                              const std::string &eventData);
 
-    // W3C SCXML transition domain and exit set computation
+    // W3C SCXML transition domain and exit set computation (delegated to TransitionDomainCalculator)
+    std::unique_ptr<TransitionDomainCalculator> transitionDomain_;
+
     std::string findLCA(const std::string &sourceStateId, const std::string &targetStateId) const;
     ExitSetResult computeExitSet(const std::string &sourceStateId, const std::string &targetStateId) const;
     int getStateDocumentPosition(const std::string &stateId) const;
     std::vector<std::string> getProperAncestors(const std::string &stateId) const;
     bool isDescendant(const std::string &stateId, const std::string &ancestorId) const;
-
-    // Helper: Build exit set for descendants of an ancestor state
-    // Used by both internal transitions and computeExitSet to avoid code duplication
     std::vector<std::string> buildExitSetForDescendants(const std::string &ancestorState,
                                                         bool excludeParallelChildren = true) const;
 

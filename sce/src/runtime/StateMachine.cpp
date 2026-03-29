@@ -1,13 +1,10 @@
 #include "runtime/StateMachine.h"
-#include "runtime/BindingHelper.h"
 #include "core/ConflictResolutionHelper.h"
 #include "states/ConcurrentStateTypes.h"
 
 using SCE::Core::ConflictResolutionAlgorithms;
-#include "common/DataModelInitHelper.h"
 #include "common/DoneDataHelper.h"
 #include "core/EntryExitHelper.h"
-#include "common/FileLoadingHelper.h"
 #include "core/LogMacros.h"
 #ifdef SCE_USE_SPDLOG
 #include <spdlog/spdlog.h>
@@ -26,7 +23,6 @@ using SCE::Core::ConflictResolutionAlgorithms;
 #include "parsing/SCXMLParser.h"
 #include "parsing/XIncludeProcessor.h"
 #include "runtime/ActionExecutorImpl.h"
-#include "runtime/DataContentHelpers.h"
 #include "runtime/EventRaiserImpl.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/HistoryManager.h"
@@ -2058,252 +2054,6 @@ StateMachine::Statistics StateMachine::getStatistics() const {
     return stats_;
 }
 
-// W3C SCXML 5.3: Collect all data items from document for global scope initialization
-std::vector<StateMachine::DataItemInfo> StateMachine::collectAllDataItems() const {
-    std::vector<DataItemInfo> allDataItems;
-
-    if (!model_) {
-        return allDataItems;
-    }
-
-    // Collect top-level datamodel items
-    const auto &topLevelItems = model_->getDataModelItems();
-    for (const auto &item : topLevelItems) {
-        allDataItems.push_back(DataItemInfo{"", item});  // Empty stateId for top-level
-    }
-    SCE_LOG_DEBUG("StateMachine: Collected {} top-level data items", topLevelItems.size());
-
-    // Collect state-level data items from all states
-    const auto &allStates = model_->getAllStates();
-    for (const auto &state : allStates) {
-        if (!state) {
-            continue;
-        }
-
-        const auto &stateDataItems = state->getDataItems();
-        if (!stateDataItems.empty()) {
-            for (const auto &item : stateDataItems) {
-                allDataItems.push_back(DataItemInfo{state->getId(), item});
-            }
-            SCE_LOG_DEBUG("StateMachine: Collected {} data items from state '{}'", stateDataItems.size(), state->getId());
-        }
-    }
-
-    SCE_LOG_INFO("StateMachine: Total data items collected: {} (for global scope initialization)", allDataItems.size());
-    return allDataItems;
-}
-
-// W3C SCXML 5.3: Initialize a single data item with binding mode support
-void StateMachine::initializeDataItem(const std::shared_ptr<IDataModelItem> &item, bool assignValue) {
-    if (!item) {
-        return;
-    }
-
-    std::string id = item->getId();
-    std::string expr = item->getExpr();
-    std::string src = item->getSrc();
-    std::string content = item->getContent();
-
-    // W3C SCXML 6.4: Check if variable was pre-initialized (e.g., by invoke namelist/param)
-    // Skip this check for late binding value assignment (assignValue=true with late binding)
-    // because late binding creates variables as undefined first, then assigns values on state entry
-    bool isLateBindingAssignment = assignValue && model_ && (model_->getBinding() == "late");
-
-    if (!isLateBindingAssignment && SCE::JSEngine::instance().isVariablePreInitialized(sessionId_, id)) {
-        SCE_LOG_INFO("StateMachine: Skipping initialization for '{}' - pre-initialized by invoke data", id);
-        return;
-    }
-
-    // W3C SCXML B.2.2: Late binding creates variables with undefined at init, assigns values on state entry
-    if (!assignValue) {
-        // Create variable with undefined value (both early and late binding)
-        auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
-        auto setResult = setVarFuture.get();
-
-        if (!SCE::JSEngine::isSuccess(setResult)) {
-            SCE_LOG_ERROR("StateMachine: Failed to create unbound variable '{}': {}", id, setResult.getErrorMessage());
-            if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution",
-                                         "Failed to create variable '" + id + "': " + setResult.getErrorMessage());
-            }
-            return;
-        }
-
-        SCE_LOG_DEBUG("StateMachine: Created unbound variable '{}' (value assignment deferred for late binding)", id);
-        return;
-    }
-
-    // Early binding or late binding value assignment: Evaluate and assign
-    if (!expr.empty()) {
-        // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-        // W3C SCXML B.2: For function expressions, use direct JavaScript assignment to preserve function type
-        // Test 453: ECMAScript function literals must be stored as functions, not converted to C++
-        bool isFunctionExpression = DataModelInitHelper::isFunctionExpression(expr);
-
-        if (isFunctionExpression) {
-            // Use direct JavaScript assignment to avoid function → C++ → function conversion loss
-            std::string assignmentScript = id + " = " + expr;
-            auto scriptFuture = SCE::JSEngine::instance().executeScript(sessionId_, assignmentScript);
-            auto scriptResult = scriptFuture.get();
-
-            if (!SCE::JSEngine::isSuccess(scriptResult)) {
-                SCE_LOG_ERROR("StateMachine: Failed to assign function expression '{}' to variable '{}': {}", expr, id,
-                          scriptResult.getErrorMessage());
-                if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", "Failed to assign function expression for '" + id +
-                                                                    "': " + scriptResult.getErrorMessage());
-                }
-                return;
-            }
-            SCE_LOG_DEBUG("StateMachine: Initialized function variable '{}' from expression '{}'", id, expr);
-        } else {
-            // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-            // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
-            // Test 277: expr evaluation failure must raise error.execution (no fallback)
-            bool success = DataModelInitHelper::initializeVariableFromExpr(
-                SCE::JSEngine::instance(), sessionId_, id, expr, [this](const std::string &msg) {
-                    // W3C SCXML 5.3: Raise error.execution on initialization failure
-                    if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution", msg);
-                    }
-                    SCE_LOG_ERROR("StateMachine: {}", msg);
-                });
-
-            if (success) {
-                SCE_LOG_DEBUG("StateMachine: Initialized variable '{}' from expression '{}'", id, expr);
-            } else {
-                // Leave variable unbound (don't create it) so it can be assigned later
-                return;
-            }
-        }
-    } else if (!src.empty()) {
-        // W3C SCXML 5.3: Load data from external source (test 446)
-        // ARCHITECTURE.MD: Zero Duplication - Use FileLoadingHelper (Single Source of Truth)
-
-        std::string filePath = FileLoadingHelper::normalizePath(src);
-
-        // Resolve relative path based on SCXML file location
-        if (filePath[0] != '/') {  // Relative path
-            std::string scxmlFilePath = SCE::JSEngine::instance().getSessionFilePath(sessionId_);
-            if (!scxmlFilePath.empty()) {
-                // Extract directory from SCXML file path
-                size_t lastSlash = scxmlFilePath.find_last_of("/");
-                if (lastSlash != std::string::npos) {
-                    std::string directory = scxmlFilePath.substr(0, lastSlash + 1);
-                    filePath = directory + filePath;
-                }
-            }
-        }
-
-        // Load file content using FileLoadingHelper
-        std::string fileContent;
-        bool success = FileLoadingHelper::loadFileContent(filePath, fileContent);
-
-        if (!success) {
-            SCE_LOG_ERROR("StateMachine: Failed to load file '{}' for variable '{}'", filePath, id);
-            if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution",
-                                         "Failed to load file '" + filePath + "' for variable '" + id + "'");
-            }
-            return;
-        }
-
-        // W3C SCXML B.2: Check content type (XML/JSON/text) and handle appropriately
-        if (isXMLContent(fileContent)) {
-            // W3C SCXML B.2 test 557: Parse XML content as DOM object
-            SCE_LOG_DEBUG("StateMachine: Parsing XML content from file '{}' as DOM for variable '{}'", filePath, id);
-
-            auto setVarFuture = SCE::JSEngine::instance().setVariableAsDOM(sessionId_, id, fileContent);
-            auto setResult = setVarFuture.get();
-
-            if (!SCE::JSEngine::isSuccess(setResult)) {
-                SCE_LOG_ERROR("StateMachine: Failed to set XML content from file '{}' for variable '{}': {}", filePath, id,
-                          setResult.getErrorMessage());
-                if (eventRaiser_) {
-                    eventRaiser_->raiseEvent("error.execution", "Failed to set XML content from file '" + filePath +
-                                                                    "' for '" + id +
-                                                                    "': " + setResult.getErrorMessage());
-                }
-                return;
-            }
-
-            SCE_LOG_DEBUG("StateMachine: Set variable '{}' as XML DOM object from file '{}'", id, filePath);
-        } else {
-            // W3C SCXML B.2: Try evaluating as JSON/JS first (test 446), fall back to text (test 558)
-            auto future = SCE::JSEngine::instance().evaluateExpression(sessionId_, fileContent);
-            auto result = future.get();
-
-            if (SCE::JSEngine::isSuccess(result)) {
-                // Successfully evaluated as JSON/JS expression
-                auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, result.getInternalValue());
-                auto setResult = setVarFuture.get();
-
-                if (!SCE::JSEngine::isSuccess(setResult)) {
-                    SCE_LOG_ERROR("StateMachine: Failed to set variable '{}' from file '{}': {}", id, filePath,
-                              setResult.getErrorMessage());
-                    if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution", "Failed to set variable '" + id + "' from file '" +
-                                                                        filePath + "': " + setResult.getErrorMessage());
-                    }
-                    return;
-                }
-
-                SCE_LOG_DEBUG("StateMachine: Initialized variable '{}' from file '{}'", id, filePath);
-            } else {
-                // W3C SCXML B.2 test 558: Non-JSON content - normalize whitespace and store as string
-                std::string normalized = normalizeWhitespace(fileContent);
-
-                auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{normalized});
-                auto setResult = setVarFuture.get();
-
-                if (!SCE::JSEngine::isSuccess(setResult)) {
-                    SCE_LOG_ERROR("StateMachine: Failed to set normalized text from file '{}' for variable '{}': {}",
-                              filePath, id, setResult.getErrorMessage());
-                    if (eventRaiser_) {
-                        eventRaiser_->raiseEvent("error.execution", "Failed to set text content from file '" +
-                                                                        filePath + "' for '" + id +
-                                                                        "': " + setResult.getErrorMessage());
-                    }
-                    return;
-                }
-
-                SCE_LOG_DEBUG("StateMachine: Set variable '{}' with normalized text from file '{}': '{}'", id, filePath,
-                          normalized);
-            }
-        }
-    } else if (!content.empty()) {
-        // W3C SCXML B.2: Initialize with inline content
-        // ARCHITECTURE.md: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
-        bool success = DataModelInitHelper::initializeVariable(SCE::JSEngine::instance(), sessionId_, id, content,
-                                                               [this](const std::string &msg) {
-                                                                   SCE_LOG_ERROR("StateMachine: {}", msg);
-                                                                   if (eventRaiser_) {
-                                                                       eventRaiser_->raiseEvent("error.execution", msg);
-                                                                   }
-                                                               });
-
-        if (!success) {
-            return;  // Error already handled by callback
-        }
-
-        SCE_LOG_DEBUG("StateMachine: Initialized variable '{}' from content", id);
-    } else {
-        // W3C SCXML 5.3: No expression or content - create variable with undefined value (test 445)
-        auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
-        auto setResult = setVarFuture.get();
-
-        if (!SCE::JSEngine::isSuccess(setResult)) {
-            SCE_LOG_ERROR("StateMachine: Failed to create undefined variable '{}': {}", id, setResult.getErrorMessage());
-            if (eventRaiser_) {
-                eventRaiser_->raiseEvent("error.execution",
-                                         "Failed to create variable '" + id + "': " + setResult.getErrorMessage());
-            }
-            return;
-        }
-
-        SCE_LOG_DEBUG("StateMachine: Created variable '{}' with undefined value", id);
-    }
-}
 
 bool StateMachine::initializeFromModel() {
     SCE_LOG_DEBUG("StateMachine: Initializing from SCXML model");
@@ -2338,6 +2088,9 @@ bool StateMachine::initializeFromModel() {
     try {
         // Initialize hierarchy manager for hierarchical state support
         hierarchyManager_ = std::make_unique<StateHierarchyManager>(model_);
+
+        // W3C SCXML 3.12/3.13: Initialize transition domain calculator
+        transitionDomain_ = std::make_unique<TransitionDomainCalculator>(model_, hierarchyManager_.get());
 
         // Set up onentry callback for W3C SCXML compliance
         SCE_LOG_DEBUG("StateMachine: Setting up onentry callback for StateHierarchyManager");
@@ -2498,36 +2251,9 @@ bool StateMachine::enterState(const std::string &stateId) {
     // SCXML W3C specification: hierarchy manager is required for compliant state entry
     assert(hierarchyManager_ && "SCXML violation: hierarchy manager required for state management");
 
-    // W3C SCXML 5.3: Late binding - assign values to state's data items when state is entered
-    // W3C SCXML 5.3: Handle late binding initialization on state entry
-    // Use BindingHelper (Single Source of Truth) for binding semantics
-    if (model_) {
-        const std::string &binding = model_->getBinding();
-        bool isFirstEntry = (initializedStates_.find(stateId) == initializedStates_.end());
-
-        if (isFirstEntry) {
-            // First entry to this state - check if we need to initialize variables
-            auto stateNode = model_->findStateById(stateId);
-            if (stateNode) {
-                const auto &stateDataItems = stateNode->getDataItems();
-                if (!stateDataItems.empty()) {
-                    SCE_LOG_DEBUG("StateMachine: First entry to state '{}' - checking {} data items for late binding",
-                              stateId, stateDataItems.size());
-
-                    for (const auto &item : stateDataItems) {
-                        bool hasExpr = !item->getExpr().empty();
-
-                        // Use BindingHelper to determine if value should be assigned on state entry
-                        if (BindingHelper::shouldAssignValueOnStateEntry(binding, isFirstEntry, hasExpr)) {
-                            // Late binding: assign value now
-                            initializeDataItem(item, true);  // assignValue=true
-                        }
-                    }
-
-                    initializedStates_.insert(stateId);  // Mark state as initialized
-                }
-            }
-        }
+    // W3C SCXML 5.3: Late binding - delegate to DataModelInitializer
+    if (dataModelInit_) {
+        dataModelInit_->initializeStateDataOnEntry(stateId);
     }
 
     SCE_LOG_DEBUG("[ENTER STATE DEBUG] About to call hierarchyManager_->enterState('{}') (Test 570 debug)", stateId);
@@ -3364,32 +3090,11 @@ bool StateMachine::setupJSEnvironment() {
     SCE::JSEngine::instance().setStateMachine(shared_from_this(), sessionId_);
     SCE_LOG_DEBUG("StateMachine: Registered with JSEngine for In() function support");
 
-    // W3C SCXML 5.3: Initialize data model with binding mode support (early/late binding)
-    // Use BindingHelper (Single Source of Truth) for binding semantics
+    // W3C SCXML 5.3: Initialize data model (delegated to DataModelInitializer)
+    dataModelInit_ = std::make_unique<DataModelInitializer>(model_, sessionId_);
+    dataModelInit_->setEventRaiser(eventRaiser_);
     if (model_) {
-        // Collect all data items (top-level + state-level) for global scope
-        const auto allDataItems = collectAllDataItems();
-        const std::string &binding = model_->getBinding();
-        SCE_LOG_INFO("StateMachine: Initializing {} total data items (global scope with {} binding)", allDataItems.size(),
-                 binding.empty() ? "early (default)" : binding);
-
-        // Use BindingHelper to determine initialization strategy
-        // This ensures W3C SCXML 5.3 compliance through shared logic with AOT engine
-        bool shouldAssignValue = BindingHelper::shouldAssignValueAtDocumentLoad(binding);
-
-        for (const auto &dataInfo : allDataItems) {
-            // Always call initializeDataItem (handles expr/src/content/undefined)
-            // The assignValue flag controls whether to evaluate expr/src/content or use undefined
-            initializeDataItem(dataInfo.dataItem, shouldAssignValue);
-        }
-
-        if (BindingHelper::isLateBinding(binding)) {
-            SCE_LOG_DEBUG("StateMachine: Late binding mode - values will be assigned on state entry");
-        } else {
-            SCE_LOG_DEBUG("StateMachine: Early binding mode - all values assigned at init");
-        }
-    } else {
-        SCE_LOG_DEBUG("StateMachine: No model available for data model initialization");
+        dataModelInit_->initializeAllDataItems(model_->getBinding());
     }
 
     // Initialize ActionExecutor and ExecutionContext (needed for script execution)
@@ -4427,254 +4132,39 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
 }
 
 // W3C SCXML: Get proper ancestors of a state (all ancestors excluding the state itself)
+// W3C SCXML 3.12/3.13: Delegation to TransitionDomainCalculator
+// transitionDomain_ is guaranteed non-null after initializeFromModel()
+
 std::vector<std::string> StateMachine::getProperAncestors(const std::string &stateId) const {
-    std::vector<std::string> ancestors;
-
-    if (!model_) {
-        return ancestors;
-    }
-
-    auto stateNode = model_->findStateById(stateId);
-    if (!stateNode) {
-        return ancestors;
-    }
-
-    IStateNode *current = stateNode->getParent();
-    while (current != nullptr) {
-        ancestors.push_back(current->getId());
-        current = current->getParent();
-    }
-
-    return ancestors;
+    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
+    return transitionDomain_->getProperAncestors(stateId);
 }
 
-// W3C SCXML: Check if stateId is a descendant of ancestorId
 bool StateMachine::isDescendant(const std::string &stateId, const std::string &ancestorId) const {
-    if (!model_ || stateId.empty() || ancestorId.empty()) {
-        return false;
-    }
-
-    if (stateId == ancestorId) {
-        return false;  // A state is not its own descendant
-    }
-
-    auto stateNode = model_->findStateById(stateId);
-    if (!stateNode) {
-        return false;
-    }
-
-    IStateNode *current = stateNode->getParent();
-    while (current != nullptr) {
-        if (current->getId() == ancestorId) {
-            return true;
-        }
-        current = current->getParent();
-    }
-
-    return false;
+    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
+    return transitionDomain_->isDescendant(stateId, ancestorId);
 }
 
-// W3C SCXML: Find Lowest Common Ancestor of source and target states
 int StateMachine::getStateDocumentPosition(const std::string &stateId) const {
-    // W3C SCXML 3.13: Get document order position for state
-    // Uses depth-first pre-order traversal to assign positions
-    if (!model_) {
-        return -1;
-    }
-
-    // Helper to recursively assign positions
-    int position = 0;
-    std::function<int(IStateNode *, const std::string &)> findPosition = [&](IStateNode *node,
-                                                                             const std::string &targetId) -> int {
-        if (!node) {
-            return -1;
-        }
-
-        if (node->getId() == targetId) {
-            return position;
-        }
-
-        position++;
-
-        // Depth-first pre-order: visit children
-        const auto &children = node->getChildren();
-        for (const auto &child : children) {
-            int result = findPosition(child.get(), targetId);
-            if (result >= 0) {
-                return result;
-            }
-        }
-
-        return -1;
-    };
-
-    // Start from root state
-    auto rootState = model_->getRootState();
-    if (!rootState) {
-        return -1;
-    }
-
-    return findPosition(rootState.get(), stateId);
+    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
+    return transitionDomain_->getStateDocumentPosition(stateId);
 }
 
 std::string StateMachine::findLCA(const std::string &sourceStateId, const std::string &targetStateId) const {
-    if (!model_) {
-        return "";
-    }
-
-    // ARCHITECTURE.md: Zero Duplication - delegate to HierarchicalStateHelper
-    // W3C SCXML 3.12: Find Least Common Ancestor for hierarchical transitions
-    auto getParent = [this](const std::string &stateId) -> std::optional<std::string> {
-        auto node = model_->findStateById(stateId);
-        if (!node || !node->getParent()) {
-            return std::nullopt;
-        }
-        return node->getParent()->getId();
-    };
-
-    // Use shared unified algorithm (Single Source of Truth)
-    return SCE::Core::HierarchicalAlgorithms::findLCA(sourceStateId, targetStateId, getParent).value_or("");
+    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
+    return transitionDomain_->findLCA(sourceStateId, targetStateId);
 }
 
-// Helper: Build exit set for descendants of an ancestor state
-// Used by both internal transitions and computeExitSet to avoid code duplication
 std::vector<std::string> StateMachine::buildExitSetForDescendants(const std::string &ancestorState,
                                                                   bool excludeParallelChildren) const {
-    std::vector<std::string> exitSet;
-
-    if (!hierarchyManager_ || !model_) {
-        return exitSet;
-    }
-
-    // Get all active states
-    auto activeStates = hierarchyManager_->getActiveStates();
-
-    for (const auto &activeState : activeStates) {
-        // Skip if this is the ancestor itself
-        if (activeState == ancestorState) {
-            continue;
-        }
-
-        // Defensive: Get state node and skip if not found
-        auto activeNode = model_->findStateById(activeState);
-        if (!activeNode) {
-            SCE_LOG_WARN("buildExitSetForDescendants: Active state '{}' not found in model - skipping", activeState);
-            continue;
-        }
-
-        // Check if parent is a parallel state - skip if requested
-        if (excludeParallelChildren) {
-            auto parent = activeNode->getParent();
-            if (parent && parent->getType() == Type::PARALLEL) {
-                // Skip - parallel state's children are handled by exitParallelState
-                continue;
-            }
-        }
-
-        // Check if activeState is a descendant of ancestorState
-        if (ancestorState.empty()) {
-            // If ancestor is root (empty), all active states are descendants
-            exitSet.push_back(activeState);
-        } else {
-            // Walk up the ancestor chain to check if we reach ancestorState
-            IStateNode *current = activeNode->getParent();
-            while (current) {
-                if (current->getId() == ancestorState) {
-                    // Found ancestor - activeState is a descendant
-                    exitSet.push_back(activeState);
-                    break;
-                }
-                current = current->getParent();
-            }
-        }
-    }
-
-    // Sort by depth (deepest first) for correct exit order
-    std::sort(exitSet.begin(), exitSet.end(), [this](const std::string &a, const std::string &b) {
-        int depthA = 0, depthB = 0;
-        auto nodeA = model_->findStateById(a);
-        auto nodeB = model_->findStateById(b);
-
-        if (nodeA) {
-            IStateNode *current = nodeA->getParent();
-            while (current) {
-                depthA++;
-                current = current->getParent();
-            }
-        }
-        if (nodeB) {
-            IStateNode *current = nodeB->getParent();
-            while (current) {
-                depthB++;
-                current = current->getParent();
-            }
-        }
-
-        return depthA > depthB;  // Deeper states first
-    });
-
-    return exitSet;
+    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
+    return transitionDomain_->buildExitSetForDescendants(ancestorState, excludeParallelChildren);
 }
 
-// W3C SCXML: Compute exit set for transition from source to target
 StateMachine::ExitSetResult StateMachine::computeExitSet(const std::string &sourceStateId,
                                                          const std::string &targetStateId) const {
-    ExitSetResult result;
-    result.states.reserve(8);  // Performance: Reserve typical exit set size to avoid reallocation
-
-    if (!model_ || sourceStateId.empty()) {
-        return result;
-    }
-
-    // If target is empty (targetless transition), exit source only
-    if (targetStateId.empty()) {
-        result.states.push_back(sourceStateId);
-        return result;
-    }
-
-    // W3C SCXML 3.13: Find LCA (Lowest Common Ancestor) once
-    result.lca = findLCA(sourceStateId, targetStateId);
-
-    // W3C SCXML 3.13: Exit set = "all active states that are proper descendants of LCCA"
-    // This must include ALL active descendants, not just the source->LCA chain (test 505)
-    // Use helper method to build exit set (reduces code duplication)
-    result.states = buildExitSetForDescendants(result.lca, true);
-
-    // W3C SCXML 3.10 (test 579): Ancestor transition (target == LCA)
-    // When transitioning to an ancestor state, the target must also be exited and re-entered
-    // This ensures onexit/onentry are executed, allowing data changes (e.g., Var1++)
-    if (targetStateId == result.lca && hierarchyManager_ && hierarchyManager_->isStateActive(targetStateId)) {
-        result.states.push_back(targetStateId);
-        SCE_LOG_DEBUG("W3C SCXML: Ancestor transition detected, including target '{}' in exit set", targetStateId);
-    }
-
-    // W3C SCXML 3.10 (test 580): History state transition
-    // When transitioning to a history state whose parent is active, exit and re-enter the parent
-    // This ensures onexit/onentry actions execute (e.g., Var1++ in onexit)
-    auto targetNode = model_->findStateById(targetStateId);
-    if (targetNode && targetNode->getType() == Type::HISTORY) {
-        auto parentNode = targetNode->getParent();
-        if (parentNode && hierarchyManager_ && hierarchyManager_->isStateActive(parentNode->getId())) {
-            std::string parentId = parentNode->getId();
-            // Check if parent is not already in exit set
-            if (std::find(result.states.begin(), result.states.end(), parentId) == result.states.end()) {
-                result.states.push_back(parentId);
-                SCE_LOG_DEBUG(
-                    "W3C SCXML 3.10: History state transition, including active parent '{}' in exit set (test 580)",
-                    parentId);
-            }
-        }
-    }
-
-    // Note: buildExitSetForDescendants already:
-    // - Excludes parallel children (test 404, 504)
-    // - Sorts by depth (deepest first)
-    // - Handles null checks defensively
-
-    SCE_LOG_DEBUG("W3C SCXML: computeExitSet({} -> {}) = {} states, LCA = '{}'", sourceStateId, targetStateId,
-              result.states.size(), result.lca);
-
-    return result;
+    assert(transitionDomain_ && "TransitionDomainCalculator must be initialized before use");
+    return transitionDomain_->computeExitSet(sourceStateId, targetStateId);
 }
 
 }  // namespace SCE
