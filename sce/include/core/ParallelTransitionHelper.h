@@ -81,34 +81,19 @@ public:
             return exitSet;  // Empty exit set for targetless transition
         }
 
-        // W3C SCXML 3.13: Internal transitions have special exit semantics
-        // Internal transition does NOT exit source state if:
-        // 1. transition.isInternal == true
-        // 2. source is a compound state (NOT parallel)
-        // 3. target is a proper descendant of source
+        // W3C SCXML 3.13: Internal transition to compound descendant - source stays active
         if (transition.isInternal) {
-            // Check if source is compound state (NOT parallel, NOT atomic)
-            bool sourceIsCompound =
-                PolicyType::isCompoundState(transition.source) && !PolicyType::isParallelState(transition.source);
-
-            if (sourceIsCompound) {
-                // Check if all targets are proper descendants of source
-                bool allTargetsAreDescendants = true;
-                for (const auto &target : transition.targets) {
-                    if (!PolicyType::isDescendantOf(target, transition.source) || target == transition.source) {
-                        allTargetsAreDescendants = false;
-                        break;
-                    }
-                }
-
-                if (allTargetsAreDescendants) {
-                    // W3C SCXML 3.13: Internal transition to descendant - source stays active
-                    // Exit set is empty (source and its ancestors remain active)
-                    return exitSet;  // Empty set
+            bool allTargetsAreDescendants = true;
+            for (const auto &target : transition.targets) {
+                if (!isInternalToDescendant<StateType, PolicyType>(transition.source, target)) {
+                    allTargetsAreDescendants = false;
+                    break;
                 }
             }
-            // Otherwise: Internal transition but source is NOT compound or target is NOT descendant
-            // Treat as external transition (exit source)
+
+            if (allTargetsAreDescendants) {
+                return exitSet;  // Empty set - source and ancestors remain active
+            }
         }
 
         // External transition (or internal transition that behaves as external)
@@ -322,35 +307,8 @@ public:
             }
 
             for (const auto &target : trans.targets) {
-                // W3C SCXML 3.13: Internal transitions only skip exiting source if:
-                // 1. transition.isInternal == true
-                // 2. source is a compound state (NOT parallel)
-                // 3. target is a proper descendant of source
-                std::optional<StateType> lca;
-                if (trans.isInternal) {
-                    // Check if source is compound state (NOT parallel, NOT atomic)
-                    bool sourceIsCompound =
-                        PolicyType::isCompoundState(trans.source) && !PolicyType::isParallelState(trans.source);
-
-                    if (sourceIsCompound) {
-                        // Check if target is proper descendant of source
-                        bool targetIsDescendant =
-                            PolicyType::isDescendantOf(target, trans.source) && target != trans.source;
-
-                        if (targetIsDescendant) {
-                            // W3C SCXML 3.13: Internal transition to descendant - source stays active
-                            lca = trans.source;  // Source is the LCA - don't exit it
-                        } else {
-                            // Target is not descendant - treat as external
-                            lca = SCE::Core::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
-                        }
-                    } else {
-                        // Source is NOT compound (it's parallel or atomic) - treat as external per W3C SCXML 3.13
-                        lca = SCE::Core::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
-                    }
-                } else {
-                    lca = SCE::Core::HierarchicalStateHelper<PolicyType>::findLCA(trans.source, target);
-                }
+                // W3C SCXML 3.13: Compute effective LCA considering internal transition semantics
+                auto lca = computeEffectiveLCA<StateType, PolicyType>(trans.source, target, trans.isInternal);
 
                 if (!lca.has_value()) {
                     // No LCA found - exit from source up to root
@@ -534,6 +492,49 @@ public:
         // Check if event matches (event matching logic is in EventMatchingHelper)
         // For now, simple equality check
         return transitionEvent == currentEvent;
+    }
+
+private:
+    /**
+     * @brief Check if a transition qualifies as internal-to-descendant
+     *
+     * W3C SCXML 3.13: An internal transition does NOT exit its source state when:
+     * 1. The source is a compound state (NOT parallel, NOT atomic)
+     * 2. The target is a proper descendant of the source
+     *
+     * @tparam StateType State enum or identifier type
+     * @tparam PolicyType Policy class with state hierarchy
+     * @param source Source state of the transition
+     * @param target Target state to check
+     * @return true if source is compound and target is a proper descendant
+     */
+    template <typename StateType, ParallelStatePolicy PolicyType>
+    static bool isInternalToDescendant(StateType source, StateType target) {
+        bool sourceIsCompound = PolicyType::isCompoundState(source) && !PolicyType::isParallelState(source);
+        if (!sourceIsCompound) return false;
+        return PolicyType::isDescendantOf(target, source) && target != source;
+    }
+
+    /**
+     * @brief Compute effective LCA for a (source, target) pair considering internal transition semantics
+     *
+     * W3C SCXML 3.13: For internal transitions where the source is compound and
+     * the target is a proper descendant, the effective LCA is the source itself
+     * (source stays active). For all other cases, standard LCA via hierarchy traversal.
+     *
+     * @tparam StateType State enum or identifier type
+     * @tparam PolicyType Policy class with state hierarchy
+     * @param source Source state of the transition
+     * @param target Target state of the transition
+     * @param isInternal Whether the transition is type="internal"
+     * @return Effective LCA state, or nullopt if no common ancestor found
+     */
+    template <typename StateType, ParallelStatePolicy PolicyType>
+    static std::optional<StateType> computeEffectiveLCA(StateType source, StateType target, bool isInternal) {
+        if (isInternal && isInternalToDescendant<StateType, PolicyType>(source, target)) {
+            return source;  // Source is the LCA - don't exit it
+        }
+        return SCE::Core::HierarchicalStateHelper<PolicyType>::findLCA(source, target);
     }
 };
 

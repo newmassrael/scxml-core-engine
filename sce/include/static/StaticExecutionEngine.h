@@ -62,11 +62,8 @@ namespace SCE::Static {
  *         See core/StatePolicyConcepts.h for the full interface contract.
  */
 template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine {
-    friend StatePolicy;
-
     // ── Compile-time verification of required member variables ──
-    // Concepts cannot verify member variable existence through friend access,
-    // so we use static_assert for these checks.
+    // StatePolicy is generated as a struct (public members), verified via requires expression.
     static_assert(requires(StatePolicy p) { { p.lastTransitionIsInternal_ } -> std::convertible_to<bool>; },
                   "StatePolicy must have member: mutable bool lastTransitionIsInternal_");
     static_assert(requires(StatePolicy p) { { p.lastTransitionIsTargetless_ } -> std::convertible_to<bool>; },
@@ -284,6 +281,93 @@ private:
         }
     }
 
+    /**
+     * @brief Execute a state transition with default handlers (for event queue processing)
+     *
+     * W3C SCXML Appendix D: For parallel states, executeMicrostep already handles
+     * exit/entry, so no parallel handler is needed.
+     *
+     * @param event Event to process
+     * @return true if a hierarchical state change occurred
+     */
+    bool executeTransition(Event event) {
+        return executeTransition(event, [](auto, const auto &) {}, [] {});
+    }
+
+    /**
+     * @brief Execute a state transition with hierarchical exit/entry handling
+     *
+     * W3C SCXML 3.12/3.13: Single Source of Truth for transition execution across all
+     * processing paths (event queues, direct processEvent, eventless transitions).
+     *
+     * Callers customize two axes of variation via template callbacks:
+     * - onParallelTransition: how parallel states handle exit/entry (queue path: executeMicrostep
+     *   already handled; direct path: explicit executeOnExit/executeOnEntry)
+     * - postTransition: work after hierarchical handling, before eventless check
+     *   (queue path: nothing; direct path: processEventQueues)
+     *
+     * @tparam ParallelHandlerFn Callable(State oldState, vector<State> preStates) for parallel states
+     * @tparam PostTransitionFn Callable() for post-hierarchical work
+     * @param event Event to process
+     * @param onParallelTransition Parallel exit/entry handler
+     * @param postTransition Post-hierarchical work before eventless check
+     * @return true if a hierarchical state change occurred
+     */
+    template <typename ParallelHandlerFn, typename PostTransitionFn>
+    bool executeTransition(Event event, ParallelHandlerFn &&onParallelTransition,
+                           PostTransitionFn &&postTransition) {
+        State oldState = currentState_;
+        std::vector<State> preTransitionStates = getActiveStates();
+        if (!policy_.processTransition(currentState_, event, *this)) {
+            return false;
+        }
+
+        // W3C SCXML 3.13: Self-transitions (target = source) exit and re-enter the state
+        // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
+        bool isSelfTransition = (oldState == currentState_);
+        bool needsHierarchicalHandling =
+            (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
+
+        if (!needsHierarchicalHandling) {
+            // W3C SCXML 3.4: Targetless transition - execute actions without state change
+            policy_.executeTransitionActions(*this);
+            return false;
+        }
+
+        // W3C SCXML 3.12: State transition requires hierarchical exit/entry
+        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
+            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
+                                         [this] { policy_.executeTransitionActions(*this); });
+        } else {
+            // W3C SCXML Appendix D: Parallel states - caller provides context-specific handling
+            onParallelTransition(oldState, preTransitionStates);
+        }
+        postTransition();
+        checkEventlessTransitions();
+        return true;
+    }
+
+    /**
+     * @brief Shared implementation for processEvent overloads
+     *
+     * W3C SCXML 3.12: External event processing with full macrostep completion.
+     *
+     * @param event Event to process
+     */
+    void processEventImpl(Event event) {
+        bool stateChanged = executeTransition(
+            event,
+            [this](State oldState, const std::vector<State> &preTransitionStates) {
+                executeOnExit(oldState, preTransitionStates);
+                executeOnEntry(currentState_);
+            },
+            [this] { processEventQueues(); });
+        // W3C SCXML 6.4: Notify parent if reached final state after macrostep
+        if (stateChanged && isInFinalState() && completionCallback_) {
+            completionCallback_();
+        }
+    }
+
     State currentState_;
     SCE::Core::EventQueueManager<EventWithMetadata>
         internalQueue_;  // W3C SCXML C.1: Internal event queue (high priority)
@@ -296,36 +380,20 @@ private:
 protected:
     StatePolicy policy_;  // Policy instance for stateful policies
 
-protected:
+public:
     /**
      * @brief Raise an internal event with metadata (W3C SCXML C.1)
      *
-     * Preferred API for raising events with complete metadata.
-     * Uses EventWithMetadata struct for better readability and extensibility.
+     * Places event on the internal queue with FIFO ordering.
+     * Internal events have higher priority than external events.
      *
      * @param metadata Complete event metadata including all W3C SCXML 5.10.1 fields
-     *
-     * @example Constructor Pattern (required for nested template types)
-     * @code
-     * // Raise error.execution with data and sendId
-     * engine.raise(typename Engine::EventWithMetadata(
-     *     Event::Error_execution,  // event
-     *     errorMsg,                // data
-     *     "#_internal",            // origin
-     *     sendId,                  // sendId
-     *     "platform"               // type
-     * ));
-     *
-     * // Raise simple event
-     * engine.raise(typename Engine::EventWithMetadata(Event::Done_invoke));
-     * @endcode
      */
     void raise(EventWithMetadata metadata) {
         // W3C SCXML C.1: Enqueue event with metadata
         internalQueue_.raise(std::move(metadata));
     }
 
-public:
     /**
      * @brief Raise an external event (W3C SCXML C.1, 6.2)
      *
@@ -562,8 +630,6 @@ protected:
         SCE::Core::AOTEventQueue<EventWithMetadata> internalAdapter(internalQueue_);
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             internalAdapter, [this](const EventWithMetadata &eventWithMeta) {
-                // W3C SCXML 5.10: Set pending event fields from metadata using EventMetadataHelper
-                // ARCHITECTURE.md: Zero Duplication - shared logic with EventMetadataHelper
                 Event event = eventWithMeta.event;
                 SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
@@ -572,80 +638,19 @@ protected:
                           static_cast<int>(currentState_));
 
                 // W3C SCXML 5.4.1: Stop processing events if TOP-LEVEL final state reached
-                // Parallel state internal final states generate done.state events, not stop processing
                 if (StatePolicy::isFinalState(currentState_)) {
-                    bool shouldStop = false;
-
-                    // W3C SCXML 3.7: Top-level final state = direct child of SCXML root (no parent)
-                    // Compound state internal final states have parents and generate done.state events
-                    // Applies to both simple and parallel state machines
                     auto parent = StatePolicy::getParent(currentState_);
-                    if (parent.has_value()) {
-                        // Has parent = compound/parallel state child = non-top-level
-                        shouldStop = false;
-                    } else {
-                        // No parent = SCXML root child = top-level
-                        shouldStop = true;
-                    }
-
-                    if (shouldStop) {
+                    if (!parent.has_value()) {
                         SCE_LOG_DEBUG("AOT processEventQueues: Top-level final state {} reached, stopping event processing",
                                   static_cast<int>(currentState_));
                         return false;
-                    } else {
-                        SCE_LOG_DEBUG("AOT processEventQueues: Non-top-level final state {} (inside parallel/compound), "
-                                  "continue processing done.state events",
-                                  static_cast<int>(currentState_));
                     }
+                    SCE_LOG_DEBUG("AOT processEventQueues: Non-top-level final state {} (inside parallel/compound), "
+                              "continue processing done.state events",
+                              static_cast<int>(currentState_));
                 }
 
-                // Process event through transition logic
-                State oldState = currentState_;
-                std::vector<State> preTransitionStates =
-                    getActiveStates();  // W3C SCXML 3.11: Capture before transition
-                // Call through policy instance (works for both static and non-static)
-                bool transitionTaken = policy_.processTransition(currentState_, event, *this);
-                SCE_LOG_DEBUG(
-                    "AOT processEventQueues (internal): processTransition returned {}, oldState={}, currentState={}",
-                    transitionTaken, static_cast<int>(oldState), static_cast<int>(currentState_));
-                if (transitionTaken) {
-                    // W3C SCXML 3.13: Self-transitions (target = source) exit and re-enter the state
-                    // W3C SCXML 5.9.2: Both internal and external self-transitions behave the same
-                    // (internal only differs when target is proper descendant, not when target = source)
-                    // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
-                    bool isSelfTransition = (oldState == currentState_);
-                    bool needsHierarchicalHandling =
-                        (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
-
-                    if (needsHierarchicalHandling) {
-                        SCE_LOG_DEBUG("AOT processEventQueues: State transition {} -> {}", static_cast<int>(oldState),
-                                  static_cast<int>(currentState_));
-
-                        // W3C SCXML Appendix D: For parallel states, executeMicrostep already handled
-                        // exit/transition/entry Only call handleHierarchicalTransition for non-parallel state machines
-                        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                            // ARCHITECTURE.md: Zero Duplication - use shared helper
-                            // W3C SCXML 3.13: Pass transition action callback for correct execution order
-                            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                                         [this] { policy_.executeTransitionActions(*this); });
-                        } else {
-                            SCE_LOG_DEBUG(
-                                "AOT processEventQueues (internal): Parallel state machine - executeMicrostep handled "
-                                "all transitions");
-                        }
-
-                        SCE_LOG_DEBUG("AOT processEventQueues: Calling checkEventlessTransitions after state entry");
-                        // W3C SCXML 3.13: Check eventless transitions immediately after state entry
-                        // This ensures guards evaluate BEFORE queued error.execution events are processed
-                        checkEventlessTransitions();
-                        SCE_LOG_DEBUG("AOT processEventQueues: Returned from checkEventlessTransitions");
-                    } else {
-                        // W3C SCXML 3.4: Internal transition - no state change, but execute actions
-                        SCE_LOG_DEBUG("AOT processEventQueues: Internal transition in state {}",
-                                  static_cast<int>(currentState_));
-                        policy_.executeTransitionActions(*this);
-                    }
-                }
+                executeTransition(event);
                 return true;  // Continue processing
             });
 
@@ -653,61 +658,17 @@ protected:
         SCE::Core::AOTEventQueue<EventWithMetadata> externalAdapter(externalQueue_);
         SCE::Core::EventProcessingAlgorithms::processInternalEventQueue(
             externalAdapter, [this](const EventWithMetadata &eventWithMeta) {
-                // W3C SCXML 5.10: Set pending event fields from metadata using EventMetadataHelper
-                // ARCHITECTURE.md: Zero Duplication - shared logic with EventMetadataHelper
                 Event event = eventWithMeta.event;
                 SCE::Common::EventMetadataHelper::populatePolicyFromMetadata<StatePolicy, Event>(policy_,
                                                                                                  eventWithMeta);
 
                 // W3C SCXML 6.5: Execute finalize BEFORE processing child events
-                // Finalize runs when child sends event to parent
-                // _event is set inside executeFinalizeForChildEvent (matches Interpreter pattern)
                 if constexpr (SCE::Core::HasFinalize<StatePolicy, EventWithMetadata,
                                                      StaticExecutionEngine<StatePolicy>>) {
                     policy_.executeFinalizeForChildEvent(eventWithMeta, *this);
                 }
 
-                // Process event through transition logic
-                State oldState = currentState_;
-                std::vector<State> preTransitionStates =
-                    getActiveStates();  // W3C SCXML 3.11: Capture before transition
-                // Call through policy instance (works for both static and non-static)
-                bool transitionTaken = policy_.processTransition(currentState_, event, *this);
-                SCE_LOG_DEBUG(
-                    "AOT processEventQueues (external): processTransition returned {}, oldState={}, currentState={}",
-                    transitionTaken, static_cast<int>(oldState), static_cast<int>(currentState_));
-                if (transitionTaken) {
-                    // W3C SCXML 3.13: Self-transitions (target = source) exit and re-enter the state
-                    // W3C SCXML 5.9.2: Both internal and external self-transitions behave the same
-                    // (internal only differs when target is proper descendant, not when target = source)
-                    // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
-                    bool isSelfTransition = (oldState == currentState_);
-                    bool needsHierarchicalHandling =
-                        (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
-
-                    if (needsHierarchicalHandling) {
-                        // W3C SCXML Appendix D: For parallel states, executeMicrostep already handled
-                        // exit/transition/entry Only call handleHierarchicalTransition for non-parallel state machines
-                        if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                            // ARCHITECTURE.md: Zero Duplication - use shared helper
-                            // W3C SCXML 3.13: Pass transition action callback for correct execution order
-                            handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                                         [this] { policy_.executeTransitionActions(*this); });
-                        } else {
-                            SCE_LOG_DEBUG(
-                                "AOT processEventQueues (external): Parallel state machine - executeMicrostep handled "
-                                "all transitions");
-                        }
-
-                        // W3C SCXML 3.13: Check eventless transitions immediately after state entry
-                        checkEventlessTransitions();
-                    } else {
-                        // W3C SCXML 3.4: Internal transition - no state change, but execute actions
-                        SCE_LOG_DEBUG("AOT processEventQueues: Internal transition in state {}",
-                                  static_cast<int>(currentState_));
-                        policy_.executeTransitionActions(*this);
-                    }
-                }
+                executeTransition(event);
                 return true;  // Continue processing
             });
     }
@@ -912,42 +873,8 @@ public:
      * @param event External event to process
      */
     void processEvent(Event event) {
-        if (!isRunning_) {
-            return;
-        }
-
-        // Note: currentEventMetadata_ is only present in policies with invokes
-        // If needed, it's managed by processTransition() and processEvent(Event, EventMetadata)
-
-        State oldState = currentState_;
-        std::vector<State> preTransitionStates = getActiveStates();  // W3C SCXML 3.11: Capture before transition
-        // Call through policy instance (works for both static and non-static)
-        if (policy_.processTransition(currentState_, event, *this)) {
-            // W3C SCXML 3.13: Self-transitions (target = source) exit and re-enter the state
-            // W3C SCXML 5.9.2: Targetless transitions consume event only (no exit/enter)
-            bool isSelfTransition = (oldState == currentState_);
-            bool needsHierarchicalHandling =
-                (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
-
-            if (needsHierarchicalHandling) {
-                // W3C SCXML 3.13: Use handleHierarchicalTransition for correct
-                // compound state entry (descends into initial children)
-                if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                    handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                                 [this] { policy_.executeTransitionActions(*this); });
-                } else {
-                    executeOnExit(oldState, preTransitionStates);
-                    executeOnEntry(currentState_);
-                }
-                processEventQueues();
-                checkEventlessTransitions();
-
-                // W3C SCXML 6.4: Notify parent if reached final state
-                if (isInFinalState() && completionCallback_) {
-                    completionCallback_();
-                }
-            }
-        }
+        if (!isRunning_) return;
+        processEventImpl(event);
     }
 
     /**
@@ -960,38 +887,9 @@ public:
      * @param metadata Event metadata (originSessionId, etc.)
      */
     void processEvent(Event event, const SCE::Core::EventMetadata &metadata) {
-        if (!isRunning_) {
-            return;
-        }
-
-        // Set event metadata for invoke processing
+        if (!isRunning_) return;
         policy_.currentEventMetadata_ = metadata;
-
-        State oldState = currentState_;
-        std::vector<State> preTransitionStates = getActiveStates();  // W3C SCXML 3.11: Capture before transition
-        // Call through policy instance (works for both static and non-static)
-        if (policy_.processTransition(currentState_, event, *this)) {
-            bool isSelfTransition = (oldState == currentState_);
-            bool needsHierarchicalHandling =
-                (oldState != currentState_) || (isSelfTransition && !policy_.lastTransitionIsTargetless_);
-
-            if (needsHierarchicalHandling) {
-                if constexpr (!StatePolicy::HAS_PARALLEL_STATES) {
-                    handleHierarchicalTransition(oldState, currentState_, preTransitionStates,
-                                                 [this] { policy_.executeTransitionActions(*this); });
-                } else {
-                    executeOnExit(oldState, preTransitionStates);
-                    executeOnEntry(currentState_);
-                }
-                processEventQueues();
-                checkEventlessTransitions();
-
-                // W3C SCXML 6.4: Notify parent if reached final state
-                if (isInFinalState() && completionCallback_) {
-                    completionCallback_();
-                }
-            }
-        }
+        processEventImpl(event);
     }
 
     /**
