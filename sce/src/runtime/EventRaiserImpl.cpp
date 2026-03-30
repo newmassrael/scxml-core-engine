@@ -1,4 +1,5 @@
 #include "runtime/EventRaiserImpl.h"
+#include "common/EventDataHelper.h"
 #include "common/EventTypeHelper.h"
 #include "core/LogMacros.h"
 #include "common/StringUtils.h"
@@ -226,6 +227,12 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                                              const std::string &sendId, const std::string &invokeId,
                                              const std::string &originType, int64_t timestampNs,
                                              std::optional<ScriptValue> typedData) {
+    // W3C SCXML B.2: Parse JSON eventData to ScriptValue at pipeline level (engine-agnostic)
+    // Covers all entry points: EventTargets, HTTP callbacks, AOT, DoneData
+    if (!typedData.has_value() && !eventData.empty()) {
+        typedData = EventDataHelper::jsonStringToScriptValue(eventData);
+    }
+
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
              "immediateMode={}, EventRaiser instance={}",
              eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), isRunning_.load(),

@@ -770,13 +770,12 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
             LuaDOMBinding::pushDOMObject(L, eventData);
             lua_setfield(L, -2, "data");
         } else {
-            // Try to evaluate as Lua expression (for structured data / JSON-like)
+            // Try to evaluate as Lua expression (for structured data)
             std::string loadExpr = "return " + eventData;
             if (luaL_dostring(L, loadExpr.c_str()) == LUA_OK) {
                 lua_setfield(L, -2, "data");
             } else {
                 lua_pop(L, 1); // Pop error
-                // Store as space-normalized string
                 lua_pushstring(L, eventData.c_str());
                 lua_setfield(L, -2, "data");
             }

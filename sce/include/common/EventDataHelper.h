@@ -18,6 +18,7 @@
 
 #include "SCXMLTypes.h"
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,19 @@ public:
      * @return ScriptValue containing a ScriptObject with param properties
      */
     static ScriptValue buildScriptValueFromParams(const std::map<std::string, ScriptValue> &typedParams);
+
+    /**
+     * @brief Parse JSON string into ScriptValue (engine-agnostic)
+     *
+     * W3C SCXML B.2: Converts JSON event data to typed ScriptValue at the pipeline level,
+     * avoiding engine-specific JSON parsing workarounds.
+     *
+     * Used when typedParams are unavailable (e.g., content elements, HTTP responses).
+     *
+     * @param jsonStr JSON string to parse
+     * @return ScriptValue if valid JSON, std::nullopt otherwise
+     */
+    static std::optional<ScriptValue> jsonStringToScriptValue(const std::string &jsonStr);
 };
 
 }  // namespace SCE

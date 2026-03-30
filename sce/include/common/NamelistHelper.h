@@ -20,6 +20,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace SCE {
@@ -85,7 +86,8 @@ public:
      */
     template <typename JSEngineType, typename ErrorHandler>
     static bool evaluateNamelist(JSEngineType &jsEngine, const std::string &sessionId, const std::string &namelist,
-                                 std::map<std::string, std::vector<std::string>> &params, ErrorHandler errorHandler) {
+                                 std::map<std::string, std::vector<std::string>> &params, ErrorHandler errorHandler,
+                                 std::map<std::string, ScriptValue> *outTypedParams = nullptr) {
         if (namelist.empty()) {
             return true;  // No namelist to evaluate
         }
@@ -108,6 +110,11 @@ public:
             // Store variable value in params map
             std::string varValue = ScriptResultUtils::resultToString(varResult);
             params[varName].push_back(varValue);
+
+            // W3C SCXML C.1: Preserve typed value for engine-agnostic ScriptValue pipeline
+            if (outTypedParams) {
+                (*outTypedParams)[varName] = varResult.getInternalValue();
+            }
         }
 
         return true;  // All variables evaluated successfully

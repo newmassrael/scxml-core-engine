@@ -807,6 +807,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         // W3C SCXML C.1: Build event data from namelist and params (Test 354, 178)
         // W3C SCXML: Supports duplicate param names - all values must be included (Test 178)
         std::map<std::string, std::vector<std::string>> evaluatedParams;
+        std::map<std::string, ScriptValue> typedParams;
 
         // Step 1: Evaluate namelist variables using NamelistHelper (Zero Duplication Principle)
         const std::string &namelist = action.getNamelist();
@@ -823,7 +824,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
                                                                     eventRaiser_->raiseEvent("error.execution",
                                                                                              errorMsg, sendId, false);
                                                                 }
-                                                            });
+                                                            },
+                                                            &typedParams);
 
             if (!success) {
                 return false;
@@ -834,7 +836,6 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
         // Step 2: Evaluate param elements (W3C SCXML Test 186, 354)
         // Note: params can override namelist values (evaluated after namelist)
-        std::map<std::string, ScriptValue> typedParams;
         const auto &params = action.getParamsWithExpr();
         if (!params.empty()) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Evaluating {} param elements", params.size());

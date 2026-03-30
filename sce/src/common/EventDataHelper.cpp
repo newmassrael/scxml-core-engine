@@ -33,4 +33,51 @@ ScriptValue EventDataHelper::buildScriptValueFromParams(const std::map<std::stri
     return obj;
 }
 
+// W3C SCXML B.2: Recursive JSON → ScriptValue conversion
+static ScriptValue jsonToScriptValue(const json &j) {
+    if (j.is_null()) {
+        return ScriptNull{};
+    } else if (j.is_boolean()) {
+        return j.get<bool>();
+    } else if (j.is_number_integer()) {
+        return j.get<int64_t>();
+    } else if (j.is_number_float()) {
+        return j.get<double>();
+    } else if (j.is_string()) {
+        return j.get<std::string>();
+    } else if (j.is_array()) {
+        auto arr = std::make_shared<ScriptArray>();
+        for (const auto &elem : j) {
+            arr->elements.push_back(jsonToScriptValue(elem));
+        }
+        return arr;
+    } else if (j.is_object()) {
+        auto obj = std::make_shared<ScriptObject>();
+        for (auto &[key, val] : j.items()) {
+            obj->properties[key] = jsonToScriptValue(val);
+        }
+        return obj;
+    }
+    return ScriptUndefined{};
+}
+
+std::optional<ScriptValue> EventDataHelper::jsonStringToScriptValue(const std::string &jsonStr) {
+    // Skip non-JSON strings early to avoid exception overhead from nlohmann::json::parse
+    size_t pos = jsonStr.find_first_not_of(" \t\r\n");
+    if (pos == std::string::npos) {
+        return std::nullopt;
+    }
+    char first = jsonStr[pos];
+    if (first != '{' && first != '[' && first != '"' && first != 't' && first != 'f' && first != 'n' &&
+        !std::isdigit(first) && first != '-') {
+        return std::nullopt;
+    }
+
+    auto parsed = JsonUtils::parseJson(jsonStr);
+    if (!parsed.has_value()) {
+        return std::nullopt;
+    }
+    return jsonToScriptValue(parsed.value());
+}
+
 }  // namespace SCE

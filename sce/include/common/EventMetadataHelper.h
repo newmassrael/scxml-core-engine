@@ -17,6 +17,7 @@
 #pragma once
 
 #include "SCXMLTypes.h"
+#include "common/EventDataHelper.h"
 #include "core/StatePolicyConcepts.h"
 #include <string>
 
@@ -159,9 +160,13 @@ public:
             policy.pendingEventInvokeId_ = metadata.invokeId;
         }
 
-        // W3C SCXML 5.5: Set pending typed event data for engine-agnostic ScriptValue pipeline
+        // W3C SCXML B.2: Set typed event data — from explicit typedData or JSON parsing
         if constexpr (requires { policy.pendingEventTypedData_; }) {
-            policy.pendingEventTypedData_ = metadata.typedData;
+            if (metadata.typedData.has_value()) {
+                policy.pendingEventTypedData_ = metadata.typedData;
+            } else if (!metadata.data.empty()) {
+                policy.pendingEventTypedData_ = EventDataHelper::jsonStringToScriptValue(metadata.data);
+            }
         }
     }
 
