@@ -25,6 +25,15 @@ public:
     static void registerMetatable(lua_State *L);
 
     /**
+     * @brief Reset DOM binding state for engine reset/shutdown
+     *
+     * W3C SCXML B.2: Mirrors DOMBinding::resetClassId() for API consistency.
+     * Lua metatables are per-lua_State and auto-cleaned on lua_close(),
+     * so this is currently a no-op.
+     */
+    static void resetClassId();
+
+    /**
      * @brief Create a DOM userdata from XML content string and push onto Lua stack
      * @param L Lua state
      * @param xmlContent XML string to parse

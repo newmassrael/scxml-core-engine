@@ -522,8 +522,12 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
     output.reserve(result.size() * 2);
 
     size_t i = 0;
-    // Stack of brace depths where functions start
-    std::vector<int> funcStartDepths;
+    // Stack tracks brace depth and whether function is a JS constructor (uses this.)
+    struct FuncInfo {
+        int depth;
+        bool isConstructor;
+    };
+    std::vector<FuncInfo> funcStack;
     int braceDepth = 0;
 
     while (i < result.size()) {
@@ -551,11 +555,28 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
                 while (j < result.size() && std::isspace(result[j])) ++j;
 
                 if (j < result.size() && result[j] == '{') {
+                    // W3C SCXML 5.3: Detect JS constructor pattern (function body uses this.)
+                    // Scan function body for this. to inject Lua table creation/return
+                    bool isConstructor = false;
+                    int checkDepth = 1;
+                    for (size_t k = j + 1; k < result.size() && checkDepth > 0; ++k) {
+                        if (result[k] == '{') ++checkDepth;
+                        else if (result[k] == '}') --checkDepth;
+                        if (checkDepth > 0 && k + 5 <= result.size() &&
+                            result.substr(k, 5) == "this.") {
+                            isConstructor = true;
+                            break;
+                        }
+                    }
+
                     // Output: function name(params)  (without {)
-                    // Extract function header up to {
                     output += result.substr(funcStart, j - funcStart);
-                    output += ' '; // space instead of {
-                    funcStartDepths.push_back(braceDepth);
+                    if (isConstructor) {
+                        output += " local self = {} ";
+                    } else {
+                        output += ' ';
+                    }
+                    funcStack.push_back({braceDepth, isConstructor});
                     braceDepth++;
                     i = j + 1;
                     continue;
@@ -568,9 +589,13 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
             output += result[i];
         } else if (result[i] == '}') {
             braceDepth--;
-            if (!funcStartDepths.empty() && braceDepth == funcStartDepths.back()) {
-                output += " end";
-                funcStartDepths.pop_back();
+            if (!funcStack.empty() && braceDepth == funcStack.back().depth) {
+                if (funcStack.back().isConstructor) {
+                    output += " return self end";
+                } else {
+                    output += " end";
+                }
+                funcStack.pop_back();
             } else {
                 output += result[i];
             }

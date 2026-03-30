@@ -957,6 +957,12 @@ bool JSEngine::bindNativeObject(const std::string &sessionId, const std::string 
     JSValue global = JS_GetGlobalObject(ctx);
     JSValue obj = JS_NewObject(ctx);
 
+    if (JS_IsException(obj)) {
+        SCE_LOG_ERROR("JSEngine::bindNativeObject: Failed to create object '{}' in session '{}'", objectName, sessionId);
+        JS_FreeValue(ctx, global);
+        return false;
+    }
+
     for (const auto &[methodName, method] : methods) {
         // Store method with session ownership for lifetime management
         auto methodPtr = std::make_unique<NativeMethod>(method);
@@ -967,6 +973,15 @@ bool JSEngine::bindNativeObject(const std::string &sessionId, const std::string 
         JSValue ptrVal = JS_NewInt64(ctx, reinterpret_cast<int64_t>(rawPtr));
         JSValue func = JS_NewCFunctionData(ctx, bindNativeObjectCallback, 0, 0, 1, &ptrVal);
         JS_FreeValue(ctx, ptrVal);
+
+        if (JS_IsException(func)) {
+            SCE_LOG_ERROR("JSEngine::bindNativeObject: Failed to create function for method '{}' in session '{}'",
+                          methodName, sessionId);
+            JS_FreeValue(ctx, obj);
+            JS_FreeValue(ctx, global);
+            return false;
+        }
+
         JS_SetPropertyStr(ctx, obj, methodName.c_str(), func);
     }
 

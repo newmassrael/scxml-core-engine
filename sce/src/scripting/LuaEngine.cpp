@@ -101,6 +101,9 @@ void LuaEngine::shutdown() {
         observers_.clear();
     }
 
+    // W3C SCXML B.2: Reset DOM binding state (mirrors JSEngine::shutdown behavior)
+    LuaDOMBinding::resetClassId();
+
     initialized_ = false;
 }
 
@@ -602,15 +605,32 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
 
     int status = luaL_dostring(L, wrapped.c_str());
     if (status != LUA_OK) {
-        // Try without return (might be a statement like assignment)
-        lua_pop(L, 1); // Pop error message
-        status = luaL_dostring(L, luaExpr.c_str());
-        if (status != LUA_OK) {
-            std::string err = lua_tostring(L, -1);
-            lua_pop(L, 1);
-            return ScriptResult::createError(err);
+        std::string firstError = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
+        lua_pop(L, 1);
+
+        // W3C SCXML 5.9: Only try statement fallback for assignment-like expressions.
+        // Bare keywords like "return" are valid Lua chunks but invalid as JS expressions
+        // (JavaScript's eval("return") throws SyntaxError — W3C test 344).
+        bool looksLikeAssignment = false;
+        for (size_t i = 0; i < luaExpr.size(); ++i) {
+            if (luaExpr[i] == '=' &&
+                (i == 0 || (luaExpr[i - 1] != '~' && luaExpr[i - 1] != '<' &&
+                            luaExpr[i - 1] != '>' && luaExpr[i - 1] != '=')) &&
+                (i + 1 >= luaExpr.size() || luaExpr[i + 1] != '=')) {
+                looksLikeAssignment = true;
+                break;
+            }
         }
-        return ScriptResult::createSuccess(ScriptUndefined{});
+
+        if (looksLikeAssignment) {
+            status = luaL_dostring(L, luaExpr.c_str());
+            if (status == LUA_OK) {
+                return ScriptResult::createSuccess(ScriptUndefined{});
+            }
+            lua_pop(L, 1);
+        }
+
+        return ScriptResult::createError(firstError);
     }
 
     return luaResultToScriptResult(L, status);
@@ -960,6 +980,7 @@ bool LuaEngine::bindNativeObject(const std::string &sessionId, const std::string
     }
 
     lua_State *L = it->second->L;
+    int stackTop = lua_gettop(L);
 
     // Create a Lua table to represent the object
     lua_newtable(L);
@@ -1032,6 +1053,14 @@ bool LuaEngine::bindNativeObject(const std::string &sessionId, const std::string
 
         // Set the closure as a field on the table: obj[methodName] = closure
         lua_setfield(L, -2, methodName.c_str());
+
+        // Verify stack integrity after each method binding
+        if (lua_gettop(L) != stackTop + 1) {
+            SCE_LOG_ERROR("LuaEngine::bindNativeObject: Stack corruption after binding method '{}' for object '{}' in session '{}'",
+                          methodName, objectName, sessionId);
+            lua_settop(L, stackTop);
+            return false;
+        }
     }
 
     // Set the table as a global: _G[objectName] = obj
