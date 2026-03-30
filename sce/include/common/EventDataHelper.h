@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "SCXMLTypes.h"
 #include <map>
 #include <string>
 #include <vector>
@@ -59,6 +60,17 @@ public:
      * buildJsonFromParams(params) → {"data":["first","second"]}
      */
     static std::string buildJsonFromParams(const std::map<std::string, std::vector<std::string>> &params);
+
+    /**
+     * @brief Build ScriptValue object from typed params
+     *
+     * Engine-agnostic alternative to buildJsonFromParams. Creates a ScriptObject
+     * directly from typed param values, avoiding JSON serialization/deserialization.
+     *
+     * @param typedParams Map of param names to ScriptValue values
+     * @return ScriptValue containing a ScriptObject with param properties
+     */
+    static ScriptValue buildScriptValueFromParams(const std::map<std::string, ScriptValue> &typedParams);
 };
 
 }  // namespace SCE

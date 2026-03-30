@@ -25,4 +25,12 @@ std::string EventDataHelper::buildJsonFromParams(const std::map<std::string, std
     return JsonUtils::toCompactString(eventDataJson);
 }
 
+ScriptValue EventDataHelper::buildScriptValueFromParams(const std::map<std::string, ScriptValue> &typedParams) {
+    auto obj = std::make_shared<ScriptObject>();
+    for (const auto &[name, value] : typedParams) {
+        obj->properties[name] = value;
+    }
+    return obj;
+}
+
 }  // namespace SCE

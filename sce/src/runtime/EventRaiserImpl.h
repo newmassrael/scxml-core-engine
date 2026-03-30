@@ -1,12 +1,14 @@
 #pragma once
 
 #include "IEventRaiser.h"
+#include "SCXMLTypes.h"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <queue>
 
 namespace SCE {
@@ -59,13 +61,16 @@ public:
         std::string originType;  // W3C SCXML 5.10.1: _event.origintype - event processor type
         std::chrono::steady_clock::time_point timestamp;
         EventPriority priority;
+        std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
 
         QueuedEvent(const std::string &name, const std::string &data, EventPriority prio = EventPriority::INTERNAL,
                     const std::string &originSessionId = "", const std::string &sid = "", const std::string &iid = "",
                     const std::string &otype = "",
-                    std::chrono::steady_clock::time_point ts = std::chrono::steady_clock::time_point())
+                    std::chrono::steady_clock::time_point ts = std::chrono::steady_clock::time_point(),
+                    std::optional<ScriptValue> typed = std::nullopt)
             : eventName(name), eventData(data), origin(originSessionId), sendId(sid), invokeId(iid), originType(otype),
-              timestamp(ts.time_since_epoch().count() > 0 ? ts : std::chrono::steady_clock::now()), priority(prio) {}
+              timestamp(ts.time_since_epoch().count() > 0 ? ts : std::chrono::steady_clock::now()), priority(prio),
+              typedData(std::move(typed)) {}
     };
 
     /**
@@ -236,7 +241,8 @@ public:
     bool raiseEventWithPriority(const std::string &eventName, const std::string &eventData, EventPriority priority,
                                 const std::string &originSessionId = "", const std::string &sendId = "",
                                 const std::string &invokeId = "", const std::string &originType = "",
-                                int64_t timestampNs = 0);
+                                int64_t timestampNs = 0,
+                                std::optional<ScriptValue> typedData = std::nullopt);
 
 private:
     /**
@@ -277,6 +283,9 @@ private:
 
     // W3C SCXML 5.10: Thread-local storage for event type ("internal", "platform", "external") (test 331)
     static thread_local std::string currentEventType_;
+
+    // W3C SCXML 5.10: Thread-local storage for typed event data (engine-agnostic)
+    static thread_local std::optional<ScriptValue> currentTypedData_;
 
 public:
     /**
@@ -322,6 +331,15 @@ public:
      */
     static std::string getCurrentEventType() {
         return currentEventType_;
+    }
+
+    /**
+     * @brief Get current typed event data (for engine-agnostic _event.data)
+     * When present, engines should use this instead of parsing eventData JSON string.
+     * @return Typed data if set, std::nullopt otherwise
+     */
+    static const std::optional<ScriptValue> &getCurrentTypedData() {
+        return currentTypedData_;
     }
 
     mutable std::mutex callbackMutex_;

@@ -1,9 +1,11 @@
 #include "events/ParentEventTarget.h"
+#include "common/EventDataHelper.h"
 #include "runtime/JsonUtils.h"
 #include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"
+#include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
 #include "scripting/SessionRegistry.h"
 #include <sstream>
@@ -143,8 +145,23 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
         SCE_LOG_DEBUG("ParentEventTarget::sendImmediately() - Calling parent EventRaiser->raiseEvent('{}', '{}', origin: "
                   "'{}', invokeId: '{}', originType: '{}')",
                   eventName, eventData, actualChildSessionId, invokeId, originType);
-        bool raiseResult =
-            parentEventRaiser->raiseEvent(eventName, eventData, actualChildSessionId, invokeId, originType);
+        // Build typed event data from typedParams if available (engine-agnostic pipeline)
+        std::optional<ScriptValue> typedData;
+        if (!event.typedParams.empty()) {
+            typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
+        }
+
+        bool raiseResult = false;
+        // Try to use raiseEventWithPriority for typed data support
+        auto *eventRaiserImpl = dynamic_cast<EventRaiserImpl *>(parentEventRaiser.get());
+        if (eventRaiserImpl && typedData.has_value()) {
+            raiseResult = eventRaiserImpl->raiseEventWithPriority(
+                eventName, eventData, EventRaiserImpl::EventPriority::EXTERNAL,
+                actualChildSessionId, "", invokeId, originType, 0, std::move(typedData));
+        } else {
+            raiseResult =
+                parentEventRaiser->raiseEvent(eventName, eventData, actualChildSessionId, invokeId, originType);
+        }
         SCE_LOG_DEBUG("ParentEventTarget::sendImmediately() - parent EventRaiser->raiseEvent() returned: {}", raiseResult);
 
         SCE_LOG_DEBUG("ParentEventTarget: Successfully routed event '{}' to parent session '{}'", eventName,

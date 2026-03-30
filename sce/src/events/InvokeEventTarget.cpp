@@ -1,8 +1,10 @@
 #include "events/InvokeEventTarget.h"
+#include "common/EventDataHelper.h"
 #include "runtime/JsonUtils.h"
 #include "core/LogMacros.h"
 #include "common/SCXMLConstants.h"
 #include "events/EventRaiserService.h"
+#include "runtime/EventRaiserImpl.h"
 #include "runtime/IEventRaiser.h"
 #include "scripting/SessionRegistry.h"
 #include <sstream>
@@ -88,7 +90,21 @@ std::future<SendResult> InvokeEventTarget::send(const EventDescriptor &event) {
         SCE_LOG_DEBUG("InvokeEventTarget::send() - Calling eventRaiser->raiseEvent('{}', '{}', origin: '{}', invokeId: "
                   "'{}', originType: '{}')",
                   eventName, eventData, parentSessionId_, invokeId_, originType);
-        bool raiseResult = eventRaiser->raiseEvent(eventName, eventData, parentSessionId_, invokeId_, originType);
+        // Build typed event data from typedParams if available (engine-agnostic pipeline)
+        std::optional<ScriptValue> typedData;
+        if (!event.typedParams.empty()) {
+            typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
+        }
+
+        bool raiseResult = false;
+        auto *eventRaiserImpl = dynamic_cast<EventRaiserImpl *>(eventRaiser.get());
+        if (eventRaiserImpl && typedData.has_value()) {
+            raiseResult = eventRaiserImpl->raiseEventWithPriority(
+                eventName, eventData, EventRaiserImpl::EventPriority::EXTERNAL,
+                parentSessionId_, "", invokeId_, originType, 0, std::move(typedData));
+        } else {
+            raiseResult = eventRaiser->raiseEvent(eventName, eventData, parentSessionId_, invokeId_, originType);
+        }
         SCE_LOG_DEBUG("InvokeEventTarget::send() - eventRaiser->raiseEvent() returned: {}", raiseResult);
 
         if (!raiseResult) {

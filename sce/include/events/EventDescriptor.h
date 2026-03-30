@@ -1,7 +1,9 @@
 #pragma once
 
+#include "SCXMLTypes.h"
 #include <chrono>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -22,6 +24,7 @@ struct EventDescriptor {
     std::string type = "scxml";                              // Event type (scxml, platform, etc.)
     std::chrono::milliseconds delay{0};                      // Delivery delay
     std::map<std::string, std::vector<std::string>> params;  // Additional parameters (W3C: supports duplicate names)
+    std::map<std::string, ScriptValue> typedParams;          // Typed params preserving ScriptValue (engine-agnostic)
     std::string content;                                     // W3C SCXML C.2: Content for HTTP body
 
     // W3C SCXML 3.13: Logical execution time for MANUAL mode FIFO preservation (visualizer stepping)

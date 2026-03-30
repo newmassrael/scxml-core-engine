@@ -116,7 +116,8 @@ private:
     std::string currentSendId_;           // W3C SCXML 5.10.1: _event.sendid from send element
     std::string currentInvokeId_;         // W3C SCXML 5.10.1: _event.invokeid from invoked child process
     std::string currentOriginType_;       // W3C SCXML 5.10.1: _event.origintype from event processor
-    std::string currentOriginSessionId_;  // W3C SCXML 5.10.1: _event.origin session ID
+    std::string currentOriginSessionId_;               // W3C SCXML 5.10.1: _event.origin session ID
+    std::optional<ScriptValue> currentTypedData_;      // W3C SCXML 5.10: Typed event data (engine-agnostic)
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
 

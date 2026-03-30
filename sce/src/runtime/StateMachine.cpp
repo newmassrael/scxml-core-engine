@@ -577,6 +577,8 @@ StateMachine::TransitionResult StateMachine::processEvent(const std::string &eve
 
     // W3C SCXML 5.10: Protect _event during nested event processing with RAII guard (Test 230)
     EventMetadata currentEventMetadata(eventName, eventData, eventType, sendId, invokeId, originType, originSessionId);
+    // W3C SCXML 5.10: Carry typed event data from EventRaiser thread-local (avoids JSON round-trip)
+    currentEventMetadata.typedData = EventRaiserImpl::getCurrentTypedData();
     EventContextGuard eventContextGuard(cachedExecutorImpl_, currentEventMetadata);
 
     // Count this event

@@ -330,6 +330,7 @@ void ActionExecutorImpl::setCurrentEvent(const EventMetadata &metadata) {
     currentInvokeId_ = metadata.invokeId;
     currentOriginType_ = metadata.originType;
     currentOriginSessionId_ = metadata.originSessionId;
+    currentTypedData_ = metadata.typedData;
 
     // W3C SCXML 5.10.1: Auto-detect event type if not provided
     // ARCHITECTURE.md: Zero Duplication - Uses EventTypeHelper for Single Source of Truth
@@ -463,6 +464,11 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
         if (!currentEventData_.empty()) {
             // Set raw JSON data for the new architecture
             event->setRawJsonData(currentEventData_);
+        }
+
+        // W3C SCXML 5.10: Set typed event data if available (engine-agnostic, avoids JSON round-trip)
+        if (currentTypedData_.has_value()) {
+            event->setTypedData(currentTypedData_.value());
         }
 
         // W3C SCXML 5.10: Set event metadata using EventMetadataHelper (Single Source of Truth)
@@ -828,6 +834,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
 
         // Step 2: Evaluate param elements (W3C SCXML Test 186, 354)
         // Note: params can override namelist values (evaluated after namelist)
+        std::map<std::string, ScriptValue> typedParams;
         const auto &params = action.getParamsWithExpr();
         if (!params.empty()) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Evaluating {} param elements", params.size());
@@ -836,9 +843,15 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             for (const auto &param : params) {
                 paramCount++;
                 try {
-                    std::string paramValue = evaluateExpression(param.expr);
+                    // Evaluate and preserve both string (for JSON serialization) and ScriptValue (for typed pipeline)
+                    auto evalResult = scriptEngine_.evaluateExpression(sessionId_, param.expr).get();
+                    std::string paramValue = ScriptResultUtils::resultToString(evalResult, &scriptEngine_, sessionId_, param.expr);
                     evaluatedParams[param.name].push_back(
                         paramValue);  // W3C SCXML: Support duplicate param names (Test 178)
+                    // Preserve ScriptValue for engine-agnostic typed data pipeline
+                    if (evalResult.isSuccess()) {
+                        typedParams[param.name] = evalResult.getInternalValue();
+                    }
                     SCE_LOG_DEBUG("ActionExecutorImpl: Param[{}] {}={} (expr: '{}')", paramCount, param.name, paramValue,
                               param.expr);
                 } catch (const std::exception &e) {
@@ -875,7 +888,8 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             event.delay = delay;
             event.sendId = sendId;
             event.sessionId = sessionId_;    // W3C SCXML 6.2: Track session for delayed event cancellation
-            event.params = evaluatedParams;  // W3C SCXML compliant: params evaluated at send time
+            event.params = evaluatedParams;        // W3C SCXML compliant: params evaluated at send time
+            event.typedParams = typedParams;       // Engine-agnostic typed params (avoids JSON round-trip)
             // W3C SCXML C.2: Set content for HTTP body
             event.content = action.getContent();
             // W3C SCXML 5.10: Set event type for origintype field (test 253, 331, 352, 372)

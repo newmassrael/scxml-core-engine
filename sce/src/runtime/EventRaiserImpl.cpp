@@ -24,6 +24,9 @@ thread_local std::string EventRaiserImpl::currentOriginType_;
 // W3C SCXML 5.10: Thread-local storage for event type ("internal", "platform", "external") (test 331)
 thread_local std::string EventRaiserImpl::currentEventType_;
 
+// W3C SCXML 5.10: Thread-local storage for typed event data (engine-agnostic)
+thread_local std::optional<ScriptValue> EventRaiserImpl::currentTypedData_;
+
 EventRaiserImpl::EventRaiserImpl(EventCallback callback)
     : eventCallback_(std::move(callback)), scheduler_(nullptr), shutdownRequested_(false), isRunning_(false),
       immediateMode_(false) {
@@ -221,7 +224,8 @@ bool EventRaiserImpl::raiseEvent(const std::string &eventName, const std::string
 bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const std::string &eventData,
                                              EventPriority priority, const std::string &originSessionId,
                                              const std::string &sendId, const std::string &invokeId,
-                                             const std::string &originType, int64_t timestampNs) {
+                                             const std::string &originType, int64_t timestampNs,
+                                             std::optional<ScriptValue> typedData) {
     SCE_LOG_INFO("[EVENT ROUTING] EventRaiser::raiseEventWithPriority() ENTRY - event='{}', priority={}, isRunning={}, "
              "immediateMode={}, EventRaiser instance={}",
              eventName, (priority == EventPriority::INTERNAL ? "INTERNAL" : "EXTERNAL"), isRunning_.load(),
@@ -331,7 +335,7 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
         }
 
         synchronousQueue_.emplace(eventName, eventData, priority, originSessionId, sendId, invokeId, originType,
-                                  timestamp);
+                                  timestamp, std::move(typedData));
 
         // Enhanced logging: explain why event was queued instead of processed immediately
         std::string reason = "immediateMode disabled";
@@ -566,6 +570,9 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         bool isExternal = (event.priority == EventPriority::EXTERNAL);
         currentEventType_ = EventTypeHelper::classifyEventType(event.eventName, isExternal);
 
+        // W3C SCXML 5.10: Store typed event data in thread-local for engine-agnostic consumption
+        currentTypedData_ = event.typedData;
+
         // W3C SCXML 3.13: Store last processed event for time-travel debugging
         {
             std::lock_guard<std::mutex> lock(lastProcessedEventMutex_);
@@ -581,6 +588,7 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         currentInvokeId_.clear();
         currentOriginType_.clear();
         currentEventType_.clear();
+        currentTypedData_.reset();
         SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
         return result;  // Return actual callback result (transition success/failure)
     } catch (const std::exception &e) {
@@ -590,6 +598,7 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         currentInvokeId_.clear();
         currentOriginType_.clear();
         currentEventType_.clear();
+        currentTypedData_.reset();
         return false;
     }
 }

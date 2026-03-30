@@ -1,5 +1,7 @@
 #pragma once
 
+#include "SCXMLTypes.h"
+#include <optional>
 #include <string>
 
 namespace SCE::Core {
@@ -30,7 +32,8 @@ struct EventMetadata {
     std::string sendId;           ///< Send ID from <send> element
     std::string invokeId;         ///< Invoke ID from <invoke> element
     std::string originType;       ///< Origin event processor type
-    std::string originSessionId;  ///< Origin session ID for _event.origin
+    std::string originSessionId;              ///< Origin session ID for _event.origin
+    std::optional<ScriptValue> typedData;     ///< Typed event data (engine-agnostic, avoids JSON round-trip)
 
     /**
      * @brief Construct minimal event metadata with name and data

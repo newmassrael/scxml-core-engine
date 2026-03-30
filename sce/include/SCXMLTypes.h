@@ -159,7 +159,7 @@ public:
 
     // Event data management - Enhanced version with raw JSON support
     bool hasData() const {
-        return rawJsonData_.has_value() || !dataString_.empty();
+        return typedData_.has_value() || rawJsonData_.has_value() || !dataString_.empty();
     }
 
     void setData(const std::string &data) {
@@ -181,6 +181,21 @@ public:
         return dataString_.empty() ? "null" : dataString_;
     }
 
+    // W3C SCXML 5.10: Typed event data for engine-agnostic consumption
+    // When present, engines use this directly instead of parsing JSON strings.
+    // Coexists with string data for backward compatibility and cross-process serialization.
+    void setTypedData(const ScriptValue &data) {
+        typedData_ = data;
+    }
+
+    bool hasTypedData() const {
+        return typedData_.has_value();
+    }
+
+    const std::optional<ScriptValue> &getTypedData() const {
+        return typedData_;
+    }
+
 private:
     std::string name_;
     std::string type_;
@@ -189,7 +204,8 @@ private:
     std::string originType_;
     std::string invokeId_;
     std::string dataString_;
-    mutable std::optional<std::string> rawJsonData_;  // Raw JSON storage
+    mutable std::optional<std::string> rawJsonData_;   // Raw JSON storage
+    std::optional<ScriptValue> typedData_;              // Typed data (engine-agnostic)
 };
 
 /**

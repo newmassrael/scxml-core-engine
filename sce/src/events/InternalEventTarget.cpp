@@ -70,8 +70,14 @@ std::future<SendResult> InternalEventTarget::send(const EventDescriptor &event) 
                       "originSessionId='{}', sendid='{}', origintype='{}', logicalTime={}ms, timestampNs={})",
                       eventName, eventData, (isExternal_ ? "EXTERNAL" : "INTERNAL"), sessionId_, event.sendId,
                       originType, event.logicalExecuteTime.count(), timestampNs);
+            // Build typed event data from typedParams if available (engine-agnostic pipeline)
+            std::optional<ScriptValue> typedData;
+            if (!event.typedParams.empty()) {
+                typedData = EventDataHelper::buildScriptValueFromParams(event.typedParams);
+            }
             queueSuccess = eventRaiserImpl->raiseEventWithPriority(eventName, eventData, priority, sessionId_,
-                                                                   event.sendId, "", originType, timestampNs);
+                                                                   event.sendId, "", originType, timestampNs,
+                                                                   std::move(typedData));
         } else {
             // Fallback: Use new 5-parameter raiseEvent with origintype
             SCE_LOG_DEBUG("InternalEventTarget::send() - Calling eventRaiser_->raiseEvent('{}', '{}', sendid='{}', "
