@@ -562,8 +562,10 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
                     for (size_t k = j + 1; k < result.size() && checkDepth > 0; ++k) {
                         if (result[k] == '{') ++checkDepth;
                         else if (result[k] == '}') --checkDepth;
-                        if (checkDepth > 0 && k + 5 <= result.size() &&
-                            result.substr(k, 5) == "this.") {
+                        // Only match this. at immediate function body level (depth 1),
+                        // not inside nested functions which have their own this context
+                        if (checkDepth == 1 && k + 5 <= result.size() &&
+                            result.compare(k, 5, "this.") == 0) {
                             isConstructor = true;
                             break;
                         }
