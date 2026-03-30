@@ -2,12 +2,12 @@
 {% if action.is_pure_in_predicate %}
 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
 if ({{ action.cond_cpp }}) [[likely]] {
-{% elif model.needs_jsengine %}
+{% elif model.needs_script_engine %}
 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
 // Use safeEvaluateGuard for std::optional<bool> handling and error.execution support
-this->ensureJSEngine();
-auto& jsEngine = getScriptEngine();
-if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}", engine)) [[likely]] {
+this->ensureScriptEngine();
+auto& scriptEngine = getScriptEngine();
+if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ action.cond | escape_cpp }}", engine)) [[likely]] {
 {% else %}
 if ({{ action.cond }}) [[likely]] {
 {% endif %}
@@ -17,7 +17,7 @@ if ({{ action.cond }}) [[likely]] {
     {% endwith %}
     {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if ({% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_jsengine %}this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ elseif.cond | escape_cpp }}", engine){% else %}{{ elseif.cond }}{% endif %}) {
+} else if ({% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp }}{% elif model.needs_script_engine %}this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ elseif.cond | escape_cpp }}", engine){% else %}{{ elseif.cond }}{% endif %}) {
     {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' + elseif_action.type + '.jinja2' %}

@@ -125,10 +125,10 @@
     // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ via tryTransitionInState)
     [[gnu::hot]]
     bool processTransition(State& currentState, [[maybe_unused]] Event event, [[maybe_unused]] Engine& engine) {
-{%- if model.needs_jsengine %}
+{%- if model.needs_script_engine %}
         // W3C SCXML 5.3: Ensure JSEngine initialized (lazy init for runtime operations)
         // Note: Datamodel initialization happens in StaticExecutionEngine::initialize()
-        this->ensureJSEngine();
+        this->ensureScriptEngine();
 {%- endif %}
 {# W3C SCXML 5.10: Event data for scheduled events handled via EventWithMetadata #}
 {# scheduledEventData_ map retrieval removed - engine.tick() passes eventData through raiseExternal() #}
@@ -146,7 +146,7 @@
             AOT_DEBUG("AOT processTransition: Set pendingEventName='{}', pendingEventType='{}'", pendingEventName_, pendingEventType_);
         }
 {%- endif %}
-{%- if model.needs_jsengine and (model.needs_event_name or model.needs_event_data or model.needs_event_origin) %}
+{%- if model.needs_script_engine and (model.needs_event_name or model.needs_event_data or model.needs_event_origin) %}
 
 
         // W3C SCXML 5.10: Set _event variable in JSEngine
@@ -155,9 +155,9 @@
             AOT_DEBUG("AOT processTransition: Setting _event (name='{}', data='{}', type='{}', sendId='{}', origin='{}', invokeId='{}')",
                       pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventInvokeId_);
 {% if model.needs_event_data %}
-            setCurrentEventInJSEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_, pendingEventTypedData_);
+            setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_, pendingEventTypedData_);
 {% else %}
-            setCurrentEventInJSEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_);
+            setCurrentEventInScriptEngine(pendingEventName_, pendingEventData_, pendingEventType_, pendingEventSendId_, pendingEventOrigin_, pendingEventOriginType_, pendingEventInvokeId_);
 {% endif %}
         }
 {%- endif %}
@@ -567,9 +567,9 @@ private:
                 {{ model.name }}Policy::getEventName(event), "{{ trans.event }}")) {
 {% endif %}
 {# Initialize JSEngine if needed (only once per transition) #}
-{% if model.needs_jsengine %}
-                this->ensureJSEngine();
-                [[maybe_unused]] auto& jsEngine = getScriptEngine();
+{% if model.needs_script_engine %}
+                this->ensureScriptEngine();
+                [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
 {# Process single transition with its condition #}
 {% if trans.cond %}
@@ -579,9 +579,9 @@ private:
 {% elif trans.is_pure_in_predicate %}
                 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
                 if ({{ trans.cond_cpp }}) [[likely]] {
-{% elif model.needs_jsengine %}
+{% elif model.needs_script_engine %}
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ trans.cond | escape_cpp }}", engine)) [[likely]] {
+                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ trans.cond | escape_cpp }}", engine)) [[likely]] {
 {% else %}
                 if ({{ trans.cond }}) [[likely]] {
 {% endif %}
@@ -629,11 +629,11 @@ private:
 {% endif %}
 {% endfor %}
 {% if has_any_guard.value %}
-{% set first_uses_jsengine = eventless_transitions[0].cond and model.needs_jsengine %}
-{% if first_uses_jsengine %}
+{% set first_uses_script_engine = eventless_transitions[0].cond and model.needs_script_engine %}
+{% if first_uses_script_engine %}
             {
-                this->ensureJSEngine();
-                [[maybe_unused]] auto& jsEngine = getScriptEngine();
+                this->ensureScriptEngine();
+                [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
 {% set first_trans = namespace(value=True) %}
 {% for transition in eventless_transitions %}
@@ -645,9 +645,9 @@ private:
 {% elif transition.is_pure_in_predicate %}
                 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
                 if ({{ transition.cond_cpp }}) {
-{% elif model.needs_jsengine %}
+{% elif model.needs_script_engine %}
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ transition.cond | escape_cpp }}", engine)) {
+                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ transition.cond | escape_cpp }}", engine)) {
 {% else %}
             if ({{ transition.cond }}) {
 {% endif %}
@@ -659,9 +659,9 @@ private:
 {% elif transition.is_pure_in_predicate %}
                 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
                 } else if ({{ transition.cond_cpp }}) {
-{% elif model.needs_jsengine and first_uses_jsengine %}
+{% elif model.needs_script_engine and first_uses_script_engine %}
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                } else if (this->safeEvaluateGuard(jsEngine, sessionId_.value(), "{{ transition.cond | escape_cpp }}", engine)) {
+                } else if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ transition.cond | escape_cpp }}", engine)) {
 {% else %}
             } else if ({{ transition.cond }}) {
 {% endif %}
@@ -687,7 +687,7 @@ private:
                     return true;  // Eventless transition found
 {% endfor %}
 {% if eventless_transitions[0].cond %}
-{% if model.needs_jsengine %}
+{% if model.needs_script_engine %}
                 }
             }
 {% else %}
@@ -746,9 +746,9 @@ public:
                 case {{ loop.index0 }}:  // Transition {{ loop.index0 }}
                     {
                         AOT_DEBUG("AOT executeTransitionActions: Executing transition {{ loop.index0 }} actions");
-{% if model.needs_jsengine %}
-                        this->ensureJSEngine();
-                        [[maybe_unused]] auto& jsEngine = getScriptEngine();
+{% if model.needs_script_engine %}
+                        this->ensureScriptEngine();
+                        [[maybe_unused]] auto& scriptEngine = getScriptEngine();
 {% endif %}
 {% for action in trans.actions %}
 {% include 'actions/' + action.type + '.jinja2' %}

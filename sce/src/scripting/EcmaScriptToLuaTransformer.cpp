@@ -368,6 +368,73 @@ std::string EcmaScriptToLuaTransformer::transformOperators(const std::string &in
         result = std::move(temp);
     }
 
+    // W3C SCXML B.2 (test 459): Parenthesize operands of bitwise OR/AND/XOR
+    // ECMAScript: comparison (==, !=) binds tighter than bitwise (|, &, ^)
+    // Lua 5.4: bitwise (|, &, ^) binds tighter than comparison (==, ~=)
+    // Fix: wrap each operand of |, &, ^ in parentheses to preserve JS semantics
+    result = parenthesizeBitwiseOperands(result);
+
+    return result;
+}
+
+std::string EcmaScriptToLuaTransformer::parenthesizeBitwiseOperands(const std::string &input) const {
+    // Check if expression contains bitwise operators at all
+    bool hasBitwise = false;
+    for (size_t i = 0; i < input.size(); ++i) {
+        char c = input[i];
+        if (c == '|' || c == '&' || c == '^') {
+            // Ensure it's not || (already converted to 'or') or && (already converted to 'and')
+            // At this point || and && have been replaced, so single | & ^ are bitwise
+            hasBitwise = true;
+            break;
+        }
+    }
+    if (!hasBitwise) return input;
+
+    // Check if any comparison operators exist (==, ~=, <, >, <=, >=)
+    bool hasComparison = (input.find("==") != std::string::npos ||
+                          input.find("~=") != std::string::npos ||
+                          input.find("<=") != std::string::npos ||
+                          input.find(">=") != std::string::npos);
+    if (!hasComparison) {
+        // Check standalone < > (not part of <= >=)
+        for (size_t i = 0; i < input.size(); ++i) {
+            if ((input[i] == '<' || input[i] == '>') &&
+                (i + 1 >= input.size() || input[i + 1] != '=')) {
+                hasComparison = true;
+                break;
+            }
+        }
+    }
+    if (!hasComparison) return input;
+
+    // Split on bitwise operators and parenthesize each operand
+    std::string result;
+    result.reserve(input.size() + 16);
+    size_t start = 0;
+    for (size_t i = 0; i < input.size(); ++i) {
+        char c = input[i];
+        if (c == '|' || c == '&' || c == '^') {
+            std::string operand = input.substr(start, i - start);
+            // Trim whitespace
+            size_t os = operand.find_first_not_of(" \t");
+            size_t oe = operand.find_last_not_of(" \t");
+            if (os != std::string::npos) {
+                operand = operand.substr(os, oe - os + 1);
+            }
+            result += "(" + operand + ") " + c + " ";
+            start = i + 1;
+        }
+    }
+    // Last operand
+    std::string lastOp = input.substr(start);
+    size_t os = lastOp.find_first_not_of(" \t");
+    size_t oe = lastOp.find_last_not_of(" \t");
+    if (os != std::string::npos) {
+        lastOp = lastOp.substr(os, oe - os + 1);
+    }
+    result += "(" + lastOp + ")";
+
     return result;
 }
 

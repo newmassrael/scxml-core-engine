@@ -2059,7 +2059,7 @@ TestReport W3CTestRunner::runAotTest(int testId) {
         report.timestamp = std::chrono::system_clock::now();
         report.testId = std::to_string(testId);
         report.engineType = "aot";
-        report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_JSENGINE
+        report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_SCRIPT_ENGINE
 
         // Start log capture for failure diagnostics
         if (!failedLogDir_.empty()) {
@@ -2209,7 +2209,7 @@ TestReport W3CTestRunner::runAotTest(const std::string &testId) {
         report.timestamp = std::chrono::system_clock::now();
         report.testId = testId;
         report.engineType = "aot";
-        report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_JSENGINE
+        report.testType = registryTest->getTestType();  // pure_static or static_hybrid based on Policy::NEEDS_SCRIPT_ENGINE
 
         // Start log capture for failure diagnostics
         if (!failedLogDir_.empty()) {

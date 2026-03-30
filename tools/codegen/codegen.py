@@ -141,8 +141,8 @@ class CodeGenerator:
                 self._analyze_action(action, model)
 
         # Detect event metadata needs
-        if model.needs_jsengine:
-            # If JSEngine is used, need all event metadata fields for setCurrentEventInJSEngine
+        if model.needs_script_engine:
+            # If script engine is used, need all event metadata fields for setCurrentEventInScriptEngine
             model.needs_event_name = True
             model.needs_event_data = True
             model.needs_event_type = True
@@ -168,7 +168,7 @@ class CodeGenerator:
                 model.events.add('error.execution')
                 # Donedata needs JSEngine for param/content expression evaluation
                 if state.donedata.get('params') or state.donedata.get('contentexpr'):
-                    model.needs_jsengine = True
+                    model.needs_script_engine = True
                 break
 
     def _analyze_action(self, action, model):
@@ -249,7 +249,7 @@ class CodeGenerator:
             else:
                 # Complex expression, needs JSEngine
                 var['type'] = 'runtime'
-                model.needs_jsengine = True
+                model.needs_script_engine = True
 
     def generate(self, scxml_path: str, output_dir: str, as_child: bool = False, depfile_path: str = None) -> bool:
         """
@@ -286,7 +286,7 @@ class CodeGenerator:
             print(f"Generating code for: {model.name}")
             print(f"  States: {len(model.states)}")
             print(f"  Events: {len(model.events)}")
-            print(f"  Needs JSEngine: {model.needs_jsengine}")
+            print(f"  Needs ScriptEngine: {model.needs_script_engine}")
 
             # Classify variables
             self._classify_variables(model)

@@ -1,17 +1,18 @@
 #pragma once
 
 /**
- * @brief QuickJS-specific bindObject template implementation
+ * @brief Engine-agnostic bindObject template implementation
  *
- * Isolated from StateMachine.h to contain QuickJS dependency (JSContext, ClassBinding).
- * Include this header explicitly when using StateMachine::bindObject() with ClassBinder API.
- * Not auto-included from StateMachine.h to avoid coupling all users to JSEngine/QuickJS headers.
+ * Uses GenericClassBinder<T> with IScriptEngine::bindNativeObject() to support
+ * any script engine (QuickJS, Lua, etc.) through the ScriptEngineProvider.
  *
- * When replacing QuickJS with another engine (e.g., Lua), only this file needs to change.
+ * Include this header explicitly when using StateMachine::bindObject() with class binding API.
+ * Not auto-included from StateMachine.h to avoid coupling all users to scripting headers.
+ *
+ * ClassBinding.h (QuickJS-specific ClassBinder<T>) remains available for direct QuickJS use.
  */
 
-#include "scripting/ClassBinding.h"
-#include "scripting/JSEngine.h"
+#include "scripting/GenericClassBinder.h"
 
 namespace SCE {
 
@@ -21,28 +22,18 @@ void StateMachine::bindObject(const std::string &name, T *object, RegisterFunc r
 
     // Ensure script environment is initialized
     if (!ensureJSEnvironment()) {
-        SCE_LOG_ERROR("StateMachine::bindObject: Failed to initialize JS environment");
+        SCE_LOG_ERROR("StateMachine::bindObject: Failed to initialize script environment");
         return;
     }
 
-    // Get QuickJS context via JSEngine (QuickJS-specific: requires concrete engine access)
-    JSContext *ctx = JSEngine::instance().getContextForBinding(sessionId_);
-    if (!ctx) {
-        SCE_LOG_ERROR("StateMachine::bindObject: Failed to get JSContext for session {}", sessionId_);
-        return;
-    }
-
-    // Create binder and register methods via callback
-    ClassBinder<T> binder(ctx, name, object);
+    // Create engine-agnostic binder and collect methods via callback
+    GenericClassBinder<T> binder(name, object);
     registerMethods(binder);
 
-    // Finalize and register to JavaScript global object
-    JSValue jsObject = binder.finalize();
-    JSValue global = JS_GetGlobalObject(ctx);
-    JS_SetPropertyStr(ctx, global, name.c_str(), jsObject);  // Takes ownership of jsObject
-    JS_FreeValue(ctx, global);
-
-    SCE_LOG_DEBUG("StateMachine::bindObject: Bound object '{}' to JavaScript", name);
+    // Bind through the StateMachine's injected script engine (QuickJS, Lua, etc.)
+    if (!scriptEngine_.bindNativeObject(sessionId_, name, binder.getMethods())) {
+        SCE_LOG_ERROR("StateMachine::bindObject: Failed to bind object '{}' in session '{}'", name, sessionId_);
+    }
 }
 
 }  // namespace SCE

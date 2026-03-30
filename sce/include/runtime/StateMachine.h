@@ -321,18 +321,17 @@ public:
     bool isInitialStateFinal() const;
 
     /**
-     * @brief Bind C++ object for JavaScript access (simple registerGlobalFunction approach)
-     * @param name Object name in JavaScript
-     * @param object Pointer to C++ object
-     * @param registerMethods Callback to register methods as global functions
+     * @brief Bind C++ object for script engine access (engine-agnostic via GenericClassBinder)
+     * @param name Object name in script scope
+     * @param object Pointer to C++ object (must outlive the script engine session)
+     * @param registerMethods Callback to register methods via GenericClassBinder
      *
      * Example:
      * @code
      * Hardware hw;
-     * sm.bindObject("hardware", &hw, [&hw](auto& sm) {
-     *     sm.registerGlobalFunction("hardware.getTemperature", [&hw](auto&) {
-     *         return ScriptValue(hw.getTemperature());
-     *     });
+     * sm.bindObject("hardware", &hw, [](auto& binder) {
+     *     binder.def("getTemperature", &Hardware::getTemperature)
+     *           .def("setTemperature", &Hardware::setTemperature);
      * });
      * @endcode
      */
@@ -775,6 +774,6 @@ private:
 
 }  // namespace SCE
 
-// QuickJS-specific bindObject template implementation
-// Include StateMachineBindObject.h explicitly when using bindObject() with ClassBinder API.
-// Not auto-included to avoid coupling all StateMachine users to JSEngine/QuickJS headers.
+// Engine-agnostic bindObject template implementation
+// Include StateMachineBindObject.h explicitly when using bindObject() with GenericClassBinder API.
+// Not auto-included to avoid coupling all StateMachine users to scripting headers.

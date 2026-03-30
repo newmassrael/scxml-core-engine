@@ -42,6 +42,12 @@ std::string resultToString(const ScriptResult &result, IScriptEngine *engine, co
         return std::to_string(result.getValue<int64_t>());
     } else if (std::holds_alternative<bool>(value)) {
         return result.getValue<bool>() ? "true" : "false";
+    } else if (std::holds_alternative<ScriptUndefined>(value)) {
+        // W3C SCXML C.1: undefined evaluates to empty string for target expressions
+        // Ensures isUnreachableTarget() works correctly across all script engines
+        return "";
+    } else if (std::holds_alternative<ScriptNull>(value)) {
+        return "";
     } else if (engine && !sessionId.empty() && !originalExpression.empty()) {
         // JSON.stringify fallback using provided engine
         std::string stringifyExpr = "JSON.stringify(" + originalExpression + ")";

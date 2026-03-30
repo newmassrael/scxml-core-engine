@@ -1,5 +1,5 @@
 #include "runtime/StateMachine.h"
-#include "runtime/StateMachineBindObject.h"  // QuickJS-specific bindObject with ClassBinder
+#include "runtime/StateMachineBindObject.h"  // Engine-agnostic bindObject with GenericClassBinder
 #include "core/LogMacros.h"
 #include "runtime/StateMachineFactory.h"
 #include "scripting/JSEngine.h"

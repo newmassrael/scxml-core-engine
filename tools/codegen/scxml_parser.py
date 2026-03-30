@@ -87,7 +87,7 @@ class SCXMLModel:
     has_event_metadata: bool = False
     has_parent_communication: bool = False  # True if <send target="#_parent"> detected
     has_child_communication: bool = False  # True if <send target="#_child"> detected
-    needs_jsengine: bool = False
+    needs_script_engine: bool = False
     uses_in_predicate: bool = False  # W3C SCXML 3.12.1: True if In() predicate used (requires activeStates_ management)
     has_transition_actions: bool = False  # W3C SCXML 3.13: True if any transition has executable content
 
@@ -118,7 +118,7 @@ class SCXMLModel:
     user_context_objects: Set[str] = field(default_factory=set)  # Set of object names used in C++ code (e.g., hardware, logger)
 
     # Lambda capture flag: True if entry/exit lambdas need [this, &engine], False if [&engine] suffices
-    # Computed from: needs_jsengine OR static_invokes OR has_parent_communication OR has_parallel_states OR uses_in_predicate OR user_context_objects
+    # Computed from: needs_script_engine OR static_invokes OR has_parent_communication OR has_parallel_states OR uses_in_predicate OR user_context_objects
     needs_nonstatic_method: bool = False
 
 
@@ -330,7 +330,7 @@ class SCXMLParser:
         # Compute lambda capture flag for entry/exit action templates
         # True if any feature requires non-static methods (this pointer needed in lambdas)
         self.model.needs_nonstatic_method = (
-            self.model.needs_jsengine or
+            self.model.needs_script_engine or
             bool(self.model.static_invokes) or
             self.model.has_parent_communication or
             self.model.has_parallel_states or
@@ -386,7 +386,7 @@ class SCXMLParser:
 
                 # Detect if expression requires JSEngine
                 # W3C SCXML 5.2: All datamodel variables are runtime-evaluated (handled by JSEngine)
-                self.model.needs_jsengine = True
+                self.model.needs_script_engine = True
 
     def _parse_global_scripts(self, root):
         """
@@ -480,7 +480,7 @@ class SCXMLParser:
             })
 
             # W3C SCXML 5.8: Global scripts require JSEngine
-            self.model.needs_jsengine = True
+            self.model.needs_script_engine = True
 
     def _parse_states(self, parent_elem, parent_id: Optional[str]):
         """
@@ -780,8 +780,8 @@ class SCXMLParser:
         # Detect guard conditions requiring JSEngine
         # cpp: prefix conditions are evaluated directly in C++ — skip JSEngine check
         if transition.cond and not transition.is_cpp_condition:
-            if self._requires_jsengine(transition.cond):
-                self.model.needs_jsengine = True
+            if self._requires_script_engine(transition.cond):
+                self.model.needs_script_engine = True
 
         return transition
 
@@ -831,7 +831,7 @@ class SCXMLParser:
                 # W3C SCXML C.1: NamelistHelper::evaluateNamelist() uses JSEngine.getVariable()
                 # Even if namelist contains static variable names, we need JSEngine to check if they exist at runtime
                 if action['namelist']:
-                    self.model.needs_jsengine = True
+                    self.model.needs_script_engine = True
 
                 # Parse <param> children
                 action['params'] = []
@@ -858,7 +858,7 @@ class SCXMLParser:
                     # Static literals (e.g., 'test') can be optimized at parse time (Pure Static)
                     # Dynamic expressions (including number literals like '2') require JSEngine
                     if param_expr and not is_static_literal:
-                        self.model.needs_jsengine = True
+                        self.model.needs_script_engine = True
 
                 # Parse <content>
                 content_elems = ns_findall(child, 'content')
@@ -889,7 +889,7 @@ class SCXMLParser:
                 # Detect dynamic expressions
                 if action['eventexpr'] or action['targetexpr'] or action['delayexpr'] or action['typeexpr']:
                     self.model.has_dynamic_expressions = True
-                    self.model.needs_jsengine = True
+                    self.model.needs_script_engine = True
 
                 # W3C SCXML C.1 (test 496): targetexpr may result in unreachable target → error.communication
                 if action['targetexpr']:
@@ -926,7 +926,7 @@ class SCXMLParser:
 
                 # W3C SCXML 5.3: All assignments in ECMAScript datamodel require JSEngine
                 # This matches C++ generator behavior
-                self.model.needs_jsengine = True
+                self.model.needs_script_engine = True
 
             elif tag == 'if':
                 # W3C SCXML 3.12.1: <if><elseif><else> with complex sibling structure
@@ -1024,7 +1024,7 @@ class SCXMLParser:
                                 'expr': elem.get('expr', '')
                             })
                             # W3C SCXML 5.3: All assignments require JSEngine
-                            self.model.needs_jsengine = True
+                            self.model.needs_script_engine = True
                         elif elem_tag == 'log':
                             branch_action.update({
                                 'label': elem.get('label', ''),
@@ -1035,14 +1035,14 @@ class SCXMLParser:
                                 'src': elem.get('src', ''),
                                 'content': elem.text or ''
                             })
-                            self.model.needs_jsengine = True
+                            self.model.needs_script_engine = True
                         
                         current_branch.append(branch_action)
                     
                     i += 1
                 
-                if self._requires_jsengine(action['cond']):
-                    self.model.needs_jsengine = True
+                if self._requires_script_engine(action['cond']):
+                    self.model.needs_script_engine = True
 
             elif tag == 'foreach':
                 # W3C SCXML 4.6: <foreach>
@@ -1050,7 +1050,7 @@ class SCXMLParser:
                 action['item'] = child.get('item', '')
                 action['index'] = child.get('index', '')
                 action['actions'] = self._parse_executable_content(child)
-                self.model.needs_jsengine = True
+                self.model.needs_script_engine = True
 
             elif tag == 'log':
                 # W3C SCXML 3.8.8: <log>
@@ -1060,7 +1060,7 @@ class SCXMLParser:
                 # W3C SCXML 5.10: Any expr attribute requires JSEngine for variable/expression evaluation
                 # This includes: _event, Var1, or any ECMAScript expression
                 if action['expr']:
-                    self.model.needs_jsengine = True
+                    self.model.needs_script_engine = True
 
             elif tag == 'script':
                 # W3C SCXML 3.8.6: <script>
@@ -1086,7 +1086,7 @@ class SCXMLParser:
                 else:
                     # JavaScript execution via JSEngine
                     action['content'] = child.text or ''
-                    self.model.needs_jsengine = True
+                    self.model.needs_script_engine = True
 
             elif tag == 'cancel':
                 # W3C SCXML 6.2: <cancel>
@@ -1249,11 +1249,11 @@ class SCXMLParser:
 
         if is_hybrid_invoke:
             self.model.has_hybrid_invoke = True
-            self.model.needs_jsengine = True  # JSEngine for srcexpr/contentexpr evaluation
+            self.model.needs_script_engine = True  # JSEngine for srcexpr/contentexpr evaluation
 
         # W3C SCXML 6.4.1: Namelist validation requires JSEngine (even for static invokes)
         if is_static_invoke and invoke['namelist']:
-            self.model.needs_jsengine = True  # JSEngine for namelist variable validation
+            self.model.needs_script_engine = True  # JSEngine for namelist variable validation
         
         if is_dynamic_file_invoke:
             # Deprecated: srcexpr now handled as hybrid invoke
@@ -1407,7 +1407,7 @@ class SCXMLParser:
         
         return ' '.join(js_lines)
 
-    def _requires_jsengine(self, expr: str) -> bool:
+    def _requires_script_engine(self, expr: str) -> bool:
         """
         Detect if expression requires JSEngine evaluation
 
@@ -1600,11 +1600,11 @@ class SCXMLParser:
                     try:
                         child_parser = SCXMLParser()
                         child_model = child_parser.parse_file(str(child_scxml_path))
-                        matching_static['child_needs_jsengine'] = child_model.needs_jsengine
+                        matching_static['child_needs_script_engine'] = child_model.needs_script_engine
                         # W3C SCXML 6.3.2: Extract child datamodel variable names for namelist validation
                         matching_static['child_datamodel_vars'] = [var['id'] for var in child_model.variables]
                     except Exception:
-                        matching_static['child_needs_jsengine'] = True
+                        matching_static['child_needs_script_engine'] = True
                         matching_static['child_datamodel_vars'] = []  # Empty list for safety
 
                 # Handle external src (existing logic)
@@ -1620,25 +1620,25 @@ class SCXMLParser:
                     matching_static['child_name'] = child_name
 
                     # Parse child SCXML file to detect if it needs JSEngine
-                    child_needs_jsengine = False
+                    child_needs_script_engine = False
                     try:
                         # Construct child SCXML path relative to parent
                         parent_dir = Path(self.scxml_path).parent if hasattr(self, 'scxml_path') else Path('.')
                         child_scxml_path = parent_dir / f"{child_name}.scxml"
 
                         if child_scxml_path.exists():
-                            # Parse child to check needs_jsengine and extract datamodel variables
+                            # Parse child to check needs_script_engine and extract datamodel variables
                             child_parser = SCXMLParser()
                             child_model = child_parser.parse_file(str(child_scxml_path))
-                            child_needs_jsengine = child_model.needs_jsengine
+                            child_needs_script_engine = child_model.needs_script_engine
                             # W3C SCXML 6.3.2: Extract child datamodel variable names for namelist validation
                             child_datamodel_vars = [var['id'] for var in child_model.variables]
                     except Exception:
                         # If we can't parse child, assume it needs JSEngine for safety
-                        child_needs_jsengine = True
+                        child_needs_script_engine = True
                         child_datamodel_vars = []  # Empty list for safety
 
-                    matching_static['child_needs_jsengine'] = child_needs_jsengine
+                    matching_static['child_needs_script_engine'] = child_needs_script_engine
                     matching_static['child_datamodel_vars'] = child_datamodel_vars
 
                 # Generate invoke ID if not specified (matches C++ generator logic)
@@ -2051,7 +2051,7 @@ class SCXMLParser:
         - has_parallel_states
         - has_invoke
         - has_event_metadata
-        - needs_jsengine
+        - needs_script_engine
         """
         # Check for event metadata in guards
         for state in self.model.states.values():
@@ -2060,11 +2060,11 @@ class SCXMLParser:
                     for field in self.EVENT_METADATA_FIELDS:
                         if field in transition.cond:
                             self.model.has_event_metadata = True
-                            self.model.needs_jsengine = True
+                            self.model.needs_script_engine = True
 
         # Summary
         return {
-            'needs_jsengine': self.model.needs_jsengine,
+            'needs_script_engine': self.model.needs_script_engine,
             'uses_in_predicate': self.model.uses_in_predicate,
             'has_dynamic_expressions': self.model.has_dynamic_expressions,
             'has_parallel_states': self.model.has_parallel_states,
@@ -2087,5 +2087,5 @@ if __name__ == '__main__':
     print(f"Initial: {model.initial}")
     print(f"States: {len(model.states)}")
     print(f"Events: {len(model.events)}")
-    print(f"Needs JSEngine: {model.needs_jsengine}")
+    print(f"Needs ScriptEngine: {model.needs_script_engine}")
     print(f"Variables: {len(model.variables)}")

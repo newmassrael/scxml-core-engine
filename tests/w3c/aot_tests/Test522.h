@@ -27,7 +27,7 @@ namespace SCE::W3C::AotTests {
  * - State machine structure: Fully static (compile-time states/transitions)
  * - HTTP target URL: Static literal "http://localhost:8080/test"
  * - Event name: Static literal "test"
- * - No JSEngine required (NEEDS_JSENGINE = false)
+ * - No JSEngine required (NEEDS_SCRIPT_ENGINE = false)
  * - External HTTP server handles I/O (W3CHttpTestServer)
  *
  * ✅ Zero Duplication Principle:

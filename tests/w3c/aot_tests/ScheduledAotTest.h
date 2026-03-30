@@ -40,7 +40,7 @@ public:
 
         if (!completed) {
             // Timeout - cleanup JSEngine session before returning
-            sm.getPolicy().ensureJSEngineSessionDestroyed();
+            sm.getPolicy().ensureScriptEngineSessionDestroyed();
             return false;
         }
 
@@ -65,7 +65,7 @@ public:
         // W3C SCXML: Cleanup JSEngine session before stack unwinding
         // This prevents stack-use-after-return when JSEngine background thread
         // tries to call In() predicate callbacks after sm is destroyed
-        sm.getPolicy().ensureJSEngineSessionDestroyed();
+        sm.getPolicy().ensureScriptEngineSessionDestroyed();
 
         return result;
     }
@@ -93,13 +93,13 @@ private:
     /**
      * @brief Get test type: pure_static or static_hybrid
      *
-     * Uses Policy::NEEDS_JSENGINE to determine if test uses JSEngine
+     * Uses Policy::NEEDS_SCRIPT_ENGINE to determine if test uses JSEngine
      * for ECMAScript expression evaluation (In(), typeof, _event, etc.)
      */
     const char *getTestType() const override {
         using SM = typename Derived::SM;
         using Policy = typename SM::PolicyType;
-        return Policy::NEEDS_JSENGINE ? "static_hybrid" : "pure_static";
+        return Policy::NEEDS_SCRIPT_ENGINE ? "static_hybrid" : "pure_static";
     }
 };
 

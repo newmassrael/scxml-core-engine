@@ -1,5 +1,6 @@
 #include "scripting/LuaEngine.h"
 #include "core/LogMacros.h"
+#include "runtime/DataContentHelpers.h"
 #include "SCXMLTypes.h"
 #include "scripting/EcmaScriptToLuaTransformer.h"
 #include "scripting/LuaDOMBinding.h"
@@ -866,7 +867,9 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
                 lua_setfield(L, -2, "data");
             } else {
                 lua_pop(L, 1); // Pop error
-                lua_pushstring(L, eventData.c_str());
+                // W3C SCXML B.2 (test 562): Space-normalize plain text content
+                std::string normalized = normalizeWhitespace(eventData);
+                lua_pushstring(L, normalized.c_str());
                 lua_setfield(L, -2, "data");
             }
         }
@@ -937,12 +940,97 @@ bool LuaEngine::registerGlobalFunction(const std::string &functionName,
     return true;
 }
 
-bool LuaEngine::bindNativeObject(const std::string & /*sessionId*/, const std::string & /*objectName*/,
-                                   const std::vector<std::pair<std::string, NativeMethod>> & /*methods*/) {
-    // Lua native object binding not yet implemented.
-    // Use registerGlobalFunction for individual function registration.
-    SCE_LOG_WARN("LuaEngine::bindNativeObject: Not yet implemented for Lua engine");
-    return false;
+bool LuaEngine::bindNativeObject(const std::string &sessionId, const std::string &objectName,
+                                   const std::vector<std::pair<std::string, NativeMethod>> &methods) {
+    std::lock_guard<std::mutex> lock(sessionMutex_);
+
+    auto it = sessions_.find(sessionId);
+    if (it == sessions_.end() || !it->second->L) {
+        SCE_LOG_ERROR("LuaEngine::bindNativeObject: Session '{}' not found", sessionId);
+        return false;
+    }
+
+    lua_State *L = it->second->L;
+
+    // Create a Lua table to represent the object
+    lua_newtable(L);
+
+    for (const auto &[methodName, method] : methods) {
+        // Store method with session ownership for lifetime management
+        auto methodPtr = std::make_unique<NativeMethod>(method);
+        NativeMethod *rawPtr = methodPtr.get();
+        it->second->boundMethods.push_back(std::move(methodPtr));
+
+        // Push NativeMethod pointer as light userdata upvalue
+        lua_pushlightuserdata(L, rawPtr);
+        lua_pushcclosure(
+            L,
+            [](lua_State *Ls) -> int {
+                auto *fn = static_cast<NativeMethod *>(lua_touserdata(Ls, lua_upvalueindex(1)));
+                if (!fn) {
+                    lua_pushnil(Ls);
+                    return 1;
+                }
+
+                // Convert Lua arguments to ScriptValue vector
+                int nargs = lua_gettop(Ls);
+                std::vector<ScriptValue> args;
+                args.reserve(nargs);
+                for (int i = 1; i <= nargs; ++i) {
+                    switch (lua_type(Ls, i)) {
+                        case LUA_TBOOLEAN:
+                            args.emplace_back(static_cast<bool>(lua_toboolean(Ls, i)));
+                            break;
+                        case LUA_TNUMBER:
+                            if (lua_isinteger(Ls, i)) {
+                                args.emplace_back(static_cast<int64_t>(lua_tointeger(Ls, i)));
+                            } else {
+                                args.emplace_back(lua_tonumber(Ls, i));
+                            }
+                            break;
+                        case LUA_TSTRING:
+                            args.emplace_back(std::string(lua_tostring(Ls, i)));
+                            break;
+                        default:
+                            args.emplace_back(ScriptUndefined{});
+                            break;
+                    }
+                }
+
+                // Call the native method
+                ScriptValue result = (*fn)(args);
+
+                // Convert ScriptValue result to Lua value
+                std::visit(
+                    [Ls](auto &&val) {
+                        using VT = std::decay_t<decltype(val)>;
+                        if constexpr (std::is_same_v<VT, bool>) {
+                            lua_pushboolean(Ls, val ? 1 : 0);
+                        } else if constexpr (std::is_same_v<VT, int64_t>) {
+                            lua_pushinteger(Ls, static_cast<lua_Integer>(val));
+                        } else if constexpr (std::is_same_v<VT, double>) {
+                            lua_pushnumber(Ls, val);
+                        } else if constexpr (std::is_same_v<VT, std::string>) {
+                            lua_pushstring(Ls, val.c_str());
+                        } else {
+                            lua_pushnil(Ls);
+                        }
+                    },
+                    result);
+                return 1;
+            },
+            1);
+
+        // Set the closure as a field on the table: obj[methodName] = closure
+        lua_setfield(L, -2, methodName.c_str());
+    }
+
+    // Set the table as a global: _G[objectName] = obj
+    lua_setglobal(L, objectName.c_str());
+
+    SCE_LOG_DEBUG("LuaEngine::bindNativeObject: Bound object '{}' with {} methods in session '{}'", objectName,
+                  methods.size(), sessionId);
+    return true;
 }
 
 void LuaEngine::setStateQueryCallback(StateQueryCallback callback, const std::string &sessionId) {

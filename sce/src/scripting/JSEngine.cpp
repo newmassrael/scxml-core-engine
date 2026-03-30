@@ -11,6 +11,7 @@
 #include "runtime/StateMachine.h"
 #include "scripting/DOMBinding.h"
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <sstream>
@@ -881,12 +882,100 @@ JSContext *JSEngine::getContextForBinding(const std::string &sessionId) {
     return session ? session->jsContext : nullptr;
 }
 
-bool JSEngine::bindNativeObject(const std::string & /*sessionId*/, const std::string & /*objectName*/,
-                                const std::vector<std::pair<std::string, NativeMethod>> & /*methods*/) {
-    // JSEngine uses ClassBinder-based bindObject (StateMachineBindObject.h) for full
-    // QuickJS object binding. This generic interface is a placeholder for future use.
-    SCE_LOG_WARN("JSEngine::bindNativeObject: Use StateMachineBindObject.h with ClassBinder for full JS object binding");
-    return false;
+// Static callback for bindNativeObject-created JS functions
+static JSValue bindNativeObjectCallback(JSContext *ctx, [[maybe_unused]] JSValueConst this_val, int argc,
+                                        JSValueConst *argv, [[maybe_unused]] int magic, JSValue *func_data) {
+    // Retrieve the NativeMethod pointer stored as int64 in func_data[0]
+    int64_t ptr = 0;
+    JS_ToInt64(ctx, &ptr, func_data[0]);
+    auto *method = reinterpret_cast<IScriptEngine::NativeMethod *>(ptr);
+    if (!method) {
+        return JS_ThrowTypeError(ctx, "Invalid native method binding");
+    }
+
+    // Convert JS arguments to ScriptValue vector
+    std::vector<ScriptValue> args;
+    args.reserve(argc);
+    for (int i = 0; i < argc; i++) {
+        if (JS_IsBool(argv[i])) {
+            args.emplace_back(static_cast<bool>(JS_ToBool(ctx, argv[i])));
+        } else if (JS_IsString(argv[i])) {
+            const char *str = JS_ToCString(ctx, argv[i]);
+            args.emplace_back(std::string(str ? str : ""));
+            JS_FreeCString(ctx, str);
+        } else if (JS_IsNumber(argv[i])) {
+            double dVal = 0;
+            JS_ToFloat64(ctx, &dVal, argv[i]);
+            // Distinguish integer vs float
+            auto iVal = static_cast<int64_t>(dVal);
+            if (static_cast<double>(iVal) == dVal && !std::isinf(dVal) && !std::isnan(dVal)) {
+                args.emplace_back(iVal);
+            } else {
+                args.emplace_back(dVal);
+            }
+        } else if (JS_IsNull(argv[i])) {
+            args.emplace_back(ScriptNull{});
+        } else {
+            args.emplace_back(ScriptUndefined{});
+        }
+    }
+
+    // Call the native method
+    ScriptValue result = (*method)(args);
+
+    // Convert ScriptValue result back to JSValue
+    return std::visit(
+        [ctx](auto &&v) -> JSValue {
+            using VT = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<VT, bool>) {
+                return JS_NewBool(ctx, v);
+            } else if constexpr (std::is_same_v<VT, int64_t>) {
+                return JS_NewInt64(ctx, v);
+            } else if constexpr (std::is_same_v<VT, double>) {
+                return JS_NewFloat64(ctx, v);
+            } else if constexpr (std::is_same_v<VT, std::string>) {
+                return JS_NewString(ctx, v.c_str());
+            } else if constexpr (std::is_same_v<VT, ScriptNull>) {
+                return JS_NULL;
+            } else {
+                return JS_UNDEFINED;
+            }
+        },
+        result);
+}
+
+bool JSEngine::bindNativeObject(const std::string &sessionId, const std::string &objectName,
+                                const std::vector<std::pair<std::string, NativeMethod>> &methods) {
+    std::lock_guard<std::mutex> lock(sessionsMutex_);
+    SessionContext *session = getSession(sessionId);
+    if (!session || !session->jsContext) {
+        SCE_LOG_ERROR("JSEngine::bindNativeObject: Session '{}' not found", sessionId);
+        return false;
+    }
+
+    JSContext *ctx = session->jsContext;
+    JSValue global = JS_GetGlobalObject(ctx);
+    JSValue obj = JS_NewObject(ctx);
+
+    for (const auto &[methodName, method] : methods) {
+        // Store method with session ownership for lifetime management
+        auto methodPtr = std::make_unique<NativeMethod>(method);
+        NativeMethod *rawPtr = methodPtr.get();
+        session->boundMethods.push_back(std::move(methodPtr));
+
+        // Create JS function wrapping the NativeMethod via func_data pointer
+        JSValue ptrVal = JS_NewInt64(ctx, reinterpret_cast<int64_t>(rawPtr));
+        JSValue func = JS_NewCFunctionData(ctx, bindNativeObjectCallback, 0, 0, 1, &ptrVal);
+        JS_FreeValue(ctx, ptrVal);
+        JS_SetPropertyStr(ctx, obj, methodName.c_str(), func);
+    }
+
+    JS_SetPropertyStr(ctx, global, objectName.c_str(), obj);
+    JS_FreeValue(ctx, global);
+
+    SCE_LOG_DEBUG("JSEngine::bindNativeObject: Bound object '{}' with {} methods in session '{}'", objectName,
+                  methods.size(), sessionId);
+    return true;
 }
 
 // ===================================================================

@@ -83,6 +83,7 @@ private:
     std::string transformTernaryOperator(const std::string &input) const;
     std::string transformDOMMethods(const std::string &input) const;
     std::string transformSemicolons(const std::string &input) const;
+    std::string parenthesizeBitwiseOperands(const std::string &input) const;
 
     // Stage 3: Guard-specific truthiness wrapping
     std::string wrapTruthiness(const std::string &input) const;

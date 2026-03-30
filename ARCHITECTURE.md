@@ -119,7 +119,7 @@ When choosing between approaches:
   - `actions/*.jinja2` - Individual action handlers (send, assign, if, foreach, etc.)
   - `entry_exit_actions.jinja2` - State entry/exit action generation
   - `process_transition.jinja2` - Transition processing logic
-  - `jsengine_helpers.jinja2` - JSEngine lazy initialization
+  - `scriptengine_helpers.jinja2` - Script engine lazy initialization
   - `utility_methods.jinja2` - Helper methods (getEventName, etc.)
 - **Code Generation Flow**: SCXML → Parser → Model → Jinja2 Templates → C++ Header
 

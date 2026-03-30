@@ -182,7 +182,7 @@ bool SCE::DataModelInitHelper::initializeVariableFromExpr(IScriptEngine &jsEngin
                                                           std::function<void(const std::string &)> errorCallback) {
     // W3C SCXML 5.2/5.3: Evaluate expr attribute and assign to variable
     // Test 277: expr evaluation failure must raise error.execution (no fallback to whitespace normalization)
-    // ARCHITECTURE.md Zero Duplication: Matches AOT engine template (jsengine_helpers.jinja2)
+    // ARCHITECTURE.md Zero Duplication: Matches AOT engine template (scriptengine_helpers.jinja2)
 
     auto evalResult = jsEngine.evaluateExpression(sessionId, expr);
     evalResult.wait();

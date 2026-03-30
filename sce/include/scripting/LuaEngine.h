@@ -106,6 +106,8 @@ private:
         bool systemVarsInitialized = false;
         std::unordered_set<std::string> preInitializedVars;
         std::unordered_set<std::string> declaredVars;  // Track all declared variables (Lua nil != undeclared)
+        // Bound native method storage for bindNativeObject lifetime management
+        std::vector<std::unique_ptr<NativeMethod>> boundMethods;
     };
 
     // === Internal implementation ===

@@ -27,10 +27,10 @@
 {% endif %}
 if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
     // Location is valid, proceed with assignment
-    AOT_DEBUG("AOT assign: Before ensureJSEngine for {{ action.location }}");
-    this->ensureJSEngine();
-    AOT_DEBUG("AOT assign: After ensureJSEngine, sessionId={}", sessionId_.value_or("NONE"));
-    auto& jsEngine = getScriptEngine();
+    AOT_DEBUG("AOT assign: Before ensureScriptEngine for {{ action.location }}");
+    this->ensureScriptEngine();
+    AOT_DEBUG("AOT assign: After ensureScriptEngine, sessionId={}", sessionId_.value_or("NONE"));
+    auto& scriptEngine = getScriptEngine();
 
     // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
     // W3C SCXML 5.3/5.10: Assignment execution with proper system variable handling
@@ -42,7 +42,7 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
     {% endif %}
 
     success = ::SCE::AssignmentExecutionHelper::executeAssignment(
-        jsEngine, sessionId_.value(), "{{ action.location }}", expr,
+        scriptEngine, sessionId_.value(), "{{ action.location }}", expr,
         [&engine](const std::string& error) {
             SCE_LOG_ERROR("AOT assign: {}", error);
             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, error));

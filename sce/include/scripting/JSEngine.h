@@ -414,6 +414,8 @@ private:
         std::shared_ptr<class IEventRaiser> eventRaiser;
         // W3C SCXML 5.10: Track _event object initialization for lazy binding
         bool eventObjectInitialized = false;
+        // Bound native method storage for bindNativeObject lifetime management
+        std::vector<std::unique_ptr<NativeMethod>> boundMethods;
     };
 
     struct ExecutionRequest {
