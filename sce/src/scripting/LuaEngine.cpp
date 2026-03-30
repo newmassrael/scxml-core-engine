@@ -1,4 +1,5 @@
 #include "scripting/LuaEngine.h"
+#include "common/EventDataHelper.h"
 #include "core/LogMacros.h"
 #include "runtime/DataContentHelpers.h"
 #include "SCXMLTypes.h"
@@ -861,16 +862,24 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
             LuaDOMBinding::pushDOMObject(L, eventData);
             lua_setfield(L, -2, "data");
         } else {
-            // Try to evaluate as Lua expression (for structured data)
+            // Try to evaluate as Lua expression (for structured data like Lua tables)
             std::string loadExpr = "return " + eventData;
             if (luaL_dostring(L, loadExpr.c_str()) == LUA_OK) {
                 lua_setfield(L, -2, "data");
             } else {
                 lua_pop(L, 1); // Pop error
-                // W3C SCXML B.2 (test 562): Space-normalize plain text content
-                std::string normalized = normalizeWhitespace(eventData);
-                lua_pushstring(L, normalized.c_str());
-                lua_setfield(L, -2, "data");
+                // W3C SCXML B.2: Try JSON parsing for structured event data
+                // JSON syntax ({"key":"value"}) is not valid Lua, requires explicit conversion
+                auto parsed = EventDataHelper::jsonStringToScriptValue(eventData);
+                if (parsed.has_value()) {
+                    pushScriptValue(L, parsed.value());
+                    lua_setfield(L, -2, "data");
+                } else {
+                    // W3C SCXML B.2 (test 562): Space-normalize plain text content
+                    std::string normalized = normalizeWhitespace(eventData);
+                    lua_pushstring(L, normalized.c_str());
+                    lua_setfield(L, -2, "data");
+                }
             }
         }
     } else {

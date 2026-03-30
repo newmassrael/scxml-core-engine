@@ -33,6 +33,32 @@ ScriptValue EventDataHelper::buildScriptValueFromParams(const std::map<std::stri
     return obj;
 }
 
+std::string EventDataHelper::buildJsonFromTypedParams(const std::map<std::string, ScriptValue> &typedParams) {
+    json eventDataJson = json::object();
+    for (const auto &[name, value] : typedParams) {
+        std::visit(
+            [&eventDataJson, &name](auto &&val) {
+                using T = std::decay_t<decltype(val)>;
+                if constexpr (std::is_same_v<T, int64_t>) {
+                    eventDataJson[name] = val;
+                } else if constexpr (std::is_same_v<T, double>) {
+                    eventDataJson[name] = val;
+                } else if constexpr (std::is_same_v<T, bool>) {
+                    eventDataJson[name] = val;
+                } else if constexpr (std::is_same_v<T, std::string>) {
+                    eventDataJson[name] = val;
+                } else if constexpr (std::is_same_v<T, ScriptNull> || std::is_same_v<T, ScriptUndefined>) {
+                    eventDataJson[name] = nullptr;
+                } else {
+                    // ScriptArray/ScriptObject: fall back to string representation
+                    eventDataJson[name] = nullptr;
+                }
+            },
+            value);
+    }
+    return JsonUtils::toCompactString(eventDataJson);
+}
+
 // W3C SCXML B.2: Recursive JSON → ScriptValue conversion
 static ScriptValue jsonToScriptValue(const json &j) {
     if (j.is_null()) {

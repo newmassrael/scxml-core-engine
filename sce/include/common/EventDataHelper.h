@@ -74,6 +74,18 @@ public:
     static ScriptValue buildScriptValueFromParams(const std::map<std::string, ScriptValue> &typedParams);
 
     /**
+     * @brief Build type-preserving JSON string from typed params
+     *
+     * W3C SCXML 5.10: Constructs JSON that preserves numeric types (int/double remain unquoted).
+     * Used for scheduler event data and child-to-parent communication where typedData cannot be
+     * passed directly as ScriptValue (e.g., PullScheduler stores string-only event data).
+     *
+     * @param typedParams Map of param names to ScriptValue values
+     * @return JSON string with type-preserving values (e.g., {"aParam":1} not {"aParam":"1"})
+     */
+    static std::string buildJsonFromTypedParams(const std::map<std::string, ScriptValue> &typedParams);
+
+    /**
      * @brief Parse JSON string into ScriptValue (engine-agnostic)
      *
      * W3C SCXML B.2: Converts JSON event data to typed ScriptValue at the pipeline level,

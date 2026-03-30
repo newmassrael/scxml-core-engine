@@ -140,6 +140,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
 // W3C SCXML 5.10: Build event data from params for finalize access (test233)
 {
     std::map<std::string, std::vector<std::string>> params;
+    std::map<std::string, ScriptValue> typedParams;
 {% set needs_script_engine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
 {% if needs_script_engine %}
     this->ensureScriptEngine();
@@ -155,6 +156,7 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
         auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+            typedParams["{{ param.name }}"] = paramResult.getInternalValue();
         } else {
             SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
             params["{{ param.name }}"].push_back("");
@@ -162,7 +164,10 @@ if (::SCE::SendHelper::isUnreachableTarget(dynamicTarget)) {
     }
 {% endif %}
 {% endfor %}
-    std::string eventData = ::SCE::EventDataHelper::buildJsonFromParams(params);
+    // W3C SCXML 5.10: Use type-preserving JSON for parent communication (preserves int/double types)
+    std::string eventData = !typedParams.empty()
+        ? ::SCE::EventDataHelper::buildJsonFromTypedParams(typedParams)
+        : ::SCE::EventDataHelper::buildJsonFromParams(params);
     ::SCE::SendHelper::sendToParentWithOrigin(
         engine.getPolicy().parent_,
         ParentStateMachine::Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }},
@@ -351,6 +356,7 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
 {% if action.namelist or action.params %}
     // W3C SCXML 5.10: Build event data from namelist and params (test354)
     std::map<std::string, std::vector<std::string>> params;
+    std::map<std::string, ScriptValue> typedParams;
 {% if action.namelist %}
     // W3C SCXML C.1: Evaluate namelist variables using NamelistHelper (Zero Duplication)
 {% if model.needs_script_engine or model.needs_event_origin %}
@@ -363,7 +369,8 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
             [&engine](const std::string& msg) {
                 SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
                 engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
-            }
+            },
+            &typedParams
         );
         if (!success) return;
     }
@@ -379,6 +386,7 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
         auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
         if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
             params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+            typedParams["{{ param.name }}"] = paramResult.getInternalValue();
         } else {
             SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
             params["{{ param.name }}"].push_back("");
@@ -406,8 +414,11 @@ engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, 
 {% else %}
     auto delayMs = ::SCE::SendSchedulingHelper::parseDelayString("{{ action.delay }}");
 {% endif %}
-{% if action.params %}
-    std::string eventData = ::SCE::EventDataHelper::buildJsonFromParams(params);
+{% if action.params or action.namelist %}
+    // W3C SCXML 5.10: Use type-preserving JSON for scheduler (preserves int/double types)
+    std::string eventData = !typedParams.empty()
+        ? ::SCE::EventDataHelper::buildJsonFromTypedParams(typedParams)
+        : ::SCE::EventDataHelper::buildJsonFromParams(params);
     engine.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId, eventData);
 {% else %}
     engine.scheduleEvent(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, delayMs, sendId);
@@ -511,10 +522,14 @@ if (::SCE::SendHelper::isInternalTarget(dynamicTarget)) {
 }
 {% else %}
 if (::SCE::SendHelper::isInternalTarget("{{ action.target }}")) {
-    engine.raise(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData));
+    auto meta = typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
+    meta.typedData = typedData;
+    engine.raise(std::move(meta));
 } else {
 {% if model.needs_script_engine or model.needs_event_origin %}
-    engine.raiseExternal(typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %}));
+    auto meta = typename Engine::EventWithMetadata(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", {% if action.targetexpr %}dynamicTarget{% else %}"{{ action.target }}"{% endif %});
+    meta.typedData = typedData;
+    engine.raiseExternal(std::move(meta));
 {% else %}
     engine.raiseExternal(Event::{{ action.event | replace('.', '_') | replace('-', '_') | capitalize }}, eventData);
 {% endif %}
