@@ -158,6 +158,11 @@ public:
         if constexpr (requires { policy.pendingEventInvokeId_; }) {
             policy.pendingEventInvokeId_ = metadata.invokeId;
         }
+
+        // W3C SCXML 5.5: Set pending typed event data for engine-agnostic ScriptValue pipeline
+        if constexpr (requires { policy.pendingEventTypedData_; }) {
+            policy.pendingEventTypedData_ = metadata.typedData;
+        }
     }
 
     /**
@@ -212,6 +217,11 @@ public:
         // W3C SCXML 5.10.1: Clear event invokeId for next cycle
         if constexpr (requires { policy.pendingEventInvokeId_; }) {
             policy.pendingEventInvokeId_.clear();
+        }
+
+        // W3C SCXML 5.5: Clear typed event data for next cycle
+        if constexpr (requires { policy.pendingEventTypedData_; }) {
+            policy.pendingEventTypedData_.reset();
         }
     }
 

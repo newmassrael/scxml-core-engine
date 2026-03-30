@@ -4058,7 +4058,8 @@ void StateMachine::handleCompoundStateFinalChild(const std::string &finalStateId
     // W3C SCXML 5.5 & 5.7: Evaluate donedata and construct event data
     // If evaluation fails (error.execution raised), do not generate done.state event
     std::string eventData;
-    if (!evaluateDoneData(finalStateId, eventData)) {
+    std::optional<ScriptValue> typedData;
+    if (!evaluateDoneData(finalStateId, eventData, typedData)) {
         SCE_LOG_DEBUG("W3C SCXML 5.7: Donedata evaluation failed, skipping done.state event generation");
         return;
     }
@@ -4066,7 +4067,15 @@ void StateMachine::handleCompoundStateFinalChild(const std::string &finalStateId
     // W3C SCXML: Queue the done.state event (not immediate processing)
     // This allows error.execution events from donedata evaluation to be processed first
     if (isRunning_ && eventRaiser_) {
-        eventRaiser_->raiseEvent(doneEventName, eventData);
+        // W3C SCXML 5.5: Pass typed data through engine-agnostic ScriptValue pipeline
+        auto eventRaiserImpl = std::dynamic_pointer_cast<EventRaiserImpl>(eventRaiser_);
+        if (eventRaiserImpl && typedData.has_value()) {
+            eventRaiserImpl->raiseEventWithPriority(doneEventName, eventData,
+                                                    EventRaiserImpl::EventPriority::INTERNAL,
+                                                    "", "", "", "", 0, std::move(typedData));
+        } else {
+            eventRaiser_->raiseEvent(doneEventName, eventData);
+        }
         SCE_LOG_DEBUG("W3C SCXML: Queued done.state event: {}", doneEventName);
     }
 }
@@ -4101,7 +4110,8 @@ void StateMachine::handleCompoundStateFinalChild(const std::string &finalStateId
  * @param outEventData Output parameter for JSON event data
  * @return false if structural error (prevents done.state), true otherwise
  */
-bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string &outEventData) {
+bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string &outEventData,
+                                    std::optional<ScriptValue> &outTypedData) {
     // W3C SCXML 5.5: Initialize output
     outEventData = "";
 
@@ -4120,25 +4130,29 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
     if (!doneData.getContent().empty()) {
         SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating donedata content: '{}'", doneData.getContent());
         return DoneDataHelper::evaluateContent(
-            scriptEngine_, sessionId_, doneData.getContent(), outEventData, [this](const std::string &msg) {
+            scriptEngine_, sessionId_, doneData.getContent(), outEventData,
+            [this](const std::string &msg) {
                 SCE_LOG_ERROR("W3C SCXML 5.5: Failed to evaluate donedata content: {}", msg);
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution", msg);
                 }
-            });
+            },
+            &outTypedData);
     }
 
     // W3C SCXML 5.5: Evaluate params using shared DoneDataHelper (Zero Duplication)
     const auto &params = doneData.getParams();
     if (!params.empty()) {
         SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating {} donedata params", params.size());
-        return DoneDataHelper::evaluateParams(scriptEngine_, sessionId_, params, outEventData,
-                                              [this](const std::string &msg) {
-                                                  SCE_LOG_ERROR("W3C SCXML 5.7: {}", msg);
-                                                  if (eventRaiser_) {
-                                                      eventRaiser_->raiseEvent("error.execution", msg);
-                                                  }
-                                              });
+        return DoneDataHelper::evaluateParams(
+            scriptEngine_, sessionId_, params, outEventData,
+            [this](const std::string &msg) {
+                SCE_LOG_ERROR("W3C SCXML 5.7: {}", msg);
+                if (eventRaiser_) {
+                    eventRaiser_->raiseEvent("error.execution", msg);
+                }
+            },
+            &outTypedData);
     }
 
     // No donedata

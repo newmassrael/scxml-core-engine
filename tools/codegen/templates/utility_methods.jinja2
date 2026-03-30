@@ -146,17 +146,30 @@ public:
     // Always generated for compile-time compatibility, but no-op if JSEngine not needed
     void setCurrentEventInJSEngine([[maybe_unused]] const std::string& eventName, [[maybe_unused]] const std::string& eventData = "",
                                 [[maybe_unused]] const std::string& eventType = "", [[maybe_unused]] const std::string& sendId = "",
-                                [[maybe_unused]] const std::string& origin = "", [[maybe_unused]] const std::string& originType = "", 
-                                [[maybe_unused]] const std::string& invokeId = "") {
+                                [[maybe_unused]] const std::string& origin = "", [[maybe_unused]] const std::string& originType = "",
+                                [[maybe_unused]] const std::string& invokeId = "",
+                                [[maybe_unused]] const std::optional<ScriptValue>& typedData = std::nullopt) {
 {% if model.needs_jsengine and (model.needs_event_name or model.needs_event_data) %}
         if (eventName.empty()) return;
         ensureJSEngine();
         std::string actualType = eventType.empty() ? this->getEventType(eventName) : eventType;
         AOT_DEBUG("AOT setCurrentEventInJSEngine: name='{}', data='{}', type='{}', sendId='{}', origin='{}', originType='{}', invokeId='{}'",
                   eventName, eventData, actualType, sendId, origin, originType, invokeId);
-        // W3C SCXML 5.10: Wait for setCurrentEvent to complete before proceeding (synchronous)
-        getScriptEngine().setCurrentEvent(sessionId_.value(), eventName, eventData,
-                                                    actualType, sendId, origin, originType, invokeId).get();
+        // W3C SCXML 5.5: Use Event object when typed data available (engine-agnostic ScriptValue pipeline)
+        if (typedData.has_value()) {
+            auto event = std::make_shared<::SCE::Event>(eventName, actualType);
+            event->setData(eventData);
+            event->setSendId(sendId);
+            event->setOrigin(origin);
+            event->setOriginType(originType);
+            event->setInvokeId(invokeId);
+            event->setTypedData(typedData.value());
+            getScriptEngine().setCurrentEvent(sessionId_.value(), event).get();
+        } else {
+            // W3C SCXML 5.10: String-based path (standard)
+            getScriptEngine().setCurrentEvent(sessionId_.value(), eventName, eventData,
+                                                        actualType, sendId, origin, originType, invokeId).get();
+        }
 {% else %}
         // No-op: This state machine doesn't use JSEngine
 {% endif %}

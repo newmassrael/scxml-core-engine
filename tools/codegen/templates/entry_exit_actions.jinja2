@@ -195,6 +195,7 @@
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 {
                     std::string eventData;
+                    std::optional<ScriptValue> typedData;
 {% if state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements
                     this->ensureJSEngine();
@@ -215,7 +216,8 @@
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata param evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-                        }
+                        },
+                        &typedData
                     );
 
                     // W3C SCXML 5.7: If structural error (empty location), skip done.state event
@@ -235,7 +237,8 @@
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-                        }
+                        },
+                        &typedData
                     );
 {% elif state.donedata.content %}
                     // W3C SCXML 5.5: Evaluate <content> expression
@@ -249,7 +252,8 @@
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-                        }
+                        },
+                        &typedData
                     );
 {% endif %}
 
@@ -260,7 +264,9 @@
                 {
                     AOT_DEBUG("Final state {{ state_id }} entered, generating done.state.{{ state.parent }}");
 {% if state.donedata %}
-                    engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}, eventData));
+                    auto doneMeta = typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}, eventData);
+                    doneMeta.typedData = std::move(typedData);
+                    engine.raise(std::move(doneMeta));
 {% else %}
                     engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}));
 {% endif %}

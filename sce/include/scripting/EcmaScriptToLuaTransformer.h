@@ -68,6 +68,8 @@ private:
     std::string restoreStringLiterals(const std::string &processed, const std::vector<std::string> &literals) const;
 
     // Stage 2: Pattern-based transformations (applied to protected string)
+    std::string transformCompoundAssignment(const std::string &input) const;
+    std::string transformIncrementDecrement(const std::string &input) const;
     std::string transformTypeofPatterns(const std::string &input) const;
     std::string transformInstanceofPatterns(const std::string &input) const;
     std::string transformNullUndefined(const std::string &input) const;

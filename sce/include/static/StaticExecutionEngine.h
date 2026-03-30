@@ -107,6 +107,7 @@ public:
         std::string originType;  // W3C SCXML 5.10.1: _event.origintype
         std::string invokeId;    // W3C SCXML 5.10.1: _event.invokeid
         std::string target;      // W3C SCXML C.2: HTTP POST target URL
+        std::optional<ScriptValue> typedData;  // W3C SCXML 5.5: Engine-agnostic typed event data
 
         // Default constructor for aggregate initialization
         EventWithMetadata() = default;

@@ -18,6 +18,7 @@
 
 #include "scripting/IScriptEngine.h"
 #include <functional>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -68,7 +69,8 @@ public:
      * ```
      */
     static bool evaluateContent(IScriptEngine &jsEngine, const std::string &sessionId, const std::string &contentExpr,
-                                std::string &outEventData, std::function<void(const std::string &)> onError = nullptr) {
+                                std::string &outEventData, std::function<void(const std::string &)> onError = nullptr,
+                                std::optional<ScriptValue> *outTypedData = nullptr) {
         if (contentExpr.empty()) {
             outEventData = "";
             return true;
@@ -81,6 +83,11 @@ public:
         if (result.isSuccess()) {
             const auto &value = result.getInternalValue();
             outEventData = convertScriptValueToJson(value, false);
+
+            // W3C SCXML 5.5: Preserve typed data for engine-agnostic pipeline
+            if (outTypedData) {
+                *outTypedData = value;
+            }
 
             // For objects/arrays (null case), use original content as fallback
             if (outEventData == "null" && !std::holds_alternative<ScriptNull>(value)) {
@@ -135,7 +142,8 @@ public:
      */
     static bool evaluateParams(IScriptEngine &jsEngine, const std::string &sessionId,
                                const std::vector<std::pair<std::string, std::string>> &params,
-                               std::string &outEventData, std::function<void(const std::string &)> onError = nullptr) {
+                               std::string &outEventData, std::function<void(const std::string &)> onError = nullptr,
+                               std::optional<ScriptValue> *outTypedData = nullptr) {
         if (params.empty()) {
             outEventData = "";
             return true;
@@ -144,6 +152,12 @@ public:
         // W3C SCXML 5.5: <param> elements create an object with name:value pairs
         std::ostringstream jsonBuilder;
         jsonBuilder << "{";
+
+        // W3C SCXML 5.5: Build ScriptObject for engine-agnostic typed data pipeline
+        std::shared_ptr<ScriptObject> typedObj;
+        if (outTypedData) {
+            typedObj = std::make_shared<ScriptObject>();
+        }
 
         bool first = true;
         for (const auto &param : params) {
@@ -173,6 +187,11 @@ public:
 
                 const auto &value = result.getInternalValue();
                 jsonBuilder << "\"" << escapeJsonString(paramName) << "\":" << convertScriptValueToJson(value, true);
+
+                // Preserve typed value for engine-agnostic pipeline
+                if (typedObj) {
+                    typedObj->properties[paramName] = value;
+                }
             } else {
                 // W3C SCXML 5.7: Invalid location or expression (runtime error)
                 // Must raise error.execution and ignore this param, but continue with others
@@ -185,6 +204,12 @@ public:
 
         jsonBuilder << "}";
         outEventData = jsonBuilder.str();
+
+        // W3C SCXML 5.5: Store typed data for done.state event
+        if (outTypedData && typedObj) {
+            *outTypedData = typedObj;
+        }
+
         return true;
     }
 

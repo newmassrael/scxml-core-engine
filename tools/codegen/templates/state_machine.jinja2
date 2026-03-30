@@ -227,6 +227,10 @@ struct {{ model.name }}Policy {
     // Required for: <send> params, error.execution event data (W3C SCXML 5.3)
     mutable ::std::string pendingEventData_;
     {% endif %}
+    {% if model.needs_donedata_helper %}
+    // W3C SCXML 5.5: Typed event data for engine-agnostic ScriptValue pipeline (donedata)
+    mutable ::std::optional<ScriptValue> pendingEventTypedData_;
+    {% endif %}
     {% if model.needs_event_type %}
     // W3C SCXML 5.10.1: Event type storage for _event.type access (test331)
     mutable ::std::string pendingEventType_;

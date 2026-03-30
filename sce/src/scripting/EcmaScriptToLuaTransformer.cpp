@@ -21,6 +21,9 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
     auto [processed, literals] = protectStringLiterals(preProcessed);
 
     // Stage 2: Apply transformation pipeline (order matters)
+    // Compound assignment and increment/decrement must run before operator transforms
+    processed = transformCompoundAssignment(processed);
+    processed = transformIncrementDecrement(processed);
     processed = transformInstanceofPatterns(processed);
     processed = transformNullUndefined(processed);
     processed = transformNewExpression(processed);
@@ -56,6 +59,9 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     auto [processed, literals] = protectStringLiterals(preProcessed);
 
     // Stage 2: Apply transformations
+    // Compound assignment and increment/decrement must run before operator transforms
+    processed = transformCompoundAssignment(processed);
+    processed = transformIncrementDecrement(processed);
     processed = transformFunctionSyntax(processed);
     processed = transformInstanceofPatterns(processed);
     processed = transformNullUndefined(processed);
@@ -215,6 +221,57 @@ std::string EcmaScriptToLuaTransformer::transformTypeofPatterns(const std::strin
 
 // === Stage 2: Pattern Transformations ===
 
+std::string EcmaScriptToLuaTransformer::transformCompoundAssignment(const std::string &input) const {
+    std::string result = input;
+
+    // ECMAScript compound assignment operators: +=, -=, *=, /=, %=
+    // Var1+=1 → Var1 = Var1 + (1)
+    // RHS is wrapped in parentheses for correct operator precedence with *= and /=
+    std::regex compoundAssign(R"((\w+)\s*(\+|-|\*|\/|%)=\s*([^;\n]+))");
+    result = std::regex_replace(result, compoundAssign, "$1 = $1 $2 ($3)");
+
+    return result;
+}
+
+std::string EcmaScriptToLuaTransformer::transformIncrementDecrement(const std::string &input) const {
+    std::string result = input;
+
+    // Postfix operators must be matched BEFORE prefix operators.
+    // Otherwise "a--b" is incorrectly parsed as prefix dec of b instead of postfix dec of a.
+
+    // ECMAScript postfix increment: var++ → IIFE that returns old value then increments
+    {
+        std::regex postfixInc(R"((\w+)\+\+)");
+        result = std::regex_replace(result, postfixInc,
+                                    "(function() local _t = $1 $1 = $1 + 1 return _t end)()");
+    }
+
+    // ECMAScript postfix decrement: var-- → IIFE that returns old value then decrements
+    {
+        std::regex postfixDec(R"((\w+)--)");
+        result = std::regex_replace(result, postfixDec,
+                                    "(function() local _t = $1 $1 = $1 - 1 return _t end)()");
+    }
+
+    // ECMAScript prefix increment: ++var → IIFE that increments and returns new value
+    // Used in conditions like ++var1==2
+    {
+        std::regex prefixInc(R"(\+\+(\w+))");
+        result = std::regex_replace(result, prefixInc,
+                                    "(function() $1 = $1 + 1 return $1 end)()");
+    }
+
+    // ECMAScript prefix decrement: --var → IIFE that decrements and returns new value
+    // Must transform before Lua sees -- (which starts a comment in Lua)
+    {
+        std::regex prefixDec(R"(--(\w+))");
+        result = std::regex_replace(result, prefixDec,
+                                    "(function() $1 = $1 - 1 return $1 end)()");
+    }
+
+    return result;
+}
+
 std::string EcmaScriptToLuaTransformer::transformInstanceofPatterns(const std::string &input) const {
     // Match: expr instanceof Array — where expr can be a variable, (expr), or complex expression
     std::regex instanceofArray(R"(((?:\([^)]+\)|\w+))\s+instanceof\s+Array)");
@@ -369,8 +426,9 @@ std::string EcmaScriptToLuaTransformer::transformArrayMethods(const std::string 
     }
 
     // .concat(...) -> _concat(arr, ...)
+    // Also match empty array literal [] before transformArrayLiterals converts it to {}
     {
-        std::regex concatMethod(R"((\w+|\{\})\.concat\()");
+        std::regex concatMethod(R"((\w+|\{\}|\[\])\.concat\()");
         result = std::regex_replace(result, concatMethod, "_concat($1, ");
     }
 

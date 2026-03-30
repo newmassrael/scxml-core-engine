@@ -22,6 +22,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <vector>
@@ -766,7 +767,8 @@ private:
 
     // W3C SCXML 3.7 & 5.5: Compound state done.state event generation
     void handleCompoundStateFinalChild(const std::string &finalStateId);
-    bool evaluateDoneData(const std::string &finalStateId, std::string &outEventData);
+    bool evaluateDoneData(const std::string &finalStateId, std::string &outEventData,
+                          std::optional<ScriptValue> &outTypedData);
 
     // W3C SCXML 5.5: Helper methods moved to DoneDataHelper (Zero Duplication)
 };
