@@ -300,6 +300,12 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                     // 352, 372)
                     currentOriginType_ = originType;
 
+                    // W3C SCXML 5.10: Set thread-local event type before immediate callback execution
+                    currentEventType_ = EventTypeHelper::classifyEventType(eventName, !isInternal);
+
+                    // W3C SCXML 5.10: Set thread-local typed data before immediate callback execution
+                    currentTypedData_ = typedData;
+
                     bool result = callback(eventName, eventData);
 
                     // Clear after callback
@@ -307,6 +313,8 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                     currentSendId_.clear();
                     currentInvokeId_.clear();
                     currentOriginType_.clear();
+                    currentEventType_.clear();
+                    currentTypedData_.reset();
 
                     return result;
                 } catch (const std::exception &e) {
@@ -315,6 +323,8 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
                     currentSendId_.clear();
                     currentInvokeId_.clear();
                     currentOriginType_.clear();
+                    currentEventType_.clear();
+                    currentTypedData_.reset();
                     return false;
                 }
             } else {

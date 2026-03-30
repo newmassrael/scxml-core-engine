@@ -281,8 +281,21 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     });
     lua_setglobal(L, "_isArray");
 
-    // _indexOf(arr, value): ECMAScript Array.indexOf (0-based, returns -1 if not found)
+    // _indexOf(obj, value): ECMAScript Array.indexOf / String.indexOf (0-based, returns -1 if not found)
     lua_pushcfunction(L, [](lua_State *Ls) -> int {
+        // W3C SCXML B.2: String.prototype.indexOf(searchString)
+        if (lua_isstring(Ls, 1) && lua_isstring(Ls, 2)) {
+            const char *haystack = lua_tostring(Ls, 1);
+            const char *needle = lua_tostring(Ls, 2);
+            const char *found = strstr(haystack, needle);
+            if (found) {
+                lua_pushinteger(Ls, static_cast<lua_Integer>(found - haystack));  // 0-based
+            } else {
+                lua_pushinteger(Ls, -1);
+            }
+            return 1;
+        }
+        // Array.prototype.indexOf(searchElement)
         if (!lua_istable(Ls, 1)) {
             lua_pushinteger(Ls, -1);
             return 1;
@@ -576,6 +589,10 @@ ScriptResult LuaEngine::setVariableInternal(const std::string &sessionId, const 
 
     // Track declared variables (Lua nil == undeclared, so we need explicit tracking)
     it->second->declaredVars.insert(name);
+
+    // Track pre-initialized variables for invoke param/namelist support
+    // W3C SCXML 6.4.2: DataModelInitializer skips re-initialization of pre-initialized variables
+    it->second->preInitializedVars.insert(name);
 
     return ScriptResult::createSuccess(true);
 }
