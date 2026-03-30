@@ -368,7 +368,7 @@ TEST_F(SessionManagementTest, EventSchedulingComponentCreationStepByStepTest) {
 
     // Step 2: Create ActionExecutor (potential hang point?)
     try {
-        auto actionExecutor = std::make_shared<SCE::ActionExecutorImpl>("test_session");
+        auto actionExecutor = std::make_shared<SCE::ActionExecutorImpl>("test_session", SCE::JSEngine::instance());
         EXPECT_TRUE(actionExecutor != nullptr) << "ActionExecutor creation failed";
 
         // Step 3: Create EventTargetFactory with MockEventRaiser (potential hang point?)
@@ -395,7 +395,7 @@ TEST_F(SessionManagementTest, EventSchedulerCreationTest) {
     bool sessionResult = engine_->createSession("test_session", "");
     EXPECT_TRUE(sessionResult);
 
-    auto actionExecutor = std::make_shared<SCE::ActionExecutorImpl>("test_session");
+    auto actionExecutor = std::make_shared<SCE::ActionExecutorImpl>("test_session", SCE::JSEngine::instance());
     auto mockEventRaiser = std::make_shared<SCE::Test::MockEventRaiser>(
         [](const std::string &, const std::string &) -> bool { return true; });
     actionExecutor->setEventRaiser(mockEventRaiser);
@@ -421,7 +421,7 @@ TEST_F(SessionManagementTest, EventSchedulerCreationTest) {
         EXPECT_TRUE(dispatcher != nullptr) << "EventDispatcherImpl creation failed";
 
         // Step 5: Test if we can create ActionExecutor with dispatcher
-        auto actionExecutorWithDispatcher = std::make_shared<SCE::ActionExecutorImpl>("test_session", dispatcher);
+        auto actionExecutorWithDispatcher = std::make_shared<SCE::ActionExecutorImpl>("test_session", SCE::JSEngine::instance(), dispatcher);
         EXPECT_TRUE(actionExecutorWithDispatcher != nullptr) << "ActionExecutor with dispatcher failed";
 
         SUCCEED() << "All event scheduling components created successfully!";

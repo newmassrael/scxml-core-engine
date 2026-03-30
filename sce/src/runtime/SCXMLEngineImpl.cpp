@@ -1,6 +1,6 @@
 #define SCXML_ENGINE_EXPORTS
 #include "SCXMLEngineImpl.h"
-#include "scripting/JSEngine.h"
+#include "scripting/JSEngine.h"  // For default constructor backward compatibility
 #include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include "scripting/ScriptResultUtils.h"
@@ -41,12 +41,15 @@ Event::Event(const ::std::string &name, const ::std::string &type) : name_(name)
 
 // === SCXMLEngineImpl Implementation ===
 
-SCXMLEngineImpl::SCXMLEngineImpl() = default;
+SCXMLEngineImpl::SCXMLEngineImpl()
+    : scriptEngine_(JSEngine::instance()), sessionManager_(JSEngine::instance()) {}
+
+SCXMLEngineImpl::SCXMLEngineImpl(IScriptEngine &scriptEngine, ISessionManager &sessionManager)
+    : scriptEngine_(scriptEngine), sessionManager_(sessionManager) {}
 
 SCXMLEngineImpl::~SCXMLEngineImpl() {
-    // Do NOT call shutdown() - JSEngine is a singleton shared by all SCXMLEngine instances
-    // Calling JSEngine::shutdown() from each SCXMLEngine destructor causes race conditions
-    // JSEngine lifecycle is managed at process level, not per-instance
+    // Do NOT call shutdown() - script engine may be shared by all SCXMLEngine instances
+    // Engine lifecycle is managed at process level, not per-instance
     initialized_ = false;
 }
 
@@ -57,39 +60,37 @@ bool SCXMLEngineImpl::initialize() {
         return true;
     }
 
-    // JSEngine automatically initialized in constructor (RAII)
-    // instance() call provides fully initialized engine
-    SCE::JSEngine::instance();  // RAII guaranteed
-    SCE_LOG_DEBUG("SCXMLEngineImpl: JSEngine automatically initialized via RAII");
+    // Script engine automatically initialized (RAII)
+    SCE_LOG_DEBUG("SCXMLEngineImpl: Script engine ready");
     initialized_ = true;
     return true;
 }
 
 void SCXMLEngineImpl::shutdown() {
     if (initialized_) {
-        SCE::JSEngine::instance().shutdown();
+        scriptEngine_.shutdown();
         initialized_ = false;
     }
 }
 
 ::std::string SCXMLEngineImpl::getEngineInfo() const {
-    return SCE::JSEngine::instance().getEngineInfo() + " (SCXML C++ API v1.0)";
+    return scriptEngine_.getEngineInfo() + " (SCXML C++ API v1.0)";
 }
 
 bool SCXMLEngineImpl::createSession(const ::std::string &sessionId, const ::std::string &parentSessionId) {
-    return SCE::JSEngine::instance().createSession(sessionId, parentSessionId);
+    return scriptEngine_.createSession(sessionId, parentSessionId);
 }
 
 bool SCXMLEngineImpl::destroySession(const ::std::string &sessionId) {
-    return SCE::JSEngine::instance().destroySession(sessionId);
+    return scriptEngine_.destroySession(sessionId);
 }
 
 bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
-    return SCE::JSEngine::instance().hasSession(sessionId);
+    return scriptEngine_.hasSession(sessionId);
 }
 
 ::std::vector<SessionInfo> SCXMLEngineImpl::getActiveSessions() const {
-    auto sessionIds = SCE::JSEngine::instance().getActiveSessions();
+    auto sessionIds = sessionManager_.getActiveSessions();
     ::std::vector<SessionInfo> result;
     result.reserve(sessionIds.size());
 
@@ -105,7 +106,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 
 ::std::future<ExecutionResult> SCXMLEngineImpl::executeScript(const ::std::string &sessionId,
                                                               const ::std::string &script) {
-    auto jsFuture = SCE::JSEngine::instance().executeScript(sessionId, script);
+    auto jsFuture = scriptEngine_.executeScript(sessionId, script);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -114,7 +115,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 
 ::std::future<ExecutionResult> SCXMLEngineImpl::evaluateExpression(const ::std::string &sessionId,
                                                                    const ::std::string &expression) {
-    auto jsFuture = SCE::JSEngine::instance().evaluateExpression(sessionId, expression);
+    auto jsFuture = scriptEngine_.evaluateExpression(sessionId, expression);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -124,7 +125,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 ::std::future<ExecutionResult> SCXMLEngineImpl::setVariable(const ::std::string &sessionId, const ::std::string &name,
                                                             const ScriptValue &value) {
     // Convert public ScriptValue to internal ScriptValue (same type)
-    auto jsFuture = SCE::JSEngine::instance().setVariable(sessionId, name, value);
+    auto jsFuture = scriptEngine_.setVariable(sessionId, name, value);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -132,7 +133,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 }
 
 ::std::future<ExecutionResult> SCXMLEngineImpl::getVariable(const ::std::string &sessionId, const ::std::string &name) {
-    auto jsFuture = SCE::JSEngine::instance().getVariable(sessionId, name);
+    auto jsFuture = scriptEngine_.getVariable(sessionId, name);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -141,8 +142,8 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 
 ::std::future<ExecutionResult> SCXMLEngineImpl::setCurrentEvent(const ::std::string &sessionId,
                                                                 ::std::shared_ptr<Event> event) {
-    return ::std::async(::std::launch::deferred, [sessionId, event]() -> ExecutionResult {
-        auto jsResult = JSEngine::instance().setCurrentEvent(sessionId, event).get();
+    return ::std::async(::std::launch::deferred, [this, sessionId, event]() -> ExecutionResult {
+        auto jsResult = scriptEngine_.setCurrentEvent(sessionId, event).get();
         ExecutionResult result;
         result.success = jsResult.isSuccess();
         result.errorMessage = jsResult.isSuccess() ? "" : "Failed to set current event";
@@ -153,7 +154,7 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 ::std::future<ExecutionResult> SCXMLEngineImpl::setupSystemVariables(const ::std::string &sessionId,
                                                                      const ::std::string &sessionName,
                                                                      const ::std::vector<::std::string> &ioProcessors) {
-    auto jsFuture = SCE::JSEngine::instance().setupSystemVariables(sessionId, sessionName, ioProcessors);
+    auto jsFuture = scriptEngine_.setupSystemVariables(sessionId, sessionName, ioProcessors);
     return ::std::async(::std::launch::deferred, [jsFuture = ::std::move(jsFuture), this]() mutable {
         auto jsResult = jsFuture.get();
         return convertResult(jsResult);
@@ -161,11 +162,11 @@ bool SCXMLEngineImpl::hasSession(const ::std::string &sessionId) const {
 }
 
 size_t SCXMLEngineImpl::getMemoryUsage() const {
-    return SCE::JSEngine::instance().getMemoryUsage();
+    return scriptEngine_.getMemoryUsage();
 }
 
 void SCXMLEngineImpl::collectGarbage() {
-    SCE::JSEngine::instance().collectGarbage();
+    scriptEngine_.collectGarbage();
 }
 
 ExecutionResult SCXMLEngineImpl::convertResult(const ScriptResult &jsResult) const {
@@ -379,8 +380,7 @@ bool SCXMLEngineImpl::setVariableSyncImpl(const std::string &name, const ScriptV
 
     try {
         const std::string &smSessionId = stateMachine_->getSessionId();
-        auto &jsEngine = JSEngine::instance();
-        auto future = jsEngine.setVariable(smSessionId, name, value);
+        auto future = scriptEngine_.setVariable(smSessionId, name, value);
         auto result = future.get();
 
         if (!ScriptResultUtils::isSuccess(result)) {
@@ -422,8 +422,7 @@ std::string SCXMLEngineImpl::getVariableSync(const std::string &name,
     try {
         // Use StateMachine's session ID
         const std::string &smSessionId = stateMachine_->getSessionId();
-        auto &jsEngine = JSEngine::instance();
-        auto future = jsEngine.getVariable(smSessionId, name);
+        auto future = scriptEngine_.getVariable(smSessionId, name);
         auto result = future.get();
 
         if (!ScriptResultUtils::isSuccess(result)) {

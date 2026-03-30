@@ -405,7 +405,7 @@ TEST_F(JSEngineBasicTest, W3C_InFunction_StateMachineIntegration_ShouldReturnCor
     // Create StateMachine with controlled scope for proper lifecycle management
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
     {
-        auto sm = std::make_shared<SCE::StateMachine>();
+        auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
         ASSERT_TRUE(sm->loadSCXMLFromString(scxml)) << "Failed to load SCXML";
         ASSERT_TRUE(sm->start()) << "Failed to start StateMachine";
 
@@ -1175,7 +1175,7 @@ TEST_F(JSEngineBasicTest, W3C_InPredicate_FunctionalStateMachineIntegration) {
     tempFile.close();
 
     // Create StateMachine from SCXML
-    auto stateMachine = std::make_shared<SCE::StateMachine>();
+    auto stateMachine = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
     bool loadResult = stateMachine->loadSCXML(tempPath);
     ASSERT_TRUE(loadResult) << "Failed to load SCXML file";
 
@@ -1236,7 +1236,7 @@ TEST_F(JSEngineBasicTest, W3C_InPredicate_UsedInConditions) {
     tempFile << scxmlContent;
     tempFile.close();
 
-    auto stateMachine = std::make_shared<SCE::StateMachine>();
+    auto stateMachine = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
     ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
     ASSERT_TRUE(stateMachine->start());
 
@@ -1287,7 +1287,7 @@ TEST_F(JSEngineBasicTest, W3C_SystemVariables_IOProcessorsDetailedStructure) {
     tempFile << scxmlContent;
     tempFile.close();
 
-    auto stateMachine = std::make_shared<SCE::StateMachine>();
+    auto stateMachine = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
     ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
     ASSERT_TRUE(stateMachine->start());
 
@@ -1368,7 +1368,7 @@ TEST_F(JSEngineBasicTest, W3C_SystemVariables_IOProcessorsInExpressions) {
     tempFile << scxmlContent;
     tempFile.close();
 
-    auto stateMachine = std::make_shared<SCE::StateMachine>();
+    auto stateMachine = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
     ASSERT_TRUE(stateMachine->loadSCXML(tempPath));
     ASSERT_TRUE(stateMachine->start());
 

@@ -1,6 +1,6 @@
 #include "runtime/StateMachineFactory.h"
 #include "core/LogMacros.h"
-#include "scripting/IScriptEngine.h"
+#include "scripting/JSEngine.h"
 #include <random>
 
 namespace SCE {
@@ -26,7 +26,7 @@ StateMachineFactory::CreationResult StateMachineFactory::createInternal(const st
     try {
         // Create StateMachine with shared_ptr (required for enable_shared_from_this)
         // StateMachine uses shared_from_this() internally, so it must be managed by shared_ptr
-        auto stateMachine = std::make_shared<StateMachine>();
+        auto stateMachine = std::make_shared<StateMachine>(JSEngine::instance());
 
         // Load SCXML if provided
         if (!scxmlContent.empty()) {

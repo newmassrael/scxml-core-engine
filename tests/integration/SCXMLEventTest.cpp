@@ -59,7 +59,7 @@ protected:
         scheduler_ = std::make_shared<EventSchedulerImpl>(eventExecutionCallback_);
 
         // Create ActionExecutor
-        executor_ = std::make_shared<ActionExecutorImpl>(sessionId_);
+        executor_ = std::make_shared<ActionExecutorImpl>(sessionId_, JSEngine::instance());
 
         // Set up event raising with MockEventRaiser for internal events
         raisedEvents_.clear();
@@ -423,7 +423,7 @@ TEST_F(SCXMLEventTest, ParentChildEventCommunication) {
     JSEngine::instance().createSession(childSessionId, sessionId_);
 
     // Create child ActionExecutor and EventRaiser
-    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId);
+    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, JSEngine::instance());
     auto childEventRaiser =
         std::make_shared<MockEventRaiser>([this](const std::string &eventName, const std::string &eventData) -> bool {
             // This should route events to parent session
@@ -474,7 +474,7 @@ TEST_F(SCXMLEventTest, CrossSessionCancelAction) {
     JSEngine::instance().createSession(childSessionId, sessionId_);
 
     // Create child infrastructure
-    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId);
+    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, JSEngine::instance());
     auto childEventRaiser =
         std::make_shared<MockEventRaiser>([](const std::string &, const std::string &) -> bool { return true; });
     childExecutor->setEventRaiser(childEventRaiser);
@@ -543,7 +543,7 @@ TEST_F(SCXMLEventTest, InvokeWithDelayedEventAndCancel) {
     EXPECT_TRUE(registered) << "Failed to register MockEventRaiser for parent session";
 
     // Create child infrastructure
-    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId);
+    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, JSEngine::instance());
     auto childEventRaiser =
         std::make_shared<MockEventRaiser>([](const std::string &, const std::string &) -> bool { return true; });
     childExecutor->setEventRaiser(childEventRaiser);

@@ -30,7 +30,7 @@ protected:
         sessionId = "action_executor_test_session";
         ASSERT_TRUE(jsEngine->createSession(sessionId, ""));
 
-        executor = std::make_unique<ActionExecutorImpl>(sessionId);
+        executor = std::make_unique<ActionExecutorImpl>(sessionId, JSEngine::instance());
     }
 
     void TearDown() override {

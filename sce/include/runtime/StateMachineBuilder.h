@@ -17,6 +17,7 @@ namespace SCE {
  */
 class StateMachineBuilder {
 private:
+    IScriptEngine *scriptEngine_ = nullptr;
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
     std::shared_ptr<IEventRaiser> eventRaiser_;
     std::string sessionId_;
@@ -24,6 +25,16 @@ private:
 
 public:
     StateMachineBuilder() = default;
+
+    /**
+     * @brief Set script engine for pluggable engine support
+     * @param scriptEngine Script engine implementation (QuickJS, Lua, etc.)
+     * @return Reference to builder for method chaining
+     */
+    StateMachineBuilder &withScriptEngine(IScriptEngine &scriptEngine) {
+        scriptEngine_ = &scriptEngine;
+        return *this;
+    }
 
     /**
      * @brief Set EventDispatcher for send actions and delayed events
@@ -79,34 +90,7 @@ public:
      * @return Shared pointer to StateMachine (for callback safety)
      * @throws std::runtime_error if required dependencies are missing
      */
-    std::shared_ptr<StateMachine> build() {
-        std::shared_ptr<StateMachine> stateMachine;
-
-        // Create StateMachine with or without session ID
-        if (!sessionId_.empty()) {
-            stateMachine = std::make_shared<StateMachine>(sessionId_);
-        } else {
-            stateMachine = std::make_shared<StateMachine>();
-        }
-
-        // Inject dependencies after construction
-        if (eventDispatcher_) {
-            stateMachine->setEventDispatcher(eventDispatcher_);
-        }
-
-        if (eventRaiser_) {
-            stateMachine->setEventRaiser(eventRaiser_);
-
-            // W3C SCXML 3.13: Apply scheduler mode for parent-child inheritance
-            // Get scheduler from EventRaiser and set mode (MANUAL for interactive debugging)
-            auto scheduler = eventRaiser_->getScheduler();
-            if (scheduler) {
-                scheduler->setMode(schedulerMode_);
-            }
-        }
-
-        return stateMachine;
-    }
+    std::shared_ptr<StateMachine> build();
 };
 
 }  // namespace SCE

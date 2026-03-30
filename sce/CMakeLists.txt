@@ -112,6 +112,7 @@ add_library(sce_runtime
     src/runtime/SCXMLEngineImpl.cpp
     src/runtime/StateMachine.cpp
     src/runtime/StateMachineContext.cpp
+    src/runtime/StateMachineBuilder.cpp
     src/runtime/StateMachineFactory.cpp
     src/runtime/ActionExecutorImpl.cpp
     src/runtime/StateMachineEventRaiser.cpp

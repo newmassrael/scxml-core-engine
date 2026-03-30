@@ -15,7 +15,7 @@
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineBuilder.h"
 #include "runtime/StateMachineContext.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IScriptEngine.h"
 #include "scripting/ScriptResultUtils.h"
 #include "scripting/SessionRegistry.h"
 #include <cerrno>
@@ -57,13 +57,13 @@ static std::string extractParentStateIdFromInvokeId(const std::string &invokeId)
 // SCXMLInvokeHandler Implementation
 // ============================================================================
 
-SCXMLInvokeHandler::SCXMLInvokeHandler() = default;
+SCXMLInvokeHandler::SCXMLInvokeHandler(IScriptEngine &scriptEngine) : scriptEngine_(scriptEngine) {}
 
 SCXMLInvokeHandler::~SCXMLInvokeHandler() {
     // Cancel all active sessions on destruction
     for (const auto &[invokeid, session] : activeSessions_) {
         if (session.isActive) {
-            JSEngine::instance().destroySession(session.sessionId);
+            scriptEngine_.destroySession(session.sessionId);
         }
     }
 }
@@ -100,7 +100,7 @@ std::string SCXMLInvokeHandler::startInvokeWithSessionId(const std::shared_ptr<I
         parentSessionId, childSessionId);
 
     // Check if session exists (architectural fix for timing)
-    bool sessionExists = JSEngine::instance().hasSession(childSessionId);
+    bool sessionExists = scriptEngine_.hasSession(childSessionId);
 
     // Delegate to internal method with session existence information
     return startInvokeInternal(invoke, parentSessionId, eventDispatcher, childSessionId, sessionExists, isRestoration);
@@ -132,7 +132,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // W3C SCXML test 530: Handle contentexpr evaluation
     if (scxmlContent.empty() && !invoke->getContentExpr().empty()) {
         // Evaluate contentexpr in parent session context
-        auto future = JSEngine::instance().evaluateExpression(parentSessionId, invoke->getContentExpr());
+        auto future = scriptEngine_.evaluateExpression(parentSessionId, invoke->getContentExpr());
         auto result = future.get();
 
         if (result.isSuccess()) {
@@ -149,7 +149,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
     // Handle srcexpr evaluation first
     if (scxmlContent.empty() && !invoke->getSrcExpr().empty()) {
         // Evaluate srcexpr in parent session context
-        auto future = JSEngine::instance().evaluateExpression(parentSessionId, invoke->getSrcExpr());
+        auto future = scriptEngine_.evaluateExpression(parentSessionId, invoke->getSrcExpr());
         auto result = future.get();
 
         if (result.isSuccess()) {
@@ -190,7 +190,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
     // Create session if it doesn't exist
     if (!sessionAlreadyExists) {
-        bool sessionCreated = JSEngine::instance().createSession(childSessionId, parentSessionId);
+        bool sessionCreated = scriptEngine_.createSession(childSessionId, parentSessionId);
         if (!sessionCreated) {
             SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to create child session: {}", childSessionId);
             return "";
@@ -199,14 +199,14 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
 
     // W3C SCXML 6.4: Handle idlocation attribute - store invoke ID in parent session
     if (!invoke->getIdLocation().empty()) {
-        JSEngine::instance().setVariable(parentSessionId, invoke->getIdLocation(), ScriptValue{invokeid});
+        scriptEngine_.setVariable(parentSessionId, invoke->getIdLocation(), ScriptValue{invokeid});
         SCE_LOG_DEBUG("SCXMLInvokeHandler: Set idlocation '{}' = '{}' in parent session '{}'", invoke->getIdLocation(),
                   invokeid, parentSessionId);
     }
 
     // Set special variables in child session
-    JSEngine::instance().setVariable(childSessionId, "_invokeid", ScriptValue{invokeid});
-    JSEngine::instance().setVariable(childSessionId, "_parent", ScriptValue{parentSessionId});
+    scriptEngine_.setVariable(childSessionId, "_invokeid", ScriptValue{invokeid});
+    scriptEngine_.setVariable(childSessionId, "_parent", ScriptValue{parentSessionId});
 
     // W3C SCXML 6.2 compliance: Register EventDispatcher for delayed event cancellation
     if (eventDispatcher) {
@@ -381,7 +381,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         invokeid, scxmlContent.length());
     if (!session.smContext->get()->loadSCXMLFromString(scxmlContent)) {
         SCE_LOG_ERROR("SCXMLInvokeHandler: Failed to load SCXML content for invoke: {}", invokeid);
-        JSEngine::instance().destroySession(childSessionId);
+        scriptEngine_.destroySession(childSessionId);
         return "";
     }
     SCE_LOG_DEBUG("SCXMLInvokeHandler: Successfully loaded SCXML content for invoke: {}", invokeid);
@@ -408,7 +408,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         while (iss >> varName) {
             // W3C SCXML 6.4: First evaluate variable in parent session to detect errors
             // If evaluation fails (e.g., undefined variable), invoke must be cancelled (test 554)
-            auto future = JSEngine::instance().getVariable(parentSessionId, varName);
+            auto future = scriptEngine_.getVariable(parentSessionId, varName);
             auto result = future.get();
 
             if (!ScriptResultUtils::isSuccess(result)) {
@@ -417,7 +417,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                     varName);
                 // W3C SCXML 6.4: If evaluation of invoke's arguments produces an error,
                 // the Processor MUST terminate processing of the element (test 554)
-                JSEngine::instance().destroySession(childSessionId);
+                scriptEngine_.destroySession(childSessionId);
                 return "";
             }
 
@@ -444,7 +444,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 continue;
             }
 
-            auto future = JSEngine::instance().evaluateExpression(parentSessionId, expr);
+            auto future = scriptEngine_.evaluateExpression(parentSessionId, expr);
             auto result = future.get();
 
             if (!ScriptResultUtils::isSuccess(result)) {
@@ -453,7 +453,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                     expr);
                 // W3C SCXML 6.4: If evaluation of invoke's arguments produces an error,
                 // the Processor MUST terminate processing of the element
-                JSEngine::instance().destroySession(childSessionId);
+                scriptEngine_.destroySession(childSessionId);
                 return "";
             }
 
@@ -504,7 +504,7 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
                 std::lock_guard<std::mutex> lock(finalizeScriptsMutex_);
                 finalizeScripts_.erase(childSessionId);
             }
-            JSEngine::instance().destroySession(childSessionId);
+            scriptEngine_.destroySession(childSessionId);
             return "";
         }
         SCE_LOG_INFO("SCXMLInvokeHandler: Child StateMachine started successfully for invoke: {} (session: {})", invokeid,
@@ -595,7 +595,7 @@ bool SCXMLInvokeHandler::cancelInvoke(const std::string &invokeid) {
     // Destroy the child session (RAII cleanup with thread-safe weak_ptr callbacks)
     // Callbacks use weak_ptr::lock() which returns nullptr if StateMachine is destroyed
     // Child's onexit handlers may send events to parent during destruction - these will be filtered
-    JSEngine::instance().destroySession(session.sessionId);
+    scriptEngine_.destroySession(session.sessionId);
 
     // Mark as inactive
     session.isActive = false;
@@ -623,7 +623,7 @@ std::string SCXMLInvokeHandler::getType() const {
 
 void SCXMLInvokeHandler::setInvokeDataVariable(const std::string &childSessionId, const std::string &varName,
                                                const ScriptValue &value, const std::string &source) {
-    JSEngine::instance().setVariable(childSessionId, varName, value);
+    scriptEngine_.setVariable(childSessionId, varName, value);
     SCE_LOG_INFO("SCXMLInvokeHandler: Set {} variable '{}' in child session", source, varName);
 }
 
@@ -649,42 +649,25 @@ std::string SCXMLInvokeHandler::generateInvokeId(const std::string &stateId) con
 // InvokeHandlerFactory Implementation
 // ============================================================================
 
-std::unordered_map<std::string, std::function<std::shared_ptr<IInvokeHandler>()>> InvokeHandlerFactory::creators_;
-
-std::shared_ptr<IInvokeHandler> InvokeHandlerFactory::createHandler(const std::string &type) {
-    // Initialize default handlers on first call
-    static bool initialized = false;
-    if (!initialized) {
-        // W3C SCXML: Register all standard SCXML invoke type variations
-        auto scxmlHandler = []() { return std::make_shared<SCXMLInvokeHandler>(); };
-        registerHandler("scxml", scxmlHandler);
-        registerHandler(Constants::SCXML_INVOKE_PROCESSOR_URI, scxmlHandler);
-        registerHandler(std::string(Constants::SCXML_INVOKE_PROCESSOR_URI)
-                            .substr(0, std::string(Constants::SCXML_INVOKE_PROCESSOR_URI).length() - 1),
-                        scxmlHandler);  // Without trailing slash
-        initialized = true;
-    }
-
-    auto it = creators_.find(type);
-    if (it != creators_.end()) {
-        return it->second();
+std::shared_ptr<IInvokeHandler> InvokeHandlerFactory::createHandler(const std::string &type,
+                                                                    IScriptEngine &scriptEngine) {
+    // W3C SCXML: Check if type matches SCXML invoke processor
+    if (type == "scxml" || type == Constants::SCXML_INVOKE_PROCESSOR_URI ||
+        type == std::string(Constants::SCXML_INVOKE_PROCESSOR_URI)
+                   .substr(0, std::string(Constants::SCXML_INVOKE_PROCESSOR_URI).length() - 1)) {
+        return std::make_shared<SCXMLInvokeHandler>(scriptEngine);
     }
 
     SCE_LOG_WARN("InvokeHandlerFactory: Unknown invoke type: {}, falling back to SCXML handler", type);
-    return std::make_shared<SCXMLInvokeHandler>();
-}
-
-void InvokeHandlerFactory::registerHandler(const std::string &type,
-                                           std::function<std::shared_ptr<IInvokeHandler>()> creator) {
-    creators_[type] = creator;
-    SCE_LOG_DEBUG("InvokeHandlerFactory: Registered handler for type: {}", type);
+    return std::make_shared<SCXMLInvokeHandler>(scriptEngine);
 }
 
 // ============================================================================
 // InvokeExecutor Implementation
 // ============================================================================
 
-InvokeExecutor::InvokeExecutor(std::shared_ptr<IEventDispatcher> eventDispatcher) : eventDispatcher_(eventDispatcher) {
+InvokeExecutor::InvokeExecutor(IScriptEngine &scriptEngine, std::shared_ptr<IEventDispatcher> eventDispatcher)
+    : scriptEngine_(scriptEngine), eventDispatcher_(eventDispatcher) {
     SCE_LOG_DEBUG("InvokeExecutor: Created with eventDispatcher: {}", eventDispatcher ? "provided" : "null");
 }
 
@@ -740,14 +723,14 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
     // W3C SCXML 1.0: Handle typeexpr attribute for dynamic type evaluation
     if (invokeType.empty() && !invoke->getTypeExpr().empty()) {
         try {
-            auto future = JSEngine::instance().evaluateExpression(sessionId, invoke->getTypeExpr());
+            auto future = scriptEngine_.evaluateExpression(sessionId, invoke->getTypeExpr());
             auto jsResult = future.get();
             if (!jsResult.isSuccess()) {
                 SCE_LOG_ERROR("InvokeExecutor: Failed to evaluate typeexpr '{}': {}", invoke->getTypeExpr(),
                           jsResult.getErrorMessage());
                 return "";
             }
-            invokeType = ScriptResultUtils::resultToString(jsResult, &JSEngine::instance(), sessionId, invoke->getTypeExpr());
+            invokeType = ScriptResultUtils::resultToString(jsResult, &scriptEngine_, sessionId, invoke->getTypeExpr());
             SCE_LOG_DEBUG("InvokeExecutor: Evaluated typeexpr '{}' to type: '{}'", invoke->getTypeExpr(), invokeType);
         } catch (const std::exception &e) {
             SCE_LOG_ERROR("InvokeExecutor: Failed to evaluate typeexpr '{}': {}", invoke->getTypeExpr(), e.what());
@@ -777,7 +760,7 @@ std::string InvokeExecutor::executeInvoke(const std::shared_ptr<IInvokeNode> &in
     }
 
     // Create appropriate handler using factory pattern
-    auto handler = InvokeHandlerFactory::createHandler(invokeType);
+    auto handler = InvokeHandlerFactory::createHandler(invokeType, scriptEngine_);
     if (!handler) {
         SCE_LOG_ERROR("InvokeExecutor: Failed to create handler for invoke type: {}", invokeType);
         return "";
@@ -1523,7 +1506,7 @@ void InvokeExecutor::restoreInvokeState(const std::vector<InvokeSnapshot> &invok
         // Leave src/srcexpr/contentexpr empty - startInvokeInternal will use content field
 
         // Create SCXML invoke handler
-        auto handler = std::make_shared<SCXMLInvokeHandler>();
+        auto handler = std::make_shared<SCXMLInvokeHandler>(scriptEngine_);
         handler->setParentStateMachine(parentSM);
 
         // Register handler

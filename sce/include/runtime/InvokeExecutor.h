@@ -76,12 +76,12 @@ public:
 /**
  * @brief SCXML invoke handler implementation
  *
- * Handles SCXML-to-SCXML invocation using JSEngine sessions
+ * Handles SCXML-to-SCXML invocation using IScriptEngine sessions
  * and hierarchical parent-child relationships.
  */
 class SCXMLInvokeHandler : public IInvokeHandler {
 public:
-    SCXMLInvokeHandler();
+    explicit SCXMLInvokeHandler(IScriptEngine &scriptEngine);
     ~SCXMLInvokeHandler() override;
 
     std::string startInvoke(const std::shared_ptr<IInvokeNode> &invoke, const std::string &parentSessionId,
@@ -171,6 +171,8 @@ public:
     bool getAutoForward() const;
 
 private:
+    IScriptEngine &scriptEngine_;
+
     struct InvokeSession {
         std::string invokeid;
         std::string sessionId;
@@ -242,11 +244,10 @@ private:
  */
 class InvokeHandlerFactory {
 public:
-    static std::shared_ptr<IInvokeHandler> createHandler(const std::string &type);
-    static void registerHandler(const std::string &type, std::function<std::shared_ptr<IInvokeHandler>()> creator);
+    static std::shared_ptr<IInvokeHandler> createHandler(const std::string &type, IScriptEngine &scriptEngine);
 
 private:
-    static std::unordered_map<std::string, std::function<std::shared_ptr<IInvokeHandler>()>> creators_;
+    // No static registration - handlers created directly with engine injection
 };
 
 /**
@@ -254,7 +255,7 @@ private:
  *
  * Coordinates invoke lifecycle management by delegating to appropriate handlers
  * while maintaining SCXML W3C compliance. Leverages existing infrastructure:
- * - JSEngine for session management
+ * - IScriptEngine for session management
  * - IEventDispatcher for event communication
  * - IInvokeNode for parsed invoke data
  */
@@ -262,9 +263,10 @@ class InvokeExecutor {
 public:
     /**
      * @brief Constructor with dependency injection (Dependency Inversion Principle)
+     * @param scriptEngine Script engine for expression evaluation and session management
      * @param eventDispatcher Event dispatcher for inter-session communication
      */
-    explicit InvokeExecutor(std::shared_ptr<IEventDispatcher> eventDispatcher = nullptr);
+    explicit InvokeExecutor(IScriptEngine &scriptEngine, std::shared_ptr<IEventDispatcher> eventDispatcher = nullptr);
 
     /**
      * @brief Destructor - ensures cleanup of active invokes
@@ -391,6 +393,7 @@ public:
     void restoreInvokeState(const std::vector<InvokeSnapshot> &invokes, std::shared_ptr<StateMachine> parentSM);
 
 private:
+    IScriptEngine &scriptEngine_;
     std::shared_ptr<IEventDispatcher> eventDispatcher_;
 
     // W3C SCXML 6.5: Parent StateMachine weak_ptr for completion callback state checking (thread-safe)

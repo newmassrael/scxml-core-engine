@@ -1,6 +1,5 @@
 #pragma once
 
-#include "scripting/ClassBinding.h"  // C++ class binding infrastructure
 #include "core/LogMacros.h"
 #include "core/HierarchicalStateHelper.h"
 #include "core/InvokeHelper.h"  // W3C SCXML 6.4: Shared invoke lifecycle logic (Zero Duplication)
@@ -16,7 +15,7 @@
 #include "runtime/StateHierarchyManager.h"
 #include "runtime/StateMachineEventRaiser.h"
 #include "runtime/TransitionDomainCalculator.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IScriptEngine.h"
 #include "states/ConcurrentStateTypes.h"  // W3C SCXML Appendix D.2: TransitionDescriptorString
 #include <atomic>
 #include <functional>
@@ -100,15 +99,11 @@ public:
     using ExitSetResult = TransitionDomainCalculator::ExitSetResult;
 
     /**
-     * @brief Default constructor - generates random session ID
+     * @brief Constructor with explicit script engine injection
+     * @param scriptEngine Script engine for expression evaluation and session management
+     * @param sessionId Pre-existing session ID (empty = auto-generate)
      */
-    StateMachine();
-
-    /**
-     * @brief Constructor with session ID injection
-     * @param sessionId Pre-existing session ID to use (for invoke scenarios)
-     */
-    explicit StateMachine(const std::string &sessionId);
+    explicit StateMachine(IScriptEngine &scriptEngine, const std::string &sessionId = "");
 
     /**
      * @brief Destructor
@@ -174,16 +169,14 @@ public:
      * @endcode
      */
     static std::shared_ptr<StateMachine> createFromSCXMLString(const std::string &scxmlContent,
-                                                               const std::string &sessionId = "") {
-        auto sm = sessionId.empty() ? std::make_shared<StateMachine>() : std::make_shared<StateMachine>(sessionId);
+                                                               const std::string &sessionId = "");
 
-        if (!sm->loadSCXMLFromString(scxmlContent)) {
-            SCE_LOG_ERROR("StateMachine::createFromSCXMLString: Failed to load SCXML from string");
-            return nullptr;
-        }
-
-        return sm;
-    }
+    /**
+     * @brief Create from SCXML string with explicit engine injection
+     */
+    static std::shared_ptr<StateMachine> createFromSCXMLString(IScriptEngine &scriptEngine,
+                                                               const std::string &scxmlContent,
+                                                               const std::string &sessionId = "");
 
     /**
      * @brief Load pre-parsed SCXML model directly
@@ -612,7 +605,8 @@ private:
     // SCXML model
     std::shared_ptr<SCXMLModel> model_;
 
-    // JavaScript integration
+    // Script engine integration
+    IScriptEngine &scriptEngine_;
     std::string sessionId_;
     std::string currentEventData_;
     std::string currentOriginSessionId_;  // W3C SCXML Test 252: Track origin for cancelled invoke filtering
@@ -777,35 +771,7 @@ private:
     // W3C SCXML 5.5: Helper methods moved to DoneDataHelper (Zero Duplication)
 };
 
-// Template implementation
-template <typename T, typename RegisterFunc>
-void StateMachine::bindObject(const std::string &name, T *object, RegisterFunc registerMethods) {
-    static_assert(std::is_class_v<T>, "Can only bind class objects");
-
-    // Ensure JavaScript environment is initialized
-    if (!ensureJSEnvironment()) {
-        SCE_LOG_ERROR("StateMachine::bindObject: Failed to initialize JS environment");
-        return;
-    }
-
-    // Get QuickJS context via JSEngine
-    JSContext *ctx = JSEngine::instance().getContextForBinding(sessionId_);
-    if (!ctx) {
-        SCE_LOG_ERROR("StateMachine::bindObject: Failed to get JSContext for session {}", sessionId_);
-        return;
-    }
-
-    // Create binder and register methods via callback
-    ClassBinder<T> binder(ctx, name, object);
-    registerMethods(binder);
-
-    // Finalize and register to JavaScript global object
-    JSValue jsObject = binder.finalize();
-    JSValue global = JS_GetGlobalObject(ctx);
-    JS_SetPropertyStr(ctx, global, name.c_str(), jsObject);  // Takes ownership of jsObject
-    JS_FreeValue(ctx, global);
-
-    SCE_LOG_DEBUG("StateMachine::bindObject: Bound object '{}' to JavaScript", name);
-}
-
 }  // namespace SCE
+
+// QuickJS-specific bindObject template implementation (separate include for engine isolation)
+#include "runtime/StateMachineBindObject.h"

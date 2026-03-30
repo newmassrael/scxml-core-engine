@@ -13,6 +13,7 @@
 #include "mocks/MockEventRaiser.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/ExecutionContextImpl.h"
+#include "scripting/JSEngine.h"
 
 namespace SCE {
 
@@ -40,7 +41,7 @@ protected:
                 return true;  // Always succeed for HTTP tests
             });
 
-        actionExecutor_ = std::make_shared<ActionExecutorImpl>("test_session");
+        actionExecutor_ = std::make_shared<ActionExecutorImpl>("test_session", JSEngine::instance());
         actionExecutor_->setEventRaiser(mockEventRaiser);
         targetFactory_ = std::make_shared<EventTargetFactoryImpl>(mockEventRaiser);
     }

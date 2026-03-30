@@ -10,6 +10,8 @@
 
 namespace SCE {
 
+class IScriptEngine;
+
 /**
  * @brief W3C SCXML 5.3: Data model initialization with binding mode support
  *
@@ -21,7 +23,7 @@ namespace SCE {
  * ARCHITECTURE.md Compliance:
  * - Zero Duplication: Uses DataModelInitHelper, BindingHelper, FileLoadingHelper
  * - Single Responsibility: Data model initialization only
- * - No engine mixing: Works with JSEngine singleton for expression evaluation
+ * - No engine mixing: Works with IScriptEngine interface for expression evaluation
  */
 class DataModelInitializer {
 public:
@@ -37,9 +39,11 @@ public:
      * @brief Construct with required dependencies
      *
      * @param model SCXML model for data item lookups
-     * @param sessionId JavaScript session ID for variable operations
+     * @param sessionId Script session ID for variable operations
+     * @param scriptEngine Script engine for expression evaluation and variable management
      */
-    DataModelInitializer(std::shared_ptr<SCXMLModel> model, const std::string &sessionId);
+    DataModelInitializer(std::shared_ptr<SCXMLModel> model, const std::string &sessionId,
+                         IScriptEngine &scriptEngine);
 
     /**
      * @brief Set EventRaiser for error.execution event reporting
@@ -90,6 +94,7 @@ public:
     void initializeStateDataOnEntry(const std::string &stateId);
 
 private:
+    IScriptEngine &scriptEngine_;
     std::shared_ptr<SCXMLModel> model_;
     std::string sessionId_;
     std::shared_ptr<IEventRaiser> eventRaiser_;

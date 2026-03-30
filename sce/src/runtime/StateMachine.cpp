@@ -31,7 +31,8 @@ using SCE::Core::ConflictResolutionAlgorithms;
 #include "runtime/HistoryStateAutoRegistrar.h"
 #include "runtime/HistoryValidator.h"
 #include "runtime/ImmediateModeGuard.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IScriptEngine.h"
+#include "scripting/JSEngine.h"  // For backward-compat static factory methods
 #include "states/ConcurrentRegion.h"
 #include "states/ConcurrentStateNode.h"
 #include <algorithm>
@@ -71,35 +72,39 @@ private:
 };
 }  // anonymous namespace
 
-StateMachine::StateMachine() : jsEnvironmentReady_(false) {
-    sessionId_ = SessionRegistry::instance().generateSessionIdString("sm_");
-    // JS environment changed to lazy initialization
+std::shared_ptr<StateMachine> StateMachine::createFromSCXMLString(const std::string &scxmlContent,
+                                                                   const std::string &sessionId) {
+    return createFromSCXMLString(JSEngine::instance(), scxmlContent, sessionId);
+}
+
+std::shared_ptr<StateMachine> StateMachine::createFromSCXMLString(IScriptEngine &scriptEngine,
+                                                                   const std::string &scxmlContent,
+                                                                   const std::string &sessionId) {
+    auto sm = std::make_shared<StateMachine>(scriptEngine, sessionId);
+    if (!sm->loadSCXMLFromString(scxmlContent)) {
+        SCE_LOG_ERROR("StateMachine::createFromSCXMLString: Failed to load SCXML from string");
+        return nullptr;
+    }
+    return sm;
+}
+
+StateMachine::StateMachine(IScriptEngine &scriptEngine, const std::string &sessionId)
+    : scriptEngine_(scriptEngine), jsEnvironmentReady_(false) {
+    if (sessionId.empty()) {
+        sessionId_ = SessionRegistry::instance().generateSessionIdString("sm_");
+    } else {
+        sessionId_ = sessionId;
+        SCE_LOG_DEBUG("StateMachine: Created with injected session ID: {}", sessionId_);
+    }
+
+    // Script environment uses lazy initialization
     // ActionExecutor and ExecutionContext initialized in setupJSEnvironment
 
     // Initialize History Manager with SOLID architecture (Dependency Injection)
     initializeHistoryManager();
 
     // Initialize InvokeExecutor with SOLID architecture (W3C SCXML invoke support)
-    invokeExecutor_ = std::make_unique<InvokeExecutor>(nullptr);  // EventDispatcher will be set later if needed
-}
-
-// Constructor with session ID injection for invoke scenarios
-StateMachine::StateMachine(const std::string &sessionId) : jsEnvironmentReady_(false) {
-    if (sessionId.empty()) {
-        throw std::invalid_argument("StateMachine: Session ID cannot be empty when using injection constructor");
-    }
-
-    sessionId_ = sessionId;
-    SCE_LOG_DEBUG("StateMachine: Created with injected session ID: {}", sessionId_);
-
-    // JS environment uses lazy initialization - use existing session
-    // ActionExecutor and ExecutionContext are initialized in setupJSEnvironment
-
-    // Initialize History Manager with SOLID architecture (Dependency Injection)
-    initializeHistoryManager();
-
-    // Initialize InvokeExecutor with SOLID architecture (W3C SCXML invoke support)
-    invokeExecutor_ = std::make_unique<InvokeExecutor>(nullptr);  // EventDispatcher will be set later if needed
+    invokeExecutor_ = std::make_unique<InvokeExecutor>(scriptEngine_, nullptr);
 }
 
 StateMachine::~StateMachine() {
@@ -420,7 +425,7 @@ void StateMachine::stop() {
     // CRITICAL: Always unregister state query callback, even if isRunning_ is already false
     // Race condition prevention: JSEngine worker threads may have queued tasks accessing StateMachine
     // W3C Test 415: isRunning_=false may be set in top-level final state before destructor calls stop()
-    SCE::JSEngine::instance().setStateQueryCallback(nullptr, sessionId_);
+    scriptEngine_.setStateQueryCallback(nullptr, sessionId_);
     SCE_LOG_DEBUG("StateMachine: Unregistered state query callback from script engine");
 
     // FUNDAMENTAL FIX: Two-Phase Destruction Pattern
@@ -429,7 +434,7 @@ void StateMachine::stop() {
     // Ensures JSEngine singleton is alive during cleanup (prevents deadlock)
     // Required for StaticExecutionEngine wrapper lifecycle management
     if (jsEnvironmentReady_) {
-        SCE::JSEngine::instance().destroySession(sessionId_);
+        scriptEngine_.destroySession(sessionId_);
         jsEnvironmentReady_ = false;
         SCE_LOG_DEBUG("StateMachine: Destroyed JSEngine session in stop(): {}", sessionId_);
     }
@@ -2145,7 +2150,7 @@ bool StateMachine::evaluateCondition(const std::string &condition) {
     try {
         SCE_LOG_DEBUG("Evaluating condition: '{}'", condition);
 
-        auto future = SCE::JSEngine::instance().evaluateExpression(sessionId_, condition);
+        auto future = scriptEngine_.evaluateExpression(sessionId_, condition);
         auto result = future.get();
 
         if (!SCE::ScriptResultUtils::isSuccess(result)) {
@@ -3057,18 +3062,15 @@ bool StateMachine::ensureJSEnvironment() {
 }
 
 bool StateMachine::setupJSEnvironment() {
-    // JSEngine automatically initialized in constructor (RAII)
-    auto &jsEngine = SCE::JSEngine::instance();  // RAII guaranteed
-    SCE_LOG_DEBUG("StateMachine: JSEngine automatically initialized via RAII at address: {}",
-              static_cast<void *>(&jsEngine));
+    SCE_LOG_DEBUG("StateMachine: Script engine available for session setup");
 
     // Create JavaScript session only if it doesn't exist (for invoke scenarios)
     // Check if session already exists (created by InvokeExecutor for child sessions)
-    bool sessionExists = SCE::JSEngine::instance().hasSession(sessionId_);
+    bool sessionExists = scriptEngine_.hasSession(sessionId_);
 
     if (!sessionExists) {
         // Create new session for standalone StateMachine
-        if (!SCE::JSEngine::instance().createSession(sessionId_)) {
+        if (!scriptEngine_.createSession(sessionId_)) {
             SCE_LOG_ERROR("StateMachine: Failed to create JavaScript session");
             return false;
         }
@@ -3080,7 +3082,7 @@ bool StateMachine::setupJSEnvironment() {
     // W3C SCXML 5.10: Set up read-only system variables (_sessionid, _name, _ioprocessors)
     std::string sessionName = model_ && !model_->getName().empty() ? model_->getName() : "StateMachine";
     std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
-    auto setupResult = SCE::JSEngine::instance().setupSystemVariables(sessionId_, sessionName, ioProcessors).get();
+    auto setupResult = scriptEngine_.setupSystemVariables(sessionId_, sessionName, ioProcessors).get();
     if (!setupResult.isSuccess()) {
         SCE_LOG_ERROR("StateMachine: Failed to setup system variables: {}", setupResult.getErrorMessage());
         return false;
@@ -3090,7 +3092,7 @@ bool StateMachine::setupJSEnvironment() {
     // Uses IScriptEngine interface method instead of JSEngine-specific setStateMachine()
     // RACE CONDITION FIX: Capture weak_ptr to prevent heap-use-after-free (W3C Test 530)
     std::weak_ptr<StateMachine> weakSelf = shared_from_this();
-    SCE::JSEngine::instance().setStateQueryCallback(
+    scriptEngine_.setStateQueryCallback(
         [weakSelf](const std::string &stateId) -> bool {
             if (auto sm = weakSelf.lock()) {
                 return sm->isStateActive(stateId);
@@ -3101,7 +3103,7 @@ bool StateMachine::setupJSEnvironment() {
     SCE_LOG_DEBUG("StateMachine: Registered state query callback for In() function support");
 
     // W3C SCXML 5.3: Initialize data model (delegated to DataModelInitializer)
-    dataModelInit_ = std::make_unique<DataModelInitializer>(model_, sessionId_);
+    dataModelInit_ = std::make_unique<DataModelInitializer>(model_, sessionId_, scriptEngine_);
     dataModelInit_->setEventRaiser(eventRaiser_);
     if (model_) {
         dataModelInit_->initializeAllDataItems(model_->getBinding());
@@ -3218,7 +3220,7 @@ void StateMachine::updateStatistics() {
 bool StateMachine::initializeActionExecutor() {
     try {
         // Create ActionExecutor using the same session as StateMachine
-        actionExecutor_ = std::make_shared<ActionExecutorImpl>(sessionId_);
+        actionExecutor_ = std::make_shared<ActionExecutorImpl>(sessionId_, scriptEngine_);
 
         // Cache the pointer to avoid dynamic_pointer_cast overhead in hot path
         cachedExecutorImpl_ = dynamic_cast<ActionExecutorImpl *>(actionExecutor_.get());
@@ -4116,7 +4118,7 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
     if (!doneData.getContent().empty()) {
         SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating donedata content: '{}'", doneData.getContent());
         return DoneDataHelper::evaluateContent(
-            SCE::JSEngine::instance(), sessionId_, doneData.getContent(), outEventData, [this](const std::string &msg) {
+            scriptEngine_, sessionId_, doneData.getContent(), outEventData, [this](const std::string &msg) {
                 SCE_LOG_ERROR("W3C SCXML 5.5: Failed to evaluate donedata content: {}", msg);
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution", msg);
@@ -4128,7 +4130,7 @@ bool StateMachine::evaluateDoneData(const std::string &finalStateId, std::string
     const auto &params = doneData.getParams();
     if (!params.empty()) {
         SCE_LOG_DEBUG("W3C SCXML 5.5: Evaluating {} donedata params", params.size());
-        return DoneDataHelper::evaluateParams(SCE::JSEngine::instance(), sessionId_, params, outEventData,
+        return DoneDataHelper::evaluateParams(scriptEngine_, sessionId_, params, outEventData,
                                               [this](const std::string &msg) {
                                                   SCE_LOG_ERROR("W3C SCXML 5.7: {}", msg);
                                                   if (eventRaiser_) {

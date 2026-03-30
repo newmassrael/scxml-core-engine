@@ -36,7 +36,7 @@
 namespace SCE::W3C {
 
 InteractiveTestRunner::InteractiveTestRunner()
-    : stateMachine_(std::make_shared<StateMachine>()), snapshotManager_(1000)  // 1000 step history
+    : stateMachine_(std::make_shared<StateMachine>(JSEngine::instance())), snapshotManager_(1000)  // 1000 step history
       ,
       currentStep_(0) {
     // W3C SCXML 6.2: Create event infrastructure for send/invoke support

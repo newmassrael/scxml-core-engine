@@ -30,7 +30,7 @@ protected:
         SCE::JSEngine::instance().reset();
 
         // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-        stateMachine = std::make_shared<StateMachine>();
+        stateMachine = std::make_shared<StateMachine>(JSEngine::instance());
 
         // Create JSEngine session for this test
         sessionId = "history_integration_test";

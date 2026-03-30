@@ -71,7 +71,7 @@ protected:
             });
 
         // Create ActionExecutor for target factory
-        auto tempActionExecutor = std::make_shared<ActionExecutorImpl>("deadlock_test_session");
+        auto tempActionExecutor = std::make_shared<ActionExecutorImpl>("deadlock_test_session", JSEngine::instance());
         tempActionExecutor->setEventRaiser(mockEventRaiser);
         targetFactory_ = std::make_shared<EventTargetFactoryImpl>(mockEventRaiser);
 
@@ -79,7 +79,7 @@ protected:
         dispatcher_ = std::make_shared<EventDispatcherImpl>(scheduler_, targetFactory_);
 
         // Create ActionExecutor that will be used in main thread (potential deadlock source)
-        actionExecutor_ = std::make_shared<ActionExecutorImpl>("deadlock_test_session", dispatcher_);
+        actionExecutor_ = std::make_shared<ActionExecutorImpl>("deadlock_test_session", JSEngine::instance(), dispatcher_);
         actionExecutor_->setEventRaiser(mockEventRaiser);
 
         deadlockDetected_.store(false);

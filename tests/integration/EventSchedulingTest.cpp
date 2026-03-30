@@ -73,7 +73,7 @@ protected:
         scheduler_ = std::make_shared<EventSchedulerImpl>(eventExecutionCallback_);
 
         // Create ActionExecutor first (without dispatcher)
-        actionExecutor_ = std::make_shared<ActionExecutorImpl>("test_session");
+        actionExecutor_ = std::make_shared<ActionExecutorImpl>("test_session", JSEngine::instance());
 
         // Set up event raising with MockEventRaiser
         raisedEvents_.clear();
@@ -442,9 +442,9 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
     jsEngine.createSession("session_3");
 
     // Create ActionExecutors for each session
-    auto actionExecutor1 = std::make_shared<ActionExecutorImpl>("session_1");
-    auto actionExecutor2 = std::make_shared<ActionExecutorImpl>("session_2");
-    auto actionExecutor3 = std::make_shared<ActionExecutorImpl>("session_3");
+    auto actionExecutor1 = std::make_shared<ActionExecutorImpl>("session_1", JSEngine::instance());
+    auto actionExecutor2 = std::make_shared<ActionExecutorImpl>("session_2", JSEngine::instance());
+    auto actionExecutor3 = std::make_shared<ActionExecutorImpl>("session_3", JSEngine::instance());
 
     // Set up event raising for each session
     // TSAN FIX: Thread-safe access with mutex protection
@@ -606,7 +606,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
     std::atomic<bool> sessionIsolationViolated{false};
 
     // Create parent StateMachine (with 2 child invokes) - shared_ptr for enable_shared_from_this support
-    auto parentStateMachine = std::make_shared<StateMachine>();
+    auto parentStateMachine = std::make_shared<StateMachine>(JSEngine::instance());
     auto parentContext = std::make_unique<StateMachineContext>(parentStateMachine);
 
     // Parent SCXML: Invoke two child sessions and verify session isolation
@@ -936,7 +936,7 @@ TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
 TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
     SCE_LOG_DEBUG("=== W3C SCXML Test 230: Autoforward Event Field Preservation ===");
 
-    auto parentStateMachine = std::make_shared<StateMachine>();
+    auto parentStateMachine = std::make_shared<StateMachine>(JSEngine::instance());
 
     std::string scxmlContent = R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
@@ -1113,7 +1113,7 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
 TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers) {
     SCE_LOG_DEBUG("=== W3C SCXML Test 250: Invoke Cancellation Onexit Handlers ===");
 
-    auto parentStateMachine = std::make_shared<StateMachine>();
+    auto parentStateMachine = std::make_shared<StateMachine>(JSEngine::instance());
 
     std::string scxmlContent = R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
@@ -1278,7 +1278,7 @@ TEST_F(EventSchedulingTest, W3C_Test301_ExternalScriptRejection) {
     <final id="fail"/>
 </scxml>)";
 
-    StateMachine sm;
+    StateMachine sm(JSEngine::instance());
     bool loadResult = sm.loadSCXMLFromString(scxmlContent);
 
     // W3C SCXML 5.8: Document must be rejected
@@ -1361,7 +1361,7 @@ Then in s1 we access a non-existent substructure of a variable. -->
     <final id="final"/>
 </scxml>)";
 
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
 
     auto eventRaiser =
         std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
@@ -1471,7 +1471,7 @@ with its illegal expression, it must raise an error -->
     </final>
 </scxml>)";
 
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
 
     auto eventRaiser =
         std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
@@ -1598,7 +1598,7 @@ it should not raise an error until it gets to s03 and evaluates the illegal expr
     </final>
 </scxml>)";
 
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
 
     auto eventRaiser =
         std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
@@ -1699,7 +1699,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
     </final>
 </scxml>)";
 
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
 
     // Track if event1 was processed (should not happen)
     std::atomic<bool> event1Processed{false};

@@ -15,7 +15,7 @@ class SCXMLForeachIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         SCE::JSEngine::instance().reset();
-        executor = std::make_unique<ActionExecutorImpl>("foreach_integration_test");
+        executor = std::make_unique<ActionExecutorImpl>("foreach_integration_test", SCE::JSEngine::instance());
 
         // Create JSEngine session following SCXML specification pattern
         // Session must be created before variable assignments can be performed

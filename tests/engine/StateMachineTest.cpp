@@ -1,6 +1,7 @@
 #include "runtime/StateMachine.h"
 #include "core/LogMacros.h"
 #include "runtime/StateMachineFactory.h"
+#include "scripting/JSEngine.h"
 #include <fstream>
 #include <gtest/gtest.h>
 
@@ -131,7 +132,7 @@ private:
 // Basic functionality tests
 TEST_F(StateMachineTest, Constructor) {
     // Default constructor succeeds safely
-    StateMachine sm;
+    StateMachine sm(JSEngine::instance());
     EXPECT_FALSE(sm.isRunning());
     EXPECT_TRUE(sm.getCurrentState().empty());
     EXPECT_TRUE(sm.getActiveStates().empty());
@@ -162,7 +163,7 @@ TEST_F(StateMachineTest, FactoryPattern_CreateProduction) {
 }
 
 TEST_F(StateMachineTest, LoadSimpleSCXML) {
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     EXPECT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -174,7 +175,7 @@ TEST_F(StateMachineTest, LoadSimpleSCXML) {
 }
 
 TEST_F(StateMachineTest, StartStateMachine) {
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -185,7 +186,7 @@ TEST_F(StateMachineTest, StartStateMachine) {
 }
 
 TEST_F(StateMachineTest, BasicTransition) {
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -201,7 +202,7 @@ TEST_F(StateMachineTest, BasicTransition) {
 }
 
 TEST_F(StateMachineTest, InvalidEvent) {
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -215,7 +216,7 @@ TEST_F(StateMachineTest, InvalidEvent) {
 }
 
 TEST_F(StateMachineTest, MultipleTransitions) {
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -239,7 +240,7 @@ TEST_F(StateMachineTest, MultipleTransitions) {
 }
 
 TEST_F(StateMachineTest, StopStateMachine) {
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -252,7 +253,7 @@ TEST_F(StateMachineTest, StopStateMachine) {
 }
 
 TEST_F(StateMachineTest, Statistics) {
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -288,7 +289,7 @@ TEST_F(StateMachineTest, JavaScriptDatamodel) {
     // - Data variable initialization and modification
     // - Conditional guards (cond attribute)
     // - Script actions (onentry, transition)
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSCXMLWithJS();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -313,7 +314,7 @@ TEST_F(StateMachineTest, JavaScriptDatamodel) {
 
 // C++ binding tests
 TEST_F(StateMachineTest, CppObjectBinding) {
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     MockHardware hardware;
 
     std::string scxml = createSCXMLWithCppBinding();
@@ -352,7 +353,7 @@ TEST_F(StateMachineTest, CppObjectBinding) {
 // Integration with existing JSEngine tests
 TEST_F(StateMachineTest, ScriptExecutionBasic) {
     // Verify script execution affects state machine behavior (W3C SCXML 5.8)
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
 
     // Create SCXML with script that affects transition logic
     std::string scxml = R"(<?xml version="1.0" encoding="UTF-8"?>
@@ -383,27 +384,27 @@ TEST_F(StateMachineTest, ScriptExecutionBasic) {
 
 // Error handling tests
 TEST_F(StateMachineTest, InvalidSCXML) {
-    StateMachine sm;
+    StateMachine sm(JSEngine::instance());
 
     std::string invalidScxml = "<?xml version='1.0'?><invalid>not scxml</invalid>";
     EXPECT_FALSE(sm.loadSCXMLFromString(invalidScxml));
 }
 
 TEST_F(StateMachineTest, EmptySCXML) {
-    StateMachine sm;
+    StateMachine sm(JSEngine::instance());
 
     EXPECT_FALSE(sm.loadSCXMLFromString(""));
 }
 
 TEST_F(StateMachineTest, StartWithoutLoading) {
-    StateMachine sm;
+    StateMachine sm(JSEngine::instance());
 
     EXPECT_FALSE(sm.start());
     EXPECT_FALSE(sm.isRunning());
 }
 
 TEST_F(StateMachineTest, ProcessEventWithoutStarting) {
-    StateMachine sm;
+    StateMachine sm(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm.loadSCXMLFromString(scxml));
@@ -417,7 +418,7 @@ TEST_F(StateMachineTest, ProcessEventWithoutStarting) {
 // Final state and lifecycle tests
 TEST_F(StateMachineTest, FinalStateReached) {
     // Verify behavior when final state is reached (W3C SCXML 3.7)
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -441,7 +442,7 @@ TEST_F(StateMachineTest, FinalStateReached) {
 
 TEST_F(StateMachineTest, RestartAfterStop) {
     // Verify state machine can restart after stop
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     // First run
@@ -466,7 +467,7 @@ TEST_F(StateMachineTest, RestartAfterStop) {
 
 TEST_F(StateMachineTest, CompletionCallback) {
     // Verify completion callback is invoked on final state
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     std::string scxml = createSimpleSCXML();
 
     ASSERT_TRUE(sm->loadSCXMLFromString(scxml));
@@ -487,7 +488,7 @@ TEST_F(StateMachineTest, CompletionCallback) {
 
 TEST_F(StateMachineTest, LoadSCXMLFromFile) {
     // Verify loading SCXML from file
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
 
     // Create temporary SCXML file
     std::string tempPath = "/tmp/test_scxml_load.xml";

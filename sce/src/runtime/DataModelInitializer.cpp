@@ -5,15 +5,16 @@
 #include "core/LogMacros.h"
 #include "runtime/BindingHelper.h"
 #include "runtime/DataContentHelpers.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IScriptEngine.h"
 #include "scripting/ScriptResultUtils.h"
 #include "scripting/SessionRegistry.h"
 #include <string>
 
 namespace SCE {
 
-DataModelInitializer::DataModelInitializer(std::shared_ptr<SCXMLModel> model, const std::string &sessionId)
-    : model_(std::move(model)), sessionId_(sessionId) {}
+DataModelInitializer::DataModelInitializer(std::shared_ptr<SCXMLModel> model, const std::string &sessionId,
+                                           IScriptEngine &scriptEngine)
+    : scriptEngine_(scriptEngine), model_(std::move(model)), sessionId_(sessionId) {}
 
 void DataModelInitializer::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
     eventRaiser_ = std::move(eventRaiser);
@@ -70,7 +71,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
     // because late binding creates variables as undefined first, then assigns values on state entry
     bool isLateBindingAssignment = assignValue && model_ && (model_->getBinding() == "late");
 
-    if (!isLateBindingAssignment && SCE::JSEngine::instance().isVariablePreInitialized(sessionId_, id)) {
+    if (!isLateBindingAssignment && scriptEngine_.isVariablePreInitialized(sessionId_, id)) {
         SCE_LOG_INFO("DataModelInitializer: Skipping initialization for '{}' - pre-initialized by invoke data", id);
         return;
     }
@@ -78,7 +79,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
     // W3C SCXML B.2.2: Late binding creates variables with undefined at init, assigns values on state entry
     if (!assignValue) {
         // Create variable with undefined value (both early and late binding)
-        auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
+        auto setVarFuture = scriptEngine_.setVariable(sessionId_, id, ScriptValue{});
         auto setResult = setVarFuture.get();
 
         if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
@@ -106,7 +107,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
         if (isFunctionExpression) {
             // Use direct JavaScript assignment to avoid function → C++ → function conversion loss
             std::string assignmentScript = id + " = " + expr;
-            auto scriptFuture = SCE::JSEngine::instance().executeScript(sessionId_, assignmentScript);
+            auto scriptFuture = scriptEngine_.executeScript(sessionId_, assignmentScript);
             auto scriptResult = scriptFuture.get();
 
             if (!SCE::ScriptResultUtils::isSuccess(scriptResult)) {
@@ -125,7 +126,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
             // Test 277: expr evaluation failure must raise error.execution (no fallback)
             bool success = DataModelInitHelper::initializeVariableFromExpr(
-                SCE::JSEngine::instance(), sessionId_, id, expr, [this](const std::string &msg) {
+                scriptEngine_, sessionId_, id, expr, [this](const std::string &msg) {
                     // W3C SCXML 5.3: Raise error.execution on initialization failure
                     if (eventRaiser_) {
                         eventRaiser_->raiseEvent("error.execution", msg);
@@ -178,7 +179,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             SCE_LOG_DEBUG("DataModelInitializer: Parsing XML content from file '{}' as DOM for variable '{}'", filePath,
                       id);
 
-            auto setVarFuture = SCE::JSEngine::instance().setVariableAsDOM(sessionId_, id, fileContent);
+            auto setVarFuture = scriptEngine_.setVariableAsDOM(sessionId_, id, fileContent);
             auto setResult = setVarFuture.get();
 
             if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
@@ -196,13 +197,13 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
             SCE_LOG_DEBUG("DataModelInitializer: Set variable '{}' as XML DOM object from file '{}'", id, filePath);
         } else {
             // W3C SCXML B.2: Try evaluating as JSON/JS first (test 446), fall back to text (test 558)
-            auto future = SCE::JSEngine::instance().evaluateExpression(sessionId_, fileContent);
+            auto future = scriptEngine_.evaluateExpression(sessionId_, fileContent);
             auto result = future.get();
 
             if (SCE::ScriptResultUtils::isSuccess(result)) {
                 // Successfully evaluated as JSON/JS expression
                 auto setVarFuture =
-                    SCE::JSEngine::instance().setVariable(sessionId_, id, result.getInternalValue());
+                    scriptEngine_.setVariable(sessionId_, id, result.getInternalValue());
                 auto setResult = setVarFuture.get();
 
                 if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
@@ -222,7 +223,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
                 std::string normalized = normalizeWhitespace(fileContent);
 
                 auto setVarFuture =
-                    SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{normalized});
+                    scriptEngine_.setVariable(sessionId_, id, ScriptValue{normalized});
                 auto setResult = setVarFuture.get();
 
                 if (!SCE::ScriptResultUtils::isSuccess(setResult)) {
@@ -245,7 +246,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
         // W3C SCXML B.2: Initialize with inline content
         // ARCHITECTURE.md: Zero Duplication - Use DataModelInitHelper (shared with AOT engine)
         bool success = DataModelInitHelper::initializeVariable(
-            SCE::JSEngine::instance(), sessionId_, id, content, [this](const std::string &msg) {
+            scriptEngine_, sessionId_, id, content, [this](const std::string &msg) {
                 SCE_LOG_ERROR("DataModelInitializer: {}", msg);
                 if (eventRaiser_) {
                     eventRaiser_->raiseEvent("error.execution", msg);
@@ -259,7 +260,7 @@ void DataModelInitializer::initializeDataItem(const std::shared_ptr<IDataModelIt
         SCE_LOG_DEBUG("DataModelInitializer: Initialized variable '{}' from content", id);
     } else {
         // W3C SCXML 5.3: No expression or content - create variable with undefined value (test 445)
-        auto setVarFuture = SCE::JSEngine::instance().setVariable(sessionId_, id, ScriptValue{});
+        auto setVarFuture = scriptEngine_.setVariable(sessionId_, id, ScriptValue{});
         auto setResult = setVarFuture.get();
 
         if (!SCE::ScriptResultUtils::isSuccess(setResult)) {

@@ -11,6 +11,8 @@
 
 namespace SCE {
 
+class Event;  // Forward declaration for Event-based setCurrentEvent overload
+
 /**
  * @brief Script execution engine interface (language-agnostic)
  *
@@ -98,7 +100,16 @@ public:
                                                        const std::vector<std::string> &ioProcessors) = 0;
 
     /**
-     * @brief Set current event object in script context (W3C SCXML 5.10)
+     * @brief Set current event from Event object (W3C SCXML 5.10)
+     * @param sessionId Target session context
+     * @param event Event object containing all event fields
+     * @return Future indicating success/failure
+     */
+    virtual std::future<ScriptResult> setCurrentEvent(const std::string &sessionId,
+                                                      const std::shared_ptr<Event> &event) = 0;
+
+    /**
+     * @brief Set current event from individual fields (W3C SCXML 5.10)
      * @param sessionId Target session context
      * @param eventName Event name
      * @param eventData Event data as JSON string

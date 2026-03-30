@@ -456,7 +456,7 @@ TEST_F(StateMachineIntegrationTest, W3C_Test250_InvokeOnexitHandlers) {
 </scxml>)";
 
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<StateMachine>();
+    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent));
     ASSERT_TRUE(sm->start());
 

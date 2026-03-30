@@ -21,22 +21,22 @@ class IActionNode;
 using Core::EventMetadata;
 
 /**
- * @brief Concrete implementation of IActionExecutor using JSEngine
+ * @brief Concrete implementation of IActionExecutor for script engine integration
  *
  * This implementation bridges the action execution interface with
- * the existing JSEngine infrastructure, providing SCXML executable
- * content capabilities while maintaining compatibility with current
- * architecture.
+ * a pluggable IScriptEngine, providing SCXML executable content
+ * capabilities while supporting engine replacement (QuickJS, Lua, etc.).
  */
 class ActionExecutorImpl : public IActionExecutor {
 public:
     /**
-     * @brief Construct executor for given session
-     * @param sessionId JavaScript session identifier
+     * @brief Construct executor with explicit script engine injection
+     * @param sessionId Script session identifier
+     * @param scriptEngine Script engine for expression evaluation and variable management
      * @param eventDispatcher Event dispatcher for delayed event sending (optional)
      */
-    explicit ActionExecutorImpl(const std::string &sessionId,
-                                std::shared_ptr<IEventDispatcher> eventDispatcher = nullptr);
+    ActionExecutorImpl(const std::string &sessionId, IScriptEngine &scriptEngine,
+                       std::shared_ptr<IEventDispatcher> eventDispatcher = nullptr);
 
     /**
      * @brief Destructor - unregister from JSEngine EventDispatcher registry
@@ -108,6 +108,7 @@ public:
     void setEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher);
 
 private:
+    IScriptEngine &scriptEngine_;
     std::string sessionId_;
     std::string currentEventName_;
     std::string currentEventData_;

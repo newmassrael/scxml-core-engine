@@ -29,7 +29,6 @@
 #include "events/InvokeEventTarget.h"
 #include "events/ParentEventTarget.h"
 #include "runtime/ExecutionContextImpl.h"
-#include "scripting/JSEngine.h"
 #include "scripting/ScriptResultUtils.h"
 #include "scripting/SessionRegistry.h"
 #include <atomic>
@@ -40,14 +39,15 @@
 
 namespace SCE {
 
-ActionExecutorImpl::ActionExecutorImpl(const std::string &sessionId, std::shared_ptr<IEventDispatcher> eventDispatcher)
-    : sessionId_(sessionId), eventDispatcher_(std::move(eventDispatcher)) {
+ActionExecutorImpl::ActionExecutorImpl(const std::string &sessionId, IScriptEngine &scriptEngine,
+                                       std::shared_ptr<IEventDispatcher> eventDispatcher)
+    : scriptEngine_(scriptEngine), sessionId_(sessionId), eventDispatcher_(std::move(eventDispatcher)) {
     // EventRaiser will be injected via setEventRaiser() following dependency injection pattern
     SCE_LOG_DEBUG("ActionExecutorImpl created for session: {} at address: {}", sessionId_, static_cast<void *>(this));
 }
 
 ActionExecutorImpl::~ActionExecutorImpl() {
-    // W3C SCXML 6.2: Unregister from JSEngine EventDispatcher registry for proper cleanup
+    // W3C SCXML 6.2: Unregister from SessionRegistry EventDispatcher registry for proper cleanup
     if (eventDispatcher_) {
         try {
             SessionRegistry::instance().unregisterEventDispatcher(sessionId_);
@@ -75,7 +75,7 @@ bool ActionExecutorImpl::executeScript(const std::string &script) {
         // Ensure current event is available in JavaScript context
         ensureCurrentEventSet();
 
-        auto result = JSEngine::instance().executeScript(sessionId_, script).get();
+        auto result = scriptEngine_.executeScript(sessionId_, script).get();
 
         if (!result.isSuccess()) {
             handleJSError("script execution", "Script execution failed");
@@ -130,7 +130,7 @@ bool ActionExecutorImpl::assignVariable(const std::string &location, const std::
         // ARCHITECTURE.md: Zero Duplication - Use shared AssignmentExecutionHelper
         // W3C SCXML 5.3/5.10: Assignment execution with proper system variable handling
         bool success = AssignmentExecutionHelper::executeAssignment(
-            JSEngine::instance(), sessionId_, jsLocation, expr, [this, &location, &expr](const std::string &error) {
+            scriptEngine_, sessionId_, jsLocation, expr, [this, &location, &expr](const std::string &error) {
                 handleJSError("assignment execution", error);
                 // W3C SCXML 5.9: Raise error.execution for assignment failure
                 if (eventRaiser_) {
@@ -222,7 +222,7 @@ bool ActionExecutorImpl::tryJavaScriptEvaluation(const std::string &expression, 
         std::string jsExpression = expression;
 
         // Perform JavaScript evaluation using the engine
-        auto jsResult = JSEngine::instance().evaluateExpression(sessionId_, jsExpression).get();
+        auto jsResult = scriptEngine_.evaluateExpression(sessionId_, jsExpression).get();
 
         if (!jsResult.isSuccess()) {
             SCE_LOG_DEBUG("JavaScript evaluation failed for '{}': not a "
@@ -232,7 +232,7 @@ bool ActionExecutorImpl::tryJavaScriptEvaluation(const std::string &expression, 
         }
 
         // Convert JavaScript result to string using the integrated API
-        result = ScriptResultUtils::resultToString(jsResult, &JSEngine::instance(), sessionId_, jsExpression);
+        result = ScriptResultUtils::resultToString(jsResult, &scriptEngine_, sessionId_, jsExpression);
         SCE_LOG_DEBUG("JavaScript evaluation successful: '{}' -> '{}' (JS: '{}')", expression, result, jsExpression);
         return true;
 
@@ -280,7 +280,7 @@ bool ActionExecutorImpl::hasVariable(const std::string &location) {
         // W3C SCXML Compliance: Check if variable is declared (not just if it's not undefined)
         // Variables can be declared with undefined values and should be considered as existing
         std::string checkExpr = "'" + jsLocation + "' in this || typeof " + jsLocation + " !== 'undefined'";
-        auto result = JSEngine::instance().evaluateExpression(sessionId_, checkExpr).get();
+        auto result = scriptEngine_.evaluateExpression(sessionId_, checkExpr).get();
 
         if (result.isSuccess() && std::holds_alternative<bool>(result.getInternalValue())) {
             return result.getValue<bool>();
@@ -362,7 +362,7 @@ void ActionExecutorImpl::clearCurrentEvent() {
     if (isSessionReady()) {
         try {
             std::shared_ptr<Event> nullEvent;
-            auto result = JSEngine::instance().setCurrentEvent(sessionId_, nullEvent).get();
+            auto result = scriptEngine_.setCurrentEvent(sessionId_, nullEvent).get();
             if (!result.isSuccess()) {
                 SCE_LOG_DEBUG("Failed to clear current event");
             }
@@ -373,26 +373,13 @@ void ActionExecutorImpl::clearCurrentEvent() {
 }
 
 bool ActionExecutorImpl::isSessionReady() const {
-    // SCXML Compliance: Check if JSEngine is available without blocking
+    // W3C SCXML: Check if script engine session is available without blocking
     try {
-        auto &jsEngine = JSEngine::instance();
-        SCE_LOG_DEBUG("ActionExecutorImpl: Using JSEngine at address: {}", static_cast<void *>(&jsEngine));
-        // Use a non-blocking check - if JSEngine is not properly initialized,
-        // we should not block indefinitely
-        bool hasSessionResult = jsEngine.hasSession(sessionId_);
+        bool hasSessionResult = scriptEngine_.hasSession(sessionId_);
         SCE_LOG_DEBUG("ActionExecutorImpl: hasSession({}) returned: {}", sessionId_, hasSessionResult);
-
-        // Additional verification: check active sessions
-        auto activeSessions = jsEngine.getActiveSessions();
-        SCE_LOG_DEBUG("ActionExecutorImpl: Active sessions count: {}", activeSessions.size());
-        for (const auto &session : activeSessions) {
-            SCE_LOG_DEBUG("ActionExecutorImpl: Active session: {}", session);
-        }
-
         return hasSessionResult;
     } catch (const std::exception &e) {
-        // If JSEngine is not available, consider session not ready
-        SCE_LOG_WARN("JSEngine not available for session check: {}", e.what());
+        SCE_LOG_WARN("Script engine not available for session check: {}", e.what());
         return false;
     }
 }
@@ -411,13 +398,13 @@ void ActionExecutorImpl::setEventDispatcher(std::shared_ptr<IEventDispatcher> ev
     // Store new EventDispatcher
     eventDispatcher_ = std::move(eventDispatcher);
 
-    // W3C SCXML 6.2: Register new EventDispatcher with JSEngine for automatic delayed event cancellation
+    // W3C SCXML 6.2: Register new EventDispatcher with SessionRegistry for automatic delayed event cancellation
     if (eventDispatcher_) {
         try {
             SessionRegistry::instance().registerEventDispatcher(sessionId_, eventDispatcher_);
-            SCE_LOG_DEBUG("ActionExecutorImpl: Registered EventDispatcher with JSEngine for session: {}", sessionId_);
+            SCE_LOG_DEBUG("ActionExecutorImpl: Registered EventDispatcher for session: {}", sessionId_);
         } catch (const std::exception &e) {
-            SCE_LOG_ERROR("ActionExecutorImpl: Failed to register EventDispatcher with JSEngine: {}", e.what());
+            SCE_LOG_ERROR("ActionExecutorImpl: Failed to register EventDispatcher: {}", e.what());
         }
     }
 
@@ -487,7 +474,7 @@ bool ActionExecutorImpl::ensureCurrentEventSet() {
                                                            currentInvokeId_     // invokeId (test338)
         );
 
-        auto result = JSEngine::instance().setCurrentEvent(sessionId_, event).get();
+        auto result = scriptEngine_.setCurrentEvent(sessionId_, event).get();
         return result.isSuccess();
 
     } catch (const std::exception &e) {
@@ -639,8 +626,7 @@ bool ActionExecutorImpl::evaluateCondition(const std::string &condition) {
         return true;  // Empty condition is always true
     }
 
-    auto &jsEngine = JSEngine::instance();
-    auto result = GuardHelper::evaluateGuard(jsEngine, sessionId_, condition);
+    auto result = GuardHelper::evaluateGuard(scriptEngine_, sessionId_, condition);
 
     if (!result.has_value()) {
         // W3C SCXML 5.9: Evaluation failed → raise error.execution AND return false
@@ -659,7 +645,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
     SCE_LOG_DEBUG("Executing send action: {}", action.getId());
 
     try {
-        // CRITICAL: Complete ALL JSEngine operations first to avoid deadlock
+        // CRITICAL: Complete ALL script engine operations first to avoid deadlock
         // Evaluate all expressions before calling EventDispatcher
 
         // W3C SCXML 5.10 & 6.2.4: Generate and store sendid BEFORE validation
@@ -821,7 +807,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
         if (!namelist.empty()) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Evaluating namelist: '{}'", namelist);
 
-            bool success = NamelistHelper::evaluateNamelist(JSEngine::instance(), sessionId_, namelist, evaluatedParams,
+            bool success = NamelistHelper::evaluateNamelist(scriptEngine_, sessionId_, namelist, evaluatedParams,
                                                             [this, &sendId](const std::string &errorMsg) {
                                                                 SCE_LOG_ERROR("ActionExecutorImpl: {}", errorMsg);
                                                                 // W3C SCXML 6.2: If evaluation of send's arguments
@@ -876,7 +862,7 @@ bool ActionExecutorImpl::executeSendAction(const SendAction &action) {
             }
         }
 
-        // ALL JSEngine operations complete - now safe to call EventDispatcher
+        // ALL script engine operations complete - now safe to call EventDispatcher
 
         if (eventDispatcher_) {
             SCE_LOG_DEBUG("ActionExecutorImpl: Using event dispatcher for send action");
@@ -1025,7 +1011,7 @@ bool ActionExecutorImpl::executeForeachAction(const ForeachAction &action) {
     // W3C SCXML 4.6: Use ForeachHelper as Single Source of Truth
     // ARCHITECTURE.md: Zero Duplication Principle - shared logic between Interpreter and AOT engines
     bool success = Core::ForeachHelper::executeForeachWithActions(
-        JSEngine::instance(), sessionId_, jsArrayExpr, transformVariableName(itemVar),
+        scriptEngine_, sessionId_, jsArrayExpr, transformVariableName(itemVar),
         indexVar.empty() ? "" : transformVariableName(indexVar), [&](size_t i) -> bool {
             // Execute nested actions for this iteration
             auto sharedThis = std::shared_ptr<IActionExecutor>(this, [](IActionExecutor *) {});
@@ -1062,7 +1048,7 @@ bool ActionExecutorImpl::setLoopVariable(const std::string &varName, const std::
         std::string jsVarName = transformVariableName(varName);
 
         // Use shared ForeachHelper logic (eliminates code duplication with AOT engine)
-        bool success = SCE::Core::ForeachHelper::setLoopVariable(JSEngine::instance(), sessionId_, jsVarName, value);
+        bool success = SCE::Core::ForeachHelper::setLoopVariable(scriptEngine_, sessionId_, jsVarName, value);
 
         if (success) {
             SCE_LOG_DEBUG("Set foreach variable: {} = {} (JS: {}, iteration {})", varName, value, jsVarName, iteration);

@@ -6,6 +6,7 @@
 #include "runtime/IActionExecutor.h"
 #include "runtime/StateMachine.h"
 #include "scripting/IScriptEngine.h"
+#include "scripting/ISessionManager.h"
 #include <map>
 
 namespace SCE {
@@ -18,7 +19,12 @@ namespace SCE {
  */
 class SCXMLEngineImpl : public SCXMLEngine {
 public:
+    /// @brief Default constructor using JSEngine singleton
     SCXMLEngineImpl();
+
+    /// @brief Constructor with explicit script engine injection
+    SCXMLEngineImpl(IScriptEngine &scriptEngine, ISessionManager &sessionManager);
+
     ~SCXMLEngineImpl() override;
 
     // === Engine Lifecycle ===
@@ -85,6 +91,8 @@ private:
      */
     std::string generateSessionId() const;
 
+    IScriptEngine &scriptEngine_;
+    ISessionManager &sessionManager_;
     bool initialized_ = false;
     std::shared_ptr<SCE::SCXMLModel> scxmlModel_;
     std::shared_ptr<IActionExecutor> actionExecutor_;
