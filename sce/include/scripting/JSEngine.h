@@ -376,10 +376,10 @@ public:
                           std::is_same_v<T, std::string>,
                       "Supported types: bool, int64_t, double, std::string");
 
-        if (!result.success_internal || !std::holds_alternative<T>(result.value_internal)) {
+        if (!result.isSuccess() || !std::holds_alternative<T>(result.getInternalValue())) {
             return std::nullopt;
         }
-        return std::get<T>(result.value_internal);
+        return std::get<T>(result.getInternalValue());
     }
 
     // === DEPRECATED: Direct result.value access is architecturally forbidden ===

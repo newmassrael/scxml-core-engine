@@ -1,7 +1,6 @@
 #include "runtime/StateMachineFactory.h"
 #include "core/LogMacros.h"
 #include "scripting/IScriptEngine.h"
-#include "scripting/JSEngine.h"
 #include <random>
 
 namespace SCE {

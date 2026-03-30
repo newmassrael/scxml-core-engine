@@ -417,11 +417,11 @@ void StateMachine::stop() {
         }
     }
 
-    // CRITICAL: Always unregister from JSEngine, even if isRunning_ is already false
+    // CRITICAL: Always unregister state query callback, even if isRunning_ is already false
     // Race condition prevention: JSEngine worker threads may have queued tasks accessing StateMachine
     // W3C Test 415: isRunning_=false may be set in top-level final state before destructor calls stop()
-    SCE::JSEngine::instance().setStateMachine(nullptr, sessionId_);
-    SCE_LOG_DEBUG("StateMachine: Unregistered from JSEngine");
+    SCE::JSEngine::instance().setStateQueryCallback(nullptr, sessionId_);
+    SCE_LOG_DEBUG("StateMachine: Unregistered state query callback from script engine");
 
     // FUNDAMENTAL FIX: Two-Phase Destruction Pattern
     // LIFECYCLE: Explicit Cleanup Stage
@@ -3086,11 +3086,19 @@ bool StateMachine::setupJSEnvironment() {
         return false;
     }
 
-    // Register this StateMachine instance with JSEngine for In() function support
-    // RACE CONDITION FIX: Use shared_from_this() to enable weak_ptr safety
-    // W3C Test 530: Prevents heap-use-after-free during invoke child destruction
-    SCE::JSEngine::instance().setStateMachine(shared_from_this(), sessionId_);
-    SCE_LOG_DEBUG("StateMachine: Registered with JSEngine for In() function support");
+    // Register state query callback for In() function support (W3C SCXML 5.9.2)
+    // Uses IScriptEngine interface method instead of JSEngine-specific setStateMachine()
+    // RACE CONDITION FIX: Capture weak_ptr to prevent heap-use-after-free (W3C Test 530)
+    std::weak_ptr<StateMachine> weakSelf = shared_from_this();
+    SCE::JSEngine::instance().setStateQueryCallback(
+        [weakSelf](const std::string &stateId) -> bool {
+            if (auto sm = weakSelf.lock()) {
+                return sm->isStateActive(stateId);
+            }
+            return false;
+        },
+        sessionId_);
+    SCE_LOG_DEBUG("StateMachine: Registered state query callback for In() function support");
 
     // W3C SCXML 5.3: Initialize data model (delegated to DataModelInitializer)
     dataModelInit_ = std::make_unique<DataModelInitializer>(model_, sessionId_);

@@ -52,6 +52,28 @@ public:
      */
     virtual std::string getInvokeIdForChildSession(const std::string &childSessionId) const = 0;
 
+    /**
+     * @brief Register parent-child session relationship
+     * W3C SCXML 6.4: Enables child-to-parent event routing without script engine coupling
+     * @param childSessionId Child session ID
+     * @param parentSessionId Parent session ID
+     */
+    virtual void registerParentChild(const std::string &childSessionId, const std::string &parentSessionId) = 0;
+
+    /**
+     * @brief Unregister parent-child session relationship
+     * @param childSessionId Child session ID to remove
+     */
+    virtual void unregisterParentChild(const std::string &childSessionId) = 0;
+
+    /**
+     * @brief Get parent session ID for a child session
+     * W3C SCXML 6.4: Enables child-to-parent event routing without script engine coupling
+     * @param childSessionId Child session ID to lookup
+     * @return Parent session ID, or empty string if not found
+     */
+    virtual std::string getParentSessionId(const std::string &childSessionId) const = 0;
+
     // === Session File Path Management (W3C SCXML relative path resolution) ===
 
     /**

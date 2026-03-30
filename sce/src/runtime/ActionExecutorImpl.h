@@ -4,7 +4,7 @@
 #include "IEventRaiser.h"
 #include "runtime/TypeRegistry.h"
 #include "core/EventMetadata.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IScriptEngine.h"
 #include <functional>
 #include <memory>
 #include <mutex>

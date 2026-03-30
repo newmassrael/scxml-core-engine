@@ -35,6 +35,9 @@ public:
     std::string getInvokeSessionId(const std::string &parentSessionId, const std::string &invokeId) const override;
     void unregisterInvokeMapping(const std::string &parentSessionId, const std::string &invokeId) override;
     std::string getInvokeIdForChildSession(const std::string &childSessionId) const override;
+    void registerParentChild(const std::string &childSessionId, const std::string &parentSessionId) override;
+    void unregisterParentChild(const std::string &childSessionId) override;
+    std::string getParentSessionId(const std::string &childSessionId) const override;
 
     void registerSessionFilePath(const std::string &sessionId, const std::string &filePath) override;
     std::string getSessionFilePath(const std::string &sessionId) const override;
@@ -66,6 +69,11 @@ private:
     // W3C SCXML: Maps session_id -> absolute_file_path for relative path resolution
     std::unordered_map<std::string, std::string> sessionFilePaths_;
     mutable std::mutex sessionFilePathsMutex_;
+
+    // === Parent-Child Session Relationships ===
+    // W3C SCXML 6.4: Maps child_session_id -> parent_session_id
+    std::unordered_map<std::string, std::string> parentChildMappings_;
+    mutable std::mutex parentChildMutex_;
 
     // === Event Dispatchers ===
     // W3C SCXML 6.2: EventDispatcher registry for automatic delayed event cancellation

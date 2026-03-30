@@ -5,7 +5,7 @@
 #include "model/SCXMLModel.h"
 #include "runtime/IActionExecutor.h"
 #include "runtime/StateMachine.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IScriptEngine.h"
 #include <map>
 
 namespace SCE {

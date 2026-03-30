@@ -146,15 +146,8 @@ void EventRaiserService::clearAll() {
         return;
     }
 
-    // Safe clearing that works with any IEventRaiserRegistry implementation
-    // This method should be added to IEventRaiserRegistry interface
-    auto concreteRegistry = std::dynamic_pointer_cast<EventRaiserRegistry>(registry_);
-    if (concreteRegistry) {
-        concreteRegistry->clear();
-        SCE_LOG_DEBUG("EventRaiserService: Cleared all EventRaiser registrations");
-    } else {
-        SCE_LOG_WARN("EventRaiserService: Registry does not support clearing");
-    }
+    registry_->clear();
+    SCE_LOG_DEBUG("EventRaiserService: Cleared all EventRaiser registrations");
 }
 
 }  // namespace SCE

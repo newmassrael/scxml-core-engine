@@ -20,6 +20,10 @@ void SessionRegistry::reset() {
         sessionFilePaths_.clear();
     }
     {
+        std::lock_guard<std::mutex> lock(parentChildMutex_);
+        parentChildMappings_.clear();
+    }
+    {
         std::lock_guard<std::mutex> lock(eventDispatchersMutex_);
         eventDispatchers_.clear();
     }
@@ -89,6 +93,50 @@ std::string SessionRegistry::getInvokeIdForChildSession(const std::string &child
     }
 
     SCE_LOG_DEBUG("SessionRegistry: No invokeId found for child session: {}", childSessionId);
+    return "";
+}
+
+void SessionRegistry::registerParentChild(const std::string &childSessionId, const std::string &parentSessionId) {
+    if (childSessionId.empty() || parentSessionId.empty()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(parentChildMutex_);
+    parentChildMappings_[childSessionId] = parentSessionId;
+    SCE_LOG_DEBUG("SessionRegistry: Registered parent-child: parent='{}', child='{}'", parentSessionId, childSessionId);
+}
+
+void SessionRegistry::unregisterParentChild(const std::string &childSessionId) {
+    std::lock_guard<std::mutex> lock(parentChildMutex_);
+    parentChildMappings_.erase(childSessionId);
+    SCE_LOG_DEBUG("SessionRegistry: Unregistered parent-child for child: {}", childSessionId);
+}
+
+std::string SessionRegistry::getParentSessionId(const std::string &childSessionId) const {
+    // W3C SCXML 6.4: Direct lookup from parent-child mapping
+    {
+        std::lock_guard<std::mutex> lock(parentChildMutex_);
+        auto it = parentChildMappings_.find(childSessionId);
+        if (it != parentChildMappings_.end()) {
+            SCE_LOG_DEBUG("SessionRegistry: Found parent '{}' for child session '{}'", it->second, childSessionId);
+            return it->second;
+        }
+    }
+
+    // Fallback: Reverse lookup from invoke mappings (for backward compatibility)
+    {
+        std::lock_guard<std::mutex> lock(invokeMappingsMutex_);
+        for (const auto &parentEntry : invokeMappings_) {
+            for (const auto &invokeEntry : parentEntry.second) {
+                if (invokeEntry.second == childSessionId) {
+                    SCE_LOG_DEBUG("SessionRegistry: Found parent '{}' for child session '{}' (via invoke mapping)",
+                                  parentEntry.first, childSessionId);
+                    return parentEntry.first;
+                }
+            }
+        }
+    }
+
+    SCE_LOG_DEBUG("SessionRegistry: No parent found for child session: {}", childSessionId);
     return "";
 }
 

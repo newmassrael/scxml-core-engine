@@ -3,7 +3,7 @@
 #include "runtime/JsonUtils.h"
 #include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IScriptEngine.h"
 #include <httplib.h>
 #include <regex>
 #include <sstream>

@@ -357,8 +357,8 @@ size_t JSEngine::getMemoryUsage() const {
     });
 
     auto result = future.get();
-    if (result.isSuccess() && std::holds_alternative<int64_t>(result.value_internal)) {
-        return static_cast<size_t>(std::get<int64_t>(result.value_internal));
+    if (result.isSuccess() && std::holds_alternative<int64_t>(result.getInternalValue())) {
+        return static_cast<size_t>(std::get<int64_t>(result.getInternalValue()));
     }
     return 0;
 }
@@ -414,6 +414,12 @@ bool JSEngine::createSessionInternal(const std::string &sessionId, const std::st
 
     sessions_[sessionId] = std::move(session);
 
+    // W3C SCXML 6.4: Register parent-child relationship in SessionRegistry
+    // Enables engine-agnostic parent session lookup for event routing
+    if (!parentSessionId.empty()) {
+        SessionRegistry::instance().registerParentChild(sessionId, parentSessionId);
+    }
+
     SCE_LOG_DEBUG("JSEngine: Created session '{}' - sessions_ map size now: {}", sessionId, sessions_.size());
     return true;
 }
@@ -427,6 +433,8 @@ bool JSEngine::destroySessionInternal(const std::string &sessionId) {
         return false;
     }
 
+    // W3C SCXML 6.4: Unregister parent-child relationship
+    SessionRegistry::instance().unregisterParentChild(sessionId);
     // W3C SCXML 6.2: Delegate session cleanup to SessionRegistry
     SessionRegistry::instance().cleanupSession(sessionId);
 

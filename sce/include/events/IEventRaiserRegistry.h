@@ -53,6 +53,14 @@ public:
      * @return true if EventRaiser is registered for this session
      */
     virtual bool hasEventRaiser(const std::string &sessionId) const = 0;
+
+    /**
+     * @brief Clear all registered EventRaisers
+     *
+     * Removes all session-to-EventRaiser mappings. Used for test isolation
+     * and engine shutdown cleanup.
+     */
+    virtual void clear() = 0;
 };
 
 }  // namespace SCE

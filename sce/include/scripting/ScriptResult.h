@@ -255,8 +255,8 @@ public:
         return value_internal;
     }
 
-    // FRIEND ACCESS: Internal field access only from integrated API
-    friend class JSEngine;
+    // Engine-agnostic: No friend class dependency — all engines use public API
+    // (createSuccess, createError, isSuccess, getInternalValue, getValue, etc.)
 };
 
 }  // namespace SCE

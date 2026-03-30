@@ -5,7 +5,6 @@
 #include "events/EventRaiserService.h"
 #include "events/IEventDispatcher.h"
 #include "runtime/IEventRaiser.h"
-#include "scripting/JSEngine.h"
 #include "scripting/SessionRegistry.h"
 #include <sstream>
 #include <thread>
@@ -82,7 +81,7 @@ std::future<SendResult> ParentEventTarget::sendImmediately(const EventDescriptor
             SCE_LOG_DEBUG("ParentEventTarget: Using parent session from params: '{}'", parentSessionId);
         } else {
             parentSessionId = findParentSessionId(actualChildSessionId);
-            SCE_LOG_DEBUG("ParentEventTarget: Found parent session via JSEngine: '{}'", parentSessionId);
+            SCE_LOG_DEBUG("ParentEventTarget: Found parent session via SessionRegistry: '{}'", parentSessionId);
         }
 
         if (parentSessionId.empty()) {
@@ -196,11 +195,9 @@ std::string ParentEventTarget::getDebugInfo() const {
 }
 
 std::string ParentEventTarget::findParentSessionId(const std::string &childSessionId) const {
-    // Access JSEngine to find parent session relationship
-    JSEngine &jsEngine = JSEngine::instance();
-
-    // Get parent session ID from JSEngine
-    std::string parentSessionId = jsEngine.getParentSessionId(childSessionId);
+    // W3C SCXML 6.4: Use SessionRegistry for parent-child relationship lookup
+    // Engine-agnostic: No dependency on specific script engine implementation
+    std::string parentSessionId = SessionRegistry::instance().getParentSessionId(childSessionId);
 
     if (parentSessionId.empty()) {
         SCE_LOG_DEBUG("ParentEventTarget: No parent session found for child: {}", childSessionId);

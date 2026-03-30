@@ -3,7 +3,7 @@
 #include "events/IEventDispatcher.h"
 #include "model/IInvokeNode.h"
 #include "runtime/StateSnapshot.h"
-#include "scripting/JSEngine.h"
+#include "scripting/IScriptEngine.h"
 #include <deque>
 #include <memory>
 #include <string>
