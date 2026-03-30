@@ -74,43 +74,64 @@ public:
         return true;
     }
 
+    /**
+     * @brief Set a loop variable directly from a ScriptValue (no string round-trip)
+     *
+     * W3C SCXML 4.6: Preserves type information for objects, arrays, and all primitive types.
+     */
     template <typename JSEngineType>
     static inline bool setLoopVariable(JSEngineType &jsEngine, const std::string &sessionId, const std::string &varName,
-                                       const std::string &value) {
+                                       const ScriptValue &value) {
         try {
-            // W3C SCXML B.2: Validate that item is a legal variable name
             if (!isLegalVariableName(varName)) {
                 SCE_LOG_ERROR("W3C FOREACH: Illegal variable name '{}'", varName);
                 return false;
             }
 
-            // W3C SCXML 4.6: Check if variable already exists using engine-agnostic API
-            bool variableExists = jsEngine.hasVariable(sessionId, varName);
-
-            if (!variableExists) {
-                SCE_LOG_DEBUG("W3C FOREACH: Creating NEW variable '{}' = {}", varName, value);
-            } else {
-                SCE_LOG_DEBUG("W3C FOREACH: Updating EXISTING variable '{}' = {}", varName, value);
+            auto setResult = jsEngine.setVariable(sessionId, varName, value).get();
+            if (!setResult.isSuccess()) {
+                SCE_LOG_ERROR("Failed to set foreach variable '{}'", varName);
+                return false;
             }
 
-            // Evaluate the value expression and set via engine-agnostic setVariable API
-            auto evalResult = jsEngine.evaluateExpression(sessionId, value).get();
+            SCE_LOG_DEBUG("Set foreach variable: {} (ScriptValue direct)", varName);
+            return true;
+
+        } catch (const std::exception &e) {
+            SCE_LOG_ERROR("Exception setting foreach variable {}: {}", varName, e.what());
+            return false;
+        }
+    }
+
+    /**
+     * @brief Set a loop variable from a string expression (evaluates then sets)
+     *
+     * Used for index variables and initial "undefined" declarations.
+     */
+    template <typename JSEngineType>
+    static inline bool setLoopVariableFromExpr(JSEngineType &jsEngine, const std::string &sessionId,
+                                               const std::string &varName, const std::string &expr) {
+        try {
+            if (!isLegalVariableName(varName)) {
+                SCE_LOG_ERROR("W3C FOREACH: Illegal variable name '{}'", varName);
+                return false;
+            }
+
+            auto evalResult = jsEngine.evaluateExpression(sessionId, expr).get();
             if (evalResult.isSuccess()) {
                 auto setResult = jsEngine.setVariable(sessionId, varName, evalResult.getInternalValue()).get();
                 if (setResult.isSuccess()) {
-                    SCE_LOG_DEBUG("Set foreach variable: {} = {}", varName, value);
+                    SCE_LOG_DEBUG("Set foreach variable: {} = {}", varName, expr);
                     return true;
                 }
             }
 
             // Fallback: try as string literal
-            auto setStrResult = jsEngine.setVariable(sessionId, varName, ScriptValue(value)).get();
+            auto setStrResult = jsEngine.setVariable(sessionId, varName, ScriptValue(expr)).get();
             if (!setStrResult.isSuccess()) {
-                SCE_LOG_ERROR("Failed to set foreach variable {} = {}", varName, value);
+                SCE_LOG_ERROR("Failed to set foreach variable {} = {}", varName, expr);
                 return false;
             }
-
-            SCE_LOG_DEBUG("Set foreach variable (string fallback): {} = {}", varName, value);
             return true;
 
         } catch (const std::exception &e) {
@@ -130,10 +151,10 @@ public:
      * @param jsEngine Reference to script engine instance
      * @param sessionId Script engine session ID
      * @param arrayExpr Array expression to evaluate (e.g., "Var3", "[1,2,3]")
-     * @return std::optional<std::vector<std::string>> Array values as strings, or std::nullopt on failure
+     * @return std::optional<std::vector<ScriptValue>> Array element values, or std::nullopt on failure
      */
     template <typename JSEngineType>
-    static inline std::optional<std::vector<std::string>>
+    static inline std::optional<std::vector<ScriptValue>>
     evaluateForeachArray(JSEngineType &jsEngine, const std::string &sessionId, const std::string &arrayExpr) {
         // W3C SCXML 4.6: Array expression must be non-empty
         if (arrayExpr.empty()) {
@@ -149,9 +170,7 @@ public:
         }
 
         // W3C SCXML 5.4: Validate that the value is an array
-        // Engine-agnostic: check ScriptResult type directly, then fallback to engine evaluation
         if (!arrayResult.isArray()) {
-            // Fallback: ask the engine (handles cases where engine stores arrays differently)
             std::string arrayCheckExpr = "(" + arrayExpr + ") instanceof Array";
             auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, arrayCheckExpr).get();
             if (!arrayCheckResult.isSuccess() ||
@@ -162,7 +181,8 @@ public:
             }
         }
 
-        return ScriptResultUtils::resultToStringArray(arrayResult, &jsEngine, sessionId, arrayExpr);
+        // W3C SCXML 4.6: Extract elements as ScriptValue directly (no string round-trip)
+        return ScriptResultUtils::resultToScriptValueArray(arrayResult, &jsEngine, sessionId, arrayExpr);
     }
 
     /**
@@ -182,19 +202,19 @@ public:
      */
     template <typename JSEngineType>
     static inline bool setForeachIterationVariables(JSEngineType &jsEngine, const std::string &sessionId,
-                                                    const std::string &itemVar, const std::string &itemValue,
+                                                    const std::string &itemVar, const ScriptValue &itemValue,
                                                     const std::string &indexVar, size_t indexValue) {
-        // Set item variable using shared logic
+        // Set item variable directly from ScriptValue (no string round-trip)
         if (!setLoopVariable(jsEngine, sessionId, itemVar, itemValue)) {
             SCE_LOG_ERROR("Failed to set foreach item variable: {}", itemVar);
-            return false;  // Return failure instead of throwing
+            return false;
         }
 
         // Set index variable (if provided)
         if (!indexVar.empty()) {
-            if (!setLoopVariable(jsEngine, sessionId, indexVar, std::to_string(indexValue))) {
+            if (!setLoopVariable(jsEngine, sessionId, indexVar, ScriptValue(static_cast<int64_t>(indexValue)))) {
                 SCE_LOG_ERROR("Failed to set foreach index variable: {}", indexVar);
-                return false;  // Return failure instead of throwing
+                return false;
             }
         }
         return true;
@@ -220,26 +240,26 @@ public:
                                                  const std::string &indexVar) {
         auto arrayValuesOpt = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
         if (!arrayValuesOpt.has_value()) {
-            return false;  // Array evaluation failed
+            return false;
         }
         auto &arrayValues = arrayValuesOpt.value();
 
         // W3C SCXML 4.6: Declare item and index variables even for empty arrays
-        if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
+        if (!setLoopVariable(jsEngine, sessionId, itemVar, ScriptValue(ScriptUndefined{}))) {
             SCE_LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
-            return false;  // Return failure instead of throwing
+            return false;
         }
 
         if (!indexVar.empty()) {
-            if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
+            if (!setLoopVariable(jsEngine, sessionId, indexVar, ScriptValue(ScriptUndefined{}))) {
                 SCE_LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
-                return false;  // Return failure instead of throwing
+                return false;
             }
         }
 
         for (size_t i = 0; i < arrayValues.size(); ++i) {
             if (!setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i)) {
-                return false;  // Variable setting failed
+                return false;
             }
         }
         return true;
@@ -305,32 +325,30 @@ public:
     static inline bool executeForeachWithActions(JSEngineType &jsEngine, const std::string &sessionId,
                                                  const std::string &arrayExpr, const std::string &itemVar,
                                                  const std::string &indexVar, BodyFunc &&executeBody) {
-        // Evaluate array expression
+        // Evaluate array expression — returns ScriptValue elements directly (no string round-trip)
         auto arrayValuesOpt = evaluateForeachArray(jsEngine, sessionId, arrayExpr);
         if (!arrayValuesOpt.has_value()) {
-            return false;  // Array evaluation failed
+            return false;
         }
         auto &arrayValues = arrayValuesOpt.value();
 
         // W3C SCXML 4.6: Declare item and index variables BEFORE iteration
-        // Variables MUST be declared even for empty arrays
-        if (!setLoopVariable(jsEngine, sessionId, itemVar, "undefined")) {
+        if (!setLoopVariable(jsEngine, sessionId, itemVar, ScriptValue(ScriptUndefined{}))) {
             SCE_LOG_ERROR("Failed to declare foreach item variable: {}", itemVar);
-            return false;  // Return failure instead of throwing
+            return false;
         }
 
         if (!indexVar.empty()) {
-            if (!setLoopVariable(jsEngine, sessionId, indexVar, "undefined")) {
+            if (!setLoopVariable(jsEngine, sessionId, indexVar, ScriptValue(ScriptUndefined{}))) {
                 SCE_LOG_ERROR("Failed to declare foreach index variable: {}", indexVar);
-                return false;  // Return failure instead of throwing
+                return false;
             }
         }
 
         // W3C SCXML 4.6: Execute foreach loop with error handling
         for (size_t i = 0; i < arrayValues.size(); ++i) {
-            // Set iteration variables (item and optional index)
             if (!setForeachIterationVariables(jsEngine, sessionId, itemVar, arrayValues[i], indexVar, i)) {
-                return false;  // Variable setting failed
+                return false;
             }
 
             // Execute body actions for this iteration

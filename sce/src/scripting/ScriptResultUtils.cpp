@@ -202,6 +202,57 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
     return arrayValues;
 }
 
+std::vector<ScriptValue> resultToScriptValueArray(const ScriptResult &result, IScriptEngine *engine,
+                                                    const std::string &sessionId,
+                                                    const std::string &originalExpression) {
+    std::vector<ScriptValue> values;
+
+    if (!result.isSuccess()) {
+        return values;
+    }
+
+    const auto &value = result.getInternalValue();
+
+    // Direct ScriptArray extraction — preserves all types including objects and nested arrays
+    if (std::holds_alternative<std::shared_ptr<ScriptArray>>(value)) {
+        auto arr = std::get<std::shared_ptr<ScriptArray>>(value);
+        if (arr) {
+            for (const auto &elem : arr->elements) {
+                values.push_back(elem);
+            }
+            SCE_LOG_DEBUG("resultToScriptValueArray: Extracted {} elements directly from ScriptArray", values.size());
+            return values;
+        }
+    }
+
+    // Fallback: use engine to extract elements by index
+    if (engine && !sessionId.empty() && !originalExpression.empty()) {
+        // Get array length
+        std::string lengthExpr = "(" + originalExpression + ").length";
+        auto lengthResult = engine->evaluateExpression(sessionId, lengthExpr).get();
+
+        int64_t arrayLength = 0;
+        if (lengthResult.isSuccess()) {
+            const auto &lv = lengthResult.getInternalValue();
+            if (std::holds_alternative<int64_t>(lv)) arrayLength = std::get<int64_t>(lv);
+            else if (std::holds_alternative<double>(lv)) arrayLength = static_cast<int64_t>(std::get<double>(lv));
+        }
+
+        for (int64_t i = 0; i < arrayLength; ++i) {
+            std::string elemExpr = "(" + originalExpression + ")[" + std::to_string(i) + "]";
+            auto elemResult = engine->evaluateExpression(sessionId, elemExpr).get();
+            if (elemResult.isSuccess()) {
+                values.push_back(elemResult.getInternalValue());
+            } else {
+                values.emplace_back(ScriptUndefined{});
+            }
+        }
+        SCE_LOG_DEBUG("resultToScriptValueArray: Extracted {} elements via engine fallback", values.size());
+    }
+
+    return values;
+}
+
 bool isSuccess(const ScriptResult &result) noexcept {
     return result.isSuccess();
 }

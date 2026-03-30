@@ -48,6 +48,23 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
                                              const std::string &originalExpression = "");
 
 /**
+ * @brief Extract ScriptValue array elements directly from ScriptResult
+ *
+ * W3C SCXML 4.6: Foreach array element extraction without string round-trip.
+ * Preserves type information for objects, arrays, and all primitive types.
+ * Falls back to engine evaluation for non-ScriptArray results.
+ *
+ * @param result Script engine evaluation result of array expression
+ * @param engine Script engine for fallback evaluation
+ * @param sessionId Session ID for fallback evaluation
+ * @param originalExpression Original expression for fallback
+ * @return Vector of ScriptValue elements, empty on failure
+ */
+std::vector<ScriptValue> resultToScriptValueArray(const ScriptResult &result, IScriptEngine *engine = nullptr,
+                                                   const std::string &sessionId = "",
+                                                   const std::string &originalExpression = "");
+
+/**
  * @brief Check if result represents successful operation
  * @param result Script engine execution result
  * @return true if operation succeeded
