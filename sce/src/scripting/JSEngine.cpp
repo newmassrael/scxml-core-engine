@@ -942,14 +942,8 @@ bool JSEngine::isVariablePreInitialized(const std::string &sessionId, const std:
 
 void JSEngine::initializeEventRaiserService() {
     try {
-        // Create registry and use JSEngine directly as session manager
         auto registry = std::make_shared<EventRaiserRegistry>();
-
-        // JSEngine implements ISessionManager directly - no adapter needed
-        EventRaiserService::initialize(registry, std::shared_ptr<ISessionManager>(this, [](ISessionManager *) {
-                                           // Custom deleter that does nothing - JSEngine is a singleton
-                                       }));
-
+        EventRaiserService::initialize(registry);
         SCE_LOG_DEBUG("JSEngine: EventRaiserService initialized with dependency injection");
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("JSEngine: Failed to initialize EventRaiserService: {}", e.what());

@@ -509,20 +509,7 @@ int main(int argc, char *argv[]) {
                             break;
                         }
 
-#ifdef __EMSCRIPTEN__
-                        // WASM memory leak investigation: Per-test cleanup for specific tests
-                        // Only cleanup if test was actually executed (testReports not empty)
-                        if (!testReports.empty()) {
-                            // W3C SCXML: Cleanup order to prevent memory leaks
-                            // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
-                            SCE::JSEngine::clearEventRaiserRegistry();
-
-                            // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
-                            SCE::JSEngine::instance().reset();
-
-                            SCE_LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
-                        }
-#endif
+                        // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
 
                     } catch (const std::exception &e) {
                         std::string errorMsg = e.what();
@@ -713,20 +700,7 @@ int main(int argc, char *argv[]) {
                             break;
                         }
 
-#ifdef __EMSCRIPTEN__
-                        // WASM memory leak investigation: Per-test cleanup for specific tests
-                        // Only cleanup if test was actually executed (testReports not empty)
-                        if (!testReports.empty()) {
-                            // W3C SCXML: Cleanup order to prevent memory leaks
-                            // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
-                            SCE::JSEngine::clearEventRaiserRegistry();
-
-                            // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
-                            SCE::JSEngine::instance().reset();
-
-                            SCE_LOG_INFO("W3C CLI: Cleaned up JSEngine after test (Registry cleared → Engine reset)");
-                        }
-#endif
+                        // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
 
                     } catch (const std::exception &e) {
                         std::string errorMsg = e.what();
@@ -852,14 +826,7 @@ int main(int argc, char *argv[]) {
                                 break;
                             }
 
-#ifdef __EMSCRIPTEN__
-                            // WASM memory leak investigation: Per-AOT-test cleanup
-                            // W3C SCXML: Cleanup order to prevent memory leaks
-                            SCE::JSEngine::clearEventRaiserRegistry();
-                            SCE::JSEngine::instance().reset();
-                            SCE_LOG_INFO("W3C CLI: Cleaned up JSEngine after AOT test {} (Registry cleared → Engine reset)",
-                                     testIdStr);
-#endif
+                            // Cleanup handled by W3CTestRunner::cleanupBetweenTests()
 
                         } catch (const std::exception &e) {
                             SCE_LOG_ERROR("W3C CLI: AOT engine test {} failed: {}", testIdStr, e.what());

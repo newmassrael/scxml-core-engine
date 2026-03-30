@@ -2,6 +2,7 @@
 #include "core/LogMacros.h"
 #include "events/EventRaiserRegistry.h"
 #include "runtime/IEventRaiser.h"
+#include "scripting/ScriptEngineProvider.h"
 #include <stdexcept>
 
 namespace SCE {
@@ -9,8 +10,7 @@ namespace SCE {
 std::unique_ptr<EventRaiserService> EventRaiserService::instance_;
 std::mutex EventRaiserService::initMutex_;
 
-void EventRaiserService::initialize(std::shared_ptr<IEventRaiserRegistry> registry,
-                                    std::shared_ptr<ISessionManager> sessionManager) {
+void EventRaiserService::initialize(std::shared_ptr<IEventRaiserRegistry> registry) {
     std::lock_guard<std::mutex> lock(initMutex_);
 
     if (!registry) {
@@ -18,13 +18,11 @@ void EventRaiserService::initialize(std::shared_ptr<IEventRaiserRegistry> regist
     }
 
     if (instance_) {
-        // Already initialized (possibly auto-initialized) — update session manager only
-        instance_->sessionManager_ = std::move(sessionManager);
-        SCE_LOG_DEBUG("EventRaiserService: Updated session manager on existing instance");
+        SCE_LOG_DEBUG("EventRaiserService: Already initialized");
         return;
     }
 
-    instance_ = std::unique_ptr<EventRaiserService>(new EventRaiserService(registry, sessionManager));
+    instance_ = std::unique_ptr<EventRaiserService>(new EventRaiserService(registry));
     SCE_LOG_DEBUG("EventRaiserService: Initialized with dependency injection");
 }
 
@@ -32,11 +30,10 @@ EventRaiserService &EventRaiserService::getInstance() {
     std::lock_guard<std::mutex> lock(initMutex_);
 
     if (!instance_) {
-        // Auto-initialize with default registry (no session manager dependency)
-        // This enables EventRaiserService to work independently of any script engine
+        // Auto-initialize with default registry
         SCE_LOG_DEBUG("EventRaiserService: Auto-initializing with default EventRaiserRegistry");
         auto registry = std::make_shared<EventRaiserRegistry>();
-        instance_ = std::unique_ptr<EventRaiserService>(new EventRaiserService(registry, nullptr));
+        instance_ = std::unique_ptr<EventRaiserService>(new EventRaiserService(registry));
     }
 
     return *instance_;
@@ -53,9 +50,8 @@ bool EventRaiserService::isInitialized() {
     return instance_ != nullptr;
 }
 
-EventRaiserService::EventRaiserService(std::shared_ptr<IEventRaiserRegistry> registry,
-                                       std::shared_ptr<ISessionManager> sessionManager)
-    : registry_(std::move(registry)), sessionManager_(std::move(sessionManager)) {
+EventRaiserService::EventRaiserService(std::shared_ptr<IEventRaiserRegistry> registry)
+    : registry_(std::move(registry)) {
     SCE_LOG_DEBUG("EventRaiserService: Created with injected dependencies");
 }
 
@@ -73,15 +69,18 @@ bool EventRaiserService::registerEventRaiser(const std::string &sessionId, std::
         return false;
     }
 
-    // Check if session exists before registration (skip if no session manager)
-    if (sessionManager_) {
-        bool sessionExists = sessionManager_->hasSession(sessionId);
-        SCE_LOG_DEBUG("EventRaiserService: Session '{}' exists: {}", sessionId, sessionExists);
-
-        if (!sessionExists) {
-            SCE_LOG_DEBUG("EventRaiserService: Session '{}' does not exist yet, deferring EventRaiser registration", sessionId);
-            return false;  // Not an error, just deferred
+    // W3C SCXML: Validate session existence via ScriptEngineProvider (engine-agnostic).
+    // Dynamically resolves to the active engine (JSEngine or LuaEngine) at call time.
+    try {
+        auto &sessionMgr = ScriptEngineProvider::getSessionManager();
+        if (!sessionMgr.hasSession(sessionId)) {
+            SCE_LOG_DEBUG("EventRaiserService: Session '{}' does not exist yet, deferring EventRaiser registration",
+                          sessionId);
+            return false;
         }
+    } catch (const std::exception &e) {
+        // ScriptEngineProvider not configured during early startup — skip validation
+        SCE_LOG_DEBUG("EventRaiserService: ScriptEngineProvider not available, skipping session check: {}", e.what());
     }
 
     // Check if already registered to avoid duplicates

@@ -64,7 +64,7 @@ public:
      * @brief Reset the JavaScript engine for test isolation
      * Reinitializes the engine after shutdown, allowing fresh start between tests
      */
-    void reset();
+    void reset() override;
 
     /**
      * @brief Shutdown the JavaScript engine and cleanup all sessions

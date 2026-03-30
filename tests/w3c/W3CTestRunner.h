@@ -148,6 +148,15 @@ private:
     TestReport runSingleTest(const std::string &testDirectory);
 
     /**
+     * @brief Cleanup shared state between test executions for proper isolation
+     *
+     * Ensures no cross-test interference from EventRaiserRegistry entries,
+     * stale script engine sessions, or SessionRegistry invoke mappings.
+     * Called after each test completes (success or failure).
+     */
+    void cleanupBetweenTests();
+
+    /**
      * @brief Run a single test with HTTP server for bidirectional communication
      */
     TestReport runSingleTestWithHttpServer(const std::string &testDirectory, W3CHttpTestServer *httpServer);

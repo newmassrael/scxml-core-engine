@@ -4,6 +4,7 @@
 #include "scripting/EcmaScriptToLuaTransformer.h"
 #include "scripting/LuaDOMBinding.h"
 #include "scripting/ScriptResult.h"
+#include "scripting/SessionRegistry.h"
 
 extern "C" {
 #include <lauxlib.h>
@@ -16,6 +17,37 @@ extern "C" {
 #include <sstream>
 
 namespace SCE {
+
+// W3C SCXML: Helper to detect undeclared simple variable references in Lua expressions.
+// JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
+// This bridges the semantic gap for simple identifier expressions (e.g., donedata location="foo").
+static bool isUndeclaredSimpleVariable(const std::string &expr,
+                                       const std::unordered_set<std::string> &declaredVars,
+                                       lua_State *L) {
+    if (expr.empty()) return false;
+
+    // Check if expression is a simple identifier (variable name)
+    if (!std::isalpha(static_cast<unsigned char>(expr[0])) && expr[0] != '_') return false;
+    for (size_t i = 1; i < expr.size(); ++i) {
+        if (!std::isalnum(static_cast<unsigned char>(expr[i])) && expr[i] != '_') return false;
+    }
+
+    // Exclude Lua keywords (true, false, nil, etc.)
+    static const std::unordered_set<std::string> luaKeywords = {
+        "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto",
+        "if",  "in",    "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while"};
+    if (luaKeywords.count(expr)) return false;
+
+    // If declared via setVariable, it's valid (even if nil)
+    if (declaredVars.count(expr) > 0) return false;
+
+    // Check if it's a Lua standard library global (math, string, table, etc.)
+    lua_getglobal(L, expr.c_str());
+    bool isNil = lua_isnil(L, -1);
+    lua_pop(L, 1);
+
+    return isNil;  // Truly undeclared if not a keyword, not declared, and not a Lua global
+}
 
 // === Singleton ===
 
@@ -45,15 +77,40 @@ void LuaEngine::shutdown() {
     if (!initialized_) return;
     SCE_LOG_INFO("LuaEngine: Shutting down");
 
-    std::lock_guard<std::mutex> lock(sessionMutex_);
-    for (auto &[id, ctx] : sessions_) {
-        if (ctx->L) {
-            lua_close(ctx->L);
-            ctx->L = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(sessionMutex_);
+        for (auto &[id, ctx] : sessions_) {
+            if (ctx->L) {
+                lua_close(ctx->L);
+                ctx->L = nullptr;
+            }
         }
+        sessions_.clear();
+        stateQueryCallbacks_.clear();
     }
-    sessions_.clear();
+
+    {
+        std::lock_guard<std::mutex> lock(globalFuncMutex_);
+        globalFunctions_.clear();
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(observerMutex_);
+        observers_.clear();
+    }
+
     initialized_ = false;
+}
+
+void LuaEngine::reset() {
+    SCE_LOG_DEBUG("LuaEngine: reset() called");
+    shutdown();
+
+    // Clear SessionRegistry (invoke mappings, file paths, event dispatchers)
+    SessionRegistry::instance().reset();
+
+    initialize();
+    SCE_LOG_DEBUG("LuaEngine: reset() completed");
 }
 
 bool LuaEngine::isInitialized() const {
@@ -527,6 +584,14 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
 
     lua_State *L = it->second->L;
     std::string luaExpr = transformer_.transform(expression);
+
+    // W3C SCXML: Detect undeclared simple variable references
+    // JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
+    // For simple identifier expressions (e.g., donedata param location="foo"),
+    // check if the variable is declared before evaluating.
+    if (isUndeclaredSimpleVariable(luaExpr, it->second->declaredVars, L)) {
+        return ScriptResult::createError("ReferenceError: " + expression + " is not defined");
+    }
 
     // Wrap as return statement to get expression value
     std::string wrapped = "return " + luaExpr;

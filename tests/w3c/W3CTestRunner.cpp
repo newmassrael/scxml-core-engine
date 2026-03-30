@@ -5,6 +5,7 @@
 #include "common/Logger.h"
 #include "core/LogMacros.h"
 #include "events/EventDispatcherImpl.h"
+#include "events/EventRaiserService.h"
 #include "events/EventSchedulerImpl.h"
 #include "events/EventTargetFactoryImpl.h"
 #include "impl/TXMLConverter.h"
@@ -13,6 +14,7 @@
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineBuilder.h"
 #include "runtime/StateMachineContext.h"
+#include "scripting/ScriptEngineProvider.h"
 #include "scripting/SessionRegistry.h"
 #include <chrono>
 #include <cstdlib>
@@ -1169,14 +1171,8 @@ TestRunSummary W3CTestRunner::runAllTests(bool skipReporting) {
                       testDirectories.size(), heapAfterTest / (1024 * 1024), testDelta / (1024 * 1024));
 #endif
 
-            // W3C SCXML: Cleanup order to prevent memory leaks
-            // Step 1: Clear EventRaiserRegistry first (breaks shared_ptr cycles with HttpEventTarget)
-            // This ensures HttpEventTarget instances are released before next test
-            SCE::JSEngine::clearEventRaiserRegistry();
-
-            // Step 2: Reset JSEngine (frees QuickJS runtime: JS_FreeRuntime)
-            // WASM CRITICAL: 384MB memory limit requires aggressive cleanup between tests
-            SCE::JSEngine::instance().reset();
+            // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
+            cleanupBetweenTests();
 
 #ifdef __EMSCRIPTEN__
             // WASM memory leak investigation: Log heap size AFTER cleanup with cumulative tracking
@@ -1380,6 +1376,18 @@ TestReport W3CTestRunner::runSingleTest(const std::string &testDirectory) {
 
         throw;  // Re-throw to be caught by runAllTests
     }
+}
+
+void W3CTestRunner::cleanupBetweenTests() {
+    // Step 1: Clear EventRaiserRegistry (breaks shared_ptr cycles with HttpEventTarget)
+    if (SCE::EventRaiserService::isInitialized()) {
+        SCE::EventRaiserService::getInstance().clearAll();
+    }
+
+    // Step 2: Reset active script engine via ScriptEngineProvider (engine-agnostic)
+    SCE::ScriptEngineProvider::getScriptEngine().reset();
+
+    SCE_LOG_DEBUG("W3C Test Execution: Inter-test cleanup completed");
 }
 
 bool W3CTestRunner::requiresHttpServer(const std::string &testDirectory) const {
@@ -1749,6 +1757,9 @@ std::vector<TestReport> W3CTestRunner::runAllMatchingTests(int testId) {
                     SCE_LOG_ERROR("W3C Test {}: AOT engine test failed for variant: {}", testId, e.what());
                     // Don't throw - continue with other variants
                 }
+
+                // W3C SCXML: Cleanup shared state for test isolation (Zero Duplication)
+                cleanupBetweenTests();
             } catch (const std::exception &e) {
                 SCE_LOG_ERROR("W3C Test Execution: Failed to run test in {}: {}", testDir, e.what());
                 // Continue with other variants even if one fails
@@ -1786,6 +1797,7 @@ TestRunSummary W3CTestRunner::runFilteredTests(const std::string &conformanceLev
             TestReport report = runSingleTest(testDir);
             reports.push_back(report);
             reporter_->reportTestResult(report);
+            cleanupBetweenTests();
         } catch (const std::exception &e) {
             SCE_LOG_ERROR("Failed to run filtered test in {}: {}", testDir, e.what());
         }

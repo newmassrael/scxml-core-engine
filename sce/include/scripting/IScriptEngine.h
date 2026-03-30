@@ -216,6 +216,15 @@ public:
      * @return true if ready for operations
      */
     virtual bool isInitialized() const = 0;
+
+    /**
+     * @brief Reset engine state for test isolation
+     *
+     * Destroys all sessions, clears registered functions and callbacks,
+     * then re-initializes for fresh use. Implementations should also
+     * reset shared registries (SessionRegistry, etc.).
+     */
+    virtual void reset() = 0;
 };
 
 }  // namespace SCE

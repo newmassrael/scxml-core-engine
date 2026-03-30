@@ -406,8 +406,17 @@ std::string SCXMLInvokeHandler::startInvokeInternal(const std::shared_ptr<IInvok
         std::istringstream iss(namelist);
         std::string varName;
         while (iss >> varName) {
-            // W3C SCXML 6.4: First evaluate variable in parent session to detect errors
-            // If evaluation fails (e.g., undefined variable), invoke must be cancelled (test 554)
+            // W3C SCXML 6.4: Namelist variable must exist in parent datamodel.
+            // Bridges Lua's nil-for-undeclared gap (JS throws ReferenceError, Lua returns nil).
+            if (!scriptEngine_.hasVariable(parentSessionId, varName)) {
+                SCE_LOG_ERROR(
+                    "SCXMLInvokeHandler: Namelist variable '{}' not defined in parent session: invoke cancelled",
+                    varName);
+                scriptEngine_.destroySession(childSessionId);
+                return "";
+            }
+
+            // W3C SCXML 6.4: Evaluate variable in parent session
             auto future = scriptEngine_.getVariable(parentSessionId, varName);
             auto result = future.get();
 

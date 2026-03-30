@@ -75,6 +75,14 @@ public:
     void shutdown() override;
     bool isInitialized() const override;
 
+    /**
+     * @brief Reset engine state for test isolation
+     *
+     * Destroys all sessions, clears global functions, state query callbacks,
+     * and observers. Re-initializes for fresh use. Mirrors JSEngine::reset().
+     */
+    void reset() override;
+
     // === ISessionLifecycle (shared by IScriptEngine and ISessionManager) ===
     bool createSession(const std::string &sessionId, const std::string &parentSessionId = "") override;
     bool destroySession(const std::string &sessionId) override;

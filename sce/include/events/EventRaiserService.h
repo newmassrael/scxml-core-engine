@@ -1,7 +1,6 @@
 #pragma once
 
 #include "events/IEventRaiserRegistry.h"
-#include "scripting/ISessionManager.h"
 #include <memory>
 #include <string>
 
@@ -29,11 +28,12 @@ public:
      * Must be called before getInstance(). Allows dependency injection
      * for testing with mock implementations.
      *
+     * Session validation uses ScriptEngineProvider::getSessionManager() dynamically,
+     * resolving to whichever engine is active (JSEngine or LuaEngine).
+     *
      * @param registry EventRaiser registry implementation
-     * @param sessionManager Session manager implementation
      */
-    static void initialize(std::shared_ptr<IEventRaiserRegistry> registry,
-                           std::shared_ptr<ISessionManager> sessionManager);
+    static void initialize(std::shared_ptr<IEventRaiserRegistry> registry);
 
     /**
      * @brief Get the singleton service instance
@@ -107,11 +107,9 @@ public:
     void clearAll();
 
 private:
-    explicit EventRaiserService(std::shared_ptr<IEventRaiserRegistry> registry,
-                                std::shared_ptr<ISessionManager> sessionManager);
+    explicit EventRaiserService(std::shared_ptr<IEventRaiserRegistry> registry);
 
     std::shared_ptr<IEventRaiserRegistry> registry_;
-    std::shared_ptr<ISessionManager> sessionManager_;
 
     static std::unique_ptr<EventRaiserService> instance_;
     static std::mutex initMutex_;

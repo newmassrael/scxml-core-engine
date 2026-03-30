@@ -97,6 +97,16 @@ public:
         std::string varName;
 
         while (namelistStream >> varName) {
+            // W3C SCXML 6.2: Namelist variables must be declared in the datamodel.
+            // Check existence first to bridge Lua's nil-for-undeclared semantic gap.
+            // In JavaScript, accessing an undeclared variable throws ReferenceError;
+            // in Lua, it silently returns nil. hasVariable() uses the declaredVars set.
+            if (!jsEngine.hasVariable(sessionId, varName)) {
+                std::string errorMsg = "Failed to evaluate namelist variable '" + varName + "': not defined";
+                errorHandler(errorMsg);
+                return false;
+            }
+
             // Evaluate variable in JSEngine context
             auto varResult = jsEngine.getVariable(sessionId, varName).get();
 
