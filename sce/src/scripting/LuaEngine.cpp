@@ -18,6 +18,73 @@ extern "C" {
 #include <future>
 #include <sstream>
 
+namespace {
+
+// Type alias for global function callbacks registered via registerGlobalFunction()
+using GlobalFuncCallback = std::function<ScriptValue(const std::vector<ScriptValue> &)>;
+
+// Lua __gc metamethod: destroys GlobalFuncCallback stored as full userdata
+int globalFuncGC(lua_State *L) {
+    auto *fn = static_cast<GlobalFuncCallback *>(lua_touserdata(L, 1));
+    if (fn) {
+        fn->~GlobalFuncCallback();
+    }
+    return 0;
+}
+
+// Lua cclosure: invokes a GlobalFuncCallback stored as full userdata upvalue
+int globalFuncCall(lua_State *Ls) {
+    auto *fn = static_cast<GlobalFuncCallback *>(lua_touserdata(Ls, lua_upvalueindex(1)));
+    int nargs = lua_gettop(Ls);
+    std::vector<ScriptValue> args;
+    for (int i = 1; i <= nargs; ++i) {
+        if (lua_isinteger(Ls, i)) {
+            args.emplace_back(static_cast<int64_t>(lua_tointeger(Ls, i)));
+        } else if (lua_isnumber(Ls, i)) {
+            args.emplace_back(lua_tonumber(Ls, i));
+        } else if (lua_isstring(Ls, i)) {
+            args.emplace_back(std::string(lua_tostring(Ls, i)));
+        } else if (lua_isboolean(Ls, i)) {
+            args.emplace_back(static_cast<bool>(lua_toboolean(Ls, i)));
+        } else {
+            args.emplace_back(ScriptUndefined{});
+        }
+    }
+    ScriptValue result = (*fn)(args);
+    std::visit([Ls](auto &&val) {
+        using T = std::decay_t<decltype(val)>;
+        if constexpr (std::is_same_v<T, bool>) {
+            lua_pushboolean(Ls, val ? 1 : 0);
+        } else if constexpr (std::is_same_v<T, int64_t>) {
+            lua_pushinteger(Ls, val);
+        } else if constexpr (std::is_same_v<T, double>) {
+            lua_pushnumber(Ls, val);
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            lua_pushstring(Ls, val.c_str());
+        } else {
+            lua_pushnil(Ls);
+        }
+    }, result);
+    return 1;
+}
+
+// Push a Lua closure that calls a GlobalFuncCallback.
+// Uses full userdata with __gc for proper lifetime management (no memory leak).
+void pushGlobalFuncClosure(lua_State *L, const GlobalFuncCallback &func) {
+    auto *ud = static_cast<GlobalFuncCallback *>(lua_newuserdata(L, sizeof(GlobalFuncCallback)));
+    new (ud) GlobalFuncCallback(func);
+
+    if (luaL_newmetatable(L, "SCE.GlobalFunc")) {
+        lua_pushcfunction(L, globalFuncGC);
+        lua_setfield(L, -2, "__gc");
+    }
+    lua_setmetatable(L, -2);
+
+    lua_pushcclosure(L, globalFuncCall, 1);
+}
+
+}  // anonymous namespace
+
 namespace SCE {
 
 // W3C SCXML: Helper to detect undeclared simple variable references in Lua expressions.
@@ -476,51 +543,11 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     });
     lua_setglobal(L, "In");
 
-    // Register globally registered functions
+    // Register globally registered functions (full userdata with __gc — no leak)
     {
         std::lock_guard<std::mutex> gfLock(globalFuncMutex_);
         for (auto &[name, func] : globalFunctions_) {
-            // Store function pointer in upvalue
-            auto *funcPtr = new std::function<ScriptValue(const std::vector<ScriptValue> &)>(func);
-            lua_pushlightuserdata(L, funcPtr);
-            lua_pushcclosure(L, [](lua_State *Ls) -> int {
-                auto *fn = static_cast<std::function<ScriptValue(const std::vector<ScriptValue> &)> *>(
-                    lua_touserdata(Ls, lua_upvalueindex(1)));
-                // Collect arguments
-                int nargs = lua_gettop(Ls);
-                std::vector<ScriptValue> args;
-                for (int i = 1; i <= nargs; ++i) {
-                    // Simple conversion: numbers and strings
-                    if (lua_isinteger(Ls, i)) {
-                        args.emplace_back(static_cast<int64_t>(lua_tointeger(Ls, i)));
-                    } else if (lua_isnumber(Ls, i)) {
-                        args.emplace_back(lua_tonumber(Ls, i));
-                    } else if (lua_isstring(Ls, i)) {
-                        args.emplace_back(std::string(lua_tostring(Ls, i)));
-                    } else if (lua_isboolean(Ls, i)) {
-                        args.emplace_back(static_cast<bool>(lua_toboolean(Ls, i)));
-                    } else {
-                        args.emplace_back(ScriptUndefined{});
-                    }
-                }
-                ScriptValue result = (*fn)(args);
-                // Push result
-                std::visit([Ls](auto &&val) {
-                    using T = std::decay_t<decltype(val)>;
-                    if constexpr (std::is_same_v<T, bool>) {
-                        lua_pushboolean(Ls, val ? 1 : 0);
-                    } else if constexpr (std::is_same_v<T, int64_t>) {
-                        lua_pushinteger(Ls, val);
-                    } else if constexpr (std::is_same_v<T, double>) {
-                        lua_pushnumber(Ls, val);
-                    } else if constexpr (std::is_same_v<T, std::string>) {
-                        lua_pushstring(Ls, val.c_str());
-                    } else {
-                        lua_pushnil(Ls);
-                    }
-                }, result);
-                return 1;
-            }, 1);
+            pushGlobalFuncClosure(L, func);
             lua_setglobal(L, name.c_str());
         }
     }
@@ -963,50 +990,15 @@ std::future<ScriptResult> LuaEngine::setCurrentEvent(const std::string &sessionI
 
 bool LuaEngine::registerGlobalFunction(const std::string &functionName,
                                          std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) {
-    std::lock_guard<std::mutex> lock(globalFuncMutex_);
+    // Lock order: sessionMutex_ → globalFuncMutex_ (consistent with createSession → registerBuiltins)
+    std::lock_guard<std::mutex> sessLock(sessionMutex_);
+    std::lock_guard<std::mutex> gfLock(globalFuncMutex_);
     globalFunctions_[functionName] = std::move(callback);
 
-    // Register in all existing sessions
-    std::lock_guard<std::mutex> sessLock(sessionMutex_);
+    // Register in all existing sessions (full userdata with __gc — no leak)
     for (auto &[id, ctx] : sessions_) {
         if (ctx->L) {
-            auto *funcPtr = new std::function<ScriptValue(const std::vector<ScriptValue> &)>(globalFunctions_[functionName]);
-            lua_pushlightuserdata(ctx->L, funcPtr);
-            lua_pushcclosure(ctx->L, [](lua_State *Ls) -> int {
-                auto *fn = static_cast<std::function<ScriptValue(const std::vector<ScriptValue> &)> *>(
-                    lua_touserdata(Ls, lua_upvalueindex(1)));
-                int nargs = lua_gettop(Ls);
-                std::vector<ScriptValue> args;
-                for (int i = 1; i <= nargs; ++i) {
-                    if (lua_isinteger(Ls, i)) {
-                        args.emplace_back(static_cast<int64_t>(lua_tointeger(Ls, i)));
-                    } else if (lua_isnumber(Ls, i)) {
-                        args.emplace_back(lua_tonumber(Ls, i));
-                    } else if (lua_isstring(Ls, i)) {
-                        args.emplace_back(std::string(lua_tostring(Ls, i)));
-                    } else if (lua_isboolean(Ls, i)) {
-                        args.emplace_back(static_cast<bool>(lua_toboolean(Ls, i)));
-                    } else {
-                        args.emplace_back(ScriptUndefined{});
-                    }
-                }
-                ScriptValue result = (*fn)(args);
-                std::visit([Ls](auto &&val) {
-                    using T = std::decay_t<decltype(val)>;
-                    if constexpr (std::is_same_v<T, bool>) {
-                        lua_pushboolean(Ls, val ? 1 : 0);
-                    } else if constexpr (std::is_same_v<T, int64_t>) {
-                        lua_pushinteger(Ls, val);
-                    } else if constexpr (std::is_same_v<T, double>) {
-                        lua_pushnumber(Ls, val);
-                    } else if constexpr (std::is_same_v<T, std::string>) {
-                        lua_pushstring(Ls, val.c_str());
-                    } else {
-                        lua_pushnil(Ls);
-                    }
-                }, result);
-                return 1;
-            }, 1);
+            pushGlobalFuncClosure(ctx->L, globalFunctions_[functionName]);
             lua_setglobal(ctx->L, functionName.c_str());
         }
     }

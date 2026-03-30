@@ -101,6 +101,18 @@ target_link_libraries(benchmark_timer_accuracy
         Threads::Threads
 )
 
+# LuaEngine Benchmarks
+add_executable(benchmark_luaengine
+    LuaEngineBenchmark.cpp
+)
+target_link_libraries(benchmark_luaengine
+    PRIVATE
+        sce_runtime
+        benchmark::benchmark
+        benchmark::benchmark_main
+        Threads::Threads
+)
+
 # Memory Footprint Benchmarks
 add_executable(benchmark_memory_footprint
     MemoryFootprintBenchmark.cpp
@@ -180,6 +192,21 @@ add_test(
         --benchmark_format=console
 )
 
+# LuaEngine quick benchmark test
+add_test(
+    NAME benchmark_luaengine_quick
+    COMMAND benchmark_luaengine
+        --benchmark_min_time=0.1s
+        --benchmark_filter="SessionCreation|SessionLookup|SimpleExpression|NativeSimpleExpression"
+        --benchmark_format=console
+)
+
+# LuaEngine full benchmark test
+add_test(
+    NAME benchmark_luaengine_full
+    COMMAND benchmark_luaengine
+)
+
 # Memory Footprint quick benchmark test
 add_test(
     NAME benchmark_memory_footprint_quick
@@ -242,6 +269,19 @@ set_tests_properties(benchmark_timer_accuracy_quick PROPERTIES
     COST 1000
 )
 
+set_tests_properties(benchmark_luaengine_quick PROPERTIES
+    LABELS "benchmark;quick;performance;luaengine"
+    TIMEOUT 300
+    COST 1000
+)
+
+set_tests_properties(benchmark_luaengine_full PROPERTIES
+    LABELS "benchmark;full;performance;luaengine;manual"
+    TIMEOUT 600
+    COST 500
+    DISABLED TRUE
+)
+
 set_tests_properties(benchmark_memory_footprint_quick PROPERTIES
     LABELS "benchmark;quick;performance;memory"
     TIMEOUT 300
@@ -271,5 +311,20 @@ add_custom_target(benchmark_json
 add_custom_target(benchmark_quick
     COMMAND benchmark_event_scheduler --benchmark_min_time=0.1s --benchmark_filter=Quick
     DEPENDS benchmark_event_scheduler
+    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+)
+
+# QuickJS vs Lua engine comparison
+add_custom_target(benchmark_compare_engines
+    COMMAND ${CMAKE_COMMAND} -E echo "======== QuickJS (JSEngine) ========"
+    COMMAND benchmark_jsengine
+        --benchmark_filter="SimpleExpression$|VariableOperations$|ScriptExecutionLatency$|SessionCreation$|SessionLookup$"
+        --benchmark_format=console
+    COMMAND ${CMAKE_COMMAND} -E echo ""
+    COMMAND ${CMAKE_COMMAND} -E echo "======== Lua 5.4 (LuaEngine) ========"
+    COMMAND benchmark_luaengine
+        --benchmark_filter="SimpleExpression$|VariableOperations$|ScriptExecutionLatency$|NativeSimpleExpression$|NativeMathExpression$|NativeScriptExecutionLatency$|SessionCreation$|SessionLookup$"
+        --benchmark_format=console
+    DEPENDS benchmark_jsengine benchmark_luaengine
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
 )
