@@ -53,6 +53,7 @@ public:
     std::future<ScriptResult> setVariable(const std::string &sessionId, const std::string &name,
                                       const ScriptValue &value) override;
     std::future<ScriptResult> getVariable(const std::string &sessionId, const std::string &name) override;
+    bool hasVariable(const std::string &sessionId, const std::string &variableName) const override;
     bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
     std::future<ScriptResult> setupSystemVariables(const std::string &sessionId, const std::string &sessionName,

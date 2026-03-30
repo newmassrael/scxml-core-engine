@@ -69,6 +69,30 @@ std::vector<std::string> resultToStringArray(const ScriptResult &result, IScript
     const auto &value = result.getInternalValue();
     std::string arrayStr;
 
+    // Direct ScriptArray extraction (engine-agnostic, works with both QuickJS and Lua)
+    if (std::holds_alternative<std::shared_ptr<ScriptArray>>(value)) {
+        auto arr = std::get<std::shared_ptr<ScriptArray>>(value);
+        if (arr) {
+            for (const auto &elem : arr->elements) {
+                arrayValues.push_back(std::visit(
+                    [](const auto &v) -> std::string {
+                        using T = std::decay_t<decltype(v)>;
+                        if constexpr (std::is_same_v<T, std::string>) return v;
+                        else if constexpr (std::is_same_v<T, int64_t>) return std::to_string(v);
+                        else if constexpr (std::is_same_v<T, double>) {
+                            std::ostringstream oss;
+                            oss << std::noshowpoint << v;
+                            return oss.str();
+                        }
+                        else if constexpr (std::is_same_v<T, bool>) return v ? "true" : "false";
+                        else return "undefined";
+                    }, elem));
+            }
+            SCE_LOG_DEBUG("resultToStringArray: Extracted {} elements directly from ScriptArray", arrayValues.size());
+            return arrayValues;
+        }
+    }
+
     if (std::holds_alternative<std::string>(value)) {
         arrayStr = std::get<std::string>(value);
         SCE_LOG_DEBUG("resultToStringArray: Got string result: '{}'", arrayStr);

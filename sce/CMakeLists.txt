@@ -19,6 +19,12 @@ if(EMSCRIPTEN)
 endif()
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURRENT_BINARY_DIR}/quickjs)
 
+# Add Lua 5.4 subdirectory (for LuaEngine support)
+option(SCE_ENABLE_LUA "Enable Lua scripting engine support" ON)
+if(SCE_ENABLE_LUA)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lua ${CMAKE_CURRENT_BINARY_DIR}/lua)
+endif()
+
 # ============================================================================
 # spdlog Logger Configuration (Optional Dependency)
 # ============================================================================
@@ -169,9 +175,15 @@ add_library(sce_runtime
     src/scripting/JSEngineImpl.cpp
     src/scripting/JSExecutionEngineImpl.cpp
     src/scripting/ScriptResultUtils.cpp
+    src/scripting/ScriptEngineProvider.cpp
+    src/scripting/EcmaScriptToLuaTransformer.cpp
     src/scripting/SessionRegistry.cpp
     src/scripting/XMLDOMWrapper.cpp  # W3C SCXML B.2: XML DOM (pugixml for all platforms)
     src/scripting/DOMBinding.cpp      # QuickJS bindings for XML DOM API
+
+    # Lua scripting engine (conditional)
+    $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaEngine.cpp>
+    $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaDOMBinding.cpp>
 
     # Parsing implementation
     src/parsing/StateNodeParser.cpp
@@ -283,11 +295,17 @@ target_link_libraries(sce_runtime
     PUBLIC
         sce_core  # Header-only core (include directories propagated)
         qjs       # QuickJS library
+        $<$<BOOL:${SCE_ENABLE_LUA}>:lua54>  # Lua 5.4 library (conditional)
         # nlohmann/json is header-only, no linking required
         # spdlog is header-only, no linking required
     PRIVATE
         pthread
 )
+
+# Lua compile definition for conditional compilation
+if(SCE_ENABLE_LUA)
+    target_compile_definitions(sce_runtime PUBLIC SCE_ENABLE_LUA)
+endif()
 
 # Note: pugixml is header-only, no linking required
 

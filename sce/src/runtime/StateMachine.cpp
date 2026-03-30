@@ -32,7 +32,7 @@ using SCE::Core::ConflictResolutionAlgorithms;
 #include "runtime/HistoryValidator.h"
 #include "runtime/ImmediateModeGuard.h"
 #include "scripting/IScriptEngine.h"
-#include "scripting/JSEngine.h"  // For backward-compat static factory methods
+#include "scripting/ScriptEngineProvider.h"  // For backward-compat static factory methods
 #include "states/ConcurrentRegion.h"
 #include "states/ConcurrentStateNode.h"
 #include <algorithm>
@@ -74,7 +74,7 @@ private:
 
 std::shared_ptr<StateMachine> StateMachine::createFromSCXMLString(const std::string &scxmlContent,
                                                                    const std::string &sessionId) {
-    return createFromSCXMLString(JSEngine::instance(), scxmlContent, sessionId);
+    return createFromSCXMLString(ScriptEngineProvider::getScriptEngine(), scxmlContent, sessionId);
 }
 
 std::shared_ptr<StateMachine> StateMachine::createFromSCXMLString(IScriptEngine &scriptEngine,

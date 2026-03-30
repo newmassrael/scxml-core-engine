@@ -911,6 +911,16 @@ bool JSEngine::isSuccess(const ScriptResult &result) noexcept {
     return ScriptResultUtils::isSuccess(result);
 }
 
+bool JSEngine::hasVariable(const std::string &sessionId, const std::string &variableName) const {
+    // W3C SCXML 4.6: Check if variable exists in session global scope
+    auto checkExpr = "'" + variableName + "' in this";
+    auto result = const_cast<JSEngine *>(this)->evaluateExpression(sessionId, checkExpr).get();
+    if (result.isSuccess() && std::holds_alternative<bool>(result.getInternalValue())) {
+        return std::get<bool>(result.getInternalValue());
+    }
+    return false;
+}
+
 bool JSEngine::isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const {
     std::lock_guard<std::mutex> lock(sessionsMutex_);
     auto it = sessions_.find(sessionId);

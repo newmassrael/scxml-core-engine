@@ -80,6 +80,17 @@ public:
                                                    const std::string &xmlContent) = 0;
 
     /**
+     * @brief Check if a variable exists in the session scope
+     * @param sessionId Session identifier
+     * @param variableName Variable name to check
+     * @return true if variable has been declared (even if value is undefined/nil)
+     *
+     * W3C SCXML 4.6: Foreach must distinguish between declared and undeclared variables.
+     * Engine-agnostic replacement for ECMAScript-specific "'name' in this" check.
+     */
+    virtual bool hasVariable(const std::string &sessionId, const std::string &variableName) const = 0;
+
+    /**
      * @brief Check if a variable was pre-initialized (set before datamodel initialization)
      * @param sessionId Session identifier
      * @param variableName Variable name to check

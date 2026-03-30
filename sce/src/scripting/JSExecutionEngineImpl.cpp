@@ -223,6 +223,11 @@ void JSExecutionEngineImpl::collectGarbage() {
     }
 }
 
+bool JSExecutionEngineImpl::hasVariable(const std::string &sessionId, const std::string &variableName) const {
+    // Delegate to JSEngine for actual ECMAScript scope check
+    return JSEngine::instance().hasVariable(sessionId, variableName);
+}
+
 bool JSExecutionEngineImpl::isVariablePreInitialized(const std::string &sessionId,
                                                      const std::string &variableName) const {
     std::lock_guard<std::mutex> lock(contextsMutex_);

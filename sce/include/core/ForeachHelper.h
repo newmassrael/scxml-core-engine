@@ -57,51 +57,60 @@ public:
      * @param value JavaScript literal value (e.g., "1", "undefined", "null")
      * @return true if successful, false otherwise
      */
+    /**
+     * @brief Validate that a variable name is a legal ECMAScript identifier
+     * W3C SCXML B.2: Legal values for 'item' attribute are legal ECMAScript variable names
+     */
+    static inline bool isLegalVariableName(const std::string &name) {
+        if (name.empty()) return false;
+        // Must not be quoted (e.g., 'continue' or "continue")
+        if (name.front() == '\'' || name.front() == '"') return false;
+        // Must start with letter, underscore, or dollar sign
+        if (!std::isalpha(name[0]) && name[0] != '_' && name[0] != '$') return false;
+        // Must contain only alphanumeric, underscore, or dollar sign
+        for (char c : name) {
+            if (!std::isalnum(c) && c != '_' && c != '$') return false;
+        }
+        return true;
+    }
+
     template <typename JSEngineType>
     static inline bool setLoopVariable(JSEngineType &jsEngine, const std::string &sessionId, const std::string &varName,
                                        const std::string &value) {
         try {
-            // W3C SCXML 4.6: Check if variable already exists
-            // W3C SCXML 5.3: Variables with undefined values should be considered as "existing"
-            std::string checkExpression = "'" + varName + "' in this";
-            auto checkResult = jsEngine.evaluateExpression(sessionId, checkExpression).get();
-
-            bool variableExists = false;
-            if (checkResult.isSuccess() && std::holds_alternative<bool>(checkResult.getInternalValue())) {
-                variableExists = std::get<bool>(checkResult.getInternalValue());
+            // W3C SCXML B.2: Validate that item is a legal variable name
+            if (!isLegalVariableName(varName)) {
+                SCE_LOG_ERROR("W3C FOREACH: Illegal variable name '{}'", varName);
+                return false;
             }
 
-            std::string script;
+            // W3C SCXML 4.6: Check if variable already exists using engine-agnostic API
+            bool variableExists = jsEngine.hasVariable(sessionId, varName);
+
             if (!variableExists) {
-                // Declare and assign new variable - W3C compliance
-                script = "var " + varName + " = " + value + ";";
                 SCE_LOG_DEBUG("W3C FOREACH: Creating NEW variable '{}' = {}", varName, value);
             } else {
-                // Assign value to existing variable
-                script = varName + " = " + value + ";";
                 SCE_LOG_DEBUG("W3C FOREACH: Updating EXISTING variable '{}' = {}", varName, value);
             }
 
-            auto setResult = jsEngine.executeScript(sessionId, script).get();
-
-            if (!setResult.isSuccess()) {
-                // Fallback: Treat as string literal
-                std::string stringLiteral = "\"" + value + "\"";
-                std::string fallbackScript;
-                if (!variableExists) {
-                    fallbackScript = "var " + varName + " = " + stringLiteral + ";";
-                } else {
-                    fallbackScript = varName + " = " + stringLiteral + ";";
-                }
-
-                auto fallbackResult = jsEngine.executeScript(sessionId, fallbackScript).get();
-                if (!fallbackResult.isSuccess()) {
-                    SCE_LOG_ERROR("Failed to set foreach variable {} = {}", varName, value);
-                    return false;
+            // Evaluate the value expression and set via engine-agnostic setVariable API
+            auto evalResult = jsEngine.evaluateExpression(sessionId, value).get();
+            if (evalResult.isSuccess()) {
+                auto setResult = jsEngine.setVariable(sessionId, varName, evalResult.getInternalValue()).get();
+                if (setResult.isSuccess()) {
+                    SCE_LOG_DEBUG("Set foreach variable: {} = {}", varName, value);
+                    return true;
                 }
             }
 
-            SCE_LOG_DEBUG("Set foreach variable: {} = {}", varName, value);
+            // Fallback: try as string literal
+            auto setStrResult = jsEngine.setVariable(sessionId, varName, ScriptValue(value)).get();
+            if (!setStrResult.isSuccess()) {
+                SCE_LOG_ERROR("Failed to set foreach variable {} = {}", varName, value);
+                return false;
+            }
+
+            SCE_LOG_DEBUG("Set foreach variable (string fallback): {} = {}", varName, value);
             return true;
 
         } catch (const std::exception &e) {
@@ -126,22 +135,31 @@ public:
     template <typename JSEngineType>
     static inline std::optional<std::vector<std::string>>
     evaluateForeachArray(JSEngineType &jsEngine, const std::string &sessionId, const std::string &arrayExpr) {
+        // W3C SCXML 4.6: Array expression must be non-empty
+        if (arrayExpr.empty()) {
+            SCE_LOG_ERROR("Foreach array attribute is missing or empty");
+            return std::nullopt;
+        }
+
         auto arrayResult = jsEngine.evaluateExpression(sessionId, arrayExpr).get();
 
         if (!arrayResult.isSuccess()) {
             SCE_LOG_ERROR("Failed to evaluate array expression: {}", arrayExpr);
-            return std::nullopt;  // Return failure instead of throwing
+            return std::nullopt;
         }
 
-        // W3C SCXML 5.4: Validate that the value is an array (instanceof Array)
-        std::string arrayCheckExpr = "(" + arrayExpr + ") instanceof Array";
-        auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, arrayCheckExpr).get();
-
-        if (!arrayCheckResult.isSuccess() ||
-            !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
-            !std::get<bool>(arrayCheckResult.getInternalValue())) {
-            SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr);
-            return std::nullopt;  // Return failure instead of throwing
+        // W3C SCXML 5.4: Validate that the value is an array
+        // Engine-agnostic: check ScriptResult type directly, then fallback to engine evaluation
+        if (!arrayResult.isArray()) {
+            // Fallback: ask the engine (handles cases where engine stores arrays differently)
+            std::string arrayCheckExpr = "(" + arrayExpr + ") instanceof Array";
+            auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, arrayCheckExpr).get();
+            if (!arrayCheckResult.isSuccess() ||
+                !std::holds_alternative<bool>(arrayCheckResult.getInternalValue()) ||
+                !std::get<bool>(arrayCheckResult.getInternalValue())) {
+                SCE_LOG_ERROR("Foreach array '{}' is not an iterable collection (W3C SCXML 5.4)", arrayExpr);
+                return std::nullopt;
+            }
         }
 
         return ScriptResultUtils::resultToStringArray(arrayResult, &jsEngine, sessionId, arrayExpr);

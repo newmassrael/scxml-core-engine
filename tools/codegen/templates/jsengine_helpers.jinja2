@@ -8,7 +8,7 @@
 {% if model.needs_jsengine %}
     // Script engine accessor (pluggable: override for alternative engines like Lua)
     static ::SCE::IScriptEngine& getScriptEngine() {
-        return ::SCE::JSEngine::instance();
+        return ::SCE::ScriptEngineProvider::getScriptEngine();
     }
 
     // Helper: Ensure JSEngine is initialized (lazy initialization)

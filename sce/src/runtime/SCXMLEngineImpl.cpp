@@ -1,6 +1,6 @@
 #define SCXML_ENGINE_EXPORTS
 #include "SCXMLEngineImpl.h"
-#include "scripting/JSEngine.h"  // For default constructor backward compatibility
+#include "scripting/ScriptEngineProvider.h"  // For default constructor engine resolution
 #include "core/LogMacros.h"
 #include "common/UniqueIdGenerator.h"
 #include "scripting/ScriptResultUtils.h"
@@ -42,7 +42,7 @@ Event::Event(const ::std::string &name, const ::std::string &type) : name_(name)
 // === SCXMLEngineImpl Implementation ===
 
 SCXMLEngineImpl::SCXMLEngineImpl()
-    : scriptEngine_(JSEngine::instance()), sessionManager_(JSEngine::instance()) {}
+    : scriptEngine_(ScriptEngineProvider::getScriptEngine()), sessionManager_(ScriptEngineProvider::getSessionManager()) {}
 
 SCXMLEngineImpl::SCXMLEngineImpl(IScriptEngine &scriptEngine, ISessionManager &sessionManager)
     : scriptEngine_(scriptEngine), sessionManager_(sessionManager) {}

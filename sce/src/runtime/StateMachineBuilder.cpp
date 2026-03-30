@@ -1,11 +1,11 @@
 #include "runtime/StateMachineBuilder.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 
 namespace SCE {
 
 std::shared_ptr<StateMachine> StateMachineBuilder::build() {
-    // Resolve script engine: explicit injection or default singleton
-    IScriptEngine &engine = scriptEngine_ ? *scriptEngine_ : JSEngine::instance();
+    // Resolve script engine: explicit injection or configured provider default
+    IScriptEngine &engine = scriptEngine_ ? *scriptEngine_ : ScriptEngineProvider::getScriptEngine();
 
     // Create StateMachine with engine injection
     auto stateMachine = std::make_shared<StateMachine>(engine, sessionId_);

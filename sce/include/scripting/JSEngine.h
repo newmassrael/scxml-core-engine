@@ -187,6 +187,7 @@ public:
      * @param variableName Variable name to check
      * @return true if variable was pre-initialized (e.g., by invoke data)
      */
+    bool hasVariable(const std::string &sessionId, const std::string &variableName) const override;
     bool isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const override;
 
     // === SCXML-specific Features ===

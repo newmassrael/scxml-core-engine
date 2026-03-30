@@ -35,44 +35,54 @@ bool W3CHttpTestServer::start() {
 
     shutdownRequested_ = false;
 
-    // Start server in background thread
-    serverThread_ = std::thread([this]() {
-        SCE_LOG_INFO("W3CHttpTestServer: [{}] Starting HTTP server on localhost:{}{}", instanceId_, port_, path_);
-
-        running_ = true;
-
-        // Set SO_REUSEADDR and SO_REUSEPORT to allow immediate port reuse
-        server_->set_socket_options([](socket_t sock) {
-            int yes = 1;
-            setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&yes), sizeof(yes));
+    // Set SO_REUSEADDR and SO_REUSEPORT to allow immediate port reuse
+    server_->set_socket_options([](socket_t sock) {
+        int yes = 1;
+        setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char *>(&yes), sizeof(yes));
 #ifdef SO_REUSEPORT
-            setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<const char *>(&yes), sizeof(yes));
+        setsockopt(sock, SOL_SOCKET, SO_REUSEPORT, reinterpret_cast<const char *>(&yes), sizeof(yes));
 #endif
-        });
-
-        bool success = server_->listen("localhost", port_);
-
-        if (!success && !shutdownRequested_.load()) {
-            SCE_LOG_ERROR("W3CHttpTestServer: [{}] Failed to start server on port {}", instanceId_, port_);
-            running_ = false;  // Set to false immediately on failure
-        } else {
-            running_ = false;  // Normal shutdown
-        }
-
-        SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Server thread ended", instanceId_);
     });
 
-    // Wait a bit for server to start
-    std::this_thread::sleep_for(SCE::Test::Utils::STANDARD_WAIT_MS);
-
-    if (!running_.load()) {
-        if (serverThread_.joinable()) {
-            serverThread_.join();
-        }
+    // Bind port on the calling thread — guarantees the port is ready before returning
+    if (!server_->bind_to_port("localhost", port_)) {
+        SCE_LOG_ERROR("W3CHttpTestServer: [{}] Failed to bind to port {}", instanceId_, port_);
         return false;
     }
 
-    SCE_LOG_INFO("W3CHttpTestServer: [{}] HTTP server started successfully on localhost:{}{}", instanceId_, port_, path_);
+    // Start the accept loop in a background thread (port is already bound)
+    serverThread_ = std::thread([this]() {
+        SCE_LOG_INFO("W3CHttpTestServer: [{}] Accepting connections on localhost:{}{}", instanceId_, port_, path_);
+        running_ = true;
+
+        bool success = server_->listen_after_bind();
+
+        if (!success && !shutdownRequested_.load()) {
+            SCE_LOG_ERROR("W3CHttpTestServer: [{}] listen_after_bind failed", instanceId_);
+        }
+        running_ = false;
+        SCE_LOG_DEBUG("W3CHttpTestServer: [{}] Server thread ended", instanceId_);
+    });
+
+    // Wait until the server is actually accepting connections
+    // by polling with a TCP connect probe
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    bool serverReady = false;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (running_.load()) {
+            serverReady = true;
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    if (!serverReady) {
+        SCE_LOG_ERROR("W3CHttpTestServer: [{}] Server failed to become ready within timeout", instanceId_);
+        stop();
+        return false;
+    }
+
+    SCE_LOG_INFO("W3CHttpTestServer: [{}] HTTP server ready on localhost:{}{}", instanceId_, port_, path_);
     return true;
 }
 
