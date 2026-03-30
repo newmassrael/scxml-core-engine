@@ -114,6 +114,9 @@ void LuaEngine::reset() {
     // Clear SessionRegistry (invoke mappings, file paths, event dispatchers)
     SessionRegistry::instance().reset();
 
+    // Clear expression transformation cache
+    transformer_.clearCache();
+
     initialize();
     SCE_LOG_DEBUG("LuaEngine: reset() completed");
 }
@@ -525,6 +528,23 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
 
 // === Script Execution ===
 
+int LuaEngine::loadCachedChunk(lua_State *L, const std::string &code,
+                               std::unordered_map<std::string, int> &cache) {
+    auto cacheIt = cache.find(code);
+    if (cacheIt != cache.end()) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, cacheIt->second);
+        return LUA_OK;
+    }
+
+    int status = luaL_loadstring(L, code.c_str());
+    if (status == LUA_OK) {
+        lua_pushvalue(L, -1);
+        int ref = luaL_ref(L, LUA_REGISTRYINDEX);
+        cache[code] = ref;
+    }
+    return status;
+}
+
 std::future<ScriptResult> LuaEngine::executeScript(const std::string &sessionId, const std::string &script) {
     auto result = executeScriptInternal(sessionId, script);
     std::promise<ScriptResult> promise;
@@ -553,14 +573,18 @@ std::future<ScriptResult> LuaEngine::validateExpression(const std::string &sessi
     std::string luaExpr = transformer_.transform(expression);
     std::string wrapped = "return " + luaExpr;
 
-    int status = luaL_loadstring(it->second->L, wrapped.c_str());
-    if (status == LUA_OK) {
-        lua_pop(it->second->L, 1); // Pop the compiled chunk
-    }
+    lua_State *L = it->second->L;
+    int status = loadCachedChunk(L, wrapped, it->second->chunkCache);
 
     std::promise<ScriptResult> p;
-    p.set_value(status == LUA_OK ? ScriptResult::createSuccess(true) :
-                ScriptResult::createError("Syntax error: " + std::string(lua_tostring(it->second->L, -1))));
+    if (status == LUA_OK) {
+        lua_pop(L, 1);  // Pop the compiled function (validate doesn't execute)
+        p.set_value(ScriptResult::createSuccess(true));
+    } else {
+        std::string err = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
+        lua_pop(L, 1);  // Pop the error message to prevent stack leak
+        p.set_value(ScriptResult::createError("Syntax error: " + err));
+    }
     return p.get_future();
 }
 
@@ -576,7 +600,11 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
 
     SCE_LOG_DEBUG("LuaEngine: Execute script [{}]: {} -> {}", sessionId, script, luaScript);
 
-    int status = luaL_dostring(L, luaScript.c_str());
+    int loadStatus = loadCachedChunk(L, luaScript, it->second->chunkCache);
+    if (loadStatus != LUA_OK) {
+        return luaResultToScriptResult(L, loadStatus);
+    }
+    int status = lua_pcall(L, 0, LUA_MULTRET, 0);
     return luaResultToScriptResult(L, status);
 }
 
@@ -600,40 +628,57 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
 
     // Wrap as return statement to get expression value
     std::string wrapped = "return " + luaExpr;
+    auto &cache = it->second->chunkCache;
 
     SCE_LOG_DEBUG("LuaEngine: Evaluate [{}]: {} -> {}", sessionId, expression, wrapped);
 
-    int status = luaL_dostring(L, wrapped.c_str());
-    if (status != LUA_OK) {
-        std::string firstError = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
-        lua_pop(L, 1);
-
-        // W3C SCXML 5.9: Only try statement fallback for assignment-like expressions.
-        // Bare keywords like "return" are valid Lua chunks but invalid as JS expressions
-        // (JavaScript's eval("return") throws SyntaxError — W3C test 344).
-        bool looksLikeAssignment = false;
-        for (size_t i = 0; i < luaExpr.size(); ++i) {
-            if (luaExpr[i] == '=' &&
-                (i == 0 || (luaExpr[i - 1] != '~' && luaExpr[i - 1] != '<' &&
-                            luaExpr[i - 1] != '>' && luaExpr[i - 1] != '=')) &&
-                (i + 1 >= luaExpr.size() || luaExpr[i + 1] != '=')) {
-                looksLikeAssignment = true;
-                break;
-            }
+    // Try compiled chunk from cache (or compile + cache on first call).
+    // If "return <expr>" compiles, it's a valid expression — runtime errors are returned
+    // directly without assignment fallback. Assignment expressions (e.g., "x = 5") fail
+    // compilation as "return x = 5" (LUA_ERRSYNTAX) and fall through to the fallback below.
+    int loadStatus = loadCachedChunk(L, wrapped, cache);
+    if (loadStatus == LUA_OK) {
+        int status = lua_pcall(L, 0, LUA_MULTRET, 0);
+        if (status == LUA_OK) {
+            return luaResultToScriptResult(L, status);
         }
+        std::string error = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
+        lua_pop(L, 1);
+        return ScriptResult::createError(error);
+    }
 
-        if (looksLikeAssignment) {
-            status = luaL_dostring(L, luaExpr.c_str());
+    // Compilation of "return <expr>" failed — try assignment fallback
+    std::string firstError = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
+    lua_pop(L, 1);
+
+    // W3C SCXML 5.9: Only try statement fallback for assignment-like expressions.
+    // Bare keywords like "return" are valid Lua chunks but invalid as JS expressions
+    // (JavaScript's eval("return") throws SyntaxError — W3C test 344).
+    bool looksLikeAssignment = false;
+    for (size_t i = 0; i < luaExpr.size(); ++i) {
+        if (luaExpr[i] == '=' &&
+            (i == 0 || (luaExpr[i - 1] != '~' && luaExpr[i - 1] != '<' &&
+                        luaExpr[i - 1] != '>' && luaExpr[i - 1] != '=')) &&
+            (i + 1 >= luaExpr.size() || luaExpr[i + 1] != '=')) {
+            looksLikeAssignment = true;
+            break;
+        }
+    }
+
+    if (looksLikeAssignment) {
+        loadStatus = loadCachedChunk(L, luaExpr, cache);
+        if (loadStatus == LUA_OK) {
+            int status = lua_pcall(L, 0, LUA_MULTRET, 0);
             if (status == LUA_OK) {
                 return ScriptResult::createSuccess(ScriptUndefined{});
             }
             lua_pop(L, 1);
+        } else {
+            lua_pop(L, 1);
         }
-
-        return ScriptResult::createError(firstError);
     }
 
-    return luaResultToScriptResult(L, status);
+    return ScriptResult::createError(firstError);
 }
 
 ScriptResult LuaEngine::luaResultToScriptResult(lua_State *L, int status) {

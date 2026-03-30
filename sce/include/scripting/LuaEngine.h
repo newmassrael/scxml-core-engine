@@ -108,6 +108,8 @@ private:
         std::unordered_set<std::string> declaredVars;  // Track all declared variables (Lua nil != undeclared)
         // Bound native method storage for bindNativeObject lifetime management
         std::vector<std::unique_ptr<NativeMethod>> boundMethods;
+        // Lua bytecode cache: compiled chunks stored in Lua registry (keyed by source string)
+        std::unordered_map<std::string, int> chunkCache;
     };
 
     // === Internal implementation ===
@@ -115,6 +117,12 @@ private:
     ScriptResult evaluateExpressionInternal(const std::string &sessionId, const std::string &expression);
     ScriptResult setVariableInternal(const std::string &sessionId, const std::string &name, const ScriptValue &value);
     ScriptResult getVariableInternal(const std::string &sessionId, const std::string &name);
+
+    // Lua chunk compilation with per-session bytecode caching.
+    // On LUA_OK: compiled function is pushed onto the stack.
+    // On error: error message is pushed onto the stack.
+    int loadCachedChunk(lua_State *L, const std::string &code,
+                        std::unordered_map<std::string, int> &cache);
 
     // Lua state management
     lua_State *createLuaState();

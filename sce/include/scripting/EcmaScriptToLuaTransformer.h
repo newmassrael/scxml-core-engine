@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace SCE {
@@ -35,8 +36,7 @@ public:
      */
     enum class ExpressionContext {
         General,    // Assignment, log, data init — no truthiness wrapping
-        Guard,      // Transition cond, if/elseif — may need truthiness wrapping
-        Script      // Script block — multi-statement, function definitions
+        Guard       // Transition cond, if/elseif — may need truthiness wrapping
     };
 
     EcmaScriptToLuaTransformer() = default;
@@ -55,6 +55,15 @@ public:
      * @return Lua-compatible script block
      */
     std::string transformScript(const std::string &script) const;
+
+    /**
+     * @brief Clear the expression transformation cache
+     *
+     * Should be called on engine reset to free memory.
+     * The cache is naturally bounded by the number of unique expressions
+     * in an SCXML document.
+     */
+    void clearCache();
 
 private:
     // === Transformation pipeline stages ===
@@ -88,6 +97,12 @@ private:
     // Stage 3: Guard-specific truthiness wrapping
     std::string wrapTruthiness(const std::string &input) const;
     bool needsTruthinessWrapping(const std::string &expr) const;
+
+    // Expression transformation cache: same input + context always produces same output.
+    // General and Guard contexts are cached separately (Guard adds truthiness wrapping).
+    mutable std::unordered_map<std::string, std::string> generalCache_;
+    mutable std::unordered_map<std::string, std::string> guardCache_;
+    mutable std::unordered_map<std::string, std::string> scriptCache_;
 };
 
 }  // namespace SCE

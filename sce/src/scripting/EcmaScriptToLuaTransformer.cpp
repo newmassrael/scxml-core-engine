@@ -7,10 +7,23 @@ namespace SCE {
 
 // === Public API ===
 
+void EcmaScriptToLuaTransformer::clearCache() {
+    generalCache_.clear();
+    guardCache_.clear();
+    scriptCache_.clear();
+}
+
 std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
                                                     ExpressionContext context) const {
     if (ecmaScript.empty()) {
         return ecmaScript;
+    }
+
+    // Cache lookup: General and Guard use separate maps to avoid key-suffix allocation
+    auto &cache = (context == ExpressionContext::Guard) ? guardCache_ : generalCache_;
+    auto cacheIt = cache.find(ecmaScript);
+    if (cacheIt != cache.end()) {
+        return cacheIt->second;
     }
 
     // Pre-pass: typeof patterns must be transformed BEFORE string protection
@@ -44,12 +57,18 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
         result = wrapTruthiness(result);
     }
 
+    cache[ecmaScript] = result;
     return result;
 }
 
 std::string EcmaScriptToLuaTransformer::transformScript(const std::string &script) const {
     if (script.empty()) {
         return script;
+    }
+
+    auto cacheIt = scriptCache_.find(script);
+    if (cacheIt != scriptCache_.end()) {
+        return cacheIt->second;
     }
 
     // Pre-pass: typeof before string protection
@@ -76,7 +95,9 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     processed = transformSemicolons(processed);
 
     // Stage 3: Restore string literals
-    return restoreStringLiterals(processed, literals);
+    std::string result = restoreStringLiterals(processed, literals);
+    scriptCache_[script] = result;
+    return result;
 }
 
 // === Stage 1: String Literal Protection ===
