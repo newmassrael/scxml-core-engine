@@ -111,10 +111,14 @@ bool LuaEngine::createSession(const std::string &sessionId, const std::string &p
     SCE_LOG_DEBUG("LuaEngine: Created session: {} (parent: {})", sessionId,
                   parentSessionId.empty() ? "none" : parentSessionId);
 
-    // Notify observers
+    // Notify observers (copy list to avoid deadlock if observer re-enters LuaEngine)
     {
-        std::lock_guard<std::mutex> obsLock(observerMutex_);
-        for (auto *obs : observers_) {
+        std::vector<ISessionObserver *> observersCopy;
+        {
+            std::lock_guard<std::mutex> obsLock(observerMutex_);
+            observersCopy = observers_;
+        }
+        for (auto *obs : observersCopy) {
             obs->onSessionCreated(sessionId);
         }
     }
@@ -142,10 +146,14 @@ bool LuaEngine::destroySession(const std::string &sessionId) {
 
     SCE_LOG_DEBUG("LuaEngine: Destroyed session: {}", sessionId);
 
-    // Notify observers
+    // Notify observers (copy list to avoid deadlock if observer re-enters LuaEngine)
     {
-        std::lock_guard<std::mutex> obsLock(observerMutex_);
-        for (auto *obs : observers_) {
+        std::vector<ISessionObserver *> observersCopy;
+        {
+            std::lock_guard<std::mutex> obsLock(observerMutex_);
+            observersCopy = observers_;
+        }
+        for (auto *obs : observersCopy) {
             obs->onSessionDestroyed(sessionId);
         }
     }
@@ -862,6 +870,14 @@ bool LuaEngine::registerGlobalFunction(const std::string &functionName,
     }
 
     return true;
+}
+
+bool LuaEngine::bindNativeObject(const std::string & /*sessionId*/, const std::string & /*objectName*/,
+                                   const std::vector<std::pair<std::string, NativeMethod>> & /*methods*/) {
+    // Lua native object binding not yet implemented.
+    // Use registerGlobalFunction for individual function registration.
+    SCE_LOG_WARN("LuaEngine::bindNativeObject: Not yet implemented for Lua engine");
+    return false;
 }
 
 void LuaEngine::setStateQueryCallback(StateQueryCallback callback, const std::string &sessionId) {

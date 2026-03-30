@@ -239,6 +239,9 @@ public:
     bool registerGlobalFunction(const std::string &functionName,
                                 std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) override;
 
+    bool bindNativeObject(const std::string &sessionId, const std::string &objectName,
+                          const std::vector<std::pair<std::string, NativeMethod>> &methods) override;
+
     /**
      * @brief Set the StateMachine instance for In() function integration
      * @param stateMachine Pointer to the StateMachine instance

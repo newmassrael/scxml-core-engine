@@ -4,6 +4,9 @@
  * @brief QuickJS-specific bindObject template implementation
  *
  * Isolated from StateMachine.h to contain QuickJS dependency (JSContext, ClassBinding).
+ * Include this header explicitly when using StateMachine::bindObject() with ClassBinder API.
+ * Not auto-included from StateMachine.h to avoid coupling all users to JSEngine/QuickJS headers.
+ *
  * When replacing QuickJS with another engine (e.g., Lua), only this file needs to change.
  */
 

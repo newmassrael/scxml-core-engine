@@ -881,6 +881,14 @@ JSContext *JSEngine::getContextForBinding(const std::string &sessionId) {
     return session ? session->jsContext : nullptr;
 }
 
+bool JSEngine::bindNativeObject(const std::string & /*sessionId*/, const std::string & /*objectName*/,
+                                const std::vector<std::pair<std::string, NativeMethod>> & /*methods*/) {
+    // JSEngine uses ClassBinder-based bindObject (StateMachineBindObject.h) for full
+    // QuickJS object binding. This generic interface is a placeholder for future use.
+    SCE_LOG_WARN("JSEngine::bindNativeObject: Use StateMachineBindObject.h with ClassBinder for full JS object binding");
+    return false;
+}
+
 // ===================================================================
 // INTEGRATED RESULT PROCESSING IMPLEMENTATION
 // ===================================================================

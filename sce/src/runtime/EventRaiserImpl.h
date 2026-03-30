@@ -25,6 +25,12 @@ class IEventScheduler;
  * This class implements the SCXML "fire and forget" event model using
  * asynchronous event queues to prevent deadlocks and ensure proper
  * event processing order as specified by W3C SCXML standard.
+ *
+ * Lock ordering (always acquire in this order to prevent deadlocks):
+ *   1. queueMutex_              (async event queue)
+ *   2. synchronousQueueMutex_   (SCXML mode synchronous queue)
+ *   3. callbackMutex_           (event callback registration)
+ *   4. lastProcessedEventMutex_ (debug/snapshot state)
  */
 class EventRaiserImpl : public IEventRaiser {
     // Forward declarations for EventScheduler support
@@ -47,6 +53,46 @@ public:
     enum class EventPriority {
         INTERNAL = 0,  // High priority - internal queue events (raise, send with target="#_internal")
         EXTERNAL = 1   // Low priority - external queue events (send without target or with external targets)
+    };
+
+    /**
+     * @brief Thread-local event context for W3C SCXML 5.10 metadata passing
+     *
+     * Consolidates all thread-local variables into a single struct.
+     * Set before event callback execution, cleared after callback returns.
+     * StateMachine reads this during processEvent() to populate _event fields.
+     */
+    struct EventContext {
+        std::string originSessionId;  // W3C SCXML 6.4: _event.origin
+        std::string sendId;           // W3C SCXML 5.10: _event.sendid
+        std::string invokeId;         // W3C SCXML 5.10: _event.invokeid
+        std::string originType;       // W3C SCXML 5.10: _event.origintype
+        std::string eventType;        // W3C SCXML 5.10: "internal"/"platform"/"external"
+        std::optional<ScriptValue> typedData;  // Engine-agnostic typed data (avoids JSON round-trip)
+
+        void clear() {
+            originSessionId.clear();
+            sendId.clear();
+            invokeId.clear();
+            originType.clear();
+            eventType.clear();
+            typedData.reset();
+        }
+    };
+
+    /**
+     * @brief RAII guard for thread-local EventContext
+     * Sets context on construction, clears on destruction (exception-safe).
+     */
+    struct EventContextGuard {
+        explicit EventContextGuard(EventContext ctx) {
+            currentEventContext_ = std::move(ctx);
+        }
+        ~EventContextGuard() {
+            currentEventContext_.clear();
+        }
+        EventContextGuard(const EventContextGuard &) = delete;
+        EventContextGuard &operator=(const EventContextGuard &) = delete;
     };
 
     /**
@@ -269,78 +315,26 @@ private:
     // Event callback
     EventCallback eventCallback_;
 
-    // W3C SCXML 6.4: Thread-local storage for origin session ID during callback execution
-    static thread_local std::string currentOriginSessionId_;
-
-    // W3C SCXML 5.10: Thread-local storage for send ID from failed send elements (for error events)
-    static thread_local std::string currentSendId_;
-
-    // W3C SCXML 5.10: Thread-local storage for invoke ID from invoked child processes (test 338)
-    static thread_local std::string currentInvokeId_;
-
-    // W3C SCXML 5.10: Thread-local storage for origin type from event processor (test 253, 331, 352, 372)
-    static thread_local std::string currentOriginType_;
-
-    // W3C SCXML 5.10: Thread-local storage for event type ("internal", "platform", "external") (test 331)
-    static thread_local std::string currentEventType_;
-
-    // W3C SCXML 5.10: Thread-local storage for typed event data (engine-agnostic)
-    static thread_local std::optional<ScriptValue> currentTypedData_;
+    // W3C SCXML 5.10: Consolidated thread-local event context for callback execution
+    static thread_local EventContext currentEventContext_;
 
 public:
     /**
-     * @brief Get current origin session ID (for W3C SCXML 6.4 finalize support)
-     * This is set during event callback execution to allow StateMachine to identify event origin
-     * @return Origin session ID if set, empty string otherwise
+     * @brief Get the current thread-local event context
+     * Set during event callback execution, contains all W3C SCXML 5.10 event metadata.
+     * StateMachine reads this during processEvent() to populate _event fields.
      */
-    static std::string getCurrentOriginSessionId() {
-        return currentOriginSessionId_;
+    static const EventContext &getCurrentEventContext() {
+        return currentEventContext_;
     }
 
-    /**
-     * @brief Get current send ID (for W3C SCXML 5.10 error event compliance)
-     * This is set during error event callback execution to allow StateMachine to set event.sendid
-     * @return Send ID if set, empty string otherwise
-     */
-    static std::string getCurrentSendId() {
-        return currentSendId_;
-    }
-
-    /**
-     * @brief Get current invoke ID (for W3C SCXML 5.10 test 338 compliance)
-     * This is set during event callback execution from invoked children to allow StateMachine to set event.invokeid
-     * @return Invoke ID if set, empty string otherwise
-     */
-    static std::string getCurrentInvokeId() {
-        return currentInvokeId_;
-    }
-
-    /**
-     * @brief Get current origin type (for W3C SCXML 5.10 origintype field compliance)
-     * This is set during event callback execution to allow StateMachine to set event.origintype
-     * @return Origin type if set, empty string otherwise
-     */
-    static std::string getCurrentOriginType() {
-        return currentOriginType_;
-    }
-
-    /**
-     * @brief Get current event type (for W3C SCXML 5.10 event type field compliance)
-     * This is set during event callback execution to allow StateMachine to set event.type correctly
-     * @return Event type ("internal", "platform", "external") if set, empty string otherwise
-     */
-    static std::string getCurrentEventType() {
-        return currentEventType_;
-    }
-
-    /**
-     * @brief Get current typed event data (for engine-agnostic _event.data)
-     * When present, engines should use this instead of parsing eventData JSON string.
-     * @return Typed data if set, std::nullopt otherwise
-     */
-    static const std::optional<ScriptValue> &getCurrentTypedData() {
-        return currentTypedData_;
-    }
+    // Convenience accessors (delegate to EventContext)
+    static const std::string &getCurrentOriginSessionId() { return currentEventContext_.originSessionId; }
+    static const std::string &getCurrentSendId() { return currentEventContext_.sendId; }
+    static const std::string &getCurrentInvokeId() { return currentEventContext_.invokeId; }
+    static const std::string &getCurrentOriginType() { return currentEventContext_.originType; }
+    static const std::string &getCurrentEventType() { return currentEventContext_.eventType; }
+    static const std::optional<ScriptValue> &getCurrentTypedData() { return currentEventContext_.typedData; }
 
     mutable std::mutex callbackMutex_;
 

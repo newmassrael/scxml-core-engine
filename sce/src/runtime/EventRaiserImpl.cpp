@@ -10,23 +10,8 @@
 
 namespace SCE {
 
-// W3C SCXML 6.4: Thread-local storage for origin session ID during event callback execution
-thread_local std::string EventRaiserImpl::currentOriginSessionId_;
-
-// W3C SCXML 5.10: Thread-local storage for send ID from failed send elements (for error events)
-thread_local std::string EventRaiserImpl::currentSendId_;
-
-// W3C SCXML 5.10: Thread-local storage for invoke ID from invoked child processes (test 338)
-thread_local std::string EventRaiserImpl::currentInvokeId_;
-
-// W3C SCXML 5.10: Thread-local storage for origin type from event processor (test 253, 331, 352, 372)
-thread_local std::string EventRaiserImpl::currentOriginType_;
-
-// W3C SCXML 5.10: Thread-local storage for event type ("internal", "platform", "external") (test 331)
-thread_local std::string EventRaiserImpl::currentEventType_;
-
-// W3C SCXML 5.10: Thread-local storage for typed event data (engine-agnostic)
-thread_local std::optional<ScriptValue> EventRaiserImpl::currentTypedData_;
+// W3C SCXML 5.10: Consolidated thread-local event context for callback execution
+thread_local EventRaiserImpl::EventContext EventRaiserImpl::currentEventContext_;
 
 EventRaiserImpl::EventRaiserImpl(EventCallback callback)
     : eventCallback_(std::move(callback)), scheduler_(nullptr), shutdownRequested_(false), isRunning_(false),
@@ -287,44 +272,20 @@ bool EventRaiserImpl::raiseEventWithPriority(const std::string &eventName, const
 
             if (callback) {
                 try {
-                    // W3C SCXML 6.4: Set thread-local originSessionId before immediate callback execution
-                    currentOriginSessionId_ = originSessionId;
-
-                    // W3C SCXML 5.10: Set thread-local sendId before immediate callback execution
-                    currentSendId_ = sendId;
-
-                    // W3C SCXML 5.10: Set thread-local invokeId before immediate callback execution (test 338)
-                    currentInvokeId_ = invokeId;
-
-                    // W3C SCXML 5.10: Set thread-local originType before immediate callback execution (test 253, 331,
-                    // 352, 372)
-                    currentOriginType_ = originType;
-
-                    // W3C SCXML 5.10: Set thread-local event type before immediate callback execution
-                    currentEventType_ = EventTypeHelper::classifyEventType(eventName, !isInternal);
-
-                    // W3C SCXML 5.10: Set thread-local typed data before immediate callback execution
-                    currentTypedData_ = typedData;
+                    // W3C SCXML 5.10: RAII guard sets all event context fields and clears on scope exit
+                    EventContext ctx;
+                    ctx.originSessionId = originSessionId;
+                    ctx.sendId = sendId;
+                    ctx.invokeId = invokeId;
+                    ctx.originType = originType;
+                    ctx.eventType = EventTypeHelper::classifyEventType(eventName, !isInternal);
+                    ctx.typedData = typedData;
+                    EventContextGuard guard(ctx);
 
                     bool result = callback(eventName, eventData);
-
-                    // Clear after callback
-                    currentOriginSessionId_.clear();
-                    currentSendId_.clear();
-                    currentInvokeId_.clear();
-                    currentOriginType_.clear();
-                    currentEventType_.clear();
-                    currentTypedData_.reset();
-
                     return result;
                 } catch (const std::exception &e) {
                     SCE_LOG_ERROR("EventRaiserImpl: Exception in immediate processing: {}", e.what());
-                    currentOriginSessionId_.clear();  // Ensure cleanup on exception
-                    currentSendId_.clear();
-                    currentInvokeId_.clear();
-                    currentOriginType_.clear();
-                    currentEventType_.clear();
-                    currentTypedData_.reset();
                     return false;
                 }
             } else {
@@ -426,32 +387,22 @@ void EventRaiserImpl::processEvent(const QueuedEvent &event) {
     try {
         SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data: {}", event.eventName, event.eventData);
 
-        // W3C SCXML 6.4 & 5.10: Set thread-local metadata before callback execution
-        currentOriginSessionId_ = event.origin;
-        currentSendId_ = event.sendId;
-        currentInvokeId_ = event.invokeId;
-        currentOriginType_ = event.originType;
+        // W3C SCXML 5.10: RAII guard sets all event context fields and clears on scope exit
+        bool isExternal = (event.priority == EventPriority::EXTERNAL);
+        EventContext ctx;
+        ctx.originSessionId = event.origin;
+        ctx.sendId = event.sendId;
+        ctx.invokeId = event.invokeId;
+        ctx.originType = event.originType;
+        ctx.eventType = EventTypeHelper::classifyEventType(event.eventName, isExternal);
+        ctx.typedData = event.typedData;
+        EventContextGuard guard(ctx);
 
-        // Execute the callback (this is where the actual event processing happens)
         bool result = callback(event.eventName, event.eventData);
-
-        // Clear thread-local metadata after callback
-        currentOriginSessionId_.clear();
-        currentSendId_.clear();
-        currentInvokeId_.clear();
-        currentOriginType_.clear();
-
-        // SCXML "fire and forget": Log result but don't propagate failures
-        // Event processing failures don't affect the async queue operation
         SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
 
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("EventRaiserImpl: Exception while processing event '{}': {}", event.eventName, e.what());
-        // Ensure cleanup on exception
-        currentOriginSessionId_.clear();
-        currentSendId_.clear();
-        currentInvokeId_.clear();
-        currentOriginType_.clear();
     }
 }
 
@@ -570,25 +521,16 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         SCE_LOG_DEBUG("EventRaiserImpl: Processing event '{}' with data '{}' from origin '{}'", event.eventName,
                   event.eventData, event.origin);
 
-        // W3C SCXML 5.10.1: Store originSessionId in thread-local for StateMachine to access (_event.origin)
-        currentOriginSessionId_ = event.origin;
-
-        // W3C SCXML 5.10.1: Store sendId in thread-local for StateMachine to access (_event.sendid)
-        currentSendId_ = event.sendId;
-
-        // W3C SCXML 5.10.1: Store invokeId in thread-local for StateMachine to access (_event.invokeid)
-        currentInvokeId_ = event.invokeId;
-
-        // W3C SCXML 5.10.1: Store originType in thread-local for StateMachine to access (_event.origintype)
-        currentOriginType_ = event.originType;
-
-        // W3C SCXML 5.10.1: Store event type in thread-local for StateMachine to access (test 331)
-        // ARCHITECTURE.md: Zero Duplication - Uses EventTypeHelper for Single Source of Truth
+        // W3C SCXML 5.10: RAII guard sets all event context fields and clears on scope exit
         bool isExternal = (event.priority == EventPriority::EXTERNAL);
-        currentEventType_ = EventTypeHelper::classifyEventType(event.eventName, isExternal);
-
-        // W3C SCXML 5.10: Store typed event data in thread-local for engine-agnostic consumption
-        currentTypedData_ = event.typedData;
+        EventContext ctx;
+        ctx.originSessionId = event.origin;
+        ctx.sendId = event.sendId;
+        ctx.invokeId = event.invokeId;
+        ctx.originType = event.originType;
+        ctx.eventType = EventTypeHelper::classifyEventType(event.eventName, isExternal);
+        ctx.typedData = event.typedData;
+        EventContextGuard guard(ctx);
 
         // W3C SCXML 3.13: Store last processed event for time-travel debugging
         {
@@ -598,24 +540,10 @@ bool EventRaiserImpl::executeEventCallback(const QueuedEvent &event) {
         }
 
         bool result = callback(event.eventName, event.eventData);
-
-        // Clear after callback
-        currentOriginSessionId_.clear();
-        currentSendId_.clear();
-        currentInvokeId_.clear();
-        currentOriginType_.clear();
-        currentEventType_.clear();
-        currentTypedData_.reset();
         SCE_LOG_DEBUG("EventRaiserImpl: Event '{}' processed with result: {}", event.eventName, result);
         return result;  // Return actual callback result (transition success/failure)
     } catch (const std::exception &e) {
         SCE_LOG_ERROR("EventRaiserImpl: Exception processing event '{}': {}", event.eventName, e.what());
-        currentOriginSessionId_.clear();
-        currentSendId_.clear();
-        currentInvokeId_.clear();
-        currentOriginType_.clear();
-        currentEventType_.clear();
-        currentTypedData_.reset();
         return false;
     }
 }

@@ -2,6 +2,7 @@
 #include "SCXMLTypes.h"
 #include "core/LogMacros.h"
 #include "runtime/StateMachine.h"
+#include "scripting/JSEngine.h"
 #include <chrono>
 #include <cstring>
 #include <sstream>
@@ -193,6 +194,12 @@ bool JSExecutionEngineImpl::registerGlobalFunction(
 
     SCE_LOG_DEBUG("JSExecutionEngineImpl: Registered global function: {}", functionName);
     return true;
+}
+
+bool JSExecutionEngineImpl::bindNativeObject(const std::string & /*sessionId*/, const std::string & /*objectName*/,
+                                              const std::vector<std::pair<std::string, NativeMethod>> & /*methods*/) {
+    SCE_LOG_WARN("JSExecutionEngineImpl::bindNativeObject: Use StateMachineBindObject.h with ClassBinder for full JS object binding");
+    return false;
 }
 
 std::string JSExecutionEngineImpl::getEngineInfo() const {

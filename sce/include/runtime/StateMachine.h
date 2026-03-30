@@ -775,5 +775,6 @@ private:
 
 }  // namespace SCE
 
-// QuickJS-specific bindObject template implementation (separate include for engine isolation)
-#include "runtime/StateMachineBindObject.h"
+// QuickJS-specific bindObject template implementation
+// Include StateMachineBindObject.h explicitly when using bindObject() with ClassBinder API.
+// Not auto-included to avoid coupling all StateMachine users to JSEngine/QuickJS headers.

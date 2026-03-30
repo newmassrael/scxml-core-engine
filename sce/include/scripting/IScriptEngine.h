@@ -149,6 +149,23 @@ public:
     virtual bool registerGlobalFunction(const std::string &functionName,
                                         std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) = 0;
 
+    // === Native Object Binding ===
+
+    using NativeMethod = std::function<ScriptValue(const std::vector<ScriptValue> &)>;
+
+    /**
+     * @brief Bind a native C++ object as a script-accessible object with methods
+     * @param sessionId Session identifier
+     * @param objectName Name of the object in script context (e.g., "hardware")
+     * @param methods Map of method names to native callbacks
+     * @return true if binding successful
+     *
+     * Creates a script object accessible as objectName.methodName() in the datamodel.
+     * Engine-agnostic: JSEngine creates a JS object, LuaEngine creates a Lua table.
+     */
+    virtual bool bindNativeObject(const std::string &sessionId, const std::string &objectName,
+                                  const std::vector<std::pair<std::string, NativeMethod>> &methods) = 0;
+
     // === Engine Information ===
 
     /**

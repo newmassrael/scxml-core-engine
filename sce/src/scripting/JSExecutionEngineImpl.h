@@ -62,6 +62,9 @@ public:
     bool registerGlobalFunction(const std::string &functionName,
                                 std::function<ScriptValue(const std::vector<ScriptValue> &)> callback) override;
 
+    bool bindNativeObject(const std::string &sessionId, const std::string &objectName,
+                          const std::vector<std::pair<std::string, NativeMethod>> &methods) override;
+
     std::string getEngineInfo() const override;
     size_t getMemoryUsage() const override;
     void collectGarbage() override;
