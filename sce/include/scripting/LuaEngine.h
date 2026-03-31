@@ -147,7 +147,7 @@ private:
     // Lua state management
     lua_State *createLuaState();
     void registerBuiltins(lua_State *L, const std::string &sessionId);
-    void pushScriptValue(lua_State *L, const ScriptValue &value);
+    static void pushScriptValue(lua_State *L, const ScriptValue &value);
     ScriptValue luaToScriptValue(lua_State *L, int index);
     ScriptResult luaResultToScriptResult(lua_State *L, int status);
 

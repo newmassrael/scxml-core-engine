@@ -76,7 +76,12 @@ private:
     ProtectedString protectStringLiterals(const std::string &input) const;
     std::string restoreStringLiterals(const std::string &processed, const std::vector<std::string> &literals) const;
 
-    // Stage 2: Pattern-based transformations (applied to protected string)
+    // Stage 2: Structural transforms (script-only, must see original JS syntax)
+    std::string transformForLoops(const std::string &input) const;
+    std::string transformConditionalBlocks(const std::string &input) const;
+    std::string transformBareExpressions(const std::string &input) const;
+
+    // Stage 3: Pattern-based transformations (applied to protected string)
     std::string transformCompoundAssignment(const std::string &input) const;
     std::string transformIncrementDecrement(const std::string &input) const;
     std::string transformTypeofPatterns(const std::string &input) const;
@@ -84,6 +89,7 @@ private:
     std::string transformNullUndefined(const std::string &input) const;
     std::string transformOperators(const std::string &input) const;
     std::string transformArrayLiterals(const std::string &input) const;
+    std::string transformArrayIndexing(const std::string &input) const;
     std::string transformArrayMethods(const std::string &input) const;
     std::string transformStringConcat(const std::string &input) const;
     std::string transformFunctionSyntax(const std::string &input) const;

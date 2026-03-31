@@ -1,6 +1,7 @@
 #include "scripting/EcmaScriptToLuaTransformer.h"
 #include <algorithm>
 #include <cstring>
+#include <sstream>
 
 namespace {
 
@@ -82,6 +83,20 @@ std::string trim(const std::string &s) {
     size_t start = s.find_first_not_of(" \t");
     size_t end = s.find_last_not_of(" \t");
     return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+}
+
+// Find matching close bracket/paren/brace starting after the opening character.
+// Returns position of the matching closer. If unbalanced, returns the last position
+// in the string (safe fallback — callers can extract truncated content without UB).
+size_t findMatchingClose(const std::string &s, size_t openPos, char open, char close) {
+    int depth = 1;
+    size_t pos = openPos + 1;
+    while (pos < s.size() && depth > 0) {
+        if (s[pos] == open) ++depth;
+        else if (s[pos] == close) --depth;
+        if (depth > 0) ++pos;
+    }
+    return (depth == 0) ? pos : (s.empty() ? 0 : s.size() - 1);
 }
 
 // Check if position is preceded only by \w characters going back to a word-char
@@ -176,6 +191,7 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
     processed = transformNewExpression(processed);
     processed = transformArrayMethods(processed);
     processed = transformArrayLiterals(processed);
+    processed = transformArrayIndexing(processed);
     processed = transformObjectLiterals(processed);
     processed = transformTernaryOperator(processed);
     processed = transformOperators(processed);
@@ -212,7 +228,11 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     // Stage 1: Protect string literals
     auto [processed, literals] = protectStringLiterals(preProcessed);
 
-    // Stage 2: Apply transformations
+    // Stage 2: Structural transforms (must see original JS syntax with semicolons)
+    // For-loops must be converted before semicolons are removed
+    processed = transformForLoops(processed);
+
+    // Stage 3: Apply transformations
     // Compound assignment and increment/decrement must run before operator transforms
     processed = transformCompoundAssignment(processed);
     processed = transformIncrementDecrement(processed);
@@ -222,6 +242,7 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     processed = transformNewExpression(processed);
     processed = transformArrayMethods(processed);
     processed = transformArrayLiterals(processed);
+    processed = transformArrayIndexing(processed);
     processed = transformObjectLiterals(processed);
     processed = transformTernaryOperator(processed);
     processed = transformOperators(processed);
@@ -229,6 +250,8 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     processed = transformDOMMethods(processed);
     processed = transformVarDeclarations(processed);
     processed = transformSemicolons(processed);
+    processed = transformConditionalBlocks(processed);
+    processed = transformBareExpressions(processed);
 
     // Stage 3: Restore string literals
     std::string result = restoreStringLiterals(processed, literals);
@@ -247,6 +270,22 @@ EcmaScriptToLuaTransformer::protectStringLiterals(const std::string &input) cons
 
     for (size_t i = 0; i < input.size(); ++i) {
         char c = input[i];
+
+        // Strip JS block comments /* ... */
+        if (c == '/' && i + 1 < input.size() && input[i + 1] == '*') {
+            i += 2;
+            while (i + 1 < input.size() && !(input[i] == '*' && input[i + 1] == '/')) ++i;
+            if (i + 1 < input.size()) ++i;  // skip closing '/'
+            continue;
+        }
+
+        // Strip JS line comments // ...
+        if (c == '/' && i + 1 < input.size() && input[i + 1] == '/') {
+            i += 2;
+            while (i < input.size() && input[i] != '\n') ++i;
+            if (i < input.size()) output += '\n';  // preserve newline for statement separation
+            continue;
+        }
 
         if (c == '\'' || c == '"') {
             char quote = c;
@@ -718,16 +757,61 @@ std::string EcmaScriptToLuaTransformer::transformArrayLiterals(const std::string
             }
 
             if (!isPropertyAccess) {
-                int depth = 1;
-                size_t start = i;
-                ++i;
-                while (i < input.size() && depth > 0) {
-                    if (input[i] == '[') ++depth;
-                    else if (input[i] == ']') --depth;
-                    if (depth > 0) ++i;
-                }
-                std::string contents = input.substr(start + 1, i - start - 1);
+                size_t closePos = findMatchingClose(input, i, '[', ']');
+                std::string contents = input.substr(i + 1, closePos - i - 1);
+                contents = transformArrayLiterals(contents);
                 result += "{" + contents + "}";
+                i = closePos;
+            } else {
+                result += input[i];
+            }
+        } else {
+            result += input[i];
+        }
+    }
+
+    return result;
+}
+
+std::string EcmaScriptToLuaTransformer::transformArrayIndexing(const std::string &input) const {
+    // ECMAScript arrays are 0-based; Lua tables are 1-based.
+    // Convert property-access brackets with integer literal index: arr[0] → arr[0 + 1]
+    // Only applies to numeric integer literal indices (not variables or string keys).
+    std::string result;
+    result.reserve(input.size() + 32);
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        if (input[i] == '[') {
+            // Check if this is a property access (preceded by identifier/)/])
+            bool isPropertyAccess = false;
+            if (i > 0) {
+                char prev = input[i - 1];
+                if (std::isalnum(static_cast<unsigned char>(prev)) || prev == '_' ||
+                    prev == ')' || prev == ']' || prev == '\x01') {
+                    isPropertyAccess = true;
+                }
+            }
+
+            if (isPropertyAccess) {
+                size_t end = findMatchingClose(input, i, '[', ']');
+                std::string indexExpr = trim(input.substr(i + 1, end - i - 1));
+
+                // Check if pure integer literal (0, 1, 2, etc.) with safe range
+                bool isIntLiteral = !indexExpr.empty() && indexExpr.size() <= 9;
+                for (char c : indexExpr) {
+                    if (!std::isdigit(static_cast<unsigned char>(c))) {
+                        isIntLiteral = false;
+                        break;
+                    }
+                }
+
+                if (isIntLiteral) {
+                    int idx = std::stoi(indexExpr);
+                    result += "[" + std::to_string(idx + 1) + "]";
+                    i = end;  // skip past ']'
+                } else {
+                    result += input[i];
+                }
             } else {
                 result += input[i];
             }
@@ -767,18 +851,11 @@ std::string EcmaScriptToLuaTransformer::transformArrayMethods(const std::string 
                 if (idStart != std::string::npos) {
                     std::string varName = result.substr(idStart);
                     result.erase(idStart);
-                    // Find closing )
-                    size_t argStart = i + 9;
-                    size_t argEnd = argStart;
-                    int depth = 1;
-                    while (argEnd < input.size() && depth > 0) {
-                        if (input[argEnd] == '(') ++depth;
-                        else if (input[argEnd] == ')') --depth;
-                        if (depth > 0) ++argEnd;
-                    }
-                    std::string args = input.substr(argStart, argEnd - argStart);
+                    size_t parenOpen = i + 8;  // position of '('
+                    size_t argEnd = findMatchingClose(input, parenOpen, '(', ')');
+                    std::string args = input.substr(parenOpen + 1, argEnd - parenOpen - 1);
                     result += "_indexOf(" + varName + ", " + args + ")";
-                    i = argEnd + 1;  // skip past )
+                    i = argEnd + 1;
                     continue;
                 }
             }
@@ -812,16 +889,26 @@ std::string EcmaScriptToLuaTransformer::transformArrayMethods(const std::string 
                 if (idStart != std::string::npos) {
                     std::string varName = result.substr(idStart);
                     result.erase(idStart);
-                    size_t argStart = i + 6;
-                    size_t argEnd = argStart;
-                    int depth = 1;
-                    while (argEnd < input.size() && depth > 0) {
-                        if (input[argEnd] == '(') ++depth;
-                        else if (input[argEnd] == ')') --depth;
-                        if (depth > 0) ++argEnd;
-                    }
-                    std::string args = input.substr(argStart, argEnd - argStart);
+                    size_t parenOpen = i + 5;  // position of '('
+                    size_t argEnd = findMatchingClose(input, parenOpen, '(', ')');
+                    std::string args = input.substr(parenOpen + 1, argEnd - parenOpen - 1);
                     result += "table.insert(" + varName + ", " + args + ")";
+                    i = argEnd + 1;
+                    continue;
+                }
+            }
+
+            // .join( → table.concat(var,
+            if (i + 6 <= input.size() && input.compare(i + 1, 5, "join(") == 0) {
+                size_t idStart = findPrecedingIdentifier(result, result.size());
+                if (idStart != std::string::npos) {
+                    std::string varName = result.substr(idStart);
+                    result.erase(idStart);
+                    size_t parenOpen = i + 5;  // position of '('
+                    size_t argEnd = findMatchingClose(input, parenOpen, '(', ')');
+                    std::string args = input.substr(parenOpen + 1, argEnd - parenOpen - 1);
+                    if (args.empty()) args = "','";  // JS default: .join() uses ',' separator
+                    result += "table.concat(" + varName + ", " + args + ")";
                     i = argEnd + 1;
                     continue;
                 }
@@ -1051,11 +1138,25 @@ std::string EcmaScriptToLuaTransformer::transformObjectLiterals(const std::strin
             --braceDepth;
             result += input[i];
         } else if (input[i] == ':' && braceDepth > 0) {
-            // Check if preceded by an identifier (object key)
+            // Check if preceded by an identifier or string placeholder (object key)
             size_t keyEnd = i;
             while (keyEnd > 0 && std::isspace(static_cast<unsigned char>(input[keyEnd - 1]))) --keyEnd;
             if (keyEnd > 0 && (std::isalnum(static_cast<unsigned char>(input[keyEnd - 1])) ||
                                input[keyEnd - 1] == '_')) {
+                result += " =";
+            } else if (keyEnd > 0 && input[keyEnd - 1] == '\x01') {
+                // JSON string key placeholder: \x01STR<n>\x01: value → [\x01STR<n>\x01] = value
+                // Find the start of the placeholder
+                size_t placeholderEnd = keyEnd;
+                size_t placeholderStart = keyEnd - 1;
+                while (placeholderStart > 0 && input[placeholderStart - 1] != '\x01') --placeholderStart;
+                if (placeholderStart > 0) --placeholderStart;
+                // Replace the placeholder in result with bracketed form
+                std::string placeholder = input.substr(placeholderStart, placeholderEnd - placeholderStart);
+                size_t resultPlaceholderPos = result.rfind(placeholder);
+                if (resultPlaceholderPos != std::string::npos) {
+                    result.replace(resultPlaceholderPos, placeholder.size(), "[" + placeholder + "]");
+                }
                 result += " =";
             } else {
                 result += input[i];
@@ -1091,7 +1192,315 @@ std::string EcmaScriptToLuaTransformer::transformSemicolons(const std::string &i
     return result;
 }
 
-// === Stage 3: Truthiness Wrapping ===
+std::string EcmaScriptToLuaTransformer::transformForLoops(const std::string &input) const {
+    // Convert JS for (init; cond; incr) { body } → Lua do init while cond do body incr end end
+    // Must run BEFORE transformSemicolons (semicolons in for-header are structural)
+    std::string result;
+    result.reserve(input.size() + 64);
+    size_t i = 0;
+    size_t len = input.size();
+
+    while (i < len) {
+        size_t forPos = findWord(input, "for", 3, i);
+        if (forPos == std::string::npos) {
+            result.append(input, i, len - i);
+            break;
+        }
+        result.append(input, i, forPos - i);
+        i = forPos + 3;
+
+        // Skip whitespace to find '('
+        size_t parenStart = skipSpaces(input, i);
+        if (parenStart >= len || input[parenStart] != '(') {
+            result += "for";
+            continue;
+        }
+
+        // Find matching ')' — parse three semicolon-separated parts
+        int parenDepth = 1;
+        size_t pos = parenStart + 1;
+        std::vector<size_t> semiPositions;
+        while (pos < len && parenDepth > 0) {
+            if (input[pos] == '(') ++parenDepth;
+            else if (input[pos] == ')') --parenDepth;
+            else if (input[pos] == ';' && parenDepth == 1) semiPositions.push_back(pos);
+            if (parenDepth > 0) ++pos;
+        }
+
+        // Must have exactly 2 semicolons for C-style for loop
+        if (semiPositions.size() != 2) {
+            result += "for";
+            i = forPos + 3;
+            continue;
+        }
+
+        std::string init = trim(input.substr(parenStart + 1, semiPositions[0] - parenStart - 1));
+        std::string cond = trim(input.substr(semiPositions[0] + 1, semiPositions[1] - semiPositions[0] - 1));
+        std::string incr = trim(input.substr(semiPositions[1] + 1, pos - semiPositions[1] - 1));
+        i = pos + 1;  // skip ')'
+
+        // Simplify common increment patterns to avoid IIFE (prevents Lua call ambiguity)
+        // i++ / ++i → i = i + 1;  |  i-- / --i → i = i - 1;
+        if (incr.size() >= 3) {
+            std::string varName;
+            bool isIncr = false, isDecr = false;
+            if (incr.size() >= 3 && incr.substr(incr.size() - 2) == "++") {
+                varName = trim(incr.substr(0, incr.size() - 2));
+                isIncr = true;
+            } else if (incr.size() >= 3 && incr.substr(0, 2) == "++") {
+                varName = trim(incr.substr(2));
+                isIncr = true;
+            } else if (incr.size() >= 3 && incr.substr(incr.size() - 2) == "--") {
+                varName = trim(incr.substr(0, incr.size() - 2));
+                isDecr = true;
+            } else if (incr.size() >= 3 && incr.substr(0, 2) == "--") {
+                varName = trim(incr.substr(2));
+                isDecr = true;
+            }
+            if (isIncr) incr = varName + " = " + varName + " + 1";
+            else if (isDecr) incr = varName + " = " + varName + " - 1";
+        }
+
+        // Find '{' for body
+        size_t bodyStart = skipSpaces(input, i);
+        if (bodyStart >= len || input[bodyStart] != '{') {
+            // No block body — pass through original text (let other transforms handle it)
+            // Append everything from 'for' keyword through the closing ')' as-is
+            result += input.substr(forPos, i - forPos);
+            continue;
+        }
+
+        // Find matching '}'
+        size_t bodyEnd = findMatchingClose(input, bodyStart, '{', '}');
+        std::string body = trim(input.substr(bodyStart + 1, bodyEnd - bodyStart - 1));
+        i = bodyEnd + 1;
+
+        // Detect common pattern: for (var/let i = 0; i < arr.length; i++) → for i = 1, #arr do
+        // This converts JS 0-based iteration to Lua 1-based for-loop with adjusted body indices
+        bool usedNumericFor = false;
+        {
+            // Check init: "var/let/const IDENT = 0" or "IDENT = 0"
+            std::string initTrimmed = init;
+            // Strip var/let/const prefix
+            for (const char *kw : {"let ", "var ", "const "}) {
+                if (initTrimmed.find(kw) == 0) {
+                    initTrimmed = initTrimmed.substr(std::strlen(kw));
+                    break;
+                }
+            }
+            initTrimmed = trim(initTrimmed);
+            // Check pattern: IDENT = 0
+            size_t eqPos = initTrimmed.find('=');
+            if (eqPos != std::string::npos) {
+                std::string loopVar = trim(initTrimmed.substr(0, eqPos));
+                std::string startVal = trim(initTrimmed.substr(eqPos + 1));
+                if (startVal == "0" && !loopVar.empty()) {
+                    // Check cond: IDENT < EXPR.length (already transformed to IDENT < #EXPR by pipeline)
+                    // At this point, .length hasn't been transformed yet, so check for "i < EXPR.length"
+                    std::string condPattern = loopVar + " < ";
+                    if (cond.find(condPattern) == 0) {
+                        std::string boundExpr = trim(cond.substr(condPattern.size()));
+                        // Check if bound ends with .length
+                        if (boundExpr.size() > 7 && boundExpr.substr(boundExpr.size() - 7) == ".length") {
+                            std::string arrName = boundExpr.substr(0, boundExpr.size() - 7);
+                            // Emit Lua numeric for with 1-based indexing
+                            result += "for " + loopVar + " = 1, #" + arrName + " do\n" + body + "\nend\n";
+                            usedNumericFor = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!usedNumericFor) {
+            // Emit Lua equivalent: init; while cond do body; incr end
+            result += init + "\nwhile " + cond + " do\n" + body + "\n" + incr + "\nend\n";
+        }
+    }
+
+    return result;
+}
+
+std::string EcmaScriptToLuaTransformer::transformConditionalBlocks(const std::string &input) const {
+    // Convert JS if/else blocks to Lua syntax:
+    //   if (cond) { body } else if (cond2) { body2 } else { body3 }
+    //   → if cond then body elseif cond2 then body2 else body3 end
+    std::string result;
+    result.reserve(input.size() + 32);
+    size_t i = 0;
+    size_t len = input.size();
+
+    while (i < len) {
+        // Look for 'if' keyword with word boundary
+        size_t ifPos = findWord(input, "if", 2, i);
+        if (ifPos == std::string::npos) {
+            result.append(input, i, len - i);
+            break;
+        }
+        result.append(input, i, ifPos - i);
+        i = ifPos + 2;
+
+        // Skip whitespace to find '('
+        size_t condStart = skipSpaces(input, i);
+        if (condStart >= len || input[condStart] != '(') {
+            result += "if";
+            continue;
+        }
+
+        // Find matching ')' for condition
+        size_t condEnd = findMatchingClose(input, condStart, '(', ')');
+        std::string condition = trim(input.substr(condStart + 1, condEnd - condStart - 1));
+        i = condEnd + 1;
+
+        // Skip whitespace to find '{'
+        size_t bodyStart = skipSpaces(input, i);
+        if (bodyStart >= len || input[bodyStart] != '{') {
+            result += "if (" + condition + ")";
+            i = bodyStart;
+            continue;
+        }
+
+        // Find matching '}'
+        size_t bodyEnd = findMatchingClose(input, bodyStart, '{', '}');
+        std::string body = trim(input.substr(bodyStart + 1, bodyEnd - bodyStart - 1));
+        i = bodyEnd + 1;
+
+        result += "if " + condition + " then\n" + body + "\n";
+
+        // Check for else/else if
+        while (i < len) {
+            size_t elsePos = skipSpaces(input, i);
+            if (elsePos + 4 <= len && input.compare(elsePos, 4, "else") == 0 &&
+                (elsePos + 4 >= len || !isWordChar(input[elsePos + 4]))) {
+                i = elsePos + 4;
+                size_t afterElse = skipSpaces(input, i);
+
+                // "else if" → "elseif"
+                if (afterElse + 2 <= len && input.compare(afterElse, 2, "if") == 0 &&
+                    (afterElse + 2 >= len || !isWordChar(input[afterElse + 2]))) {
+                    i = afterElse + 2;
+                    size_t eiCondStart = skipSpaces(input, i);
+                    if (eiCondStart < len && input[eiCondStart] == '(') {
+                        condEnd = findMatchingClose(input, eiCondStart, '(', ')');
+                        condition = trim(input.substr(eiCondStart + 1, condEnd - eiCondStart - 1));
+                        i = condEnd + 1;
+
+                        bodyStart = skipSpaces(input, i);
+                        if (bodyStart < len && input[bodyStart] == '{') {
+                            bodyEnd = findMatchingClose(input, bodyStart, '{', '}');
+                            body = trim(input.substr(bodyStart + 1, bodyEnd - bodyStart - 1));
+                            i = bodyEnd + 1;
+                            result += "elseif " + condition + " then\n" + body + "\n";
+                            continue;
+                        }
+                    }
+                    // "else if" without valid condition/body — rewind to treat as plain else
+                    i = elsePos + 4;
+                }
+
+                // Plain "else { ... }"
+                bodyStart = skipSpaces(input, i);
+                if (bodyStart < len && input[bodyStart] == '{') {
+                    bodyEnd = findMatchingClose(input, bodyStart, '{', '}');
+                    body = trim(input.substr(bodyStart + 1, bodyEnd - bodyStart - 1));
+                    i = bodyEnd + 1;
+                    result += "else\n" + body + "\n";
+                }
+            }
+            break;
+        }
+        result += "end\n";
+    }
+
+    return result;
+}
+
+std::string EcmaScriptToLuaTransformer::transformBareExpressions(const std::string &input) const {
+    // In Lua, bare expression statements (e.g., `x` or `a.b`) are syntax errors.
+    // Only function calls are valid expression statements.
+    // Convert bare expression lines to `_ = expr` for non-last lines, or `return expr` for last line.
+    std::string result;
+    std::vector<std::string> lines;
+
+    // Split by newlines
+    std::istringstream stream(input);
+    std::string line;
+    while (std::getline(stream, line)) {
+        lines.push_back(line);
+    }
+
+    // Find last non-empty line index
+    int lastNonEmpty = -1;
+    for (int j = static_cast<int>(lines.size()) - 1; j >= 0; --j) {
+        if (!trim(lines[j]).empty()) {
+            lastNonEmpty = j;
+            break;
+        }
+    }
+
+    for (int j = 0; j < static_cast<int>(lines.size()); ++j) {
+        std::string trimmed = trim(lines[j]);
+        if (trimmed.empty() || trimmed == "end") {
+            result += lines[j] + "\n";
+            continue;
+        }
+
+        // Check if this line is a valid Lua statement:
+        // - Contains '=' (assignment)
+        // - Starts with a Lua keyword
+        // - Contains '(' (function call)
+        // - Starts with 'return'
+        bool isStatement = false;
+
+        // Check for assignment (but not ==, ~=, <=, >=)
+        for (size_t k = 0; k < trimmed.size(); ++k) {
+            if (trimmed[k] == '=' && k > 0 && trimmed[k - 1] != '~' && trimmed[k - 1] != '<' &&
+                trimmed[k - 1] != '>' && trimmed[k - 1] != '!' &&
+                (k + 1 >= trimmed.size() || trimmed[k + 1] != '=')) {
+                isStatement = true;
+                break;
+            }
+        }
+
+        if (!isStatement) {
+            // Check for Lua keywords
+            static const char *keywords[] = {"local",  "return", "if",   "for",     "while",  "repeat",
+                                             "do",     "end",    "else", "elseif",  "then",   "function",
+                                             "break",  nullptr};
+            for (int k = 0; keywords[k]; ++k) {
+                size_t kwLen = std::strlen(keywords[k]);
+                if (trimmed.size() >= kwLen && trimmed.compare(0, kwLen, keywords[k]) == 0 &&
+                    (trimmed.size() == kwLen || !isWordChar(trimmed[kwLen]))) {
+                    isStatement = true;
+                    break;
+                }
+            }
+        }
+
+        if (!isStatement) {
+            // Check for function call (contains open paren not inside string)
+            if (trimmed.find('(') != std::string::npos) {
+                isStatement = true;
+            }
+        }
+
+        if (!isStatement) {
+            // This is a bare expression — wrap it
+            if (j == lastNonEmpty) {
+                lines[j] = "return " + trimmed;
+            } else {
+                lines[j] = "_ = " + trimmed;
+            }
+        }
+
+        result += lines[j] + "\n";
+    }
+
+    // Remove trailing newline
+    while (!result.empty() && result.back() == '\n') result.pop_back();
+
+    return result;
+}
 
 bool EcmaScriptToLuaTransformer::needsTruthinessWrapping(const std::string &expr) const {
     if (expr.find("==") != std::string::npos ||

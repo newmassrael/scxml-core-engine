@@ -88,35 +88,47 @@ void pushGlobalFuncClosure(lua_State *L, const GlobalFuncCallback &func) {
 
 namespace SCE {
 
-// W3C SCXML: Helper to detect undeclared simple variable references in Lua expressions.
-// JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
-// This bridges the semantic gap for simple identifier expressions (e.g., donedata location="foo").
-static bool isUndeclaredSimpleVariable(const std::string &expr,
-                                       const std::unordered_set<std::string> &declaredVars,
-                                       lua_State *L) {
-    if (expr.empty()) return false;
-
-    // Check if expression is a simple identifier (variable name)
-    if (!std::isalpha(static_cast<unsigned char>(expr[0])) && expr[0] != '_') return false;
-    for (size_t i = 1; i < expr.size(); ++i) {
-        if (!std::isalnum(static_cast<unsigned char>(expr[i])) && expr[i] != '_') return false;
-    }
-
+// W3C SCXML: Helper to check if a single identifier is undeclared
+static bool isUndeclaredIdentifier(const std::string &name,
+                                   const std::unordered_set<std::string> &declaredVars,
+                                   lua_State *L) {
     // Exclude Lua keywords (true, false, nil, etc.)
     static const std::unordered_set<std::string> luaKeywords = {
         "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto",
         "if",  "in",    "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while"};
-    if (luaKeywords.count(expr)) return false;
+    if (luaKeywords.count(name)) return false;
 
     // If declared via setVariable, it's valid (even if nil)
-    if (declaredVars.count(expr) > 0) return false;
+    if (declaredVars.count(name) > 0) return false;
 
     // Check if it's a Lua standard library global (math, string, table, etc.)
-    lua_getglobal(L, expr.c_str());
+    lua_getglobal(L, name.c_str());
     bool isNil = lua_isnil(L, -1);
     lua_pop(L, 1);
 
     return isNil;  // Truly undeclared if not a keyword, not declared, and not a Lua global
+}
+
+// W3C SCXML: Helper to detect undeclared variable references in Lua expressions.
+// JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
+// Handles both simple identifiers (Var1) and member access (Var1.bar, Var1["key"]).
+static bool isUndeclaredSimpleVariable(const std::string &expr,
+                                       const std::unordered_set<std::string> &declaredVars,
+                                       lua_State *L) {
+    if (expr.empty()) return false;
+    if (!std::isalpha(static_cast<unsigned char>(expr[0])) && expr[0] != '_') return false;
+
+    // Extract base identifier (before first '.' or '[')
+    size_t baseEnd = 0;
+    while (baseEnd < expr.size() && (std::isalnum(static_cast<unsigned char>(expr[baseEnd])) || expr[baseEnd] == '_')) {
+        ++baseEnd;
+    }
+    if (baseEnd == 0) return false;
+
+    std::string baseName = expr.substr(0, baseEnd);
+
+    // Check if the base identifier is undeclared
+    return isUndeclaredIdentifier(baseName, declaredVars, L);
 }
 
 // === Singleton ===
@@ -575,13 +587,18 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
         }
     }
 
-    // ECMAScript compatibility: string __add, JSON, Object builtins
+    // ECMAScript compatibility: string __add, number/boolean __index, JSON, Object builtins
     luaL_dostring(L, R"LUA(
         -- ECMAScript '+' operator: string + anything = concatenation
         local mt = getmetatable('')
         if mt then
             mt.__add = function(a, b) return tostring(a) .. tostring(b) end
         end
+
+        -- ECMAScript: property access on non-objects returns undefined (nil), not error
+        -- Handles cases like (1).bar → nil, true.foo → nil
+        debug.setmetatable(0, {__index = function() return nil end})
+        debug.setmetatable(true, {__index = function() return nil end})
 
         -- JSON.stringify / JSON.parse (ECMAScript standard)
         JSON = {}
@@ -1283,14 +1300,7 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
             lua_newtable(L);
             if (val) {
                 for (size_t i = 0; i < val->elements.size(); ++i) {
-                    std::visit([L](auto &&elem) {
-                        using E = std::decay_t<decltype(elem)>;
-                        if constexpr (std::is_same_v<E, int64_t>) lua_pushinteger(L, elem);
-                        else if constexpr (std::is_same_v<E, double>) lua_pushnumber(L, elem);
-                        else if constexpr (std::is_same_v<E, std::string>) lua_pushstring(L, elem.c_str());
-                        else if constexpr (std::is_same_v<E, bool>) lua_pushboolean(L, elem ? 1 : 0);
-                        else lua_pushnil(L);
-                    }, val->elements[i]);
+                    pushScriptValue(L, val->elements[i]);
                     lua_rawseti(L, -2, static_cast<int>(i + 1));
                 }
             }
@@ -1298,14 +1308,7 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
             lua_newtable(L);
             if (val) {
                 for (auto &[key, objVal] : val->properties) {
-                    std::visit([L](auto &&v) {
-                        using V = std::decay_t<decltype(v)>;
-                        if constexpr (std::is_same_v<V, int64_t>) lua_pushinteger(L, v);
-                        else if constexpr (std::is_same_v<V, double>) lua_pushnumber(L, v);
-                        else if constexpr (std::is_same_v<V, std::string>) lua_pushstring(L, v.c_str());
-                        else if constexpr (std::is_same_v<V, bool>) lua_pushboolean(L, v ? 1 : 0);
-                        else lua_pushnil(L);
-                    }, objVal);
+                    pushScriptValue(L, objVal);
                     lua_setfield(L, -2, key.c_str());
                 }
             }

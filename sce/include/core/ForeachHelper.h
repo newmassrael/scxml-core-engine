@@ -171,6 +171,15 @@ public:
 
         // W3C SCXML 5.4: Validate that the value is an array
         if (!arrayResult.isArray()) {
+            // Empty Lua table converts to ScriptObject with no properties — treat as empty array
+            const auto &val = arrayResult.getInternalValue();
+            if (std::holds_alternative<std::shared_ptr<ScriptObject>>(val)) {
+                auto obj = std::get<std::shared_ptr<ScriptObject>>(val);
+                if (obj && obj->properties.empty()) {
+                    return std::vector<ScriptValue>{};  // Empty array
+                }
+            }
+
             std::string arrayCheckExpr = "(" + arrayExpr + ") instanceof Array";
             auto arrayCheckResult = jsEngine.evaluateExpression(sessionId, arrayCheckExpr).get();
             if (!arrayCheckResult.isSuccess() ||
