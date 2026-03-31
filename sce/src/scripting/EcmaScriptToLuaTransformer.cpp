@@ -40,6 +40,42 @@ std::string replaceWord(const std::string &s, const char *word, const char *repl
     return result;
 }
 
+// Replace word-bounded occurrences only at bracket depth 0.
+// Skips matches inside nested {}, (), [] — used for array-element-level sentinel replacement.
+std::string replaceWordAtTopLevel(const std::string &s, const char *word, const char *replacement) {
+    size_t wordLen = std::strlen(word);
+    size_t replLen = std::strlen(replacement);
+    std::string result;
+    result.reserve(s.size());
+    int depth = 0;
+    size_t i = 0;
+
+    while (i < s.size()) {
+        char c = s[i];
+        if (c == '{' || c == '(' || c == '[') {
+            ++depth;
+            result += c;
+            ++i;
+        } else if (c == '}' || c == ')' || c == ']') {
+            if (depth > 0) --depth;
+            result += c;
+            ++i;
+        } else if (depth == 0 &&
+                   i + wordLen <= s.size() &&
+                   s.compare(i, wordLen, word) == 0 &&
+                   (i == 0 || !isWordChar(s[i - 1])) &&
+                   (i + wordLen >= s.size() || !isWordChar(s[i + wordLen]))) {
+            result.append(replacement, replLen);
+            i += wordLen;
+        } else {
+            result += c;
+            ++i;
+        }
+    }
+
+    return result;
+}
+
 // Replace word-bounded keyword followed by whitespace: \bword\s+ -> replacement
 // Used for var/let/const -> local
 std::string replaceKeywordPrefix(const std::string &s, const char *keyword, const char *replacement) {
@@ -760,10 +796,10 @@ std::string EcmaScriptToLuaTransformer::transformArrayLiterals(const std::string
                 size_t closePos = findMatchingClose(input, i, '[', ']');
                 std::string contents = input.substr(i + 1, closePos - i - 1);
                 contents = transformArrayLiterals(contents);
-                // W3C SCXML 4.6: Replace null/undefined with sentinels in array context
-                // to prevent Lua nil holes during foreach iteration
-                contents = replaceWord(contents, "null", "_NULL");
-                contents = replaceWord(contents, "undefined", "_UNDEFINED");
+                // W3C SCXML 4.6: Replace null/undefined with sentinels at array element level only.
+                // Nested structures ({key: null}, function calls) are left unchanged.
+                contents = replaceWordAtTopLevel(contents, "null", "_NULL");
+                contents = replaceWordAtTopLevel(contents, "undefined", "_UNDEFINED");
                 result += "{" + contents + "}";
                 i = closePos;
             } else {

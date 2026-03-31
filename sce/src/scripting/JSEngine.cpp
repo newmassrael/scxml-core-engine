@@ -1025,11 +1025,24 @@ bool JSEngine::isSuccess(const ScriptResult &result) noexcept {
 
 bool JSEngine::hasVariable(const std::string &sessionId, const std::string &variableName) const {
     // W3C SCXML 4.6: Check if variable exists in session scope
-    // For dotted paths (e.g., "obj.nested.value"), use typeof with try-catch
-    // For simple names, use 'in' operator on global scope
     std::string checkExpr;
-    if (variableName.find('.') != std::string::npos) {
-        checkExpr = "(function(){try{return typeof(" + variableName + ")!=='undefined';}catch(e){return false;}})()";
+    auto dotPos = variableName.find('.');
+    if (dotPos != std::string::npos) {
+        // Dotted path (e.g., "obj.nested.value") — build 'in' operator chain:
+        //   'obj' in this && 'nested' in obj && 'value' in obj.nested
+        // This correctly distinguishes "property doesn't exist" from "property is undefined".
+        std::string root = variableName.substr(0, dotPos);
+        checkExpr = "'" + root + "' in this";
+        size_t segStart = dotPos + 1;
+        while (segStart < variableName.size()) {
+            size_t nextDot = variableName.find('.', segStart);
+            std::string segment = (nextDot != std::string::npos)
+                ? variableName.substr(segStart, nextDot - segStart)
+                : variableName.substr(segStart);
+            std::string parent = variableName.substr(0, segStart - 1);
+            checkExpr += " && '" + segment + "' in " + parent;
+            segStart = (nextDot != std::string::npos) ? nextDot + 1 : variableName.size();
+        }
     } else {
         checkExpr = "'" + variableName + "' in this";
     }
