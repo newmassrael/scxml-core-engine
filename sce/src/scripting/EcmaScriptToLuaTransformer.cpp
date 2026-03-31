@@ -1,7 +1,138 @@
 #include "scripting/EcmaScriptToLuaTransformer.h"
 #include <algorithm>
-#include <regex>
-#include <sstream>
+#include <cstring>
+
+namespace {
+
+// Word character check: equivalent to regex \w (alphanumeric + underscore)
+inline bool isWordChar(char c) {
+    return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
+}
+
+// Find a keyword with word boundaries (equivalent to \bword\b)
+size_t findWord(const std::string &s, const char *word, size_t wordLen, size_t startPos = 0) {
+    size_t pos = startPos;
+    while ((pos = s.find(word, pos)) != std::string::npos) {
+        bool leftOk = (pos == 0 || !isWordChar(s[pos - 1]));
+        bool rightOk = (pos + wordLen >= s.size() || !isWordChar(s[pos + wordLen]));
+        if (leftOk && rightOk) return pos;
+        ++pos;
+    }
+    return std::string::npos;
+}
+
+// Replace all word-bounded occurrences: \bword\b -> replacement
+std::string replaceWord(const std::string &s, const char *word, const char *replacement) {
+    size_t wordLen = std::strlen(word);
+    size_t replLen = std::strlen(replacement);
+    std::string result;
+    result.reserve(s.size());
+    size_t lastPos = 0;
+    size_t pos = 0;
+    while ((pos = findWord(s, word, wordLen, pos)) != std::string::npos) {
+        result.append(s, lastPos, pos - lastPos);
+        result.append(replacement, replLen);
+        lastPos = pos + wordLen;
+        pos = lastPos;
+    }
+    result.append(s, lastPos, s.size() - lastPos);
+    return result;
+}
+
+// Replace word-bounded keyword followed by whitespace: \bword\s+ -> replacement
+// Used for var/let/const -> local
+std::string replaceKeywordPrefix(const std::string &s, const char *keyword, const char *replacement) {
+    size_t kwLen = std::strlen(keyword);
+    std::string result;
+    result.reserve(s.size());
+    size_t lastPos = 0;
+    size_t pos = 0;
+    while ((pos = findWord(s, keyword, kwLen, pos)) != std::string::npos) {
+        size_t afterKw = pos + kwLen;
+        if (afterKw < s.size() && std::isspace(static_cast<unsigned char>(s[afterKw]))) {
+            result.append(s, lastPos, pos - lastPos);
+            result.append(replacement);
+            lastPos = afterKw + 1;
+            pos = lastPos;
+        } else {
+            ++pos;
+        }
+    }
+    result.append(s, lastPos, s.size() - lastPos);
+    return result;
+}
+
+// Skip whitespace, return new position
+inline size_t skipSpaces(const std::string &s, size_t pos) {
+    while (pos < s.size() && std::isspace(static_cast<unsigned char>(s[pos]))) ++pos;
+    return pos;
+}
+
+// Read a word (\w+) starting at pos, return end position
+inline size_t readWord(const std::string &s, size_t pos) {
+    while (pos < s.size() && isWordChar(s[pos])) ++pos;
+    return pos;
+}
+
+// Trim whitespace from both ends
+std::string trim(const std::string &s) {
+    size_t start = s.find_first_not_of(" \t");
+    size_t end = s.find_last_not_of(" \t");
+    return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
+}
+
+// Check if position is preceded only by \w characters going back to a word-char
+// Used to extract a preceding identifier for methods like .length, .indexOf, etc.
+// Returns start position of the identifier, or npos if none found.
+size_t findPrecedingIdentifier(const std::string &s, size_t dotPos) {
+    if (dotPos == 0) return std::string::npos;
+    size_t end = dotPos;
+    size_t start = dotPos;
+    while (start > 0 && isWordChar(s[start - 1])) --start;
+    return (start < end) ? start : std::string::npos;
+}
+
+// Check if a pure In() predicate chain (no regex)
+// Matches patterns like: In('s1'), In('s1') and In('s2'), (In('s1') or In('s2'))
+bool isPureInPredicate(const std::string &expr) {
+    size_t i = 0;
+    size_t len = expr.size();
+    bool foundIn = false;
+
+    while (i < len) {
+        char c = expr[i];
+        // Skip whitespace and parentheses
+        if (std::isspace(static_cast<unsigned char>(c)) || c == '(' || c == ')') {
+            ++i;
+            continue;
+        }
+        // Check for "In("
+        if (i + 3 <= len && expr.compare(i, 3, "In(") == 0) {
+            foundIn = true;
+            i += 3;
+            // Skip to closing )
+            while (i < len && expr[i] != ')') ++i;
+            if (i < len) ++i;  // skip ')'
+            continue;
+        }
+        // Check for "and" or "or" keywords
+        if (i + 3 <= len && expr.compare(i, 3, "and") == 0 &&
+            (i + 3 >= len || !isWordChar(expr[i + 3]))) {
+            i += 3;
+            continue;
+        }
+        if (i + 2 <= len && expr.compare(i, 2, "or") == 0 &&
+            (i + 2 >= len || !isWordChar(expr[i + 2]))) {
+            i += 2;
+            continue;
+        }
+        // Any other character means this is not a pure In() predicate
+        return false;
+    }
+    return foundIn;
+}
+
+}  // anonymous namespace
 
 namespace SCE {
 
@@ -161,80 +292,94 @@ std::string EcmaScriptToLuaTransformer::restoreStringLiterals(
 
 // === Pre-pass: typeof Transformation (before string protection) ===
 
-// Helper: extract the unquoted content of a JS string literal ('foo' or "foo" -> foo)
-static std::string unquote(const std::string &s) {
-    if (s.size() >= 2 && ((s.front() == '\'' && s.back() == '\'') ||
-                           (s.front() == '"' && s.back() == '"'))) {
-        return s.substr(1, s.size() - 2);
-    }
-    return s;
-}
-
 std::string EcmaScriptToLuaTransformer::transformTypeofPatterns(const std::string &input) const {
-    std::string result = input;
+    // typeof VAR OP 'TYPE' → Lua type comparison
+    // typeof VAR (standalone) → _typeof(VAR)
+    std::string result;
+    result.reserve(input.size());
+    size_t i = 0;
 
-    // Pattern: typeof VAR OP 'TYPE'   where OP is ===, ==, !==, !=
-    // Must handle: typeof x === 'undefined', typeof(x) !== 'undefined',
-    //              typeof x === 'number', typeof x === 'string', etc.
-    //
-    // Lua mapping:
-    //   typeof x === 'undefined'  ->  x == nil
-    //   typeof x !== 'undefined'  ->  x ~= nil
-    //   typeof x === 'number'     ->  type(x) == 'number'
-    //   typeof x === 'string'     ->  type(x) == 'string'
-    //   typeof x === 'boolean'    ->  type(x) == 'boolean'
-    //   typeof x === 'function'   ->  type(x) == 'function'
-    //   typeof x === 'object'     ->  type(x) == 'table'
-    //   standalone typeof x       ->  _typeof(x)
-
-    // Match typeof with comparison: typeof VAR OP 'string_literal'
-    // Capture groups: (1)varname, (2)operator, (3)quoted_type_string
-    std::regex typeofCmp(
-        R"(typeof\s*\(?\s*(\w+)\s*\)?\s*(!==?|===?)\s*('[^']*'|"[^"]*"))");
-
-    std::string temp;
-    std::sregex_iterator it(result.begin(), result.end(), typeofCmp);
-    std::sregex_iterator end;
-    size_t lastPos = 0;
-
-    for (; it != end; ++it) {
-        auto &match = *it;
-        temp += result.substr(lastPos, match.position() - lastPos);
-
-        std::string varName = match[1].str();
-        std::string op = match[2].str();
-        std::string typeStr = unquote(match[3].str());
-
-        // Determine Lua operator
-        std::string luaOp;
-        if (op == "!==" || op == "!=") {
-            luaOp = "~=";
-        } else {
-            luaOp = "==";
+    while (i < input.size()) {
+        size_t typeofPos = input.find("typeof", i);
+        if (typeofPos == std::string::npos) {
+            result.append(input, i, input.size() - i);
+            break;
         }
 
-        if (typeStr == "undefined") {
-            // typeof x === 'undefined' -> x == nil
-            temp += varName + " " + luaOp + " nil";
-        } else {
-            // Map JS type names to Lua type() return values
-            std::string luaType = typeStr;
-            if (typeStr == "object") {
-                luaType = "table";
+        // Check word boundary before "typeof"
+        if (typeofPos > 0 && isWordChar(input[typeofPos - 1])) {
+            result.append(input, i, typeofPos + 6 - i);
+            i = typeofPos + 6;
+            continue;
+        }
+
+        result.append(input, i, typeofPos - i);
+
+        // Parse: typeof\s*\(?\s*(\w+)\s*\)?
+        size_t j = typeofPos + 6;
+        j = skipSpaces(input, j);
+
+        bool hasParen = (j < input.size() && input[j] == '(');
+        if (hasParen) j = skipSpaces(input, j + 1);
+
+        size_t varStart = j;
+        size_t varEnd = readWord(input, j);
+
+        if (varEnd == varStart) {
+            result.append("typeof");
+            i = typeofPos + 6;
+            continue;
+        }
+        std::string varName = input.substr(varStart, varEnd - varStart);
+
+        // Compute position after typeof expr (past optional closing paren)
+        size_t afterTypeofExpr = skipSpaces(input, varEnd);
+        if (hasParen && afterTypeofExpr < input.size() && input[afterTypeofExpr] == ')') {
+            ++afterTypeofExpr;
+        }
+
+        // Check for comparison operator: !==, ===, !=, ==
+        size_t k = skipSpaces(input, afterTypeofExpr);
+        size_t opLen = 0;
+        bool isNeg = false;
+        if (k + 2 < input.size() && (input.compare(k, 3, "!==") == 0)) {
+            opLen = 3; isNeg = true;
+        } else if (k + 2 < input.size() && input.compare(k, 3, "===") == 0) {
+            opLen = 3; isNeg = false;
+        } else if (k + 1 < input.size() && input.compare(k, 2, "!=") == 0) {
+            opLen = 2; isNeg = true;
+        } else if (k + 1 < input.size() && input.compare(k, 2, "==") == 0) {
+            opLen = 2; isNeg = false;
+        }
+
+        if (opLen > 0) {
+            size_t m = skipSpaces(input, k + opLen);
+
+            if (m < input.size() && (input[m] == '\'' || input[m] == '"')) {
+                // Full typeof comparison pattern
+                char quote = input[m];
+                ++m;
+                size_t typeStart = m;
+                while (m < input.size() && input[m] != quote) ++m;
+                std::string typeStr = input.substr(typeStart, m - typeStart);
+                if (m < input.size()) ++m;
+
+                const char *luaOp = isNeg ? "~=" : "==";
+
+                if (typeStr == "undefined") {
+                    result += varName + " " + luaOp + " nil";
+                } else {
+                    const char *luaType = (typeStr == "object") ? "table" : typeStr.c_str();
+                    result += "type(" + varName + ") " + luaOp + " '" + luaType + "'";
+                }
+                i = m;
+                continue;
             }
-            // typeof x === 'number' -> type(x) == 'number'
-            temp += "type(" + varName + ") " + luaOp + " '" + luaType + "'";
         }
 
-        lastPos = match.position() + match.length();
-    }
-    temp += result.substr(lastPos);
-    result = std::move(temp);
-
-    // Remaining standalone typeof x -> _typeof(x)
-    {
-        std::regex remainingTypeof(R"(\btypeof\s*\(?\s*(\w+)\s*\)?)");
-        result = std::regex_replace(result, remainingTypeof, "_typeof($1)");
+        // Standalone typeof → _typeof(varName)
+        result += "_typeof(" + varName + ")";
+        i = afterTypeofExpr;
     }
 
     return result;
@@ -243,74 +388,198 @@ std::string EcmaScriptToLuaTransformer::transformTypeofPatterns(const std::strin
 // === Stage 2: Pattern Transformations ===
 
 std::string EcmaScriptToLuaTransformer::transformCompoundAssignment(const std::string &input) const {
-    std::string result = input;
+    // ECMAScript compound assignment: Var1+=1 → Var1 = Var1 + (1)
+    // Operators: +=, -=, *=, /=, %=
+    std::string result;
+    result.reserve(input.size());
+    size_t i = 0;
 
-    // ECMAScript compound assignment operators: +=, -=, *=, /=, %=
-    // Var1+=1 → Var1 = Var1 + (1)
-    // RHS is wrapped in parentheses for correct operator precedence with *= and /=
-    std::regex compoundAssign(R"((\w+)\s*(\+|-|\*|\/|%)=\s*([^;\n]+))");
-    result = std::regex_replace(result, compoundAssign, "$1 = $1 $2 ($3)");
+    while (i < input.size()) {
+        // Look for compound assignment operators: +=, -=, *=, /=, %=
+        // Scan for = preceded by +, -, *, /, %
+        size_t eqPos = input.find('=', i);
+        if (eqPos == std::string::npos || eqPos == 0) {
+            result.append(input, i, input.size() - i);
+            break;
+        }
+
+        char prev = input[eqPos - 1];
+        // Skip ==, !=, <=, >=, !== , ===
+        if (prev == '=' || prev == '!' || prev == '<' || prev == '>') {
+            result.append(input, i, eqPos + 1 - i);
+            i = eqPos + 1;
+            continue;
+        }
+
+        if (prev != '+' && prev != '-' && prev != '*' && prev != '/' && prev != '%') {
+            result.append(input, i, eqPos + 1 - i);
+            i = eqPos + 1;
+            continue;
+        }
+
+        // Found potential compound assignment: extract variable name before operator
+        size_t opPos = eqPos - 1;  // position of +, -, *, /, %
+
+        // Read variable name backwards from opPos
+        size_t varEnd = opPos;
+        // Skip whitespace between var and operator
+        while (varEnd > i && std::isspace(static_cast<unsigned char>(input[varEnd - 1]))) --varEnd;
+        size_t varStart = varEnd;
+        while (varStart > i && isWordChar(input[varStart - 1])) --varStart;
+
+        if (varStart == varEnd) {
+            // No identifier before operator
+            result.append(input, i, eqPos + 1 - i);
+            i = eqPos + 1;
+            continue;
+        }
+
+        std::string varName = input.substr(varStart, varEnd - varStart);
+        char op = prev;
+
+        // Read RHS: everything until ; or newline
+        size_t rhsStart = eqPos + 1;
+        while (rhsStart < input.size() && std::isspace(static_cast<unsigned char>(input[rhsStart]))) ++rhsStart;
+        size_t rhsEnd = rhsStart;
+        while (rhsEnd < input.size() && input[rhsEnd] != ';' && input[rhsEnd] != '\n') ++rhsEnd;
+
+        std::string rhs = input.substr(rhsStart, rhsEnd - rhsStart);
+
+        // Emit: text before var + var = var op (rhs)
+        result.append(input, i, varStart - i);
+        result += varName + " = " + varName + " " + op + " (" + rhs + ")";
+        i = rhsEnd;
+    }
 
     return result;
 }
 
 std::string EcmaScriptToLuaTransformer::transformIncrementDecrement(const std::string &input) const {
-    std::string result = input;
-
     // Postfix operators must be matched BEFORE prefix operators.
-    // Otherwise "a--b" is incorrectly parsed as prefix dec of b instead of postfix dec of a.
+    std::string result;
+    result.reserve(input.size() * 2);
+    size_t i = 0;
 
-    // ECMAScript postfix increment: var++ → IIFE that returns old value then increments
-    {
-        std::regex postfixInc(R"((\w+)\+\+)");
-        result = std::regex_replace(result, postfixInc,
-                                    "(function() local _t = $1 $1 = $1 + 1 return _t end)()");
-    }
+    while (i < input.size()) {
+        // Check for postfix increment: \w++
+        if (input[i] == '+' && i + 1 < input.size() && input[i + 1] == '+') {
+            // Look backwards for identifier
+            size_t varEnd = i;
+            size_t varStart = i;
+            while (varStart > 0 && isWordChar(input[varStart - 1])) --varStart;
 
-    // ECMAScript postfix decrement: var-- → IIFE that returns old value then decrements
-    {
-        std::regex postfixDec(R"((\w+)--)");
-        result = std::regex_replace(result, postfixDec,
-                                    "(function() local _t = $1 $1 = $1 - 1 return _t end)()");
-    }
+            if (varStart < varEnd) {
+                // Found postfix increment
+                // Remove the variable we already appended
+                result.erase(result.size() - (varEnd - varStart));
+                std::string var = input.substr(varStart, varEnd - varStart);
+                result += "(function() local _t = " + var + " " + var + " = " + var + " + 1 return _t end)()";
+                i += 2;  // skip ++
+                continue;
+            }
+        }
 
-    // ECMAScript prefix increment: ++var → IIFE that increments and returns new value
-    // Used in conditions like ++var1==2
-    {
-        std::regex prefixInc(R"(\+\+(\w+))");
-        result = std::regex_replace(result, prefixInc,
-                                    "(function() $1 = $1 + 1 return $1 end)()");
-    }
+        // Check for postfix decrement: \w--
+        if (input[i] == '-' && i + 1 < input.size() && input[i + 1] == '-') {
+            // Look backwards for identifier
+            size_t varEnd = i;
+            size_t varStart = i;
+            while (varStart > 0 && isWordChar(input[varStart - 1])) --varStart;
 
-    // ECMAScript prefix decrement: --var → IIFE that decrements and returns new value
-    // Must transform before Lua sees -- (which starts a comment in Lua)
-    {
-        std::regex prefixDec(R"(--(\w+))");
-        result = std::regex_replace(result, prefixDec,
-                                    "(function() $1 = $1 - 1 return $1 end)()");
+            if (varStart < varEnd) {
+                result.erase(result.size() - (varEnd - varStart));
+                std::string var = input.substr(varStart, varEnd - varStart);
+                result += "(function() local _t = " + var + " " + var + " = " + var + " - 1 return _t end)()";
+                i += 2;
+                continue;
+            }
+
+            // Check for prefix decrement: --\w
+            size_t afterOp = i + 2;
+            size_t wordEnd = readWord(input, afterOp);
+            if (wordEnd > afterOp) {
+                std::string var = input.substr(afterOp, wordEnd - afterOp);
+                result += "(function() " + var + " = " + var + " - 1 return " + var + " end)()";
+                i = wordEnd;
+                continue;
+            }
+        }
+
+        // Check for prefix increment: ++\w
+        if (input[i] == '+' && i + 1 < input.size() && input[i + 1] == '+') {
+            size_t afterOp = i + 2;
+            size_t wordEnd = readWord(input, afterOp);
+            if (wordEnd > afterOp) {
+                std::string var = input.substr(afterOp, wordEnd - afterOp);
+                result += "(function() " + var + " = " + var + " + 1 return " + var + " end)()";
+                i = wordEnd;
+                continue;
+            }
+        }
+
+        result += input[i];
+        ++i;
     }
 
     return result;
 }
 
 std::string EcmaScriptToLuaTransformer::transformInstanceofPatterns(const std::string &input) const {
-    // Match: expr instanceof Array — where expr can be a variable, (expr), or complex expression
-    std::regex instanceofArray(R"(((?:\([^)]+\)|\w+))\s+instanceof\s+Array)");
-    return std::regex_replace(input, instanceofArray, "_isArray($1)");
+    // expr instanceof Array → _isArray(expr)
+    // expr can be a variable or (parenthesized expression)
+    std::string result;
+    result.reserve(input.size());
+    size_t i = 0;
+
+    while (i < input.size()) {
+        size_t pos = findWord(input, "instanceof", 10, i);
+        if (pos == std::string::npos) {
+            result.append(input, i, input.size() - i);
+            break;
+        }
+
+        // Check if followed by whitespace + "Array"
+        size_t afterInst = skipSpaces(input, pos + 10);
+        size_t arrayEnd = readWord(input, afterInst);
+        if (arrayEnd > afterInst && input.compare(afterInst, arrayEnd - afterInst, "Array") == 0) {
+            // Find the preceding expression (variable or parenthesized)
+            size_t exprEnd = pos;
+            while (exprEnd > i && std::isspace(static_cast<unsigned char>(input[exprEnd - 1]))) --exprEnd;
+
+            std::string expr;
+            size_t exprStart = exprEnd;
+
+            if (exprEnd > i && input[exprEnd - 1] == ')') {
+                // Parenthesized expression: find matching (
+                int depth = 1;
+                size_t k = exprEnd - 2;
+                while (k > i && depth > 0) {
+                    if (input[k] == ')') ++depth;
+                    else if (input[k] == '(') --depth;
+                    if (depth > 0) --k;
+                }
+                exprStart = k;
+            } else {
+                // Variable name
+                while (exprStart > i && isWordChar(input[exprStart - 1])) --exprStart;
+            }
+
+            expr = input.substr(exprStart, exprEnd - exprStart);
+            result.append(input, i, exprStart - i);
+            result += "_isArray(" + expr + ")";
+            i = arrayEnd;
+        } else {
+            result.append(input, i, pos + 10 - i);
+            i = pos + 10;
+        }
+    }
+
+    return result;
 }
 
 std::string EcmaScriptToLuaTransformer::transformNullUndefined(const std::string &input) const {
-    std::string result = input;
-
-    // Standalone undefined -> nil (word boundary)
-    std::regex undefRegex(R"(\bundefined\b)");
-    result = std::regex_replace(result, undefRegex, "nil");
-
-    // null -> nil
-    std::regex nullRegex(R"(\bnull\b)");
-    result = std::regex_replace(result, nullRegex, "nil");
-
-    return result;
+    std::string result = replaceWord(input, "undefined", "nil");
+    return replaceWord(result, "null", "nil");
 }
 
 std::string EcmaScriptToLuaTransformer::transformOperators(const std::string &input) const {
@@ -376,7 +645,6 @@ std::string EcmaScriptToLuaTransformer::transformOperators(const std::string &in
         temp.reserve(result.size());
         for (size_t i = 0; i < result.size(); ++i) {
             if (result[i] == '!') {
-                // Skip if next char is '=' (already handled above as !=)
                 if (i + 1 < result.size() && result[i + 1] == '=') {
                     temp += result[i];
                 } else {
@@ -390,35 +658,27 @@ std::string EcmaScriptToLuaTransformer::transformOperators(const std::string &in
     }
 
     // W3C SCXML B.2 (test 459): Parenthesize operands of bitwise OR/AND/XOR
-    // ECMAScript: comparison (==, !=) binds tighter than bitwise (|, &, ^)
-    // Lua 5.4: bitwise (|, &, ^) binds tighter than comparison (==, ~=)
-    // Fix: wrap each operand of |, &, ^ in parentheses to preserve JS semantics
     result = parenthesizeBitwiseOperands(result);
 
     return result;
 }
 
 std::string EcmaScriptToLuaTransformer::parenthesizeBitwiseOperands(const std::string &input) const {
-    // Check if expression contains bitwise operators at all
     bool hasBitwise = false;
     for (size_t i = 0; i < input.size(); ++i) {
         char c = input[i];
         if (c == '|' || c == '&' || c == '^') {
-            // Ensure it's not || (already converted to 'or') or && (already converted to 'and')
-            // At this point || and && have been replaced, so single | & ^ are bitwise
             hasBitwise = true;
             break;
         }
     }
     if (!hasBitwise) return input;
 
-    // Check if any comparison operators exist (==, ~=, <, >, <=, >=)
     bool hasComparison = (input.find("==") != std::string::npos ||
                           input.find("~=") != std::string::npos ||
                           input.find("<=") != std::string::npos ||
                           input.find(">=") != std::string::npos);
     if (!hasComparison) {
-        // Check standalone < > (not part of <= >=)
         for (size_t i = 0; i < input.size(); ++i) {
             if ((input[i] == '<' || input[i] == '>') &&
                 (i + 1 >= input.size() || input[i + 1] != '=')) {
@@ -429,31 +689,18 @@ std::string EcmaScriptToLuaTransformer::parenthesizeBitwiseOperands(const std::s
     }
     if (!hasComparison) return input;
 
-    // Split on bitwise operators and parenthesize each operand
     std::string result;
     result.reserve(input.size() + 16);
     size_t start = 0;
     for (size_t i = 0; i < input.size(); ++i) {
         char c = input[i];
         if (c == '|' || c == '&' || c == '^') {
-            std::string operand = input.substr(start, i - start);
-            // Trim whitespace
-            size_t os = operand.find_first_not_of(" \t");
-            size_t oe = operand.find_last_not_of(" \t");
-            if (os != std::string::npos) {
-                operand = operand.substr(os, oe - os + 1);
-            }
+            std::string operand = trim(input.substr(start, i - start));
             result += "(" + operand + ") " + c + " ";
             start = i + 1;
         }
     }
-    // Last operand
-    std::string lastOp = input.substr(start);
-    size_t os = lastOp.find_first_not_of(" \t");
-    size_t oe = lastOp.find_last_not_of(" \t");
-    if (os != std::string::npos) {
-        lastOp = lastOp.substr(os, oe - os + 1);
-    }
+    std::string lastOp = trim(input.substr(start));
     result += "(" + lastOp + ")";
 
     return result;
@@ -465,8 +712,6 @@ std::string EcmaScriptToLuaTransformer::transformArrayLiterals(const std::string
 
     for (size_t i = 0; i < input.size(); ++i) {
         if (input[i] == '[') {
-            // Determine if array literal or property access
-            // Property access: preceded by identifier char, ), ]
             bool isPropertyAccess = false;
             if (i > 0) {
                 char prev = input[i - 1];
@@ -476,7 +721,6 @@ std::string EcmaScriptToLuaTransformer::transformArrayLiterals(const std::string
             }
 
             if (!isPropertyAccess) {
-                // Array literal: find matching ] and replace with {}
                 int depth = 1;
                 size_t start = i;
                 ++i;
@@ -499,31 +743,96 @@ std::string EcmaScriptToLuaTransformer::transformArrayLiterals(const std::string
 }
 
 std::string EcmaScriptToLuaTransformer::transformArrayMethods(const std::string &input) const {
-    std::string result = input;
+    std::string result;
+    result.reserve(input.size());
+    size_t i = 0;
 
-    // .length -> # prefix operator
-    {
-        std::regex lengthProp(R"((\w+)\.length\b)");
-        result = std::regex_replace(result, lengthProp, "#$1");
-    }
+    while (i < input.size()) {
+        // Look for dot-method patterns
+        if (input[i] == '.') {
+            // .length\b → # prefix
+            if (i + 7 <= input.size() && input.compare(i + 1, 6, "length") == 0 &&
+                (i + 7 >= input.size() || !isWordChar(input[i + 7]))) {
+                // Find preceding identifier
+                size_t idStart = findPrecedingIdentifier(result, result.size());
+                if (idStart != std::string::npos) {
+                    std::string varName = result.substr(idStart);
+                    result.erase(idStart);
+                    result += "#" + varName;
+                    i += 7;  // skip .length
+                    continue;
+                }
+            }
 
-    // .indexOf(x) -> _indexOf(arr, x)
-    {
-        std::regex indexOfMethod(R"((\w+)\.indexOf\(([^)]*)\))");
-        result = std::regex_replace(result, indexOfMethod, "_indexOf($1, $2)");
-    }
+            // .indexOf( → _indexOf(var,
+            if (i + 9 <= input.size() && input.compare(i + 1, 8, "indexOf(") == 0) {
+                size_t idStart = findPrecedingIdentifier(result, result.size());
+                if (idStart != std::string::npos) {
+                    std::string varName = result.substr(idStart);
+                    result.erase(idStart);
+                    // Find closing )
+                    size_t argStart = i + 9;
+                    size_t argEnd = argStart;
+                    int depth = 1;
+                    while (argEnd < input.size() && depth > 0) {
+                        if (input[argEnd] == '(') ++depth;
+                        else if (input[argEnd] == ')') --depth;
+                        if (depth > 0) ++argEnd;
+                    }
+                    std::string args = input.substr(argStart, argEnd - argStart);
+                    result += "_indexOf(" + varName + ", " + args + ")";
+                    i = argEnd + 1;  // skip past )
+                    continue;
+                }
+            }
 
-    // .concat(...) -> _concat(arr, ...)
-    // Also match empty array literal [] before transformArrayLiterals converts it to {}
-    {
-        std::regex concatMethod(R"((\w+|\{\}|\[\])\.concat\()");
-        result = std::regex_replace(result, concatMethod, "_concat($1, ");
-    }
+            // .concat( → _concat(var,
+            if (i + 8 <= input.size() && input.compare(i + 1, 7, "concat(") == 0) {
+                size_t idStart = findPrecedingIdentifier(result, result.size());
+                if (idStart != std::string::npos) {
+                    std::string varName = result.substr(idStart);
+                    result.erase(idStart);
+                    result += "_concat(" + varName + ", ";
+                    i += 8;  // skip .concat(
+                    continue;
+                }
+                // Also handle {}.concat( or [].concat(
+                if (result.size() >= 2) {
+                    std::string last2 = result.substr(result.size() - 2);
+                    if (last2 == "{}" || last2 == "[]") {
+                        std::string obj = last2;
+                        result.erase(result.size() - 2);
+                        result += "_concat(" + obj + ", ";
+                        i += 8;
+                        continue;
+                    }
+                }
+            }
 
-    // .push(x) -> table.insert(arr, x)
-    {
-        std::regex pushMethod(R"((\w+)\.push\(([^)]*)\))");
-        result = std::regex_replace(result, pushMethod, "table.insert($1, $2)");
+            // .push( → table.insert(var,
+            if (i + 6 <= input.size() && input.compare(i + 1, 5, "push(") == 0) {
+                size_t idStart = findPrecedingIdentifier(result, result.size());
+                if (idStart != std::string::npos) {
+                    std::string varName = result.substr(idStart);
+                    result.erase(idStart);
+                    size_t argStart = i + 6;
+                    size_t argEnd = argStart;
+                    int depth = 1;
+                    while (argEnd < input.size() && depth > 0) {
+                        if (input[argEnd] == '(') ++depth;
+                        else if (input[argEnd] == ')') --depth;
+                        if (depth > 0) ++argEnd;
+                    }
+                    std::string args = input.substr(argStart, argEnd - argStart);
+                    result += "table.insert(" + varName + ", " + args + ")";
+                    i = argEnd + 1;
+                    continue;
+                }
+            }
+        }
+
+        result += input[i];
+        ++i;
     }
 
     return result;
@@ -538,12 +847,10 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
     std::string result = input;
 
     // Track brace depth to replace } -> end at the correct level
-    // First pass: replace function declarations and track brace→end mapping
     std::string output;
     output.reserve(result.size() * 2);
 
     size_t i = 0;
-    // Stack tracks brace depth and whether function is a JS constructor (uses this.)
     struct FuncInfo {
         int depth;
         bool isConstructor;
@@ -553,17 +860,15 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
 
     while (i < result.size()) {
         // Detect function keyword
-        if (i + 8 <= result.size() && result.substr(i, 8) == "function" &&
-            (i == 0 || !std::isalnum(result[i - 1]))) {
-            // Find opening (
+        if (i + 8 <= result.size() && result.compare(i, 8, "function") == 0 &&
+            (i == 0 || !isWordChar(result[i - 1]))) {
             size_t funcStart = i;
             size_t j = i + 8;
-            // Skip whitespace and optional function name
-            while (j < result.size() && (std::isspace(result[j]) || std::isalnum(result[j]) || result[j] == '_'))
+            while (j < result.size() && (std::isspace(static_cast<unsigned char>(result[j])) ||
+                                          isWordChar(result[j])))
                 ++j;
 
             if (j < result.size() && result[j] == '(') {
-                // Find matching )
                 int parenDepth = 1;
                 ++j;
                 while (j < result.size() && parenDepth > 0) {
@@ -572,19 +877,15 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
                     ++j;
                 }
 
-                // Skip whitespace before {
-                while (j < result.size() && std::isspace(result[j])) ++j;
+                while (j < result.size() && std::isspace(static_cast<unsigned char>(result[j]))) ++j;
 
                 if (j < result.size() && result[j] == '{') {
-                    // W3C SCXML 5.3: Detect JS constructor pattern (function body uses this.)
-                    // Scan function body for this. to inject Lua table creation/return
+                    // W3C SCXML 5.3: Detect JS constructor pattern
                     bool isConstructor = false;
                     int checkDepth = 1;
                     for (size_t k = j + 1; k < result.size() && checkDepth > 0; ++k) {
                         if (result[k] == '{') ++checkDepth;
                         else if (result[k] == '}') --checkDepth;
-                        // Only match this. at immediate function body level (depth 1),
-                        // not inside nested functions which have their own this context
                         if (checkDepth == 1 && k + 5 <= result.size() &&
                             result.compare(k, 5, "this.") == 0) {
                             isConstructor = true;
@@ -592,7 +893,6 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
                         }
                     }
 
-                    // Output: function name(params)  (without {)
                     output += result.substr(funcStart, j - funcStart);
                     if (isConstructor) {
                         output += " local self = {} ";
@@ -630,61 +930,87 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
 
     result = std::move(output);
 
-    // Transform this.prop -> self.prop (for constructors)
+    // Transform this.prop -> self.prop
+    // Only replace "this." (with dot) to match original behavior.
     {
-        std::regex thisDot(R"(\bthis\.)");
-        result = std::regex_replace(result, thisDot, "self.");
+        size_t pos = 0;
+        while (true) {
+            pos = findWord(result, "this", 4, pos);
+            if (pos == std::string::npos) break;
+            if (pos + 4 < result.size() && result[pos + 4] == '.') {
+                result.replace(pos, 4, "self");
+            }
+            pos += 4;
+        }
     }
 
     return result;
 }
 
 std::string EcmaScriptToLuaTransformer::transformVarDeclarations(const std::string &input) const {
-    std::string result = input;
+    std::string result = replaceKeywordPrefix(input, "var", "local ");
+    result = replaceKeywordPrefix(result, "let", "local ");
+    return replaceKeywordPrefix(result, "const", "local ");
+}
 
-    // var/let/const -> local
-    {
-        std::regex varDecl(R"(\bvar\s+)");
-        result = std::regex_replace(result, varDecl, "local ");
-    }
-    {
-        std::regex letDecl(R"(\blet\s+)");
-        result = std::regex_replace(result, letDecl, "local ");
-    }
-    {
-        std::regex constDecl(R"(\bconst\s+)");
-        result = std::regex_replace(result, constDecl, "local ");
+std::string EcmaScriptToLuaTransformer::transformNewExpression(const std::string &input) const {
+    // \bnew\s+(\w+)\s*\( → $1(
+    std::string result;
+    result.reserve(input.size());
+    size_t i = 0;
+
+    while (i < input.size()) {
+        size_t pos = findWord(input, "new", 3, i);
+        if (pos == std::string::npos) {
+            result.append(input, i, input.size() - i);
+            break;
+        }
+
+        result.append(input, i, pos - i);
+
+        // Skip "new" + whitespace
+        size_t j = skipSpaces(input, pos + 3);
+        // Read constructor name
+        size_t nameEnd = readWord(input, j);
+        if (nameEnd > j) {
+            size_t k = skipSpaces(input, nameEnd);
+            if (k < input.size() && input[k] == '(') {
+                // Matched: new ConstructorName(
+                result.append(input, j, nameEnd - j);
+                result += '(';
+                i = k + 1;
+                continue;
+            }
+        }
+        // Not a match — keep "new"
+        result.append("new");
+        i = pos + 3;
     }
 
     return result;
 }
 
-std::string EcmaScriptToLuaTransformer::transformNewExpression(const std::string &input) const {
-    std::regex newExpr(R"(\bnew\s+(\w+)\s*\()");
-    return std::regex_replace(input, newExpr, "$1(");
-}
-
 std::string EcmaScriptToLuaTransformer::transformTernaryOperator(const std::string &input) const {
     // cond ? a : b -> (cond and a or b)
-    std::regex ternary(R"(([^?]+)\?([^:]+):(.+))");
-    std::smatch match;
-    if (std::regex_match(input, match, ternary)) {
-        auto trim = [](const std::string &s) {
-            size_t start = s.find_first_not_of(" \t");
-            size_t end = s.find_last_not_of(" \t");
-            return (start == std::string::npos) ? "" : s.substr(start, end - start + 1);
-        };
-        return "(" + trim(match[1].str()) + " and " + trim(match[2].str()) +
-               " or " + trim(match[3].str()) + ")";
-    }
-    return input;
+    // Only match if the entire expression is a single ternary
+    size_t qPos = input.find('?');
+    if (qPos == std::string::npos) return input;
+
+    size_t cPos = input.find(':', qPos + 1);
+    if (cPos == std::string::npos) return input;
+
+    std::string cond = trim(input.substr(0, qPos));
+    std::string trueVal = trim(input.substr(qPos + 1, cPos - qPos - 1));
+    std::string falseVal = trim(input.substr(cPos + 1));
+
+    if (cond.empty() || trueVal.empty() || falseVal.empty()) return input;
+
+    return "(" + cond + " and " + trueVal + " or " + falseVal + ")";
 }
 
 std::string EcmaScriptToLuaTransformer::transformDOMMethods(const std::string &input) const {
     std::string result = input;
 
-    // DOM method calls use . in JS but : in Lua (to pass self)
-    // .getElementsByTagName( -> :getElementsByTagName(
     {
         size_t pos = 0;
         while ((pos = result.find(".getElementsByTagName(", pos)) != std::string::npos) {
@@ -692,8 +1018,6 @@ std::string EcmaScriptToLuaTransformer::transformDOMMethods(const std::string &i
             pos += 21;
         }
     }
-
-    // .getAttribute( -> :getAttribute(
     {
         size_t pos = 0;
         while ((pos = result.find(".getAttribute(", pos)) != std::string::npos) {
@@ -701,8 +1025,6 @@ std::string EcmaScriptToLuaTransformer::transformDOMMethods(const std::string &i
             pos += 14;
         }
     }
-
-    // .getTagName( -> :getTagName(
     {
         size_t pos = 0;
         while ((pos = result.find(".getTagName(", pos)) != std::string::npos) {
@@ -717,18 +1039,15 @@ std::string EcmaScriptToLuaTransformer::transformDOMMethods(const std::string &i
 std::string EcmaScriptToLuaTransformer::transformSemicolons(const std::string &input) const {
     std::string result = input;
 
-    // Remove trailing semicolons
     while (!result.empty() && result.back() == ';') {
         result.pop_back();
     }
 
-    // Replace ; with newline in multi-statement contexts
     {
         std::string temp;
         temp.reserve(result.size());
         for (size_t i = 0; i < result.size(); ++i) {
             if (result[i] == ';') {
-                // Replace with newline for statement separation
                 temp += '\n';
             } else {
                 temp += result[i];
@@ -743,7 +1062,6 @@ std::string EcmaScriptToLuaTransformer::transformSemicolons(const std::string &i
 // === Stage 3: Truthiness Wrapping ===
 
 bool EcmaScriptToLuaTransformer::needsTruthinessWrapping(const std::string &expr) const {
-    // Already boolean-producing expressions don't need wrapping
     if (expr.find("==") != std::string::npos ||
         expr.find("~=") != std::string::npos ||
         expr.find(">=") != std::string::npos ||
@@ -753,7 +1071,6 @@ bool EcmaScriptToLuaTransformer::needsTruthinessWrapping(const std::string &expr
         return false;
     }
 
-    // Check for standalone < or > (not inside <= or >=)
     for (size_t i = 0; i < expr.size(); ++i) {
         if ((expr[i] == '<' || expr[i] == '>') &&
             (i + 1 >= expr.size() || expr[i + 1] != '=')) {
@@ -761,27 +1078,20 @@ bool EcmaScriptToLuaTransformer::needsTruthinessWrapping(const std::string &expr
         }
     }
 
-    // Boolean literals
-    std::string trimmed = expr;
-    auto start = trimmed.find_first_not_of(" \t\n");
-    auto end = trimmed.find_last_not_of(" \t\n");
-    if (start != std::string::npos) {
-        trimmed = trimmed.substr(start, end - start + 1);
-    }
+    std::string trimmed = trim(expr);
     if (trimmed == "true" || trimmed == "false") {
         return false;
     }
 
     // Pure In() predicate calls are already boolean
     if (trimmed.find("In(") != std::string::npos) {
-        std::regex pureIn(R"(^[\s()]*(?:In\([^)]+\)[\s()]*(?:\s+and\s+|\s+or\s+)?)+$)");
-        if (std::regex_match(trimmed, pureIn)) {
+        if (isPureInPredicate(trimmed)) {
             return false;
         }
     }
 
     // 'not' prefix produces boolean
-    if (trimmed.substr(0, 4) == "not ") {
+    if (trimmed.size() >= 4 && trimmed.compare(0, 4, "not ") == 0) {
         return false;
     }
 

@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <climits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -109,7 +110,26 @@ private:
         // Bound native method storage for bindNativeObject lifetime management
         std::vector<std::unique_ptr<NativeMethod>> boundMethods;
         // Lua bytecode cache: compiled chunks stored in Lua registry (keyed by source string)
-        std::unordered_map<std::string, int> chunkCache;
+        // Successful compilations store the registry ref; failed compilations store the error message.
+        struct ChunkCacheEntry {
+            int ref;              // Lua registry ref (>= 0) or CHUNK_COMPILE_FAILED sentinel
+            std::string error;    // Lua error message (only set on compilation failure)
+        };
+        static constexpr int CHUNK_COMPILE_FAILED = INT_MIN;
+        std::unordered_map<std::string, ChunkCacheEntry> chunkCache;
+
+        // Expression execution fast path: maps original ECMAScript expression
+        // directly to pre-resolved chunk ref, skipping transformer lookup,
+        // "return" wrapping attempt, and double cache lookup on repeat calls.
+        struct ExprExecInfo {
+            int chunkRef;       // Lua registry ref for compiled chunk
+            bool returnsValue;  // true: "return expr" form; false: assignment (ScriptUndefined)
+        };
+        std::unordered_map<std::string, ExprExecInfo> exprExecCache;
+
+        // Script execution fast path: maps original script directly to compiled
+        // chunk ref, skipping transformer cache lookup and string copy.
+        std::unordered_map<std::string, int> scriptExecCache;
     };
 
     // === Internal implementation ===
@@ -122,7 +142,7 @@ private:
     // On LUA_OK: compiled function is pushed onto the stack.
     // On error: error message is pushed onto the stack.
     int loadCachedChunk(lua_State *L, const std::string &code,
-                        std::unordered_map<std::string, int> &cache);
+                        std::unordered_map<std::string, LuaSessionContext::ChunkCacheEntry> &cache);
 
     // Lua state management
     lua_State *createLuaState();

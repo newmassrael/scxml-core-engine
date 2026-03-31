@@ -556,10 +556,15 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
 // === Script Execution ===
 
 int LuaEngine::loadCachedChunk(lua_State *L, const std::string &code,
-                               std::unordered_map<std::string, int> &cache) {
+                               std::unordered_map<std::string, LuaSessionContext::ChunkCacheEntry> &cache) {
     auto cacheIt = cache.find(code);
     if (cacheIt != cache.end()) {
-        lua_rawgeti(L, LUA_REGISTRYINDEX, cacheIt->second);
+        auto &entry = cacheIt->second;
+        if (entry.ref == LuaSessionContext::CHUNK_COMPILE_FAILED) {
+            lua_pushstring(L, entry.error.c_str());
+            return LUA_ERRSYNTAX;
+        }
+        lua_rawgeti(L, LUA_REGISTRYINDEX, entry.ref);
         return LUA_OK;
     }
 
@@ -567,7 +572,10 @@ int LuaEngine::loadCachedChunk(lua_State *L, const std::string &code,
     if (status == LUA_OK) {
         lua_pushvalue(L, -1);
         int ref = luaL_ref(L, LUA_REGISTRYINDEX);
-        cache[code] = ref;
+        cache[code] = {ref, {}};
+    } else {
+        std::string err = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
+        cache[code] = {LuaSessionContext::CHUNK_COMPILE_FAILED, err};
     }
     return status;
 }
@@ -623,6 +631,18 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     }
 
     lua_State *L = it->second->L;
+
+    // Fast path: if this script was successfully executed before in this session,
+    // skip transformer and chunk cache lookup entirely.
+    auto &scriptExec = it->second->scriptExecCache;
+    auto sit = scriptExec.find(script);
+    if (sit != scriptExec.end()) {
+        lua_rawgeti(L, LUA_REGISTRYINDEX, sit->second);
+        int status = lua_pcall(L, 0, LUA_MULTRET, 0);
+        return luaResultToScriptResult(L, status);
+    }
+
+    // Slow path: first-time execution for this script in this session
     std::string luaScript = transformer_.transformScript(script);
 
     SCE_LOG_DEBUG("LuaEngine: Execute script [{}]: {} -> {}", sessionId, script, luaScript);
@@ -631,6 +651,10 @@ ScriptResult LuaEngine::executeScriptInternal(const std::string &sessionId, cons
     if (loadStatus != LUA_OK) {
         return luaResultToScriptResult(L, loadStatus);
     }
+
+    // Cache for fast path on subsequent calls
+    scriptExec[script] = it->second->chunkCache.at(luaScript).ref;
+
     int status = lua_pcall(L, 0, LUA_MULTRET, 0);
     return luaResultToScriptResult(L, status);
 }
@@ -643,6 +667,27 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     }
 
     lua_State *L = it->second->L;
+
+    // Fast path: if this expression was successfully evaluated before in this session,
+    // skip transformer, "return" wrapping, and double cache lookup entirely.
+    auto &execCache = it->second->exprExecCache;
+    auto execIt = execCache.find(expression);
+    if (execIt != execCache.end()) {
+        auto &info = execIt->second;
+        lua_rawgeti(L, LUA_REGISTRYINDEX, info.chunkRef);
+        int status = lua_pcall(L, 0, LUA_MULTRET, 0);
+        if (info.returnsValue) {
+            return luaResultToScriptResult(L, status);
+        }
+        if (status == LUA_OK) {
+            return ScriptResult::createSuccess(ScriptUndefined{});
+        }
+        std::string err = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
+        lua_pop(L, 1);
+        return ScriptResult::createError(err);
+    }
+
+    // Slow path: first-time evaluation for this expression in this session
     std::string luaExpr = transformer_.transform(expression);
 
     // W3C SCXML: Detect undeclared simple variable references
@@ -667,6 +712,8 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
     if (loadStatus == LUA_OK) {
         int status = lua_pcall(L, 0, LUA_MULTRET, 0);
         if (status == LUA_OK) {
+            // Cache for fast path on subsequent calls
+            execCache[expression] = {cache.at(wrapped).ref, true};
             return luaResultToScriptResult(L, status);
         }
         std::string error = lua_tostring(L, -1) ? lua_tostring(L, -1) : "Unknown Lua error";
@@ -697,6 +744,8 @@ ScriptResult LuaEngine::evaluateExpressionInternal(const std::string &sessionId,
         if (loadStatus == LUA_OK) {
             int status = lua_pcall(L, 0, LUA_MULTRET, 0);
             if (status == LUA_OK) {
+                // Cache for fast path on subsequent calls
+                execCache[expression] = {cache.at(luaExpr).ref, false};
                 return ScriptResult::createSuccess(ScriptUndefined{});
             }
             lua_pop(L, 1);
