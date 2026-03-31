@@ -128,7 +128,7 @@ BENCHMARK_F(JSEngineFixture, VariableOperations)(benchmark::State &state) {
 }
 
 // Measure script execution with varying complexity
-BENCHMARK_F(JSEngineFixture, ScriptComplexity)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(JSEngineFixture, ScriptComplexity)(benchmark::State &state) {
     std::string sessionId = generateUniqueSessionId();
     engine_->createSession(sessionId);
 
@@ -153,7 +153,7 @@ BENCHMARK_REGISTER_F(JSEngineFixture, ScriptComplexity)->Arg(1)->Arg(10)->Arg(50
 // ============================================================================
 
 // Measure contention on session creation (each thread creates unique sessions)
-BENCHMARK_F(JSEngineFixture, ConcurrentSessionCreation)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(JSEngineFixture, ConcurrentSessionCreation)(benchmark::State &state) {
     for (auto _ : state) {
         std::string sessionId = generateUniqueSessionId();
         bool created = engine_->createSession(sessionId);
@@ -176,7 +176,7 @@ BENCHMARK_REGISTER_F(JSEngineFixture, ConcurrentSessionCreation)
     ->UseRealTime();
 
 // Measure script execution across different sessions (no shared state)
-BENCHMARK_F(JSEngineFixture, ConcurrentScriptExecution)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(JSEngineFixture, ConcurrentScriptExecution)(benchmark::State &state) {
     // Each thread gets its own session
     std::string sessionId = generateUniqueSessionId();
 
@@ -207,7 +207,7 @@ BENCHMARK_REGISTER_F(JSEngineFixture, ConcurrentScriptExecution)
     ->UseRealTime();
 
 // Measure worst-case: multiple threads accessing same session (serialization bottleneck)
-BENCHMARK_F(JSEngineFixture, ConcurrentSameSession)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(JSEngineFixture, ConcurrentSameSession)(benchmark::State &state) {
     static std::string sharedSessionId;
     static std::once_flag initFlag;
 
@@ -239,7 +239,7 @@ BENCHMARK_REGISTER_F(JSEngineFixture, ConcurrentSameSession)
 // ============================================================================
 
 // Realistic workload: mix of session operations and script execution
-BENCHMARK_F(JSEngineFixture, MixedWorkload)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(JSEngineFixture, MixedWorkload)(benchmark::State &state) {
     // Create a pool of sessions for this thread
     std::vector<std::string> sessionPool;
     for (int i = 0; i < 5; ++i) {
@@ -335,7 +335,7 @@ BENCHMARK_F(JSEngineFixture, ScriptExecutionLatency)(benchmark::State &state) {
 // ============================================================================
 
 // Test with many active sessions
-BENCHMARK_F(JSEngineFixture, ManySessionsStress)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(JSEngineFixture, ManySessionsStress)(benchmark::State &state) {
     const int num_sessions = state.range(0);
 
     for (auto _ : state) {

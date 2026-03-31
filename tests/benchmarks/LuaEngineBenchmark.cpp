@@ -137,7 +137,7 @@ BENCHMARK_F(LuaEngineFixture, VariableOperations)(benchmark::State &state) {
     state.SetLabel("Set and get variable");
 }
 
-BENCHMARK_F(LuaEngineFixture, ScriptComplexity)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(LuaEngineFixture, ScriptComplexity)(benchmark::State &state) {
     std::string sessionId = generateUniqueLuaSessionId();
     engine_->createSession(sessionId);
 
@@ -196,7 +196,7 @@ BENCHMARK_F(LuaEngineFixture, NativeMathExpression)(benchmark::State &state) {
     state.SetLabel("Native Lua math functions");
 }
 
-BENCHMARK_F(LuaEngineFixture, NativeScriptComplexity)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(LuaEngineFixture, NativeScriptComplexity)(benchmark::State &state) {
     std::string sessionId = generateUniqueLuaSessionId();
     engine_->createSession(sessionId);
 
@@ -221,7 +221,7 @@ BENCHMARK_REGISTER_F(LuaEngineFixture, NativeScriptComplexity)->Arg(1)->Arg(10)-
 // (Mirrors JSEngineBenchmark for direct comparison)
 // ============================================================================
 
-BENCHMARK_F(LuaEngineFixture, ConcurrentSessionCreation)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(LuaEngineFixture, ConcurrentSessionCreation)(benchmark::State &state) {
     for (auto _ : state) {
         std::string sessionId = generateUniqueLuaSessionId();
         bool created = engine_->createSession(sessionId);
@@ -243,7 +243,7 @@ BENCHMARK_REGISTER_F(LuaEngineFixture, ConcurrentSessionCreation)
     ->Threads(8)
     ->UseRealTime();
 
-BENCHMARK_F(LuaEngineFixture, ConcurrentScriptExecution)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(LuaEngineFixture, ConcurrentScriptExecution)(benchmark::State &state) {
     std::string sessionId = generateUniqueLuaSessionId();
 
     if (state.thread_index() == 0) {
@@ -273,7 +273,7 @@ BENCHMARK_REGISTER_F(LuaEngineFixture, ConcurrentScriptExecution)
     ->Threads(8)
     ->UseRealTime();
 
-BENCHMARK_F(LuaEngineFixture, ConcurrentSameSession)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(LuaEngineFixture, ConcurrentSameSession)(benchmark::State &state) {
     static std::string sharedSessionId;
     static std::once_flag initFlag;
 
@@ -305,7 +305,7 @@ BENCHMARK_REGISTER_F(LuaEngineFixture, ConcurrentSameSession)
 // (Mirrors JSEngineBenchmark for direct comparison)
 // ============================================================================
 
-BENCHMARK_F(LuaEngineFixture, MixedWorkload)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(LuaEngineFixture, MixedWorkload)(benchmark::State &state) {
     std::vector<std::string> sessionPool;
     for (int i = 0; i < 5; ++i) {
         std::string sid = generateUniqueLuaSessionId();
@@ -434,7 +434,7 @@ BENCHMARK_F(LuaEngineFixture, NativeScriptExecutionLatency)(benchmark::State &st
 // (Mirrors JSEngineBenchmark for direct comparison)
 // ============================================================================
 
-BENCHMARK_F(LuaEngineFixture, ManySessionsStress)(benchmark::State &state) {
+BENCHMARK_DEFINE_F(LuaEngineFixture, ManySessionsStress)(benchmark::State &state) {
     const int num_sessions = state.range(0);
 
     for (auto _ : state) {
