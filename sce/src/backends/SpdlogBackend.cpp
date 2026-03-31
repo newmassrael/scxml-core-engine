@@ -82,7 +82,7 @@ SpdlogBackend::SpdlogBackend(const std::string &logDir, bool logToFile) {
     }
 }
 
-void SpdlogBackend::log(LogLevel level, const std::string &message, [[maybe_unused]] const std::source_location &loc) {
+void SpdlogBackend::log(LogLevel level, const std::string &message, [[maybe_unused]] const SCE::source_location &loc) {
     if (logger_) {
         logger_->log(convertLevel(level), message);
     }

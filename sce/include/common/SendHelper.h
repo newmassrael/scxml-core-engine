@@ -28,6 +28,17 @@
 
 namespace SCE {
 
+namespace detail {
+// C++17/20 portable starts_with: uses std::string::starts_with on C++20, rfind on C++17
+inline bool starts_with(const std::string &s, const char *prefix) {
+#if __cplusplus >= 202002L
+    return s.starts_with(prefix);
+#else
+    return s.rfind(prefix, 0) == 0;
+#endif
+}
+}  // namespace detail
+
 /**
  * @brief Helper functions for W3C SCXML <send> element processing
  *
@@ -104,7 +115,7 @@ public:
     static bool isChildInvokeTarget(const std::string &target) {
         // W3C SCXML 6.4: #_<invokeid> format indicates child invoke target
         // Must start with #_ but not be #_parent or #_internal
-        if (!target.starts_with("#_")) {
+        if (!detail::starts_with(target, "#_")) {
             return false;
         }
         // Exclude special reserved targets
@@ -112,7 +123,7 @@ public:
             return false;
         }
         // Exclude SCXML session targets (#_scxml_<sessionid>)
-        if (target.starts_with("#_scxml_")) {
+        if (detail::starts_with(target, "#_scxml_")) {
             return false;
         }
         // All other #_<invokeid> are child invoke targets
@@ -136,7 +147,7 @@ public:
      */
     static std::string extractInvokeId(const std::string &target) {
         // W3C SCXML 6.4: Extract invokeid from #_<invokeid>
-        if (target.starts_with("#_")) {
+        if (detail::starts_with(target, "#_")) {
             return target.substr(2);  // Skip "#_" prefix
         }
         return target;  // Fallback: return as-is
@@ -169,7 +180,7 @@ public:
      */
     static bool isHttpTarget(const std::string &target) {
         // W3C SCXML C.2: HTTP/HTTPS URLs indicate BasicHTTP Event I/O Processor
-        return target.starts_with("http://") || target.starts_with("https://");
+        return detail::starts_with(target, "http://") || detail::starts_with(target, "https://");
     }
 
     /**

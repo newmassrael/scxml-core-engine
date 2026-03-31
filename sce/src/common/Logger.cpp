@@ -71,31 +71,31 @@ bool Logger::shouldLog(LogLevel level) {
     return backend_->shouldLog(level);
 }
 
-void Logger::trace(const std::string &message, const std::source_location &loc) {
+void Logger::trace(const std::string &message, const SCE::source_location &loc) {
     ensureBackend();
     std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
     backend_->log(LogLevel::Trace, enhanced_message, loc);
 }
 
-void Logger::debug(const std::string &message, const std::source_location &loc) {
+void Logger::debug(const std::string &message, const SCE::source_location &loc) {
     ensureBackend();
     std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
     backend_->log(LogLevel::Debug, enhanced_message, loc);
 }
 
-void Logger::info(const std::string &message, const std::source_location &loc) {
+void Logger::info(const std::string &message, const SCE::source_location &loc) {
     ensureBackend();
     std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
     backend_->log(LogLevel::Info, enhanced_message, loc);
 }
 
-void Logger::warn(const std::string &message, const std::source_location &loc) {
+void Logger::warn(const std::string &message, const SCE::source_location &loc) {
     ensureBackend();
     std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
     backend_->log(LogLevel::Warn, enhanced_message, loc);
 }
 
-void Logger::error(const std::string &message, const std::source_location &loc) {
+void Logger::error(const std::string &message, const SCE::source_location &loc) {
     ensureBackend();
     std::string enhanced_message = extractCleanFunctionName(loc) + "() - " + message;
     backend_->log(LogLevel::Error, enhanced_message, loc);
@@ -127,7 +127,7 @@ void Logger::ensureBackend() {
     }
 }
 
-std::string Logger::extractCleanFunctionName(const std::source_location &loc) {
+std::string Logger::extractCleanFunctionName(const SCE::source_location &loc) {
     std::string full_name = loc.function_name();
 
     // Find the opening parenthesis

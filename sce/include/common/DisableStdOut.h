@@ -7,7 +7,7 @@
 // Apply cout/cerr prohibition macros only in SCE source files
 #ifndef GTEST_INCLUDE_GTEST_GTEST_H_  // Exclude GoogleTest headers
 #ifndef _OPENSSL_BIO_H                // Exclude OpenSSL BIO headers
-#ifndef _STDIO_H                      // Exclude standard C stdio headers
+#if !defined(_STDIO_H) && !defined(_STDIO_H_INCLUDED) && !defined(__STDIO_H_INCLUDED)  // Exclude standard C stdio headers
 
 // Completely prohibit std::cout, std::cerr, std::clog at compile time
 #define cout                                                                                                           \
@@ -25,6 +25,6 @@
                          "Use SCE_LOG_DEBUG(...) instead. "                                                            \
                          "Example: SCE_LOG_DEBUG(\"Debug info: {}\", debugData);")
 
-#endif  // _STDIO_H
+#endif  // _STDIO_H / _STDIO_H_INCLUDED / __STDIO_H_INCLUDED
 #endif  // _OPENSSL_BIO_H
 #endif  // GTEST_INCLUDE_GTEST_GTEST_H_

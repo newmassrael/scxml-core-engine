@@ -39,7 +39,11 @@ public:
      * @param state State to check
      * @return true if state is parallel, false otherwise
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType> static bool isParallelState(StateType state) {
+#else
+    template <typename StateType, typename PolicyType> static bool isParallelState(StateType state) {
+#endif
         return PolicyType::isParallelState(state);
     }
 
@@ -53,7 +57,11 @@ public:
      * @param parallelState The parallel state
      * @return Vector of child region states in document order
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static std::vector<StateType> getParallelRegions(StateType parallelState) {
         return PolicyType::getParallelRegions(parallelState);
     }
@@ -69,7 +77,11 @@ public:
      * @param state State to get document order for
      * @return Document order index (0-based)
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType> static int getDocumentOrder(StateType state) {
+#else
+    template <typename StateType, typename PolicyType> static int getDocumentOrder(StateType state) {
+#endif
         return PolicyType::getDocumentOrder(state);
     }
 
@@ -84,7 +96,11 @@ public:
      * @param state2 Second state
      * @return true if state1 appears before state2 in document order
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static bool compareDocumentOrder(StateType state1, StateType state2) {
         return getDocumentOrder<StateType, PolicyType>(state1) < getDocumentOrder<StateType, PolicyType>(state2);
     }
@@ -100,7 +116,11 @@ public:
      * @param parallelState The parallel state
      * @return Vector of initial states (one per region) in document order
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static std::vector<StateType> getParallelInitialStates(StateType parallelState) {
         auto regions = getParallelRegions<StateType, PolicyType>(parallelState);
         std::vector<StateType> initialStates;
@@ -132,7 +152,11 @@ public:
      * @param configuration Current configuration
      * @return true if all regions are in final states
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType, typename ConfigurationType>
+#else
+    template <typename StateType, typename PolicyType, typename ConfigurationType>
+#endif
     static bool areAllRegionsFinal(StateType parallelState, const ConfigurationType &configuration) {
         auto regions = getParallelRegions<StateType, PolicyType>(parallelState);
 

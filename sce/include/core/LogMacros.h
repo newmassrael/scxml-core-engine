@@ -35,18 +35,36 @@
 
 #ifdef SCE_ENABLE_RUNTIME_LOGGING
   #include "common/Logger.h"
-  #include <format>
-  #include <source_location>
+  #include "common/SourceLocation.h"
+
+  // Format string handling: prefer std::format (C++20), fall back to fmt (spdlog bundled)
+  #if __cpp_lib_format >= 201907L
+    #include <format>
+    #define SCE_DETAIL_FORMAT(...) std::format(__VA_ARGS__)
+  #elif defined(SCE_USE_SPDLOG)
+    #include <spdlog/fmt/bundled/format.h>
+    #define SCE_DETAIL_FORMAT(...) fmt::format(__VA_ARGS__)
+  #else
+    // No format library available — log format string only (parameter substitution lost)
+    #include <string>
+    namespace SCE::detail {
+    inline std::string format_fallback(const char* fmt) { return std::string(fmt); }
+    template<typename... Args>
+    inline std::string format_fallback(const char* fmt, Args&&...) { return std::string(fmt); }
+    }
+    #define SCE_DETAIL_FORMAT(...) SCE::detail::format_fallback(__VA_ARGS__)
+  #endif
+
   #define SCE_LOG_TRACE(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Trace)) \
-      SCE::Logger::trace(std::format(__VA_ARGS__), std::source_location::current()); } while(0)
+      SCE::Logger::trace(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
   #define SCE_LOG_DEBUG(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Debug)) \
-      SCE::Logger::debug(std::format(__VA_ARGS__), std::source_location::current()); } while(0)
+      SCE::Logger::debug(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
   #define SCE_LOG_INFO(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Info)) \
-      SCE::Logger::info(std::format(__VA_ARGS__), std::source_location::current()); } while(0)
+      SCE::Logger::info(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
   #define SCE_LOG_WARN(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Warn)) \
-      SCE::Logger::warn(std::format(__VA_ARGS__), std::source_location::current()); } while(0)
+      SCE::Logger::warn(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
   #define SCE_LOG_ERROR(...) do { if (SCE::Logger::shouldLog(SCE::LogLevel::Error)) \
-      SCE::Logger::error(std::format(__VA_ARGS__), std::source_location::current()); } while(0)
+      SCE::Logger::error(SCE_DETAIL_FORMAT(__VA_ARGS__), SCE::source_location::current()); } while(0)
 #else
   #define SCE_LOG_TRACE(...) ((void)0)
   #define SCE_LOG_DEBUG(...) ((void)0)

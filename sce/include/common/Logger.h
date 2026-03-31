@@ -17,8 +17,8 @@
 #pragma once
 
 #include "common/ILoggerBackend.h"
+#include "common/SourceLocation.h"
 #include <memory>
-#include <source_location>
 #include <string>
 
 namespace SCE {
@@ -88,11 +88,11 @@ public:
     static bool shouldLog(LogLevel level);
 
     // Logging methods — called by SCE_LOG_* macros in LogMacros.h
-    static void trace(const std::string &message, const std::source_location &loc = std::source_location::current());
-    static void debug(const std::string &message, const std::source_location &loc = std::source_location::current());
-    static void info(const std::string &message, const std::source_location &loc = std::source_location::current());
-    static void warn(const std::string &message, const std::source_location &loc = std::source_location::current());
-    static void error(const std::string &message, const std::source_location &loc = std::source_location::current());
+    static void trace(const std::string &message, const SCE::source_location &loc = SCE::source_location::current());
+    static void debug(const std::string &message, const SCE::source_location &loc = SCE::source_location::current());
+    static void info(const std::string &message, const SCE::source_location &loc = SCE::source_location::current());
+    static void warn(const std::string &message, const SCE::source_location &loc = SCE::source_location::current());
+    static void error(const std::string &message, const SCE::source_location &loc = SCE::source_location::current());
 
     /**
      * @brief Flush log buffers
@@ -122,7 +122,7 @@ public:
 private:
     static std::unique_ptr<ILoggerBackend> backend_;
     static void ensureBackend();
-    static std::string extractCleanFunctionName(const std::source_location &loc);
+    static std::string extractCleanFunctionName(const SCE::source_location &loc);
 };
 
 }  // namespace SCE

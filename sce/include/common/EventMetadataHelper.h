@@ -20,13 +20,52 @@
 #include "common/EventDataHelper.h"
 #include "core/StatePolicyConcepts.h"
 #include <string>
+#include <type_traits>
 
 // Forward declaration to avoid circular dependency
 namespace SCE::Static {
+#if __cpp_concepts >= 202002L
 template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine;
+#else
+template <typename StatePolicy> class StaticExecutionEngine;
+#endif
 }
 
 namespace SCE::Common {
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// C++17-compatible member detection traits for policy metadata fields
+//
+// These replace inline `if constexpr (requires { ... })` expressions with
+// portable void_t-based SFINAE traits that work in both C++17 and C++20.
+// ═══════════════════════════════════════════════════════════════════════════════
+namespace detail {
+
+template<typename P, typename = void> struct has_pendingEventData : std::false_type {};
+template<typename P> struct has_pendingEventData<P, std::void_t<decltype(std::declval<P>().pendingEventData_)>> : std::true_type {};
+
+template<typename P, typename = void> struct has_pendingEventOrigin : std::false_type {};
+template<typename P> struct has_pendingEventOrigin<P, std::void_t<decltype(std::declval<P>().pendingEventOrigin_)>> : std::true_type {};
+
+template<typename P, typename = void> struct has_pendingEventSendId : std::false_type {};
+template<typename P> struct has_pendingEventSendId<P, std::void_t<decltype(std::declval<P>().pendingEventSendId_)>> : std::true_type {};
+
+template<typename P, typename = void> struct has_pendingEventType : std::false_type {};
+template<typename P> struct has_pendingEventType<P, std::void_t<decltype(std::declval<P>().pendingEventType_)>> : std::true_type {};
+
+template<typename P, typename = void> struct has_pendingEventOriginType : std::false_type {};
+template<typename P> struct has_pendingEventOriginType<P, std::void_t<decltype(std::declval<P>().pendingEventOriginType_)>> : std::true_type {};
+
+template<typename P, typename = void> struct has_pendingEventInvokeId : std::false_type {};
+template<typename P> struct has_pendingEventInvokeId<P, std::void_t<decltype(std::declval<P>().pendingEventInvokeId_)>> : std::true_type {};
+
+template<typename P, typename = void> struct has_pendingEventTypedData : std::false_type {};
+template<typename P> struct has_pendingEventTypedData<P, std::void_t<decltype(std::declval<P>().pendingEventTypedData_)>> : std::true_type {};
+
+template<typename P, typename = void> struct has_pendingEventName : std::false_type {};
+template<typename P> struct has_pendingEventName<P, std::void_t<decltype(std::declval<P>().pendingEventName_)>> : std::true_type {};
+
+}  // namespace detail
 
 /**
  * @brief Helper for W3C SCXML 5.10 event metadata management
@@ -108,7 +147,7 @@ public:
      * Used by AOT (Static) engine to extract metadata from queue and store in policy
      * for _event variable binding. Follows W3C SCXML 5.10 event descriptor semantics.
      *
-     * This method uses C++20 concepts to check if policy has the required fields,
+     * This method uses type traits to check if policy has the required fields,
      * allowing it to work with policies that may not have all metadata fields.
      *
      * @tparam Policy AOT engine policy type (must have pendingEvent* fields)
@@ -131,37 +170,37 @@ public:
     populatePolicyFromMetadata(Policy &policy,
                                const typename SCE::Static::StaticExecutionEngine<Policy>::EventWithMetadata &metadata) {
         // W3C SCXML 5.10: Set pending event data for _event.data access (test176)
-        if constexpr (requires { policy.pendingEventData_; }) {
+        if constexpr (detail::has_pendingEventData<Policy>::value) {
             policy.pendingEventData_ = metadata.data;
         }
 
         // W3C SCXML 5.10.1: Set pending event origin for _event.origin access (test336)
-        if constexpr (requires { policy.pendingEventOrigin_; }) {
+        if constexpr (detail::has_pendingEventOrigin<Policy>::value) {
             policy.pendingEventOrigin_ = metadata.origin;
         }
 
         // W3C SCXML 5.10.1: Set pending event sendId for _event.sendid access (test332)
-        if constexpr (requires { policy.pendingEventSendId_; }) {
+        if constexpr (detail::has_pendingEventSendId<Policy>::value) {
             policy.pendingEventSendId_ = metadata.sendId;
         }
 
         // W3C SCXML 5.10.1: Set pending event type for _event.type access (test331)
-        if constexpr (requires { policy.pendingEventType_; }) {
+        if constexpr (detail::has_pendingEventType<Policy>::value) {
             policy.pendingEventType_ = metadata.type;
         }
 
         // W3C SCXML 5.10.1: Set pending event originType for _event.origintype access
-        if constexpr (requires { policy.pendingEventOriginType_; }) {
+        if constexpr (detail::has_pendingEventOriginType<Policy>::value) {
             policy.pendingEventOriginType_ = metadata.originType;
         }
 
         // W3C SCXML 5.10.1: Set pending event invokeId for _event.invokeid access
-        if constexpr (requires { policy.pendingEventInvokeId_; }) {
+        if constexpr (detail::has_pendingEventInvokeId<Policy>::value) {
             policy.pendingEventInvokeId_ = metadata.invokeId;
         }
 
-        // W3C SCXML B.2: Set typed event data — from explicit typedData or JSON parsing
-        if constexpr (requires { policy.pendingEventTypedData_; }) {
+        // W3C SCXML B.2: Set typed event data -- from explicit typedData or JSON parsing
+        if constexpr (detail::has_pendingEventTypedData<Policy>::value) {
             if (metadata.typedData.has_value()) {
                 policy.pendingEventTypedData_ = metadata.typedData;
             } else if (!metadata.data.empty()) {
@@ -190,42 +229,42 @@ public:
      */
     template <typename Policy> static void clearPolicyMetadata(Policy &policy) {
         // W3C SCXML 5.10: Clear event name for next cycle
-        if constexpr (requires { policy.pendingEventName_; }) {
+        if constexpr (detail::has_pendingEventName<Policy>::value) {
             policy.pendingEventName_.clear();
         }
 
         // W3C SCXML 5.10: Clear event data for next cycle
-        if constexpr (requires { policy.pendingEventData_; }) {
+        if constexpr (detail::has_pendingEventData<Policy>::value) {
             policy.pendingEventData_.clear();
         }
 
         // W3C SCXML 5.10.1: Clear event type for next cycle (test331)
-        if constexpr (requires { policy.pendingEventType_; }) {
+        if constexpr (detail::has_pendingEventType<Policy>::value) {
             policy.pendingEventType_.clear();
         }
 
         // W3C SCXML 5.10.1: Clear event sendId for next cycle (test332)
-        if constexpr (requires { policy.pendingEventSendId_; }) {
+        if constexpr (detail::has_pendingEventSendId<Policy>::value) {
             policy.pendingEventSendId_.clear();
         }
 
         // W3C SCXML 5.10.1: Clear event origin for next cycle (test336)
-        if constexpr (requires { policy.pendingEventOrigin_; }) {
+        if constexpr (detail::has_pendingEventOrigin<Policy>::value) {
             policy.pendingEventOrigin_.clear();
         }
 
         // W3C SCXML 5.10.1: Clear event originType for next cycle
-        if constexpr (requires { policy.pendingEventOriginType_; }) {
+        if constexpr (detail::has_pendingEventOriginType<Policy>::value) {
             policy.pendingEventOriginType_.clear();
         }
 
         // W3C SCXML 5.10.1: Clear event invokeId for next cycle
-        if constexpr (requires { policy.pendingEventInvokeId_; }) {
+        if constexpr (detail::has_pendingEventInvokeId<Policy>::value) {
             policy.pendingEventInvokeId_.clear();
         }
 
         // W3C SCXML 5.5: Clear typed event data for next cycle
-        if constexpr (requires { policy.pendingEventTypedData_; }) {
+        if constexpr (detail::has_pendingEventTypedData<Policy>::value) {
             policy.pendingEventTypedData_.reset();
         }
     }

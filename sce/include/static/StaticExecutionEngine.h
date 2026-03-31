@@ -58,12 +58,17 @@ namespace SCE::Static {
  * - Event processing loop (W3C SCXML D.1)
  *
  * @tparam StatePolicy Policy class providing state-specific implementations.
- *         Must satisfy SCE::Core::EventNamingPolicy concept.
+ *         Must satisfy SCE::Core::EventNamingPolicy concept (C++20) or duck typing (C++17).
  *         See core/StatePolicyConcepts.h for the full interface contract.
  */
+#if __cpp_concepts >= 202002L
 template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine {
+#else
+template <typename StatePolicy> class StaticExecutionEngine {
+#endif
     // ── Compile-time verification of required member variables ──
     // StatePolicy is generated as a struct (public members), verified via requires expression.
+#if __cpp_concepts >= 202002L
     static_assert(requires(StatePolicy p) { { p.lastTransitionIsInternal_ } -> std::convertible_to<bool>; },
                   "StatePolicy must have member: mutable bool lastTransitionIsInternal_");
     static_assert(requires(StatePolicy p) { { p.lastTransitionIsTargetless_ } -> std::convertible_to<bool>; },
@@ -72,6 +77,7 @@ template <SCE::Core::EventNamingPolicy StatePolicy> class StaticExecutionEngine 
                       { p.lastTransitionSourceState_ } -> std::convertible_to<typename StatePolicy::State>;
                   },
                   "StatePolicy must have member: mutable State lastTransitionSourceState_");
+#endif
 
 public:
     using State = typename StatePolicy::State;
@@ -131,7 +137,10 @@ private:
      * @param newState State after transition
      * @param preTransitionStates Active states before transition (for history recording)
      */
-    template <typename TransitionActionFn = decltype([] {})>
+    // C++17-compatible named empty callable (replaces decltype([] {}))
+    struct NoOpAction { void operator()() const {} };
+
+    template <typename TransitionActionFn = NoOpAction>
     void handleHierarchicalTransition(State oldState, State newState, const std::vector<State> &preTransitionStates,
                                       TransitionActionFn &&transitionAction = {}) {
         SCE_LOG_DEBUG("AOT handleHierarchicalTransition: Transition {} -> {}", static_cast<int>(oldState),

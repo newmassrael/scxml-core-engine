@@ -16,9 +16,9 @@
 
 #include "backends/DefaultBackend.h"
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <ctime>
-#include <format>
 #include <iomanip>
 #include <sstream>
 
@@ -60,7 +60,7 @@ DefaultBackend::DefaultBackend() : currentLevel_(LogLevel::Debug) {
     }
 }
 
-void DefaultBackend::log(LogLevel level, const std::string &message, [[maybe_unused]] const std::source_location &loc) {
+void DefaultBackend::log(LogLevel level, const std::string &message, [[maybe_unused]] const SCE::source_location &loc) {
     if (level < currentLevel_) {
         return;
     }
@@ -136,8 +136,12 @@ std::string DefaultBackend::getTimestamp() {
     localtime_r(&now_time_t, &tm_buf);
 #endif
 
-    return std::format("{:02d}:{:02d}:{:02d}.{:03d}", tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
-                       static_cast<int>(now_ms.count()));
+    // C++17-compatible timestamp formatting using snprintf
+    char buf[16];
+    std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03d",
+                  tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec,
+                  static_cast<int>(now_ms.count()));
+    return std::string(buf);
 }
 
 }  // namespace SCE

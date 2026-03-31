@@ -16,14 +16,74 @@
 
 #pragma once
 
+#if __cpp_concepts >= 202002L
 #include <concepts>
+#endif
+
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace SCE::Core {
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// C++17-compatible feature detection traits
+//
+// These type traits work in both C++17 and C++20.
+// Used in if constexpr for optional policy feature detection.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+template<typename P, typename E, typename = void>
+struct HasDataModelInitTrait : std::false_type {};
+template<typename P, typename E>
+struct HasDataModelInitTrait<P, E, std::void_t<decltype(std::declval<P>().initializeDataModel(std::declval<E&>()))>> : std::true_type {};
+
+template<typename P, typename E, typename = void>
+struct HasInvokeSupportTrait : std::false_type {};
+template<typename P, typename E>
+struct HasInvokeSupportTrait<P, E, std::void_t<decltype(std::declval<P>().executePendingInvokes(std::declval<E&>()))>> : std::true_type {};
+
+template<typename P, typename E, typename = void>
+struct HasChildTickTrait : std::false_type {};
+template<typename P, typename E>
+struct HasChildTickTrait<P, E, std::void_t<decltype(std::declval<P>().tickChildren(std::declval<E&>()))>> : std::true_type {};
+
+template<typename P, typename E, typename = void>
+struct HasAutoforwardTrait : std::false_type {};
+template<typename P, typename E>
+struct HasAutoforwardTrait<P, E, std::void_t<decltype(std::declval<P>().forwardToAutoforwardChildren(std::declval<const std::string&>(), std::declval<E&>()))>> : std::true_type {};
+
+template<typename P, typename M, typename E, typename = void>
+struct HasFinalizeTrait : std::false_type {};
+template<typename P, typename M, typename E>
+struct HasFinalizeTrait<P, M, E, std::void_t<decltype(std::declval<P>().executeFinalizeForChildEvent(std::declval<const M&>(), std::declval<E&>()))>> : std::true_type {};
+
+template<typename P, typename = void>
+struct HasActiveStatesTrait : std::false_type {};
+template<typename P>
+struct HasActiveStatesTrait<P, std::void_t<decltype(std::declval<P>().getActiveStates())>> : std::true_type {};
+
+template<typename P, typename = void>
+struct HasExternalEventFlagTrait : std::false_type {};
+template<typename P>
+struct HasExternalEventFlagTrait<P, std::void_t<decltype(std::declval<P>().nextEventIsExternal_)>> : std::true_type {};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// C++20 concepts + C++17 constexpr bool aliases
+//
+// When __cpp_concepts is available (C++20): full concept definitions for template
+// constraints and clear error messages, plus concept aliases for feature detection.
+// When C++17: constexpr bool aliases from traits for if constexpr usage.
+//
+// The if constexpr usage pattern works identically in both modes:
+//   if constexpr (HasDataModelInit<P, Engine>) { ... }
+// C++20 concept converts to bool; C++17 constexpr bool is already bool.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+#if __cpp_concepts >= 202002L
+
+// ─────────────────────────────────────────────────────────────────────────────
 // StatePolicy Concept Hierarchy
 //
 // Formalizes the implicit interface contract between StaticExecutionEngine,
@@ -44,7 +104,7 @@ namespace SCE::Core {
 // verified via static_assert because concepts cannot distinguish between
 // member variables and member functions with the same syntax when accessed
 // through friend declarations.
-// ═══════════════════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Level 1: Hierarchy Policy — minimal tree traversal
@@ -110,7 +170,7 @@ concept ParallelStatePolicy = HierarchyPolicy<P> && requires(typename P::State s
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Optional Feature Detection Concepts
+// Optional Feature Detection — C++20 concept aliases
 //
 // These replace anonymous `if constexpr (requires { ... })` blocks with
 // named concepts for readability. The if constexpr pattern is preserved —
@@ -119,44 +179,62 @@ concept ParallelStatePolicy = HierarchyPolicy<P> && requires(typename P::State s
 
 /// Policy supports datamodel initialization (JSEngine-backed state machines)
 template <typename P, typename Engine>
-concept HasDataModelInit = requires(P p, Engine &eng) {
-    { p.initializeDataModel(eng) };
-};
+concept HasDataModelInit = HasDataModelInitTrait<P, Engine>::value;
 
 /// Policy supports invoke lifecycle (static or hybrid invokes)
 template <typename P, typename Engine>
-concept HasInvokeSupport = requires(P p, Engine &eng) {
-    { p.executePendingInvokes(eng) };
-};
+concept HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
 
 /// Policy supports child state machine ticking
 template <typename P, typename Engine>
-concept HasChildTick = requires(P p, Engine &eng) {
-    { p.tickChildren(eng) };
-};
+concept HasChildTick = HasChildTickTrait<P, Engine>::value;
 
 /// Policy supports autoforward to children (W3C SCXML 6.4.6)
 template <typename P, typename Engine>
-concept HasAutoforward = requires(P p, const std::string &name, Engine &eng) {
-    { p.forwardToAutoforwardChildren(name, eng) };
-};
+concept HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
 
 /// Policy supports finalize handler execution (W3C SCXML 6.5)
 template <typename P, typename EventMeta, typename Engine>
-concept HasFinalize = requires(P p, const EventMeta &meta, Engine &eng) {
-    { p.executeFinalizeForChildEvent(meta, eng) };
-};
+concept HasFinalize = HasFinalizeTrait<P, EventMeta, Engine>::value;
 
 /// Policy tracks active states across parallel regions
 template <typename P>
-concept HasActiveStates = requires(P p) {
-    { p.getActiveStates() } -> std::convertible_to<std::vector<typename P::State>>;
-};
+concept HasActiveStates = HasActiveStatesTrait<P>::value;
 
 /// Policy has external event marking flag
 template <typename P>
-concept HasExternalEventFlag = requires(P p) {
-    { p.nextEventIsExternal_ } -> std::convertible_to<bool>;
-};
+concept HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
+
+#else  // C++17 fallback
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C++17: constexpr bool aliases for if constexpr usage
+//
+// No concept definitions — template constraints use plain typename.
+// Feature detection works identically: if constexpr (HasDataModelInit<P, E>)
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <typename P, typename Engine>
+inline constexpr bool HasDataModelInit = HasDataModelInitTrait<P, Engine>::value;
+
+template <typename P, typename Engine>
+inline constexpr bool HasInvokeSupport = HasInvokeSupportTrait<P, Engine>::value;
+
+template <typename P, typename Engine>
+inline constexpr bool HasChildTick = HasChildTickTrait<P, Engine>::value;
+
+template <typename P, typename Engine>
+inline constexpr bool HasAutoforward = HasAutoforwardTrait<P, Engine>::value;
+
+template <typename P, typename M, typename Engine>
+inline constexpr bool HasFinalize = HasFinalizeTrait<P, M, Engine>::value;
+
+template <typename P>
+inline constexpr bool HasActiveStates = HasActiveStatesTrait<P>::value;
+
+template <typename P>
+inline constexpr bool HasExternalEventFlag = HasExternalEventFlagTrait<P>::value;
+
+#endif  // __cpp_concepts >= 202002L
 
 }  // namespace SCE::Core

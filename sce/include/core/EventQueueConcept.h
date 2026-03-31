@@ -1,5 +1,6 @@
 #pragma once
 
+#if __cpp_concepts >= 202002L
 #include <concepts>
 
 namespace SCE::Core {
@@ -22,3 +23,12 @@ concept EventQueueAdapter = requires(Q q) {
 };
 
 }  // namespace SCE::Core
+
+#else  // C++17 fallback
+
+namespace SCE::Core {
+// C++17: No concept check — duck typing via templates.
+// EventProcessingAlgorithms will rely on implicit template requirements.
+}  // namespace SCE::Core
+
+#endif  // __cpp_concepts >= 202002L

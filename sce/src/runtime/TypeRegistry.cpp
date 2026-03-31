@@ -126,7 +126,7 @@ bool TypeRegistry::isHttpType(const std::string &uri) {
     }
 
     // Check for HTTP URL schemes
-    if (normalizedUri.starts_with("http://") || normalizedUri.starts_with("https://")) {
+    if (normalizedUri.rfind("http://", 0) == 0 || normalizedUri.rfind("https://", 0) == 0) {
         return true;
     }
 
@@ -193,7 +193,7 @@ std::string TypeRegistry::normalizeUri(const std::string &uri) {
                    [](unsigned char c) { return std::tolower(c); });
 
     // Remove trailing slash
-    if (normalized.ends_with("/")) {
+    if (!normalized.empty() && normalized.back() == '/') {
         normalized = normalized.substr(0, normalized.length() - 1);
     }
 

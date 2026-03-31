@@ -78,7 +78,7 @@ class SpdlogBackend : public ILoggerBackend {
 public:
     SpdlogBackend(const std::string &logDir = "", bool logToFile = false);
 
-    void log(LogLevel level, const std::string &message, const std::source_location &loc) override;
+    void log(LogLevel level, const std::string &message, const SCE::source_location &loc) override;
     void setLevel(LogLevel level) override;
     bool shouldLog(LogLevel level) const override;
     void flush() override;

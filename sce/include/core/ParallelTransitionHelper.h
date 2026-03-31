@@ -71,7 +71,11 @@ public:
      * @param transition Transition to compute exit set for
      * @return Set of states that will be exited
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static std::unordered_set<StateType> computeExitSet(const Transition<StateType> &transition) {
         std::unordered_set<StateType> exitSet;
 
@@ -147,7 +151,11 @@ public:
      * @param t2 Second transition
      * @return true if transitions conflict
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static bool hasConflict(const Transition<StateType> &t1, const Transition<StateType> &t2) {
         // Check if exit sets intersect
         for (const auto &state : t1.exitSet) {
@@ -195,7 +203,11 @@ public:
      * @param enabledTransitions All enabled transitions for current event
      * @return Non-conflicting subset of transitions to execute
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static std::vector<Transition<StateType>>
     selectOptimalTransitions(std::vector<Transition<StateType>> &enabledTransitions) {
         // Compute exit sets for all transitions
@@ -242,7 +254,11 @@ public:
      * @param state State to get depth for
      * @return Depth (0 = root)
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType> static int getDepth(StateType state) {
+#else
+    template <typename StateType, typename PolicyType> static int getDepth(StateType state) {
+#endif
         int depth = 0;
         auto current = state;
 
@@ -259,22 +275,6 @@ public:
     }
 
     /**
-     * @brief Check if a transition is enabled for an event
-     *
-     * A transition is enabled if:
-     * 1. Source state is active
-     * 2. Event matches transition's event descriptor
-     * 3. Condition evaluates to true (if present)
-     *
-     * @tparam StateType State enum or identifier type
-     * @tparam EventType Event enum or identifier type
-     * @param sourceState Source state of transition
-     * @param transitionEvent Event descriptor of transition
-     * @param currentEvent Current event being processed
-     * @param isActive Predicate to check if source state is active
-     * @return true if transition is enabled
-     */
-    /**
      * @brief Compute and sort states to exit for microstep execution
      *
      * ARCHITECTURE.MD: Zero Duplication Principle - Shared exit computation logic
@@ -287,7 +287,11 @@ public:
      * @param activeStates Current active states
      * @return States to exit in reverse document order
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static std::vector<StateType> computeStatesToExit(const std::vector<Transition<StateType>> &transitions,
                                                       const std::vector<StateType> &activeStates) {
         std::vector<StateType> statesToExit;
@@ -398,7 +402,11 @@ public:
      * @param transitions Transitions to sort
      * @return Sorted transitions (by source state document order)
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static std::vector<Transition<StateType>> sortTransitionsBySource(std::vector<Transition<StateType>> transitions) {
         std::sort(transitions.begin(), transitions.end(),
                   [](const Transition<StateType> &a, const Transition<StateType> &b) {
@@ -419,7 +427,11 @@ public:
      * @param transitions Transitions to sort
      * @return Sorted transitions (by target state document order)
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static std::vector<Transition<StateType>> sortTransitionsByTarget(std::vector<Transition<StateType>> transitions) {
         std::sort(transitions.begin(), transitions.end(),
                   [](const Transition<StateType> &a, const Transition<StateType> &b) {
@@ -508,7 +520,11 @@ private:
      * @param target Target state to check
      * @return true if source is compound and target is a proper descendant
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static bool isInternalToDescendant(StateType source, StateType target) {
         bool sourceIsCompound = PolicyType::isCompoundState(source) && !PolicyType::isParallelState(source);
         if (!sourceIsCompound) return false;
@@ -529,7 +545,11 @@ private:
      * @param isInternal Whether the transition is type="internal"
      * @return Effective LCA state, or nullopt if no common ancestor found
      */
+#if __cpp_concepts >= 202002L
     template <typename StateType, ParallelStatePolicy PolicyType>
+#else
+    template <typename StateType, typename PolicyType>
+#endif
     static std::optional<StateType> computeEffectiveLCA(StateType source, StateType target, bool isInternal) {
         if (isInternal && isInternalToDescendant<StateType, PolicyType>(source, target)) {
             return source;  // Source is the LCA - don't exit it

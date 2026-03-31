@@ -195,7 +195,11 @@ struct ConflictResolutionAlgorithms {
  * - Single Source of Truth: All conflict resolution logic in ConflictResolutionAlgorithms
  * - W3C SCXML Perfect Compliance: Full implementation of Appendix D.2 algorithm
  */
+#if __cpp_concepts >= 202002L
 template <ParallelStatePolicy StatePolicy> class ConflictResolutionHelper {
+#else
+template <typename StatePolicy> class ConflictResolutionHelper {
+#endif
 public:
     using State = typename StatePolicy::State;
     using TransitionDescriptor = ConflictResolutionAlgorithms::TransitionDescriptor<State>;
@@ -222,7 +226,7 @@ public:
      *
      * @par Example
      * @code
-     * // Given hierarchy: S0 → { S01 → S011, S02 }
+     * // Given hierarchy: S0 -> { S01 -> S011, S02 }
      * // Transition from S011 to S02
      * auto exitSet = ConflictResolutionHelper<Policy>::computeExitSet(State::S011, State::S02);
      * // Returns: [S011, S01] (exit both S011 and S01 to reach LCA S0)

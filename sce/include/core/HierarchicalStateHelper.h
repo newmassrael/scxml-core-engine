@@ -21,9 +21,28 @@
 #include <algorithm>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <vector>
 
 namespace SCE::Core {
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// C++17-compatible trait for ParallelStatePolicy detection
+// Used in if constexpr to check if a policy supports parallel state operations.
+// ═══════════════════════════════════════════════════════════════════════════════
+template<typename P, typename = void>
+struct IsParallelStatePolicyTrait : std::false_type {};
+template<typename P>
+struct IsParallelStatePolicyTrait<P, std::void_t<
+    decltype(P::isParallelState(std::declval<typename P::State>())),
+    decltype(P::getParallelRegions(std::declval<typename P::State>())),
+    decltype(P::isDescendantOf(std::declval<typename P::State>(), std::declval<typename P::State>())),
+    decltype(P::getDocumentOrder(std::declval<typename P::State>())),
+    decltype(P::isFinalState(std::declval<typename P::State>()))
+>> : std::true_type {};
+
+template<typename P>
+inline constexpr bool IsParallelStatePolicy = IsParallelStatePolicyTrait<P>::value;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Unified Hierarchical Algorithms (Single Source of Truth)
@@ -179,14 +198,18 @@ struct HierarchicalAlgorithms {
  *
  * Ensures zero duplication per ARCHITECTURE.md principles.
  */
+#if __cpp_concepts >= 202002L
 template <HierarchyPolicy StatePolicy> class HierarchicalStateHelper {
+#else
+template <typename StatePolicy> class HierarchicalStateHelper {
+#endif
 public:
     using State = typename StatePolicy::State;
 
 private:
     // W3C SCXML 3.4: Add parallel region children to entry chain if StatePolicy supports parallel states
     static void addParallelRegions(std::vector<State> &chain, State leafState) {
-        if constexpr (ParallelStatePolicy<StatePolicy>) {
+        if constexpr (IsParallelStatePolicy<StatePolicy>) {
             SCE_LOG_DEBUG("HierarchicalStateHelper::buildEntryChain - Checking if leafState {} is parallel",
                       static_cast<int>(leafState));
             if (StatePolicy::isParallelState(leafState)) {
@@ -240,7 +263,7 @@ public:
      *
      * @par Example
      * @code
-     * // Given hierarchy: S0 (root) → S01 (child) → S011 (grandchild)
+     * // Given hierarchy: S0 (root) -> S01 (child) -> S011 (grandchild)
      * auto chain = HierarchicalStateHelper<Policy>::buildEntryChain(State::S011);
      * // Returns: [State::S0, State::S01, State::S011]
      *
@@ -440,11 +463,11 @@ public:
      * W3C SCXML 3.12 requires hierarchical state exit from descendant to ancestor.
      * This method builds the complete exit chain for a state transition.
      *
-     * Exit order is child → parent, matching Interpreter's buildExitSetForDescendants().
+     * Exit order is child -> parent, matching Interpreter's buildExitSetForDescendants().
      *
      * @param fromState Current state to exit from
      * @param stopBeforeState Ancestor state to stop before (exclusive, not included in exit chain)
-     * @return Vector of states in exit order (leaf → ... → parent, excluding stopBeforeState)
+     * @return Vector of states in exit order (leaf -> ... -> parent, excluding stopBeforeState)
      *
      * @par Thread Safety
      * This method is thread-safe and reentrant.
@@ -455,7 +478,7 @@ public:
      *
      * @par Example
      * @code
-     * // Given hierarchy: S0 → S01 → S011
+     * // Given hierarchy: S0 -> S01 -> S011
      * // Transition from S011 to S02 (sibling of S01)
      * // LCA is S0, so exit S011 and S01 (but not S0)
      * auto chain = HierarchicalStateHelper<Policy>::buildExitChain(State::S011, State::S0);
@@ -470,7 +493,7 @@ public:
      * @par W3C SCXML 3.12 Compliance
      * Matches Interpreter's buildExitSetForDescendants() behavior:
      * - Builds exit set from active state up to (but not including) LCA
-     * - Maintains child → parent exit order
+     * - Maintains child -> parent exit order
      * - Used for external transitions with proper LCA calculation
      */
     static std::vector<State> buildExitChain(State fromState, State stopBeforeState) {
@@ -485,11 +508,11 @@ public:
      * W3C SCXML 3.12: After finding LCA, enter states from LCA down to target.
      * This method builds the entry chain excluding the parent (LCA) itself.
      *
-     * Entry order is parent → child, matching Interpreter's hierarchical entry.
+     * Entry order is parent -> child, matching Interpreter's hierarchical entry.
      *
      * @param targetState Target state to enter
      * @param parentState Parent state to start from (exclusive, not included in entry chain)
-     * @return Vector of states in entry order (parent → ... → target, excluding parentState)
+     * @return Vector of states in entry order (parent -> ... -> target, excluding parentState)
      *
      * @par Thread Safety
      * Thread-safe and reentrant.
@@ -500,7 +523,7 @@ public:
      *
      * @par Example
      * @code
-     * // Given hierarchy: S0 → S01 → S011
+     * // Given hierarchy: S0 -> S01 -> S011
      * // Transition from S02 to S011 (sibling transition)
      * // LCA is S0, so enter S01 and S011 (but not S0)
      * auto chain = HierarchicalStateHelper<Policy>::buildEntryChainFromParent(State::S011, State::S0);
@@ -542,7 +565,7 @@ public:
      *
      * @par Example
      * @code
-     * // Given hierarchy: S0 → { S01 → S011, S02 → S021 }
+     * // Given hierarchy: S0 -> { S01 -> S011, S02 -> S021 }
      * auto lca = HierarchicalStateHelper<Policy>::findLCA(State::S011, State::S021);
      * // Returns: State::S0 (common parent of S01 and S02)
      *
@@ -583,7 +606,7 @@ public:
      *
      * @par Example
      * @code
-     * // Given hierarchy: S0 → S01 → S011
+     * // Given hierarchy: S0 -> S01 -> S011
      * bool result = HierarchicalStateHelper<Policy>::isDescendantOf(State::S011, State::S0);
      * // Returns: true (S011 is descendant of S0)
      *
@@ -593,8 +616,8 @@ public:
      *
      * @par W3C SCXML Appendix D.2 Compliance
      * Used for optimal transition set selection:
-     * - If t1.source is descendant of t2.source → t1 preempts t2
-     * - Otherwise → t2 preempts t1 (document order)
+     * - If t1.source is descendant of t2.source -> t1 preempts t2
+     * - Otherwise -> t2 preempts t1 (document order)
      */
     static bool isDescendantOf(State descendant, State ancestor) {
         return HierarchicalAlgorithms::isDescendantOf(

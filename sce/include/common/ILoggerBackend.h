@@ -16,7 +16,7 @@
 
 #pragma once
 
-#include <source_location>
+#include "common/SourceLocation.h"
 #include <string>
 
 namespace SCE {
@@ -40,7 +40,7 @@ enum class LogLevel { Trace = 0, Debug = 1, Info = 2, Warn = 3, Error = 4, Criti
  * class MyCompanyLogger : public SCE::ILoggerBackend {
  * public:
  *     void log(LogLevel level, const std::string &message,
- *              const std::source_location &loc) override {
+ *              const SCE::source_location &loc) override {
  *         myCompanyLoggingSystem->write(level, message, loc.file_name(), loc.line());
  *     }
  *
@@ -68,7 +68,7 @@ public:
      * @param message Pre-formatted message (function name already included)
      * @param loc Source location (file, line, function)
      */
-    virtual void log(LogLevel level, const std::string &message, const std::source_location &loc) = 0;
+    virtual void log(LogLevel level, const std::string &message, const SCE::source_location &loc) = 0;
 
     /**
      * @brief Set minimum log level

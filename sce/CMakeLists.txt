@@ -49,7 +49,7 @@ option(SCE_USE_SPDLOG "Use spdlog for logging (default: ON)" ON)
 
 if(SCE_USE_SPDLOG)
     message(STATUS "SCE: Building with spdlog support (header-only mode)")
-    
+
     # spdlog: header-only mode (no compilation, include-only)
     add_library(spdlog_header_only INTERFACE)
     target_include_directories(spdlog_header_only INTERFACE
@@ -59,7 +59,7 @@ if(SCE_USE_SPDLOG)
         SPDLOG_HEADER_ONLY=1
         SPDLOG_FMT_EXTERNAL=0  # Use bundled fmt (header-only)
     )
-    
+
     # Create alias for compatibility
     add_library(spdlog::spdlog ALIAS spdlog_header_only)
 else()
@@ -96,7 +96,7 @@ target_include_directories(sce_core
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-target_compile_features(sce_core INTERFACE cxx_std_20)
+target_compile_features(sce_core INTERFACE cxx_std_17)
 
 # ============================================================================
 # sce_base: Compiled base utilities for AOT (no script engine dependency)
@@ -154,7 +154,7 @@ target_compile_options(sce_base
         -include common/DisableStdOut.h
 )
 
-target_compile_features(sce_base PUBLIC cxx_std_20)
+target_compile_features(sce_base PUBLIC cxx_std_17)
 
 # ============================================================================
 # sce_scripting: Script engines and engine-dependent helpers (optional)
