@@ -343,14 +343,9 @@ int main(int argc, char *argv[]) {
 
         // Validate --engine flag against compile-time engine selection
         if (!scriptEngine.empty()) {
-            constexpr const char *compiledEngineFlag =
-#ifdef SCE_SCRIPT_ENGINE_LUA
-                "lua";
-#else
-                "quickjs";
-#endif
-            if (scriptEngine != compiledEngineFlag) {
-                fprintf(stderr, "Error: This binary was compiled with SCE_SCRIPT_ENGINE=%s.\n", compiledEngineFlag);
+            const char *compiledEngineId = SCE::ScriptEngineProvider::getEngineId();
+            if (scriptEngine != compiledEngineId) {
+                fprintf(stderr, "Error: This binary was compiled with SCE_SCRIPT_ENGINE=%s.\n", compiledEngineId);
                 fprintf(stderr, "Rebuild with -DSCE_SCRIPT_ENGINE=%s to use that engine.\n", scriptEngine.c_str());
                 return 1;
             }

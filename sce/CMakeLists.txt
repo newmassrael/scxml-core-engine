@@ -310,18 +310,29 @@ endif()
 # Compile-time script engine selection for ScriptEngineProvider
 # Controls which engine ScriptEngineProvider::getScriptEngine() returns.
 # Both engines may still be compiled (SCE_ENABLE_LUA) for direct injection use cases.
-set(SCE_SCRIPT_ENGINE "quickjs" CACHE STRING "Default script engine: quickjs or lua")
+#
+# To add a new engine:
+#   1. Add engine id to _SCE_VALID_ENGINES and STRINGS list below
+#   2. Add prerequisite validation if needed (e.g., SCE_ENABLE_XXX check)
+#   3. Add engine singleton + metadata in ScriptEngineProvider.cpp
+set(SCE_SCRIPT_ENGINE "quickjs" CACHE STRING "Script engine for ScriptEngineProvider")
 set_property(CACHE SCE_SCRIPT_ENGINE PROPERTY STRINGS "quickjs" "lua")
 
-if(SCE_SCRIPT_ENGINE STREQUAL "lua" AND NOT SCE_ENABLE_LUA)
+# Normalize and validate engine id
+string(TOLOWER "${SCE_SCRIPT_ENGINE}" _SCE_ENGINE_LOWER)
+set(_SCE_VALID_ENGINES "quickjs" "lua")
+list(FIND _SCE_VALID_ENGINES "${_SCE_ENGINE_LOWER}" _SCE_ENGINE_INDEX)
+if(_SCE_ENGINE_INDEX EQUAL -1)
+    message(FATAL_ERROR "Unknown SCE_SCRIPT_ENGINE: '${SCE_SCRIPT_ENGINE}'. Valid engines: ${_SCE_VALID_ENGINES}")
+endif()
+
+# Per-engine prerequisite validation
+if(_SCE_ENGINE_LOWER STREQUAL "lua" AND NOT SCE_ENABLE_LUA)
     message(FATAL_ERROR "SCE_SCRIPT_ENGINE=lua requires SCE_ENABLE_LUA=ON")
 endif()
 
-if(SCE_SCRIPT_ENGINE STREQUAL "lua")
-    target_compile_definitions(sce_runtime PUBLIC SCE_SCRIPT_ENGINE_LUA)
-else()
-    target_compile_definitions(sce_runtime PUBLIC SCE_SCRIPT_ENGINE_QUICKJS)
-endif()
+string(TOUPPER "${_SCE_ENGINE_LOWER}" _SCE_ENGINE_UPPER)
+target_compile_definitions(sce_runtime PUBLIC "SCE_SCRIPT_ENGINE_${_SCE_ENGINE_UPPER}")
 message(STATUS "SCE: Script engine provider default: ${SCE_SCRIPT_ENGINE}")
 
 # Note: pugixml is header-only, no linking required
