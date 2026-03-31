@@ -543,11 +543,19 @@ After timer: Red
 ```
 sce/
 ├── include/
+│   ├── core/            # W3C algorithm helpers (header-only, zero dependencies)
 │   ├── common/          # Shared helpers (SendHelper, EventDataHelper)
+│   ├── scripting/       # Script engines (QuickJS, Lua 5.4)
+│   ├── static/          # AOT engine (StaticExecutionEngine)
 │   ├── runtime/         # Interpreter engine
-│   ├── scripting/       # QuickJS integration
-│   └── static/          # AOT engine base
+│   └── ...              # model, actions, events, states, parsing
 └── src/
+
+# 4-Tier Library Architecture (link only what you need):
+#   sce_core      → Header-only (pure static AOT, zero dependencies)
+#   sce_base      → + Logger, utilities (AOT with logging)
+#   sce_scripting → + QuickJS/Lua engines (static hybrid AOT)
+#   sce_runtime   → + Parser, StateMachine (full interpreter)
 
 tools/codegen/           # Code generator (Python + Jinja2)
 ├── codegen.py
@@ -800,7 +808,7 @@ sm.raiseExternal(Event::Update, R"({"temp": 25, "pressure": 1013})");
 
 ### ECMAScript Datamodel
 
-Full ECMAScript support via QuickJS for complex expressions:
+Full ECMAScript support via QuickJS or Lua 5.4 for complex expressions:
 
 ```xml
 <datamodel>

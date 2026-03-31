@@ -167,7 +167,7 @@ If you still see crashes:
 
 ```
 ┌─────────────────────────────────────┐
-│  Docker Container (Ubuntu 22.04)   │
+│  Docker Container (Ubuntu 24.04)   │
 ├─────────────────────────────────────┤
 │  ENV IN_DOCKER_TSAN=1              │
 │  ENV TSAN_OPTIONS="..."            │

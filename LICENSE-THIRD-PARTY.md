@@ -80,7 +80,26 @@ Permission is hereby granted, free of charge, to any person obtaining a copy...
 
 ---
 
-### 5. nlohmann/json
+### 5. Lua 5.4
+
+- **Purpose:** Lua scripting engine for ECMAScript-compatible expression evaluation (W3C SCXML 5.3)
+- **License:** MIT License
+- **Copyright:** 1994-2024 Lua.org, PUC-Rio
+- **Website:** https://www.lua.org/
+- **Used in:** Static Hybrid AOT tests, Interpreter engine (alternative to QuickJS)
+
+**License Text:**
+```
+Copyright (C) 1994-2024 Lua.org, PUC-Rio.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction...
+```
+
+---
+
+### 6. nlohmann/json
 
 - **Purpose:** JSON for Modern C++ (event data, HTTP payloads)
 - **License:** MIT License
@@ -104,6 +123,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy...
 | Dependency | License | Usage |
 |-----------|---------|-------|
 | QuickJS | MIT | ECMAScript expressions |
+| Lua 5.4 | MIT | ECMAScript-compatible expressions (alternative to QuickJS) |
 | spdlog | MIT | Logging |
 | pugixml | MIT | SCXML parsing |
 | nlohmann/json | MIT | JSON serialization |
@@ -139,13 +159,13 @@ grep "CPPHTTPLIB_VERSION" /usr/include/httplib.h
 
 ### SCE Dual License (LGPL-2.1/Commercial) + MIT Dependencies
 
-| Your License | QuickJS | spdlog | cpp-httplib | pugixml | nlohmann/json |
-|-------------|---------|--------|-------------|---------|---------------|
-| **MIT (Open Source)** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Apache 2.0** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **GPL v2/v3** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **BSD** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Commercial (Proprietary)** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Your License | QuickJS | Lua 5.4 | spdlog | cpp-httplib | pugixml | nlohmann/json |
+|-------------|---------|---------|--------|-------------|---------|---------------|
+| **MIT (Open Source)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Apache 2.0** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **GPL v2/v3** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **BSD** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Commercial (Proprietary)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 **Legend:**
 - ✅ Fully compatible (all dependencies are MIT)
@@ -168,6 +188,7 @@ Include this file (LICENSE-THIRD-PARTY.md) or equivalent attribution in:
 ```
 SCE uses the following third-party libraries:
 - QuickJS (MIT) - Copyright Fabrice Bellard, Charlie Gordon
+- Lua 5.4 (MIT) - Copyright Lua.org, PUC-Rio
 - spdlog (MIT) - Copyright Gabi Melman
 - cpp-httplib (MIT) - Copyright Yuji Hirose
 - pugixml (MIT) - Copyright Arseny Kapoulkine
@@ -180,11 +201,12 @@ SCE uses the following third-party libraries:
 
 All dependencies are open source. Sources available at:
 
-- **QuickJS:** https://bellard.org/quickjs/ (or sce/external/quickjs)
-- **spdlog:** https://github.com/gabime/spdlog
-- **cpp-httplib:** https://github.com/yhirose/cpp-httplib
+- **QuickJS:** https://bellard.org/quickjs/ (or third_party/quickjs)
+- **Lua 5.4:** https://www.lua.org/ (or third_party/lua)
+- **spdlog:** https://github.com/gabime/spdlog (or third_party/spdlog)
+- **cpp-httplib:** https://github.com/yhirose/cpp-httplib (or third_party/cpp-httplib)
 - **pugixml:** https://pugixml.org/ (or third_party/pugixml)
-- **nlohmann/json:** https://github.com/nlohmann/json
+- **nlohmann/json:** https://github.com/nlohmann/json (or third_party/nlohmann_json)
 
 ---
 
@@ -199,6 +221,5 @@ We provide compliance assistance as part of our Commercial License support.
 
 ---
 
-**Last Updated:** January 7, 2025
-**SCE Version:** 1.0
+**Last Updated:** March 31, 2026
 **Verified By:** SCE Development Team
