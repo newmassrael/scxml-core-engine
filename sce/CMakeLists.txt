@@ -410,20 +410,14 @@ endif()
 # WASM pthread configuration
 # All SCE library tiers must be compiled with pthread/atomics for --shared-memory linking
 if(EMSCRIPTEN)
-    target_compile_options(sce_base PRIVATE
-        -pthread
-        -sUSE_PTHREADS=1
-    )
+    set(_SCE_PTHREAD_TARGETS sce_base sce_runtime)
     if(SCE_HAS_SCRIPTING)
-        target_compile_options(sce_scripting PRIVATE
-            -pthread
-            -sUSE_PTHREADS=1
-        )
+        list(APPEND _SCE_PTHREAD_TARGETS sce_scripting)
     endif()
-    target_compile_options(sce_runtime PRIVATE
-        -pthread
-        -sUSE_PTHREADS=1
-    )
+    foreach(_target IN LISTS _SCE_PTHREAD_TARGETS)
+        target_compile_options(${_target} PRIVATE -pthread -sUSE_PTHREADS=1)
+    endforeach()
+
     target_link_options(sce_runtime PRIVATE
         -pthread
         -sUSE_PTHREADS=1

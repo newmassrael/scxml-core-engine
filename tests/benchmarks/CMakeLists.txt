@@ -318,12 +318,12 @@ add_custom_target(benchmark_quick
 add_custom_target(benchmark_compare_engines
     COMMAND ${CMAKE_COMMAND} -E echo "======== QuickJS (JSEngine) ========"
     COMMAND benchmark_jsengine
-        --benchmark_filter="SimpleExpression$|VariableOperations$|ScriptExecutionLatency$|SessionCreation$|SessionLookup$"
+        "--benchmark_filter=SimpleExpression$$|VariableOperations$$|ScriptExecutionLatency$$|SessionCreation$$|SessionLookup$$"
         --benchmark_format=console
     COMMAND ${CMAKE_COMMAND} -E echo ""
     COMMAND ${CMAKE_COMMAND} -E echo "======== Lua 5.4 (LuaEngine) ========"
     COMMAND benchmark_luaengine
-        --benchmark_filter="SimpleExpression$|VariableOperations$|ScriptExecutionLatency$|NativeSimpleExpression$|NativeMathExpression$|NativeScriptExecutionLatency$|SessionCreation$|SessionLookup$"
+        "--benchmark_filter=SimpleExpression$$|VariableOperations$$|ScriptExecutionLatency$$|NativeSimpleExpression$$|NativeMathExpression$$|NativeScriptExecutionLatency$$|SessionCreation$$|SessionLookup$$"
         --benchmark_format=console
     DEPENDS benchmark_jsengine benchmark_luaengine
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

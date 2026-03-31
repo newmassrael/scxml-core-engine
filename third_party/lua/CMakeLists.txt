@@ -45,15 +45,17 @@ target_include_directories(lua54
 )
 
 # Platform-specific definitions
-if(UNIX AND NOT EMSCRIPTEN)
-    target_compile_definitions(lua54 PRIVATE LUA_USE_POSIX LUA_USE_DLOPEN)
-    target_link_libraries(lua54 PRIVATE m dl)
-elseif(EMSCRIPTEN)
+if(EMSCRIPTEN)
     # WASM: POSIX subset available via Emscripten, no dlopen
     target_compile_definitions(lua54 PRIVATE LUA_USE_POSIX)
     target_link_libraries(lua54 PRIVATE m)
     # WASM pthread: Required for --shared-memory linking compatibility
     target_compile_options(lua54 PRIVATE -pthread -sUSE_PTHREADS=1)
+elseif(WIN32)
+    # Windows: No extra definitions needed (Lua defaults to Windows APIs)
+elseif(UNIX)
+    target_compile_definitions(lua54 PRIVATE LUA_USE_POSIX LUA_USE_DLOPEN)
+    target_link_libraries(lua54 PRIVATE m dl)
 endif()
 
 # Suppress warnings in third-party code (Lua uses its own coding style)
