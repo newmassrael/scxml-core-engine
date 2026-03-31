@@ -37,7 +37,7 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - `core/` — W3C algorithm helpers (state entry/exit, event processing, conflict resolution, parallel orchestration)
 - `common/` — Header-only validators and shared computation (AssignHelper, SendHelper, ForeachValidator, etc.)
 - `core/LogMacros.h` — Conditional logging (no-ops when standalone)
-- C++20 concepts and interfaces (`StatePolicyConcepts.h`, `EventQueueConcept.h`)
+- C++20 concepts and interfaces (`StatePolicyConcepts.h`, `EventQueueConcept.h`) — guarded by `__cpp_concepts`, degrades to `void_t` traits on C++17
 
 **Link target**: Pure static AOT generated code with no scripting needs.
 
@@ -105,6 +105,23 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 | Static Hybrid AOT (JSEngine expressions) | `sce_scripting` | + Script engines |
 | Interpreter / Full runtime | `sce_runtime` | + Parser, StateMachine, everything |
 | Header-only (embedded, minimal) | `sce_core` | Templates and concepts only |
+
+### C++ Standard Compatibility
+
+`sce_core` and `sce_base` target C++17 minimum for cross-compilation to constrained toolchains (e.g., QNX GCC 8.3). C++20 features are conditionally enabled at compile time.
+
+| Tier | C++ Minimum | C++20 Behavior | Compatibility Mechanism |
+|------|-------------|----------------|------------------------|
+| `sce_core` | C++17 | Concepts enabled, zero-cost constraints | `__cpp_concepts >= 202002L` guard; falls back to `void_t` type traits |
+| `sce_base` | C++17 | `std::source_location`, `std::format` | `SCE::source_location` shim (`SourceLocation.h`); `fmt::format` → plain string fallback (`LogMacros.h`) |
+| `sce_scripting` | C++20 | Full C++20 features | QuickJS/Lua engines require modern standard library |
+| `sce_runtime` | C++20 | Full C++20 features | Interpreter infrastructure requires C++20 |
+
+**Key shims**:
+- `SCE::source_location` — aliases `std::source_location` on C++20, provides stub on C++17
+- `LogMacros.h` — `std::format` → `fmt::format` (spdlog bundled) → plain string fallback chain
+- `SendHelper.h` — `SCE::detail::starts_with()` dual-mode helper (C++20 `std::string::starts_with` or manual)
+- `StatePolicyConcepts.h` — `void_t` type traits always available; concepts aliased on C++20, `constexpr bool` on C++17
 
 ---
 

@@ -963,7 +963,10 @@ std::string EcmaScriptToLuaTransformer::transformArrayMethods(const std::string 
 }
 
 std::string EcmaScriptToLuaTransformer::transformStringConcat(const std::string &input) const {
-    // Leave + as-is; Lua runtime _plus() helper handles type dispatch
+    // Leave + as-is; Lua string metatable __add handles type dispatch at runtime.
+    // Limitation: Lua auto-coerces numeric strings before invoking __add, so
+    // "5" + "3" yields 8 (Lua native) instead of "53" (ECMAScript). This does not
+    // affect W3C SCXML conformance as no test relies on numeric-string concatenation.
     return input;
 }
 
@@ -1165,41 +1168,57 @@ std::string EcmaScriptToLuaTransformer::transformDOMMethods(const std::string &i
 
 std::string EcmaScriptToLuaTransformer::transformObjectLiterals(const std::string &input) const {
     // ECMAScript {key: value} → Lua {key = value}
-    // Only transform colon after identifier keys inside braces (not in ternary, labels, etc.)
+    // Track ternary '?' operators per brace scope so their ':' colons are not
+    // mistaken for object-key separators (runs before transformTernaryOperator).
     std::string result;
     result.reserve(input.size());
     int braceDepth = 0;
+    int ternaryCount = 0;
+    std::vector<int> ternaryStack;
 
     for (size_t i = 0; i < input.size(); ++i) {
         if (input[i] == '{') {
             ++braceDepth;
+            ternaryStack.push_back(ternaryCount);
+            ternaryCount = 0;
             result += input[i];
         } else if (input[i] == '}') {
             --braceDepth;
+            if (!ternaryStack.empty()) {
+                ternaryCount = ternaryStack.back();
+                ternaryStack.pop_back();
+            }
+            result += input[i];
+        } else if (input[i] == '?' && braceDepth > 0) {
+            ++ternaryCount;
             result += input[i];
         } else if (input[i] == ':' && braceDepth > 0) {
-            // Check if preceded by an identifier or string placeholder (object key)
-            size_t keyEnd = i;
-            while (keyEnd > 0 && std::isspace(static_cast<unsigned char>(input[keyEnd - 1]))) --keyEnd;
-            if (keyEnd > 0 && (std::isalnum(static_cast<unsigned char>(input[keyEnd - 1])) ||
-                               input[keyEnd - 1] == '_')) {
-                result += " =";
-            } else if (keyEnd > 0 && input[keyEnd - 1] == '\x01') {
-                // JSON string key placeholder: \x01STR<n>\x01: value → [\x01STR<n>\x01] = value
-                // Find the start of the placeholder
-                size_t placeholderEnd = keyEnd;
-                size_t placeholderStart = keyEnd - 1;
-                while (placeholderStart > 0 && input[placeholderStart - 1] != '\x01') --placeholderStart;
-                if (placeholderStart > 0) --placeholderStart;
-                // Replace the placeholder in result with bracketed form
-                std::string placeholder = input.substr(placeholderStart, placeholderEnd - placeholderStart);
-                size_t resultPlaceholderPos = result.rfind(placeholder);
-                if (resultPlaceholderPos != std::string::npos) {
-                    result.replace(resultPlaceholderPos, placeholder.size(), "[" + placeholder + "]");
-                }
-                result += " =";
-            } else {
+            if (ternaryCount > 0) {
+                // Ternary colon — leave as-is for transformTernaryOperator()
+                --ternaryCount;
                 result += input[i];
+            } else {
+                // Check if preceded by an identifier or string placeholder (object key)
+                size_t keyEnd = i;
+                while (keyEnd > 0 && std::isspace(static_cast<unsigned char>(input[keyEnd - 1]))) --keyEnd;
+                if (keyEnd > 0 && (std::isalnum(static_cast<unsigned char>(input[keyEnd - 1])) ||
+                                   input[keyEnd - 1] == '_')) {
+                    result += " =";
+                } else if (keyEnd > 0 && input[keyEnd - 1] == '\x01') {
+                    // JSON string key placeholder: \x01STR<n>\x01: value → [\x01STR<n>\x01] = value
+                    size_t placeholderEnd = keyEnd;
+                    size_t placeholderStart = keyEnd - 1;
+                    while (placeholderStart > 0 && input[placeholderStart - 1] != '\x01') --placeholderStart;
+                    if (placeholderStart > 0) --placeholderStart;
+                    std::string placeholder = input.substr(placeholderStart, placeholderEnd - placeholderStart);
+                    size_t resultPlaceholderPos = result.rfind(placeholder);
+                    if (resultPlaceholderPos != std::string::npos) {
+                        result.replace(resultPlaceholderPos, placeholder.size(), "[" + placeholder + "]");
+                    }
+                    result += " =";
+                } else {
+                    result += input[i];
+                }
             }
         } else {
             result += input[i];
