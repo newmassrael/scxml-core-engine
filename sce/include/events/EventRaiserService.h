@@ -28,8 +28,8 @@ public:
      * Must be called before getInstance(). Allows dependency injection
      * for testing with mock implementations.
      *
-     * Session validation uses ScriptEngineProvider::getSessionManager() dynamically,
-     * resolving to whichever engine is active (JSEngine or LuaEngine).
+     * Session validation uses ScriptEngineProvider::getSessionManager(),
+     * resolved at compile time to the configured engine (JSEngine or LuaEngine).
      *
      * @param registry EventRaiser registry implementation
      */

@@ -69,18 +69,12 @@ bool EventRaiserService::registerEventRaiser(const std::string &sessionId, std::
         return false;
     }
 
-    // W3C SCXML: Validate session existence via ScriptEngineProvider (engine-agnostic).
-    // Dynamically resolves to the active engine (JSEngine or LuaEngine) at call time.
-    try {
-        auto &sessionMgr = ScriptEngineProvider::getSessionManager();
-        if (!sessionMgr.hasSession(sessionId)) {
-            SCE_LOG_DEBUG("EventRaiserService: Session '{}' does not exist yet, deferring EventRaiser registration",
-                          sessionId);
-            return false;
-        }
-    } catch (const std::exception &e) {
-        // ScriptEngineProvider not configured during early startup — skip validation
-        SCE_LOG_DEBUG("EventRaiserService: ScriptEngineProvider not available, skipping session check: {}", e.what());
+    // W3C SCXML: Validate session existence via ScriptEngineProvider (compile-time selected engine).
+    auto &sessionMgr = ScriptEngineProvider::getSessionManager();
+    if (!sessionMgr.hasSession(sessionId)) {
+        SCE_LOG_DEBUG("EventRaiserService: Session '{}' does not exist yet, deferring EventRaiser registration",
+                      sessionId);
+        return false;
     }
 
     // Check if already registered to avoid duplicates

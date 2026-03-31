@@ -3,9 +3,6 @@
 #include "core/LogMacros.h"
 #include "TestSummaryHelper.h"
 #include "scripting/ScriptEngineProvider.h"
-#ifdef SCE_ENABLE_LUA
-#include "scripting/LuaEngine.h"
-#endif
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -203,7 +200,7 @@ int main(int argc, char *argv[]) {
         bool runInterpreter = true;                // run Interpreter engine tests (default: true)
         bool runAot = true;                        // run AOT engine tests (default: true)
         bool saveFailedLogs = true;                // save debug logs for failed tests (default: true)
-        std::string scriptEngine = "quickjs";      // script engine: "quickjs" (default) or "lua"
+        std::string scriptEngine;                    // --engine flag: empty = use compile-time default
 
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -257,7 +254,8 @@ int main(int argc, char *argv[]) {
                 printf("  --fail-on-failure      Alias for --stop-on-fail\n");
                 printf("  --aot-only             Run only AOT engine tests (skip Interpreter)\n");
                 printf("  --interpreter-only     Run only Interpreter engine tests (skip AOT)\n");
-                printf("  --engine ENGINE         Script engine: 'quickjs' (default) or 'lua'\n");
+                printf("  --engine ENGINE         Validate compiled engine: 'quickjs' or 'lua'\n");
+                printf("                          (engine selected at build time via SCE_SCRIPT_ENGINE)\n");
                 printf("  --no-save-failed-logs  Disable saving debug logs for failed tests\n");
                 printf("  -h, --help             Show this help message\n");
                 printf("\n");
@@ -343,22 +341,22 @@ int main(int argc, char *argv[]) {
         std::filesystem::current_path(projectRoot);
         SCE_LOG_DEBUG("W3C CLI: Changed working directory to: {}", projectRoot.string());
 
-        // Configure script engine based on --engine flag
-        if (scriptEngine == "lua") {
-#ifdef SCE_ENABLE_LUA
-            SCE::ScriptEngineProvider::setScriptEngineFactory(
-                []() -> SCE::IScriptEngine & { return SCE::LuaEngine::instance(); });
-            SCE::ScriptEngineProvider::setSessionManagerFactory(
-                []() -> SCE::ISessionManager & { return SCE::LuaEngine::instance(); });
-            SCE::Logger::info("W3C CLI: Using Lua 5.4 script engine");
+        // Validate --engine flag against compile-time engine selection
+        if (!scriptEngine.empty()) {
+            constexpr const char *compiledEngineFlag =
+#ifdef SCE_SCRIPT_ENGINE_LUA
+                "lua";
 #else
-            fprintf(stderr, "Error: Lua engine not available (built without SCE_ENABLE_LUA)\n");
-            return 1;
+                "quickjs";
 #endif
-        } else {
-            // Default: QuickJS (no provider change needed)
-            SCE::Logger::info("W3C CLI: Using QuickJS script engine (default)");
+            if (scriptEngine != compiledEngineFlag) {
+                fprintf(stderr, "Error: This binary was compiled with SCE_SCRIPT_ENGINE=%s.\n", compiledEngineFlag);
+                fprintf(stderr, "Rebuild with -DSCE_SCRIPT_ENGINE=%s to use that engine.\n", scriptEngine.c_str());
+                return 1;
+            }
         }
+        SCE_LOG_INFO("W3C CLI: Using {} script engine (compile-time selected)",
+                     SCE::ScriptEngineProvider::getEngineName());
 
         SCE::Logger::info("W3C CLI: Starting W3C SCXML 1.0 Compliance Test Suite");
         SCE_LOG_INFO("W3C CLI: Resources: {}", resourcePath);

@@ -307,6 +307,23 @@ if(SCE_ENABLE_LUA)
     target_compile_definitions(sce_runtime PUBLIC SCE_ENABLE_LUA)
 endif()
 
+# Compile-time script engine selection for ScriptEngineProvider
+# Controls which engine ScriptEngineProvider::getScriptEngine() returns.
+# Both engines may still be compiled (SCE_ENABLE_LUA) for direct injection use cases.
+set(SCE_SCRIPT_ENGINE "quickjs" CACHE STRING "Default script engine: quickjs or lua")
+set_property(CACHE SCE_SCRIPT_ENGINE PROPERTY STRINGS "quickjs" "lua")
+
+if(SCE_SCRIPT_ENGINE STREQUAL "lua" AND NOT SCE_ENABLE_LUA)
+    message(FATAL_ERROR "SCE_SCRIPT_ENGINE=lua requires SCE_ENABLE_LUA=ON")
+endif()
+
+if(SCE_SCRIPT_ENGINE STREQUAL "lua")
+    target_compile_definitions(sce_runtime PUBLIC SCE_SCRIPT_ENGINE_LUA)
+else()
+    target_compile_definitions(sce_runtime PUBLIC SCE_SCRIPT_ENGINE_QUICKJS)
+endif()
+message(STATUS "SCE: Script engine provider default: ${SCE_SCRIPT_ENGINE}")
+
 # Note: pugixml is header-only, no linking required
 
 # WASM pthread configuration for EventDispatcherImpl and JSEngine

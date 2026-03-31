@@ -2,61 +2,51 @@
 
 #include "IScriptEngine.h"
 #include "ISessionManager.h"
-#include <functional>
-#include <mutex>
+
+#if !defined(SCE_SCRIPT_ENGINE_LUA) && !defined(SCE_SCRIPT_ENGINE_QUICKJS)
+    #error "SCE_SCRIPT_ENGINE_* not defined. Link sce_runtime or set SCE_SCRIPT_ENGINE via CMake."
+#endif
 
 namespace SCE {
 
 /**
- * @brief Configurable provider for script engine instances
+ * @brief Compile-time configured provider for script engine instances
  *
- * Replaces direct JSEngine::instance() calls with a configurable provider pattern.
- * Default: JSEngine singleton (backward-compatible).
- * Can be reconfigured to provide LuaEngine or any IScriptEngine implementation.
+ * Engine selection is determined at build time via CMake SCE_SCRIPT_ENGINE option.
+ * Default: JSEngine (QuickJS). Alternative: LuaEngine (Lua 5.4).
  *
- * Thread-safe: All methods are protected by mutex.
+ * Build configuration:
+ *   cmake -DSCE_SCRIPT_ENGINE=quickjs  (default)
+ *   cmake -DSCE_SCRIPT_ENGINE=lua      (requires SCE_ENABLE_LUA=ON)
+ *
+ * Zero overhead: no mutex, no std::function, no runtime factory.
+ * Each call resolves to a direct singleton reference at compile time.
  */
 class ScriptEngineProvider {
 public:
-    using EngineFactory = std::function<IScriptEngine &()>;
-    using SessionManagerFactory = std::function<ISessionManager &()>;
-
     /**
-     * @brief Get the default script engine instance
-     * @return Reference to the configured script engine
+     * @brief Get the compile-time selected script engine instance
+     * @return Reference to JSEngine::instance() or LuaEngine::instance()
      */
     static IScriptEngine &getScriptEngine();
 
     /**
-     * @brief Get the default session manager instance
-     * @return Reference to the configured session manager
+     * @brief Get the compile-time selected session manager instance
+     * @return Reference to the same engine as getScriptEngine() (implements both interfaces)
      */
     static ISessionManager &getSessionManager();
 
     /**
-     * @brief Configure the script engine provider
-     * @param factory Function that returns a reference to the desired IScriptEngine
-     *
-     * Must be called before any getScriptEngine() calls, typically at application startup.
-     * Not intended for runtime switching between engines.
+     * @brief Get the compile-time selected engine name for logging
+     * @return "QuickJS" or "Lua 5.4"
      */
-    static void setScriptEngineFactory(EngineFactory factory);
-
-    /**
-     * @brief Configure the session manager provider
-     * @param factory Function that returns a reference to the desired ISessionManager
-     */
-    static void setSessionManagerFactory(SessionManagerFactory factory);
-
-    /**
-     * @brief Reset to default (JSEngine::instance()) — primarily for testing
-     */
-    static void resetToDefault();
-
-private:
-    static EngineFactory &scriptEngineFactory();
-    static SessionManagerFactory &sessionManagerFactory();
-    static std::mutex &mutex();
+    static constexpr const char *getEngineName() {
+#ifdef SCE_SCRIPT_ENGINE_LUA
+        return "Lua 5.4";
+#else
+        return "QuickJS";
+#endif
+    }
 };
 
 }  // namespace SCE
