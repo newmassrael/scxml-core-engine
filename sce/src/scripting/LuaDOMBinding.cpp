@@ -123,12 +123,12 @@ int LuaDOMBinding::lua_getElementsByTagName(lua_State *L) {
         }
     }
 
-    // Create Lua table with 0-based indexing for JavaScript compatibility
-    // ECMAScript expressions use [0], [1] etc. to access DOM results
+    // Create Lua table with 1-based indexing (Lua convention)
+    // ECMAScript [0],[1] are transformed to Lua [1],[2] by EcmaScriptToLuaTransformer
     lua_newtable(L);
     for (size_t i = 0; i < elements.size(); ++i) {
         pushElementObject(L, elements[i]);
-        lua_rawseti(L, -2, static_cast<int>(i));
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
     }
 
     return 1;
