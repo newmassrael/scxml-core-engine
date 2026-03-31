@@ -245,10 +245,7 @@ BENCHMARK_REGISTER_F(LuaEngineFixture, ConcurrentSessionCreation)
 
 BENCHMARK_DEFINE_F(LuaEngineFixture, ConcurrentScriptExecution)(benchmark::State &state) {
     std::string sessionId = generateUniqueLuaSessionId();
-
-    if (state.thread_index() == 0) {
-        engine_->createSession(sessionId);
-    }
+    engine_->createSession(sessionId);
 
     // Same ECMAScript expression as JSEngineBenchmark (transformer converts Math→math)
     std::string script = "Math.sqrt(1234567) + Math.sin(0.5)";
@@ -258,9 +255,7 @@ BENCHMARK_DEFINE_F(LuaEngineFixture, ConcurrentScriptExecution)(benchmark::State
         benchmark::DoNotOptimize(result);
     }
 
-    if (state.thread_index() == 0) {
-        engine_->destroySession(sessionId);
-    }
+    engine_->destroySession(sessionId);
 
     state.SetItemsProcessed(state.iterations());
     state.SetLabel("threads=" + std::to_string(state.threads()));
@@ -274,19 +269,21 @@ BENCHMARK_REGISTER_F(LuaEngineFixture, ConcurrentScriptExecution)
     ->UseRealTime();
 
 BENCHMARK_DEFINE_F(LuaEngineFixture, ConcurrentSameSession)(benchmark::State &state) {
-    static std::string sharedSessionId;
-    static std::once_flag initFlag;
+    const std::string sessionId = "lua_shared_session";
 
-    std::call_once(initFlag, [this]() {
-        sharedSessionId = generateUniqueLuaSessionId();
-        engine_->createSession(sharedSessionId);
-    });
+    if (state.thread_index() == 0) {
+        engine_->createSession(sessionId);
+    }
 
     std::string script = "1 + 2 + 3";
 
     for (auto _ : state) {
-        auto result = engine_->evaluateExpression(sharedSessionId, script);
+        auto result = engine_->evaluateExpression(sessionId, script);
         benchmark::DoNotOptimize(result);
+    }
+
+    if (state.thread_index() == 0) {
+        engine_->destroySession(sessionId);
     }
 
     state.SetItemsProcessed(state.iterations());
