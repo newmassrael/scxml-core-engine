@@ -76,14 +76,38 @@ public:
     /**
      * @brief Build type-preserving JSON string from typed params
      *
-     * W3C SCXML 5.10: Constructs JSON that preserves numeric types (int/double remain unquoted).
+     * W3C SCXML 5.10: Constructs JSON that preserves all ScriptValue types:
+     * - Primitives: int/double remain unquoted, bool as true/false, string as quoted
+     * - Structures: ScriptArray as JSON array, ScriptObject as JSON object (recursive)
+     * - Nullish: ScriptNull and ScriptUndefined both map to JSON null
+     *
      * Used for scheduler event data and child-to-parent communication where typedData cannot be
      * passed directly as ScriptValue (e.g., PullScheduler stores string-only event data).
      *
+     * @note ScriptUndefined is serialized as JSON null (JSON has no undefined concept).
+     *       Roundtrip via jsonStringToScriptValue will recover it as ScriptNull, not ScriptUndefined.
+     *
      * @param typedParams Map of param names to ScriptValue values
-     * @return JSON string with type-preserving values (e.g., {"aParam":1} not {"aParam":"1"})
+     * @return JSON string with type-preserving values (e.g., {"aParam":1,"arr":[1,2],"obj":{"k":"v"}})
      */
     static std::string buildJsonFromTypedParams(const std::map<std::string, ScriptValue> &typedParams);
+
+    /**
+     * @brief Convert ScriptValue to JSON string
+     *
+     * W3C SCXML B.2: Recursive ScriptValue -> JSON string conversion.
+     * Symmetric counterpart to jsonStringToScriptValue.
+     * Handles all ScriptValue types including nested ScriptArray/ScriptObject.
+     *
+     * Unlike jsonStringToScriptValue (which returns optional due to parse failure),
+     * this always succeeds because every ScriptValue variant is JSON-representable.
+     *
+     * @note ScriptUndefined maps to JSON null; roundtrip recovers as ScriptNull.
+     *
+     * @param value ScriptValue to serialize
+     * @return JSON string representation (compact format)
+     */
+    static std::string scriptValueToJsonString(const ScriptValue &value);
 
     /**
      * @brief Parse JSON string into ScriptValue (engine-agnostic)

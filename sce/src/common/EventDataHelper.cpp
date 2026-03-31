@@ -33,30 +33,54 @@ ScriptValue EventDataHelper::buildScriptValueFromParams(const std::map<std::stri
     return obj;
 }
 
+// W3C SCXML B.2: Recursive ScriptValue → JSON conversion (inverse of jsonToScriptValue)
+// Note: ScriptUndefined → null (JSON lacks undefined); roundtrip yields ScriptNull
+static json scriptValueToJson(const ScriptValue &value) {
+    return std::visit(
+        [](auto &&val) -> json {
+            using T = std::decay_t<decltype(val)>;
+            if constexpr (std::is_same_v<T, ScriptNull> || std::is_same_v<T, ScriptUndefined>) {
+                return nullptr;
+            } else if constexpr (std::is_same_v<T, bool>) {
+                return val;
+            } else if constexpr (std::is_same_v<T, int64_t>) {
+                return val;
+            } else if constexpr (std::is_same_v<T, double>) {
+                return val;
+            } else if constexpr (std::is_same_v<T, std::string>) {
+                return val;
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<ScriptArray>>) {
+                json arr = json::array();
+                if (val) {
+                    for (const auto &elem : val->elements) {
+                        arr.push_back(scriptValueToJson(elem));
+                    }
+                }
+                return arr;
+            } else if constexpr (std::is_same_v<T, std::shared_ptr<ScriptObject>>) {
+                json obj = json::object();
+                if (val) {
+                    for (const auto &[key, prop] : val->properties) {
+                        obj[key] = scriptValueToJson(prop);
+                    }
+                }
+                return obj;
+            }
+            return nullptr;
+        },
+        value);
+}
+
 std::string EventDataHelper::buildJsonFromTypedParams(const std::map<std::string, ScriptValue> &typedParams) {
     json eventDataJson = json::object();
     for (const auto &[name, value] : typedParams) {
-        std::visit(
-            [&eventDataJson, &name](auto &&val) {
-                using T = std::decay_t<decltype(val)>;
-                if constexpr (std::is_same_v<T, int64_t>) {
-                    eventDataJson[name] = val;
-                } else if constexpr (std::is_same_v<T, double>) {
-                    eventDataJson[name] = val;
-                } else if constexpr (std::is_same_v<T, bool>) {
-                    eventDataJson[name] = val;
-                } else if constexpr (std::is_same_v<T, std::string>) {
-                    eventDataJson[name] = val;
-                } else if constexpr (std::is_same_v<T, ScriptNull> || std::is_same_v<T, ScriptUndefined>) {
-                    eventDataJson[name] = nullptr;
-                } else {
-                    // ScriptArray/ScriptObject: fall back to string representation
-                    eventDataJson[name] = nullptr;
-                }
-            },
-            value);
+        eventDataJson[name] = scriptValueToJson(value);
     }
     return JsonUtils::toCompactString(eventDataJson);
+}
+
+std::string EventDataHelper::scriptValueToJsonString(const ScriptValue &value) {
+    return JsonUtils::toCompactString(scriptValueToJson(value));
 }
 
 // W3C SCXML B.2: Recursive JSON → ScriptValue conversion
