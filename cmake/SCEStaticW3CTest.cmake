@@ -20,9 +20,17 @@ function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
     set(METADATA_FILE "${RESOURCE_DIR}/metadata.txt")
     set(AOT_TEST_HEADER "${CMAKE_SOURCE_DIR}/tests/w3c/aot_tests/Test${TEST_NUM}.h")
 
+    # Skip generation if header already exists (preserve hand-crafted files
+    # with custom PASS_STATE, timeouts, or detailed documentation)
+    if(EXISTS "${AOT_TEST_HEADER}")
+        return()
+    endif()
+
     # Select template based on test type
     if("${TEST_TYPE}" STREQUAL "HTTP")
         set(TEMPLATE_FILE "${CMAKE_SOURCE_DIR}/tests/w3c/aot_tests/HttpAotTestTemplate.h.in")
+    elseif("${TEST_TYPE}" STREQUAL "SCHEDULED")
+        set(TEMPLATE_FILE "${CMAKE_SOURCE_DIR}/tests/w3c/aot_tests/ScheduledAotTestTemplate.h.in")
     else()
         set(TEMPLATE_FILE "${CMAKE_SOURCE_DIR}/tests/w3c/aot_tests/SimpleAotTestTemplate.h.in")
     endif()
@@ -76,6 +84,20 @@ endfunction()
 # Automatically discovers and processes sub SCXML files (e.g., test226sub1.txml)
 #
 function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
+    # Parse optional TYPE parameter (SIMPLE, SCHEDULED, HTTP)
+    cmake_parse_arguments(_SWT "" "TYPE" "" ${ARGN})
+    if(NOT _SWT_TYPE)
+        set(_SWT_TYPE "SIMPLE")
+    endif()
+
+    # W3C Test Registration Automation:
+    # 1. Accumulate test number into W3C_AOT_TESTS (eliminates manual list duplication)
+    list(APPEND W3C_AOT_TESTS ${TEST_NUM})
+    set(W3C_AOT_TESTS ${W3C_AOT_TESTS} PARENT_SCOPE)
+
+    # 2. Auto-generate TestXXX.h from template if not exists
+    sce_generate_aot_test_header(${TEST_NUM} "${_SWT_TYPE}")
+
     set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources/${TEST_NUM}")
     set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
     set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
@@ -233,8 +255,13 @@ endfunction()
 
 # sce_generate_static_w3c_test_batch: Generate C++ code for multiple W3C tests
 #
+# NOTE: PARENT_SCOPE propagation for W3C_AOT_TESTS and GENERATED_W3C_HEADERS
+# requires explicit forwarding from this wrapper function to the caller's scope.
 function(sce_generate_static_w3c_test_batch OUTPUT_DIR)
     foreach(TEST_NUM ${ARGN})
         sce_generate_static_w3c_test(${TEST_NUM} ${OUTPUT_DIR})
     endforeach()
+    # Propagate accumulated variables to caller's scope (grandparent of inner calls)
+    set(W3C_AOT_TESTS ${W3C_AOT_TESTS} PARENT_SCOPE)
+    set(GENERATED_W3C_HEADERS ${GENERATED_W3C_HEADERS} PARENT_SCOPE)
 endfunction()

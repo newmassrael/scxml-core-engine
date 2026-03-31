@@ -1,0 +1,24 @@
+#pragma once
+
+#include "ScheduledAotTest.h"
+#include "test@TEST_NUMBER@_sm.h"
+
+namespace SCE::W3C::AotTests {
+
+// clang-format off
+/**
+ * @brief W3C SCXML @SPECNUM@: @TEST_DESCRIPTION@
+ */
+// clang-format on
+
+struct Test@TEST_NUMBER@ : public ScheduledAotTest<Test@TEST_NUMBER@, @TEST_NUMBER@> {
+    // clang-format off
+    static constexpr const char *DESCRIPTION = "W3C SCXML @SPECNUM@: @TEST_DESCRIPTION@";
+    // clang-format on
+    using SM = SCE::Generated::test@TEST_NUMBER@::test@TEST_NUMBER@;
+};
+
+// Auto-register
+inline static AotTestRegistrar<Test@TEST_NUMBER@> registrar_Test@TEST_NUMBER@;
+
+}  // namespace SCE::W3C::AotTests

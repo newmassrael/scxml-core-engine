@@ -671,9 +671,11 @@ set(STATIC_W3C_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/w3c_static_generated")
 # Generate C++ code for W3C tests BEFORE defining executables
 include(${CMAKE_SOURCE_DIR}/cmake/SCEStaticW3CTest.cmake)
 
-# Initialize GENERATED_W3C_HEADERS before any sce_generate_static_w3c_test calls
-# This ensures proper accumulation across multiple function calls
+# Initialize GENERATED_W3C_HEADERS and W3C_AOT_TESTS before any sce_generate_static_w3c_test calls
+# W3C Test Registration Automation: W3C_AOT_TESTS is auto-accumulated by sce_generate_static_w3c_test()
+# Adding a new test = adding ONE sce_generate_static_w3c_test() call (TestXXX.h + registry auto-generated)
 set(GENERATED_W3C_HEADERS "")
+set(W3C_AOT_TESTS "")
 
 sce_generate_static_w3c_test(144 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.2: raise element inserts events at rear of internal queue (FIFO ordering) (Pure Static)
 sce_generate_static_w3c_test(147 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 4.3: if/elseif/else conditional execution (first true clause only) (Static Hybrid)
@@ -689,58 +691,57 @@ sce_generate_static_w3c_test(158 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.12.1: 
 sce_generate_static_w3c_test(159 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.12.1: error causes subsequent elements to be skipped (Static Hybrid)
 sce_generate_static_w3c_test(172 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.2: send eventexpr uses current value at evaluation time (Static Hybrid)
 sce_generate_static_w3c_test(173 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.3: send targetexpr uses current value at evaluation time (Static Hybrid)
-sce_generate_aot_test_header(174 "SIMPLE")  # Generate Test174.h from metadata.txt (Single Source of Truth)
 sce_generate_static_w3c_test(174 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4: send typeexpr uses current value at evaluation time (Static Hybrid)
-sce_generate_static_w3c_test(175 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.5: send delayexpr uses current value at evaluation time (Static Hybrid)
+sce_generate_static_w3c_test(175 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.2.5: send delayexpr uses current value at evaluation time (Static Hybrid)
 sce_generate_static_w3c_test(176 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.1: param uses current value at evaluation time (Static Hybrid)
 sce_generate_static_w3c_test(178 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.1: param - multiple key/value pairs with same keys (Static Hybrid)
 sce_generate_static_w3c_test(179 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.6: content element populates message body (Pure Static)
 sce_generate_static_w3c_test(183 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.7: send idlocation stores sendid value (Static Hybrid)
-sce_generate_static_w3c_test(185 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.5: send respects delay specification (Pure Static)
-sce_generate_static_w3c_test(186 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2: send evaluates args at evaluation time, not send time (Static Hybrid)
-sce_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.5: Delayed send cancellation on session termination (Pure Static)
+sce_generate_static_w3c_test(185 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.2.5: send respects delay specification (Pure Static)
+sce_generate_static_w3c_test(186 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.2: send evaluates args at evaluation time, not send time (Static Hybrid)
+sce_generate_static_w3c_test(187 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4.5: Delayed send cancellation on session termination (Pure Static)
 sce_generate_static_w3c_test(189 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: Internal queue priority via target="#_internal" (Pure Static)
 sce_generate_static_w3c_test(190 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: External queue priority via targetexpr (Static Hybrid)
-sce_generate_static_w3c_test(191 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.1: Inline <content> invoke with #_parent target (Pure Static)
-sce_generate_static_w3c_test(192 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: Inline <content> invoke with #_<invokeid> target (Pure Static)
+sce_generate_static_w3c_test(191 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4.1: Inline <content> invoke with #_parent target (Pure Static)
+sce_generate_static_w3c_test(192 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: Inline <content> invoke with #_<invokeid> target (Pure Static)
 sce_generate_static_w3c_test(193 ${STATIC_W3C_OUTPUT_DIR})  # type attribute for queue routing (W3C SCXML 6.2.4)
 sce_generate_static_w3c_test(194 ${STATIC_W3C_OUTPUT_DIR})  # invalid target raises error.execution (W3C SCXML 6.2)
 sce_generate_static_w3c_test(198 ${STATIC_W3C_OUTPUT_DIR})  # default event processor type (W3C SCXML 6.2)
 sce_generate_static_w3c_test(199 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2: unsupported send type raises error.execution (Pure Static)
 sce_generate_static_w3c_test(200 ${STATIC_W3C_OUTPUT_DIR})  # SCXML event processor support (W3C SCXML 6.2)
-sce_generate_static_w3c_test(201 ${STATIC_W3C_OUTPUT_DIR})  # BasicHTTP event processor (optional - W3C SCXML 6.2)
+sce_generate_static_w3c_test(201 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # BasicHTTP event processor (optional - W3C SCXML 6.2)
 sce_generate_static_w3c_test(205 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-sce_generate_static_w3c_test(207 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3: cancel tag - cannot cancel events in different sessions (invoke + delayed send)
-sce_generate_static_w3c_test(208 ${STATIC_W3C_OUTPUT_DIR})  # <cancel sendid="..."/> for delayed send cancellation (W3C SCXML 6.3)
-sce_generate_static_w3c_test(210 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3: sendidexpr for dynamic cancel (Static Hybrid)
+sce_generate_static_w3c_test(207 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.3: cancel tag - cannot cancel events in different sessions (invoke + delayed send)
+sce_generate_static_w3c_test(208 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # <cancel sendid="..."/> for delayed send cancellation (W3C SCXML 6.3)
+sce_generate_static_w3c_test(210 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.3: sendidexpr for dynamic cancel (Static Hybrid)
 sce_generate_static_w3c_test(215 ${STATIC_W3C_OUTPUT_DIR})  # typeexpr + inline <content>
-sce_generate_static_w3c_test(216 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: srcexpr runtime evaluation (Static Hybrid)
+sce_generate_static_w3c_test(216 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: srcexpr runtime evaluation (Static Hybrid)
 sce_generate_static_w3c_test(220 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 sce_generate_static_w3c_test(223 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-sce_generate_static_w3c_test(224 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3.1: invoke with idlocation (Static Hybrid)
+sce_generate_static_w3c_test(224 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.3.1: invoke with idlocation (Static Hybrid)
 sce_generate_static_w3c_test(225 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 sce_generate_static_w3c_test(226 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2/6.4: auto-discovers test226sub1.txml
-sce_generate_static_w3c_test(228 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3.1: invoke ID in done.invoke event (Static Hybrid)
-sce_generate_static_w3c_test(229 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.6: autoforward with inline content (Pure Static)
-sce_generate_static_w3c_test(230 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + autoforward (manual)
+sce_generate_static_w3c_test(228 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.3.1: invoke ID in done.invoke event (Static Hybrid)
+sce_generate_static_w3c_test(229 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4.6: autoforward with inline content (Pure Static)
+sce_generate_static_w3c_test(230 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # inline <content> + autoforward (manual)
 sce_generate_static_w3c_test(232 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
 sce_generate_static_w3c_test(233 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.5: finalize before done.invoke event processing (Static Hybrid)
 sce_generate_static_w3c_test(234 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.6: finalize only in invoking state (Static Hybrid)
 sce_generate_static_w3c_test(235 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: done.invoke.id event with inline content child (Pure Static)
-sce_generate_static_w3c_test(236 ${STATIC_W3C_OUTPUT_DIR})  # inline <content>
-sce_generate_static_w3c_test(237 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: invoke cancellation on state exit with inline content child
-sce_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: invoke with src attribute and inline content (Pure Static)
-sce_generate_static_w3c_test(240 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: invoke with namelist and param (Static Hybrid)
-sce_generate_static_w3c_test(241 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4.3: invoke namelist + param consistency validation (Static Hybrid)
-sce_generate_static_w3c_test(242 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: invoke src + inline content consistency (Pure Static)
-sce_generate_static_w3c_test(243 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: invoke inline content + param with child→parent event sending (Pure Static)
+sce_generate_static_w3c_test(236 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # inline <content>
+sce_generate_static_w3c_test(237 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: invoke cancellation on state exit with inline content child
+sce_generate_static_w3c_test(239 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: invoke with src attribute and inline content (Pure Static)
+sce_generate_static_w3c_test(240 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: invoke with namelist and param (Static Hybrid)
+sce_generate_static_w3c_test(241 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4.3: invoke namelist + param consistency validation (Static Hybrid)
+sce_generate_static_w3c_test(242 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: invoke src + inline content consistency (Pure Static)
+sce_generate_static_w3c_test(243 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: invoke inline content + param with child→parent event sending (Pure Static)
 sce_generate_static_w3c_test(244 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3.2: invoke inline content + namelist datamodel value passing (Static Hybrid)
 sce_generate_static_w3c_test(245 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3.2: invoke namelist with non-existent variable handling (Static Hybrid)
 sce_generate_static_w3c_test(247 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + done.invoke
-sce_generate_static_w3c_test(250 ${STATIC_W3C_OUTPUT_DIR})  # inline <content> + cancellation (manual test)
-sce_generate_static_w3c_test(252 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4: invoke cancellation ignores events from cancelled child (Pure Static)
+sce_generate_static_w3c_test(250 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # inline <content> + cancellation (manual test)
+sce_generate_static_w3c_test(252 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4: invoke cancellation ignores events from cancelled child (Pure Static)
 sce_generate_static_w3c_test(253 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.1: SCXML Event I/O Processor bidirectional communication with inline content child (Static Hybrid)
-sce_generate_static_w3c_test(276 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2/6.4: auto-discovers test276sub1.txml
+sce_generate_static_w3c_test(276 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.2/6.4: auto-discovers test276sub1.txml
 sce_generate_static_w3c_test(277 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.3: datamodel init error.execution
 sce_generate_static_w3c_test(278 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10: datamodel in non-entered state (requires wrapper)
 sce_generate_static_w3c_test(279 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding variable initialization
@@ -809,17 +810,17 @@ sce_generate_static_w3c_test(404 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: pa
 sce_generate_static_w3c_test(405 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.9/D.2: executable content execution order in transitions
 sce_generate_static_w3c_test(406 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.3: state entry order with parallel regions
 sce_generate_static_w3c_test(407 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.8: onexit handlers with datamodel variable updates
-sce_generate_static_w3c_test(409 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.12.1: state removal from active states during exit
-sce_generate_static_w3c_test(411 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.12.1: state addition to active states during entry
-sce_generate_static_w3c_test(412 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.3.2: initial transition executable content execution order
+sce_generate_static_w3c_test(409 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 3.12.1: state removal from active states during exit
+sce_generate_static_w3c_test(411 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 3.12.1: state addition to active states during entry
+sce_generate_static_w3c_test(412 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 3.3.2: initial transition executable content execution order
 sce_generate_static_w3c_test(413 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: parallel initial states with space-separated state IDs
 sce_generate_static_w3c_test(415 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.7.1: manual test (no Pass state)
 sce_generate_static_w3c_test(416 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.3.2: done.state.id event generation for compound states
 sce_generate_static_w3c_test(417 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.7.1: done.state event for parallel states
 sce_generate_static_w3c_test(419 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: eventless transition precedence over event-driven transitions
 sce_generate_static_w3c_test(421 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10.1: internal event priority over external events
-sce_generate_static_w3c_test(422 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.3: delayed send event scheduling
-sce_generate_static_w3c_test(423 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: external event queue processing
+sce_generate_static_w3c_test(422 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.3: delayed send event scheduling
+sce_generate_static_w3c_test(423 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 5.9.2: external event queue processing
 sce_generate_static_w3c_test(436 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: In() predicate in null data model
 sce_generate_static_w3c_test(444 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2/5.9: ECMAScript datamodel variable in condition
 sce_generate_static_w3c_test(445 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2.2: ECMAScript undefined variable initialization
@@ -851,35 +852,35 @@ sce_generate_static_w3c_test(506 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: i
 
 # W3C SCXML C.2: BasicHTTP Event I/O Processor tests (native builds only, not WASM)
 if(NOT EMSCRIPTEN)
-    sce_generate_static_w3c_test(509 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP Event I/O Processor POST method validation (Static Hybrid)
-    sce_generate_static_w3c_test(510 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP messages go to external queue (Static Hybrid)
-    sce_generate_static_w3c_test(513 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: manual test - BasicHTTP success response (Integration test only)
-    sce_generate_static_w3c_test(518 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP namelist encoding as POST parameters (Static Hybrid)
-    sce_generate_static_w3c_test(519 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP param encoding as POST parameters (Static)
-    sce_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP content element as message body (Static)
+    sce_generate_static_w3c_test(509 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP Event I/O Processor POST method validation (Static Hybrid)
+    sce_generate_static_w3c_test(510 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP messages go to external queue (Static Hybrid)
+    sce_generate_static_w3c_test(513 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: manual test - BasicHTTP success response (Integration test only)
+    sce_generate_static_w3c_test(518 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP namelist encoding as POST parameters (Static Hybrid)
+    sce_generate_static_w3c_test(519 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP param encoding as POST parameters (Static)
+    sce_generate_static_w3c_test(520 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP content element as message body (Static)
 endif()
 
 sce_generate_static_w3c_test(521 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4/6.2.5: error.communication on invalid targetexpr (Static Hybrid)
 
 if(NOT EMSCRIPTEN)
-    sce_generate_static_w3c_test(522 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP location field usage (Pure Static)
+    sce_generate_static_w3c_test(522 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP location field usage (Pure Static)
 endif()
 
 if(NOT EMSCRIPTEN)
-    sce_generate_static_w3c_test(531 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: _scxmleventname param overrides event name (Pure Static)
-    sce_generate_static_w3c_test(532 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: HTTP method name fallback for event naming (Pure Static)
+    sce_generate_static_w3c_test(531 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: _scxmleventname param overrides event name (Pure Static)
+    sce_generate_static_w3c_test(532 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: HTTP method name fallback for event naming (Pure Static)
 endif()
 
 sce_generate_static_w3c_test(533 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.13: internal transition exit set for non-compound states (Static Hybrid)
 
 if(NOT EMSCRIPTEN)
-    sce_generate_static_w3c_test(534 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP _scxmleventname parameter transmission (Static Hybrid)
+    sce_generate_static_w3c_test(534 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP _scxmleventname parameter transmission (Static Hybrid)
 endif()
 sce_generate_static_w3c_test(550 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding with expr attribute for data variable (Static Hybrid)
 sce_generate_static_w3c_test(551 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: early binding with inline content (Static Hybrid)
 sce_generate_static_w3c_test(552 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.2.2: external data loading via src attribute (Static Hybrid)
-sce_generate_static_w3c_test(553 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.2.4 & 5.11: send namelist error handling (Static Hybrid)
-sce_generate_static_w3c_test(554 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 6.4 & B.1: invoke with invalid namelist error handling (Pure Static)
+sce_generate_static_w3c_test(553 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.2.4 & 5.11: send namelist error handling (Static Hybrid)
+sce_generate_static_w3c_test(554 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 6.4 & B.1: invoke with invalid namelist error handling (Pure Static)
 sce_generate_static_w3c_test(557 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2: ECMAScript XML DOM assignment with inline and file content (Static Hybrid)
 sce_generate_static_w3c_test(558 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML B.2: ECMAScript whitespace normalization for non-XML content (Static Hybrid)
 sce_generate_static_w3c_test(560 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.10: _event.data param structure in ECMAScript datamodel (Static Hybrid)
@@ -887,7 +888,7 @@ sce_generate_static_w3c_test(561 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: E
 sce_generate_static_w3c_test(562 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9.2: ECMAScript content space normalization (Static Hybrid)
 
 if(NOT EMSCRIPTEN)
-    sce_generate_static_w3c_test(567 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: BasicHTTP param encoding in _event.data (Static Hybrid)
+    sce_generate_static_w3c_test(567 ${STATIC_W3C_OUTPUT_DIR} TYPE HTTP)  # W3C SCXML C.2: BasicHTTP param encoding in _event.data (Static Hybrid)
 endif()
 
 sce_generate_static_w3c_test(569 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.8: SCXML Event I/O processor location field (Static Hybrid)
@@ -898,46 +899,57 @@ if(NOT EMSCRIPTEN)
     sce_generate_static_w3c_test(577 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML C.2: error.communication on BasicHTTP send with no target
 endif()
 sce_generate_static_w3c_test(578 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 5.9/5.10: ECMAScript _event.data JSON object (Static Hybrid)
-sce_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.8: history default content execution (Static Hybrid)
-sce_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR})  # W3C SCXML 3.11: history state not in configuration (parallel)
+sce_generate_static_w3c_test(579 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 3.8: history default content execution (Static Hybrid)
+sce_generate_static_w3c_test(580 ${STATIC_W3C_OUTPUT_DIR} TYPE SCHEDULED)  # W3C SCXML 3.11: history state not in configuration (parallel)
 
 # ============================================================================
-# W3C Test Registry: Single Source of Truth for AOT vs Interpreter Classification
+# W3C Test Registration Automation
 # ============================================================================
 #
-# ARCHITECTURE: Automatic Test Classification System
+# SINGLE SOURCE OF TRUTH: sce_generate_static_w3c_test() calls above.
+# W3C_AOT_TESTS is auto-accumulated from these calls (Zero Duplication).
 #
-# Benefits:
-# - Single point of control (this file only)
-# - Automatic file management (no manual Test*.h, AllAotTests.h edits)
-# - Easy test migration (move number between lists)
-# ===========================================================================
-# W3C Test Registry Architecture
-# ===========================================================================
-# SINGLE SOURCE OF TRUTH: This section defines all test classifications.
-# - W3C_AOT_TESTS: Tests that can run on Pure Static or Static Hybrid AOT engine
-# - W3C_INTERPRETER_ONLY_TESTS: Tests requiring Interpreter (dynamic features)
+# WORKFLOW - Adding a new AOT test (ONE step):
+#   Add: sce_generate_static_w3c_test(XXX ${STATIC_W3C_OUTPUT_DIR})
+#   Optional TYPE: TYPE SCHEDULED (delayed send/invoke) or TYPE HTTP (BasicHTTP)
+#   Everything else is automatic:
+#   - TestXXX.h auto-generated from metadata.txt template (if not exists)
+#   - W3C_AOT_TESTS auto-accumulated (no manual list to maintain)
+#   - W3CTestRunner_TestXXX.cpp auto-generated
+#   - W3CTestRegistry.cpp auto-generated
+#   - visualizer/test-list.js auto-generated
 #
-# WORKFLOW:
-# 1. To add AOT test: Add test number to W3C_AOT_TESTS + create Test*.h in aot_tests/
-# 2. To migrate test: Move test number between lists, re-run cmake
-# 3. Validate test: Run /validate-test-execution [test-number] to verify correctness
-#    - Checks test intent (resources/*/metadata.txt, *.txml)
-#    - Compares Interpreter vs AOT execution logs
-#    - Detects false positives in both engines
-#    - See .claude/commands/validate-test-execution.md for details
-# 4. W3CTestRegistry.cpp auto-generates from these lists
+# CUSTOM TESTS: For tests needing PASS_STATE override, custom timeouts, etc.,
+#   create tests/w3c/aot_tests/TestXXX.h manually. Auto-generation skips existing files.
+#
+# VALIDATE: Run /validate-test-execution [test-number] to verify correctness.
 #
 # FILES GENERATED:
+# - build/W3CAotTestList.cmake (auto-accumulated test list for WASM + tooling)
 # - build/tests/w3c/W3CTestRegistry.cpp (from W3CTestRegistry.cpp.in template)
-# - tests/w3c/runners/W3CTestRunner_Test*.cpp (CMake generates list, files pre-committed)
+# - tests/w3c/runners/W3CTestRunner_Test*.cpp (CMake auto-generates)
+# - tests/w3c/aot_tests/TestXXX.h (CMake auto-generates if not exists)
 # ===========================================================================
+
+# W3C Test Registration Automation: Save accumulated W3C_AOT_TESTS for WASM builds and tooling
+# This file is auto-generated from sce_generate_static_w3c_test() calls above
+# Use space-separated format (compatible with CMake set() and Python regex parsing)
+string(REPLACE ";" " " _W3C_AOT_TESTS_SPACES "${W3C_AOT_TESTS}")
+set(_W3C_AOT_TESTS_LIST_FILE "${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake")
+file(WRITE "${_W3C_AOT_TESTS_LIST_FILE}"
+    "# Auto-generated from sce_generate_static_w3c_test() calls in tests/CMakeLists.txt\n"
+    "# DO NOT EDIT - Run Native CMake configure to regenerate\n"
+    "set(W3C_AOT_TESTS\n"
+    "    ${_W3C_AOT_TESTS_SPACES}\n"
+    ")\n"
+)
+message(STATUS "W3C AOT Tests auto-accumulated: ${W3C_AOT_TESTS}")
+message(STATUS "Saved W3C_AOT_TESTS list to ${_W3C_AOT_TESTS_LIST_FILE}")
 
 endif()  # NOT EMSCRIPTEN - W3C SCXML test generation (sce_generate_static_w3c_test calls)
 
-# WASM: Use pre-generated AOT test headers from Native build
+# WASM: Use pre-generated AOT test headers and test list from Native build
 # ARCHITECTURE.md: WASM builds cannot run txml-converter (requires filesystem operations)
-# Solution: Copy/reuse AOT test headers generated by Native build
 if(EMSCRIPTEN)
     # Point to Native build's generated headers
     # NOTE: Requires Native build to be run first to generate AOT test headers
@@ -947,46 +959,33 @@ if(EMSCRIPTEN)
         message(WARNING "WASM build requires pre-generated AOT test headers from Native build. Please run Native build first: cd ../build && cmake .. && cmake --build . --target w3c_test_cli")
     endif()
 
+    # W3C Test Registration Automation: Read accumulated test list from Native build
+    set(_W3C_AOT_TESTS_LIST_FILE "${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake")
+    if(EXISTS "${_W3C_AOT_TESTS_LIST_FILE}")
+        include("${_W3C_AOT_TESTS_LIST_FILE}")
+    else()
+        message(WARNING "W3C_AOT_TESTS list file not found: ${_W3C_AOT_TESTS_LIST_FILE}")
+        message(WARNING "Run Native CMake configure first to generate this file")
+    endif()
+
     message(STATUS "WASM: Using pre-generated AOT test headers from ${STATIC_W3C_OUTPUT_DIR}")
 endif()
 
 # ============================================================================
-# W3C Test Registry and Runner Generation (Both Native and WASM)
-# ============================================================================
-# AOT Tests: Pure Static or Static Hybrid (only tests with runner files)
-set(W3C_AOT_TESTS
-    144 147 148 149 150 151 152 153 155 156 158 159
-    172 173 174 175 176 178 179 183 185 186 187 189 190 191 192 193 194 198 199 200 205 207 208 210
-    215 216 220 223 224 225 226 228 229 230 232 233 234 235 236 237 239 240 241 242 243 244 245 247 250 252 253
-    276 277 278 279 280 286 287 294 298
-    301 302 303 304 307 309 310 311 312 313 314 318 319
-    321 322 323 324 325 326 329 330 331 332 333 335 336 337 338 339
-    342 343 344 346 347 348 349 350 351 352 354 355 364 372 375 376 377 378
-    387 388 396 399
-    401 402 403a 403b 403c 404 405 406 407 409 411 412 413 415 416 417 419 421 422 423
-    436 444 445 446 448 449 451 452 453 456 457 459 460
-    487 488 495 496 500 501 503 504 505 506 521 525 527 528 529 530 533
-    550 551 552 553 554 557 558 560 561 562 569 570 576 578 579 580
-)
-
-# HTTP tests - W3C SCXML C.2: BasicHTTP Event I/O Processor
-# HttpAotTest.h handles WASM platform limitation with skip logic (#ifdef __EMSCRIPTEN__)
-list(APPEND W3C_AOT_TESTS 201 509 510 513 518 519 520 522 531 532 534 567 577)
-
-# ============================================================================
 # Auto-generate visualizer/test-list.js from W3C_AOT_TESTS
 # ============================================================================
-# Zero Duplication: CMakeLists.txt W3C_AOT_TESTS is the single source of truth
+# Zero Duplication: W3C_AOT_TESTS is auto-accumulated from sce_generate_static_w3c_test() calls
 find_package(Python3 COMPONENTS Interpreter)
 
-if(Python3_FOUND)
+if(Python3_FOUND AND NOT EMSCRIPTEN)
+    # Use the auto-generated W3C_AOT_TESTS list file as input for test-list.js generation
     add_custom_command(
         OUTPUT ${CMAKE_SOURCE_DIR}/visualizer/test-list.js
         COMMAND ${Python3_EXECUTABLE}
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
-                ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt
+                ${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake
                 ${CMAKE_SOURCE_DIR}/visualizer/test-list.js
-        DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt
+        DEPENDS ${CMAKE_SOURCE_DIR}/build/W3CAotTestList.cmake
                 ${CMAKE_SOURCE_DIR}/tools/generate_test_list.py
         COMMENT "Generating visualizer/test-list.js from W3C_AOT_TESTS"
         VERBATIM
@@ -997,7 +996,7 @@ if(Python3_FOUND)
     )
 
     message(STATUS "Visualizer test list will be auto-generated from W3C_AOT_TESTS")
-else()
+elseif(NOT Python3_FOUND)
     message(WARNING "Python3 not found - visualizer/test-list.js will not be auto-generated")
     message(WARNING "Run manually: python3 tools/generate_test_list.py")
 endif()
