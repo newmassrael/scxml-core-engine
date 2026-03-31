@@ -362,6 +362,41 @@ class KotlinCodeGenerator(BaseCodeGenerator):
             event_tree, f"{machine_name}Event"
         )
 
+        # W3C SCXML 3.2/3.4: Compute initial entry root for enterInitialConfiguration()
+        # Walk up from the resolved leaf initial state through parents to find
+        # the top-level ancestor. If there is a hierarchy (compound/parallel),
+        # the generated code enters from root to leaf via recursive onEntry.
+        initial_entry_root = model.initial
+        current = model.initial
+        while current in model.states:
+            parent = model.states[current].parent
+            if parent and parent in model.states:
+                initial_entry_root = parent
+                current = parent
+            else:
+                break
+
+        # W3C SCXML 3.13: Compute ancestor chains for transition routing
+        # Each state maps to an ordered list of ancestor state IDs (parent first).
+        # Used by processEvent to check ancestor transitions when self returns Ignored.
+        ancestor_chains: Dict[str, List[str]] = {}
+        for state_id, state in model.states.items():
+            chain: List[str] = []
+            current_id = state.parent
+            while current_id and current_id in model.states:
+                chain.append(current_id)
+                current_id = model.states[current_id].parent
+            ancestor_chains[state_id] = chain
+
+        # W3C SCXML 3.13: Compute effective transitions (self + ancestors)
+        # Used by executeTransitionActions to execute ancestor transition actions.
+        effective_transitions: Dict[str, list] = {}
+        for state_id, state in model.states.items():
+            transitions = list(state.transitions)
+            for anc_id in ancestor_chains[state_id]:
+                transitions.extend(model.states[anc_id].transitions)
+            effective_transitions[state_id] = transitions
+
         input_stem = Path(scxml_path).stem
 
         # Load main Kotlin template
@@ -376,6 +411,9 @@ class KotlinCodeGenerator(BaseCodeGenerator):
             leaf_events=leaf_events,
             license_config=LICENSE_CONFIG,
             kotlin_default=self._to_kotlin_default,
+            initial_entry_root=initial_entry_root,
+            ancestor_chains=ancestor_chains,
+            effective_transitions=effective_transitions,
         )
 
         # Post-process: close the class and normalize whitespace

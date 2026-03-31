@@ -6,6 +6,7 @@
     Generates:
     - processEvent() dispatching to per-state handlers
     - Per-state handler functions with exhaustive when expressions
+    - W3C SCXML 3.13: Ancestor transition routing (child → parent → grandparent)
     - kt: prefix guard conditions as direct Kotlin expressions
     - In() predicate guards as isStateActive() calls
     - Eventless transitions with guard conditions
@@ -20,18 +21,63 @@
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
 {% if not state.is_parallel %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> process{{ state_id | to_state_class_name }}(event)
+{% set ancestors = ancestor_chains[state_id] %}
+{% set has_self = state.transitions | length > 0 %}
+{# Collect ancestor IDs that have transitions #}
+{% set ns_anc = namespace(ids=[]) %}
+{% for anc_id in ancestors %}
+{% if model.states[anc_id].transitions | length > 0 %}
+{% set ns_anc.ids = ns_anc.ids + [anc_id] %}
 {% endif %}
 {% endfor %}
-{% if model.has_parallel_states %}
-        else -> TransitionResult.Ignored // Parallel states handled by region dispatch
+{% if has_self and ns_anc.ids | length > 0 %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+            val result = process{{ state_id | to_state_class_name }}(event)
+            // W3C SCXML 3.13: Ancestor transition routing
+            if (result !is TransitionResult.Ignored) result
+{% for anc_id in ns_anc.ids %}
+            else {
+                val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
+                if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
+{% endfor %}
+            else TransitionResult.Ignored
+{% for anc_id in ns_anc.ids %}
+            }
+{% endfor %}
+        }
+{% elif has_self %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> process{{ state_id | to_state_class_name }}(event)
+{% elif ns_anc.ids | length > 0 %}
+        // W3C SCXML 3.13: Ancestor-only routing ({{ state_id }} has no own transitions)
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% for anc_id in ns_anc.ids %}
+{% if loop.first %}
+            val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
+            if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
+{% else %}
+            else {
+                val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
+                if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
 {% endif %}
+{% endfor %}
+            else TransitionResult.Ignored
+{% for anc_id in ns_anc.ids %}
+{% if not loop.first %}
+            }
+{% endif %}
+{% endfor %}
+        }
+{% endif %}
+{# else: no self and no ancestor transitions → falls to else -> Ignored #}
+{% endif %}
+{% endfor %}
+        else -> TransitionResult.Ignored
     }
 
     // --- Per-State Handlers ---
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
-{% if not state.is_parallel %}
+{% if state.transitions | length > 0 %}
 {# --- Pre-scan for wildcards and eventless transitions --- #}
 {% set ns = namespace(has_wildcard=false, has_eventless=false, eventless_count=0) %}
 {% for trans in state.transitions %}

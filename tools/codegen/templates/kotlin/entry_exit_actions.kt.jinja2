@@ -4,40 +4,70 @@
     W3C SCXML 3.8/3.9: Entry and exit action rendering.
     Actions are separated from transitions — the engine controls W3C ordering.
 
+    W3C SCXML 3.7: Final state done.state event emission.
+    W3C SCXML 3.4: Parallel state recursive child region entry.
+    W3C SCXML 3.3: Compound state initial child entry.
+
     Uses actions/_render.kt.jinja2 for action dispatch (shared with transition_actions).
 #}
     // Entry Actions (W3C SCXML 3.8)
-    override fun onEntry(state: {{ machine_name }}State) = when (state) {
+    override fun onEntry(state: {{ machine_name }}State) {
+        when (state) {
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
-{% if state.on_entry or model.uses_in_predicate %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
-{% if model.uses_in_predicate %}
-            activeStateIds.add("{{ state_id }}")
+{% set has_done_event = state.is_final and state.parent %}
+{% set is_top_final = state.is_final and not state.parent %}
+{% set has_parallel_children = state.is_parallel and state_id in model.parallel_regions %}
+{% set has_initial_child = not state.is_final and not state.is_parallel and state.initial and state.initial != state_id %}
+{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or has_done_event or is_top_final or has_parallel_children or has_initial_child %}
+            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% if model.uses_in_predicate or model.has_parallel_states %}
+                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                if (!activeStateIds.add("{{ state_id }}")) return
 {% endif %}
 {% for action in state.on_entry %}
-{% include 'actions/_render.kt.jinja2' with context %}
+    {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
-        }
+{% if has_done_event %}
+                // W3C SCXML 3.7: Generate done.state.{{ state.parent }} event
+                raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }})
+{% endif %}
+{% if is_top_final %}
+                // W3C SCXML 3.7: Top-level final state reached
+                isInFinalState = true
+{% endif %}
+{% if has_parallel_children %}
+                // W3C SCXML 3.4: Enter all child regions of parallel state
+{% for region_id in model.parallel_regions[state_id] %}
+                onEntry({{ machine_name }}State.{{ region_id | to_state_class_name }})
+{% endfor %}
+{% elif has_initial_child %}
+                // W3C SCXML 3.3: Enter initial child of compound state
+                onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+{% endif %}
+            }
 {% endif %}
 {% endfor %}
-        else -> {}
+            else -> {}
+        }
     }
 
     // Exit Actions (W3C SCXML 3.9)
-    override fun onExit(state: {{ machine_name }}State) = when (state) {
+    override fun onExit(state: {{ machine_name }}State) {
+        when (state) {
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
-{% if state.on_exit or model.uses_in_predicate %}
-        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
-{% if model.uses_in_predicate %}
-            activeStateIds.remove("{{ state_id }}")
+{% if state.on_exit or model.uses_in_predicate or model.has_parallel_states %}
+            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% if model.uses_in_predicate or model.has_parallel_states %}
+                activeStateIds.remove("{{ state_id }}")
 {% endif %}
 {% for action in state.on_exit %}
-{% include 'actions/_render.kt.jinja2' with context %}
+    {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
-        }
+            }
 {% endif %}
 {% endfor %}
-        else -> {}
+            else -> {}
+        }
     }

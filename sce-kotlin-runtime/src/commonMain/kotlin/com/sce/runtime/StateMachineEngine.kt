@@ -181,6 +181,21 @@ abstract class StateMachineEngine<S : State, E : Event> {
     // --- Lifecycle ---
 
     /**
+     * W3C SCXML 3.2/3.4: Enter initial state configuration.
+     *
+     * Default: enter [initialState] only (flat state machines).
+     * Override in generated code to handle compound/parallel state hierarchies
+     * where ancestors must be entered recursively from root to leaf.
+     *
+     * For parallel states (W3C SCXML 3.4), the override enters from the
+     * top-level initial state, recursing through [onEntry] to activate
+     * all child regions and register them in [activeStateIds].
+     */
+    protected open fun enterInitialConfiguration() {
+        onEntry(initialState)
+    }
+
+    /**
      * Start the event processing loop.
      *
      * W3C SCXML Appendix D: Enter initial state, then process events.
@@ -198,8 +213,15 @@ abstract class StateMachineEngine<S : State, E : Event> {
         engineScope = scope
 
         job = scope.launch(Dispatchers.Default) {
-            // R4 fix: Execute initial onEntry on Dispatchers.Default, not caller thread
-            onEntry(_currentState.value)
+            // R4 fix: Execute initial entry on Dispatchers.Default, not caller thread
+            enterInitialConfiguration()
+
+            // W3C SCXML 3.12.1: Drain internal events raised during initial entry
+            // (e.g., done.state events from <final> states entered at startup)
+            while (internalEventQueue.isNotEmpty()) {
+                val internalEvent = internalEventQueue.removeFirst()
+                processOneEvent(internalEvent)
+            }
 
             for (event in eventChannel) {
                 if (isInFinalState) break
@@ -221,6 +243,10 @@ abstract class StateMachineEngine<S : State, E : Event> {
         eventChannel.close()
         delayedSendJobs.values.forEach { it.cancel() }
         delayedSendJobs.clear()
+        // Reset state for stop/start reuse
+        activeStateIds.clear()
+        isInFinalState = false
+        internalEventQueue.clear()
     }
 
     // --- Internal Event Queue (for <raise>) ---

@@ -34,6 +34,14 @@ class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}Stat
 {% endif %}
 
     override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}
+{% if initial_entry_root and initial_entry_root != model.initial %}
+
+    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
+    // through compound/parallel hierarchy to populate activeStateIds)
+    override fun enterInitialConfiguration() {
+        onEntry({{ machine_name }}State.{{ initial_entry_root | to_state_class_name }})
+    }
+{% endif %}
 
 {% include 'process_event.kt.jinja2' %}
 

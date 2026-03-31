@@ -4,6 +4,7 @@
     W3C SCXML 3.13: Executable content within <transition> elements.
     Called between onExit(source) and onEntry(target) by the engine.
 
+    Uses effective_transitions (self + ancestor transitions) for ancestor routing.
     Uses actions/_render.kt.jinja2 for action dispatch (shared with entry_exit_actions).
 #}
     // Transition Actions (W3C SCXML 3.13)
@@ -12,18 +13,36 @@
         event: {{ machine_name }}Event
     ) = when (source) {
 {% for state_id in model.states | sort %}
-{% set state = model.states[state_id] %}
+{% set eff_transitions = effective_transitions[state_id] %}
 {% set ns = namespace(has_transition_actions=false) %}
-{% for trans in state.transitions %}
+{% for trans in eff_transitions %}
 {% if trans.actions %}
 {% set ns.has_transition_actions = true %}
 {% endif %}
 {% endfor %}
 {% if ns.has_transition_actions %}
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when {
-{% for trans in state.transitions %}
+{% for trans in eff_transitions %}
 {% if trans.actions and trans.event %}
-            event is {{ machine_name }}Event.{{ trans.event | to_event_class_name }} -> {
+{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
+            ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
+{%- if trans.is_pure_in_predicate %} && {{ trans.cond_kt }}{% elif trans.is_kt_condition %} && {{ trans.cond_kt }}{% elif trans.cond and not trans.is_cpp_condition %} && {{ trans.cond }}{% endif %} -> {
+{% else %}
+{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
+{% set resolved_event = trans.prefix_matching_events[0] %}
+{% else %}
+{% set resolved_event = trans.event %}
+{% endif %}
+{% if trans.is_pure_in_predicate %}
+            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond_kt }} -> {
+{% elif trans.is_kt_condition %}
+            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond_kt }} -> {
+{% elif trans.cond and not trans.is_cpp_condition %}
+            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond }} -> {
+{% else %}
+            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {
+{% endif %}
+{% endif %}
 {% for action in trans.actions %}
 {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
