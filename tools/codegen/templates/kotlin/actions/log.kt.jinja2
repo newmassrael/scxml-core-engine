@@ -1,0 +1,5 @@
+{% if action.expr %}
+            println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}{{ action.expr | replace("'", '"') }})
+{% elif action.label %}
+            println("{{ action.label | escape_kotlin }}")
+{% endif %}

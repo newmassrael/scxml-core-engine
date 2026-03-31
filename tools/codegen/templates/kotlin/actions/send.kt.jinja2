@@ -1,0 +1,11 @@
+{% if action.delay or action.delayexpr %}
+{% if action.event_name %}
+            scheduleSend("{{ action.id | default('__auto_' + loop.index0 | string, true) }}", {{ action.delay_ms | default('0') }}L, {{ machine_name }}Event.{{ action.event_name | to_event_ref }})
+{% elif action.event %}
+            scheduleSend("{{ action.id | default('__auto_' + loop.index0 | string, true) }}", {{ action.delay_ms | default('0') }}L, {{ machine_name }}Event.{{ action.event | to_event_ref }})
+{% endif %}
+{% elif action.event_name %}
+            send({{ machine_name }}Event.{{ action.event_name | to_event_ref }})
+{% elif action.event %}
+            send({{ machine_name }}Event.{{ action.event | to_event_ref }})
+{% endif %}

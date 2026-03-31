@@ -1,0 +1,43 @@
+{#
+    Kotlin State Machine Template
+
+    Generates a single .kt file containing:
+    - State sealed interface hierarchy (W3C SCXML 3.2)
+    - Event sealed interface hierarchy (W3C SCXML 3.12.1)
+    - StateMachine class extending StateMachineEngine<S, E>
+
+    Design: See KOTLIN_CODEGEN_DESIGN.md
+#}
+// GENERATED CODE — DO NOT EDIT
+// Source: {{ model.scxml_source_path }}
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.{{ model.name | lower }}
+
+import com.sce.runtime.*
+
+{% include 'states.kt.jinja2' %}
+
+{% include 'events.kt.jinja2' %}
+
+// --- State Machine (W3C SCXML) ---
+
+class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>() {
+{% if model.variables %}
+
+    // Datamodel (W3C SCXML 5.3)
+{% for var in model.variables %}
+{% if var.type != 'runtime' %}
+    var {{ var.id | to_camel_case }}: {{ var.type | to_kotlin_type }} = {{ kotlin_default(var) }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+    override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}
+
+{% include 'process_event.kt.jinja2' %}
+
+{% include 'entry_exit_actions.kt.jinja2' %}
+
+{% include 'transition_actions.kt.jinja2' %}
+

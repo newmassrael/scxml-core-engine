@@ -6,6 +6,8 @@ Parses W3C SCXML files and extracts state machine model for code generation.
 Replaces C++ SCXMLParser for Python-based code generation.
 """
 
+import re
+
 from lxml import etree
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Set
@@ -32,6 +34,8 @@ class Transition:
     cond_cpp_transformed: str = ""  # C++ code with this->policy_.user_-> prefix for UserContext
     is_pure_in_predicate: bool = False  # True if cond is ONLY In() predicates
     is_cpp_condition: bool = False  # True if cond uses cpp: prefix for direct C++ evaluation
+    cond_kt: str = ""  # Kotlin code for kt: prefix conditions
+    is_kt_condition: bool = False  # True if cond uses kt: prefix for direct Kotlin evaluation
     type: str = "external"  # external or internal
     actions: List[Dict] = field(default_factory=list)  # executable content
 
@@ -163,7 +167,6 @@ class SCXMLParser:
         Returns:
             Set of top-level object names
         """
-        import re
         # Match identifiers followed by dot (member access)
         # Pattern: word boundary + identifier + optional whitespace + dot
         pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.'
@@ -199,8 +202,6 @@ class SCXMLParser:
         Returns:
             Transformed C++ code with user_-> prefix (for Policy class context)
         """
-        import re
-        
         # Step 1: Extract string literals and replace with placeholders
         string_literals = []
         def save_string(match):
@@ -739,30 +740,38 @@ class SCXMLParser:
         # W3C SCXML 3.13: Guard condition can be specified via 'cond' or 'expr' attribute
         cond = trans_elem.get('cond', '') or trans_elem.get('expr', '')
         
-        # Check for cpp: prefix for direct C++ condition evaluation
+        # Check for language-specific prefixes for direct native condition evaluation
         is_cpp_condition = False
+        is_kt_condition = False
         is_pure_in = False
         cond_cpp = ''
-        
+        cond_cpp_transformed = ''
+        cond_kt = ''
+
         if cond and cond.startswith('cpp:'):
             # Direct C++ condition - no JSEngine needed
             is_cpp_condition = True
             cond_cpp = cond[4:]  # Remove 'cpp:' prefix
-            
+
             # Extract user object names for UserContext template
             user_objects = self._extract_user_objects(cond_cpp)
             self.model.user_context_objects.update(user_objects)
-            
+
             # Transform code with user_-> prefix if user objects exist
             if user_objects:
                 cond_cpp_transformed = self._transform_cpp_code_with_user_prefix(cond_cpp, user_objects)
             else:
                 cond_cpp_transformed = cond_cpp
+        elif cond and cond.startswith('kt:'):
+            # Direct Kotlin condition - no JSEngine needed
+            is_kt_condition = True
+            cond_kt = cond[3:]  # Remove 'kt:' prefix
         elif cond and self._is_pure_in_predicate(cond):
             # W3C SCXML 5.9.2: Check if condition is pure In() predicate
             is_pure_in = True
             cond_cpp = self._convert_in_to_cpp(cond)
-        
+            cond_kt = self._convert_in_to_kotlin(cond)
+
         transition = Transition(
             event=trans_elem.get('event', ''),
             target=trans_elem.get('target', ''),
@@ -771,6 +780,8 @@ class SCXMLParser:
             cond_cpp_transformed=cond_cpp_transformed if is_cpp_condition else cond_cpp,
             is_pure_in_predicate=is_pure_in,
             is_cpp_condition=is_cpp_condition,
+            cond_kt=cond_kt,
+            is_kt_condition=is_kt_condition,
             type=trans_elem.get('type', 'external')
         )
 
@@ -778,8 +789,8 @@ class SCXMLParser:
         transition.actions = self._parse_executable_content(trans_elem)
 
         # Detect guard conditions requiring JSEngine
-        # cpp: prefix conditions are evaluated directly in C++ — skip JSEngine check
-        if transition.cond and not transition.is_cpp_condition:
+        # cpp:/kt: prefix conditions are evaluated directly in native code — skip JSEngine check
+        if transition.cond and not transition.is_cpp_condition and not transition.is_kt_condition:
             if self._requires_script_engine(transition.cond):
                 self.model.needs_script_engine = True
 
@@ -938,12 +949,15 @@ class SCXMLParser:
                 # W3C SCXML 5.9.2: Check if condition is pure In() predicate
                 is_pure_in = False
                 cond_cpp = ''
+                cond_kt = ''
                 if cond and self._is_pure_in_predicate(cond):
                     is_pure_in = True
                     cond_cpp = self._convert_in_to_cpp(cond)
+                    cond_kt = self._convert_in_to_kotlin(cond)
 
                 action['cond'] = cond
                 action['cond_cpp'] = cond_cpp
+                action['cond_kt'] = cond_kt
                 action['is_pure_in_predicate'] = is_pure_in
                 action['elseif_branches'] = []
                 action['else_actions'] = []
@@ -968,13 +982,16 @@ class SCXMLParser:
                         # W3C SCXML 5.9.2: Check if condition is pure In() predicate
                         elseif_is_pure_in = False
                         elseif_cond_cpp = ''
+                        elseif_cond_kt = ''
                         if elseif_cond and self._is_pure_in_predicate(elseif_cond):
                             elseif_is_pure_in = True
                             elseif_cond_cpp = self._convert_in_to_cpp(elseif_cond)
+                            elseif_cond_kt = self._convert_in_to_kotlin(elseif_cond)
 
                         branch = {
                             'cond': elseif_cond,
                             'cond_cpp': elseif_cond_cpp,
+                            'cond_kt': elseif_cond_kt,
                             'is_pure_in_predicate': elseif_is_pure_in,
                             'actions': []
                         }
@@ -1068,21 +1085,29 @@ class SCXMLParser:
                 
                 # Check for nested <cpp> tag for direct C++ function calls
                 cpp_elem = child.find('{http://www.w3.org/2005/07/scxml}cpp')
+                # Check for nested <kt> tag for direct Kotlin function calls
+                kt_elem = child.find('{http://www.w3.org/2005/07/scxml}kt')
                 if cpp_elem is not None:
                     # Direct C++ function call - no JSEngine needed
                     cpp_code = cpp_elem.text or ''
                     action['content'] = cpp_code
                     action['is_cpp_function'] = True
-                    
+
                     # Extract user object names for UserContext template
                     user_objects = self._extract_user_objects(cpp_code)
                     self.model.user_context_objects.update(user_objects)
-                    
+
                     # Transform code with user_-> prefix if user objects exist
                     if user_objects:
                         action['content_transformed'] = self._transform_cpp_code_with_user_prefix(cpp_code, user_objects)
                     else:
                         action['content_transformed'] = cpp_code
+                elif kt_elem is not None:
+                    # Direct Kotlin function call - no JSEngine needed
+                    kt_code = kt_elem.text or ''
+                    action['content'] = kt_code
+                    action['content_kt'] = kt_code
+                    action['is_kt_function'] = True
                 else:
                     # JavaScript execution via JSEngine
                     action['content'] = child.text or ''
@@ -1284,9 +1309,7 @@ class SCXMLParser:
         """
         if not expr or 'In(' not in expr:
             return False
-        
-        import re
-        
+
         # W3C SCXML B.1: XML entity escaping - convert back for parsing
         # &amp;&amp; → &&, &amp;| → ||
         clean_expr = expr.replace('&amp;&amp;', '&&').replace('&amp;|', '||').strip()
@@ -1307,34 +1330,31 @@ class SCXMLParser:
         
         return True
     
-    def _convert_in_to_cpp(self, expr: str) -> str:
+    def _convert_in_predicate(self, expr: str, replacement: str) -> str:
         """
-        Convert In() predicates to direct C++ isStateActive() calls
-        
-        W3C SCXML 5.9.2: In(stateId) → this->isStateActive("stateId")
-        ARCHITECTURE.md Zero Duplication: Uses InPredicateHelper internally
-        
-        Examples:
-        - "In('s1')" → "this->isStateActive(\"s1\")"
-        - "In('s1') && In('s2')" → "this->isStateActive(\"s1\") && this->isStateActive(\"s2\")"
-        - "In('s1') || In('s2')" → "this->isStateActive(\"s1\") || this->isStateActive(\"s2\")"
-        
+        Convert In() predicates using the given replacement template.
+
+        W3C SCXML 5.9.2: In(stateId) is a built-in function.
+        Handles XML entity escaping and transforms each In('...') call.
+
         Args:
             expr: Pure In() predicate expression
-            
+            replacement: Regex replacement string (e.g. r'isStateActive("\\1")')
+
         Returns:
-            C++ code with direct isStateActive() calls
+            Converted code with isStateActive() calls
         """
-        import re
-        
-        # W3C SCXML B.1: XML entity escaping - convert for C++ code
-        cpp_expr = expr.replace('&amp;&amp;', '&&').replace('&amp;|', '||')
-        
-        # Transform: In('state') → this->isStateActive("state")
-        # Use double quotes in C++ for consistency with generated code
-        cpp_expr = re.sub(r"In\('([^']+)'\)", r'this->isStateActive("\1")', cpp_expr)
-        
-        return cpp_expr
+        result = expr.replace('&amp;&amp;', '&&').replace('&amp;|', '||')
+        result = re.sub(r"In\('([^']+)'\)", replacement, result)
+        return result
+
+    def _convert_in_to_cpp(self, expr: str) -> str:
+        """W3C SCXML 5.9.2: In('s1') → this->isStateActive("s1")"""
+        return self._convert_in_predicate(expr, r'this->isStateActive("\1")')
+
+    def _convert_in_to_kotlin(self, expr: str) -> str:
+        """W3C SCXML 5.9.2: In('s1') → isStateActive("s1")"""
+        return self._convert_in_predicate(expr, r'isStateActive("\1")')
 
     def _actions_to_javascript(self, actions: List[Dict]) -> str:
         """
@@ -1440,7 +1460,6 @@ class SCXMLParser:
 
         # W3C SCXML 5.9 & C.2: System-reserved identifiers starting with underscore
         # Examples: _event, _scxmleventname, _name (require JSEngine for runtime access)
-        import re
         if re.search(r'\b_[a-zA-Z]\w*\b', expr):
             return True
 
@@ -1500,10 +1519,9 @@ class SCXMLParser:
         """
         if not expr:
             return False
-        
-        import re
+
         expr_stripped = expr.strip()
-        
+
         # Match simple single-quoted or double-quoted string literals
         # Pattern: quote + any chars except that quote or backslash + quote
         # This excludes complex strings with variables, concatenation, or escape sequences
@@ -1522,7 +1540,6 @@ class SCXMLParser:
         Assumes expr has been validated with _is_static_string_literal()
         Returns the string value without quotes
         """
-        import re
         expr_stripped = expr.strip()
         
         # Extract content between quotes
@@ -1786,6 +1803,8 @@ class SCXMLParser:
                     # Add history restoration marker to transition
                     if not hasattr(transition, 'history_target'):
                         transition.history_target = transition.target
+                    # W3C SCXML 3.11: Resolved leaf target for languages without history runtime (Kotlin Phase 1)
+                    transition.history_leaf_target = self.model.history_states[transition.target]['leaf_target']
                     # Keep original target for template to generate restoration logic
         
         # W3C SCXML 3.11: Mark states whose initial transition targets history

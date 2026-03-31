@@ -1,0 +1,38 @@
+{#
+    Kotlin Transition Actions Template
+
+    W3C SCXML 3.13: Executable content within <transition> elements.
+    Called between onExit(source) and onEntry(target) by the engine.
+
+    Uses actions/_render.kt.jinja2 for action dispatch (shared with entry_exit_actions).
+#}
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: {{ machine_name }}State,
+        event: {{ machine_name }}Event
+    ) = when (source) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% set ns = namespace(has_transition_actions=false) %}
+{% for trans in state.transitions %}
+{% if trans.actions %}
+{% set ns.has_transition_actions = true %}
+{% endif %}
+{% endfor %}
+{% if ns.has_transition_actions %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> when {
+{% for trans in state.transitions %}
+{% if trans.actions and trans.event %}
+            event is {{ machine_name }}Event.{{ trans.event | to_event_class_name }} -> {
+{% for action in trans.actions %}
+{% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+            }
+{% endif %}
+{% endfor %}
+            else -> {}
+        }
+{% endif %}
+{% endfor %}
+        else -> {}
+    }

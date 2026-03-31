@@ -1,0 +1,3 @@
+{% if action.location and action.expr %}
+            {{ action.location | to_camel_case }} = {{ action.expr }}
+{% endif %}

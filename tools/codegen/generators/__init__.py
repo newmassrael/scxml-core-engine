@@ -7,14 +7,17 @@ template rendering and output file generation.
 
 Supported languages:
   - cpp: C++ (header-only .h + .inl, CRTP policy pattern)
+  - kotlin: Kotlin (sealed interfaces, StateFlow, coroutines)
 """
 
 from generators.cpp_generator import CppCodeGenerator
+from generators.kotlin_generator import KotlinCodeGenerator
 
 
 # Registry of available language generators
 _GENERATORS = {
     'cpp': CppCodeGenerator,
+    'kotlin': KotlinCodeGenerator,
 }
 
 

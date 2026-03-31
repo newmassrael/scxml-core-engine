@@ -28,23 +28,25 @@ if(NOT Python3_EXECUTABLE)
 endif()
 
 #[=============================================================================[
-sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir])
+sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir] [LANGUAGE lang])
 
-Generates C++ state machine header from SCXML and adds to target.
+Generates state machine code from SCXML and adds to target.
 
 Arguments:
   TARGET      - CMake target to add generated code to (required)
   SCXML_FILE  - Path to SCXML file (required)
   OUTPUT_DIR  - Output directory for generated files (optional, defaults to
                 ${CMAKE_CURRENT_BINARY_DIR}/generated)
+  LANGUAGE    - Target language: cpp (default) or kotlin
 
 Example:
   add_executable(my_app main.cpp)
   sce_add_state_machine(TARGET my_app SCXML_FILE player.scxml)
+  sce_add_state_machine(TARGET my_app SCXML_FILE player.scxml LANGUAGE kotlin)
   target_link_libraries(my_app PRIVATE SCE::sce)
 #]=============================================================================]
 function(sce_add_state_machine)
-    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR" "" ${ARGN})
+    cmake_parse_arguments(SCE "" "TARGET;SCXML_FILE;OUTPUT_DIR;LANGUAGE" "" ${ARGN})
 
     # Validate required arguments
     if(NOT SCE_TARGET)
@@ -60,6 +62,11 @@ function(sce_add_state_machine)
         message(FATAL_ERROR "sce_add_state_machine: TARGET '${SCE_TARGET}' does not exist")
     endif()
 
+    # Set default language
+    if(NOT SCE_LANGUAGE)
+        set(SCE_LANGUAGE "cpp")
+    endif()
+
     # Set default output directory
     if(NOT SCE_OUTPUT_DIR)
         set(SCE_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -68,7 +75,13 @@ function(sce_add_state_machine)
     # Get absolute path and extract name
     get_filename_component(SCXML_ABS_PATH "${SCE_SCXML_FILE}" ABSOLUTE)
     get_filename_component(SCXML_NAME "${SCE_SCXML_FILE}" NAME_WE)
-    set(GENERATED_HEADER "${SCE_OUTPUT_DIR}/${SCXML_NAME}_sm.h")
+
+    # Language-specific output file naming
+    if(SCE_LANGUAGE STREQUAL "kotlin")
+        set(GENERATED_OUTPUT "${SCE_OUTPUT_DIR}/${SCXML_NAME}Sm.kt")
+    else()
+        set(GENERATED_OUTPUT "${SCE_OUTPUT_DIR}/${SCXML_NAME}_sm.h")
+    endif()
 
     # Verify SCXML file exists
     if(NOT EXISTS "${SCXML_ABS_PATH}")
@@ -87,28 +100,38 @@ function(sce_add_state_machine)
         "${_SCE_CODEGEN_DIR}/generators/__init__.py"
         "${_SCE_CODEGEN_DIR}/generators/base.py"
         "${_SCE_CODEGEN_DIR}/generators/cpp_generator.py"
+        "${_SCE_CODEGEN_DIR}/generators/kotlin_generator.py"
     )
 
-    # Add custom command to generate state machine header
+    # Add custom command to generate state machine code
     # Uses DEPFILE for fine-grained template dependency tracking
-    set(_SCE_DEPFILE "${GENERATED_HEADER}.d")
+    set(_SCE_DEPFILE "${GENERATED_OUTPUT}.d")
     add_custom_command(
-        OUTPUT "${GENERATED_HEADER}"
+        OUTPUT "${GENERATED_OUTPUT}"
         COMMAND "${Python3_EXECUTABLE}" "${SCE_CODEGEN_SCRIPT}"
                 "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
+                --language "${SCE_LANGUAGE}"
                 --write-deps "${_SCE_DEPFILE}"
         DEPENDS "${SCXML_ABS_PATH}" ${_SCE_CODEGEN_SCRIPTS}
         DEPFILE "${_SCE_DEPFILE}"
-        COMMENT "SCE: Generating ${SCXML_NAME}_sm.h from SCXML"
+        COMMENT "SCE: Generating ${SCXML_NAME} (${SCE_LANGUAGE}) from SCXML"
         VERBATIM
     )
 
-    # Add generated file to target
-    target_sources(${SCE_TARGET} PRIVATE "${GENERATED_HEADER}")
-    target_include_directories(${SCE_TARGET} PRIVATE "${SCE_OUTPUT_DIR}")
-    set_source_files_properties("${GENERATED_HEADER}" PROPERTIES GENERATED TRUE)
+    # Language-specific target integration
+    if(SCE_LANGUAGE STREQUAL "kotlin")
+        # Kotlin: .kt files are not compiled by CMake — Gradle handles Kotlin compilation.
+        # Create a custom target so CMake tracks the generation dependency.
+        add_custom_target(${SCE_TARGET}_${SCXML_NAME}_kt DEPENDS "${GENERATED_OUTPUT}")
+        add_dependencies(${SCE_TARGET} ${SCE_TARGET}_${SCXML_NAME}_kt)
+    else()
+        # C++: Add generated header to target sources and include path
+        target_sources(${SCE_TARGET} PRIVATE "${GENERATED_OUTPUT}")
+        target_include_directories(${SCE_TARGET} PRIVATE "${SCE_OUTPUT_DIR}")
+        set_source_files_properties("${GENERATED_OUTPUT}" PROPERTIES GENERATED TRUE)
+    endif()
 
-    message(STATUS "SCE: Added state machine '${SCXML_NAME}' to target '${SCE_TARGET}'")
+    message(STATUS "SCE: Added state machine '${SCXML_NAME}' (${SCE_LANGUAGE}) to target '${SCE_TARGET}'")
 endfunction()
 
 #[=============================================================================[
@@ -131,7 +154,7 @@ Example:
   sce_add_state_machines_from_dir(TARGET my_app SCXML_DIR ${CMAKE_SOURCE_DIR}/scxml)
 #]=============================================================================]
 function(sce_add_state_machines_from_dir)
-    cmake_parse_arguments(SCE "" "TARGET;SCXML_DIR;OUTPUT_DIR" "" ${ARGN})
+    cmake_parse_arguments(SCE "" "TARGET;SCXML_DIR;OUTPUT_DIR;LANGUAGE" "" ${ARGN})
 
     # Validate required arguments
     if(NOT SCE_TARGET)
@@ -140,6 +163,11 @@ function(sce_add_state_machines_from_dir)
 
     if(NOT SCE_SCXML_DIR)
         message(FATAL_ERROR "sce_add_state_machines_from_dir: SCXML_DIR is required")
+    endif()
+
+    # Set default language
+    if(NOT SCE_LANGUAGE)
+        set(SCE_LANGUAGE "cpp")
     endif()
 
     # Set default output directory
@@ -161,6 +189,7 @@ function(sce_add_state_machines_from_dir)
             TARGET ${SCE_TARGET}
             SCXML_FILE ${SCXML_FILE}
             OUTPUT_DIR ${SCE_OUTPUT_DIR}
+            LANGUAGE ${SCE_LANGUAGE}
         )
     endforeach()
 

@@ -1,0 +1,27 @@
+{# W3C SCXML 3.8.5: <if>/<elseif>/<else> — conditional execution #}
+{# Phase 1: Only pure static conditions (no ECMAScript) #}
+{% if action.is_pure_in_predicate and action.cond_kt %}
+            if ({{ action.cond_kt }}) {
+{% elif action.cond %}
+            if ({{ action.cond }}) {
+{% endif %}
+{% for then_action in action.then_actions %}
+{% include 'actions/' + then_action.type + '.kt.jinja2' with context %}
+{% endfor %}
+{% for elseif in action.elseif_branches %}
+{% if elseif.is_pure_in_predicate and elseif.cond_kt %}
+            } else if ({{ elseif.cond_kt }}) {
+{% else %}
+            } else if ({{ elseif.cond }}) {
+{% endif %}
+{% for elif_action in elseif.actions %}
+{% include 'actions/' + elif_action.type + '.kt.jinja2' with context %}
+{% endfor %}
+{% endfor %}
+{% if action.else_actions %}
+            } else {
+{% for else_action in action.else_actions %}
+{% include 'actions/' + else_action.type + '.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+            }

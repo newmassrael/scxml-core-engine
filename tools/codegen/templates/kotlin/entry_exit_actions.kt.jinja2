@@ -1,0 +1,43 @@
+{#
+    Kotlin Entry/Exit Actions Template
+
+    W3C SCXML 3.8/3.9: Entry and exit action rendering.
+    Actions are separated from transitions — the engine controls W3C ordering.
+
+    Uses actions/_render.kt.jinja2 for action dispatch (shared with transition_actions).
+#}
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: {{ machine_name }}State) = when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% if state.on_entry or model.uses_in_predicate %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% if model.uses_in_predicate %}
+            activeStateIds.add("{{ state_id }}")
+{% endif %}
+{% for action in state.on_entry %}
+{% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+        }
+{% endif %}
+{% endfor %}
+        else -> {}
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: {{ machine_name }}State) = when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% if state.on_exit or model.uses_in_predicate %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% if model.uses_in_predicate %}
+            activeStateIds.remove("{{ state_id }}")
+{% endif %}
+{% for action in state.on_exit %}
+{% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+        }
+{% endif %}
+{% endfor %}
+        else -> {}
+    }

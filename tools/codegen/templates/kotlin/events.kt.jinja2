@@ -1,0 +1,17 @@
+{#
+    Kotlin Event Sealed Interface Template
+
+    W3C SCXML 3.12.1: Event representation as Kotlin sealed interface hierarchy.
+    Dot-separated event names become nested sealed interfaces for prefix matching.
+
+    Example: "error.execution" -> sealed interface Error { data object Execution : Error }
+    W3C prefix match: `event is Error` matches all error.* events.
+
+    Note: event_members is pre-rendered by KotlinCodeGenerator._render_event_tree()
+    to avoid Jinja2 recursive macro limitations.
+#}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface {{ machine_name }}Event : Event {
+{{ event_members }}
+}
