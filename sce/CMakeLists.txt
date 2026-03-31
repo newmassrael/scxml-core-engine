@@ -408,7 +408,18 @@ else()
 endif()
 
 # WASM pthread configuration
+# All SCE library tiers must be compiled with pthread/atomics for --shared-memory linking
 if(EMSCRIPTEN)
+    target_compile_options(sce_base PRIVATE
+        -pthread
+        -sUSE_PTHREADS=1
+    )
+    if(SCE_HAS_SCRIPTING)
+        target_compile_options(sce_scripting PRIVATE
+            -pthread
+            -sUSE_PTHREADS=1
+        )
+    endif()
     target_compile_options(sce_runtime PRIVATE
         -pthread
         -sUSE_PTHREADS=1

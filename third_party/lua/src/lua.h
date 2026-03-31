@@ -524,5 +524,5 @@ struct lua_Debug {
 
 #if defined(__QNXNTO__) && defined(__USESRCVERSION)
 #include <sys/srcversion.h>
-__SRCVERSION("$URL: http://f27svn.qnx.com/svn/repos/osr/trunk/lua/dist/src/lua.h $ $Rev: 4478 $")
+__SRCVERSION("$URL$ $Rev$")
 #endif

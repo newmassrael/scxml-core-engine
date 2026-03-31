@@ -1,33 +1,66 @@
-# Lua 5.4 Integration
-# Header-only interface target with system library linking
+# Lua 5.4.6 - Built from source (like QuickJS)
+# Provides static library for all platforms including WASM/Emscripten
 
-add_library(lua54 INTERFACE)
-
-target_include_directories(lua54 INTERFACE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+# Lua core library sources (excludes lua.c and luac.c which are standalone executables)
+set(LUA_SOURCES
+    src/lapi.c
+    src/lauxlib.c
+    src/lbaselib.c
+    src/lcode.c
+    src/lcorolib.c
+    src/lctype.c
+    src/ldblib.c
+    src/ldebug.c
+    src/ldo.c
+    src/ldump.c
+    src/lfunc.c
+    src/lgc.c
+    src/linit.c
+    src/liolib.c
+    src/llex.c
+    src/lmathlib.c
+    src/lmem.c
+    src/loadlib.c
+    src/lobject.c
+    src/lopcodes.c
+    src/loslib.c
+    src/lparser.c
+    src/lstate.c
+    src/lstring.c
+    src/lstrlib.c
+    src/ltable.c
+    src/ltablib.c
+    src/ltm.c
+    src/lundump.c
+    src/lutf8lib.c
+    src/lvm.c
+    src/lzio.c
 )
 
-# Link against system Lua 5.4 shared library
-# The runtime library (.so.0) is used since dev package may not be installed
-find_library(LUA_LIBRARY
-    NAMES lua5.4 lua54 lua
-    PATHS /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib
+add_library(lua54 STATIC ${LUA_SOURCES})
+
+target_include_directories(lua54
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-if(NOT LUA_LIBRARY)
-    # Dev package not installed — link against runtime .so directly
-    find_file(LUA_SO_FILE
-        NAMES liblua5.4.so.0
-        PATHS /usr/lib/x86_64-linux-gnu /usr/lib
+# Platform-specific definitions
+if(UNIX AND NOT EMSCRIPTEN)
+    target_compile_definitions(lua54 PRIVATE LUA_USE_POSIX LUA_USE_DLOPEN)
+    target_link_libraries(lua54 PRIVATE m dl)
+elseif(EMSCRIPTEN)
+    # WASM: POSIX subset available via Emscripten, no dlopen
+    target_compile_definitions(lua54 PRIVATE LUA_USE_POSIX)
+    target_link_libraries(lua54 PRIVATE m)
+    # WASM pthread: Required for --shared-memory linking compatibility
+    target_compile_options(lua54 PRIVATE -pthread -sUSE_PTHREADS=1)
+endif()
+
+# Suppress warnings in third-party code (Lua uses its own coding style)
+if(CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+    target_compile_options(lua54 PRIVATE
+        -w
     )
-    if(LUA_SO_FILE)
-        set(LUA_LIBRARY ${LUA_SO_FILE})
-    endif()
 endif()
 
-if(LUA_LIBRARY)
-    target_link_libraries(lua54 INTERFACE ${LUA_LIBRARY})
-    message(STATUS "Lua 5.4: Found library at ${LUA_LIBRARY}")
-else()
-    message(WARNING "Lua 5.4: Library not found, LuaEngine will not be available")
-endif()
+message(STATUS "Lua 5.4.6: Building from source (static library)")

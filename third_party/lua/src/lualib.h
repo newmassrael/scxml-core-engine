@@ -53,5 +53,5 @@ LUALIB_API void (luaL_openlibs) (lua_State *L);
 
 #if defined(__QNXNTO__) && defined(__USESRCVERSION)
 #include <sys/srcversion.h>
-__SRCVERSION("$URL: http://f27svn.qnx.com/svn/repos/osr/trunk/lua/dist/src/lualib.h $ $Rev: 4478 $")
+__SRCVERSION("$URL$ $Rev$")
 #endif

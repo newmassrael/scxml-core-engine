@@ -200,7 +200,7 @@ public:
      * @param event Event object with full metadata (name, type, data, sendid, origin, etc.)
      * @return Future indicating success/failure
      */
-    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event);
+    std::future<ScriptResult> setCurrentEvent(const std::string &sessionId, const std::shared_ptr<Event> &event) override;
 
     /**
      * @brief Set current event object in JavaScript context (W3C SCXML 5.10)
