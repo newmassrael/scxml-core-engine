@@ -224,7 +224,7 @@ option(SCE_THREAD_SAFE "Enable thread-safe event queues" OFF)
 
 if(SCE_THREAD_SAFE)
     message(STATUS "SCE: Thread-safe event queues enabled")
-    target_compile_definitions(sce_runtime PUBLIC SCE_THREAD_SAFE)
+    target_compile_definitions(sce_base PUBLIC SCE_THREAD_SAFE)
 else()
     message(STATUS "SCE: Thread-safe event queues disabled (zero overhead)")
 endif()
@@ -303,8 +303,12 @@ add_library(SCE::sce ALIAS sce_runtime)
 set(SCE_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/SCE")
 set(SCE_INSTALL_CODEGENDIR "${CMAKE_INSTALL_DATADIR}/sce/codegen")
 
-# Install main library with export (sce_runtime is the compiled target)
-install(TARGETS sce_runtime sce_core
+# Install all library tiers with export
+set(_SCE_INSTALL_TARGETS sce_runtime sce_base sce_core)
+if(SCE_HAS_SCRIPTING)
+    list(APPEND _SCE_INSTALL_TARGETS sce_scripting)
+endif()
+install(TARGETS ${_SCE_INSTALL_TARGETS}
     EXPORT SCETargets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

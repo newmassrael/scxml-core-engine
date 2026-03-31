@@ -1,6 +1,8 @@
-# SCE Module: sce_core (header-only) + sce_runtime (compiled)
-# sce_core: Header-only library for AOT standalone usage (no Logger.cpp dependency)
-# sce_runtime: Full compiled library with Interpreter, Parser, JSEngine, Logger
+# SCE Module: 4-Tier Library Architecture
+# sce_core:      Header-only library for AOT standalone usage (templates, concepts, interfaces)
+# sce_base:      Compiled base utilities for AOT (Logger, UniqueIdGenerator, etc. — no script engines)
+# sce_scripting: Script engines (QuickJS/Lua) and engine-dependent helpers (optional)
+# sce_runtime:   Full interpreter with Parser, StateMachine, Actions, Events
 
 # Build options
 option(SCE_ENABLE_HTTP "Enable HTTP/BasicHTTPEventProcessor support (requires cpp-httplib)" ON)
@@ -10,19 +12,34 @@ option(SCE_ENABLE_HTTP "Enable HTTP/BasicHTTPEventProcessor support (requires cp
 set(PUGIXML_INCLUDE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src)
 message(STATUS "PUGIXML_INCLUDE_DIR: ${PUGIXML_INCLUDE_DIR}")
 
-# Add QuickJS subdirectory
-# WASM: Disable QuickJS stack checking (__wasi__ disables runtime stack checks)
-# QuickJS's __builtin_frame_address(0) doesn't work correctly in WASM/Emscripten
-if(EMSCRIPTEN)
-    add_compile_definitions(__wasi__)
-    message(STATUS "WASM build: QuickJS stack checking disabled (__wasi__)")
-endif()
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURRENT_BINARY_DIR}/quickjs)
-
-# Add Lua 5.4 subdirectory (for LuaEngine support)
+# Script engine options (both optional, at least one required for interpreter/hybrid)
+option(SCE_ENABLE_QUICKJS "Enable QuickJS scripting engine support" ON)
 option(SCE_ENABLE_LUA "Enable Lua scripting engine support" ON)
+
+# Add QuickJS subdirectory (conditional)
+if(SCE_ENABLE_QUICKJS)
+    # WASM: Disable QuickJS stack checking (__wasi__ disables runtime stack checks)
+    # QuickJS's __builtin_frame_address(0) doesn't work correctly in WASM/Emscripten
+    if(EMSCRIPTEN)
+        add_compile_definitions(__wasi__)
+        message(STATUS "WASM build: QuickJS stack checking disabled (__wasi__)")
+    endif()
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/quickjs ${CMAKE_CURRENT_BINARY_DIR}/quickjs)
+endif()
+
+# Add Lua 5.4 subdirectory (conditional)
 if(SCE_ENABLE_LUA)
     add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../third_party/lua ${CMAKE_CURRENT_BINARY_DIR}/lua)
+endif()
+
+# Determine if any script engine is available (propagate to parent scope)
+if(SCE_ENABLE_QUICKJS OR SCE_ENABLE_LUA)
+    set(SCE_HAS_SCRIPTING TRUE)
+    set(SCE_HAS_SCRIPTING TRUE PARENT_SCOPE)
+else()
+    set(SCE_HAS_SCRIPTING FALSE)
+    set(SCE_HAS_SCRIPTING FALSE PARENT_SCOPE)
+    message(STATUS "SCE: No script engine enabled — only pure static AOT available")
 endif()
 
 # ============================================================================
@@ -82,37 +99,161 @@ target_include_directories(sce_core
 target_compile_features(sce_core INTERFACE cxx_std_20)
 
 # ============================================================================
-# sce_runtime: Full compiled library with Interpreter, Parser, JSEngine, Logger
+# sce_base: Compiled base utilities for AOT (no script engine dependency)
 # ============================================================================
+# Contains: Logger, UniqueIdGenerator, ScriptResultUtils, EventDataHelper, etc.
+# These are engine-agnostic compiled utilities needed by AOT generated code.
+# Pure static AOT consumers link only sce_base (no QuickJS/Lua).
+add_library(sce_base
+    # Common utilities (engine-agnostic)
+    src/common/EventDataHelper.cpp
+    src/common/GuardUtils.cpp
+    src/common/Logger.cpp
+    src/common/UniqueIdGenerator.cpp
+
+    # Logger backends (conditional based on SCE_USE_SPDLOG)
+    src/backends/DefaultBackend.cpp
+    $<$<BOOL:${SCE_USE_SPDLOG}>:src/backends/SpdlogBackend.cpp>
+
+    # Engine-agnostic scripting utilities (work with ScriptResult value types only)
+    src/scripting/ScriptResultUtils.cpp
+    src/scripting/XMLDOMWrapper.cpp
+    src/scripting/SessionRegistry.cpp
+    src/scripting/EcmaScriptToLuaTransformer.cpp
+
+    # Runtime utilities (engine-agnostic)
+    src/runtime/TypeRegistry.cpp
+    src/runtime/JsonUtils.cpp
+)
+
+target_include_directories(sce_base
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
+)
+
+target_link_libraries(sce_base
+    PUBLIC
+        sce_core
+)
+
+# spdlog includes (optional)
+if(SCE_USE_SPDLOG)
+    target_include_directories(sce_base PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include>
+    )
+    target_compile_definitions(sce_base PUBLIC SCE_USE_SPDLOG)
+endif()
+
+# Enable runtime logging for sce_base and all consumers
+target_compile_definitions(sce_base PUBLIC SCE_ENABLE_RUNTIME_LOGGING)
+
+# Force include DisableStdOut.h for sce_base source files only
+target_compile_options(sce_base
+    PRIVATE
+        -include common/DisableStdOut.h
+)
+
+target_compile_features(sce_base PUBLIC cxx_std_20)
+
+# ============================================================================
+# sce_scripting: Script engines and engine-dependent helpers (optional)
+# ============================================================================
+# Contains: JSEngine, LuaEngine, ScriptEngineProvider, DataModelInitHelper
+# Requires at least one script engine (QuickJS or Lua).
+# Static hybrid AOT and Interpreter consumers link sce_scripting.
+if(SCE_HAS_SCRIPTING)
+    add_library(sce_scripting
+        # Script engine provider (compile-time engine selection)
+        src/scripting/ScriptEngineProvider.cpp
+
+        # Engine-dependent helpers
+        src/common/DataModelInitHelper.cpp
+
+        # QuickJS engine (conditional)
+        $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/JSEngine.cpp>
+        $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/JSEngineImpl.cpp>
+        $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/JSExecutionEngineImpl.cpp>
+        $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/PlatformExecutionHelper.cpp>
+        $<$<BOOL:${SCE_ENABLE_QUICKJS}>:src/scripting/DOMBinding.cpp>
+
+        # Lua engine (conditional)
+        $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaEngine.cpp>
+        $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaDOMBinding.cpp>
+    )
+
+    target_include_directories(sce_scripting
+        PRIVATE
+            # Implementation headers (Impl classes in src/)
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    )
+
+    # Force include DisableStdOut.h for sce_scripting source files only
+    target_compile_options(sce_scripting
+        PRIVATE
+            -include common/DisableStdOut.h
+    )
+
+    target_link_libraries(sce_scripting
+        PUBLIC
+            sce_base
+            $<$<BOOL:${SCE_ENABLE_QUICKJS}>:qjs>
+            $<$<BOOL:${SCE_ENABLE_LUA}>:lua54>
+    )
+
+    # Compile-time script engine selection for ScriptEngineProvider
+    set(SCE_SCRIPT_ENGINE "lua" CACHE STRING "Script engine for ScriptEngineProvider")
+    set_property(CACHE SCE_SCRIPT_ENGINE PROPERTY STRINGS "quickjs" "lua")
+
+    # Normalize and validate engine id
+    string(TOLOWER "${SCE_SCRIPT_ENGINE}" _SCE_ENGINE_LOWER)
+    set(_SCE_VALID_ENGINES "quickjs" "lua")
+    list(FIND _SCE_VALID_ENGINES "${_SCE_ENGINE_LOWER}" _SCE_ENGINE_INDEX)
+    if(_SCE_ENGINE_INDEX EQUAL -1)
+        message(FATAL_ERROR "Unknown SCE_SCRIPT_ENGINE: '${SCE_SCRIPT_ENGINE}'. Valid engines: ${_SCE_VALID_ENGINES}")
+    endif()
+
+    # Per-engine prerequisite validation
+    if(_SCE_ENGINE_LOWER STREQUAL "lua" AND NOT SCE_ENABLE_LUA)
+        message(FATAL_ERROR "SCE_SCRIPT_ENGINE=lua requires SCE_ENABLE_LUA=ON")
+    endif()
+    if(_SCE_ENGINE_LOWER STREQUAL "quickjs" AND NOT SCE_ENABLE_QUICKJS)
+        message(FATAL_ERROR "SCE_SCRIPT_ENGINE=quickjs requires SCE_ENABLE_QUICKJS=ON")
+    endif()
+
+    string(TOUPPER "${_SCE_ENGINE_LOWER}" _SCE_ENGINE_UPPER)
+    target_compile_definitions(sce_scripting PUBLIC "SCE_SCRIPT_ENGINE_${_SCE_ENGINE_UPPER}")
+    message(STATUS "SCE: Script engine provider default: ${SCE_SCRIPT_ENGINE}")
+
+    # Lua/QuickJS compile definitions
+    if(SCE_ENABLE_LUA)
+        target_compile_definitions(sce_scripting PUBLIC SCE_ENABLE_LUA)
+    endif()
+    if(SCE_ENABLE_QUICKJS)
+        target_compile_definitions(sce_scripting PUBLIC SCE_ENABLE_QUICKJS)
+    endif()
+
+    target_compile_features(sce_scripting PUBLIC cxx_std_20)
+endif()
+
+# ============================================================================
+# sce_runtime: Full interpreter with Parser, StateMachine, Actions, Events
+# ============================================================================
+# Links sce_base + sce_scripting. Provides the complete SCXML interpreter.
+# Test executables and interpreter consumers link sce_runtime.
 add_library(sce_runtime
     # Model implementation
     src/model/SCXMLModel.cpp
     src/model/StateNode.cpp
     src/model/TransitionNode.cpp
-
     src/model/GuardNode.cpp
     src/model/InvokeNode.cpp
     src/model/StateHierarchy.cpp
     src/model/DataModelItem.cpp
     src/model/SCXMLContext.cpp
 
-    # Common utilities
-    src/common/EventDataHelper.cpp
-    src/common/GuardUtils.cpp
-    src/common/Logger.cpp
-    
-    # Logger backends (conditional based on SCE_USE_SPDLOG)
-    src/backends/DefaultBackend.cpp  # Always compiled
-    $<$<BOOL:${SCE_USE_SPDLOG}>:src/backends/SpdlogBackend.cpp>
+    # Common utilities (interpreter-specific)
     src/common/NodeFactory.cpp
-    src/common/UniqueIdGenerator.cpp
-    src/common/DataModelInitHelper.cpp
-
-    # Moved to their natural subsystem directories
-    src/scripting/PlatformExecutionHelper.cpp
-    src/runtime/TypeRegistry.cpp
-    src/runtime/JsonUtils.cpp
-    src/parsing/XmlSerializationHelper.cpp
 
     # Runtime implementation
     src/runtime/SCXMLEngineImpl.cpp
@@ -159,7 +300,6 @@ add_library(sce_runtime
     src/events/EventRaiserService.cpp
     src/events/PlatformEventRaiserHelper.cpp
 
-
     # Concurrent states implementation
     src/states/ConcurrentStateNode.cpp
     src/states/ConcurrentRegion.cpp
@@ -169,21 +309,6 @@ add_library(sce_runtime
     src/states/ConcurrentCompletionMonitor.cpp
     src/states/ExternalTransitionHandler.cpp
     src/states/StateExitExecutor.cpp
-
-    # Scripting implementation
-    src/scripting/JSEngine.cpp
-    src/scripting/JSEngineImpl.cpp
-    src/scripting/JSExecutionEngineImpl.cpp
-    src/scripting/ScriptResultUtils.cpp
-    src/scripting/ScriptEngineProvider.cpp
-    src/scripting/EcmaScriptToLuaTransformer.cpp
-    src/scripting/SessionRegistry.cpp
-    src/scripting/XMLDOMWrapper.cpp  # W3C SCXML B.2: XML DOM (pugixml for all platforms)
-    src/scripting/DOMBinding.cpp      # QuickJS bindings for XML DOM API
-
-    # Lua scripting engine (conditional)
-    $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaEngine.cpp>
-    $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaDOMBinding.cpp>
 
     # Parsing implementation
     src/parsing/StateNodeParser.cpp
@@ -195,17 +320,16 @@ add_library(sce_runtime
     src/parsing/DataModelParser.cpp
     src/parsing/DoneDataParser.cpp
     src/parsing/ParsingCommon.cpp
+    src/parsing/XmlSerializationHelper.cpp
 
     # XML Parser abstraction (Platform-specific implementation)
     src/parsing/XMLParserFactory.cpp
-    
+
     # High-level API
     src/ReadySCXMLEngineImpl.cpp
 )
 
-# XInclude processing (platform-independent with different implementations)
-# XIncludeProcessor stub delegates to PugiXMLDocument::processXInclude()  
-# WASM: XIncludeProcessor stub delegates to IXMLDocument::processXInclude()
+# XInclude processing
 target_sources(sce_runtime PRIVATE
     src/parsing/XIncludeProcessor.cpp
 )
@@ -234,23 +358,19 @@ if(SCE_ENABLE_HTTP)
 endif()
 
 # XML Parser implementation (Unified)
-# All platforms: PugiXMLParser (pugixml wrapper)
 target_sources(sce_runtime PRIVATE
     src/parsing/PugiXMLParser.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/pugixml/src/pugixml.cpp
 )
 
 # Runtime-specific include directories for short (unqualified) includes
-# sce_core only exposes the root include/ for qualified paths ("common/Foo.h").
-# sce_runtime adds subdirectory flat paths so that runtime headers can use
-# cross-directory short includes (e.g., #include "IEventTarget.h" in events/).
+# sce_base already provides common/ and scripting/ flat paths.
+# sce_runtime adds remaining subdirectory flat paths for cross-directory short includes.
 target_include_directories(sce_runtime
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/model>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/runtime>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/scripting>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/factory>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/common>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/parsing>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/actions>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/events>
@@ -258,32 +378,8 @@ target_include_directories(sce_runtime
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/dispatchers>
     PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backends>
-        # Implementation headers (Impl classes) — private to sce_runtime, not installed
-        # Only the root src/ is exposed, so Impl headers require qualified includes
-        # (e.g., "runtime/EventRaiserImpl.h") preventing accidental unqualified usage
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
 )
-
-# spdlog includes (runtime-only dependency)
-if(SCE_USE_SPDLOG)
-    target_include_directories(sce_runtime PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../third_party/spdlog/include>
-    )
-endif()
-
-
-# SCE codebase: Disable std::cout usage
-# printf family disabled due to system header conflicts
-
-# Conditional spdlog support (compile definition)
-if(SCE_USE_SPDLOG)
-    target_compile_definitions(sce_runtime PUBLIC SCE_USE_SPDLOG)
-endif()
-
-# Enable runtime logging for sce_runtime and all consumers
-# Header-only code uses SCE_LOG_* macros from LogMacros.h which resolve to
-# real Logger calls when this is defined, or no-ops when using sce_core standalone
-target_compile_definitions(sce_runtime PUBLIC SCE_ENABLE_RUNTIME_LOGGING)
 
 # Force include DisableStdOut.h for sce_runtime source files only
 target_compile_options(sce_runtime
@@ -291,56 +387,27 @@ target_compile_options(sce_runtime
         -include common/DisableStdOut.h
 )
 
-target_link_libraries(sce_runtime
-    PUBLIC
-        sce_core  # Header-only core (include directories propagated)
-        qjs       # QuickJS library
-        $<$<BOOL:${SCE_ENABLE_LUA}>:lua54>  # Lua 5.4 library (conditional)
-        # nlohmann/json is header-only, no linking required
-        # spdlog is header-only, no linking required
-    PRIVATE
-        pthread
-)
-
-# Lua compile definition for conditional compilation
-if(SCE_ENABLE_LUA)
-    target_compile_definitions(sce_runtime PUBLIC SCE_ENABLE_LUA)
+# sce_runtime links sce_scripting (which transitively provides sce_base → sce_core)
+# This makes sce_runtime an umbrella target: linking sce_runtime gives you everything.
+if(SCE_HAS_SCRIPTING)
+    target_link_libraries(sce_runtime
+        PUBLIC
+            sce_scripting
+        PRIVATE
+            pthread
+    )
+else()
+    # No script engine: sce_runtime links sce_base directly (interpreter won't work)
+    target_link_libraries(sce_runtime
+        PUBLIC
+            sce_base
+        PRIVATE
+            pthread
+    )
+    message(WARNING "SCE: No script engine enabled. Interpreter and static hybrid will not work.")
 endif()
 
-# Compile-time script engine selection for ScriptEngineProvider
-# Controls which engine ScriptEngineProvider::getScriptEngine() returns.
-# Both engines may still be compiled (SCE_ENABLE_LUA) for direct injection use cases.
-#
-# To add a new engine:
-#   1. Add engine id to _SCE_VALID_ENGINES and STRINGS list below
-#   2. Add prerequisite validation if needed (e.g., SCE_ENABLE_XXX check)
-#   3. Add engine singleton + metadata in ScriptEngineProvider.cpp
-set(SCE_SCRIPT_ENGINE "lua" CACHE STRING "Script engine for ScriptEngineProvider")
-set_property(CACHE SCE_SCRIPT_ENGINE PROPERTY STRINGS "quickjs" "lua")
-
-# Normalize and validate engine id
-string(TOLOWER "${SCE_SCRIPT_ENGINE}" _SCE_ENGINE_LOWER)
-set(_SCE_VALID_ENGINES "quickjs" "lua")
-list(FIND _SCE_VALID_ENGINES "${_SCE_ENGINE_LOWER}" _SCE_ENGINE_INDEX)
-if(_SCE_ENGINE_INDEX EQUAL -1)
-    message(FATAL_ERROR "Unknown SCE_SCRIPT_ENGINE: '${SCE_SCRIPT_ENGINE}'. Valid engines: ${_SCE_VALID_ENGINES}")
-endif()
-
-# Per-engine prerequisite validation
-if(_SCE_ENGINE_LOWER STREQUAL "lua" AND NOT SCE_ENABLE_LUA)
-    message(FATAL_ERROR "SCE_SCRIPT_ENGINE=lua requires SCE_ENABLE_LUA=ON")
-endif()
-
-string(TOUPPER "${_SCE_ENGINE_LOWER}" _SCE_ENGINE_UPPER)
-target_compile_definitions(sce_runtime PUBLIC "SCE_SCRIPT_ENGINE_${_SCE_ENGINE_UPPER}")
-message(STATUS "SCE: Script engine provider default: ${SCE_SCRIPT_ENGINE}")
-
-# Note: pugixml is header-only, no linking required
-
-# WASM pthread configuration for EventDispatcherImpl and JSEngine
-# W3C SCXML: EventDispatcherImpl uses std::thread for invoke operations
-# ARCHITECTURE.md: JSEngine uses SynchronousExecutionHelper, but EventDispatcherImpl needs pthread
-# Note: PROXY_TO_PTHREAD removed to reduce overhead while keeping pthread support
+# WASM pthread configuration
 if(EMSCRIPTEN)
     target_compile_options(sce_runtime PRIVATE
         -pthread
@@ -372,7 +439,4 @@ if(SCE_ENABLE_HTTP)
     endif()
 endif()
 
-# C++20 standard inherited from sce_core INTERFACE, but set explicitly for sce_runtime too
 target_compile_features(sce_runtime PUBLIC cxx_std_20)
-
-
