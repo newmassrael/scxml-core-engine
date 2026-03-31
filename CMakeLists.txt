@@ -336,7 +336,14 @@ install(PROGRAMS tools/codegen/codegen.py
 )
 
 install(FILES tools/codegen/scxml_parser.py
+              tools/codegen/license_config.py
     DESTINATION ${SCE_INSTALL_CODEGENDIR}
+)
+
+install(FILES tools/codegen/generators/__init__.py
+              tools/codegen/generators/base.py
+              tools/codegen/generators/cpp_generator.py
+    DESTINATION ${SCE_INSTALL_CODEGENDIR}/generators
 )
 
 install(DIRECTORY tools/codegen/templates

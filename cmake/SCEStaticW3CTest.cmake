@@ -109,6 +109,10 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     set(CODEGEN_SCRIPTS
         "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py"
         "${CMAKE_SOURCE_DIR}/tools/codegen/scxml_parser.py"
+        "${CMAKE_SOURCE_DIR}/tools/codegen/license_config.py"
+        "${CMAKE_SOURCE_DIR}/tools/codegen/generators/__init__.py"
+        "${CMAKE_SOURCE_DIR}/tools/codegen/generators/base.py"
+        "${CMAKE_SOURCE_DIR}/tools/codegen/generators/cpp_generator.py"
     )
 
     # Check if main TXML file exists
