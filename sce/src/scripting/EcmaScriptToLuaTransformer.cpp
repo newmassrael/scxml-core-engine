@@ -52,7 +52,10 @@ std::string replaceKeywordPrefix(const std::string &s, const char *keyword, cons
         if (afterKw < s.size() && std::isspace(static_cast<unsigned char>(s[afterKw]))) {
             result.append(s, lastPos, pos - lastPos);
             result.append(replacement);
-            lastPos = afterKw + 1;
+            // Consume all whitespace after keyword (matches \bword\s+ semantics)
+            size_t spaceEnd = afterKw;
+            while (spaceEnd < s.size() && std::isspace(static_cast<unsigned char>(s[spaceEnd]))) ++spaceEnd;
+            lastPos = spaceEnd;
             pos = lastPos;
         } else {
             ++pos;
@@ -461,27 +464,32 @@ std::string EcmaScriptToLuaTransformer::transformIncrementDecrement(const std::s
     size_t i = 0;
 
     while (i < input.size()) {
-        // Check for postfix increment: \w++
+        // Check for postfix/prefix increment: \w++ or ++\w
         if (input[i] == '+' && i + 1 < input.size() && input[i + 1] == '+') {
-            // Look backwards for identifier
             size_t varEnd = i;
             size_t varStart = i;
             while (varStart > 0 && isWordChar(input[varStart - 1])) --varStart;
 
             if (varStart < varEnd) {
-                // Found postfix increment
-                // Remove the variable we already appended
                 result.erase(result.size() - (varEnd - varStart));
                 std::string var = input.substr(varStart, varEnd - varStart);
                 result += "(function() local _t = " + var + " " + var + " = " + var + " + 1 return _t end)()";
-                i += 2;  // skip ++
+                i += 2;
+                continue;
+            }
+
+            size_t afterOp = i + 2;
+            size_t wordEnd = readWord(input, afterOp);
+            if (wordEnd > afterOp) {
+                std::string var = input.substr(afterOp, wordEnd - afterOp);
+                result += "(function() " + var + " = " + var + " + 1 return " + var + " end)()";
+                i = wordEnd;
                 continue;
             }
         }
 
-        // Check for postfix decrement: \w--
+        // Check for postfix/prefix decrement: \w-- or --\w
         if (input[i] == '-' && i + 1 < input.size() && input[i + 1] == '-') {
-            // Look backwards for identifier
             size_t varEnd = i;
             size_t varStart = i;
             while (varStart > 0 && isWordChar(input[varStart - 1])) --varStart;
@@ -494,24 +502,11 @@ std::string EcmaScriptToLuaTransformer::transformIncrementDecrement(const std::s
                 continue;
             }
 
-            // Check for prefix decrement: --\w
             size_t afterOp = i + 2;
             size_t wordEnd = readWord(input, afterOp);
             if (wordEnd > afterOp) {
                 std::string var = input.substr(afterOp, wordEnd - afterOp);
                 result += "(function() " + var + " = " + var + " - 1 return " + var + " end)()";
-                i = wordEnd;
-                continue;
-            }
-        }
-
-        // Check for prefix increment: ++\w
-        if (input[i] == '+' && i + 1 < input.size() && input[i + 1] == '+') {
-            size_t afterOp = i + 2;
-            size_t wordEnd = readWord(input, afterOp);
-            if (wordEnd > afterOp) {
-                std::string var = input.substr(afterOp, wordEnd - afterOp);
-                result += "(function() " + var + " = " + var + " + 1 return " + var + " end)()";
                 i = wordEnd;
                 continue;
             }
