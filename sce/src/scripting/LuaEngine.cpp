@@ -21,6 +21,11 @@ extern "C" {
 
 namespace {
 
+// ECMAScript null/undefined sentinel tags for Lua lightuserdata
+// Used to preserve null vs undefined distinction in Lua arrays (W3C SCXML 4.6)
+char NULL_SENTINEL_TAG;
+char UNDEFINED_SENTINEL_TAG;
+
 // Type alias for global function callbacks registered via registerGlobalFunction()
 using GlobalFuncCallback = std::function<ScriptValue(const std::vector<ScriptValue> &)>;
 
@@ -392,12 +397,26 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
 
     // === Register SCXML built-in functions ===
 
+    // W3C SCXML 4.6: null/undefined sentinels for array element preservation
+    lua_pushlightuserdata(L, &NULL_SENTINEL_TAG);
+    lua_setglobal(L, "_NULL");
+    lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
+    lua_setglobal(L, "_UNDEFINED");
+
     // _scxml_truthy(v): ECMAScript truthiness semantics
     // In JS: 0, "", null, undefined, NaN are falsy. In Lua only nil/false are falsy.
     lua_pushcfunction(L, [](lua_State *Ls) -> int {
         if (lua_isnil(Ls, 1) || (lua_isboolean(Ls, 1) && !lua_toboolean(Ls, 1))) {
             lua_pushboolean(Ls, 0);
             return 1;
+        }
+        // W3C SCXML 4.6: null/undefined sentinels are falsy
+        if (lua_islightuserdata(Ls, 1)) {
+            void *p = lua_touserdata(Ls, 1);
+            if (p == &NULL_SENTINEL_TAG || p == &UNDEFINED_SENTINEL_TAG) {
+                lua_pushboolean(Ls, 0);
+                return 1;
+            }
         }
         if (lua_isnumber(Ls, 1)) {
             lua_pushboolean(Ls, lua_tonumber(Ls, 1) != 0.0 ? 1 : 0);
@@ -419,6 +438,10 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
     lua_pushcfunction(L, [](lua_State *Ls) -> int {
         if (lua_isnil(Ls, 1)) {
             lua_pushstring(Ls, "undefined");
+        } else if (lua_islightuserdata(Ls, 1)) {
+            // W3C SCXML 4.6: typeof null === "object", typeof undefined === "undefined"
+            void *p = lua_touserdata(Ls, 1);
+            lua_pushstring(Ls, (p == &NULL_SENTINEL_TAG) ? "object" : "undefined");
         } else if (lua_isboolean(Ls, 1)) {
             lua_pushstring(Ls, "boolean");
         } else if (lua_isnumber(Ls, 1)) {
@@ -961,18 +984,56 @@ bool LuaEngine::hasVariable(const std::string &sessionId, const std::string &var
     auto it = sessions_.find(sessionId);
     if (it == sessions_.end()) return false;
 
-    // Check explicit tracking first
-    if (it->second->declaredVars.count(variableName) > 0) return true;
+    bool isDottedPath = variableName.find('.') != std::string::npos;
 
-    // Also check Lua global table (variables set via script execution)
+    // Check explicit tracking first (simple names only)
+    if (!isDottedPath) {
+        if (it->second->declaredVars.count(variableName) > 0) return true;
+    }
+
+    // Check Lua state: simple globals or dotted path traversal
     lua_State *L = it->second->L;
-    if (L) {
+    if (!L) return false;
+
+    if (!isDottedPath) {
+        // Simple variable name — check global table directly
         lua_getglobal(L, variableName.c_str());
         bool exists = !lua_isnil(L, -1);
         lua_pop(L, 1);
         return exists;
     }
-    return false;
+
+    // Dotted path (e.g., "obj.nested.value") — traverse table chain
+    std::istringstream stream(variableName);
+    std::string segment;
+    int pushCount = 0;
+
+    // Get root variable
+    if (!std::getline(stream, segment, '.') || segment.empty()) return false;
+    lua_getglobal(L, segment.c_str());
+    ++pushCount;
+
+    if (lua_isnil(L, -1)) {
+        lua_pop(L, pushCount);
+        return false;
+    }
+
+    // Traverse remaining path segments
+    while (std::getline(stream, segment, '.')) {
+        if (!lua_istable(L, -1)) {
+            lua_pop(L, pushCount);
+            return false;
+        }
+        lua_getfield(L, -1, segment.c_str());
+        ++pushCount;
+        if (lua_isnil(L, -1)) {
+            lua_pop(L, pushCount);
+            return false;
+        }
+    }
+
+    lua_pop(L, pushCount);
+    return true;
 }
 
 bool LuaEngine::isVariablePreInitialized(const std::string &sessionId, const std::string &variableName) const {
@@ -1287,7 +1348,8 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
         if constexpr (std::is_same_v<T, ScriptUndefined>) {
             lua_pushnil(L);
         } else if constexpr (std::is_same_v<T, ScriptNull>) {
-            lua_pushnil(L);
+            // W3C SCXML 4.6: Push null sentinel to preserve typeof semantics
+            lua_pushlightuserdata(L, &NULL_SENTINEL_TAG);
         } else if constexpr (std::is_same_v<T, bool>) {
             lua_pushboolean(L, val ? 1 : 0);
         } else if constexpr (std::is_same_v<T, int64_t>) {
@@ -1300,7 +1362,12 @@ void LuaEngine::pushScriptValue(lua_State *L, const ScriptValue &value) {
             lua_newtable(L);
             if (val) {
                 for (size_t i = 0; i < val->elements.size(); ++i) {
-                    pushScriptValue(L, val->elements[i]);
+                    // W3C SCXML 4.6: Use undefined sentinel in arrays to prevent nil holes
+                    if (std::holds_alternative<ScriptUndefined>(val->elements[i])) {
+                        lua_pushlightuserdata(L, &UNDEFINED_SENTINEL_TAG);
+                    } else {
+                        pushScriptValue(L, val->elements[i]);
+                    }
                     lua_rawseti(L, -2, static_cast<int>(i + 1));
                 }
             }
@@ -1353,6 +1420,14 @@ ScriptValue LuaEngine::luaToScriptValue(lua_State *L, int index) {
                 lua_pop(L, 1);
             }
             return ScriptValue(obj);
+        }
+        case LUA_TLIGHTUSERDATA: {
+            // W3C SCXML 4.6: Convert null/undefined sentinels back to ScriptValue types
+            void *p = lua_touserdata(L, index);
+            if (p == &NULL_SENTINEL_TAG) {
+                return ScriptNull{};
+            }
+            return ScriptUndefined{};
         }
         default:
             return ScriptUndefined{};

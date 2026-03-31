@@ -187,10 +187,10 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
     processed = transformCompoundAssignment(processed);
     processed = transformIncrementDecrement(processed);
     processed = transformInstanceofPatterns(processed);
+    processed = transformArrayLiterals(processed);
     processed = transformNullUndefined(processed);
     processed = transformNewExpression(processed);
     processed = transformArrayMethods(processed);
-    processed = transformArrayLiterals(processed);
     processed = transformArrayIndexing(processed);
     processed = transformObjectLiterals(processed);
     processed = transformTernaryOperator(processed);
@@ -238,10 +238,10 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     processed = transformIncrementDecrement(processed);
     processed = transformFunctionSyntax(processed);
     processed = transformInstanceofPatterns(processed);
+    processed = transformArrayLiterals(processed);
     processed = transformNullUndefined(processed);
     processed = transformNewExpression(processed);
     processed = transformArrayMethods(processed);
-    processed = transformArrayLiterals(processed);
     processed = transformArrayIndexing(processed);
     processed = transformObjectLiterals(processed);
     processed = transformTernaryOperator(processed);
@@ -760,6 +760,10 @@ std::string EcmaScriptToLuaTransformer::transformArrayLiterals(const std::string
                 size_t closePos = findMatchingClose(input, i, '[', ']');
                 std::string contents = input.substr(i + 1, closePos - i - 1);
                 contents = transformArrayLiterals(contents);
+                // W3C SCXML 4.6: Replace null/undefined with sentinels in array context
+                // to prevent Lua nil holes during foreach iteration
+                contents = replaceWord(contents, "null", "_NULL");
+                contents = replaceWord(contents, "undefined", "_UNDEFINED");
                 result += "{" + contents + "}";
                 i = closePos;
             } else {
