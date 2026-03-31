@@ -102,6 +102,7 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     set(TXML_FILE "${RESOURCE_DIR}/test${TEST_NUM}.txml")
     set(SCXML_FILE "${OUTPUT_DIR}/test${TEST_NUM}.scxml")
     set(GENERATED_HEADER "${OUTPUT_DIR}/test${TEST_NUM}_sm.h")
+    set(GENERATED_INL "${OUTPUT_DIR}/test${TEST_NUM}_sm.inl")
 
     # Code generator Python scripts as base dependencies
     # Template dependencies are tracked via DEPFILE for fine-grained incremental builds
@@ -137,12 +138,14 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         )
 
         # Generate C++ code for sub SCXML (as invoked child)
+        set(SUB_INL_FILE "${OUTPUT_DIR}/${SUB_TXML_NAME}_sm.inl")
         add_custom_command(
             OUTPUT "${SUB_HEADER_FILE}"
             COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SUB_SCXML_FILE}" -o "${OUTPUT_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
             DEPENDS "${SUB_SCXML_FILE}" ${CODEGEN_SCRIPTS}
             DEPFILE "${SUB_HEADER_FILE}.d"
-            COMMENT "Generating C++ code: ${SUB_TXML_NAME}_sm.h"
+            BYPRODUCTS "${SUB_INL_FILE}"
+            COMMENT "Generating C++ code: ${SUB_TXML_NAME}_sm.h + .inl"
             VERBATIM
         )
 
@@ -244,7 +247,8 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
         COMMAND ${CMAKE_COMMAND} -P "${PROCESS_CHILDREN_SCRIPT}"
         DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} ${CODEGEN_SCRIPTS}
         DEPFILE "${GENERATED_HEADER}.d"
-        COMMENT "Generating C++ code: test${TEST_NUM}_sm.h (with inline children)"
+        BYPRODUCTS "${GENERATED_INL}"
+        COMMENT "Generating C++ code: test${TEST_NUM}_sm.h + .inl"
         VERBATIM
     )
 

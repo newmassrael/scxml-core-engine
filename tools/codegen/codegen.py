@@ -318,30 +318,45 @@ class CodeGenerator:
                 print(f"  → Generating Interpreter wrapper (dynamic features detected)")
                 return self._generate_interpreter_wrapper(model, output_dir)
 
-            # Load template
-            template = self.env.get_template('state_machine.jinja2')
+            # Load templates
+            header_template = self.env.get_template('state_machine.jinja2')
+            inl_template = self.env.get_template('state_machine_inl.jinja2')
 
             # Calculate base_path for DataModelInitHelper file loading
             # ARCHITECTURE.md: basePath is resolved from executable location at runtime
             # Use simple directory name - resolveExecutableBasePath() will make it absolute
             base_path = Path(output_dir).name
 
-            # Render template with centralized license configuration
-            output = template.render(model=model, base_path=base_path, license_config=LICENSE_CONFIG)
-
             # Use input filename (without extension) for output filename
             # W3C SCXML 6.4: Multiple tests may use same SCXML name attribute (e.g., test338 and test347 both use "machineName")
             # Using input filename ensures unique output files (test338_machineName_sm.h vs test347_machineName_sm.h)
             input_stem = Path(scxml_path).stem  # e.g., "test338_machineName" from "test338_machineName.scxml"
+            inl_filename = f"{input_stem}_sm.inl"
 
-            # Write output file
+            # Render header (.h) with centralized license configuration
+            header_output = header_template.render(
+                model=model, base_path=base_path, license_config=LICENSE_CONFIG,
+                inl_filename=inl_filename
+            )
+
+            # Render implementation (.inl)
+            inl_output = inl_template.render(
+                model=model, base_path=base_path, license_config=LICENSE_CONFIG
+            )
+
+            # Write output files
             output_path = Path(output_dir) / f"{input_stem}_sm.h"
+            inl_path = Path(output_dir) / inl_filename
             output_path.parent.mkdir(parents=True, exist_ok=True)
 
             with open(output_path, 'w') as f:
-                f.write(output)
+                f.write(header_output)
+
+            with open(inl_path, 'w') as f:
+                f.write(inl_output)
 
             print(f"  ✓ Generated: {output_path}")
+            print(f"  ✓ Generated: {inl_path}")
 
             # W3C SCXML 6.4: Write child state machines metadata for CMake
             # Outputs list of child SCXML files that need to be generated
@@ -367,8 +382,11 @@ class CodeGenerator:
                 with open(depfile_path, 'w') as f:
                     # Makefile format: escape spaces in paths
                     output_escaped = str(output_path).replace(' ', '\\ ')
+                    inl_escaped = str(inl_path).replace(' ', '\\ ')
                     deps_escaped = ' '.join(d.replace(' ', '\\ ') for d in all_deps)
                     f.write(f"{output_escaped}: {deps_escaped}\n")
+                    # Track .inl as additional output with same dependencies
+                    f.write(f"{inl_escaped}: {deps_escaped}\n")
 
             return True
 
