@@ -3,7 +3,7 @@
 #include "parsing/SCXMLParser.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/StateMachine.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include "states/SCXMLParallelTypes.h"
 #include <chrono>
 #include <gtest/gtest.h>
@@ -18,7 +18,7 @@ namespace SCE {
 class SCXMLParallelComplianceTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &JSEngine::instance();
+        engine_ = &ScriptEngineProvider::getScriptEngine();
         engine_->reset();
         nodeFactory_ = std::make_shared<NodeFactory>();
         parser_ = std::make_unique<SCXMLParser>(nodeFactory_);
@@ -31,7 +31,7 @@ protected:
         }
     }
 
-    JSEngine *engine_;
+    IScriptEngine *engine_;
     std::shared_ptr<NodeFactory> nodeFactory_;
     std::unique_ptr<SCXMLParser> parser_;
     std::string sessionId_;
@@ -74,7 +74,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_ParallelState_BasicBehavior_ShouldParseA
 
     // SCXML W3C section 3.4: Verify StateMachine can load and execute parallel state
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
+    auto sm = std::make_shared<SCE::StateMachine>(SCE::ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent)) << "StateMachine failed to load valid SCXML";
     ASSERT_TRUE(sm->start()) << "StateMachine failed to start with parallel initial state";
 
@@ -120,7 +120,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_DoneStateEvent_Generation_ShouldProcessD
 
     // SCXML W3C specification section 3.4: done.state event handling compliance test
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
+    auto sm = std::make_shared<SCE::StateMachine>(SCE::ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent)) << "Failed to load valid SCXML with parallel state";
     ASSERT_TRUE(sm->start()) << "Failed to start StateMachine with parallel initial state";
 
@@ -179,7 +179,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_DoneStateEvent_Generation) {
 
     // SCXML W3C specification 3.4: Automatic done.state event generation test on parallel state completion
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
+    auto sm = std::make_shared<SCE::StateMachine>(SCE::ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent)) << "StateMachine loading failed";
     ASSERT_TRUE(sm->start()) << "StateMachine start failed";
 
@@ -195,10 +195,10 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_DoneStateEvent_Generation) {
 
         // Verify transition occurred due to automatically generated done.state event
         auto doneEventResult =
-            SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "done_event_received").get();
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "done_event_received").get();
 
         auto parallelCompletedResult =
-            SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "parallel_completed").get();
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "parallel_completed").get();
 
         // W3C SCXML 3.4: Verify done.state event automatic generation
         if (doneEventResult.getValueAsString() == "true" && parallelCompletedResult.getValueAsString() == "true") {
@@ -488,7 +488,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_RegionActivation_Simultaneous) 
     // W3C specification: "When a <parallel> element is active, ALL of its children are active"
     // Test actual region activation through StateMachine integration
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
+    auto sm = std::make_shared<SCE::StateMachine>(SCE::ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent)) << "StateMachine loading failed";
     ASSERT_TRUE(sm->start()) << "StateMachine start failed";
 
@@ -507,7 +507,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_RegionActivation_Simultaneous) 
     // This should result in region1_active, region2_active, region3_active being set to true
 
     // Check data model variables that should be set by onentry actions
-    auto &jsEngine = SCE::JSEngine::instance();
+    auto &jsEngine = SCE::ScriptEngineProvider::getScriptEngine();
 
     try {
         // Verify region1_active was set to true by onentry action
@@ -584,7 +584,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EventBroadcasting_AllRegions) {
     ASSERT_NE(stateMachine, nullptr) << "SCXML parsing failed";
 
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
+    auto sm = std::make_shared<SCE::StateMachine>(SCE::ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent)) << "SCXML loading failed";
     ASSERT_TRUE(sm->start()) << "StateMachine start failed";
 
@@ -601,19 +601,19 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EventBroadcasting_AllRegions) {
         EXPECT_TRUE(result.success) << "SCXML violation: Event broadcasting failed: " << result.errorMessage;
 
         // Verify all regions received and processed the event
-        auto region1Future = SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "region1_received");
+        auto region1Future = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region1_received");
         auto region1Result = region1Future.get();
         EXPECT_EQ(region1Result.getValueAsString(), "true")
             << "SCXML violation: region1 did not receive broadcast event. Expected true, got: "
             << region1Result.getValueAsString();
 
-        auto region2Future = SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "region2_received");
+        auto region2Future = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region2_received");
         auto region2Result = region2Future.get();
         EXPECT_EQ(region2Result.getValueAsString(), "true")
             << "SCXML violation: region2 did not receive broadcast event. Expected true, got: "
             << region2Result.getValueAsString();
 
-        auto region3Future = SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "region3_received");
+        auto region3Future = SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "region3_received");
         auto region3Result = region3Future.get();
         EXPECT_EQ(region3Result.getValueAsString(), "true")
             << "SCXML violation: region3 did not receive broadcast event. Expected true, got: "
@@ -663,7 +663,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_CompletionCriteria) {
     ASSERT_NE(stateMachine, nullptr) << "SCXML parsing failed";
 
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
+    auto sm = std::make_shared<SCE::StateMachine>(SCE::ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent)) << "SCXML loading failed";
     ASSERT_TRUE(sm->start()) << "StateMachine start failed";
 
@@ -684,14 +684,14 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_CompletionCriteria) {
 
         // Verify done.state event was automatically generated and processed
         auto parallelCompleteResult =
-            SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "parallel_complete").get();
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "parallel_complete").get();
         EXPECT_EQ(parallelCompleteResult.getValueAsString(), "true")
             << "SCXML violation: done.state event not automatically generated when all regions completed. Expected "
                "true, got: "
             << parallelCompleteResult.getValueAsString();
 
         auto doneEventResult =
-            SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "done_event_fired").get();
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "done_event_fired").get();
         EXPECT_EQ(doneEventResult.getValueAsString(), "true")
             << "SCXML violation: done.state.completion_test event not processed. Expected true, got: "
             << doneEventResult.getValueAsString();
@@ -755,7 +755,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EntryExitSequence) {
 
     // W3C SCXML specification section 3.4: Entry/exit sequence compliance test
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
+    auto sm = std::make_shared<SCE::StateMachine>(SCE::ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent)) << "StateMachine loading failed";
     ASSERT_TRUE(sm->start()) << "StateMachine start failed";
 
@@ -766,7 +766,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EntryExitSequence) {
 
         // SCXML W3C 3.4: Entry sequence must be: parallel_entry -> child1_entry, child2_entry
         auto entrySequenceResult =
-            SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "entry_sequence").get();
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "entry_sequence").get();
         std::string entrySequence = entrySequenceResult.getValueAsString();
         EXPECT_TRUE(entrySequence.find("parallel_entry") != std::string::npos)
             << "SCXML violation: parallel state onentry action not executed. Expected 'parallel_entry' in: "
@@ -792,7 +792,7 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_EntryExitSequence) {
 
         // SCXML W3C 3.4: Exit sequence must be: child1_exit, child2_exit -> parallel_exit
         auto exitSequenceResult =
-            SCE::JSEngine::instance().evaluateExpression(sm->getSessionId(), "exit_sequence").get();
+            SCE::ScriptEngineProvider::getScriptEngine().evaluateExpression(sm->getSessionId(), "exit_sequence").get();
         std::string exitSequence = exitSequenceResult.getValueAsString();
         EXPECT_TRUE(exitSequence.find("child1_exit") != std::string::npos)
             << "SCXML violation: child1 onexit action not executed. Expected 'child1_exit' in: " << exitSequence;
@@ -855,14 +855,14 @@ TEST_F(SCXMLParallelComplianceTest, W3C_Parallel_TransitionProcessing_Independen
 
     // W3C SCXML specification section 3.4: Independent transition processing test
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<SCE::StateMachine>(SCE::JSEngine::instance());
+    auto sm = std::make_shared<SCE::StateMachine>(SCE::ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent)) << "StateMachine loading failed";
     ASSERT_TRUE(sm->start()) << "StateMachine start failed";
 
     // Verify initial state is parallel state
     EXPECT_EQ(sm->getCurrentState(), "independent_test") << "Parallel state not entered correctly";
 
-    auto &jsEngine = SCE::JSEngine::instance();
+    auto &jsEngine = SCE::ScriptEngineProvider::getScriptEngine();
 
     try {
         // Initial state verification: both regions should be in initial states

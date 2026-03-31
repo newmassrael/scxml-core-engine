@@ -277,16 +277,8 @@ bool ActionExecutorImpl::hasVariable(const std::string &location) {
         // Transform numeric variable names to JavaScript-compatible identifiers
         std::string jsLocation = transformVariableName(location);
 
-        // W3C SCXML Compliance: Check if variable is declared (not just if it's not undefined)
-        // Variables can be declared with undefined values and should be considered as existing
-        std::string checkExpr = "'" + jsLocation + "' in this || typeof " + jsLocation + " !== 'undefined'";
-        auto result = scriptEngine_.evaluateExpression(sessionId_, checkExpr).get();
-
-        if (result.isSuccess() && std::holds_alternative<bool>(result.getInternalValue())) {
-            return result.getValue<bool>();
-        }
-
-        return false;
+        // W3C SCXML Compliance: Use engine's native hasVariable for reliable cross-engine support
+        return scriptEngine_.hasVariable(sessionId_, jsLocation);
 
     } catch (const std::exception &e) {
         SCE_LOG_DEBUG("Error checking variable existence: {}", e.what());

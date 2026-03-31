@@ -10,7 +10,7 @@
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineBuilder.h"
 #include "runtime/StateMachineContext.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 
 using namespace SCE;
 
@@ -18,7 +18,7 @@ class ActionIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Ensure test isolation with JSEngine reset
-        SCE::JSEngine::instance().reset();
+        SCE::ScriptEngineProvider::getScriptEngine().reset();
 
         // Build StateMachine with dependency injection, then wrap in RAII context
         auto eventRaiser = std::make_shared<EventRaiserImpl>();
@@ -35,7 +35,7 @@ protected:
         // RAII cleanup: StateMachineContext destructor handles StateMachine stop and cleanup
         smContext_.reset();
         // Clean shutdown with minimal delay
-        SCE::JSEngine::instance().shutdown();
+        SCE::ScriptEngineProvider::getScriptEngine().shutdown();
         std::this_thread::sleep_for(SCE::Test::Utils::POLL_INTERVAL_MS);
     }
 

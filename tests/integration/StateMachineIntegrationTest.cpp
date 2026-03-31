@@ -3,7 +3,7 @@
 #include "model/SCXMLModel.h"
 #include "parsing/SCXMLParser.h"
 #include "runtime/StateMachine.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include <chrono>
 #include <gtest/gtest.h>
 #include <thread>
@@ -14,8 +14,8 @@ namespace Tests {
 class StateMachineIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &JSEngine::instance();
-        // Ensure test isolation with JSEngine reset
+        engine_ = &ScriptEngineProvider::getScriptEngine();
+        // Ensure test isolation with script engine reset
         engine_->reset();
 
         nodeFactory_ = std::make_shared<NodeFactory>();
@@ -30,7 +30,7 @@ protected:
         }
     }
 
-    JSEngine *engine_;
+    IScriptEngine *engine_;
     std::shared_ptr<NodeFactory> nodeFactory_;
     std::unique_ptr<SCXMLParser> parser_;
     std::string sessionId_;
@@ -456,7 +456,7 @@ TEST_F(StateMachineIntegrationTest, W3C_Test250_InvokeOnexitHandlers) {
 </scxml>)";
 
     // Note: Must use shared_ptr because StateMachine uses shared_from_this() internally
-    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
+    auto sm = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
     ASSERT_TRUE(sm->loadSCXMLFromString(scxmlContent));
     ASSERT_TRUE(sm->start());
 

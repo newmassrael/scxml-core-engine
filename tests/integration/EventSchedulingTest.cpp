@@ -19,7 +19,7 @@
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/StateMachine.h"
 #include "runtime/StateMachineContext.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include "scripting/SessionRegistry.h"
 #include "tests/w3c/W3CHttpTestServer.h"
 #include <httplib.h>
@@ -45,7 +45,7 @@ class EventSchedulingTest : public ::testing::Test {
 protected:
     void SetUp() override {
         // Ensure test isolation with JSEngine reset
-        auto &jsEngine = JSEngine::instance();
+        auto &jsEngine = ScriptEngineProvider::getScriptEngine();
         jsEngine.reset();
 
         jsEngine.createSession("test_session");
@@ -73,7 +73,7 @@ protected:
         scheduler_ = std::make_shared<EventSchedulerImpl>(eventExecutionCallback_);
 
         // Create ActionExecutor first (without dispatcher)
-        actionExecutor_ = std::make_shared<ActionExecutorImpl>("test_session", JSEngine::instance());
+        actionExecutor_ = std::make_shared<ActionExecutorImpl>("test_session", ScriptEngineProvider::getScriptEngine());
 
         // Set up event raising with MockEventRaiser
         raisedEvents_.clear();
@@ -108,7 +108,7 @@ protected:
         }
 
         // Clean up JSEngine sessions
-        auto &jsEngine = JSEngine::instance();
+        auto &jsEngine = ScriptEngineProvider::getScriptEngine();
         jsEngine.destroySession("test_session");
 
         executedEvents_.clear();
@@ -434,7 +434,7 @@ TEST_F(EventSchedulingTest, ShutdownWithPendingEvents) {
  * "When a session terminates, all delayed events scheduled by that session must be cancelled"
  */
 TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
-    auto &jsEngine = JSEngine::instance();
+    auto &jsEngine = ScriptEngineProvider::getScriptEngine();
 
     // Create additional sessions for testing
     jsEngine.createSession("session_1");
@@ -442,9 +442,9 @@ TEST_F(EventSchedulingTest, SessionAwareDelayedEventCancellation) {
     jsEngine.createSession("session_3");
 
     // Create ActionExecutors for each session
-    auto actionExecutor1 = std::make_shared<ActionExecutorImpl>("session_1", JSEngine::instance());
-    auto actionExecutor2 = std::make_shared<ActionExecutorImpl>("session_2", JSEngine::instance());
-    auto actionExecutor3 = std::make_shared<ActionExecutorImpl>("session_3", JSEngine::instance());
+    auto actionExecutor1 = std::make_shared<ActionExecutorImpl>("session_1", ScriptEngineProvider::getScriptEngine());
+    auto actionExecutor2 = std::make_shared<ActionExecutorImpl>("session_2", ScriptEngineProvider::getScriptEngine());
+    auto actionExecutor3 = std::make_shared<ActionExecutorImpl>("session_3", ScriptEngineProvider::getScriptEngine());
 
     // Set up event raising for each session
     // TSAN FIX: Thread-safe access with mutex protection
@@ -606,7 +606,7 @@ TEST_F(EventSchedulingTest, InvokeSessionEventIsolation_DelayedEventRouting) {
     std::atomic<bool> sessionIsolationViolated{false};
 
     // Create parent StateMachine (with 2 child invokes) - shared_ptr for enable_shared_from_this support
-    auto parentStateMachine = std::make_shared<StateMachine>(JSEngine::instance());
+    auto parentStateMachine = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
     auto parentContext = std::make_unique<StateMachineContext>(parentStateMachine);
 
     // Parent SCXML: Invoke two child sessions and verify session isolation
@@ -936,7 +936,7 @@ TEST_F(EventSchedulingTest, SCXML_InternalEventQueue_FIFOOrdering) {
 TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
     SCE_LOG_DEBUG("=== W3C SCXML Test 230: Autoforward Event Field Preservation ===");
 
-    auto parentStateMachine = std::make_shared<StateMachine>(JSEngine::instance());
+    auto parentStateMachine = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
 
     std::string scxmlContent = R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
@@ -1047,26 +1047,26 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
 
     // Retrieve and verify event field values
     std::string parentSessionId = parentStateMachine->getSessionId();
-    auto parentName = JSEngine::instance().getVariable(parentSessionId, "parent_name").get().getValueAsString();
-    auto parentType = JSEngine::instance().getVariable(parentSessionId, "parent_type").get().getValueAsString();
-    auto parentSendId = JSEngine::instance().getVariable(parentSessionId, "parent_sendid").get().getValueAsString();
-    auto parentOrigin = JSEngine::instance().getVariable(parentSessionId, "parent_origin").get().getValueAsString();
+    auto parentName = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_name").get().getValueAsString();
+    auto parentType = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_type").get().getValueAsString();
+    auto parentSendId = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_sendid").get().getValueAsString();
+    auto parentOrigin = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_origin").get().getValueAsString();
     auto parentOrigintype =
-        JSEngine::instance().getVariable(parentSessionId, "parent_origintype").get().getValueAsString();
-    auto parentInvokeid = JSEngine::instance().getVariable(parentSessionId, "parent_invokeid").get().getValueAsString();
-    auto parentData = JSEngine::instance().getVariable(parentSessionId, "parent_data").get().getValueAsString();
+        ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_origintype").get().getValueAsString();
+    auto parentInvokeid = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_invokeid").get().getValueAsString();
+    auto parentData = ScriptEngineProvider::getScriptEngine().getVariable(parentSessionId, "parent_data").get().getValueAsString();
 
     std::string childSessionId = SessionRegistry::instance().getInvokeSessionId(parentSessionId, "childInvokeId");
     ASSERT_FALSE(childSessionId.empty()) << "Child session should exist";
 
-    auto childName = JSEngine::instance().getVariable(childSessionId, "child_name").get().getValueAsString();
-    auto childType = JSEngine::instance().getVariable(childSessionId, "child_type").get().getValueAsString();
-    auto childSendId = JSEngine::instance().getVariable(childSessionId, "child_sendid").get().getValueAsString();
-    auto childOrigin = JSEngine::instance().getVariable(childSessionId, "child_origin").get().getValueAsString();
+    auto childName = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_name").get().getValueAsString();
+    auto childType = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_type").get().getValueAsString();
+    auto childSendId = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_sendid").get().getValueAsString();
+    auto childOrigin = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_origin").get().getValueAsString();
     auto childOrigintype =
-        JSEngine::instance().getVariable(childSessionId, "child_origintype").get().getValueAsString();
-    auto childInvokeid = JSEngine::instance().getVariable(childSessionId, "child_invokeid").get().getValueAsString();
-    auto childData = JSEngine::instance().getVariable(childSessionId, "child_data").get().getValueAsString();
+        ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_origintype").get().getValueAsString();
+    auto childInvokeid = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_invokeid").get().getValueAsString();
+    auto childData = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "child_data").get().getValueAsString();
 
     // W3C SCXML 6.4: Verify ALL event fields are preserved during autoforward
     EXPECT_EQ(childName, parentName) << "Autoforwarded event.name must match original";
@@ -1113,7 +1113,7 @@ TEST_F(EventSchedulingTest, W3C_Test230_AutoforwardPreservesAllEventFields) {
 TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers) {
     SCE_LOG_DEBUG("=== W3C SCXML Test 250: Invoke Cancellation Onexit Handlers ===");
 
-    auto parentStateMachine = std::make_shared<StateMachine>(JSEngine::instance());
+    auto parentStateMachine = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
 
     std::string scxmlContent = R"scxml(<?xml version="1.0" encoding="UTF-8"?>
 <scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
@@ -1204,8 +1204,8 @@ TEST_F(EventSchedulingTest, W3C_Test250_InvokeCancellationExecutesOnexitHandlers
     // After cancellation, session may be destroyed but onexit should have executed
     if (!childSessionId.empty()) {
         // Child session still exists - verify onexit flags
-        auto exitedSub01 = JSEngine::instance().getVariable(childSessionId, "exitedSub01").get().getValue<bool>();
-        auto exitedSub0 = JSEngine::instance().getVariable(childSessionId, "exitedSub0").get().getValue<bool>();
+        auto exitedSub01 = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "exitedSub01").get().getValue<bool>();
+        auto exitedSub0 = ScriptEngineProvider::getScriptEngine().getVariable(childSessionId, "exitedSub0").get().getValue<bool>();
 
         // W3C SCXML 3.13: CRITICAL VERIFICATION
         // Both sub01 AND sub0 onexit handlers must have executed
@@ -1278,7 +1278,7 @@ TEST_F(EventSchedulingTest, W3C_Test301_ExternalScriptRejection) {
     <final id="fail"/>
 </scxml>)";
 
-    StateMachine sm(JSEngine::instance());
+    StateMachine sm(ScriptEngineProvider::getScriptEngine());
     bool loadResult = sm.loadSCXMLFromString(scxmlContent);
 
     // W3C SCXML 5.8: Document must be rejected
@@ -1361,7 +1361,7 @@ Then in s1 we access a non-existent substructure of a variable. -->
     <final id="final"/>
 </scxml>)";
 
-    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
+    auto sm = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
 
     auto eventRaiser =
         std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
@@ -1390,8 +1390,8 @@ Then in s1 we access a non-existent substructure of a variable. -->
 
     // Verify late binding behavior
     std::string sessionId = sm->getSessionId();
-    auto s0_error = JSEngine::instance().getVariable(sessionId, "s0_error").get().getValue<bool>();
-    auto s1_error = JSEngine::instance().getVariable(sessionId, "s1_error").get().getValue<bool>();
+    auto s0_error = ScriptEngineProvider::getScriptEngine().getVariable(sessionId, "s0_error").get().getValue<bool>();
+    auto s1_error = ScriptEngineProvider::getScriptEngine().getVariable(sessionId, "s1_error").get().getValue<bool>();
 
     // W3C SCXML Late Binding: Both undefined variable access and non-existent substructure
     // access should be handled consistently
@@ -1471,7 +1471,7 @@ with its illegal expression, it must raise an error -->
     </final>
 </scxml>)";
 
-    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
+    auto sm = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
 
     auto eventRaiser =
         std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
@@ -1598,7 +1598,7 @@ it should not raise an error until it gets to s03 and evaluates the illegal expr
     </final>
 </scxml>)";
 
-    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
+    auto sm = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
 
     auto eventRaiser =
         std::make_shared<SCE::EventRaiserImpl>([&sm](const std::string &name, const std::string &data) -> bool {
@@ -1699,7 +1699,7 @@ processing "event1" which is raised in the final state's on-entry handler. -->
     </final>
 </scxml>)";
 
-    auto sm = std::make_shared<StateMachine>(JSEngine::instance());
+    auto sm = std::make_shared<StateMachine>(ScriptEngineProvider::getScriptEngine());
 
     // Track if event1 was processed (should not happen)
     std::atomic<bool> event1Processed{false};

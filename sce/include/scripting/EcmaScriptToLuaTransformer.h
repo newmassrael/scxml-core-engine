@@ -90,6 +90,7 @@ private:
     std::string transformVarDeclarations(const std::string &input) const;
     std::string transformNewExpression(const std::string &input) const;
     std::string transformTernaryOperator(const std::string &input) const;
+    std::string transformObjectLiterals(const std::string &input) const;
     std::string transformDOMMethods(const std::string &input) const;
     std::string transformSemicolons(const std::string &input) const;
     std::string parenthesizeBitwiseOperands(const std::string &input) const;

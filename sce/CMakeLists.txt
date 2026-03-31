@@ -315,7 +315,7 @@ endif()
 #   1. Add engine id to _SCE_VALID_ENGINES and STRINGS list below
 #   2. Add prerequisite validation if needed (e.g., SCE_ENABLE_XXX check)
 #   3. Add engine singleton + metadata in ScriptEngineProvider.cpp
-set(SCE_SCRIPT_ENGINE "quickjs" CACHE STRING "Script engine for ScriptEngineProvider")
+set(SCE_SCRIPT_ENGINE "lua" CACHE STRING "Script engine for ScriptEngineProvider")
 set_property(CACHE SCE_SCRIPT_ENGINE PROPERTY STRINGS "quickjs" "lua")
 
 # Normalize and validate engine id

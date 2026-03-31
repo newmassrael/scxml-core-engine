@@ -4,7 +4,7 @@
 #include "model/StateNode.h"
 #include "parsing/SCXMLParser.h"
 #include "runtime/ExecutionContextImpl.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include "states/ConcurrentCompletionMonitor.h"
 #include "states/ConcurrentRegion.h"
 #include "gtest/gtest.h"
@@ -18,7 +18,7 @@ namespace SCE {
 class ConcurrentCompletionMonitoringTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &JSEngine::instance();
+        engine_ = &ScriptEngineProvider::getScriptEngine();
         engine_->reset();
         nodeFactory_ = std::make_shared<NodeFactory>();
         parser_ = std::make_unique<SCXMLParser>(nodeFactory_);
@@ -32,7 +32,7 @@ protected:
         }
     }
 
-    JSEngine *engine_;
+    IScriptEngine *engine_;
     std::shared_ptr<NodeFactory> nodeFactory_;
     std::unique_ptr<SCXMLParser> parser_;
     std::unique_ptr<ConcurrentCompletionMonitor> monitor_;

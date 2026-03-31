@@ -5,7 +5,7 @@
 #include "actions/ScriptAction.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/StateMachine.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include <gtest/gtest.h>
 #include <memory>
 
@@ -14,20 +14,20 @@ using namespace SCE;
 class SCXMLForeachIntegrationTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        SCE::JSEngine::instance().reset();
-        executor = std::make_unique<ActionExecutorImpl>("foreach_integration_test", SCE::JSEngine::instance());
+        SCE::ScriptEngineProvider::getScriptEngine().reset();
+        executor = std::make_unique<ActionExecutorImpl>("foreach_integration_test", SCE::ScriptEngineProvider::getScriptEngine());
 
         // Create JSEngine session following SCXML specification pattern
         // Session must be created before variable assignments can be performed
-        bool sessionCreated = SCE::JSEngine::instance().createSession("foreach_integration_test");
+        bool sessionCreated = SCE::ScriptEngineProvider::getScriptEngine().createSession("foreach_integration_test");
         if (!sessionCreated) {
-            throw std::runtime_error("Failed to create JSEngine session for test");
+            throw std::runtime_error("Failed to create script engine session for test");
         }
     }
 
     void TearDown() override {
         executor.reset();
-        SCE::JSEngine::instance().shutdown();
+        SCE::ScriptEngineProvider::getScriptEngine().shutdown();
     }
 
     std::unique_ptr<ActionExecutorImpl> executor;

@@ -42,7 +42,7 @@ public:
     /**
      * @brief Clear all registrations (for testing cleanup)
      */
-    void clear();
+    void clear() override;
 
 private:
     mutable std::mutex registryMutex_;

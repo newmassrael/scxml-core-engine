@@ -7,6 +7,7 @@
 #include "scripting/LuaDOMBinding.h"
 #include "scripting/ScriptResult.h"
 #include "scripting/SessionRegistry.h"
+#include "events/EventRaiserService.h"
 
 extern "C" {
 #include <lauxlib.h>
@@ -240,6 +241,12 @@ bool LuaEngine::createSession(const std::string &sessionId, const std::string &p
     registerBuiltins(ctx->L, sessionId);
     sessions_[sessionId] = std::move(ctx);
 
+    // W3C SCXML 6.4: Register parent-child relationship in SessionRegistry
+    // Enables engine-agnostic parent session lookup for event routing
+    if (!parentSessionId.empty()) {
+        SessionRegistry::instance().registerParentChild(sessionId, parentSessionId);
+    }
+
     SCE_LOG_DEBUG("LuaEngine: Created session: {} (parent: {})", sessionId,
                   parentSessionId.empty() ? "none" : parentSessionId);
 
@@ -267,6 +274,11 @@ bool LuaEngine::destroySession(const std::string &sessionId) {
         return false;
     }
 
+    // W3C SCXML 6.4: Unregister parent-child relationship
+    SessionRegistry::instance().unregisterParentChild(sessionId);
+    // W3C SCXML 6.2: Delegate session cleanup to SessionRegistry
+    SessionRegistry::instance().cleanupSession(sessionId);
+
     if (it->second->L) {
         lua_close(it->second->L);
     }
@@ -275,6 +287,17 @@ bool LuaEngine::destroySession(const std::string &sessionId) {
 
     // Remove state query callback
     stateQueryCallbacks_.erase(sessionId);
+
+    // Clean up EventRaiser from global registry to prevent dangling callback access
+    try {
+        auto registry = EventRaiserService::getInstance().getRegistry();
+        if (registry && registry->hasEventRaiser(sessionId)) {
+            registry->unregisterEventRaiser(sessionId);
+            SCE_LOG_DEBUG("LuaEngine: Cleaned up EventRaiser for destroyed session: {}", sessionId);
+        }
+    } catch (const std::exception &) {
+        // EventRaiserService may not be initialized during early cleanup
+    }
 
     SCE_LOG_DEBUG("LuaEngine: Destroyed session: {}", sessionId);
 
@@ -551,6 +574,74 @@ void LuaEngine::registerBuiltins(lua_State *L, const std::string &sessionId) {
             lua_setglobal(L, name.c_str());
         }
     }
+
+    // ECMAScript compatibility: string __add, JSON, Object builtins
+    luaL_dostring(L, R"LUA(
+        -- ECMAScript '+' operator: string + anything = concatenation
+        local mt = getmetatable('')
+        if mt then
+            mt.__add = function(a, b) return tostring(a) .. tostring(b) end
+        end
+
+        -- JSON.stringify / JSON.parse (ECMAScript standard)
+        JSON = {}
+        function JSON.stringify(v, indent)
+            local t = type(v)
+            if v == nil then return "null"
+            elseif t == "boolean" then return v and "true" or "false"
+            elseif t == "number" then
+                if v ~= v then return "null" end
+                if v == math.huge or v == -math.huge then return "null" end
+                if v == math.floor(v) and math.abs(v) < 1e15 then return string.format("%d", v) end
+                return tostring(v)
+            elseif t == "string" then
+                return '"' .. v:gsub('[\\"]', '\\%0'):gsub('\n','\\n'):gsub('\r','\\r'):gsub('\t','\\t') .. '"'
+            elseif t == "table" then
+                local is_arr = (#v > 0)
+                if is_arr then
+                    local parts = {}
+                    for i = 1, #v do parts[i] = JSON.stringify(v[i]) end
+                    return "[" .. table.concat(parts, ",") .. "]"
+                else
+                    local keys = {}
+                    for k, _ in pairs(v) do
+                        if type(k) == "string" then keys[#keys+1] = k end
+                    end
+                    table.sort(keys)
+                    local parts = {}
+                    for _, k in ipairs(keys) do
+                        parts[#parts+1] = JSON.stringify(k) .. ":" .. JSON.stringify(v[k])
+                    end
+                    return "{" .. table.concat(parts, ",") .. "}"
+                end
+            end
+            return "null"
+        end
+
+        function JSON.parse(s)
+            if s == nil or s == "" then return nil end
+            local str = s:gsub('"([^"]-)":', function(k) return '["'..k..'"]='; end)
+            str = str:gsub('%[', '{'):gsub('%]', '}')
+            str = str:gsub(':true', '=true'):gsub(':false', '=false'):gsub(':null', '=nil')
+            str = str:gsub('([=,{])%s*(%d)', '%1%2')
+            local fn = load("return " .. str)
+            if fn then return fn() end
+            return nil
+        end
+
+        -- Object.keys (ECMAScript standard)
+        Object = {}
+        function Object.keys(t)
+            if type(t) ~= "table" then return {} end
+            local keys = {}
+            for k, _ in pairs(t) do keys[#keys+1] = k end
+            table.sort(keys, function(a,b)
+                if type(a) == type(b) then return tostring(a) < tostring(b) end
+                return type(a) < type(b)
+            end)
+            return keys
+        end
+    )LUA");
 }
 
 // === Script Execution ===
@@ -851,8 +942,18 @@ std::future<ScriptResult> LuaEngine::setVariableAsDOM(const std::string &session
 bool LuaEngine::hasVariable(const std::string &sessionId, const std::string &variableName) const {
     std::lock_guard<std::mutex> lock(sessionMutex_);
     auto it = sessions_.find(sessionId);
-    if (it != sessions_.end()) {
-        return it->second->declaredVars.count(variableName) > 0;
+    if (it == sessions_.end()) return false;
+
+    // Check explicit tracking first
+    if (it->second->declaredVars.count(variableName) > 0) return true;
+
+    // Also check Lua global table (variables set via script execution)
+    lua_State *L = it->second->L;
+    if (L) {
+        lua_getglobal(L, variableName.c_str());
+        bool exists = !lua_isnil(L, -1);
+        lua_pop(L, 1);
+        return exists;
     }
     return false;
 }

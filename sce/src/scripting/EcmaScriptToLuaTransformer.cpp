@@ -176,6 +176,7 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
     processed = transformNewExpression(processed);
     processed = transformArrayMethods(processed);
     processed = transformArrayLiterals(processed);
+    processed = transformObjectLiterals(processed);
     processed = transformTernaryOperator(processed);
     processed = transformOperators(processed);
     processed = transformStringConcat(processed);
@@ -221,6 +222,7 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     processed = transformNewExpression(processed);
     processed = transformArrayMethods(processed);
     processed = transformArrayLiterals(processed);
+    processed = transformObjectLiterals(processed);
     processed = transformTernaryOperator(processed);
     processed = transformOperators(processed);
     processed = transformStringConcat(processed);
@@ -943,9 +945,12 @@ std::string EcmaScriptToLuaTransformer::transformFunctionSyntax(const std::strin
 }
 
 std::string EcmaScriptToLuaTransformer::transformVarDeclarations(const std::string &input) const {
-    std::string result = replaceKeywordPrefix(input, "var", "local ");
-    result = replaceKeywordPrefix(result, "let", "local ");
-    return replaceKeywordPrefix(result, "const", "local ");
+    // W3C SCXML: All datamodel variables are session-global.
+    // Strip var/let/const entirely to produce global assignments in Lua.
+    // (Lua's 'local' is chunk-scoped and would make variables invisible to subsequent evaluations)
+    std::string result = replaceKeywordPrefix(input, "var", "");
+    result = replaceKeywordPrefix(result, "let", "");
+    return replaceKeywordPrefix(result, "const", "");
 }
 
 std::string EcmaScriptToLuaTransformer::transformNewExpression(const std::string &input) const {
@@ -1025,6 +1030,38 @@ std::string EcmaScriptToLuaTransformer::transformDOMMethods(const std::string &i
         while ((pos = result.find(".getTagName(", pos)) != std::string::npos) {
             result.replace(pos, 1, ":");
             pos += 12;
+        }
+    }
+
+    return result;
+}
+
+std::string EcmaScriptToLuaTransformer::transformObjectLiterals(const std::string &input) const {
+    // ECMAScript {key: value} → Lua {key = value}
+    // Only transform colon after identifier keys inside braces (not in ternary, labels, etc.)
+    std::string result;
+    result.reserve(input.size());
+    int braceDepth = 0;
+
+    for (size_t i = 0; i < input.size(); ++i) {
+        if (input[i] == '{') {
+            ++braceDepth;
+            result += input[i];
+        } else if (input[i] == '}') {
+            --braceDepth;
+            result += input[i];
+        } else if (input[i] == ':' && braceDepth > 0) {
+            // Check if preceded by an identifier (object key)
+            size_t keyEnd = i;
+            while (keyEnd > 0 && std::isspace(static_cast<unsigned char>(input[keyEnd - 1]))) --keyEnd;
+            if (keyEnd > 0 && (std::isalnum(static_cast<unsigned char>(input[keyEnd - 1])) ||
+                               input[keyEnd - 1] == '_')) {
+                result += " =";
+            } else {
+                result += input[i];
+            }
+        } else {
+            result += input[i];
         }
     }
 

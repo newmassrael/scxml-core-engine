@@ -13,7 +13,7 @@
 #include "mocks/MockEventRaiser.h"
 #include "runtime/ActionExecutorImpl.h"
 #include "runtime/ExecutionContextImpl.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include <chrono>
 #include <gtest/gtest.h>
 #include <memory>
@@ -35,10 +35,10 @@ protected:
     void SetUp() override {
         // Initialize JavaScript engine
         // Ensure test isolation with JSEngine reset
-        JSEngine::instance().reset();
+        ScriptEngineProvider::getScriptEngine().reset();
 
         sessionId_ = "scxml_event_test_session";
-        JSEngine::instance().createSession(sessionId_);
+        ScriptEngineProvider::getScriptEngine().createSession(sessionId_);
 
         // SCXML Compliance: Set up proper event infrastructure
         // Create event execution callback (SCXML compliant - delegates to target)
@@ -59,7 +59,7 @@ protected:
         scheduler_ = std::make_shared<EventSchedulerImpl>(eventExecutionCallback_);
 
         // Create ActionExecutor
-        executor_ = std::make_shared<ActionExecutorImpl>(sessionId_, JSEngine::instance());
+        executor_ = std::make_shared<ActionExecutorImpl>(sessionId_, ScriptEngineProvider::getScriptEngine());
 
         // Set up event raising with MockEventRaiser for internal events
         raisedEvents_.clear();
@@ -95,8 +95,8 @@ protected:
         raisedEvents_.clear();
         context_.reset();
         executor_.reset();
-        JSEngine::instance().destroySession(sessionId_);
-        JSEngine::instance().shutdown();
+        ScriptEngineProvider::getScriptEngine().destroySession(sessionId_);
+        ScriptEngineProvider::getScriptEngine().shutdown();
     }
 
     std::string sessionId_;
@@ -215,7 +215,11 @@ TEST_F(SCXMLEventTest, SendActionWithComplexData) {
     // Verify event was raised with JSON data
     ASSERT_EQ(raisedEvents_.size(), 1);
     EXPECT_EQ(raisedEvents_[0].first, "data.update");
-    EXPECT_EQ(raisedEvents_[0].second, "{\"name\":\"John\",\"age\":30}");
+    // JSON key order varies by engine (insertion order in JS, sorted in Lua)
+    auto data = raisedEvents_[0].second;
+    EXPECT_TRUE(data.find("\"name\":\"John\"") != std::string::npos &&
+                data.find("\"age\":30") != std::string::npos)
+        << "Actual data: " << data;
 }
 
 /**
@@ -420,10 +424,10 @@ TEST_F(SCXMLEventTest, IntegrationWithExistingActions) {
 TEST_F(SCXMLEventTest, ParentChildEventCommunication) {
     // Create child session
     std::string childSessionId = "child_session_test";
-    JSEngine::instance().createSession(childSessionId, sessionId_);
+    ScriptEngineProvider::getScriptEngine().createSession(childSessionId, sessionId_);
 
     // Create child ActionExecutor and EventRaiser
-    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, JSEngine::instance());
+    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, ScriptEngineProvider::getScriptEngine());
     auto childEventRaiser =
         std::make_shared<MockEventRaiser>([this](const std::string &eventName, const std::string &eventData) -> bool {
             // This should route events to parent session
@@ -459,7 +463,7 @@ TEST_F(SCXMLEventTest, ParentChildEventCommunication) {
     EXPECT_TRUE(foundPassEvent) << "Parent session should receive 'pass' event from child";
 
     // Cleanup
-    JSEngine::instance().destroySession(childSessionId);
+    ScriptEngineProvider::getScriptEngine().destroySession(childSessionId);
 }
 
 /**
@@ -471,10 +475,10 @@ TEST_F(SCXMLEventTest, ParentChildEventCommunication) {
 TEST_F(SCXMLEventTest, CrossSessionCancelAction) {
     // Create child session
     std::string childSessionId = "child_session_cancel_test";
-    JSEngine::instance().createSession(childSessionId, sessionId_);
+    ScriptEngineProvider::getScriptEngine().createSession(childSessionId, sessionId_);
 
     // Create child infrastructure
-    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, JSEngine::instance());
+    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, ScriptEngineProvider::getScriptEngine());
     auto childEventRaiser =
         std::make_shared<MockEventRaiser>([](const std::string &, const std::string &) -> bool { return true; });
     childExecutor->setEventRaiser(childEventRaiser);
@@ -504,7 +508,7 @@ TEST_F(SCXMLEventTest, CrossSessionCancelAction) {
     // (In a real scenario, we'd check if event1 fired in the child session)
 
     // Cleanup
-    JSEngine::instance().destroySession(childSessionId);
+    ScriptEngineProvider::getScriptEngine().destroySession(childSessionId);
 }
 
 /**
@@ -521,7 +525,7 @@ TEST_F(SCXMLEventTest, CrossSessionCancelAction) {
 TEST_F(SCXMLEventTest, InvokeWithDelayedEventAndCancel) {
     // Step 1: Create child session (simulating invoke)
     std::string childSessionId = "invoke_child_test";
-    JSEngine::instance().createSession(childSessionId, sessionId_);
+    ScriptEngineProvider::getScriptEngine().createSession(childSessionId, sessionId_);
 
     // Track events received by parent
     std::vector<std::string> parentEvents;
@@ -543,7 +547,7 @@ TEST_F(SCXMLEventTest, InvokeWithDelayedEventAndCancel) {
     EXPECT_TRUE(registered) << "Failed to register MockEventRaiser for parent session";
 
     // Create child infrastructure
-    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, JSEngine::instance());
+    auto childExecutor = std::make_shared<ActionExecutorImpl>(childSessionId, ScriptEngineProvider::getScriptEngine());
     auto childEventRaiser =
         std::make_shared<MockEventRaiser>([](const std::string &, const std::string &) -> bool { return true; });
     childExecutor->setEventRaiser(childEventRaiser);
@@ -599,7 +603,7 @@ TEST_F(SCXMLEventTest, InvokeWithDelayedEventAndCancel) {
     EXPECT_TRUE(receivedPass) << "Parent should receive pass event (Test 207 critical issue)";
 
     // Cleanup
-    JSEngine::instance().destroySession(childSessionId);
+    ScriptEngineProvider::getScriptEngine().destroySession(childSessionId);
 }
 
 // W3C SCXML 6.2: Test 178 - Duplicate param names support
@@ -734,8 +738,8 @@ TEST_F(SCXMLEventTest, W3C_Test178_NamelistWithDuplicateParams) {
     constexpr size_t EXPECTED_PARAM_COUNT = 2;
 
     // Setup: Create variables in datamodel
-    JSEngine::instance().setVariable(sessionId_, VAR1_NAME, VAR1_VALUE).get();
-    JSEngine::instance().setVariable(sessionId_, VAR2_NAME, VAR2_VALUE).get();
+    ScriptEngineProvider::getScriptEngine().setVariable(sessionId_, VAR1_NAME, VAR1_VALUE).get();
+    ScriptEngineProvider::getScriptEngine().setVariable(sessionId_, VAR2_NAME, VAR2_VALUE).get();
 
     auto sendAction = std::make_shared<SendAction>(EVENT_NAME, "test178_namelist_send");
     sendAction->setTarget("#_internal");

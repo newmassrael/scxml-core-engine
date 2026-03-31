@@ -1,7 +1,7 @@
 #include "states/ExternalTransitionHandler.h"
 #include "factory/NodeFactory.h"
 #include "parsing/SCXMLParser.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include "gtest/gtest.h"
 #include <future>
 #include <memory>
@@ -13,7 +13,7 @@ namespace SCE {
 class ExternalTransitionHandlerTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        engine_ = &JSEngine::instance();
+        engine_ = &ScriptEngineProvider::getScriptEngine();
         engine_->reset();
         nodeFactory_ = std::make_shared<NodeFactory>();
         parser_ = std::make_unique<SCXMLParser>(nodeFactory_);
@@ -27,7 +27,7 @@ protected:
         }
     }
 
-    JSEngine *engine_;
+    IScriptEngine *engine_;
     std::shared_ptr<NodeFactory> nodeFactory_;
     std::unique_ptr<SCXMLParser> parser_;
     std::unique_ptr<ExternalTransitionHandler> handler_;
