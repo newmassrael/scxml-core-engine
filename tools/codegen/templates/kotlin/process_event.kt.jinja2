@@ -5,11 +5,11 @@
 
     Generates:
     - processEvent() dispatching to per-state handlers
+    - processNullEvent() for eventless transitions (W3C SCXML Appendix D)
     - Per-state handler functions with exhaustive when expressions
     - W3C SCXML 3.13: Ancestor transition routing (child → parent → grandparent)
     - kt: prefix guard conditions as direct Kotlin expressions
     - In() predicate guards as isStateActive() calls
-    - Eventless transitions with guard conditions
     - History state target resolution (W3C SCXML 3.11)
     - Multi-descriptor event matching (W3C SCXML 3.12.1)
 #}
@@ -22,15 +22,27 @@
 {% set state = model.states[state_id] %}
 {% if not state.is_parallel %}
 {% set ancestors = ancestor_chains[state_id] %}
-{% set has_self = state.transitions | length > 0 %}
-{# Collect ancestor IDs that have transitions #}
+{# Check if state has any event-based or wildcard transitions (excluding eventless) #}
+{% set ns_self = namespace(has_event_trans=false) %}
+{% for trans in state.transitions %}
+{% if trans.event %}
+{% set ns_self.has_event_trans = true %}
+{% endif %}
+{% endfor %}
+{# Collect ancestor IDs that have event-based transitions #}
 {% set ns_anc = namespace(ids=[]) %}
 {% for anc_id in ancestors %}
-{% if model.states[anc_id].transitions | length > 0 %}
+{% set ns_anc_event = namespace(has=false) %}
+{% for trans in model.states[anc_id].transitions %}
+{% if trans.event %}
+{% set ns_anc_event.has = true %}
+{% endif %}
+{% endfor %}
+{% if ns_anc_event.has %}
 {% set ns_anc.ids = ns_anc.ids + [anc_id] %}
 {% endif %}
 {% endfor %}
-{% if has_self and ns_anc.ids | length > 0 %}
+{% if ns_self.has_event_trans and ns_anc.ids | length > 0 %}
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
             val result = process{{ state_id | to_state_class_name }}(event)
             // W3C SCXML 3.13: Ancestor transition routing
@@ -45,10 +57,10 @@
             }
 {% endfor %}
         }
-{% elif has_self %}
+{% elif ns_self.has_event_trans %}
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> process{{ state_id | to_state_class_name }}(event)
 {% elif ns_anc.ids | length > 0 %}
-        // W3C SCXML 3.13: Ancestor-only routing ({{ state_id }} has no own transitions)
+        // W3C SCXML 3.13: Ancestor-only routing ({{ state_id }} has no own event transitions)
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
 {% for anc_id in ns_anc.ids %}
 {% if loop.first %}
@@ -68,25 +80,151 @@
 {% endfor %}
         }
 {% endif %}
-{# else: no self and no ancestor transitions → falls to else -> Ignored #}
+{# else: no event transitions anywhere → falls to else -> Ignored #}
 {% endif %}
 {% endfor %}
         else -> TransitionResult.Ignored
     }
 
-    // --- Per-State Handlers ---
+{% set ns_has_eventless = namespace(value=false) %}
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
-{% if state.transitions | length > 0 %}
-{# --- Pre-scan for wildcards and eventless transitions --- #}
-{% set ns = namespace(has_wildcard=false, has_eventless=false, eventless_count=0) %}
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target %}
+{% set ns_has_eventless.value = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if ns_has_eventless.value %}
+    // W3C SCXML Appendix D: Eventless (null) transition check
+    override fun processNullEvent(
+        state: {{ machine_name }}State
+    ): TransitionResult<{{ machine_name }}State> = when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% if not state.is_parallel %}
+{# Check if this state has eventless transitions (self or ancestors) #}
+{% set ns_null_self = namespace(has=false) %}
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target %}
+{% set ns_null_self.has = true %}
+{% endif %}
+{% endfor %}
+{# Check ancestor eventless transitions #}
+{% set ancestors = ancestor_chains[state_id] %}
+{% set ns_null_anc = namespace(ids=[]) %}
+{% for anc_id in ancestors %}
+{% set ns_anc_null = namespace(has=false) %}
+{% for trans in model.states[anc_id].transitions %}
+{% if not trans.event and trans.target %}
+{% set ns_anc_null.has = true %}
+{% endif %}
+{% endfor %}
+{% if ns_anc_null.has %}
+{% set ns_null_anc.ids = ns_null_anc.ids + [anc_id] %}
+{% endif %}
+{% endfor %}
+{# Collect all null sources: self first, then ancestors #}
+{% set ns_null_sources = namespace(ids=[]) %}
+{% if ns_null_self.has %}
+{% set ns_null_sources.ids = ns_null_sources.ids + [state_id] %}
+{% endif %}
+{% for anc_id in ns_null_anc.ids %}
+{% set ns_null_sources.ids = ns_null_sources.ids + [anc_id] %}
+{% endfor %}
+{% if ns_null_sources.ids | length == 1 %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> processNull{{ ns_null_sources.ids[0] | to_state_class_name }}()
+{% elif ns_null_sources.ids | length > 1 %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% for src_id in ns_null_sources.ids %}
+{% if loop.first %}
+            val null{{ loop.index }} = processNull{{ src_id | to_state_class_name }}()
+            if (null{{ loop.index }} !is TransitionResult.Ignored) null{{ loop.index }}
+{% else %}
+            else {
+                val null{{ loop.index }} = processNull{{ src_id | to_state_class_name }}()
+                if (null{{ loop.index }} !is TransitionResult.Ignored) null{{ loop.index }}
+{% endif %}
+{% endfor %}
+            else TransitionResult.Ignored
+{% for src_id in ns_null_sources.ids %}
+{% if not loop.first %}
+            }
+{% endif %}
+{% endfor %}
+        }
+{% endif %}
+{% endif %}
+{% endfor %}
+        else -> TransitionResult.Ignored
+    }
+
+    // --- Per-State Null (Eventless) Handlers ---
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% set ns_null = namespace(has=false) %}
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target %}
+{% set ns_null.has = true %}
+{% endif %}
+{% endfor %}
+{% if ns_null.has %}
+
+    private fun processNull{{ state_id | to_state_class_name }}(
+    ): TransitionResult<{{ machine_name }}State> = when {
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target %}
+{# --- Determine target expression (history resolution) --- #}
+{% if trans.history_leaf_target is defined %}
+{% set target_expr = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% else %}
+{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
+{% endif %}
+{% if trans.is_pure_in_predicate %}
+        // W3C SCXML 5.9.2: Eventless In() predicate guard
+        {{ trans.cond_kt }} -> TransitionResult.External({{ target_expr }})
+{% elif trans.is_kt_condition %}
+        // Eventless guarded transition
+        {{ trans.cond_kt }} -> TransitionResult.External({{ target_expr }})
+{% elif trans.cond and not trans.is_cpp_condition %}
+        // Eventless guarded transition (cond="{{ trans.cond }}")
+        {{ trans.cond }} -> TransitionResult.External({{ target_expr }})
+{% else %}
+        // Eventless unconditional transition
+        else -> TransitionResult.External({{ target_expr }})
+{% endif %}
+{% endif %}
+{% endfor %}
+{% set ns_has_unconditional = namespace(value=false) %}
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target and not trans.cond and not trans.is_pure_in_predicate and not trans.is_kt_condition %}
+{% set ns_has_unconditional.value = true %}
+{% endif %}
+{% endfor %}
+{% if not ns_has_unconditional.value %}
+        else -> TransitionResult.Ignored
+{% endif %}
+    }
+{% endif %}
+{% endfor %}
+{% endif %}
+
+    // --- Per-State Event Handlers ---
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{# Only generate handler if state has event-based transitions #}
+{% set ns_event = namespace(has=false) %}
+{% for trans in state.transitions %}
+{% if trans.event %}
+{% set ns_event.has = true %}
+{% endif %}
+{% endfor %}
+{% if ns_event.has %}
+{# --- Pre-scan for wildcards --- #}
+{% set ns = namespace(has_wildcard=false) %}
 {% for trans in state.transitions %}
 {% if trans.event == '*' or trans.event == '.*' %}
 {% set ns.has_wildcard = true %}
-{% endif %}
-{% if not trans.event and trans.target %}
-{% set ns.has_eventless = true %}
-{% set ns.eventless_count = ns.eventless_count + 1 %}
 {% endif %}
 {% endfor %}
 
@@ -148,38 +286,8 @@
 {% endif %}
 {% endif %}
 {% endfor %}
-{# --- Eventless transitions (guarded → conditions, last unguarded → else) --- #}
-{% if ns.has_eventless %}
-{% set ns2 = namespace(has_unconditional=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event and trans.target %}
-{# --- Determine target expression (history resolution) --- #}
-{% if trans.history_leaf_target is defined %}
-{% set target_expr = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
-{% else %}
-{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
-{% endif %}
-{% if trans.is_pure_in_predicate %}
-        // W3C SCXML 5.9.2: Eventless In() predicate guard
-        {{ trans.cond_kt }} -> TransitionResult.External({{ target_expr }})
-{% elif trans.is_kt_condition %}
-        // Eventless guarded transition
-        {{ trans.cond_kt }} -> TransitionResult.External({{ target_expr }})
-{% elif trans.cond and not trans.is_cpp_condition %}
-        // Eventless guarded transition (cond="{{ trans.cond }}")
-        {{ trans.cond }} -> TransitionResult.External({{ target_expr }})
-{% else %}
-{% set ns2.has_unconditional = true %}
-        // Eventless unconditional transition
-        else -> TransitionResult.External({{ target_expr }})
-{% endif %}
-{% endif %}
-{% endfor %}
-{% if not ns2.has_unconditional %}
-        else -> TransitionResult.Ignored
-{% endif %}
-{% elif ns.has_wildcard %}
 {# --- Wildcard transition as else --- #}
+{% if ns.has_wildcard %}
 {% for trans in state.transitions %}
 {% if trans.event == '*' or trans.event == '.*' %}
 {% if trans.history_leaf_target is defined %}

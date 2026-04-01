@@ -335,6 +335,49 @@ class KotlinCodeGenerator(BaseCodeGenerator):
         return to_event_ref
 
     # ──────────────────────────────────────────────
+    # State Hierarchy Helpers
+    # ──────────────────────────────────────────────
+
+    @staticmethod
+    def _collect_descendants(model: SCXMLModel, parent_id: str, result: List[str]):
+        """Collect all descendant state IDs of a parent state (recursive)."""
+        for state_id, state in model.states.items():
+            if state.parent == parent_id:
+                result.append(state_id)
+                KotlinCodeGenerator._collect_descendants(model, state_id, result)
+
+    def _make_parallel_complete_check(self, model: SCXMLModel, machine_name: str):
+        """
+        Create a Jinja2 filter that generates a Kotlin expression checking
+        if all regions of a parallel state have reached a final child.
+
+        W3C SCXML 3.7.1: All child regions must be in a final state.
+        """
+        def to_parallel_complete_check(parallel_id: str) -> str:
+            regions = model.parallel_regions.get(parallel_id, [])
+            if not regions:
+                return "false"
+            checks = []
+            for region_id in regions:
+                # Find final states within this region
+                finals = []
+                for state_id, state in model.states.items():
+                    if state.parent == region_id and state.is_final:
+                        finals.append(state_id)
+                if finals:
+                    # Check if any final state in this region is active
+                    cond = ' || '.join(
+                        f'activeStateIds.contains("{f}")'
+                        for f in finals
+                    )
+                    checks.append(f'({cond})')
+                else:
+                    # Region has no final state — parallel can never complete
+                    return "false"
+            return ' && '.join(checks)
+        return to_parallel_complete_check
+
+    # ──────────────────────────────────────────────
     # Code Generation
     # ──────────────────────────────────────────────
 
@@ -397,6 +440,33 @@ class KotlinCodeGenerator(BaseCodeGenerator):
                 transitions.extend(model.states[anc_id].transitions)
             effective_transitions[state_id] = transitions
 
+        # W3C SCXML 3.3: Build parent map for state hierarchy
+        # Used by generated parentOf() override for hierarchical exit
+        parent_map: Dict[str, str] = {}
+        for state_id, state in model.states.items():
+            if state.parent and state.parent in model.states:
+                parent_map[state_id] = state.parent
+
+        # W3C SCXML 3.3/3.4: Build leaf map for compound/parallel state resolution
+        # Maps non-leaf states to their initial leaf states
+        leaf_map: Dict[str, str] = {}
+        for state_id, state in model.states.items():
+            leaf = model.resolve_to_leaf(state_id)
+            if leaf != state_id:
+                leaf_map[state_id] = leaf
+
+        # W3C SCXML 3.4: Compute descendants for each parallel state
+        # Used by onExit to collect and exit active descendants
+        parallel_descendants: Dict[str, List[str]] = {}
+        for parallel_id, regions in model.parallel_regions.items():
+            descendants = []
+            self._collect_descendants(model, parallel_id, descendants)
+            parallel_descendants[parallel_id] = descendants
+
+        # W3C SCXML 3.7.1: Register parallel completion check filter
+        self.env.filters['to_parallel_complete_check'] = \
+            self._make_parallel_complete_check(model, machine_name)
+
         input_stem = Path(scxml_path).stem
 
         # Load main Kotlin template
@@ -414,6 +484,9 @@ class KotlinCodeGenerator(BaseCodeGenerator):
             initial_entry_root=initial_entry_root,
             ancestor_chains=ancestor_chains,
             effective_transitions=effective_transitions,
+            parent_map=parent_map,
+            leaf_map=leaf_map,
+            parallel_descendants=parallel_descendants,
         )
 
         # Post-process: close the class and normalize whitespace

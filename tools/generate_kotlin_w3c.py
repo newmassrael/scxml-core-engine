@@ -152,13 +152,31 @@ def detect_pass_state(test_id: str) -> str | None:
 
     content = sm_file.read_text()
 
-    # Find which states are final (markFinalStateReached() or isInFinalState = true)
+    # Find which states are final (markFinalStateReached() in onEntry)
+    # Strategy: scan line-by-line through onEntry for state → markFinalStateReached pairs.
+    # This avoids fragile nested-brace regex parsing.
     final_states = set()
-    for m in re.finditer(
-        r'is \w+State\.(\w+)\s*->\s*\{[\s\S]*?(?:markFinalStateReached\(\)|isInFinalState\s*=\s*true)',
-        content,
-    ):
-        final_states.add(m.group(1))
+    in_on_entry = False
+    current_state = None
+    brace_depth = 0
+    for line in content.splitlines():
+        stripped = line.strip()
+        if not in_on_entry:
+            if 'override fun onEntry(' in line:
+                in_on_entry = True
+                # Count braces on the declaration line itself (includes opening {)
+                brace_depth = stripped.count('{') - stripped.count('}')
+            continue
+        brace_depth += stripped.count('{') - stripped.count('}')
+        if brace_depth <= 0:
+            in_on_entry = False
+            current_state = None
+            continue
+        m = re.match(r'is \w+State\.(\w+)\s*->', stripped)
+        if m:
+            current_state = m.group(1)
+        if current_state and 'markFinalStateReached()' in stripped:
+            final_states.add(current_state)
 
     # Priority: Pass > Final > first non-Fail final state
     if 'Pass' in final_states:

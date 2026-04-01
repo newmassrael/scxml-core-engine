@@ -5,8 +5,10 @@
     Actions are separated from transitions — the engine controls W3C ordering.
 
     W3C SCXML 3.7: Final state done.state event emission.
+    W3C SCXML 3.7.1: Parallel state completion detection.
     W3C SCXML 3.4: Parallel state recursive child region entry.
     W3C SCXML 3.3: Compound state initial child entry.
+    W3C SCXML 3.4/3.13: Parallel state recursive descendant exit.
 
     Uses actions/_render.kt.jinja2 for action dispatch (shared with transition_actions).
 #}
@@ -19,7 +21,16 @@
 {% set is_top_final = state.is_final and not state.parent %}
 {% set has_parallel_children = state.is_parallel and state_id in model.parallel_regions %}
 {% set has_initial_child = not state.is_final and not state.is_parallel and state.initial and state.initial != state_id %}
-{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or has_done_event or is_top_final or has_parallel_children or has_initial_child %}
+{# W3C SCXML 3.7.1: Check if this final state's grandparent is parallel #}
+{% set grandparent_is_parallel = false %}
+{% if state.is_final and state.parent %}
+{% set parent_state = model.states[state.parent] %}
+{% if parent_state.parent and model.states[parent_state.parent].is_parallel %}
+{% set grandparent_is_parallel = true %}
+{% set parallel_grandparent_id = parent_state.parent %}
+{% endif %}
+{% endif %}
+{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or has_done_event or is_top_final or has_parallel_children or has_initial_child or grandparent_is_parallel %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
 {% if model.uses_in_predicate or model.has_parallel_states %}
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
@@ -35,6 +46,12 @@
 {% if is_top_final %}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
+{% endif %}
+{% if grandparent_is_parallel %}
+                // W3C SCXML 3.7.1: Check if all regions of parallel grandparent are complete
+                if ({{ parallel_grandparent_id | to_parallel_complete_check }}) {
+                    raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ parallel_grandparent_id) | to_event_ref }})
+                }
 {% endif %}
 {% if has_parallel_children %}
                 // W3C SCXML 3.4: Enter all child regions of parallel state
@@ -57,8 +74,26 @@
         when (state) {
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
-{% if state.on_exit or model.uses_in_predicate or model.has_parallel_states %}
+{% set is_parallel = state.is_parallel and state_id in model.parallel_regions %}
+{% if state.on_exit or model.uses_in_predicate or model.has_parallel_states or is_parallel %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% if is_parallel %}
+                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
+                // in reverse document order (deepest states exit first).
+                // Defensive: when called from exitHierarchy, descendants are already
+                // exited and removed from activeStateIds — the contains() checks below
+                // prevent double-exit. This code is needed for direct onExit() calls.
+                val toExit = mutableListOf<Pair<{{ machine_name }}State, Int>>()
+{% for desc_id in parallel_descendants[state_id] %}
+                if (activeStateIds.contains("{{ desc_id }}")) {
+                    toExit.add({{ machine_name }}State.{{ desc_id | to_state_class_name }} to {{ model.states[desc_id].document_order }})
+                }
+{% endfor %}
+                toExit.sortByDescending { it.second }
+                for ((desc, _) in toExit) {
+                    onExit(desc)
+                }
+{% endif %}
 {% if model.uses_in_predicate or model.has_parallel_states %}
                 activeStateIds.remove("{{ state_id }}")
 {% endif %}

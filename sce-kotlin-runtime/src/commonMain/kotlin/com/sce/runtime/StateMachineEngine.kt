@@ -143,6 +143,7 @@ abstract class StateMachineEngine<S : State, E : Event> {
      * Initial state of the state machine.
      *
      * W3C SCXML 3.2: Resolved from the `initial` attribute.
+     * Must be an atomic (leaf) state for processEvent to work correctly.
      */
     abstract val initialState: S
 
@@ -155,6 +156,17 @@ abstract class StateMachineEngine<S : State, E : Event> {
      * W3C SCXML 3.12: Event processing algorithm.
      */
     abstract fun processEvent(state: S, event: E): TransitionResult<S>
+
+    /**
+     * W3C SCXML Appendix D: Check for eventless (null) transitions.
+     *
+     * Eventless transitions fire automatically after state entry,
+     * before waiting for external events. Override in generated code
+     * for state machines that have eventless transitions.
+     *
+     * @return TransitionResult for any enabled eventless transition, or Ignored
+     */
+    protected open fun processNullEvent(state: S): TransitionResult<S> = TransitionResult.Ignored
 
     /**
      * Execute entry actions for a state.
@@ -175,8 +187,71 @@ abstract class StateMachineEngine<S : State, E : Event> {
      *
      * W3C SCXML 3.13: Executable content within `<transition>`.
      * Called between onExit(source) and onEntry(target).
+     *
+     * @param event null for eventless transitions
      */
-    abstract fun executeTransitionActions(source: S, event: E)
+    abstract fun executeTransitionActions(source: S, event: E?)
+
+    // --- State Hierarchy (W3C SCXML 3.3/3.4) ---
+
+    /**
+     * W3C SCXML 3.3: Get the parent of a state in the hierarchy.
+     *
+     * Override in generated code with the actual state hierarchy.
+     * Returns null for root states.
+     */
+    protected open fun parentOf(state: S): S? = null
+
+    /**
+     * W3C SCXML 3.4: Check if [descendant] is a descendant of [ancestor].
+     *
+     * Uses [parentOf] to walk up the hierarchy.
+     */
+    protected fun isDescendantOf(descendant: S, ancestor: S): Boolean {
+        var current: S? = parentOf(descendant)
+        while (current != null) {
+            if (current == ancestor) return true
+            current = parentOf(current)
+        }
+        return false
+    }
+
+    /**
+     * Resolve a compound/parallel state to its initial leaf state.
+     *
+     * Override in generated code for state machines with compound/parallel states.
+     * Default returns state unchanged (already a leaf).
+     */
+    protected open fun resolveLeafState(state: S): S = state
+
+    /**
+     * Resolve a state ID string back to its State object.
+     *
+     * Override in generated code to map state IDs to sealed interface objects.
+     * Used by the runtime to iterate over active states for parallel processing.
+     */
+    protected open fun resolveState(stateId: String): S? = null
+
+    /**
+     * Check if a state is an atomic (leaf) state — no children.
+     *
+     * Override in generated code. Default returns true (flat state machines).
+     */
+    protected open fun isAtomicState(state: S): Boolean = true
+
+    /**
+     * W3C SCXML 3.13: Get document order index for exit order sorting.
+     *
+     * Override in generated code. Higher values = later in document.
+     */
+    protected open fun documentOrderOf(state: S): Int = 0
+
+    /**
+     * Get the string state ID for a state object (reverse of resolveState).
+     *
+     * Override in generated code.
+     */
+    protected open fun stateIdOf(state: S): String = ""
 
     // --- Event Submission ---
 
@@ -240,20 +315,16 @@ abstract class StateMachineEngine<S : State, E : Event> {
             // R4 fix: Execute initial entry on Dispatchers.Default, not caller thread
             enterInitialConfiguration()
 
-            // Flush pending final state from initial entry (e.g., test415:
-            // initial state IS a final state, so markFinalStateReached()
-            // was called during enterInitialConfiguration)
-            if (pendingFinalState) {
-                pendingFinalState = false
-                isInFinalState = true
-            }
+            // Resolve to leaf state after initial configuration
+            _currentState.value = resolveLeafState(_currentState.value)
 
-            // W3C SCXML 3.12.1: Drain internal events raised during initial entry
-            // (e.g., done.state events from <final> states entered at startup)
-            while (internalEventQueue.isNotEmpty()) {
-                val internalEvent = internalEventQueue.removeFirst()
-                processOneEvent(internalEvent)
-            }
+            // Flush pending final state from initial entry (e.g., test415:
+            // initial state IS a final state)
+            flushPendingFinalState()
+
+            // W3C SCXML Appendix D: Process eventless transitions and internal
+            // events raised during initial entry (e.g., done.state from <final>)
+            drainEventlessAndInternal()
 
             for (event in eventChannel) {
                 if (isInFinalState) break
@@ -328,59 +399,252 @@ abstract class StateMachineEngine<S : State, E : Event> {
     // --- Microstep Processing ---
 
     /**
-     * W3C SCXML Appendix D: Process a single microstep.
+     * W3C SCXML Appendix D: Process a macrostep triggered by an external event.
      *
+     * Algorithm:
      * 1. Process the external event
-     * 2. Drain internal event queue (from <raise>)
+     * 2. Drain eventless transitions and internal events until stable
      */
     private fun processMicrostep(event: E) {
         processOneEvent(event)
+        drainEventlessAndInternal()
+    }
 
-        // W3C SCXML 3.12.1: Drain internal event queue
-        while (internalEventQueue.isNotEmpty()) {
-            val internalEvent = internalEventQueue.removeFirst()
-            processOneEvent(internalEvent)
+    /**
+     * Flush pending final state flag to the observable [isInFinalState].
+     *
+     * Called after initial configuration and at stable points to ensure
+     * final state is visible even when no transitions fired.
+     */
+    private fun flushPendingFinalState() {
+        if (pendingFinalState) {
+            pendingFinalState = false
+            isInFinalState = true
         }
     }
 
-    private fun processOneEvent(event: E) {
-        val currentStateValue = _currentState.value
+    /**
+     * Collect active atomic (leaf) states sorted by document order.
+     *
+     * W3C SCXML 3.13: Document order determines transition priority
+     * when multiple parallel children could handle the same event.
+     * Returns empty list for simple machines (no activeStateIds).
+     */
+    private fun activeLeafStatesInDocumentOrder(): List<S> {
+        if (activeStateIds.isEmpty()) return emptyList()
+        val leaves = mutableListOf<Pair<S, Int>>()
+        for (stateId in activeStateIds) {
+            val state = resolveState(stateId) ?: continue
+            if (!isAtomicState(state)) continue
+            leaves.add(state to documentOrderOf(state))
+        }
+        leaves.sortBy { it.second }
+        return leaves.map { it.first }
+    }
 
-        when (val result = processEvent(currentStateValue, event)) {
+    /**
+     * W3C SCXML Appendix D: Drain eventless transitions and internal events.
+     *
+     * Repeats until no more eventless transitions are enabled and the
+     * internal event queue is empty. This implements the inner loop of
+     * the W3C macrostep algorithm.
+     *
+     * W3C SCXML 3.4: For parallel states, eventless transitions are checked
+     * for ALL active atomic (leaf) states, not just _currentState.
+     */
+    private fun drainEventlessAndInternal() {
+        while (!isInFinalState) {
+            // W3C SCXML Appendix D: Eventless transitions take priority
+            var foundEventless = false
+
+            val leaves = activeLeafStatesInDocumentOrder()
+            if (leaves.isNotEmpty()) {
+                // W3C SCXML 3.4: Parallel-aware scan — check ALL active leaf states
+                for (state in leaves) {
+                    val nullResult = processNullEvent(state)
+                    if (nullResult !is TransitionResult.Ignored) {
+                        applyTransitionFrom(state, nullResult, null)
+                        foundEventless = true
+                        break  // Restart scan after state change
+                    }
+                }
+            } else {
+                // Simple machines without activeStateIds tracking — use _currentState
+                val nullResult = processNullEvent(_currentState.value)
+                if (nullResult !is TransitionResult.Ignored) {
+                    applyTransition(nullResult, null)
+                    foundEventless = true
+                }
+            }
+            if (foundEventless) {
+                flushPendingFinalState()
+                continue
+            }
+
+            // W3C SCXML 3.12.1: Internal events next
+            if (internalEventQueue.isNotEmpty()) {
+                val internalEvent = internalEventQueue.removeFirst()
+                processOneEvent(internalEvent)
+                flushPendingFinalState()
+                continue
+            }
+
+            // Stable: no eventless transitions, no internal events
+            break
+        }
+    }
+
+    /**
+     * Process a single event (internal or external).
+     *
+     * For parallel state machines, tries all active leaf states in
+     * document order to find a matching transition (first match wins).
+     * W3C SCXML 3.13: Document order priority for conflict resolution.
+     */
+    private fun processOneEvent(event: E) {
+        val leaves = activeLeafStatesInDocumentOrder()
+        if (leaves.isNotEmpty()) {
+            for (state in leaves) {
+                val result = processEvent(state, event)
+                if (result !is TransitionResult.Ignored) {
+                    applyTransitionFrom(state, result, event)
+                    return
+                }
+            }
+            // No active state handled the event — ignored
+        } else {
+            // Simple machine: use _currentState
+            val result = processEvent(_currentState.value, event)
+            applyTransition(result, event)
+        }
+    }
+
+    /**
+     * Apply a transition result using _currentState as source.
+     *
+     * @param event null for eventless transitions
+     */
+    private fun applyTransition(result: TransitionResult<S>, event: E?) {
+        applyTransitionFrom(_currentState.value, result, event)
+    }
+
+    /**
+     * Apply a transition result with an explicit source state.
+     *
+     * Used by parallel eventless processing where the source may differ
+     * from _currentState (multiple active leaf states).
+     *
+     * @param source the state that originated the transition
+     * @param event null for eventless transitions
+     */
+    private fun applyTransitionFrom(source: S, result: TransitionResult<S>, event: E?) {
+        when (result) {
             is TransitionResult.External -> {
-                val source = currentStateValue
                 val target = result.target
 
                 // W3C SCXML 3.13: Exit -> Transition Actions -> Entry
-                onExit(source)
+                exitHierarchy(source, target)
                 executeTransitionActions(source, event)
                 onEntry(target)
 
+                // Resolve to leaf state for compound/parallel targets
+                val leafTarget = resolveLeafState(target)
+
                 // Update observable state BEFORE flushing isInFinalState.
-                // This guarantees observers never see isInFinalState=true
-                // while currentState still reflects the source state.
-                _currentState.value = target
+                _currentState.value = leafTarget
                 if (pendingFinalState) {
                     pendingFinalState = false
                     isInFinalState = true
                 }
 
-                // Emit transition record
-                _transitions.tryEmit(
-                    TransitionRecord(
-                        source = source,
-                        event = event,
-                        target = target,
-                        timestamp = nextTimestamp()
+                // Emit transition record (only for event-based transitions)
+                if (event != null) {
+                    _transitions.tryEmit(
+                        TransitionRecord(
+                            source = source,
+                            event = event,
+                            target = leafTarget,
+                            timestamp = nextTimestamp()
+                        )
                     )
-                )
+                }
             }
             is TransitionResult.Internal -> {
                 // W3C SCXML 3.13: type="internal" — actions only
-                executeTransitionActions(currentStateValue, event)
+                executeTransitionActions(source, event)
             }
             is TransitionResult.Ignored -> {
                 // W3C SCXML 3.12: No matching transition, discard event
+            }
+        }
+    }
+
+    // --- Hierarchical Exit (W3C SCXML 3.4/3.13) ---
+
+    /**
+     * W3C SCXML 3.13: Exit states from source up to the LCCA with target.
+     *
+     * For flat machines (no activeStateIds), exits source only.
+     * For hierarchical machines, computes the proper exit set:
+     * 1. Find LCCA (Least Common Compound Ancestor)
+     * 2. Collect all active states that are descendants of LCCA
+     *    but not the target or its descendants
+     * 3. Sort by reverse document order
+     * 4. Exit each in order
+     *
+     * This matches the W3C SCXML algorithm and correctly handles
+     * parallel state exit ordering.
+     *
+     * Note: Generated onExit() for parallel states also contains descendant
+     * exit logic as a defensive fallback (e.g., when onExit is called directly
+     * outside of exitHierarchy). When called from here, the activeStateIds
+     * check in that generated code ensures no double-exit occurs — descendants
+     * are already removed by the time the parallel state's onExit runs.
+     */
+    private fun exitHierarchy(source: S, target: S) {
+        if (activeStateIds.isEmpty()) {
+            // Simple machine — just exit source
+            onExit(source)
+            return
+        }
+
+        // Step 1: Find LCCA (Least Common Compound Ancestor)
+        // Walk up from source to find first ancestor that contains target.
+        // If no common ancestor found (lcca == null), all active states
+        // from source's subtree upward must be exited.
+        var lcca: S? = parentOf(source)
+        while (lcca != null) {
+            if (lcca == target || isDescendantOf(target, lcca)) break
+            lcca = parentOf(lcca)
+        }
+
+        // Step 2: Collect active states to exit
+        val statesToExit = mutableListOf<Pair<S, Int>>()
+        for (stateId in activeStateIds.toList()) {
+            val state = resolveState(stateId) ?: continue
+            // Don't exit target or its descendants
+            if (state == target || isDescendantOf(state, target)) continue
+            if (lcca != null) {
+                // Normal case: exit descendants of LCCA (but not LCCA itself)
+                if (state == lcca) continue
+                if (!isDescendantOf(state, lcca)) continue
+            } else {
+                // No common ancestor: exit source and all its ancestors/descendants
+                // This handles root→root transitions (e.g., parallel root to final)
+                if (state != source && !isDescendantOf(state, source) && !isDescendantOf(source, state)) continue
+            }
+            statesToExit.add(state to documentOrderOf(state))
+        }
+
+        // Step 3: Sort by reverse document order (deepest states first)
+        statesToExit.sortByDescending { it.second }
+
+        // Step 4: Exit each
+        for ((state, _) in statesToExit) {
+            // Check still active (may have been removed by a parallel's onExit)
+            val sid = stateIdOf(state)
+            if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
+                onExit(state)
             }
         }
     }

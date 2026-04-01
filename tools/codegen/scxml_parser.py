@@ -125,6 +125,37 @@ class SCXMLModel:
     # Computed from: needs_script_engine OR static_invokes OR has_parent_communication OR has_parallel_states OR uses_in_predicate OR user_context_objects
     needs_nonstatic_method: bool = False
 
+    def resolve_to_leaf(self, state_id: str) -> str:
+        """
+        Resolve a state ID to its leaf by following initial attrs and parallel first children.
+
+        W3C SCXML 3.3/3.4: Shared utility for parser and code generators.
+        """
+        MAX_DEPTH = 20
+        current = state_id
+        depth = 0
+        while depth < MAX_DEPTH:
+            if current not in self.states:
+                return current
+            state = self.states[current]
+            if state.initial and state.initial in self.states:
+                current = state.initial
+                depth += 1
+            elif state.is_parallel:
+                first_child = None
+                for child_id, child_state in self.states.items():
+                    if child_state.parent == current:
+                        first_child = child_id
+                        break
+                if first_child:
+                    current = first_child
+                    depth += 1
+                else:
+                    break
+            else:
+                break
+        return current
+
 
 class SCXMLParser:
     """
@@ -1826,36 +1857,8 @@ class SCXMLParser:
                 state.initial = leaf_target
 
     def _resolve_to_leaf_state(self, state_id: str) -> str:
-        """
-        Resolve a state ID to its leaf state by following initial attributes
-
-        Args:
-            state_id: State ID to resolve
-
-        Returns:
-            Leaf state ID (atomic state with no initial attribute)
-        """
-        MAX_DEPTH = 20  # Safety limit
-        current = state_id
-        depth = 0
-
-        while depth < MAX_DEPTH:
-            if current not in self.model.states:
-                # State not found - return as is
-                return current
-
-            state = self.model.states[current]
-
-            # Check if state has an initial child
-            if state.initial and state.initial in self.model.states:
-                # Follow to initial child
-                current = state.initial
-                depth += 1
-            else:
-                # Reached leaf state (or final state, or state without initial)
-                break
-
-        return current
+        """Delegate to SCXMLModel.resolve_to_leaf (Single Source of Truth)."""
+        return self.model.resolve_to_leaf(state_id)
 
     def _compute_parallel_regions(self):
         """

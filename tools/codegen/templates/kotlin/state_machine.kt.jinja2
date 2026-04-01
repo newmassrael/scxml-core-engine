@@ -34,12 +34,69 @@ class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}Stat
 {% endif %}
 
     override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}
-{% if initial_entry_root and initial_entry_root != model.initial %}
+{% if initial_entry_root and initial_entry_root != (model.initial_leaf if model.initial_leaf else model.initial) %}
 
     // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
     // through compound/parallel hierarchy to populate activeStateIds)
     override fun enterInitialConfiguration() {
         onEntry({{ machine_name }}State.{{ initial_entry_root | to_state_class_name }})
+    }
+{% endif %}
+
+{% if parent_map %}
+    // W3C SCXML 3.3: State hierarchy parent mapping
+    override fun parentOf(state: {{ machine_name }}State): {{ machine_name }}State? = when (state) {
+{% for child_id, parent_id in parent_map.items() | sort %}
+        is {{ machine_name }}State.{{ child_id | to_state_class_name }} -> {{ machine_name }}State.{{ parent_id | to_state_class_name }}
+{% endfor %}
+        else -> null
+    }
+{% endif %}
+
+{% if leaf_map %}
+    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
+    override fun resolveLeafState(state: {{ machine_name }}State): {{ machine_name }}State = when (state) {
+{% for compound_id, leaf_id in leaf_map.items() | sort %}
+        is {{ machine_name }}State.{{ compound_id | to_state_class_name }} -> {{ machine_name }}State.{{ leaf_id | to_state_class_name }}
+{% endfor %}
+        else -> state
+    }
+{% endif %}
+
+{% if model.has_parallel_states or model.uses_in_predicate %}
+    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    override fun resolveState(stateId: String): {{ machine_name }}State? = when (stateId) {
+{% for state_id in model.states | sort %}
+        "{{ state_id }}" -> {{ machine_name }}State.{{ state_id | to_state_class_name }}
+{% endfor %}
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: {{ machine_name }}State): String = when (state) {
+{% for state_id in model.states | sort %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> "{{ state_id }}"
+{% endfor %}
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: {{ machine_name }}State): Boolean = when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% if state.is_parallel or state.initial or (state_id in model.parallel_regions) %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> false
+{% endif %}
+{% endfor %}
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: {{ machine_name }}State): Int = when (state) {
+{% for state_id in model.states | sort %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {{ model.states[state_id].document_order }}
+{% endfor %}
+        else -> 0
     }
 {% endif %}
 
