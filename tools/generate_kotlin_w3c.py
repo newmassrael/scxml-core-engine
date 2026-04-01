@@ -104,6 +104,95 @@ def to_pascal_case(name: str) -> str:
     return ''.join(p[0].upper() + p[1:] if p else '' for p in parts)
 
 
+def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
+    """
+    Generate child state machines for invoke tests.
+
+    Finds child SCXML files extracted by the parser (_child0, _machineName, sub1, etc.)
+    and generates Kotlin SMs in the same package as the parent.
+
+    Returns number of children generated.
+    """
+    resource_dir = scxml_path.parent
+    parent_stem = scxml_path.stem  # e.g., "test191"
+    parent_package = f'test{test_id}'
+    count = 0
+
+    # Find child SCXML files: test{num}_*.scxml and test{num}sub*.scxml
+    num_prefix = re.match(r'(\d+)', test_id)
+    if not num_prefix:
+        return 0
+    num = num_prefix.group(1)
+
+    for child_scxml in resource_dir.glob('*.scxml'):
+        child_name = child_scxml.stem
+        # Skip the parent itself
+        if child_name == parent_stem:
+            continue
+        # Match: test191_child0, test191_machineName, test226sub1, etc.
+        if not (child_name.startswith(f'test{num}_') or
+                child_name.startswith(f'test{num}sub')):
+            continue
+
+        # Generate child SM
+        child_result = subprocess.run(
+            [
+                sys.executable, str(CODEGEN_SCRIPT),
+                str(child_scxml),
+                '-o', str(output_dir),
+                '--language', 'kotlin',
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, 'SPDLOG_LEVEL': 'warn'},
+        )
+
+        # Children that need script engine: generate a no-op stub
+        # Check BEFORE 'Generated:' — codegen may write a broken SM file alongside the flag.
+        # Does NOT markFinalStateReached — prevents incorrect done.invoke to parent.
+        # Parent will timeout and follow fallback transition (matches C++ Interpreter behavior).
+        if 'Needs ScriptEngine: True' in child_result.stdout:
+            child_sm_file = output_dir / f'{child_name}Sm.kt'
+            child_class = to_pascal_case(child_name)
+            stub_content = (
+                f"// GENERATED STUB — child requires script engine (no-op)\n"
+                f"package com.sce.generated.{parent_package}\n\n"
+                f"import com.sce.runtime.*\n\n"
+                f"sealed interface {child_class}State : State {{\n"
+                f"    data object Initial : {child_class}State\n"
+                f"}}\n"
+                f"sealed interface {child_class}Event : Event\n\n"
+                f"class {child_class}StateMachine : StateMachineEngine<{child_class}State, {child_class}Event>() {{\n"
+                f"    override val initialState = {child_class}State.Initial\n"
+                f"    override fun processEvent(state: {child_class}State, event: {child_class}Event) = TransitionResult.Ignored as TransitionResult<{child_class}State>\n"
+                f"    override fun onEntry(state: {child_class}State) {{}}\n"
+                f"    override fun onExit(state: {child_class}State) {{}}\n"
+                f"    override fun executeTransitionActions(source: {child_class}State, event: {child_class}Event?) {{}}\n"
+                f"}}\n"
+            )
+            child_sm_file.write_text(stub_content)
+            count += 1
+            continue
+
+        if 'Generated:' not in child_result.stdout:
+            continue
+
+        # Fix package name: child SM must be in same package as parent
+        child_sm_file = output_dir / f'{child_name}Sm.kt'
+        if child_sm_file.exists():
+            content = child_sm_file.read_text()
+            # Replace child's own package with parent's package
+            child_package = child_name.lower()
+            content = content.replace(
+                f'package com.sce.generated.{child_package}',
+                f'package com.sce.generated.{parent_package}'
+            )
+            child_sm_file.write_text(content)
+            count += 1
+
+    return count
+
+
 def generate_sm(test_id: str, scxml_path: Path) -> str:
     """
     Run Kotlin codegen for a single test.
@@ -133,6 +222,8 @@ def generate_sm(test_id: str, scxml_path: Path) -> str:
         shutil.rmtree(output_dir, ignore_errors=True)
         return 'script_engine'
     if 'Generated:' in stdout:
+        # Generate child SMs for invoke tests
+        generate_child_sms(test_id, scxml_path, output_dir)
         return 'generated'
     return 'failed'
 

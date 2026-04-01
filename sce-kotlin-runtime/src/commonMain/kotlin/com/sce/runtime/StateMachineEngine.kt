@@ -5,6 +5,7 @@
 
 package com.sce.runtime
 
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -326,10 +327,19 @@ abstract class StateMachineEngine<S : State, E : Event> {
             // events raised during initial entry (e.g., done.state from <final>)
             drainEventlessAndInternal()
 
-            for (event in eventChannel) {
-                if (isInFinalState) break
-                processMicrostep(event)
+            // W3C SCXML 3.7: Only enter event loop if not already in final state
+            // (child SMs may reach final state during drainEventlessAndInternal)
+            if (!isInFinalState) {
+                for (event in eventChannel) {
+                    if (isInFinalState) break
+                    processMicrostep(event)
+                }
             }
+
+            // W3C SCXML 6.2: Cancel pending delayed sends on session termination
+            // Per spec, terminated sessions must not deliver delayed events (test187)
+            delayedSendJobs.values.forEach { it.cancel() }
+            delayedSendJobs.clear()
         }
     }
 
@@ -346,11 +356,18 @@ abstract class StateMachineEngine<S : State, E : Event> {
         eventChannel.close()
         delayedSendJobs.values.forEach { it.cancel() }
         delayedSendJobs.clear()
+        // W3C SCXML 6.4: Cancel all active invokes
+        for ((_, entry) in activeInvokes) {
+            entry.child.stop()
+            entry.monitorJob.cancel()
+        }
+        activeInvokes.clear()
         // Reset state for stop/start reuse
         activeStateIds.clear()
         isInFinalState = false
         pendingFinalState = false
         internalEventQueue.clear()
+        completion = CompletableDeferred()
     }
 
     // --- Internal Event Queue (for <raise>) ---
@@ -380,7 +397,7 @@ abstract class StateMachineEngine<S : State, E : Event> {
     protected fun scheduleSend(sendId: String, delayMs: Long, event: E) {
         val scope = engineScope ?: return
         delayedSendJobs[sendId]?.cancel()
-        delayedSendJobs[sendId] = scope.launch {
+        delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
             kotlinx.coroutines.delay(delayMs)
             send(event)
             delayedSendJobs.remove(sendId)
@@ -395,6 +412,115 @@ abstract class StateMachineEngine<S : State, E : Event> {
     protected fun cancelSend(sendId: String) {
         delayedSendJobs.remove(sendId)?.cancel()
     }
+
+    /**
+     * W3C SCXML 6.4 (test187): Schedule a delayed send to parent.
+     * Cancelled when child session stops (all delayedSendJobs are cancelled in stop()).
+     */
+    protected fun scheduleParentSend(sendId: String, delayMs: Long, eventName: String) {
+        val scope = engineScope ?: return
+        delayedSendJobs[sendId]?.cancel()
+        delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
+            kotlinx.coroutines.delay(delayMs)
+            onSendToParent?.invoke(eventName)
+            delayedSendJobs.remove(sendId)
+        }
+    }
+
+    // --- Invoke Support (W3C SCXML 6.4) ---
+
+    /**
+     * W3C SCXML 6.4: Completion signal for invoke monitoring.
+     * Completes when this state machine reaches a top-level final state.
+     * Reset on [stop] for stop/start reuse.
+     */
+    var completion: CompletableDeferred<Unit> = CompletableDeferred()
+        private set
+
+    /**
+     * W3C SCXML 6.4: Callback for child SMs to send events to parent.
+     * Set by parent when starting an invoked child SM.
+     * Called from generated code when child executes send target="#_parent".
+     */
+    @Volatile
+    var onSendToParent: ((String) -> Unit)? = null
+        internal set
+
+    /** Active invoked child sessions, keyed by invoke ID. */
+    private data class InvokeEntry(
+        val child: StateMachineEngine<*, *>,
+        val monitorJob: Job
+    )
+    private val activeInvokes = mutableMapOf<String, InvokeEntry>()
+
+    /**
+     * W3C SCXML 6.4: Start an invoked child state machine.
+     *
+     * @param invokeId Invoke session identifier
+     * @param child Child state machine instance
+     * @param autoforward Forward parent events to child
+     * @param doneEvent Event to send when child completes (done.invoke)
+     */
+    protected fun startInvoke(
+        invokeId: String,
+        child: StateMachineEngine<*, *>,
+        autoforward: Boolean,
+        doneEvent: E?
+    ) {
+        val scope = engineScope ?: return
+
+        // W3C SCXML 6.4: Set up child→parent event routing
+        child.onSendToParent = { eventName ->
+            resolveEventByName(eventName)?.let { send(it) }
+        }
+
+        // Start child on the same scope
+        child.start(scope)
+
+        // Monitor child completion for done.invoke
+        // Run on Dispatchers.Default to avoid BlockingEventLoop deadlock in tests
+        val monitorJob = scope.launch(Dispatchers.Default) {
+            child.completion.await()
+            if (doneEvent != null) {
+                send(doneEvent)
+            }
+            activeInvokes.remove(invokeId)
+        }
+
+        activeInvokes[invokeId] = InvokeEntry(child, monitorJob)
+    }
+
+    /**
+     * W3C SCXML 6.4: Cancel an invoked child state machine on state exit.
+     */
+    protected fun cancelInvoke(invokeId: String) {
+        activeInvokes.remove(invokeId)?.let {
+            it.child.stop()
+            it.monitorJob.cancel()
+        }
+    }
+
+    /**
+     * W3C SCXML 6.4: Send event to invoked child by invoke ID.
+     * Uses string-based routing for type-erased cross-SM communication.
+     */
+    protected fun sendToChild(invokeId: String, eventName: String) {
+        activeInvokes[invokeId]?.child?.sendByName(eventName)
+    }
+
+    /**
+     * W3C SCXML 6.4: Send event by name (string-based, for cross-SM routing).
+     * Internal: only used by parent SM's [sendToChild] for type-erased communication.
+     */
+    internal fun sendByName(name: String) {
+        resolveEventByName(name)?.let { send(it) }
+    }
+
+    /**
+     * W3C SCXML 6.4: Resolve event name string to Event object.
+     * Override in generated code for cross-SM event routing.
+     */
+    protected open fun resolveEventByName(name: String): E? = null
 
     // --- Microstep Processing ---
 
@@ -420,6 +546,8 @@ abstract class StateMachineEngine<S : State, E : Event> {
         if (pendingFinalState) {
             pendingFinalState = false
             isInFinalState = true
+            // W3C SCXML 6.4: Notify invoke monitors that this SM completed
+            if (!completion.isCompleted) completion.complete(Unit)
         }
     }
 
@@ -625,10 +753,8 @@ abstract class StateMachineEngine<S : State, E : Event> {
 
                 // Update observable state BEFORE flushing isInFinalState.
                 _currentState.value = leafTarget
-                if (pendingFinalState) {
-                    pendingFinalState = false
-                    isInFinalState = true
-                }
+                // W3C SCXML 3.7 + 6.4: Single path for final state + invoke completion
+                flushPendingFinalState()
 
                 // Emit transition record (only for event-based transitions)
                 if (event != null) {

@@ -496,6 +496,35 @@ class KotlinCodeGenerator(BaseCodeGenerator):
                     })
                 deep_initial_entries[state_id] = entry_order
 
+        # W3C SCXML 6.4: Compute invoke entries for each state
+        # Maps state_id -> list of invoke info dicts with child class names
+        invoke_entries: Dict[str, list] = {}
+        for state_id, state in model.states.items():
+            if state.static_invokes:
+                entries = []
+                for si in state.static_invokes:
+                    child_name = si.get('child_name', '')
+                    if child_name:
+                        child_class = self._to_pascal_case(child_name)
+                    else:
+                        child_class = ''
+                    invoke_id = si.get('invoke_id', '')
+                    # W3C SCXML 6.4: Use specific done.invoke.{id} if event exists,
+                    # otherwise use general done.invoke (prefix matching)
+                    specific_done = f"done.invoke.{invoke_id}" if invoke_id else ""
+                    if specific_done and specific_done in model.events:
+                        done_event = specific_done
+                    else:
+                        done_event = 'done.invoke'
+                    entries.append({
+                        'invoke_id': invoke_id,
+                        'child_class': child_class,
+                        'autoforward': si.get('autoforward', False),
+                        'done_event': done_event,
+                        'has_done_event': done_event in model.events or 'done.invoke' in model.events,
+                    })
+                invoke_entries[state_id] = entries
+
         input_stem = Path(scxml_path).stem
 
         # Load main Kotlin template
@@ -517,6 +546,7 @@ class KotlinCodeGenerator(BaseCodeGenerator):
             leaf_map=leaf_map,
             parallel_descendants=parallel_descendants,
             deep_initial_entries=deep_initial_entries,
+            invoke_entries=invoke_entries,
         )
 
         # Post-process: close the class and normalize whitespace

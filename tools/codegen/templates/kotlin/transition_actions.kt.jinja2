@@ -14,7 +14,8 @@
     override fun executeTransitionActions(
         source: {{ machine_name }}State,
         event: {{ machine_name }}Event?
-    ) = when (source) {
+    ) {
+        when (source) {
 {% for state_id in model.states | sort %}
 {% set eff_transitions = effective_transitions[state_id] %}
 {% set ns = namespace(has_transition_actions=false) %}
@@ -28,7 +29,9 @@
 {# --- Event-based transition actions --- #}
 {% for trans in eff_transitions %}
 {% if trans.actions and trans.event %}
-{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
+{% if trans.event == '*' %}
+            event != null -> {
+{% elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
             ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
 {%- if trans.is_pure_in_predicate %} && {{ trans.cond_kt }}{% elif trans.is_kt_condition %} && {{ trans.cond_kt }}{% elif trans.cond and not trans.is_cpp_condition %} && {{ trans.cond }}{% endif %} -> {
 {% else %}
@@ -76,4 +79,5 @@
 {% endif %}
 {% endfor %}
         else -> {}
+        }
     }

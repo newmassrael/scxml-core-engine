@@ -100,6 +100,16 @@ class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}Stat
     }
 {% endif %}
 
+{% if model.has_invoke or model.has_parent_communication %}
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
+{% for event_name in leaf_events | sort %}
+        "{{ event_name }}" -> {{ machine_name }}Event.{{ event_name | to_event_ref }}
+{% endfor %}
+        else -> null
+    }
+{% endif %}
+
 {% include 'process_event.kt.jinja2' %}
 
 {% include 'entry_exit_actions.kt.jinja2' %}

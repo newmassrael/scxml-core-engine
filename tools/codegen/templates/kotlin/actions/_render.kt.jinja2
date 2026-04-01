@@ -8,10 +8,8 @@
             println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}{{ action.expr | to_kotlin_string_expr }})
 {% elif action.type == 'log' and action.label %}
             println("{{ action.label | escape_kotlin }}")
-{% elif action.type == 'send' and action.event_name %}
-            send({{ machine_name }}Event.{{ action.event_name | to_event_ref }})
-{% elif action.type == 'send' and action.event %}
-            send({{ machine_name }}Event.{{ action.event | to_event_ref }})
+{% elif action.type == 'send' %}
+{% include 'actions/send.kt.jinja2' with context %}
 {% elif action.type == 'script' and action.get('is_kt_function', false) %}
             {{ action.content_kt | trim }}
 {% elif action.type == 'cancel' and action.sendid %}

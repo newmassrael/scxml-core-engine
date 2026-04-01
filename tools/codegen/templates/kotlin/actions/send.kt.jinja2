@@ -1,11 +1,41 @@
-{% if action.delay or action.delayexpr %}
-{% if action.event_name %}
-            scheduleSend("{{ action.id | default('__auto_' + loop.index0 | string, true) }}", {{ action.delay_ms | default('0') }}L, {{ machine_name }}Event.{{ action.event_name | to_event_ref }})
-{% elif action.event %}
-            scheduleSend("{{ action.id | default('__auto_' + loop.index0 | string, true) }}", {{ action.delay_ms | default('0') }}L, {{ machine_name }}Event.{{ action.event | to_event_ref }})
+{# W3C SCXML 6.2: Send action with target/type validation, delay, and invoke routing.
+   Expects `action` and `machine_name` variables in scope.
+   Uses action.auto_send_id for unique delayed send identification (C++ UniqueIdGenerator pattern). #}
+{% if action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
+            // W3C SCXML 6.2 (test199): Unsupported send type raises error.execution
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+            return  // W3C SCXML 5.10: Stop subsequent executable content
+{% elif action.target and action.target.startswith('!') %}
+            // W3C SCXML 6.2 (test194): Invalid target raises error.execution
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+            return  // W3C SCXML 5.10: Stop subsequent executable content
+{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
+            // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
+            raiseInternal({{ machine_name }}Event.Error.Communication)
+            return  // W3C SCXML 5.10: Stop subsequent executable content
+{% elif action.target == '#_internal' %}
+{% if action.event %}
+            raiseInternal({{ machine_name }}Event.{{ action.event | to_event_ref }})
 {% endif %}
-{% elif action.event_name %}
-            send({{ machine_name }}Event.{{ action.event_name | to_event_ref }})
+{% elif action.target == '#_parent' %}
+{% if action.event %}
+{% if action.delay or action.delayexpr %}
+            // W3C SCXML 6.4 (test187): Delayed send to parent — cancelled when child stops
+            scheduleParentSend("{{ action.auto_send_id }}", {{ action.delay_ms | default(0) }}L, "{{ action.event }}")
+{% else %}
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
+            onSendToParent?.invoke("{{ action.event }}")
+{% endif %}
+{% endif %}
+{% elif action.target and action.target.startswith('#_') and action.target not in ['#_internal', '#_parent'] %}
+{% if action.event %}
+            // W3C SCXML 6.4 (test192): Send event to invoked child
+            sendToChild("{{ action.target[2:] }}", "{{ action.event }}")
+{% endif %}
+{% elif action.delay or action.delayexpr %}
+{% if action.event %}
+            scheduleSend("{{ action.auto_send_id }}", {{ action.delay_ms | default(0) }}L, {{ machine_name }}Event.{{ action.event | to_event_ref }})
+{% endif %}
 {% elif action.event %}
             send({{ machine_name }}Event.{{ action.event | to_event_ref }})
 {% endif %}

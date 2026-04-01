@@ -181,6 +181,7 @@ class SCXMLParser:
         self.model = None
         self.document_order_counter = 0  # W3C SCXML 3.13: Track document order
         self.invoke_counter = 0  # W3C SCXML 6.4.1: Generate invoke IDs when missing
+        self.send_counter = 0  # W3C SCXML 6.2: Generate unique send IDs (C++ UniqueIdGenerator pattern)
 
     def _extract_user_objects(self, cpp_code: str) -> Set[str]:
         """
@@ -865,7 +866,18 @@ class SCXMLParser:
                 action['typeexpr'] = child.get('typeexpr', '')  # W3C SCXML 6.2: Dynamic type evaluation (test174)
                 action['delay'] = child.get('delay', '')
                 action['delayexpr'] = child.get('delayexpr', '')
+                action['delay_ms'] = self._parse_delay_to_ms(action['delay'])
                 action['id'] = child.get('id', '')
+                # W3C SCXML 6.2: Generate unique auto send ID if not specified.
+                # C++ uses UniqueIdGenerator::generateSendId() at runtime;
+                # Kotlin AOT generates unique IDs at parse time for determinism.
+                # When id is explicit (e.g., <send id="foo"/>), auto_send_id == "foo"
+                # so <cancel sendid="foo"/> (which uses action['sendid']) matches correctly.
+                if not action['id']:
+                    action['auto_send_id'] = f"__send_{self.send_counter}"
+                    self.send_counter += 1
+                else:
+                    action['auto_send_id'] = action['id']
                 action['idlocation'] = child.get('idlocation', '')
                 action['namelist'] = child.get('namelist', '')  # W3C SCXML C.1: namelist for event data
                 
@@ -1536,6 +1548,37 @@ class SCXMLParser:
 
         return False
 
+    def _parse_delay_to_ms(self, delay_str: str) -> int:
+        """
+        Parse W3C SCXML delay string to milliseconds.
+
+        W3C SCXML 6.2.5: The delay attribute uses CSS2 time format:
+        - "1s" → 1000ms
+        - "1.5s" → 1500ms
+        - "200ms" → 200ms
+        - ".5" → 500ms (bare number defaults to seconds)
+        - "" → 0 (no delay)
+
+        @param delay_str Raw delay attribute value
+        @return Delay in milliseconds (0 if empty or unparseable)
+        """
+        if not delay_str:
+            return 0
+        stripped = delay_str.strip()
+        # Try with explicit unit first
+        m = re.match(r'^(\d*\.?\d+)(s|ms)$', stripped)
+        if m:
+            value = float(m.group(1))
+            unit = m.group(2)
+            if unit == 's':
+                return int(value * 1000)
+            return int(value)
+        # Bare number: default to seconds (common in W3C test suite)
+        m = re.match(r'^(\d*\.?\d+)$', stripped)
+        if m:
+            return int(float(m.group(1)) * 1000)
+        return 0
+
     def _is_static_string_literal(self, expr: str) -> bool:
         """
         Detect if expression is a static string literal (e.g., 'test', "test")
@@ -1761,51 +1804,61 @@ class SCXMLParser:
     def _apply_parallel_initial_overrides(self):
         """
         Apply parallel initial state overrides (W3C SCXML 3.13)
-        
+
         When scxml initial="s1 s2", these states override the initial attributes
         of their parent regions in parallel states.
-        
+
+        W3C SCXML 3.6 (test576): Walk up from each target through ALL ancestors,
+        overriding compound states' initial to point to the child on the path.
+        Parallel states are skipped (they enter all children automatically).
+
         Example:
-          <scxml initial="s2p112 s2p122">
-            <parallel id="s2p1">
-              <state id="s2p11" initial="s2p111">  <!-- Override to s2p112 -->
-                <state id="s2p111"/>
-                <state id="s2p112"/>
+          <scxml initial="s11p112 s11p122">
+            <state id="s1">
+              <state id="s11" initial="s111">  <!-- Override to s11p1 -->
+                <state id="s111"/>
+                <parallel id="s11p1">
+                  <state id="s11p11" initial="s11p111">  <!-- Override to s11p112 -->
+                    <state id="s11p111"/>
+                    <state id="s11p112"/>
+                  </state>
+                  <state id="s11p12" initial="s11p121">  <!-- Override to s11p122 -->
+                    <state id="s11p121"/>
+                    <state id="s11p122"/>
+                  </state>
+                </parallel>
               </state>
-              <state id="s2p12" initial="s2p121">  <!-- Override to s2p122 -->
-                <state id="s2p121"/>
-                <state id="s2p122"/>
-              </state>
-            </parallel>
+            </state>
         """
         if not self.model.initial:
             return
-        
+
         # Check if initial contains space-separated states (parallel initial states)
         initial_states = self.model.initial.split()
-        
+
         if len(initial_states) <= 1:
             # Single initial state - no overrides needed
             return
-        
-        # W3C SCXML 3.13: Override parent region initial attributes
+
+        # W3C SCXML 3.13: Walk up from each target through all ancestors,
+        # overriding compound states' initial to point to the child on the path.
+        # Skip parallel states (they enter all children automatically).
         for state_id in initial_states:
             if state_id not in self.model.states:
-                # State not found - skip
                 continue
-            
-            # Find parent of this initial state
-            state = self.model.states[state_id]
-            parent_id = state.parent
-            
-            if not parent_id or parent_id not in self.model.states:
-                # No parent or parent not found
-                continue
-            
-            # Override parent's initial attribute
-            parent_state = self.model.states[parent_id]
-            parent_state.initial = state_id
-        
+
+            current = state_id
+            while current in self.model.states:
+                state = self.model.states[current]
+                parent_id = state.parent
+                if not parent_id or parent_id not in self.model.states:
+                    break
+                parent_state = self.model.states[parent_id]
+                # Only override compound states, not parallel (which enter all children)
+                if not parent_state.is_parallel:
+                    parent_state.initial = current
+                current = parent_id
+
         # After overrides, set model.initial to the first state
         # The parallel regions will use their overridden initial attributes
         self.model.initial = initial_states[0]
