@@ -259,8 +259,9 @@ abstract class StateMachineEngine<S : State, E : Event> {
     /**
      * Submit an event to the state machine (non-suspending, fire-and-forget).
      *
-     * Always succeeds because the channel is UNLIMITED.
-     * UI event handlers are not suspend functions, so this is non-suspending.
+     * Succeeds while the SM is running (Channel.UNLIMITED, never drops).
+     * After the SM reaches a final state, the channel is closed and events
+     * are silently discarded (SM no longer processes events per W3C SCXML 3.7).
      */
     fun send(event: E) {
         eventChannel.trySend(event)
@@ -541,6 +542,11 @@ abstract class StateMachineEngine<S : State, E : Event> {
      * 2. Drain eventless transitions and internal events until stable
      */
     private fun processMicrostep(event: E) {
+        // W3C SCXML 6.4: Auto-forward external events to child invoke sessions.
+        // Only external events (from the event channel) reach processMicrostep;
+        // internal events from <raise> are processed in drainEventlessAndInternal
+        // and must NOT be forwarded per spec.
+        autoForwardEvent(event)
         processOneEvent(event)
         drainEventlessAndInternal()
     }
@@ -556,43 +562,19 @@ abstract class StateMachineEngine<S : State, E : Event> {
             pendingFinalState = false
             isInFinalState = true
 
-            // W3C SCXML 3.7: Exit all active states when SM terminates.
-            // onexit handlers must execute before session completion is signaled,
-            // so that child-to-parent events (e.g., test236) arrive before done.invoke.
-            exitAllActiveStates()
+            // W3C SCXML 3.8: Execute onexit actions for the final state before
+            // notifying parent. Matches C++ AOT StaticExecutionEngine::initialize()
+            // which calls executeOnExit(currentState_) for the final state only.
+            // Ancestors are NOT exited here — transition exitHierarchy already
+            // handled ancestor exits. This ensures child-to-parent events
+            // (e.g., test236 SubFinal onexit) arrive before done.invoke.
+            onExit(_currentState.value)
 
             // W3C SCXML 6.4: Notify invoke monitors that this SM completed
             if (!completion.isCompleted) completion.complete(Unit)
             // W3C SCXML 3.7: Close event channel to terminate event loop coroutine.
             // After reaching final state, no further events are processed.
             eventChannel.close()
-        }
-    }
-
-    /**
-     * W3C SCXML 3.7: Exit all active states when SM reaches a top-level final state.
-     *
-     * For non-parallel machines (no activeStateIds tracking), exits the current
-     * final state and all its ancestors from deepest to shallowest.
-     * For parallel machines, exits all tracked active states in reverse document order.
-     */
-    private fun exitAllActiveStates() {
-        if (activeStateIds.isNotEmpty()) {
-            // Parallel machine: exit all active states in reverse document order
-            val statesToExit = activeStateIds.toList()
-                .mapNotNull { id -> resolveState(id)?.let { it to documentOrderOf(it) } }
-                .sortedByDescending { it.second }
-            for ((state, _) in statesToExit) {
-                onExit(state)
-            }
-            activeStateIds.clear()
-        } else {
-            // Non-parallel machine: exit current state and walk up to root
-            var current: S? = _currentState.value
-            while (current != null) {
-                onExit(current)
-                current = parentOf(current)
-            }
         }
     }
 
@@ -748,11 +730,6 @@ abstract class StateMachineEngine<S : State, E : Event> {
      * W3C SCXML 3.13: Document order priority for conflict resolution.
      */
     private fun processOneEvent(event: E) {
-        // W3C SCXML 6.4: Auto-forward external events to child invoke sessions.
-        // Forwarding happens before parent processes the event, matching C++ behavior.
-        // Platform events (done.*, error.*, cancel.*) are not forwarded.
-        autoForwardEvent(event)
-
         val leaves = activeLeafStatesInDocumentOrder()
         if (leaves.isNotEmpty()) {
             for (state in leaves) {
@@ -771,21 +748,19 @@ abstract class StateMachineEngine<S : State, E : Event> {
     }
 
     /**
-     * W3C SCXML 6.4: Forward external event to all autoforward child sessions.
+     * W3C SCXML 6.4.6: Forward external event to all autoforward child sessions.
      *
-     * Platform events (done.*, error.*, cancel.*) are never forwarded per spec.
+     * Matches C++ AOT StaticExecutionEngine::raiseExternal() which forwards
+     * all events without platform event filtering. Child's resolveEventByName
+     * silently ignores unrecognized events (e.g., done.invoke).
      */
     private fun autoForwardEvent(event: E) {
         if (activeInvokes.isEmpty()) return
-        val hasAutoforward = activeInvokes.values.any { it.autoforward }
-        if (!hasAutoforward) return
 
         val eventName = eventNameOf(event) ?: return
-        // W3C SCXML 6.4: Don't forward platform events
-        if (eventName.startsWith("done.") || eventName.startsWith("error.") || eventName.startsWith("cancel.")) return
 
         for ((_, entry) in activeInvokes) {
-            if (entry.autoforward && !entry.child.isInFinalState) {
+            if (entry.autoforward) {
                 entry.child.sendByName(eventName)
             }
         }
@@ -875,13 +850,22 @@ abstract class StateMachineEngine<S : State, E : Event> {
         if (activeStateIds.isEmpty()) {
             // Non-parallel machine — exit source and ancestors up to LCCA
             onExit(source)
-            // W3C SCXML 3.13: Exit ancestor states when leaving a compound state.
-            // Walk up from source, exiting each ancestor until we reach one that
-            // contains the target (LCCA). For flat machines parentOf returns null
-            // immediately, so this is a no-op.
+            // W3C SCXML 3.13: Exit ancestor states when transitioning out.
+            // Walk up from source, exiting each ancestor until we reach the LCCA
+            // (the first ancestor that contains the target as a descendant).
+            // For flat machines parentOf returns null immediately, so this is a no-op.
             var ancestor = parentOf(source)
-            while (ancestor != null && ancestor != target && !isDescendantOf(target, ancestor)) {
+            while (ancestor != null) {
+                if (isDescendantOf(target, ancestor)) {
+                    // LCCA found — ancestor contains both source and target.
+                    // Don't exit it (both sides live under it).
+                    break
+                }
+                // Exit this ancestor (target is outside it).
+                // W3C SCXML 3.13: type="external" transitions to an ancestor
+                // exit-and-reenter the ancestor itself (ancestor == target case).
                 onExit(ancestor)
+                if (ancestor == target) break
                 ancestor = parentOf(ancestor)
             }
             return
