@@ -449,7 +449,8 @@ abstract class StateMachineEngine<S : State, E : Event> {
     /** Active invoked child sessions, keyed by invoke ID. */
     private data class InvokeEntry(
         val child: StateMachineEngine<*, *>,
-        val monitorJob: Job
+        val monitorJob: Job,
+        val autoforward: Boolean
     )
     private val activeInvokes = mutableMapOf<String, InvokeEntry>()
 
@@ -487,7 +488,7 @@ abstract class StateMachineEngine<S : State, E : Event> {
             activeInvokes.remove(invokeId)
         }
 
-        activeInvokes[invokeId] = InvokeEntry(child, monitorJob)
+        activeInvokes[invokeId] = InvokeEntry(child, monitorJob, autoforward)
     }
 
     /**
@@ -522,6 +523,14 @@ abstract class StateMachineEngine<S : State, E : Event> {
      */
     protected open fun resolveEventByName(name: String): E? = null
 
+    /**
+     * W3C SCXML 6.4: Resolve Event object to event name string.
+     * Reverse of [resolveEventByName]. Override in generated code.
+     * Used by autoforward to convert typed parent events to string names
+     * for type-erased child routing.
+     */
+    protected open fun eventNameOf(event: E): String? = null
+
     // --- Microstep Processing ---
 
     /**
@@ -546,8 +555,44 @@ abstract class StateMachineEngine<S : State, E : Event> {
         if (pendingFinalState) {
             pendingFinalState = false
             isInFinalState = true
+
+            // W3C SCXML 3.7: Exit all active states when SM terminates.
+            // onexit handlers must execute before session completion is signaled,
+            // so that child-to-parent events (e.g., test236) arrive before done.invoke.
+            exitAllActiveStates()
+
             // W3C SCXML 6.4: Notify invoke monitors that this SM completed
             if (!completion.isCompleted) completion.complete(Unit)
+            // W3C SCXML 3.7: Close event channel to terminate event loop coroutine.
+            // After reaching final state, no further events are processed.
+            eventChannel.close()
+        }
+    }
+
+    /**
+     * W3C SCXML 3.7: Exit all active states when SM reaches a top-level final state.
+     *
+     * For non-parallel machines (no activeStateIds tracking), exits the current
+     * final state and all its ancestors from deepest to shallowest.
+     * For parallel machines, exits all tracked active states in reverse document order.
+     */
+    private fun exitAllActiveStates() {
+        if (activeStateIds.isNotEmpty()) {
+            // Parallel machine: exit all active states in reverse document order
+            val statesToExit = activeStateIds.toList()
+                .mapNotNull { id -> resolveState(id)?.let { it to documentOrderOf(it) } }
+                .sortedByDescending { it.second }
+            for ((state, _) in statesToExit) {
+                onExit(state)
+            }
+            activeStateIds.clear()
+        } else {
+            // Non-parallel machine: exit current state and walk up to root
+            var current: S? = _currentState.value
+            while (current != null) {
+                onExit(current)
+                current = parentOf(current)
+            }
         }
     }
 
@@ -703,6 +748,11 @@ abstract class StateMachineEngine<S : State, E : Event> {
      * W3C SCXML 3.13: Document order priority for conflict resolution.
      */
     private fun processOneEvent(event: E) {
+        // W3C SCXML 6.4: Auto-forward external events to child invoke sessions.
+        // Forwarding happens before parent processes the event, matching C++ behavior.
+        // Platform events (done.*, error.*, cancel.*) are not forwarded.
+        autoForwardEvent(event)
+
         val leaves = activeLeafStatesInDocumentOrder()
         if (leaves.isNotEmpty()) {
             for (state in leaves) {
@@ -717,6 +767,27 @@ abstract class StateMachineEngine<S : State, E : Event> {
             // Simple machine: use _currentState
             val result = processEvent(_currentState.value, event)
             applyTransition(result, event)
+        }
+    }
+
+    /**
+     * W3C SCXML 6.4: Forward external event to all autoforward child sessions.
+     *
+     * Platform events (done.*, error.*, cancel.*) are never forwarded per spec.
+     */
+    private fun autoForwardEvent(event: E) {
+        if (activeInvokes.isEmpty()) return
+        val hasAutoforward = activeInvokes.values.any { it.autoforward }
+        if (!hasAutoforward) return
+
+        val eventName = eventNameOf(event) ?: return
+        // W3C SCXML 6.4: Don't forward platform events
+        if (eventName.startsWith("done.") || eventName.startsWith("error.") || eventName.startsWith("cancel.")) return
+
+        for ((_, entry) in activeInvokes) {
+            if (entry.autoforward && !entry.child.isInFinalState) {
+                entry.child.sendByName(eventName)
+            }
         }
     }
 
@@ -802,8 +873,17 @@ abstract class StateMachineEngine<S : State, E : Event> {
      */
     private fun exitHierarchy(source: S, target: S) {
         if (activeStateIds.isEmpty()) {
-            // Simple machine — just exit source
+            // Non-parallel machine — exit source and ancestors up to LCCA
             onExit(source)
+            // W3C SCXML 3.13: Exit ancestor states when leaving a compound state.
+            // Walk up from source, exiting each ancestor until we reach one that
+            // contains the target (LCCA). For flat machines parentOf returns null
+            // immediately, so this is a no-op.
+            var ancestor = parentOf(source)
+            while (ancestor != null && ancestor != target && !isDescendantOf(target, ancestor)) {
+                onExit(ancestor)
+                ancestor = parentOf(ancestor)
+            }
             return
         }
 
