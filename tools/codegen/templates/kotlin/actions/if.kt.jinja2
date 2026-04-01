@@ -1,27 +1,31 @@
 {# W3C SCXML 3.8.5: <if>/<elseif>/<else> — conditional execution #}
-{# Phase 1: Only pure static conditions (no ECMAScript) #}
-{% if action.is_pure_in_predicate and action.cond_kt %}
-            if ({{ action.cond_kt }}) {
-{% elif action.cond %}
-            if ({{ action.cond }}) {
+{# Save outer action to avoid scoping conflict with nested action includes #}
+{% set outer_if_action = action %}
+{% if outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt %}
+            if ({{ outer_if_action.cond_kt }}) {
+{% elif outer_if_action.cond %}
+            if ({{ outer_if_action.cond }}) {
 {% endif %}
-{% for then_action in action.then_actions %}
-{% include 'actions/' + then_action.type + '.kt.jinja2' with context %}
+{% for then_action in outer_if_action.then_actions %}
+{% set action = then_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
-{% for elseif in action.elseif_branches %}
+{% for elseif in outer_if_action.elseif_branches %}
 {% if elseif.is_pure_in_predicate and elseif.cond_kt %}
             } else if ({{ elseif.cond_kt }}) {
 {% else %}
             } else if ({{ elseif.cond }}) {
 {% endif %}
 {% for elif_action in elseif.actions %}
-{% include 'actions/' + elif_action.type + '.kt.jinja2' with context %}
+{% set action = elif_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endfor %}
-{% if action.else_actions %}
+{% if outer_if_action.else_actions %}
             } else {
-{% for else_action in action.else_actions %}
-{% include 'actions/' + else_action.type + '.kt.jinja2' with context %}
+{% for else_action in outer_if_action.else_actions %}
+{% set action = else_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}
             }

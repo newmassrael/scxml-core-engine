@@ -20,7 +20,8 @@
 {% set has_done_event = state.is_final and state.parent %}
 {% set is_top_final = state.is_final and not state.parent %}
 {% set has_parallel_children = state.is_parallel and state_id in model.parallel_regions %}
-{% set has_initial_child = not state.is_final and not state.is_parallel and state.initial and state.initial != state_id %}
+{% set has_deep_initial = state_id in deep_initial_entries %}
+{% set has_initial_child = not state.is_final and not state.is_parallel and state.initial and state.initial != state_id and not has_deep_initial %}
 {# W3C SCXML 3.7.1: Check if this final state's grandparent is parallel #}
 {% set grandparent_is_parallel = false %}
 {% if state.is_final and state.parent %}
@@ -30,7 +31,7 @@
 {% set parallel_grandparent_id = parent_state.parent %}
 {% endif %}
 {% endif %}
-{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or has_done_event or is_top_final or has_parallel_children or has_initial_child or grandparent_is_parallel %}
+{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or has_done_event or is_top_final or has_parallel_children or has_initial_child or has_deep_initial or grandparent_is_parallel %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
 {% if model.uses_in_predicate or model.has_parallel_states %}
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
@@ -40,6 +41,20 @@
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% if has_done_event %}
+{% if state.donedata and state.donedata.contentexpr %}
+                // W3C SCXML 4.6: Unevaluable donedata content expr raises error.execution
+                // Phase 1 (pure static): all ECMAScript exprs are unevaluable.
+                // Phase 2: conditionally raise only when expr evaluation fails.
+                raiseInternal({{ machine_name }}Event.Error.Execution)
+{% endif %}
+{% if state.donedata and state.donedata.params %}
+{% for param in state.donedata.params %}
+{% if param.location or param.expr %}
+                // W3C SCXML 4.6: Unevaluable donedata param raises error.execution
+                raiseInternal({{ machine_name }}Event.Error.Execution)
+{% endif %}
+{% endfor %}
+{% endif %}
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }})
 {% endif %}
@@ -58,7 +73,32 @@
 {% for region_id in model.parallel_regions[state_id] %}
                 onEntry({{ machine_name }}State.{{ region_id | to_state_class_name }})
 {% endfor %}
+{% elif has_deep_initial %}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+                // W3C SCXML 3.6: Enter deep initial targets via ancestor path
+{% for entry in deep_initial_entries[state_id] %}
+{% if not entry.is_target %}
+                activeStateIds.add("{{ entry.id }}")
+{% set ancestor_state = model.states[entry.id] %}
+{% for action in ancestor_state.on_entry %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% else %}
+                onEntry({{ machine_name }}State.{{ entry.id | to_state_class_name }})
+{% endif %}
+{% endfor %}
 {% elif has_initial_child %}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
                 // W3C SCXML 3.3: Enter initial child of compound state
                 onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
 {% endif %}

@@ -449,8 +449,10 @@ abstract class StateMachineEngine<S : State, E : Event> {
      * internal event queue is empty. This implements the inner loop of
      * the W3C macrostep algorithm.
      *
-     * W3C SCXML 3.4: For parallel states, eventless transitions are checked
-     * for ALL active atomic (leaf) states, not just _currentState.
+     * W3C SCXML 3.4: For parallel states, ALL non-conflicting eventless
+     * transitions are selected and fired in a single microstep. This matches
+     * the W3C selectEventlessTransitions() algorithm where transitions in
+     * different parallel regions execute simultaneously.
      */
     private fun drainEventlessAndInternal() {
         while (!isInFinalState) {
@@ -459,14 +461,24 @@ abstract class StateMachineEngine<S : State, E : Event> {
 
             val leaves = activeLeafStatesInDocumentOrder()
             if (leaves.isNotEmpty()) {
-                // W3C SCXML 3.4: Parallel-aware scan — check ALL active leaf states
+                // W3C SCXML Appendix D: Select ALL enabled eventless transitions
+                val enabledTransitions = mutableListOf<Pair<S, TransitionResult<S>>>()
                 for (state in leaves) {
                     val nullResult = processNullEvent(state)
                     if (nullResult !is TransitionResult.Ignored) {
-                        applyTransitionFrom(state, nullResult, null)
-                        foundEventless = true
-                        break  // Restart scan after state change
+                        enabledTransitions.add(state to nullResult)
                     }
+                }
+
+                if (enabledTransitions.size > 1) {
+                    // W3C SCXML Appendix D.2: Multiple simultaneous transitions
+                    // in different parallel regions — batch microstep
+                    applySimultaneousTransitions(enabledTransitions)
+                    foundEventless = true
+                } else if (enabledTransitions.size == 1) {
+                    val (source, result) = enabledTransitions[0]
+                    applyTransitionFrom(source, result, null)
+                    foundEventless = true
                 }
             } else {
                 // Simple machines without activeStateIds tracking — use _currentState
@@ -491,6 +503,67 @@ abstract class StateMachineEngine<S : State, E : Event> {
 
             // Stable: no eventless transitions, no internal events
             break
+        }
+    }
+
+    /**
+     * W3C SCXML Appendix D.2: Apply multiple non-conflicting transitions
+     * as a single microstep.
+     *
+     * For parallel states, the W3C algorithm requires that all enabled
+     * non-conflicting eventless transitions fire simultaneously:
+     * 1. Exit all source states in reverse document order
+     * 2. Execute all transition actions in document order
+     * 3. Enter all target states in document order
+     *
+     * This ensures correct event ordering when parallel regions have
+     * eventless transitions with executable content in exits/actions/entries.
+     *
+     * NOTE: This assumes all transitions are non-conflicting (different parallel
+     * regions). AOT-generated processNullEvent() only returns leaf-state transitions
+     * within their own region — ancestor eventless transitions are not included.
+     * This makes W3C removeConflictingTransitions() unnecessary for AOT machines.
+     */
+    private fun applySimultaneousTransitions(
+        transitions: List<Pair<S, TransitionResult<S>>>
+    ) {
+        // Separate External and Internal transitions
+        val externals = mutableListOf<Pair<S, TransitionResult.External<S>>>()
+        val internals = mutableListOf<Pair<S, TransitionResult.Internal>>()
+        for ((source, result) in transitions) {
+            when (result) {
+                is TransitionResult.External -> externals.add(source to result)
+                is TransitionResult.Internal -> internals.add(source to result)
+                is TransitionResult.Ignored -> {}
+            }
+        }
+
+        if (externals.isNotEmpty()) {
+            // Sort by source document order
+            val sorted = externals.sortedBy { documentOrderOf(it.first) }
+
+            // W3C SCXML Appendix D.2, Step 1: Exit all in reverse document order
+            for ((source, result) in sorted.reversed()) {
+                exitHierarchy(source, result.target)
+            }
+
+            // W3C SCXML Appendix D.2, Step 2: Transition actions in document order
+            for ((source, _) in sorted) {
+                executeTransitionActions(source, null)
+            }
+
+            // W3C SCXML Appendix D.2, Step 3: Enter all targets in document order
+            for ((_, result) in sorted) {
+                onEntry(result.target)
+            }
+
+            // Update _currentState to last entered leaf
+            _currentState.value = resolveLeafState(sorted.last().second.target)
+        }
+
+        // Internal transitions: execute actions only (no state change)
+        for ((source, _) in internals) {
+            executeTransitionActions(source, null)
         }
     }
 

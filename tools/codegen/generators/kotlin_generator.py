@@ -467,6 +467,35 @@ class KotlinCodeGenerator(BaseCodeGenerator):
         self.env.filters['to_parallel_complete_check'] = \
             self._make_parallel_complete_check(model, machine_name)
 
+        # W3C SCXML 3.6: Compute deep initial entry order for space-separated initials
+        # When a compound state has initial="target1 target2" (deep descendant targets),
+        # the codegen must enter ancestors along the path without triggering their
+        # default initial child entry, then enter the actual targets with full onEntry.
+        deep_initial_entries: Dict[str, List[Dict[str, Any]]] = {}
+        for state_id, state in model.states.items():
+            if len(state.initial_children) > 1:
+                target_set = set(state.initial_children)
+                # Collect all states on the path from each target back to parent
+                all_path_states = set()
+                for target_id in state.initial_children:
+                    current = target_id
+                    visited = set()
+                    while current != state_id and current in model.states:
+                        if current in visited:
+                            break  # Cycle detection
+                        visited.add(current)
+                        all_path_states.add(current)
+                        current = model.states[current].parent
+                # Sort by document order and mark targets
+                entry_order = []
+                for sid in sorted(all_path_states,
+                                  key=lambda s: model.states[s].document_order):
+                    entry_order.append({
+                        'id': sid,
+                        'is_target': sid in target_set,
+                    })
+                deep_initial_entries[state_id] = entry_order
+
         input_stem = Path(scxml_path).stem
 
         # Load main Kotlin template
@@ -487,6 +516,7 @@ class KotlinCodeGenerator(BaseCodeGenerator):
             parent_map=parent_map,
             leaf_map=leaf_map,
             parallel_descendants=parallel_descendants,
+            deep_initial_entries=deep_initial_entries,
         )
 
         # Post-process: close the class and normalize whitespace

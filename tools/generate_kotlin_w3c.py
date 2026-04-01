@@ -34,10 +34,8 @@ TEST_OUTPUT_DIR = TESTS_MODULE / 'src' / 'test' / 'kotlin' / 'com' / 'sce' / 'w3
 # C++ CMakeLists.txt — source of truth for test IDs and types
 CMAKE_FILE = PROJECT_ROOT / 'tests' / 'CMakeLists.txt'
 
-# Tests with known Kotlin codegen bugs (to be fixed in templates)
-# 364: space-separated initial states in compound state
-# 409, 411: empty event name -> "Empty" reference unresolved
-CODEGEN_EXCLUDE = {'364', '409', '411'}
+# Tests excluded from Kotlin codegen (empty — all codegen bugs resolved)
+CODEGEN_EXCLUDE: set = set()
 
 
 def parse_cmake_tests() -> dict:
