@@ -29,12 +29,12 @@
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% if has_done_event %}
-                // W3C SCXML 3.7: Generate done.state.{{ state.parent }} event
+                // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }})
 {% endif %}
 {% if is_top_final %}
                 // W3C SCXML 3.7: Top-level final state reached
-                isInFinalState = true
+                markFinalStateReached()
 {% endif %}
 {% if has_parallel_children %}
                 // W3C SCXML 3.4: Enter all child regions of parallel state

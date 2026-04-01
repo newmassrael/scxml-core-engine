@@ -109,9 +109,33 @@ abstract class StateMachineEngine<S : State, E : Event> {
 
     /**
      * Whether the state machine has reached a final state.
+     *
+     * Guaranteed to be visible only after [currentState] reflects the final state.
+     * This ordering is enforced by [markFinalStateReached] + deferred flush in
+     * [processOneEvent], preventing observers from seeing isInFinalState=true
+     * while currentState still points to the source state.
      */
+    @Volatile
     var isInFinalState: Boolean = false
-        protected set
+        private set
+
+    /**
+     * Pending final state flag, set by generated onEntry() code via
+     * [markFinalStateReached]. Flushed to [isInFinalState] after
+     * _currentState.value is updated in [processOneEvent].
+     */
+    private var pendingFinalState: Boolean = false
+
+    /**
+     * W3C SCXML 3.7: Mark that a top-level final state has been entered.
+     *
+     * Called from generated [onEntry] code. The actual [isInFinalState] flag
+     * is deferred until [_currentState] is updated, so that observers never
+     * see isInFinalState=true with a stale currentState value.
+     */
+    protected fun markFinalStateReached() {
+        pendingFinalState = true
+    }
 
     // --- Generated Code Overrides ---
 
@@ -216,6 +240,14 @@ abstract class StateMachineEngine<S : State, E : Event> {
             // R4 fix: Execute initial entry on Dispatchers.Default, not caller thread
             enterInitialConfiguration()
 
+            // Flush pending final state from initial entry (e.g., test415:
+            // initial state IS a final state, so markFinalStateReached()
+            // was called during enterInitialConfiguration)
+            if (pendingFinalState) {
+                pendingFinalState = false
+                isInFinalState = true
+            }
+
             // W3C SCXML 3.12.1: Drain internal events raised during initial entry
             // (e.g., done.state events from <final> states entered at startup)
             while (internalEventQueue.isNotEmpty()) {
@@ -246,6 +278,7 @@ abstract class StateMachineEngine<S : State, E : Event> {
         // Reset state for stop/start reuse
         activeStateIds.clear()
         isInFinalState = false
+        pendingFinalState = false
         internalEventQueue.clear()
     }
 
@@ -323,8 +356,14 @@ abstract class StateMachineEngine<S : State, E : Event> {
                 executeTransitionActions(source, event)
                 onEntry(target)
 
-                // Update observable state
+                // Update observable state BEFORE flushing isInFinalState.
+                // This guarantees observers never see isInFinalState=true
+                // while currentState still reflects the source state.
                 _currentState.value = target
+                if (pendingFinalState) {
+                    pendingFinalState = false
+                    isInFinalState = true
+                }
 
                 // Emit transition record
                 _transitions.tryEmit(
