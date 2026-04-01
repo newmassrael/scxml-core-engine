@@ -1,5 +1,5 @@
-# Build directories
-build/
+# Build directories (covers root build/ and Gradle subproject builds)
+**/build/
 build_debug/
 build_wasm/
 build_tsan/
@@ -115,5 +115,14 @@ docker_tsan/docker-tsan-build.log
 .claude/
 
 tools/codegen/__pycache__/
+tools/codegen/generators/__pycache__/
 archive/
 *.wasm
+
+# Gradle
+.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin generated W3C test code (regenerate via tools/generate_kotlin_w3c.py)
+sce-kotlin-tests/src/main/kotlin/com/sce/generated/
+sce-kotlin-tests/src/test/kotlin/com/sce/w3c/Test[0-9]*.kt
