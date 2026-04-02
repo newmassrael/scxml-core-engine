@@ -182,6 +182,8 @@ class Test286StateMachine(
                 markFinalStateReached()
             }
             is Test286State.S0 -> {
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
+            raiseInternal(Test286Event.Error.Execution, EventMetadata.platform())
             raiseInternal(Test286Event.Foo)
             }
             else -> {}

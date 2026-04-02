@@ -267,6 +267,8 @@ class Test402StateMachine(
             }
             is Test402State.S01 -> {
             raiseInternal(Test402Event.Event1)
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
+            raiseInternal(Test402Event.Error.Execution, EventMetadata.platform())
             }
             else -> {}
         }

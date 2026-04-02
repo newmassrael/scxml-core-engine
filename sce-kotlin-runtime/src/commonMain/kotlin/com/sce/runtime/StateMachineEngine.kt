@@ -689,6 +689,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
             else d.toString()
         }
         is String -> "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        is Map<*, *> -> {
+            val entries = value.entries.joinToString(",") { (k, v) ->
+                "\"${k}\":${valueToJson(v)}"
+            }
+            "{$entries}"
+        }
+        is List<*> -> {
+            val items = value.joinToString(",") { valueToJson(it) }
+            "[$items]"
+        }
+        is Array<*> -> {
+            val items = value.joinToString(",") { valueToJson(it) }
+            "[$items]"
+        }
         else -> "\"${value.toString().replace("\\", "\\\\").replace("\"", "\\\"")}\""
     }
 

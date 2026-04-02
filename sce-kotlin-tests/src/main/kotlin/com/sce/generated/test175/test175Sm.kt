@@ -212,7 +212,7 @@ class Test175StateMachine(
                 val sidDly = scriptSessionId ?: return@run
                 val delayStrE: String
                 try {
-                    val v = engineDly.getVariable(sidDly, "Var1")
+                    val v = engineDly.evaluateExpr(sidDly, "Var1")
                     delayStrE = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raiseInternal(Test175Event.Error.Execution, EventMetadata.platform())

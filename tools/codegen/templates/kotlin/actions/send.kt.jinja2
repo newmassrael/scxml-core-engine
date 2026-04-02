@@ -31,7 +31,7 @@
                 val sid = scriptSessionId ?: return@run
                 val dynamicEventName: String
                 try {
-                    val v = engine.getVariable(sid, "{{ action.eventexpr | escape_kotlin }}")
+                    val v = engine.evaluateExpr(sid, "{{ action.eventexpr | escape_kotlin }}")
                     dynamicEventName = v?.toString() ?: ""
                 } catch (_: Exception) {
                     raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
@@ -74,7 +74,7 @@
 {% if param.is_static_literal %}
                 paramsT["{{ param.name }}"] = "{{ param.static_value }}"
 {% elif param.expr %}
-                try { paramsT["{{ param.name }}"] = engineT.evaluateExpr(sidT, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) {}
+                try { paramsT["{{ param.name }}"] = engineT.evaluateExpr(sidT, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) { paramsT["{{ param.name }}"] = "" }
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -111,7 +111,7 @@
 {% if param.is_static_literal %}
                 paramsP["{{ param.name }}"] = "{{ param.static_value }}"
 {% elif param.expr %}
-                try { paramsP["{{ param.name }}"] = engineP.evaluateExpr(sidP, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) {}
+                try { paramsP["{{ param.name }}"] = engineP.evaluateExpr(sidP, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) { paramsP["{{ param.name }}"] = "" }
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -153,7 +153,7 @@
 {% if param.is_static_literal %}
                 paramsE["{{ param.name }}"] = "{{ param.static_value }}"
 {% elif param.expr %}
-                try { paramsE["{{ param.name }}"] = engineE.evaluateExpr(sidE, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) {}
+                try { paramsE["{{ param.name }}"] = engineE.evaluateExpr(sidE, "{{ param.expr | escape_kotlin }}") } catch (_: Exception) { paramsE["{{ param.name }}"] = "" }
 {% endif %}
 {% endfor %}
 {% if action.namelist %}
@@ -180,7 +180,7 @@
                 val sidDly = scriptSessionId ?: return@run
                 val delayStrE: String
                 try {
-                    val v = engineDly.getVariable(sidDly, "{{ action.delayexpr | escape_kotlin }}")
+                    val v = engineDly.evaluateExpr(sidDly, "{{ action.delayexpr | escape_kotlin }}")
                     delayStrE = v?.toString() ?: "0s"
                 } catch (_: Exception) {
                     raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())

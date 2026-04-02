@@ -251,6 +251,8 @@ class Test331StateMachine(
             raiseInternal(Test331Event.Foo)
             }
             is Test331State.S2 -> {
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
+            raiseInternal(Test331Event.Error.Execution, EventMetadata.platform())
             }
             is Test331State.S4 -> {
             send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))

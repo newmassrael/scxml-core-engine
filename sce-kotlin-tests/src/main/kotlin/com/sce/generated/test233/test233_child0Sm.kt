@@ -169,7 +169,7 @@ class Test233Child0StateMachine(
                 val engineP = scriptEngine ?: return@run
                 val sidP = scriptSessionId ?: return@run
                 val paramsP = mutableMapOf<String, Any?>()
-                try { paramsP["aParam"] = engineP.evaluateExpr(sidP, "2") } catch (_: Exception) {}
+                try { paramsP["aParam"] = engineP.evaluateExpr(sidP, "2") } catch (_: Exception) { paramsP["aParam"] = "" }
                 val eventDataP = buildJsonFromParams(paramsP)
                 onSendToParent?.invoke("childToParent", eventDataP)
             }

@@ -187,6 +187,8 @@ class Test401StateMachine(
             }
             is Test401State.S0 -> {
             send(Test401Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
+            raiseInternal(Test401Event.Error.Execution, EventMetadata.platform())
             }
             else -> {}
         }

@@ -220,7 +220,7 @@ class Test342StateMachine(
                 val sid = scriptSessionId ?: return@run
                 val dynamicEventName: String
                 try {
-                    val v = engine.getVariable(sid, "Var1")
+                    val v = engine.evaluateExpr(sid, "Var1")
                     dynamicEventName = v?.toString() ?: ""
                 } catch (_: Exception) {
                     raiseInternal(Test342Event.Error.Execution, EventMetadata.platform())

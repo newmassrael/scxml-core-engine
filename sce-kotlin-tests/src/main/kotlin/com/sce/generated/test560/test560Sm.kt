@@ -188,7 +188,7 @@ class Test560StateMachine(
                 val engineE = scriptEngine ?: return@run
                 val sidE = scriptSessionId ?: return@run
                 val paramsE = mutableMapOf<String, Any?>()
-                try { paramsE["aParam"] = engineE.evaluateExpr(sidE, "1") } catch (_: Exception) {}
+                try { paramsE["aParam"] = engineE.evaluateExpr(sidE, "1") } catch (_: Exception) { paramsE["aParam"] = "" }
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test560Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = eventDataE))
             }

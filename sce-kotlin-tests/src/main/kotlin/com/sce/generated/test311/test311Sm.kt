@@ -183,6 +183,8 @@ class Test311StateMachine(
             }
             is Test311State.S0 -> {
             scheduleSend("__send_0", 1000L, Test311Event.Timeout)
+            // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
+            raiseInternal(Test311Event.Error.Execution, EventMetadata.platform())
             }
             else -> {}
         }
