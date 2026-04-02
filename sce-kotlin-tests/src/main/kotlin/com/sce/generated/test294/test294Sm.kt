@@ -248,16 +248,20 @@ class Test294StateMachine(
     private fun processS0(
         event: Test294Event
     ): TransitionResult<Test294State> = when {
-        event is Test294Event.Done.State.S0 && safeEvaluateGuard("_event.data.Var1 == 1") -> TransitionResult.External(Test294State.S1)
-        event is Test294Event.Done.State.S0 -> TransitionResult.External(Test294State.Fail)
+        event is Test294Event.Done.State.S0 && safeEvaluateGuard("_event.data.Var1 == 1") -> TransitionResult.External(Test294State.S1, Test294State.S0)
+
+        event is Test294Event.Done.State.S0 -> TransitionResult.External(Test294State.Fail, Test294State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS1(
         event: Test294Event
     ): TransitionResult<Test294State> = when {
-        event is Test294Event.Done.State.S1 && safeEvaluateGuard("_event.data == 'foo'") -> TransitionResult.External(Test294State.Pass)
-        event is Test294Event.Done.State.S1 -> TransitionResult.External(Test294State.Fail)
+        event is Test294Event.Done.State.S1 && safeEvaluateGuard("_event.data == 'foo'") -> TransitionResult.External(Test294State.Pass, Test294State.S1)
+
+        event is Test294Event.Done.State.S1 -> TransitionResult.External(Test294State.Fail, Test294State.S1)
+
         else -> TransitionResult.Ignored
     }
 

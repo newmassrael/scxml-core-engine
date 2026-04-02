@@ -72,11 +72,21 @@
 {% if has_invokes %}
 {% for inv in invoke_entries[state_id] %}
 {% if inv.child_class %}
-                // W3C SCXML 6.4: Start invoked child state machine
-{% if (inv.params or inv.namelist) and model.needs_script_engine %}
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
-                    val childSM = {{ inv.child_class }}StateMachine(scriptEngine)
-                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
+{% if inv.idlocation and model.needs_script_engine %}
+                    // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation
+                    ensureScriptEngine()
+                    scriptEngine?.let { eng ->
+                        scriptSessionId?.let { sid ->
+                            eng.setVariable(sid, "{{ inv.idlocation }}", generatedInvokeId)
+                        }
+                    }
+{% endif %}
+{% if (inv.params or inv.namelist) and model.needs_script_engine %}
+                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
                     ensureScriptEngine()
                     val engineInv = scriptEngine ?: return@run
                     val sidInv = scriptSessionId ?: return@run
@@ -101,12 +111,16 @@
                     }
 {% endfor %}
 {% endif %}
-                    setInvokeParams(childSM, invokeParams)
-                    startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %})
-                }
-{% else %}
-                startInvoke("{{ inv.invoke_id }}", {{ inv.child_class }}StateMachine(scriptEngine), {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %})
 {% endif %}
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = {{ inv.child_class }}StateMachine(scriptEngine)
+{% if (inv.params or inv.namelist) and model.needs_script_engine %}
+                        setInvokeParams(childSM, invokeParams)
+{% endif %}
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, {% if inv.finalize_content %}"{{ inv.finalize_content | escape_kotlin }}"{% else %}""{% endif %}, generatedInvokeId)
+                    }
+                }
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -229,8 +243,10 @@
 {% if state.on_exit or model.uses_in_predicate or model.has_parallel_states or is_parallel or exit_has_invokes %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
 {% if exit_has_invokes %}
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
 {% for inv in invoke_entries[state_id] %}
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("{{ inv.invoke_id }}")
 {% endfor %}
 {% endif %}

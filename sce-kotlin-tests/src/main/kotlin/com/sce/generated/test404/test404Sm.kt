@@ -149,7 +149,8 @@ class Test404StateMachine(
     private fun processS02(
         event: Test404Event
     ): TransitionResult<Test404State> = when {
-        event is Test404Event.Event1 -> TransitionResult.External(Test404State.S03)
+        event is Test404Event.Event1 -> TransitionResult.External(Test404State.S03, Test404State.S02)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test404State.Fail)
     }
@@ -157,7 +158,8 @@ class Test404StateMachine(
     private fun processS03(
         event: Test404Event
     ): TransitionResult<Test404State> = when {
-        event is Test404Event.Event2 -> TransitionResult.External(Test404State.S04)
+        event is Test404Event.Event2 -> TransitionResult.External(Test404State.S04, Test404State.S03)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test404State.Fail)
     }
@@ -165,7 +167,8 @@ class Test404StateMachine(
     private fun processS04(
         event: Test404Event
     ): TransitionResult<Test404State> = when {
-        event is Test404Event.Event3 -> TransitionResult.External(Test404State.S05)
+        event is Test404Event.Event3 -> TransitionResult.External(Test404State.S05, Test404State.S04)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test404State.Fail)
     }
@@ -173,7 +176,8 @@ class Test404StateMachine(
     private fun processS05(
         event: Test404Event
     ): TransitionResult<Test404State> = when {
-        event is Test404Event.Event4 -> TransitionResult.External(Test404State.Pass)
+        event is Test404Event.Event4 -> TransitionResult.External(Test404State.Pass, Test404State.S05)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test404State.Fail)
     }

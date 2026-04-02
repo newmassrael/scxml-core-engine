@@ -212,14 +212,16 @@ class Test230StateMachine(
     private fun processS0(
         event: Test230Event
     ): TransitionResult<Test230State> = when {
-        event is Test230Event.Timeout -> TransitionResult.External(Test230State.Final)
+        event is Test230Event.Timeout -> TransitionResult.External(Test230State.Final, Test230State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS01(
         event: Test230Event
     ): TransitionResult<Test230State> = when {
-        event is Test230Event.ChildToParent -> TransitionResult.External(Test230State.S02)
+        event is Test230Event.ChildToParent -> TransitionResult.External(Test230State.S02, Test230State.S01)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test230State.Fail)
     }
@@ -227,7 +229,8 @@ class Test230StateMachine(
     private fun processS02(
         event: Test230Event
     ): TransitionResult<Test230State> = when {
-        event is Test230Event.Done.Invoke -> TransitionResult.External(Test230State.Final)
+        event is Test230Event.Done.Invoke -> TransitionResult.External(Test230State.Final, Test230State.S02)
+
         else -> TransitionResult.Ignored
     }
 
@@ -244,8 +247,16 @@ class Test230StateMachine(
             }
             is Test230State.S0 -> {
             scheduleSend("__send_0", 3000L, Test230Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_0", Test230Child0StateMachine(scriptEngine), true, Test230Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test230Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, true, Test230Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
                 // W3C SCXML 3.3: Enter initial child of compound state
                 onEntry(Test230State.S01)
             }
@@ -257,7 +268,9 @@ class Test230StateMachine(
     override fun onExit(state: Test230State) {
         when (state) {
             is Test230State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             else -> {}

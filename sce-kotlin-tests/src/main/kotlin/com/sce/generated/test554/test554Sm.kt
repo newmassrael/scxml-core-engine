@@ -175,8 +175,10 @@ class Test554StateMachine(
     private fun processS0(
         event: Test554Event
     ): TransitionResult<Test554State> = when {
-        event is Test554Event.Timer -> TransitionResult.External(Test554State.Pass)
-        event is Test554Event.Done.Invoke -> TransitionResult.External(Test554State.Fail)
+        event is Test554Event.Timer -> TransitionResult.External(Test554State.Pass, Test554State.S0)
+
+        event is Test554Event.Done.Invoke -> TransitionResult.External(Test554State.Fail, Test554State.S0)
+
         else -> TransitionResult.Ignored
     }
 
@@ -193,10 +195,11 @@ class Test554StateMachine(
             }
             is Test554State.S0 -> {
             scheduleSend("__send_0", 1000L, Test554Event.Timer)
-                // W3C SCXML 6.4: Start invoked child state machine
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
-                    val childSM = Test554Child0StateMachine(scriptEngine)
-                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
                     ensureScriptEngine()
                     val engineInv = scriptEngine ?: return@run
                     val sidInv = scriptSessionId ?: return@run
@@ -207,8 +210,12 @@ class Test554StateMachine(
                     } catch (_: Exception) {
                         return@run  // C++ pattern: invoke cancelled on namelist error
                     }
-                    setInvokeParams(childSM, invokeParams)
-                    startInvoke("_invoke_0", childSM, false, Test554Event.Done.Invoke)
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test554Child0StateMachine(scriptEngine)
+                        setInvokeParams(childSM, invokeParams)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test554Event.Done.Invoke, "", generatedInvokeId)
+                    }
                 }
             }
             else -> {}
@@ -219,7 +226,9 @@ class Test554StateMachine(
     override fun onExit(state: Test554State) {
         when (state) {
             is Test554State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             else -> {}

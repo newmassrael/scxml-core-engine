@@ -218,14 +218,16 @@ class Test576StateMachine(
     private fun processS1(
         event: Test576Event
     ): TransitionResult<Test576State> = when {
-        event is Test576Event.Timeout -> TransitionResult.External(Test576State.Fail)
+        event is Test576Event.Timeout -> TransitionResult.External(Test576State.Fail, Test576State.S1)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS11p122(
         event: Test576Event
     ): TransitionResult<Test576State> = when {
-        event is Test576Event.InS11p112 -> TransitionResult.External(Test576State.Pass)
+        event is Test576Event.InS11p112 -> TransitionResult.External(Test576State.Pass, Test576State.S11p122)
+
         else -> TransitionResult.Ignored
     }
 

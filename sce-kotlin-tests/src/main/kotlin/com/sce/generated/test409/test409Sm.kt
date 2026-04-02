@@ -144,8 +144,10 @@ class Test409StateMachine(
     private fun processS0(
         event: Test409Event
     ): TransitionResult<Test409State> = when {
-        event is Test409Event.Timeout -> TransitionResult.External(Test409State.Pass)
-        event is Test409Event.Event1 -> TransitionResult.External(Test409State.Fail)
+        event is Test409Event.Timeout -> TransitionResult.External(Test409State.Pass, Test409State.S0)
+
+        event is Test409Event.Event1 -> TransitionResult.External(Test409State.Fail, Test409State.S0)
+
         else -> TransitionResult.Ignored
     }
 

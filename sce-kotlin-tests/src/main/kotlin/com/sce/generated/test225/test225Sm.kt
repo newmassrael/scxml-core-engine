@@ -221,10 +221,40 @@ class Test225StateMachine(
             }
             is Test225State.S0 -> {
             scheduleSend("__send_0", 1000L, Test225Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_0", Test225Child0StateMachine(scriptEngine), false, Test225Event.Done.Invoke)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_1", Test225Child1StateMachine(scriptEngine), false, Test225Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation
+                    ensureScriptEngine()
+                    scriptEngine?.let { eng ->
+                        scriptSessionId?.let { sid ->
+                            eng.setVariable(sid, "Var1", generatedInvokeId)
+                        }
+                    }
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test225Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_1"
+                    // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation
+                    ensureScriptEngine()
+                    scriptEngine?.let { eng ->
+                        scriptSessionId?.let { sid ->
+                            eng.setVariable(sid, "Var2", generatedInvokeId)
+                        }
+                    }
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test225Child1StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_1", childSM, false, Test225Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
             }
             else -> {}
         }
@@ -234,9 +264,11 @@ class Test225StateMachine(
     override fun onExit(state: Test225State) {
         when (state) {
             is Test225State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_1")
             }
             else -> {}

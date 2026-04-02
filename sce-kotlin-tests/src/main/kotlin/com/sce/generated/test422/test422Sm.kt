@@ -236,9 +236,12 @@ class Test422StateMachine(
     ): TransitionResult<Test422State> = when {
         // W3C SCXML 3.12.1: Multi-descriptor targetless "invokeS1 invokeS12"
         (event is Test422Event.InvokeS1 || event is Test422Event.InvokeS12) -> TransitionResult.Internal
-        event is Test422Event.InvokeS11 -> TransitionResult.External(Test422State.Fail)
-        event is Test422Event.Timeout && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test422State.Pass)
-        event is Test422Event.Timeout -> TransitionResult.External(Test422State.Fail)
+        event is Test422Event.InvokeS11 -> TransitionResult.External(Test422State.Fail, Test422State.S1)
+
+        event is Test422Event.Timeout && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test422State.Pass, Test422State.S1)
+
+        event is Test422Event.Timeout -> TransitionResult.External(Test422State.Fail, Test422State.S1)
+
         else -> TransitionResult.Ignored
     }
 
@@ -255,18 +258,42 @@ class Test422StateMachine(
             }
             is Test422State.S1 -> {
             scheduleSend("__send_0", 2000L, Test422Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_0", Test422Child0StateMachine(scriptEngine), false, Test422Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s1.${System.identityHashCode(this)}._invoke_0"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test422Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test422Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
                 // W3C SCXML 3.3: Enter initial child of compound state
                 onEntry(Test422State.S11)
             }
             is Test422State.S11 -> {
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_1", Test422Child1StateMachine(scriptEngine), false, Test422Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s11.${System.identityHashCode(this)}._invoke_1"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test422Child1StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_1", childSM, false, Test422Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
             }
             is Test422State.S12 -> {
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_2", Test422Child2StateMachine(scriptEngine), false, Test422Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s12.${System.identityHashCode(this)}._invoke_2"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test422Child2StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_2", childSM, false, Test422Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
             }
             else -> {}
         }
@@ -276,15 +303,21 @@ class Test422StateMachine(
     override fun onExit(state: Test422State) {
         when (state) {
             is Test422State.S1 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             is Test422State.S11 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_1")
             }
             is Test422State.S12 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_2")
             }
             else -> {}

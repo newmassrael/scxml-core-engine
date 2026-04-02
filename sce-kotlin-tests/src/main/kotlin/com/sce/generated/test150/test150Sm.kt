@@ -210,7 +210,8 @@ class Test150StateMachine(
         event: Test150Event
     ): TransitionResult<Test150State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test150Event.Error || event is Test150Event.Error.Execution) -> TransitionResult.External(Test150State.Fail)
+        (event is Test150Event.Error || event is Test150Event.Error.Execution) -> TransitionResult.External(Test150State.Fail, Test150State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test150State.S1)
     }
@@ -219,7 +220,8 @@ class Test150StateMachine(
         event: Test150Event
     ): TransitionResult<Test150State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test150Event.Error || event is Test150Event.Error.Execution) -> TransitionResult.External(Test150State.Fail)
+        (event is Test150Event.Error || event is Test150Event.Error.Execution) -> TransitionResult.External(Test150State.Fail, Test150State.S1)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test150State.S2)
     }

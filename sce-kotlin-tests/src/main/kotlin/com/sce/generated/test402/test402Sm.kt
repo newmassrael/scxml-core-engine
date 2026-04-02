@@ -220,14 +220,16 @@ class Test402StateMachine(
     private fun processS0(
         event: Test402Event
     ): TransitionResult<Test402State> = when {
-        event is Test402Event.Timeout -> TransitionResult.External(Test402State.Fail)
+        event is Test402Event.Timeout -> TransitionResult.External(Test402State.Fail, Test402State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS01(
         event: Test402Event
     ): TransitionResult<Test402State> = when {
-        event is Test402Event.Event1 -> TransitionResult.External(Test402State.S02)
+        event is Test402Event.Event1 -> TransitionResult.External(Test402State.S02, Test402State.S01)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test402State.Fail)
     }
@@ -236,7 +238,8 @@ class Test402StateMachine(
         event: Test402Event
     ): TransitionResult<Test402State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test402Event.Error || event is Test402Event.Error.Execution) -> TransitionResult.External(Test402State.S03)
+        (event is Test402Event.Error || event is Test402Event.Error.Execution) -> TransitionResult.External(Test402State.S03, Test402State.S02)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test402State.Fail)
     }
@@ -244,7 +247,8 @@ class Test402StateMachine(
     private fun processS03(
         event: Test402Event
     ): TransitionResult<Test402State> = when {
-        event is Test402Event.Event2 -> TransitionResult.External(Test402State.Pass)
+        event is Test402Event.Event2 -> TransitionResult.External(Test402State.Pass, Test402State.S03)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test402State.Fail)
     }

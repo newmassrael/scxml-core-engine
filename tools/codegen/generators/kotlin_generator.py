@@ -389,6 +389,31 @@ class KotlinCodeGenerator(BaseCodeGenerator):
         Uses Jinja2 templates from templates/kotlin/:
           - state_machine.kt.jinja2 (main orchestrator)
         """
+        # W3C SCXML 3.13: Resolve internal transition types
+        # An internal transition falls back to external if:
+        # - Target is NOT a proper descendant of the source state, OR
+        # - Source state is not compound (e.g., parallel or atomic)
+        for state_id, state in model.states.items():
+            is_compound = (not state.is_parallel and not state.is_final
+                           and any(s.parent == state_id for s in model.states.values()))
+            for trans in state.transitions:
+                if trans.type == 'internal' and trans.target:
+                    # Check if target is a proper descendant of source
+                    is_descendant = False
+                    current = trans.target
+                    while current and current in model.states:
+                        parent = model.states[current].parent
+                        if parent == state_id:
+                            is_descendant = True
+                            break
+                        current = parent
+                    if not is_descendant or not is_compound:
+                        trans.type = 'external'  # W3C fallback
+                    else:
+                        # Mark as true internal with target for template
+                        trans.is_true_internal = True
+                        trans.internal_source = state_id
+
         # Build event tree for sealed interface hierarchy
         # Filter out synthetic events not meaningful in Kotlin
         kotlin_events = {e for e in model.events if e != 'Wildcard'}
@@ -524,6 +549,10 @@ class KotlinCodeGenerator(BaseCodeGenerator):
                         'has_done_event': done_event in model.events or 'done.invoke' in model.events,
                         'params': si.get('params', []),
                         'namelist': si.get('namelist', ''),
+                        'idlocation': si.get('idlocation', ''),
+                        'finalize_content': si.get('finalize_content', ''),
+                        'state_id': state_id,
+                        'child_needs_script_engine': si.get('child_needs_script_engine', False),
                     })
                 invoke_entries[state_id] = entries
 

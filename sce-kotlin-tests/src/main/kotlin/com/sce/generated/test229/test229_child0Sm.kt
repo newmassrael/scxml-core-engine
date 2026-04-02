@@ -67,7 +67,8 @@ class Test229Child0StateMachine(
     private fun processSub0(
         event: Test229Child0Event
     ): TransitionResult<Test229Child0State> = when {
-        event is Test229Child0Event.ChildToParent -> TransitionResult.External(Test229Child0State.SubFinal)
+        event is Test229Child0Event.ChildToParent -> TransitionResult.External(Test229Child0State.SubFinal, Test229Child0State.Sub0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test229Child0State.SubFinal)
     }

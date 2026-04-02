@@ -404,6 +404,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // events raised during initial entry (e.g., done.state from <final>)
             drainEventlessAndInternal()
 
+            // W3C SCXML 6.4: Execute deferred invokes after initial configuration
+            executePendingInvokes()
+
             // W3C SCXML 3.7: Only enter event loop if not already in final state
             // (child SMs may reach final state during drainEventlessAndInternal)
             if (!isInFinalState) {
@@ -440,6 +443,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
             entry.monitorJob.cancel()
         }
         activeInvokes.clear()
+        pendingInvokes.clear()
         // W3C SCXML B.1: Destroy script engine session
         if (scriptEngineInitialized) {
             scriptSessionId?.let { scriptEngine?.destroySession(it) }
@@ -559,9 +563,62 @@ abstract class StateMachineEngine<S : State, E : Event>(
     private data class InvokeEntry(
         val child: StateMachineEngine<*, *>,
         val monitorJob: Job,
-        val autoforward: Boolean
+        val autoforward: Boolean,
+        val finalizeScript: String = ""
     )
     private val activeInvokes = mutableMapOf<String, InvokeEntry>()
+
+    // --- Deferred Invoke Support (W3C SCXML 6.4) ---
+
+    /**
+     * W3C SCXML 6.4: Pending invoke to be executed at macrostep end.
+     *
+     * Invokes are deferred during state entry and only executed at macrostep end.
+     * This ensures that invokes in states entered-then-exited during a macrostep
+     * are cancelled and never executed (e.g., test 422).
+     */
+    private data class PendingInvoke<S>(
+        val invokeId: String,
+        val state: S,
+        val executor: () -> Unit
+    )
+    private val pendingInvokes = mutableListOf<PendingInvoke<S>>()
+
+    /**
+     * W3C SCXML 6.4: Defer an invoke for execution at macrostep end.
+     *
+     * Called from generated onEntry code instead of startInvoke directly.
+     * The executor lambda captures the full invoke setup (child creation,
+     * param passing, startInvoke call).
+     */
+    protected fun deferInvoke(state: S, invokeId: String, executor: () -> Unit) {
+        pendingInvokes.add(PendingInvoke(invokeId, state, executor))
+    }
+
+    /**
+     * W3C SCXML 6.4: Cancel pending invokes for a state being exited.
+     *
+     * Called from generated onExit code. Removes any deferred invokes
+     * for states that were entered but exited before macrostep end.
+     */
+    protected fun cancelPendingInvokesForState(state: S) {
+        pendingInvokes.removeAll { it.state == state }
+    }
+
+    /**
+     * W3C SCXML 6.4: Execute all pending invokes at macrostep end.
+     *
+     * Only invokes in states that are still active (entered and not exited
+     * during the macrostep) are executed. Called after drainEventlessAndInternal().
+     */
+    private fun executePendingInvokes() {
+        if (pendingInvokes.isEmpty()) return
+        val toExecute = pendingInvokes.toList()
+        pendingInvokes.clear()
+        for (pending in toExecute) {
+            pending.executor()
+        }
+    }
 
     /**
      * W3C SCXML 6.4: Start an invoked child state machine.
@@ -591,20 +648,33 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     protected var pendingInvokeParams: Map<String, Any?> = emptyMap()
 
+    /**
+     * W3C SCXML 6.4: Start an invoked child state machine.
+     *
+     * @param invokeId Static invoke element ID — used for activeInvokes key, done.invoke metadata, cancelInvoke
+     * @param child Child state machine instance
+     * @param autoforward Forward parent events to child
+     * @param doneEvent Event to send when child completes (done.invoke)
+     * @param finalizeScript W3C SCXML 6.5: Script to execute before child events are processed
+     * @param generatedInvokeId Runtime-generated ID (stateid.platformid.index) — used for child-to-parent event metadata
+     */
     protected fun startInvoke(
         invokeId: String,
         child: StateMachineEngine<*, *>,
         autoforward: Boolean,
-        doneEvent: E?
+        doneEvent: E?,
+        finalizeScript: String = "",
+        generatedInvokeId: String = invokeId
     ) {
         val scope = engineScope ?: return
 
-        // W3C SCXML 6.4: Set up child→parent event routing with metadata
+        // W3C SCXML 6.4: Set up child->parent event routing with metadata
+        // Child-to-parent events carry the generated invoke ID (matches idlocation value)
         child.onSendToParent = { eventName, eventData ->
             resolveEventByName(eventName)?.let {
                 send(it, EventMetadata(
                     type = "external",
-                    invokeId = invokeId,
+                    invokeId = generatedInvokeId,
                     origin = child.scriptSessionId ?: "",
                     originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
                     data = eventData
@@ -620,16 +690,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val monitorJob = scope.launch(Dispatchers.Default) {
             child.completion.await()
             if (doneEvent != null) {
-                // W3C SCXML 5.10: done.invoke is a platform event with invokeid
+                // W3C SCXML 5.10: done.invoke uses static invoke ID
                 send(doneEvent, EventMetadata(
                     type = "platform",
                     invokeId = invokeId
                 ))
             }
-            activeInvokes.remove(invokeId)
+            // W3C SCXML 6.5: Do NOT remove from activeInvokes here.
+            // The removal must happen on the parent's microstep thread after
+            // finalize has had a chance to execute. The parent's event loop
+            // cleans up completed invokes via cleanupCompletedInvokes().
         }
 
-        activeInvokes[invokeId] = InvokeEntry(child, monitorJob, autoforward)
+        activeInvokes[invokeId] = InvokeEntry(child, monitorJob, autoforward, finalizeScript)
     }
 
     /**
@@ -720,16 +793,65 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     protected open fun eventNameOf(event: E): String? = null
 
+    // --- Finalize Support (W3C SCXML 6.5) ---
+
+    /**
+     * W3C SCXML 6.5: Execute finalize for events from invoked children.
+     *
+     * Finalize runs BEFORE the event is processed, with _event set to the child's event.
+     * This allows finalize to update parent datamodel variables based on event data
+     * before transition guards are evaluated.
+     *
+     * Matches C++ executeFinalizeForChildEvent() behavior.
+     */
+    private fun executeFinalizeForChildEvent(event: E) {
+        val metadata = currentEventMetadata
+        if (metadata.origin.isEmpty()) return
+
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+
+        for ((_, entry) in activeInvokes) {
+            if (entry.finalizeScript.isNotEmpty() &&
+                entry.child.scriptSessionId == metadata.origin) {
+                // W3C SCXML 6.5: Set _event before finalize execution
+                val eventName = eventNameOf(event) ?: ""
+                engine.setCurrentEvent(
+                    sid, eventName,
+                    data = metadata.data,
+                    type = metadata.type,
+                    sendId = metadata.sendId,
+                    origin = metadata.origin,
+                    originType = metadata.originType,
+                    invokeId = metadata.invokeId
+                )
+                // W3C SCXML 6.5: Execute finalize script
+                try {
+                    engine.executeScript(sid, entry.finalizeScript)
+                } catch (_: Exception) {
+                    // Finalize errors are silently ignored per spec
+                }
+                return
+            }
+        }
+    }
+
     // --- Microstep Processing ---
 
     /**
      * W3C SCXML Appendix D: Process a macrostep triggered by an external event.
      *
      * Algorithm:
-     * 1. Process the external event
-     * 2. Drain eventless transitions and internal events until stable
+     * 1. Execute finalize for events from invoked children (W3C SCXML 6.5)
+     * 2. Auto-forward event to child sessions (W3C SCXML 6.4.6)
+     * 3. Process the external event
+     * 4. Drain eventless transitions and internal events until stable
+     * 5. Execute pending invokes at macrostep end (W3C SCXML 6.4)
+     * 6. Clean up completed invoke sessions
      */
     private fun processMicrostep(event: E) {
+        // W3C SCXML 6.5: Execute finalize before event processing
+        executeFinalizeForChildEvent(event)
         // W3C SCXML 6.4: Auto-forward external events to child invoke sessions.
         // Only external events (from the event channel) reach processMicrostep;
         // internal events from <raise> are processed in drainEventlessAndInternal
@@ -737,6 +859,22 @@ abstract class StateMachineEngine<S : State, E : Event>(
         autoForwardEvent(event)
         processOneEvent(event)
         drainEventlessAndInternal()
+        // W3C SCXML 6.4: Execute deferred invokes at macrostep end
+        executePendingInvokes()
+        // W3C SCXML 6.5: Clean up completed invokes (deferred from monitor coroutine)
+        cleanupCompletedInvokes()
+    }
+
+    /**
+     * W3C SCXML 6.5: Remove completed invoke entries from activeInvokes.
+     *
+     * Cleanup is deferred from the monitor coroutine to the parent's microstep
+     * thread so that finalize can access the InvokeEntry (including its
+     * finalizeScript) before it is removed.
+     */
+    private fun cleanupCompletedInvokes() {
+        if (activeInvokes.isEmpty()) return
+        activeInvokes.entries.removeAll { it.value.child.isInFinalState }
     }
 
     /**
@@ -877,6 +1015,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
         for ((source, result) in transitions) {
             when (result) {
                 is TransitionResult.External -> externals.add(source to result)
+                is TransitionResult.InternalToTarget -> {
+                    // Treat internal-with-target like external for parallel batch processing
+                    externals.add(source to TransitionResult.External(result.target, result.transitionSource))
+                }
                 is TransitionResult.Internal -> internals.add(source to result)
                 is TransitionResult.Ignored -> {}
             }
@@ -888,7 +1030,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
             // W3C SCXML Appendix D.2, Step 1: Exit all in reverse document order
             for ((source, result) in sorted.reversed()) {
-                exitHierarchy(source, result.target)
+                exitHierarchy(source, result.target, result.transitionSource)
             }
 
             // W3C SCXML Appendix D.2, Step 2: Transition actions in document order
@@ -979,7 +1121,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 val target = result.target
 
                 // W3C SCXML 3.13: Exit -> Transition Actions -> Entry
-                exitHierarchy(source, target)
+                // When transitionSource is set, use it for LCCA in the parallel path
+                exitHierarchy(source, target, result.transitionSource)
                 executeTransitionActions(source, event)
                 onEntry(target)
 
@@ -1003,8 +1146,50 @@ abstract class StateMachineEngine<S : State, E : Event>(
                     )
                 }
             }
+            is TransitionResult.InternalToTarget -> {
+                // W3C SCXML 3.13: Internal transition with target.
+                // Exit descendants of transitionSource (but NOT the source itself),
+                // execute transition actions, enter target.
+                val target = result.target
+                val txSource = result.transitionSource
+
+                // Exit active descendants of transitionSource that are not target or its descendants
+                if (activeStateIds.isNotEmpty()) {
+                    val statesToExit = mutableListOf<Pair<S, Int>>()
+                    for (stateId in activeStateIds.toList()) {
+                        val state = resolveState(stateId) ?: continue
+                        if (state == txSource) continue  // Don't exit the source
+                        if (state == target || isDescendantOf(state, target)) continue
+                        if (!isDescendantOf(state, txSource)) continue
+                        statesToExit.add(state to documentOrderOf(state))
+                    }
+                    statesToExit.sortByDescending { it.second }
+                    for ((state, _) in statesToExit) {
+                        val sid = stateIdOf(state)
+                        if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
+                            onExit(state)
+                        }
+                    }
+                } else {
+                    // Simple machine — just exit the current leaf state
+                    onExit(source)
+                }
+
+                executeTransitionActions(source, event)
+                onEntry(target)
+
+                val leafTarget = resolveLeafState(target)
+                _currentState.value = leafTarget
+                flushPendingFinalState()
+
+                if (event != null) {
+                    _transitions.tryEmit(
+                        TransitionRecord(source = source, event = event, target = leafTarget, timestamp = nextTimestamp())
+                    )
+                }
+            }
             is TransitionResult.Internal -> {
-                // W3C SCXML 3.13: type="internal" — actions only
+                // W3C SCXML 3.13: type="internal" — actions only (targetless)
                 executeTransitionActions(source, event)
             }
             is TransitionResult.Ignored -> {
@@ -1035,7 +1220,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * check in that generated code ensures no double-exit occurs — descendants
      * are already removed by the time the parallel state's onExit runs.
      */
-    private fun exitHierarchy(source: S, target: S) {
+    private fun exitHierarchy(source: S, target: S, transitionSource: S? = null) {
         if (activeStateIds.isEmpty()) {
             // Non-parallel machine — exit source and ancestors up to LCCA
             onExit(source)
@@ -1061,10 +1246,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         }
 
         // Step 1: Find LCCA (Least Common Compound Ancestor)
-        // Walk up from source to find first ancestor that contains target.
-        // If no common ancestor found (lcca == null), all active states
-        // from source's subtree upward must be exited.
-        var lcca: S? = parentOf(source)
+        // W3C SCXML 3.13: Use transition source (where transition is defined)
+        // for LCCA computation when available, instead of the leaf state.
+        // This ensures correct exit sets for transitions defined on ancestor states.
+        val lccaStart = transitionSource ?: source
+        var lcca: S? = parentOf(lccaStart)
         while (lcca != null) {
             if (lcca == target || isDescendantOf(target, lcca)) break
             lcca = parentOf(lcca)

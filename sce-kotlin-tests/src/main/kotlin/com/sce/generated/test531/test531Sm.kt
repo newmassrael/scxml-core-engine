@@ -50,7 +50,8 @@ class Test531StateMachine(
     private fun processS0(
         event: Test531Event
     ): TransitionResult<Test531State> = when {
-        event is Test531Event.Test -> TransitionResult.External(Test531State.Pass)
+        event is Test531Event.Test -> TransitionResult.External(Test531State.Pass, Test531State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test531State.Fail)
     }

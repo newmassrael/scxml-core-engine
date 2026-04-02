@@ -265,21 +265,24 @@ class Test405StateMachine(
     private fun processS0(
         event: Test405Event
     ): TransitionResult<Test405State> = when {
-        event is Test405Event.Timeout -> TransitionResult.External(Test405State.Fail)
+        event is Test405Event.Timeout -> TransitionResult.External(Test405State.Fail, Test405State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS01p(
         event: Test405Event
     ): TransitionResult<Test405State> = when {
-        event is Test405Event.Event1 -> TransitionResult.External(Test405State.S02)
+        event is Test405Event.Event1 -> TransitionResult.External(Test405State.S02, Test405State.S01p)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS02(
         event: Test405Event
     ): TransitionResult<Test405State> = when {
-        event is Test405Event.Event2 -> TransitionResult.External(Test405State.S03)
+        event is Test405Event.Event2 -> TransitionResult.External(Test405State.S03, Test405State.S02)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test405State.Fail)
     }
@@ -287,7 +290,8 @@ class Test405StateMachine(
     private fun processS03(
         event: Test405Event
     ): TransitionResult<Test405State> = when {
-        event is Test405Event.Event3 -> TransitionResult.External(Test405State.S04)
+        event is Test405Event.Event3 -> TransitionResult.External(Test405State.S04, Test405State.S03)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test405State.Fail)
     }
@@ -295,7 +299,8 @@ class Test405StateMachine(
     private fun processS04(
         event: Test405Event
     ): TransitionResult<Test405State> = when {
-        event is Test405Event.Event4 -> TransitionResult.External(Test405State.Pass)
+        event is Test405Event.Event4 -> TransitionResult.External(Test405State.Pass, Test405State.S04)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test405State.Fail)
     }

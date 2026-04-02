@@ -70,8 +70,10 @@ class Test192Child0StateMachine(
     private fun processSub0(
         event: Test192Child0Event
     ): TransitionResult<Test192Child0State> = when {
-        event is Test192Child0Event.ParentToChild -> TransitionResult.External(Test192Child0State.SubFinal)
-        event is Test192Child0Event.Timeout -> TransitionResult.External(Test192Child0State.SubFinal)
+        event is Test192Child0Event.ParentToChild -> TransitionResult.External(Test192Child0State.SubFinal, Test192Child0State.Sub0)
+
+        event is Test192Child0Event.Timeout -> TransitionResult.External(Test192Child0State.SubFinal, Test192Child0State.Sub0)
+
         else -> TransitionResult.Ignored
     }
 

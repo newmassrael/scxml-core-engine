@@ -92,21 +92,24 @@ class Test421StateMachine(
     private fun processS1(
         event: Test421Event
     ): TransitionResult<Test421State> = when {
-        event is Test421Event.ExternalEvent -> TransitionResult.External(Test421State.Fail)
+        event is Test421Event.ExternalEvent -> TransitionResult.External(Test421State.Fail, Test421State.S1)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS11(
         event: Test421Event
     ): TransitionResult<Test421State> = when {
-        event is Test421Event.InternalEvent3 -> TransitionResult.External(Test421State.S12)
+        event is Test421Event.InternalEvent3 -> TransitionResult.External(Test421State.S12, Test421State.S11)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS12(
         event: Test421Event
     ): TransitionResult<Test421State> = when {
-        event is Test421Event.InternalEvent4 -> TransitionResult.External(Test421State.Pass)
+        event is Test421Event.InternalEvent4 -> TransitionResult.External(Test421State.Pass, Test421State.S12)
+
         else -> TransitionResult.Ignored
     }
 

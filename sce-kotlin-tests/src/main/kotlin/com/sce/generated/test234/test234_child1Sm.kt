@@ -48,7 +48,8 @@ class Test234Child1StateMachine(
     private fun processSub0(
         event: Test234Child1Event
     ): TransitionResult<Test234Child1State> = when {
-        event is Test234Child1Event.Timeout -> TransitionResult.External(Test234Child1State.SubFinal2)
+        event is Test234Child1Event.Timeout -> TransitionResult.External(Test234Child1State.SubFinal2, Test234Child1State.Sub0)
+
         else -> TransitionResult.Ignored
     }
 

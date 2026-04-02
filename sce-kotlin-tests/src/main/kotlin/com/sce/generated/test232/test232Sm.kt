@@ -129,28 +129,32 @@ class Test232StateMachine(
     private fun processS0(
         event: Test232Event
     ): TransitionResult<Test232State> = when {
-        event is Test232Event.Timeout -> TransitionResult.External(Test232State.Fail)
+        event is Test232Event.Timeout -> TransitionResult.External(Test232State.Fail, Test232State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS01(
         event: Test232Event
     ): TransitionResult<Test232State> = when {
-        event is Test232Event.ChildToParent1 -> TransitionResult.External(Test232State.S02)
+        event is Test232Event.ChildToParent1 -> TransitionResult.External(Test232State.S02, Test232State.S01)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS02(
         event: Test232Event
     ): TransitionResult<Test232State> = when {
-        event is Test232Event.ChildToParent2 -> TransitionResult.External(Test232State.S03)
+        event is Test232Event.ChildToParent2 -> TransitionResult.External(Test232State.S03, Test232State.S02)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS03(
         event: Test232Event
     ): TransitionResult<Test232State> = when {
-        event is Test232Event.Done.Invoke -> TransitionResult.External(Test232State.Pass)
+        event is Test232Event.Done.Invoke -> TransitionResult.External(Test232State.Pass, Test232State.S03)
+
         else -> TransitionResult.Ignored
     }
 
@@ -167,8 +171,16 @@ class Test232StateMachine(
             }
             is Test232State.S0 -> {
             scheduleSend("__send_0", 3000L, Test232Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_0", Test232Child0StateMachine(scriptEngine), false, Test232Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test232Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test232Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
                 // W3C SCXML 3.3: Enter initial child of compound state
                 onEntry(Test232State.S01)
             }
@@ -180,7 +192,9 @@ class Test232StateMachine(
     override fun onExit(state: Test232State) {
         when (state) {
             is Test232State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             else -> {}

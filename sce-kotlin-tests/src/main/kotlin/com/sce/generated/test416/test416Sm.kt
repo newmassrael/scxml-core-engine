@@ -121,14 +121,16 @@ class Test416StateMachine(
     private fun processS1(
         event: Test416Event
     ): TransitionResult<Test416State> = when {
-        event is Test416Event.Timeout -> TransitionResult.External(Test416State.Fail)
+        event is Test416Event.Timeout -> TransitionResult.External(Test416State.Fail, Test416State.S1)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS11(
         event: Test416Event
     ): TransitionResult<Test416State> = when {
-        event is Test416Event.Done.State.S11 -> TransitionResult.External(Test416State.Pass)
+        event is Test416Event.Done.State.S11 -> TransitionResult.External(Test416State.Pass, Test416State.S11)
+
         else -> TransitionResult.Ignored
     }
 

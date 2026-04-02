@@ -210,7 +210,8 @@ class Test351StateMachine(
     private fun processS0(
         event: Test351Event
     ): TransitionResult<Test351State> = when {
-        event is Test351Event.S0Event -> TransitionResult.External(Test351State.S1)
+        event is Test351Event.S0Event -> TransitionResult.External(Test351State.S1, Test351State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test351State.Fail)
     }
@@ -218,7 +219,8 @@ class Test351StateMachine(
     private fun processS2(
         event: Test351Event
     ): TransitionResult<Test351State> = when {
-        event is Test351Event.S0Event2 -> TransitionResult.External(Test351State.S3)
+        event is Test351Event.S0Event2 -> TransitionResult.External(Test351State.S3, Test351State.S2)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test351State.Fail)
     }

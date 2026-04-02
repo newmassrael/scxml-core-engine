@@ -168,8 +168,10 @@ class Test319StateMachine(
     private fun processS0(
         event: Test319Event
     ): TransitionResult<Test319State> = when {
-        event is Test319Event.Unbound -> TransitionResult.External(Test319State.Pass)
-        event is Test319Event.Bound -> TransitionResult.External(Test319State.Fail)
+        event is Test319Event.Unbound -> TransitionResult.External(Test319State.Pass, Test319State.S0)
+
+        event is Test319Event.Bound -> TransitionResult.External(Test319State.Fail, Test319State.S0)
+
         else -> TransitionResult.Ignored
     }
 

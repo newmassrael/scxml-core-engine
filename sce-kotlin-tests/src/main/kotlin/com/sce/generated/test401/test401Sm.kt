@@ -168,9 +168,11 @@ class Test401StateMachine(
     private fun processS0(
         event: Test401Event
     ): TransitionResult<Test401State> = when {
-        event is Test401Event.Foo -> TransitionResult.External(Test401State.Fail)
+        event is Test401Event.Foo -> TransitionResult.External(Test401State.Fail, Test401State.S0)
+
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test401Event.Error || event is Test401Event.Error.Execution) -> TransitionResult.External(Test401State.Pass)
+        (event is Test401Event.Error || event is Test401Event.Error.Execution) -> TransitionResult.External(Test401State.Pass, Test401State.S0)
+
         else -> TransitionResult.Ignored
     }
 

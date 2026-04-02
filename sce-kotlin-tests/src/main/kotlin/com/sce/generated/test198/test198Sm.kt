@@ -168,7 +168,8 @@ class Test198StateMachine(
     private fun processS0(
         event: Test198Event
     ): TransitionResult<Test198State> = when {
-        event is Test198Event.Event1 && safeEvaluateGuard("_event.origintype == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> TransitionResult.External(Test198State.Pass)
+        event is Test198Event.Event1 && safeEvaluateGuard("_event.origintype == 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor'") -> TransitionResult.External(Test198State.Pass, Test198State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test198State.Fail)
     }

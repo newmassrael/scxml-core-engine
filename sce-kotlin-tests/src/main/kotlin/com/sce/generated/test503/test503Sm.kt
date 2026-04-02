@@ -211,8 +211,10 @@ class Test503StateMachine(
     ): TransitionResult<Test503State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is Test503Event.Foo -> TransitionResult.Internal
-        event is Test503Event.Bar && safeEvaluateGuard("Var2 == 1") -> TransitionResult.External(Test503State.S3)
-        event is Test503Event.Bar -> TransitionResult.External(Test503State.Fail)
+        event is Test503Event.Bar && safeEvaluateGuard("Var2 == 1") -> TransitionResult.External(Test503State.S3, Test503State.S2)
+
+        event is Test503Event.Bar -> TransitionResult.External(Test503State.Fail, Test503State.S2)
+
         else -> TransitionResult.Ignored
     }
 

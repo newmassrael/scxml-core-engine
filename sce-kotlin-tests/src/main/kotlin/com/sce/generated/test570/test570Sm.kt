@@ -318,29 +318,34 @@ class Test570StateMachine(
     ): TransitionResult<Test570State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is Test570Event.Done.State.P0s1 -> TransitionResult.Internal
-        event is Test570Event.Done.State.P0s2 -> TransitionResult.External(Test570State.S1)
-        event is Test570Event.Timeout -> TransitionResult.External(Test570State.Fail)
+        event is Test570Event.Done.State.P0s2 -> TransitionResult.External(Test570State.S1, Test570State.P0)
+
+        event is Test570Event.Timeout -> TransitionResult.External(Test570State.Fail, Test570State.P0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processP0s11(
         event: Test570Event
     ): TransitionResult<Test570State> = when {
-        event is Test570Event.E1 -> TransitionResult.External(Test570State.P0s1final)
+        event is Test570Event.E1 -> TransitionResult.External(Test570State.P0s1final, Test570State.P0s11)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processP0s21(
         event: Test570Event
     ): TransitionResult<Test570State> = when {
-        event is Test570Event.E2 -> TransitionResult.External(Test570State.P0s2final)
+        event is Test570Event.E2 -> TransitionResult.External(Test570State.P0s2final, Test570State.P0s21)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS1(
         event: Test570Event
     ): TransitionResult<Test570State> = when {
-        event is Test570Event.Done.State.P0 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test570State.Pass)
+        event is Test570Event.Done.State.P0 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test570State.Pass, Test570State.S1)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test570State.Fail)
     }

@@ -180,7 +180,8 @@ class Test346StateMachine(
     private fun processS0(
         event: Test346Event
     ): TransitionResult<Test346State> = when {
-        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S1)
+        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S1, Test346State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test346State.Fail)
     }
@@ -190,7 +191,8 @@ class Test346StateMachine(
     ): TransitionResult<Test346State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is Test346Event.Event1 -> TransitionResult.Internal
-        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S2)
+        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S2, Test346State.S1)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test346State.Fail)
     }
@@ -200,7 +202,8 @@ class Test346StateMachine(
     ): TransitionResult<Test346State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is Test346Event.Event2 -> TransitionResult.Internal
-        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S3)
+        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.S3, Test346State.S2)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test346State.Fail)
     }
@@ -210,7 +213,8 @@ class Test346StateMachine(
     ): TransitionResult<Test346State> = when {
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is Test346Event.Event3 -> TransitionResult.Internal
-        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.Pass)
+        event is Test346Event.Error.Execution -> TransitionResult.External(Test346State.Pass, Test346State.S3)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test346State.Fail)
     }

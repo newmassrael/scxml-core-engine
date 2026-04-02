@@ -135,16 +135,20 @@ class Test412StateMachine(
     private fun processS0(
         event: Test412Event
     ): TransitionResult<Test412State> = when {
-        event is Test412Event.Timeout -> TransitionResult.External(Test412State.Fail)
-        event is Test412Event.Event1 -> TransitionResult.External(Test412State.Fail)
-        event is Test412Event.Event2 -> TransitionResult.External(Test412State.Pass)
+        event is Test412Event.Timeout -> TransitionResult.External(Test412State.Fail, Test412State.S0)
+
+        event is Test412Event.Event1 -> TransitionResult.External(Test412State.Fail, Test412State.S0)
+
+        event is Test412Event.Event2 -> TransitionResult.External(Test412State.Pass, Test412State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS02(
         event: Test412Event
     ): TransitionResult<Test412State> = when {
-        event is Test412Event.Event1 -> TransitionResult.External(Test412State.S03)
+        event is Test412Event.Event1 -> TransitionResult.External(Test412State.S03, Test412State.S02)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test412State.Fail)
     }
@@ -152,7 +156,8 @@ class Test412StateMachine(
     private fun processS03(
         event: Test412Event
     ): TransitionResult<Test412State> = when {
-        event is Test412Event.Event2 -> TransitionResult.External(Test412State.S04)
+        event is Test412Event.Event2 -> TransitionResult.External(Test412State.S04, Test412State.S03)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test412State.Fail)
     }
@@ -160,7 +165,8 @@ class Test412StateMachine(
     private fun processS04(
         event: Test412Event
     ): TransitionResult<Test412State> = when {
-        event is Test412Event.Event3 -> TransitionResult.External(Test412State.Pass)
+        event is Test412Event.Event3 -> TransitionResult.External(Test412State.Pass, Test412State.S04)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test412State.Fail)
     }

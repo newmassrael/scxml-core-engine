@@ -275,14 +275,20 @@ class Test388StateMachine(
     private fun processS0(
         event: Test388Event
     ): TransitionResult<Test388State> = when {
-        event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test388State.S1)
-        event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test388State.S2)
+        event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test388State.S1, Test388State.S0)
+
+        event is Test388Event.Entering.S012 && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test388State.S2, Test388State.S0)
+
         // W3C SCXML 3.12.1: Prefix match for "entering"
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test388State.Fail)
-        event is Test388Event.Entering.S011 && safeEvaluateGuard("Var1 == 3") -> TransitionResult.External(Test388State.Pass)
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test388State.Fail, Test388State.S0)
+
+        event is Test388Event.Entering.S011 && safeEvaluateGuard("Var1 == 3") -> TransitionResult.External(Test388State.Pass, Test388State.S0)
+
         // W3C SCXML 3.12.1: Prefix match for "entering"
-        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard("Var1 == 3") -> TransitionResult.External(Test388State.Fail)
-        event is Test388Event.Timeout -> TransitionResult.External(Test388State.Fail)
+        (event is Test388Event.Entering || event is Test388Event.Entering.S011 || event is Test388Event.Entering.S012 || event is Test388Event.Entering.S021 || event is Test388Event.Entering.S022) && safeEvaluateGuard("Var1 == 3") -> TransitionResult.External(Test388State.Fail, Test388State.S0)
+
+        event is Test388Event.Timeout -> TransitionResult.External(Test388State.Fail, Test388State.S0)
+
         else -> TransitionResult.Ignored
     }
 

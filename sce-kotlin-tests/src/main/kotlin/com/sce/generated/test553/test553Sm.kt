@@ -168,8 +168,10 @@ class Test553StateMachine(
     private fun processS0(
         event: Test553Event
     ): TransitionResult<Test553State> = when {
-        event is Test553Event.Timeout -> TransitionResult.External(Test553State.Pass)
-        event is Test553Event.Event1 -> TransitionResult.External(Test553State.Fail)
+        event is Test553Event.Timeout -> TransitionResult.External(Test553State.Pass, Test553State.S0)
+
+        event is Test553Event.Event1 -> TransitionResult.External(Test553State.Fail, Test553State.S0)
+
         else -> TransitionResult.Ignored
     }
 

@@ -280,15 +280,18 @@ class Test234StateMachine(
     private fun processP0(
         event: Test234Event
     ): TransitionResult<Test234State> = when {
-        event is Test234Event.Timeout -> TransitionResult.External(Test234State.Fail)
+        event is Test234Event.Timeout -> TransitionResult.External(Test234State.Fail, Test234State.P0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processP01(
         event: Test234Event
     ): TransitionResult<Test234State> = when {
-        event is Test234Event.ChildToParent && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test234State.S1)
-        event is Test234Event.ChildToParent -> TransitionResult.External(Test234State.Fail)
+        event is Test234Event.ChildToParent && safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test234State.S1, Test234State.P01)
+
+        event is Test234Event.ChildToParent -> TransitionResult.External(Test234State.Fail, Test234State.P01)
+
         else -> TransitionResult.Ignored
     }
 
@@ -312,14 +315,30 @@ class Test234StateMachine(
             is Test234State.P01 -> {
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
                 if (!activeStateIds.add("p01")) return
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_0", Test234Child0StateMachine(scriptEngine), false, Test234Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "p01.${System.identityHashCode(this)}._invoke_0"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test234Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test234Event.Done.Invoke, "Var1 = _event.data.aParam;", generatedInvokeId)
+                    }
+                }
             }
             is Test234State.P02 -> {
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
                 if (!activeStateIds.add("p02")) return
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_1", Test234Child1StateMachine(scriptEngine), false, Test234Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "p02.${System.identityHashCode(this)}._invoke_1"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test234Child1StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_1", childSM, false, Test234Event.Done.Invoke, "Var2 = _event.data.aParam;", generatedInvokeId)
+                    }
+                }
             }
             is Test234State.Pass -> {
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
@@ -361,12 +380,16 @@ class Test234StateMachine(
                 activeStateIds.remove("p0")
             }
             is Test234State.P01 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
                 activeStateIds.remove("p01")
             }
             is Test234State.P02 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_1")
                 activeStateIds.remove("p02")
             }

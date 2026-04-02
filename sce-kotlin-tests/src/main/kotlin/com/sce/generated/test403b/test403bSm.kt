@@ -267,8 +267,10 @@ class Test403bStateMachine(
     private fun processP0s1(
         event: Test403bEvent
     ): TransitionResult<Test403bState> = when {
-        event is Test403bEvent.Event2 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test403bState.Pass)
-        event is Test403bEvent.Event2 -> TransitionResult.External(Test403bState.Fail)
+        event is Test403bEvent.Event2 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test403bState.Pass, Test403bState.P0s1)
+
+        event is Test403bEvent.Event2 -> TransitionResult.External(Test403bState.Fail, Test403bState.P0s1)
+
         else -> TransitionResult.Ignored
     }
 

@@ -222,7 +222,8 @@ class Test329StateMachine(
     private fun processS0(
         event: Test329Event
     ): TransitionResult<Test329State> = when {
-        event is Test329Event.Foo && safeEvaluateGuard("Var1 == _sessionid") -> TransitionResult.External(Test329State.S1)
+        event is Test329Event.Foo && safeEvaluateGuard("Var1 == _sessionid") -> TransitionResult.External(Test329State.S1, Test329State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test329State.Fail)
     }

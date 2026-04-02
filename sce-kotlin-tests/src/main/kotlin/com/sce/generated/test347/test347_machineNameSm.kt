@@ -64,7 +64,8 @@ class Test347MachineNameStateMachine(
     private fun processSub0(
         event: Test347MachineNameEvent
     ): TransitionResult<Test347MachineNameState> = when {
-        event is Test347MachineNameEvent.ParentToChild -> TransitionResult.External(Test347MachineNameState.SubFinal)
+        event is Test347MachineNameEvent.ParentToChild -> TransitionResult.External(Test347MachineNameState.SubFinal, Test347MachineNameState.Sub0)
+
         else -> TransitionResult.Ignored
     }
 

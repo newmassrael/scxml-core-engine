@@ -53,16 +53,20 @@ class Test193StateMachine(
     private fun processS0(
         event: Test193Event
     ): TransitionResult<Test193State> = when {
-        event is Test193Event.Event1 -> TransitionResult.External(Test193State.Fail)
-        event is Test193Event.Internal -> TransitionResult.External(Test193State.S1)
+        event is Test193Event.Event1 -> TransitionResult.External(Test193State.Fail, Test193State.S0)
+
+        event is Test193Event.Internal -> TransitionResult.External(Test193State.S1, Test193State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS1(
         event: Test193Event
     ): TransitionResult<Test193State> = when {
-        event is Test193Event.Event1 -> TransitionResult.External(Test193State.Pass)
-        event is Test193Event.Timeout -> TransitionResult.External(Test193State.Fail)
+        event is Test193Event.Event1 -> TransitionResult.External(Test193State.Pass, Test193State.S1)
+
+        event is Test193Event.Timeout -> TransitionResult.External(Test193State.Fail, Test193State.S1)
+
         else -> TransitionResult.Ignored
     }
 

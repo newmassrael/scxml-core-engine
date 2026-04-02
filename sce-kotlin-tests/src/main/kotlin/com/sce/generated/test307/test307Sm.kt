@@ -173,8 +173,10 @@ class Test307StateMachine(
         event: Test307Event
     ): TransitionResult<Test307State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionResult.External(Test307State.S1)
-        event is Test307Event.Foo -> TransitionResult.External(Test307State.S1)
+        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionResult.External(Test307State.S1, Test307State.S0)
+
+        event is Test307Event.Foo -> TransitionResult.External(Test307State.S1, Test307State.S0)
+
         else -> TransitionResult.Ignored
     }
 
@@ -182,8 +184,10 @@ class Test307StateMachine(
         event: Test307Event
     ): TransitionResult<Test307State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionResult.External(Test307State.Final)
-        event is Test307Event.Bar -> TransitionResult.External(Test307State.Final)
+        (event is Test307Event.Error || event is Test307Event.Error.Execution) -> TransitionResult.External(Test307State.Final, Test307State.S1)
+
+        event is Test307Event.Bar -> TransitionResult.External(Test307State.Final, Test307State.S1)
+
         else -> TransitionResult.Ignored
     }
 

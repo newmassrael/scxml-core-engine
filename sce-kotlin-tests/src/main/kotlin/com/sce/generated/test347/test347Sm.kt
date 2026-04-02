@@ -120,23 +120,27 @@ class Test347StateMachine(
     private fun processS0(
         event: Test347Event
     ): TransitionResult<Test347State> = when {
-        event is Test347Event.Timeout -> TransitionResult.External(Test347State.Fail)
+        event is Test347Event.Timeout -> TransitionResult.External(Test347State.Fail, Test347State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS01(
         event: Test347Event
     ): TransitionResult<Test347State> = when {
-        event is Test347Event.ChildToParent -> TransitionResult.External(Test347State.S02)
+        event is Test347Event.ChildToParent -> TransitionResult.External(Test347State.S02, Test347State.S01)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS02(
         event: Test347Event
     ): TransitionResult<Test347State> = when {
-        event is Test347Event.Done.Invoke -> TransitionResult.External(Test347State.Pass)
+        event is Test347Event.Done.Invoke -> TransitionResult.External(Test347State.Pass, Test347State.S02)
+
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test347Event.Error || event is Test347Event.Error.Execution) -> TransitionResult.External(Test347State.Fail)
+        (event is Test347Event.Error || event is Test347Event.Error.Execution) -> TransitionResult.External(Test347State.Fail, Test347State.S02)
+
         else -> TransitionResult.Ignored
     }
 
@@ -153,8 +157,16 @@ class Test347StateMachine(
             }
             is Test347State.S0 -> {
             scheduleSend("__send_0", 20000L, Test347Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("child", Test347MachineNameStateMachine(scriptEngine), false, Test347Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}.child"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test347MachineNameStateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("child", childSM, false, Test347Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
                 // W3C SCXML 3.3: Enter initial child of compound state
                 onEntry(Test347State.S01)
             }
@@ -170,7 +182,9 @@ class Test347StateMachine(
     override fun onExit(state: Test347State) {
         when (state) {
             is Test347State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("child")
             }
             else -> {}

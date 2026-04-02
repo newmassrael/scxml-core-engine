@@ -142,7 +142,8 @@ class Test399StateMachine(
     private fun processS0(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
-        event is Test399Event.Timeout -> TransitionResult.External(Test399State.Fail)
+        event is Test399Event.Timeout -> TransitionResult.External(Test399State.Fail, Test399State.S0)
+
         else -> TransitionResult.Ignored
     }
 
@@ -150,7 +151,8 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Prefix match for "foo bar"
-        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S02)
+        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S02, Test399State.S01)
+
         else -> TransitionResult.Ignored
     }
 
@@ -158,7 +160,8 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Prefix match for "foo bar"
-        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S03)
+        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S03, Test399State.S02)
+
         else -> TransitionResult.Ignored
     }
 
@@ -166,7 +169,8 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Prefix match for "foo bar"
-        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S04)
+        (event is Test399Event.Bar || event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.S04, Test399State.S03)
+
         else -> TransitionResult.Ignored
     }
 
@@ -174,15 +178,18 @@ class Test399StateMachine(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
         // W3C SCXML 3.12.1: Prefix match for "foo"
-        (event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.Fail)
-        event is Test399Event.Foos -> TransitionResult.External(Test399State.S05)
+        (event is Test399Event.Foo || event is Test399Event.Foo.Zoo) -> TransitionResult.External(Test399State.Fail, Test399State.S04)
+
+        event is Test399Event.Foos -> TransitionResult.External(Test399State.S05, Test399State.S04)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS05(
         event: Test399Event
     ): TransitionResult<Test399State> = when {
-        event is Test399Event.Foo.Zoo -> TransitionResult.External(Test399State.S06)
+        event is Test399Event.Foo.Zoo -> TransitionResult.External(Test399State.S06, Test399State.S05)
+
         else -> TransitionResult.Ignored
     }
 

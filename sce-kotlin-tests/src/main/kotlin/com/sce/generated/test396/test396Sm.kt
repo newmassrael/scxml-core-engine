@@ -46,8 +46,10 @@ class Test396StateMachine(
     private fun processS0(
         event: Test396Event
     ): TransitionResult<Test396State> = when {
-        event is Test396Event.Foo -> TransitionResult.External(Test396State.Pass)
-        event is Test396Event.Foo -> TransitionResult.External(Test396State.Fail)
+        event is Test396Event.Foo -> TransitionResult.External(Test396State.Pass, Test396State.S0)
+
+        event is Test396Event.Foo -> TransitionResult.External(Test396State.Fail, Test396State.S0)
+
         else -> TransitionResult.Ignored
     }
 

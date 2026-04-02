@@ -196,7 +196,8 @@ class Test579StateMachine(
     private fun processS01(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event1 -> TransitionResult.External(Test579State.S02)
+        event is Test579Event.Event1 -> TransitionResult.External(Test579State.S02, Test579State.S01)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test579State.Fail)
     }
@@ -204,7 +205,8 @@ class Test579StateMachine(
     private fun processS02(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event2 -> TransitionResult.External(Test579State.S03)
+        event is Test579Event.Event2 -> TransitionResult.External(Test579State.S03, Test579State.S02)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test579State.Fail)
     }
@@ -212,8 +214,10 @@ class Test579StateMachine(
     private fun processS03(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event3 && safeEvaluateGuard("Var1 == 0") -> TransitionResult.External(Test579State.S0)
-        event is Test579Event.Event1 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test579State.S2)
+        event is Test579Event.Event3 && safeEvaluateGuard("Var1 == 0") -> TransitionResult.External(Test579State.S0, Test579State.S03)
+
+        event is Test579Event.Event1 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test579State.S2, Test579State.S03)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test579State.Fail)
     }
@@ -221,7 +225,8 @@ class Test579StateMachine(
     private fun processS2(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event2 -> TransitionResult.External(Test579State.S3)
+        event is Test579Event.Event2 -> TransitionResult.External(Test579State.S3, Test579State.S2)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test579State.Fail)
     }
@@ -229,8 +234,10 @@ class Test579StateMachine(
     private fun processS3(
         event: Test579Event
     ): TransitionResult<Test579State> = when {
-        event is Test579Event.Event3 -> TransitionResult.External(Test579State.Fail)
-        event is Test579Event.Timeout -> TransitionResult.External(Test579State.Pass)
+        event is Test579Event.Event3 -> TransitionResult.External(Test579State.Fail, Test579State.S3)
+
+        event is Test579Event.Timeout -> TransitionResult.External(Test579State.Pass, Test579State.S3)
+
         else -> TransitionResult.Ignored
     }
 

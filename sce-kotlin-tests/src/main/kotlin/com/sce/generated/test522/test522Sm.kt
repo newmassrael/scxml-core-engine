@@ -51,9 +51,11 @@ class Test522StateMachine(
     private fun processS0(
         event: Test522Event
     ): TransitionResult<Test522State> = when {
-        event is Test522Event.Timeout -> TransitionResult.External(Test522State.Fail)
+        event is Test522Event.Timeout -> TransitionResult.External(Test522State.Fail, Test522State.S0)
+
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test522Event.Error || event is Test522Event.Error.Execution) -> TransitionResult.External(Test522State.Fail)
+        (event is Test522Event.Error || event is Test522Event.Error.Execution) -> TransitionResult.External(Test522State.Fail, Test522State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test522State.Pass)
     }

@@ -49,7 +49,8 @@ class Test144StateMachine(
     private fun processS0(
         event: Test144Event
     ): TransitionResult<Test144State> = when {
-        event is Test144Event.Foo -> TransitionResult.External(Test144State.S1)
+        event is Test144Event.Foo -> TransitionResult.External(Test144State.S1, Test144State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test144State.Fail)
     }
@@ -57,7 +58,8 @@ class Test144StateMachine(
     private fun processS1(
         event: Test144Event
     ): TransitionResult<Test144State> = when {
-        event is Test144Event.Bar -> TransitionResult.External(Test144State.Pass)
+        event is Test144Event.Bar -> TransitionResult.External(Test144State.Pass, Test144State.S1)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test144State.Fail)
     }

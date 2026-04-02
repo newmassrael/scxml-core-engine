@@ -75,7 +75,8 @@ class Test191StateMachine(
     private fun processS0(
         event: Test191Event
     ): TransitionResult<Test191State> = when {
-        event is Test191Event.ChildToParent -> TransitionResult.External(Test191State.Pass)
+        event is Test191Event.ChildToParent -> TransitionResult.External(Test191State.Pass, Test191State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test191State.Fail)
     }
@@ -93,8 +94,16 @@ class Test191StateMachine(
             }
             is Test191State.S0 -> {
             scheduleSend("__send_0", 5000L, Test191Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_0", Test191Child0StateMachine(scriptEngine), false, Test191Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test191Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test191Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
             }
             else -> {}
         }
@@ -104,7 +113,9 @@ class Test191StateMachine(
     override fun onExit(state: Test191State) {
         when (state) {
             is Test191State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             else -> {}

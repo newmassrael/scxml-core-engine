@@ -235,9 +235,12 @@ class Test505StateMachine(
     private fun processS1(
         event: Test505Event
     ): TransitionResult<Test505State> = when {
-        event is Test505Event.Foo -> TransitionResult.Internal
-        event is Test505Event.Bar && safeEvaluateGuard("Var3 == 1") -> TransitionResult.External(Test505State.S2)
-        event is Test505Event.Bar -> TransitionResult.External(Test505State.Fail)
+        event is Test505Event.Foo -> TransitionResult.InternalToTarget(Test505State.S11, Test505State.S1)
+
+        event is Test505Event.Bar && safeEvaluateGuard("Var3 == 1") -> TransitionResult.External(Test505State.S2, Test505State.S1)
+
+        event is Test505Event.Bar -> TransitionResult.External(Test505State.Fail, Test505State.S1)
+
         else -> TransitionResult.Ignored
     }
 

@@ -224,23 +224,28 @@ class Test240StateMachine(
     private fun processS0(
         event: Test240Event
     ): TransitionResult<Test240State> = when {
-        event is Test240Event.Timeout -> TransitionResult.External(Test240State.Fail)
+        event is Test240Event.Timeout -> TransitionResult.External(Test240State.Fail, Test240State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS01(
         event: Test240Event
     ): TransitionResult<Test240State> = when {
-        event is Test240Event.Success -> TransitionResult.External(Test240State.S02)
-        event is Test240Event.Failure -> TransitionResult.External(Test240State.Fail)
+        event is Test240Event.Success -> TransitionResult.External(Test240State.S02, Test240State.S01)
+
+        event is Test240Event.Failure -> TransitionResult.External(Test240State.Fail, Test240State.S01)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS02(
         event: Test240Event
     ): TransitionResult<Test240State> = when {
-        event is Test240Event.Success -> TransitionResult.External(Test240State.Pass)
-        event is Test240Event.Failure -> TransitionResult.External(Test240State.Fail)
+        event is Test240Event.Success -> TransitionResult.External(Test240State.Pass, Test240State.S02)
+
+        event is Test240Event.Failure -> TransitionResult.External(Test240State.Fail, Test240State.S02)
+
         else -> TransitionResult.Ignored
     }
 
@@ -261,10 +266,11 @@ class Test240StateMachine(
                 onEntry(Test240State.S01)
             }
             is Test240State.S01 -> {
-                // W3C SCXML 6.4: Start invoked child state machine
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
-                    val childSM = Test240Child0StateMachine(scriptEngine)
-                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s01.${System.identityHashCode(this)}._invoke_0"
+                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
                     ensureScriptEngine()
                     val engineInv = scriptEngine ?: return@run
                     val sidInv = scriptSessionId ?: return@run
@@ -275,15 +281,20 @@ class Test240StateMachine(
                     } catch (_: Exception) {
                         return@run  // C++ pattern: invoke cancelled on namelist error
                     }
-                    setInvokeParams(childSM, invokeParams)
-                    startInvoke("_invoke_0", childSM, false, Test240Event.Done.Invoke)
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test240Child0StateMachine(scriptEngine)
+                        setInvokeParams(childSM, invokeParams)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test240Event.Done.Invoke, "", generatedInvokeId)
+                    }
                 }
             }
             is Test240State.S02 -> {
-                // W3C SCXML 6.4: Start invoked child state machine
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
-                    val childSM = Test240Child1StateMachine(scriptEngine)
-                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s02.${System.identityHashCode(this)}._invoke_1"
+                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
                     ensureScriptEngine()
                     val engineInv = scriptEngine ?: return@run
                     val sidInv = scriptSessionId ?: return@run
@@ -294,8 +305,12 @@ class Test240StateMachine(
                     } catch (_: Exception) {
                         return@run  // C++ pattern: invoke cancelled on param error
                     }
-                    setInvokeParams(childSM, invokeParams)
-                    startInvoke("_invoke_1", childSM, false, Test240Event.Done.Invoke)
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test240Child1StateMachine(scriptEngine)
+                        setInvokeParams(childSM, invokeParams)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_1", childSM, false, Test240Event.Done.Invoke, "", generatedInvokeId)
+                    }
                 }
             }
             else -> {}
@@ -306,11 +321,15 @@ class Test240StateMachine(
     override fun onExit(state: Test240State) {
         when (state) {
             is Test240State.S01 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             is Test240State.S02 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_1")
             }
             else -> {}

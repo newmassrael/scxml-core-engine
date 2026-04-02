@@ -314,9 +314,12 @@ class Test533StateMachine(
     private fun processP(
         event: Test533Event
     ): TransitionResult<Test533State> = when {
-        event is Test533Event.Foo -> TransitionResult.Internal
-        event is Test533Event.Bar && safeEvaluateGuard("Var4 == 1") -> TransitionResult.External(Test533State.S2)
-        event is Test533Event.Bar -> TransitionResult.External(Test533State.Fail)
+        event is Test533Event.Foo -> TransitionResult.External(Test533State.Ps1, Test533State.P)
+
+        event is Test533Event.Bar && safeEvaluateGuard("Var4 == 1") -> TransitionResult.External(Test533State.S2, Test533State.P)
+
+        event is Test533Event.Bar -> TransitionResult.External(Test533State.Fail, Test533State.P)
+
         else -> TransitionResult.Ignored
     }
 

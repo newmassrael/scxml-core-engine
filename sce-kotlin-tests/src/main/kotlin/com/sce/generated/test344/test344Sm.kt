@@ -182,7 +182,8 @@ class Test344StateMachine(
     private fun processS1(
         event: Test344Event
     ): TransitionResult<Test344State> = when {
-        event is Test344Event.Error.Execution -> TransitionResult.External(Test344State.Pass)
+        event is Test344Event.Error.Execution -> TransitionResult.External(Test344State.Pass, Test344State.S1)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test344State.Fail)
     }

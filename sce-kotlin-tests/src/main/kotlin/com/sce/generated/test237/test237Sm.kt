@@ -77,14 +77,16 @@ class Test237StateMachine(
     private fun processS0(
         event: Test237Event
     ): TransitionResult<Test237State> = when {
-        event is Test237Event.Timeout1 -> TransitionResult.External(Test237State.S1)
+        event is Test237Event.Timeout1 -> TransitionResult.External(Test237State.S1, Test237State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS1(
         event: Test237Event
     ): TransitionResult<Test237State> = when {
-        event is Test237Event.Done.Invoke -> TransitionResult.External(Test237State.Fail)
+        event is Test237Event.Done.Invoke -> TransitionResult.External(Test237State.Fail, Test237State.S1)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test237State.Pass)
     }
@@ -102,8 +104,16 @@ class Test237StateMachine(
             }
             is Test237State.S0 -> {
             scheduleSend("__send_0", 1000L, Test237Event.Timeout1)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_0", Test237Child0StateMachine(scriptEngine), false, Test237Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test237Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test237Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
             }
             is Test237State.S1 -> {
             scheduleSend("__send_1", 1500L, Test237Event.Timeout2)
@@ -116,7 +126,9 @@ class Test237StateMachine(
     override fun onExit(state: Test237State) {
         when (state) {
             is Test237State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             else -> {}

@@ -106,9 +106,12 @@ class Test411StateMachine(
     private fun processS0(
         event: Test411Event
     ): TransitionResult<Test411State> = when {
-        event is Test411Event.Timeout -> TransitionResult.External(Test411State.Fail)
-        event is Test411Event.Event1 -> TransitionResult.External(Test411State.Fail)
-        event is Test411Event.Event2 -> TransitionResult.External(Test411State.Pass)
+        event is Test411Event.Timeout -> TransitionResult.External(Test411State.Fail, Test411State.S0)
+
+        event is Test411Event.Event1 -> TransitionResult.External(Test411State.Fail, Test411State.S0)
+
+        event is Test411Event.Event2 -> TransitionResult.External(Test411State.Pass, Test411State.S0)
+
         else -> TransitionResult.Ignored
     }
 

@@ -210,8 +210,10 @@ class Test529StateMachine(
     private fun processS0(
         event: Test529Event
     ): TransitionResult<Test529State> = when {
-        event is Test529Event.Done.State.S0 && safeEvaluateGuard("_event.data == 21") -> TransitionResult.External(Test529State.Pass)
-        event is Test529Event.Done.State.S0 -> TransitionResult.External(Test529State.Fail)
+        event is Test529Event.Done.State.S0 && safeEvaluateGuard("_event.data == 21") -> TransitionResult.External(Test529State.Pass, Test529State.S0)
+
+        event is Test529Event.Done.State.S0 -> TransitionResult.External(Test529State.Fail, Test529State.S0)
+
         else -> TransitionResult.Ignored
     }
 

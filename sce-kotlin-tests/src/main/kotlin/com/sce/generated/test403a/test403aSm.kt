@@ -90,16 +90,20 @@ class Test403aStateMachine(
     private fun processS0(
         event: Test403aEvent
     ): TransitionResult<Test403aState> = when {
-        event is Test403aEvent.Timeout -> TransitionResult.External(Test403aState.Fail)
-        event is Test403aEvent.Event1 -> TransitionResult.External(Test403aState.Fail)
-        event is Test403aEvent.Event2 -> TransitionResult.External(Test403aState.Pass)
+        event is Test403aEvent.Timeout -> TransitionResult.External(Test403aState.Fail, Test403aState.S0)
+
+        event is Test403aEvent.Event1 -> TransitionResult.External(Test403aState.Fail, Test403aState.S0)
+
+        event is Test403aEvent.Event2 -> TransitionResult.External(Test403aState.Pass, Test403aState.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS01(
         event: Test403aEvent
     ): TransitionResult<Test403aState> = when {
-        event is Test403aEvent.Event1 -> TransitionResult.External(Test403aState.S02)
+        event is Test403aEvent.Event1 -> TransitionResult.External(Test403aState.S02, Test403aState.S01)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test403aState.Fail)
     }
@@ -107,8 +111,10 @@ class Test403aStateMachine(
     private fun processS02(
         event: Test403aEvent
     ): TransitionResult<Test403aState> = when {
-        event is Test403aEvent.Event1 -> TransitionResult.External(Test403aState.Fail)
-        event is Test403aEvent.Event2 && false -> TransitionResult.External(Test403aState.Fail)
+        event is Test403aEvent.Event1 -> TransitionResult.External(Test403aState.Fail, Test403aState.S02)
+
+        event is Test403aEvent.Event2 && false -> TransitionResult.External(Test403aState.Fail, Test403aState.S02)
+
         else -> TransitionResult.Ignored
     }
 

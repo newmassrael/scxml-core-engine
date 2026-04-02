@@ -214,7 +214,8 @@ class Test331StateMachine(
     private fun processS0(
         event: Test331Event
     ): TransitionResult<Test331State> = when {
-        event is Test331Event.Foo -> TransitionResult.External(Test331State.S1)
+        event is Test331Event.Foo -> TransitionResult.External(Test331State.S1, Test331State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test331State.Fail)
     }
@@ -223,7 +224,8 @@ class Test331StateMachine(
         event: Test331Event
     ): TransitionResult<Test331State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test331Event.Error || event is Test331Event.Error.Execution) -> TransitionResult.External(Test331State.S3)
+        (event is Test331Event.Error || event is Test331Event.Error.Execution) -> TransitionResult.External(Test331State.S3, Test331State.S2)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test331State.Fail)
     }
@@ -231,7 +233,8 @@ class Test331StateMachine(
     private fun processS4(
         event: Test331Event
     ): TransitionResult<Test331State> = when {
-        event is Test331Event.Foo -> TransitionResult.External(Test331State.S5)
+        event is Test331Event.Foo -> TransitionResult.External(Test331State.S5, Test331State.S4)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test331State.Fail)
     }

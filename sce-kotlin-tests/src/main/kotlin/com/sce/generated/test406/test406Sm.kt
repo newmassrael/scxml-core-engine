@@ -205,14 +205,16 @@ class Test406StateMachine(
     private fun processS0(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Timeout -> TransitionResult.External(Test406State.Fail)
+        event is Test406Event.Timeout -> TransitionResult.External(Test406State.Fail, Test406State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS03(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Event2 -> TransitionResult.External(Test406State.S04)
+        event is Test406Event.Event2 -> TransitionResult.External(Test406State.S04, Test406State.S03)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test406State.Fail)
     }
@@ -220,7 +222,8 @@ class Test406StateMachine(
     private fun processS04(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Event3 -> TransitionResult.External(Test406State.S05)
+        event is Test406Event.Event3 -> TransitionResult.External(Test406State.S05, Test406State.S04)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test406State.Fail)
     }
@@ -228,7 +231,8 @@ class Test406StateMachine(
     private fun processS05(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Event4 -> TransitionResult.External(Test406State.Pass)
+        event is Test406Event.Event4 -> TransitionResult.External(Test406State.Pass, Test406State.S05)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test406State.Fail)
     }
@@ -236,7 +240,8 @@ class Test406StateMachine(
     private fun processS0p2(
         event: Test406Event
     ): TransitionResult<Test406State> = when {
-        event is Test406Event.Event1 -> TransitionResult.External(Test406State.S03)
+        event is Test406Event.Event1 -> TransitionResult.External(Test406State.S03, Test406State.S0p2)
+
         else -> TransitionResult.Ignored
     }
 

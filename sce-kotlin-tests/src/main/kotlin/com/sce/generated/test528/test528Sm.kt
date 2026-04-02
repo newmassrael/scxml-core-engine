@@ -212,15 +212,18 @@ class Test528StateMachine(
     private fun processS0(
         event: Test528Event
     ): TransitionResult<Test528State> = when {
-        event is Test528Event.Error.Execution -> TransitionResult.External(Test528State.S1)
-        event is Test528Event.Done.State.S0 -> TransitionResult.External(Test528State.Fail)
+        event is Test528Event.Error.Execution -> TransitionResult.External(Test528State.S1, Test528State.S0)
+
+        event is Test528Event.Done.State.S0 -> TransitionResult.External(Test528State.Fail, Test528State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS1(
         event: Test528Event
     ): TransitionResult<Test528State> = when {
-        event is Test528Event.Done.State.S0 -> TransitionResult.External(Test528State.Pass)
+        event is Test528Event.Done.State.S0 -> TransitionResult.External(Test528State.Pass, Test528State.S1)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test528State.Fail)
     }

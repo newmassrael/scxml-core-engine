@@ -379,28 +379,32 @@ class Test364StateMachine(
     private fun processS1(
         event: Test364Event
     ): TransitionResult<Test364State> = when {
-        event is Test364Event.Timeout -> TransitionResult.External(Test364State.Fail)
+        event is Test364Event.Timeout -> TransitionResult.External(Test364State.Fail, Test364State.S1)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS11p122(
         event: Test364Event
     ): TransitionResult<Test364State> = when {
-        event is Test364Event.InS11p112 -> TransitionResult.External(Test364State.S2)
+        event is Test364Event.InS11p112 -> TransitionResult.External(Test364State.S2, Test364State.S11p122)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS2(
         event: Test364Event
     ): TransitionResult<Test364State> = when {
-        event is Test364Event.Timeout -> TransitionResult.External(Test364State.Fail)
+        event is Test364Event.Timeout -> TransitionResult.External(Test364State.Fail, Test364State.S2)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS21p122(
         event: Test364Event
     ): TransitionResult<Test364State> = when {
-        event is Test364Event.InS21p112 -> TransitionResult.External(Test364State.S3)
+        event is Test364Event.InS21p112 -> TransitionResult.External(Test364State.S3, Test364State.S21p122)
+
         else -> TransitionResult.Ignored
     }
 

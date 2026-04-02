@@ -25,6 +25,21 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {{ trans.cond }}
 {%- endif -%}
 {%- endmacro %}
+{# --- Macro for rendering transition result (External/InternalToTarget/Internal) --- #}
+{# Handles: true internal with target (InternalToTarget), external with ancestor source, targetless internal #}
+{% macro render_result(trans, target_expr, state_id) -%}
+{% if trans.is_true_internal is defined and trans.is_true_internal -%}
+TransitionResult.InternalToTarget({{ target_expr }}, {{ machine_name }}State.{{ trans.internal_source | to_state_class_name }})
+{%- elif trans.type == 'internal' and not trans.target -%}
+TransitionResult.Internal
+{%- else -%}
+TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
+{%- endif -%}
+{%- endmacro %}
+{# --- Macro for null event transition result (no transitionSource needed) --- #}
+{% macro render_null_result(target_expr) -%}
+TransitionResult.External({{ target_expr }})
+{%- endmacro %}
 {% if model.needs_script_engine %}
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
     override fun processEvent(
@@ -259,7 +274,7 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
         // W3C SCXML 3.12.1: Prefix match for "{{ trans.event }}"
         ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
-{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
+{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {{ render_result(trans, target_expr, state_id) }}
 
 {% else %}
 {# --- Resolve single event --- #}
@@ -269,10 +284,10 @@ safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
 {% set resolved_event = trans.event %}
 {% endif %}
 {% if trans.cond %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {{ render_result(trans, target_expr, state_id) }}
 
 {% else %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {{ render_result(trans, target_expr, state_id) }}
 
 {% endif %}
 {% endif %}

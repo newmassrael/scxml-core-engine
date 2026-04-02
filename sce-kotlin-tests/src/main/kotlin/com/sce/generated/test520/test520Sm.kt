@@ -53,8 +53,10 @@ class Test520StateMachine(
     private fun processS0(
         event: Test520Event
     ): TransitionResult<Test520State> = when {
-        event is Test520Event.HTTP.POST -> TransitionResult.External(Test520State.Pass)
-        event is Test520Event.HTTP.POST -> TransitionResult.External(Test520State.Pass)
+        event is Test520Event.HTTP.POST -> TransitionResult.External(Test520State.Pass, Test520State.S0)
+
+        event is Test520Event.HTTP.POST -> TransitionResult.External(Test520State.Pass, Test520State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test520State.Fail)
     }

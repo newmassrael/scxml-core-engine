@@ -278,7 +278,8 @@ class Test580StateMachine(
     private fun processS0(
         event: Test580Event
     ): TransitionResult<Test580State> = when {
-        event is Test580Event.Timeout -> TransitionResult.External(Test580State.Fail)
+        event is Test580Event.Timeout -> TransitionResult.External(Test580State.Fail, Test580State.S0)
+
         else -> TransitionResult.Ignored
     }
 

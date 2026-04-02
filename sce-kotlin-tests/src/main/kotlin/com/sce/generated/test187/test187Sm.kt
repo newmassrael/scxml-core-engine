@@ -75,8 +75,10 @@ class Test187StateMachine(
     private fun processS0(
         event: Test187Event
     ): TransitionResult<Test187State> = when {
-        event is Test187Event.ChildToParent -> TransitionResult.External(Test187State.Fail)
-        event is Test187Event.Timeout -> TransitionResult.External(Test187State.Pass)
+        event is Test187Event.ChildToParent -> TransitionResult.External(Test187State.Fail, Test187State.S0)
+
+        event is Test187Event.Timeout -> TransitionResult.External(Test187State.Pass, Test187State.S0)
+
         else -> TransitionResult.Ignored
     }
 
@@ -93,8 +95,16 @@ class Test187StateMachine(
             }
             is Test187State.S0 -> {
             scheduleSend("__send_0", 1000L, Test187Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("_invoke_0", Test187Child0StateMachine(scriptEngine), false, Test187Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test187Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test187Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
             }
             else -> {}
         }
@@ -104,7 +114,9 @@ class Test187StateMachine(
     override fun onExit(state: Test187State) {
         when (state) {
             is Test187State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             else -> {}

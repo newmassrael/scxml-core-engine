@@ -234,14 +234,16 @@ class Test314StateMachine(
     private fun processS0(
         event: Test314Event
     ): TransitionResult<Test314State> = when {
-        event is Test314Event.Error.Execution -> TransitionResult.External(Test314State.Fail)
+        event is Test314Event.Error.Execution -> TransitionResult.External(Test314State.Fail, Test314State.S0)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processS03(
         event: Test314Event
     ): TransitionResult<Test314State> = when {
-        event is Test314Event.Error.Execution -> TransitionResult.External(Test314State.Pass)
+        event is Test314Event.Error.Execution -> TransitionResult.External(Test314State.Pass, Test314State.S03)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test314State.Fail)
     }

@@ -199,7 +199,8 @@ class Test228StateMachine(
     private fun processS0(
         event: Test228Event
     ): TransitionResult<Test228State> = when {
-        event is Test228Event.Done.Invoke -> TransitionResult.External(Test228State.S1)
+        event is Test228Event.Done.Invoke -> TransitionResult.External(Test228State.S1, Test228State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test228State.Fail)
     }
@@ -217,8 +218,16 @@ class Test228StateMachine(
             }
             is Test228State.S0 -> {
             scheduleSend("__send_0", 3000L, Test228Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("foo", Test228Child0StateMachine(scriptEngine), false, Test228Event.Done.Invoke)
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}.foo"
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test228Child0StateMachine(scriptEngine)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("foo", childSM, false, Test228Event.Done.Invoke, "", generatedInvokeId)
+                    }
+                }
             }
             else -> {}
         }
@@ -228,7 +237,9 @@ class Test228StateMachine(
     override fun onExit(state: Test228State) {
         when (state) {
             is Test228State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("foo")
             }
             else -> {}

@@ -190,7 +190,8 @@ class Test245StateMachine(
     private fun processS0(
         event: Test245Event
     ): TransitionResult<Test245State> = when {
-        event is Test245Event.Success -> TransitionResult.External(Test245State.Pass)
+        event is Test245Event.Success -> TransitionResult.External(Test245State.Pass, Test245State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test245State.Fail)
     }
@@ -208,10 +209,11 @@ class Test245StateMachine(
             }
             is Test245State.S0 -> {
             scheduleSend("__send_0", 2000L, Test245Event.Timeout)
-                // W3C SCXML 6.4: Start invoked child state machine
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
-                    val childSM = Test245Child0StateMachine(scriptEngine)
-                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
                     ensureScriptEngine()
                     val engineInv = scriptEngine ?: return@run
                     val sidInv = scriptSessionId ?: return@run
@@ -222,8 +224,12 @@ class Test245StateMachine(
                     } catch (_: Exception) {
                         return@run  // C++ pattern: invoke cancelled on namelist error
                     }
-                    setInvokeParams(childSM, invokeParams)
-                    startInvoke("_invoke_0", childSM, false, Test245Event.Done.Invoke)
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = Test245Child0StateMachine(scriptEngine)
+                        setInvokeParams(childSM, invokeParams)
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("_invoke_0", childSM, false, Test245Event.Done.Invoke, "", generatedInvokeId)
+                    }
                 }
             }
             else -> {}
@@ -234,7 +240,9 @@ class Test245StateMachine(
     override fun onExit(state: Test245State) {
         when (state) {
             is Test245State.S0 -> {
-                // W3C SCXML 6.4: Cancel invoked child on state exit
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
             }
             else -> {}

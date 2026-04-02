@@ -318,15 +318,18 @@ class Test403cStateMachine(
     private fun processP0s2(
         event: Test403cEvent
     ): TransitionResult<Test403cState> = when {
-        event is Test403cEvent.Event1 -> TransitionResult.External(Test403cState.P0s1)
+        event is Test403cEvent.Event1 -> TransitionResult.External(Test403cState.P0s1, Test403cState.P0s2)
+
         else -> TransitionResult.Ignored
     }
 
     private fun processP0s3(
         event: Test403cEvent
     ): TransitionResult<Test403cState> = when {
-        event is Test403cEvent.Event1 -> TransitionResult.External(Test403cState.Fail)
-        event is Test403cEvent.Event2 -> TransitionResult.External(Test403cState.S1)
+        event is Test403cEvent.Event1 -> TransitionResult.External(Test403cState.Fail, Test403cState.P0s3)
+
+        event is Test403cEvent.Event2 -> TransitionResult.External(Test403cState.S1, Test403cState.P0s3)
+
         else -> TransitionResult.Ignored
     }
 
@@ -340,8 +343,10 @@ class Test403cStateMachine(
     private fun processS0(
         event: Test403cEvent
     ): TransitionResult<Test403cState> = when {
-        event is Test403cEvent.Event2 -> TransitionResult.External(Test403cState.Fail)
-        event is Test403cEvent.Timeout -> TransitionResult.External(Test403cState.Fail)
+        event is Test403cEvent.Event2 -> TransitionResult.External(Test403cState.Fail, Test403cState.S0)
+
+        event is Test403cEvent.Timeout -> TransitionResult.External(Test403cState.Fail, Test403cState.S0)
+
         else -> TransitionResult.Ignored
     }
 

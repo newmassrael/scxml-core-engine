@@ -198,7 +198,8 @@ class Test332StateMachine(
         event: Test332Event
     ): TransitionResult<Test332State> = when {
         // W3C SCXML 3.12.1: Prefix match for "error"
-        (event is Test332Event.Error || event is Test332Event.Error.Execution) -> TransitionResult.External(Test332State.S1)
+        (event is Test332Event.Error || event is Test332Event.Error.Execution) -> TransitionResult.External(Test332State.S1, Test332State.S0)
+
         // W3C SCXML 3.12.1: Wildcard transition
         else -> TransitionResult.External(Test332State.Fail)
     }

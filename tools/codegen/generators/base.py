@@ -305,6 +305,33 @@ class BaseCodeGenerator(ABC):
                     model.needs_script_engine = True
                 break
 
+        # W3C SCXML 6.4: If any invoked child needs script engine, parent must
+        # carry one too — needed for param evaluation and finalize execution
+        if not model.needs_script_engine:
+            for state in model.states.values():
+                for si in state.static_invokes:
+                    if si.get('child_needs_script_engine', False):
+                        model.needs_script_engine = True
+                        break
+                if model.needs_script_engine:
+                    break
+
+        # Reapply script engine implications after potential child-driven activation
+        if model.needs_script_engine:
+            model.needs_event_name = True
+            model.needs_event_data = True
+            model.needs_event_type = True
+            model.needs_event_sendid = True
+            model.needs_event_origin = True
+            model.needs_event_origintype = True
+            model.needs_event_invokeid = True
+            model.needs_external_flag = True
+            model.events.add('error.execution')
+            model.needs_event_type_helper = True
+            model.needs_assign_helper = True
+            model.needs_foreach = True
+            model.needs_guard_helper = True
+
     def _analyze_action(self, action, model: SCXMLModel):
         """Analyze single action for feature detection."""
         action_type = action.get('type', '')
