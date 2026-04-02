@@ -40,12 +40,6 @@ class Test192StateMachine(
 
     override val initialState: Test192State = Test192State.S01
 
-    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
-    // through compound/parallel hierarchy to populate activeStateIds)
-    override fun enterInitialConfiguration() {
-        onEntry(Test192State.S0)
-    }
-
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: Test192State): Test192State? = when (state) {
         is Test192State.S01 -> Test192State.S0

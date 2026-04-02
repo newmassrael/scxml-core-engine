@@ -46,11 +46,10 @@ class Test388StateMachine(
 
     override val initialState: Test388State = Test388State.S012
 
-    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
-    // through compound/parallel hierarchy to populate activeStateIds)
+    // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()
-        onEntry(Test388State.S0)
+        super.enterInitialConfiguration()
     }
 
     // W3C SCXML 3.3: State hierarchy parent mapping

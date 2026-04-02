@@ -43,12 +43,6 @@ class Test405StateMachine(
 
     override val initialState: Test405State = Test405State.S01p11
 
-    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
-    // through compound/parallel hierarchy to populate activeStateIds)
-    override fun enterInitialConfiguration() {
-        onEntry(Test405State.S0)
-    }
-
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: Test405State): Test405State? = when (state) {
         is Test405State.S01p -> Test405State.S0
@@ -324,6 +318,8 @@ class Test405StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test405Event.Timeout)
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test405State.S01p)
             }
             is Test405State.S01p -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -335,6 +331,8 @@ class Test405StateMachine(
             is Test405State.S01p1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p1")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test405State.S01p11)
             }
             is Test405State.S01p11 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -347,6 +345,8 @@ class Test405StateMachine(
             is Test405State.S01p2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p2")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test405State.S01p21)
             }
             is Test405State.S01p21 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

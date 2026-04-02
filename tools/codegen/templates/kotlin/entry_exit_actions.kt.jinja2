@@ -64,9 +64,22 @@
 {% endfor %}
                 }
 {% endif %}
+{% if state.on_entry_blocks | length > 1 %}
+{% for block in state.on_entry_blocks %}
+                // W3C SCXML 3.8: Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }}
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
+{% for action in block %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+                }
+{% endfor %}
+{% else %}
 {% for action in state.on_entry %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
+{% endif %}
 {% if has_invokes %}
 {% for inv in invoke_entries[state_id] %}
 {% if inv.child_class %}
@@ -224,6 +237,29 @@
                         onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
                     }
                 }
+{% elif model.parallel_regions and has_deep_initial %}
+{# C++ pattern: only enter initial children in onEntry for parallel SMs.
+   Non-parallel SMs use buildEntryChain in the runtime. #}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+                // W3C SCXML 3.6: Enter deep initial targets (C++ enterDeepInitialTargets pattern)
+{% for entry in deep_initial_entries[state_id] %}
+                onEntry({{ machine_name }}State.{{ entry.id | to_state_class_name }})
+{% endfor %}
+{% elif model.parallel_regions and has_initial_child %}
+{# C++ pattern: only enter initial children in onEntry for parallel SMs. #}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
 {% elif state.initial_transition_actions %}
                 // W3C SCXML 3.3.2: Execute initial transition content
 {% for action in state.initial_transition_actions %}
@@ -289,9 +325,22 @@
 {% endif %}
 {% endfor %}
                 activeStateIds.remove("{{ state_id }}")
+{% if state.on_exit_blocks | length > 1 %}
+{% for block in state.on_exit_blocks %}
+                // W3C SCXML 3.9: Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
+{% for action in block %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+                }
+{% endfor %}
+{% else %}
 {% for action in state.on_exit %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
+{% endif %}
             }
 {% endfor %}
             else -> {}

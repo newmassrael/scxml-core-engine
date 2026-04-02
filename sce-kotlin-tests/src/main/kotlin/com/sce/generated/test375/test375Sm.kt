@@ -113,8 +113,16 @@ class Test375StateMachine(
             is Test375State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+                // W3C SCXML 3.8: Onentry block 1/2 (error-isolated)
+                fun entryBlock1() {
             raiseInternal(Test375Event.Event1)
+                }
+                entryBlock1()
+                // W3C SCXML 3.8: Onentry block 2/2 (error-isolated)
+                fun entryBlock2() {
             raiseInternal(Test375Event.Event2)
+                }
+                entryBlock2()
             }
             is Test375State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

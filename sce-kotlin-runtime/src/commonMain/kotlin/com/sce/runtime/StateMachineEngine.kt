@@ -406,16 +406,61 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * W3C SCXML 3.2/3.4: Enter initial state configuration.
      *
-     * Default: enter [initialState] only (flat state machines).
-     * Override in generated code to handle compound/parallel state hierarchies
-     * where ancestors must be entered recursively from root to leaf.
+     * C++ buildEntryChain pattern: build ancestor chain from root to initialState,
+     * then enter each state. onEntry for compound/parallel states handles recursive
+     * descent into initial children and parallel regions.
      *
-     * For parallel states (W3C SCXML 3.4), the override enters from the
-     * top-level initial state, recursing through [onEntry] to activate
-     * all child regions and register them in [activeStateIds].
+     * Override in generated code only for script engine initialization.
      */
     protected open fun enterInitialConfiguration() {
-        onEntry(initialState)
+        // C++ HierarchicalStateHelper::buildEntryChain pattern:
+        // Walk from initialState to root, reverse, enter each
+        val chain = mutableListOf<S>()
+        var cur: S? = initialState
+        while (cur != null) {
+            chain.add(cur)
+            cur = parentOf(cur)
+        }
+        chain.reverse()
+        for (state in chain) {
+            onEntry(state)
+        }
+    }
+
+    /**
+     * W3C SCXML 3.3: Enter initial children of a compound state if no descendant
+     * is already active (e.g., entered via history or parallel region).
+     *
+     * C++ HierarchicalStateHelper::buildEntryChain pattern (lines 323-335):
+     * Walk down compound states via resolveLeafState (equivalent to getInitialChild),
+     * entering each intermediate state. Parallel regions are NOT entered here —
+     * they are handled by the generated onEntry (executeEntryActions).
+     *
+     * The activeStateIds check guards against re-entering states already populated
+     * by onEntry (history restoration, parallel region descent).
+     */
+    private fun enterInitialChildrenIfNeeded(target: S) {
+        val leaf = resolveLeafState(target)
+        if (leaf == target) return
+        // C++ pattern: check if onEntry already entered a child (history or parallel)
+        val targetId = stateIdOf(target)
+        val hasActiveChild = activeStateIds.any { stateId ->
+            val st = resolveState(stateId) ?: return@any false
+            val p = parentOf(st)
+            p != null && stateIdOf(p) == targetId
+        }
+        if (hasActiveChild) return
+        // C++ buildEntryChain: walk from leaf to target, reverse, enter each
+        val intermediates = mutableListOf<S>()
+        var cur: S? = leaf
+        while (cur != null && cur != target) {
+            intermediates.add(cur)
+            cur = parentOf(cur)
+        }
+        intermediates.reverse()
+        for (state in intermediates) {
+            onEntry(state)
+        }
     }
 
     /**
@@ -1229,12 +1274,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
 
             // W3C SCXML Appendix D.2, Step 3: Enter all targets in document order
+            // C++ pattern: onEntry (executeEntryActions) handles parallel region descent
             for ((_, result) in sorted) {
                 onEntry(result.target)
             }
 
             // Update _currentState to last entered leaf
-            _currentState.value = resolveLeafState(sorted.last().second.target)
+            _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
+                ?: resolveLeafState(sorted.last().second.target)
         }
 
         // Internal transitions: execute actions only (no state change)
@@ -1319,35 +1366,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 while (anc != null) {
                     val ancId = stateIdOf(anc)
                     if (ancId.isNotEmpty() && !activeStateIds.contains(ancId)) {
-                        ancestorsToEnter.add(0, anc)
+                        ancestorsToEnter.add(anc)
                     } else {
                         break
                     }
                     anc = parentOf(anc)
                 }
+                ancestorsToEnter.reverse()
                 for (ancestor in ancestorsToEnter) {
                     onEntry(ancestor)
                 }
                 onEntry(target)
 
                 // W3C SCXML 3.3: Enter initial children chain (C++ buildEntryChain pattern)
-                // onEntry does NOT enter initial children — they must be entered here
-                var compound = target
-                while (true) {
-                    val initial = resolveLeafState(compound)
-                    if (initial == compound) break
-                    // Enter intermediate compound states on path to leaf
-                    val intermediates = mutableListOf<S>()
-                    var cur: S? = initial
-                    while (cur != null && cur != compound) {
-                        intermediates.add(0, cur)
-                        cur = parentOf(cur)
-                    }
-                    for (state in intermediates) {
-                        onEntry(state)
-                    }
-                    break
-                }
+                enterInitialChildrenIfNeeded(target)
 
                 // W3C SCXML 3.13: Resolve to actual active leaf (C++ pattern)
                 val leafTarget = activeLeafStatesInDocumentOrder().lastOrNull()
@@ -1397,7 +1429,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 executeTransitionActions(source, event)
                 onEntry(target)
 
-                val leafTarget = resolveLeafState(target)
+                // W3C SCXML 3.3: Enter initial children (same as External case)
+                enterInitialChildrenIfNeeded(target)
+
+                val leafTarget = activeLeafStatesInDocumentOrder().lastOrNull()
+                    ?: resolveLeafState(target)
                 _currentState.value = leafTarget
                 flushPendingFinalState()
 

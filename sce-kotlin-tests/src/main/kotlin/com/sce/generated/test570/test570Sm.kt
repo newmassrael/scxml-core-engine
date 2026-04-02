@@ -47,11 +47,10 @@ class Test570StateMachine(
 
     override val initialState: Test570State = Test570State.P0s11
 
-    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
-    // through compound/parallel hierarchy to populate activeStateIds)
+    // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()
-        onEntry(Test570State.P0)
+        super.enterInitialConfiguration()
     }
 
     // W3C SCXML 3.3: State hierarchy parent mapping
@@ -373,6 +372,8 @@ class Test570StateMachine(
             is Test570State.P0s1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s1")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test570State.P0s11)
             }
             is Test570State.P0s11 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -391,6 +392,8 @@ class Test570StateMachine(
             is Test570State.P0s2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s2")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test570State.P0s21)
             }
             is Test570State.P0s21 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

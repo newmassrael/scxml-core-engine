@@ -156,8 +156,16 @@ class Test377StateMachine(
             }
             is Test377State.S0 -> {
                 activeStateIds.remove("s0")
+                // W3C SCXML 3.9: Onexit block 1/2 (error-isolated)
+                fun exitBlock1() {
             raiseInternal(Test377Event.Event1)
+                }
+                exitBlock1()
+                // W3C SCXML 3.9: Onexit block 2/2 (error-isolated)
+                fun exitBlock2() {
             raiseInternal(Test377Event.Event2)
+                }
+                exitBlock2()
             }
             is Test377State.S1 -> {
                 activeStateIds.remove("s1")

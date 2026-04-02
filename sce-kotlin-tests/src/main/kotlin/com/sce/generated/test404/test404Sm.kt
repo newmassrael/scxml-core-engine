@@ -36,12 +36,6 @@ class Test404StateMachine(
 
     override val initialState: Test404State = Test404State.S01p1
 
-    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
-    // through compound/parallel hierarchy to populate activeStateIds)
-    override fun enterInitialConfiguration() {
-        onEntry(Test404State.S0)
-    }
-
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: Test404State): Test404State? = when (state) {
         is Test404State.S01p -> Test404State.S0
@@ -200,6 +194,8 @@ class Test404StateMachine(
             is Test404State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test404State.S01p)
             }
             is Test404State.S01p -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

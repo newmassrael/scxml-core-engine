@@ -43,7 +43,7 @@ class Test504StateMachine(
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()
-        onEntry(initialState)
+        super.enterInitialConfiguration()
     }
 
     // W3C SCXML 3.3: State hierarchy parent mapping
@@ -389,6 +389,8 @@ class Test504StateMachine(
             is Test504State.S2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test504State.P)
             }
             is Test504State.S3 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

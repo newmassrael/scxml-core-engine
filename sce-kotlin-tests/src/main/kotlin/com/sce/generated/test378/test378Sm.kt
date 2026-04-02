@@ -35,7 +35,7 @@ class Test378StateMachine(
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()
-        onEntry(initialState)
+        super.enterInitialConfiguration()
     }
 
 
@@ -264,10 +264,18 @@ class Test378StateMachine(
             }
             is Test378State.S0 -> {
                 activeStateIds.remove("s0")
+                // W3C SCXML 3.9: Onexit block 1/2 (error-isolated)
+                fun exitBlock1() {
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raiseInternal(Test378Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
             return  // W3C SCXML 5.10: Stop subsequent executable content
+                }
+                exitBlock1()
+                // W3C SCXML 3.9: Onexit block 2/2 (error-isolated)
+                fun exitBlock2() {
             executeAssign("Var1", "Var1 + 1")
+                }
+                exitBlock2()
             }
             is Test378State.S1 -> {
                 activeStateIds.remove("s1")

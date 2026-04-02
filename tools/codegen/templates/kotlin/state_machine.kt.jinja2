@@ -36,22 +36,12 @@ class {{ machine_name }}StateMachine(
 {% endif %}
 
     override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}
-{% if initial_entry_root and initial_entry_root != (model.initial_leaf if model.initial_leaf else model.initial) %}
-
-    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
-    // through compound/parallel hierarchy to populate activeStateIds)
-    override fun enterInitialConfiguration() {
 {% if model.needs_script_engine %}
-        ensureScriptEngine()
-{% endif %}
-        onEntry({{ machine_name }}State.{{ initial_entry_root | to_state_class_name }})
-    }
-{% elif model.needs_script_engine %}
 
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()
-        onEntry(initialState)
+        super.enterInitialConfiguration()
     }
 {% endif %}
 

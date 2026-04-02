@@ -40,12 +40,6 @@ class Test576StateMachine(
 
     override val initialState: Test576State = Test576State.S11p112
 
-    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
-    // through compound/parallel hierarchy to populate activeStateIds)
-    override fun enterInitialConfiguration() {
-        onEntry(Test576State.S1)
-    }
-
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: Test576State): Test576State? = when (state) {
         is Test576State.S11 -> Test576State.S1
@@ -254,10 +248,14 @@ class Test576StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             scheduleSend("__send_0", 1000L, Test576Event.Timeout)
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test576State.S11)
             }
             is Test576State.S11 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test576State.S11p1)
             }
             is Test576State.S111 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -273,6 +271,8 @@ class Test576StateMachine(
             is Test576State.S11p11 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p11")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test576State.S11p112)
             }
             is Test576State.S11p111 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -286,6 +286,8 @@ class Test576StateMachine(
             is Test576State.S11p12 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p12")) return
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry(Test576State.S11p122)
             }
             is Test576State.S11p121 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
