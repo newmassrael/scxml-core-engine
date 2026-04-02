@@ -30,6 +30,31 @@ class Test237Child0StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test237Child0State? = when (stateId) {
+        "sub0" -> Test237Child0State.Sub0
+        "subFinal" -> Test237Child0State.SubFinal
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test237Child0State): String = when (state) {
+        is Test237Child0State.Sub0 -> "sub0"
+        is Test237Child0State.SubFinal -> "subFinal"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test237Child0State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test237Child0State): Int = when (state) {
+        is Test237Child0State.Sub0 -> 0
+        is Test237Child0State.SubFinal -> 1
+        else -> 0
+    }
 
 
 
@@ -57,9 +82,13 @@ class Test237Child0StateMachine(
     override fun onEntry(state: Test237Child0State) {
         when (state) {
             is Test237Child0State.Sub0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("sub0")) return
             scheduleSend("__send_0", 2000L, Test237Child0Event.Timeout)
             }
             is Test237Child0State.SubFinal -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("subFinal")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -70,6 +99,12 @@ class Test237Child0StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test237Child0State) {
         when (state) {
+            is Test237Child0State.Sub0 -> {
+                activeStateIds.remove("sub0")
+            }
+            is Test237Child0State.SubFinal -> {
+                activeStateIds.remove("subFinal")
+            }
             else -> {}
         }
     }

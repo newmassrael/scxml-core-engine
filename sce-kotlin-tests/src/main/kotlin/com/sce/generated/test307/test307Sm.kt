@@ -39,6 +39,34 @@ class Test307StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test307State? = when (stateId) {
+        "final" -> Test307State.Final
+        "s0" -> Test307State.S0
+        "s1" -> Test307State.S1
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test307State): String = when (state) {
+        is Test307State.Final -> "final"
+        is Test307State.S0 -> "s0"
+        is Test307State.S1 -> "s1"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test307State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test307State): Int = when (state) {
+        is Test307State.Final -> 2
+        is Test307State.S0 -> 0
+        is Test307State.S1 -> 1
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test307Event? = when (name) {
@@ -196,10 +224,14 @@ class Test307StateMachine(
     override fun onEntry(state: Test307State) {
         when (state) {
             is Test307State.Final -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("final")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test307State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("entering s0 value of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "Var1")?.toString() ?: ""))
@@ -207,6 +239,8 @@ class Test307StateMachine(
             raiseInternal(Test307Event.Foo)
             }
             is Test307State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
                 // W3C SCXML 5.3: Late binding — initialize state-level datamodel on entry
                 run {
                     ensureScriptEngine()
@@ -232,6 +266,15 @@ class Test307StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test307State) {
         when (state) {
+            is Test307State.Final -> {
+                activeStateIds.remove("final")
+            }
+            is Test307State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test307State.S1 -> {
+                activeStateIds.remove("s1")
+            }
             else -> {}
         }
     }

@@ -30,6 +30,31 @@ class Test422Child2StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test422Child2State? = when (stateId) {
+        "sub2" -> Test422Child2State.Sub2
+        "subFinal2" -> Test422Child2State.SubFinal2
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test422Child2State): String = when (state) {
+        is Test422Child2State.Sub2 -> "sub2"
+        is Test422Child2State.SubFinal2 -> "subFinal2"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test422Child2State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test422Child2State): Int = when (state) {
+        is Test422Child2State.Sub2 -> 0
+        is Test422Child2State.SubFinal2 -> 1
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test422Child2Event? = when (name) {
@@ -76,10 +101,14 @@ class Test422Child2StateMachine(
     override fun onEntry(state: Test422Child2State) {
         when (state) {
             is Test422Child2State.Sub2 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("sub2")) return
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("invokeS12", "")
             }
             is Test422Child2State.SubFinal2 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("subFinal2")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -90,6 +119,12 @@ class Test422Child2StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test422Child2State) {
         when (state) {
+            is Test422Child2State.Sub2 -> {
+                activeStateIds.remove("sub2")
+            }
+            is Test422Child2State.SubFinal2 -> {
+                activeStateIds.remove("subFinal2")
+            }
             else -> {}
         }
     }

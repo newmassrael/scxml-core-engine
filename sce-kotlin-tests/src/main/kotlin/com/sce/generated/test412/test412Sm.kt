@@ -60,6 +60,51 @@ class Test412StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test412State? = when (stateId) {
+        "fail" -> Test412State.Fail
+        "pass" -> Test412State.Pass
+        "s0" -> Test412State.S0
+        "s01" -> Test412State.S01
+        "s011" -> Test412State.S011
+        "s02" -> Test412State.S02
+        "s03" -> Test412State.S03
+        "s04" -> Test412State.S04
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test412State): String = when (state) {
+        is Test412State.Fail -> "fail"
+        is Test412State.Pass -> "pass"
+        is Test412State.S0 -> "s0"
+        is Test412State.S01 -> "s01"
+        is Test412State.S011 -> "s011"
+        is Test412State.S02 -> "s02"
+        is Test412State.S03 -> "s03"
+        is Test412State.S04 -> "s04"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test412State): Boolean = when (state) {
+        is Test412State.S0 -> false
+        is Test412State.S01 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test412State): Int = when (state) {
+        is Test412State.Fail -> 7
+        is Test412State.Pass -> 6
+        is Test412State.S0 -> 0
+        is Test412State.S01 -> 1
+        is Test412State.S011 -> 2
+        is Test412State.S02 -> 3
+        is Test412State.S03 -> 4
+        is Test412State.S04 -> 5
+        else -> 0
+    }
 
 
 
@@ -175,27 +220,45 @@ class Test412StateMachine(
     override fun onEntry(state: Test412State) {
         when (state) {
             is Test412State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test412State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test412State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test412Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test412State.S01)
             }
             is Test412State.S01 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s01")) return
             raiseInternal(Test412Event.Event1)
                 // W3C SCXML 3.3.2: Execute initial transition content
             raiseInternal(Test412Event.Event2)
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test412State.S011)
             }
             is Test412State.S011 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s011")) return
             raiseInternal(Test412Event.Event3)
+            }
+            is Test412State.S02 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s02")) return
+            }
+            is Test412State.S03 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s03")) return
+            }
+            is Test412State.S04 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s04")) return
             }
             else -> {}
         }
@@ -204,6 +267,30 @@ class Test412StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test412State) {
         when (state) {
+            is Test412State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test412State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test412State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test412State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test412State.S011 -> {
+                activeStateIds.remove("s011")
+            }
+            is Test412State.S02 -> {
+                activeStateIds.remove("s02")
+            }
+            is Test412State.S03 -> {
+                activeStateIds.remove("s03")
+            }
+            is Test412State.S04 -> {
+                activeStateIds.remove("s04")
+            }
             else -> {}
         }
     }

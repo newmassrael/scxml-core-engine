@@ -60,6 +60,44 @@ class Test232StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test232State? = when (stateId) {
+        "fail" -> Test232State.Fail
+        "pass" -> Test232State.Pass
+        "s0" -> Test232State.S0
+        "s01" -> Test232State.S01
+        "s02" -> Test232State.S02
+        "s03" -> Test232State.S03
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test232State): String = when (state) {
+        is Test232State.Fail -> "fail"
+        is Test232State.Pass -> "pass"
+        is Test232State.S0 -> "s0"
+        is Test232State.S01 -> "s01"
+        is Test232State.S02 -> "s02"
+        is Test232State.S03 -> "s03"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test232State): Boolean = when (state) {
+        is Test232State.S0 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test232State): Int = when (state) {
+        is Test232State.Fail -> 5
+        is Test232State.Pass -> 4
+        is Test232State.S0 -> 0
+        is Test232State.S01 -> 1
+        is Test232State.S02 -> 2
+        is Test232State.S03 -> 3
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test232Event? = when (name) {
@@ -162,14 +200,20 @@ class Test232StateMachine(
     override fun onEntry(state: Test232State) {
         when (state) {
             is Test232State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test232State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test232State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 3000L, Test232Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -181,8 +225,18 @@ class Test232StateMachine(
                         startInvoke("_invoke_0", childSM, false, Test232Event.Done.Invoke, "", generatedInvokeId)
                     }
                 }
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test232State.S01)
+            }
+            is Test232State.S01 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s01")) return
+            }
+            is Test232State.S02 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s02")) return
+            }
+            is Test232State.S03 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s03")) return
             }
             else -> {}
         }
@@ -191,11 +245,27 @@ class Test232StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test232State) {
         when (state) {
+            is Test232State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test232State.Pass -> {
+                activeStateIds.remove("pass")
+            }
             is Test232State.S0 -> {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
+                activeStateIds.remove("s0")
+            }
+            is Test232State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test232State.S02 -> {
+                activeStateIds.remove("s02")
+            }
+            is Test232State.S03 -> {
+                activeStateIds.remove("s03")
             }
             else -> {}
         }

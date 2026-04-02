@@ -33,6 +33,34 @@ class Test577StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test577State? = when (stateId) {
+        "fail" -> Test577State.Fail
+        "pass" -> Test577State.Pass
+        "s0" -> Test577State.S0
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test577State): String = when (state) {
+        is Test577State.Fail -> "fail"
+        is Test577State.Pass -> "pass"
+        is Test577State.S0 -> "s0"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test577State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test577State): Int = when (state) {
+        is Test577State.Fail -> 2
+        is Test577State.Pass -> 1
+        is Test577State.S0 -> 0
+        else -> 0
+    }
 
 
 
@@ -61,14 +89,20 @@ class Test577StateMachine(
     override fun onEntry(state: Test577State) {
         when (state) {
             is Test577State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test577State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test577State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             send(Test577Event.Event1, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             // W3C SCXML C.2 (test577): BasicHTTP requires target, missing raises error.communication
             raiseInternal(Test577Event.Error.Communication, EventMetadata.platform())
@@ -81,6 +115,15 @@ class Test577StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test577State) {
         when (state) {
+            is Test577State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test577State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test577State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             else -> {}
         }
     }

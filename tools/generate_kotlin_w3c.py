@@ -16,11 +16,13 @@ Output:
 from __future__ import annotations
 
 import argparse
+import filecmp
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 # Project root (parent of tools/)
@@ -36,6 +38,15 @@ CMAKE_FILE = PROJECT_ROOT / 'tests' / 'CMakeLists.txt'
 
 # Tests excluded from Kotlin codegen (structural issues only, not script engine)
 CODEGEN_EXCLUDE: set = set()
+
+
+def write_if_changed(path: Path, content: str) -> bool:
+    """Write file only if content differs. Returns True if written."""
+    if path.exists() and path.read_text() == content:
+        return False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return True
 
 
 def parse_cmake_tests() -> dict:
@@ -169,7 +180,7 @@ def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
                 f"    override fun executeTransitionActions(source: {child_class}State, event: {child_class}Event?) {{}}\n"
                 f"}}\n"
             )
-            child_sm_file.write_text(stub_content)
+            write_if_changed(child_sm_file, stub_content)
             count += 1
             continue
 
@@ -179,47 +190,63 @@ def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
             content = child_sm_file.read_text()
             # Replace child's own package with parent's package
             child_package = child_name.lower()
-            content = content.replace(
+            new_content = content.replace(
                 f'package com.sce.generated.{child_package}',
                 f'package com.sce.generated.{parent_package}'
             )
-            child_sm_file.write_text(content)
+            write_if_changed(child_sm_file, new_content)
             count += 1
 
     return count
 
 
+def copy_if_changed(src_dir: Path, dst_dir: Path):
+    """Copy files from src to dst only if content differs. Preserves timestamps for unchanged files."""
+    dst_dir.mkdir(parents=True, exist_ok=True)
+    for src_file in src_dir.iterdir():
+        if src_file.is_file():
+            dst_file = dst_dir / src_file.name
+            content = src_file.read_text()
+            write_if_changed(dst_file, content)
+
+
 def generate_sm(test_id: str, scxml_path: Path) -> tuple[str, bool]:
     """
     Run Kotlin codegen for a single test.
+    Uses a temp dir to avoid touching timestamps on unchanged files.
 
     Returns:
         ('generated', needs_script_engine) — SM file written successfully
         ('failed', False) — codegen error
     """
     output_dir = SM_OUTPUT_BASE / f'test{test_id}'
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    result = subprocess.run(
-        [
-            sys.executable, str(CODEGEN_SCRIPT),
-            str(scxml_path),
-            '-o', str(output_dir),
-            '--language', 'kotlin',
-        ],
-        capture_output=True,
-        text=True,
-        env={**os.environ, 'SPDLOG_LEVEL': 'warn'},
-    )
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        result = subprocess.run(
+            [
+                sys.executable, str(CODEGEN_SCRIPT),
+                str(scxml_path),
+                '-o', str(tmp_dir),
+                '--language', 'kotlin',
+            ],
+            capture_output=True,
+            text=True,
+            env={**os.environ, 'SPDLOG_LEVEL': 'warn'},
+        )
 
-    stdout = result.stdout
-    needs_script = 'Needs ScriptEngine: True' in stdout
+        stdout = result.stdout
+        needs_script = 'Needs ScriptEngine: True' in stdout
 
-    if 'Generated:' in stdout:
-        # Generate child SMs for invoke tests
-        generate_child_sms(test_id, scxml_path, output_dir)
-        return 'generated', needs_script
-    return 'failed', False
+        if 'Generated:' not in stdout:
+            return 'failed', False
+
+        # Copy only changed files to preserve timestamps
+        copy_if_changed(tmp_dir, output_dir)
+
+    # Generate child SMs for invoke tests
+    generate_child_sms(test_id, scxml_path, output_dir)
+    return 'generated', needs_script
 
 
 def detect_pass_state(test_id: str) -> str | None:
@@ -285,10 +312,8 @@ def generate_test_class(test_id: str, metadata: dict, test_type: str,
     specnum = metadata.get('specnum', '')
     description = metadata.get('description', '')
 
-    if test_type == 'SCHEDULED':
-        timeout_override = '    override val timeoutMs: Long = 10_000L\n'
-    else:
-        timeout_override = ''
+    # C++ AOT default timeout: 2s for all tests (no override needed)
+    timeout_override = ''
 
     # Script engine injection for hybrid tests
     if needs_script_engine:
@@ -325,9 +350,7 @@ def generate_test_class(test_id: str, metadata: dict, test_type: str,
     )
 
     test_file = TEST_OUTPUT_DIR / f'Test{to_pascal_case(test_id)}.kt'
-    test_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(test_file, 'w') as f:
-        f.write(content)
+    write_if_changed(test_file, content)
     return True
 
 

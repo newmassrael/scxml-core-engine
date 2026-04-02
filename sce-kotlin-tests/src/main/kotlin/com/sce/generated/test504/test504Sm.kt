@@ -61,7 +61,7 @@ class Test504StateMachine(
         else -> state
     }
 
-    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test504State? = when (stateId) {
         "fail" -> Test504State.Fail
         "p" -> Test504State.P
@@ -354,58 +354,56 @@ class Test504StateMachine(
     override fun onEntry(state: Test504State) {
         when (state) {
             is Test504State.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test504State.P -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p")) return
                 // W3C SCXML 3.4: Enter all child regions of parallel state
                 onEntry(Test504State.Ps1)
                 onEntry(Test504State.Ps2)
             }
             is Test504State.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test504State.Ps1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ps1")) return
             }
             is Test504State.Ps2 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("ps2")) return
             }
             is Test504State.S1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             raiseInternal(Test504Event.Foo)
             raiseInternal(Test504Event.Bar)
             }
             is Test504State.S2 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test504State.P)
             }
             is Test504State.S3 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
             }
             is Test504State.S4 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s4")) return
             }
             is Test504State.S5 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s5")) return
             }
             is Test504State.S6 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s6")) return
             }
             else -> {}

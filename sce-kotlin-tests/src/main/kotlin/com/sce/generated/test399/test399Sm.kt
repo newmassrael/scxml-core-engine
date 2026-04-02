@@ -64,6 +64,53 @@ class Test399StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test399State? = when (stateId) {
+        "fail" -> Test399State.Fail
+        "pass" -> Test399State.Pass
+        "s0" -> Test399State.S0
+        "s01" -> Test399State.S01
+        "s02" -> Test399State.S02
+        "s03" -> Test399State.S03
+        "s04" -> Test399State.S04
+        "s05" -> Test399State.S05
+        "s06" -> Test399State.S06
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test399State): String = when (state) {
+        is Test399State.Fail -> "fail"
+        is Test399State.Pass -> "pass"
+        is Test399State.S0 -> "s0"
+        is Test399State.S01 -> "s01"
+        is Test399State.S02 -> "s02"
+        is Test399State.S03 -> "s03"
+        is Test399State.S04 -> "s04"
+        is Test399State.S05 -> "s05"
+        is Test399State.S06 -> "s06"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test399State): Boolean = when (state) {
+        is Test399State.S0 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test399State): Int = when (state) {
+        is Test399State.Fail -> 8
+        is Test399State.Pass -> 7
+        is Test399State.S0 -> 0
+        is Test399State.S01 -> 1
+        is Test399State.S02 -> 2
+        is Test399State.S03 -> 3
+        is Test399State.S04 -> 4
+        is Test399State.S05 -> 5
+        is Test399State.S06 -> 6
+        else -> 0
+    }
 
 
 
@@ -204,34 +251,50 @@ class Test399StateMachine(
     override fun onEntry(state: Test399State) {
         when (state) {
             is Test399State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test399State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test399State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 2000L, Test399Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test399State.S01)
             }
             is Test399State.S01 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s01")) return
             raiseInternal(Test399Event.Foo.Self)
             }
             is Test399State.S02 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s02")) return
             raiseInternal(Test399Event.Bar)
             }
             is Test399State.S03 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s03")) return
             raiseInternal(Test399Event.Foo.Zoo)
             }
             is Test399State.S04 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s04")) return
             raiseInternal(Test399Event.Foos)
             }
             is Test399State.S05 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s05")) return
             raiseInternal(Test399Event.Foo.Zoo)
             }
             is Test399State.S06 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s06")) return
             raiseInternal(Test399Event.Foo.Self)
             }
             else -> {}
@@ -241,6 +304,33 @@ class Test399StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test399State) {
         when (state) {
+            is Test399State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test399State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test399State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test399State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test399State.S02 -> {
+                activeStateIds.remove("s02")
+            }
+            is Test399State.S03 -> {
+                activeStateIds.remove("s03")
+            }
+            is Test399State.S04 -> {
+                activeStateIds.remove("s04")
+            }
+            is Test399State.S05 -> {
+                activeStateIds.remove("s05")
+            }
+            is Test399State.S06 -> {
+                activeStateIds.remove("s06")
+            }
             else -> {}
         }
     }

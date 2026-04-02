@@ -64,6 +64,51 @@ class Test294StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test294State? = when (stateId) {
+        "fail" -> Test294State.Fail
+        "pass" -> Test294State.Pass
+        "s0" -> Test294State.S0
+        "s01" -> Test294State.S01
+        "s02" -> Test294State.S02
+        "s1" -> Test294State.S1
+        "s11" -> Test294State.S11
+        "s12" -> Test294State.S12
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test294State): String = when (state) {
+        is Test294State.Fail -> "fail"
+        is Test294State.Pass -> "pass"
+        is Test294State.S0 -> "s0"
+        is Test294State.S01 -> "s01"
+        is Test294State.S02 -> "s02"
+        is Test294State.S1 -> "s1"
+        is Test294State.S11 -> "s11"
+        is Test294State.S12 -> "s12"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test294State): Boolean = when (state) {
+        is Test294State.S0 -> false
+        is Test294State.S1 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test294State): Int = when (state) {
+        is Test294State.Fail -> 7
+        is Test294State.Pass -> 6
+        is Test294State.S0 -> 0
+        is Test294State.S01 -> 1
+        is Test294State.S02 -> 2
+        is Test294State.S1 -> 3
+        is Test294State.S11 -> 4
+        is Test294State.S12 -> 5
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test294Event? = when (name) {
@@ -270,18 +315,28 @@ class Test294StateMachine(
     override fun onEntry(state: Test294State) {
         when (state) {
             is Test294State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test294State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test294State.S0 -> {
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test294State.S01)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
+            }
+            is Test294State.S01 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s01")) return
             }
             is Test294State.S02 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s02")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
@@ -304,10 +359,16 @@ class Test294StateMachine(
                 }
             }
             is Test294State.S1 -> {
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test294State.S11)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
+            }
+            is Test294State.S11 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s11")) return
             }
             is Test294State.S12 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s12")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
@@ -332,6 +393,30 @@ class Test294StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test294State) {
         when (state) {
+            is Test294State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test294State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test294State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test294State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test294State.S02 -> {
+                activeStateIds.remove("s02")
+            }
+            is Test294State.S1 -> {
+                activeStateIds.remove("s1")
+            }
+            is Test294State.S11 -> {
+                activeStateIds.remove("s11")
+            }
+            is Test294State.S12 -> {
+                activeStateIds.remove("s12")
+            }
             else -> {}
         }
     }

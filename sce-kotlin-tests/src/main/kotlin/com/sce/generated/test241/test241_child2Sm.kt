@@ -39,6 +39,31 @@ class Test241Child2StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test241Child2State? = when (stateId) {
+        "sub03" -> Test241Child2State.Sub03
+        "subFinal3" -> Test241Child2State.SubFinal3
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test241Child2State): String = when (state) {
+        is Test241Child2State.Sub03 -> "sub03"
+        is Test241Child2State.SubFinal3 -> "subFinal3"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test241Child2State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test241Child2State): Int = when (state) {
+        is Test241Child2State.Sub03 -> 0
+        is Test241Child2State.SubFinal3 -> 1
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test241Child2Event? = when (name) {
@@ -192,7 +217,13 @@ class Test241Child2StateMachine(
     // Entry Actions (W3C SCXML 3.8)
     override fun onEntry(state: Test241Child2State) {
         when (state) {
+            is Test241Child2State.Sub03 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("sub03")) return
+            }
             is Test241Child2State.SubFinal3 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("subFinal3")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -203,6 +234,12 @@ class Test241Child2StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test241Child2State) {
         when (state) {
+            is Test241Child2State.Sub03 -> {
+                activeStateIds.remove("sub03")
+            }
+            is Test241Child2State.SubFinal3 -> {
+                activeStateIds.remove("subFinal3")
+            }
             else -> {}
         }
     }

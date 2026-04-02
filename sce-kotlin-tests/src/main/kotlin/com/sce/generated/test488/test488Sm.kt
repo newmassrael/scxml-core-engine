@@ -56,6 +56,44 @@ class Test488StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test488State? = when (stateId) {
+        "fail" -> Test488State.Fail
+        "pass" -> Test488State.Pass
+        "s0" -> Test488State.S0
+        "s01" -> Test488State.S01
+        "s02" -> Test488State.S02
+        "s1" -> Test488State.S1
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test488State): String = when (state) {
+        is Test488State.Fail -> "fail"
+        is Test488State.Pass -> "pass"
+        is Test488State.S0 -> "s0"
+        is Test488State.S01 -> "s01"
+        is Test488State.S02 -> "s02"
+        is Test488State.S1 -> "s1"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test488State): Boolean = when (state) {
+        is Test488State.S0 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test488State): Int = when (state) {
+        is Test488State.Fail -> 5
+        is Test488State.Pass -> 4
+        is Test488State.S0 -> 0
+        is Test488State.S01 -> 1
+        is Test488State.S02 -> 2
+        is Test488State.S1 -> 3
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test488Event? = when (name) {
@@ -235,18 +273,28 @@ class Test488StateMachine(
     override fun onEntry(state: Test488State) {
         when (state) {
             is Test488State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test488State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test488State.S0 -> {
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test488State.S01)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
+            }
+            is Test488State.S01 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s01")) return
             }
             is Test488State.S02 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s02")) return
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 run {
                     ensureScriptEngine()
@@ -268,6 +316,10 @@ class Test488StateMachine(
                     raiseInternal(Test488Event.Done.State.S0, EventMetadata.platform(doneEventData))
                 }
             }
+            is Test488State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
+            }
             else -> {}
         }
     }
@@ -275,6 +327,24 @@ class Test488StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test488State) {
         when (state) {
+            is Test488State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test488State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test488State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test488State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test488State.S02 -> {
+                activeStateIds.remove("s02")
+            }
+            is Test488State.S1 -> {
+                activeStateIds.remove("s1")
+            }
             else -> {}
         }
     }

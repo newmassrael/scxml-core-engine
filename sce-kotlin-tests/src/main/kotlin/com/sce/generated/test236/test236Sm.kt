@@ -40,6 +40,40 @@ class Test236StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test236State? = when (stateId) {
+        "fail" -> Test236State.Fail
+        "pass" -> Test236State.Pass
+        "s0" -> Test236State.S0
+        "s1" -> Test236State.S1
+        "s2" -> Test236State.S2
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test236State): String = when (state) {
+        is Test236State.Fail -> "fail"
+        is Test236State.Pass -> "pass"
+        is Test236State.S0 -> "s0"
+        is Test236State.S1 -> "s1"
+        is Test236State.S2 -> "s2"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test236State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test236State): Int = when (state) {
+        is Test236State.Fail -> 4
+        is Test236State.Pass -> 3
+        is Test236State.S0 -> 0
+        is Test236State.S1 -> 1
+        is Test236State.S2 -> 2
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test236Event? = when (name) {
@@ -108,14 +142,20 @@ class Test236StateMachine(
     override fun onEntry(state: Test236State) {
         when (state) {
             is Test236State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test236State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test236State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 2000L, Test236Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -128,6 +168,14 @@ class Test236StateMachine(
                     }
                 }
             }
+            is Test236State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
+            }
+            is Test236State.S2 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s2")) return
+            }
             else -> {}
         }
     }
@@ -135,11 +183,24 @@ class Test236StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test236State) {
         when (state) {
+            is Test236State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test236State.Pass -> {
+                activeStateIds.remove("pass")
+            }
             is Test236State.S0 -> {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
+                activeStateIds.remove("s0")
+            }
+            is Test236State.S1 -> {
+                activeStateIds.remove("s1")
+            }
+            is Test236State.S2 -> {
+                activeStateIds.remove("s2")
             }
             else -> {}
         }

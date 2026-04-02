@@ -37,6 +37,34 @@ class Test311StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test311State? = when (stateId) {
+        "fail" -> Test311State.Fail
+        "pass" -> Test311State.Pass
+        "s0" -> Test311State.S0
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test311State): String = when (state) {
+        is Test311State.Fail -> "fail"
+        is Test311State.Pass -> "pass"
+        is Test311State.S0 -> "s0"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test311State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test311State): Int = when (state) {
+        is Test311State.Fail -> 2
+        is Test311State.Pass -> 1
+        is Test311State.S0 -> 0
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test311Event? = when (name) {
@@ -176,14 +204,20 @@ class Test311StateMachine(
     override fun onEntry(state: Test311State) {
         when (state) {
             is Test311State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test311State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test311State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test311Event.Timeout)
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test311Event.Error.Execution, EventMetadata.platform())
@@ -195,6 +229,15 @@ class Test311StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test311State) {
         when (state) {
+            is Test311State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test311State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test311State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             else -> {}
         }
     }

@@ -62,6 +62,41 @@ class Test422StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test422State? = when (stateId) {
+        "fail" -> Test422State.Fail
+        "pass" -> Test422State.Pass
+        "s1" -> Test422State.S1
+        "s11" -> Test422State.S11
+        "s12" -> Test422State.S12
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test422State): String = when (state) {
+        is Test422State.Fail -> "fail"
+        is Test422State.Pass -> "pass"
+        is Test422State.S1 -> "s1"
+        is Test422State.S11 -> "s11"
+        is Test422State.S12 -> "s12"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test422State): Boolean = when (state) {
+        is Test422State.S1 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test422State): Int = when (state) {
+        is Test422State.Fail -> 4
+        is Test422State.Pass -> 3
+        is Test422State.S1 -> 0
+        is Test422State.S11 -> 1
+        is Test422State.S12 -> 2
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test422Event? = when (name) {
@@ -250,14 +285,20 @@ class Test422StateMachine(
     override fun onEntry(state: Test422State) {
         when (state) {
             is Test422State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test422State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test422State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
             scheduleSend("__send_0", 2000L, Test422Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -269,10 +310,10 @@ class Test422StateMachine(
                         startInvoke("_invoke_0", childSM, false, Test422Event.Done.Invoke, "", generatedInvokeId)
                     }
                 }
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test422State.S11)
             }
             is Test422State.S11 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s11")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -285,6 +326,8 @@ class Test422StateMachine(
                 }
             }
             is Test422State.S12 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s12")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
@@ -303,23 +346,32 @@ class Test422StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test422State) {
         when (state) {
+            is Test422State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test422State.Pass -> {
+                activeStateIds.remove("pass")
+            }
             is Test422State.S1 -> {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
+                activeStateIds.remove("s1")
             }
             is Test422State.S11 -> {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_1")
+                activeStateIds.remove("s11")
             }
             is Test422State.S12 -> {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_2")
+                activeStateIds.remove("s12")
             }
             else -> {}
         }

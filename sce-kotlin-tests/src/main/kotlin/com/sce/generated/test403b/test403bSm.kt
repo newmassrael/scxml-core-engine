@@ -57,7 +57,7 @@ class Test403bStateMachine(
         else -> state
     }
 
-    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test403bState? = when (stateId) {
         "fail" -> Test403bState.Fail
         "p0" -> Test403bState.P0
@@ -287,13 +287,13 @@ class Test403bStateMachine(
     override fun onEntry(state: Test403bState) {
         when (state) {
             is Test403bState.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test403bState.P0 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
             raiseInternal(Test403bEvent.Event1)
             raiseInternal(Test403bEvent.Event2)
@@ -302,24 +302,22 @@ class Test403bStateMachine(
                 onEntry(Test403bState.P0s2)
             }
             is Test403bState.P0s1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s1")) return
             }
             is Test403bState.P0s2 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0s2")) return
             }
             is Test403bState.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test403bState.S0 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test403bState.P0)
             }
             else -> {}
         }

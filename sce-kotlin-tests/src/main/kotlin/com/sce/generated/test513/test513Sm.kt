@@ -38,6 +38,34 @@ class Test513StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test513State? = when (stateId) {
+        "fail" -> Test513State.Fail
+        "pass" -> Test513State.Pass
+        "s0" -> Test513State.S0
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test513State): String = when (state) {
+        is Test513State.Fail -> "fail"
+        is Test513State.Pass -> "pass"
+        is Test513State.S0 -> "s0"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test513State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test513State): Int = when (state) {
+        is Test513State.Fail -> 2
+        is Test513State.Pass -> 1
+        is Test513State.S0 -> 0
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test513Event? = when (name) {
@@ -180,6 +208,8 @@ class Test513StateMachine(
     override fun onEntry(state: Test513State) {
         when (state) {
             is Test513State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\"")?.toString() ?: ""))
@@ -188,6 +218,8 @@ class Test513StateMachine(
                 markFinalStateReached()
             }
             is Test513State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\"")?.toString() ?: ""))
@@ -196,6 +228,8 @@ class Test513StateMachine(
                 markFinalStateReached()
             }
             is Test513State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 30000L, Test513Event.Timeout)
             send(Test513Event.Test, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
@@ -206,6 +240,15 @@ class Test513StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test513State) {
         when (state) {
+            is Test513State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test513State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test513State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             else -> {}
         }
     }

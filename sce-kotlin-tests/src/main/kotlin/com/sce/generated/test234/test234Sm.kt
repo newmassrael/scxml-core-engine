@@ -61,7 +61,7 @@ class Test234StateMachine(
         else -> state
     }
 
-    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test234State? = when (stateId) {
         "fail" -> Test234State.Fail
         "p0" -> Test234State.P0
@@ -300,13 +300,13 @@ class Test234StateMachine(
     override fun onEntry(state: Test234State) {
         when (state) {
             is Test234State.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test234State.P0 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
             scheduleSend("__send_0", 3000L, Test234Event.Timeout)
                 // W3C SCXML 3.4: Enter all child regions of parallel state
@@ -314,7 +314,7 @@ class Test234StateMachine(
                 onEntry(Test234State.P02)
             }
             is Test234State.P01 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p01")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -328,7 +328,7 @@ class Test234StateMachine(
                 }
             }
             is Test234State.P02 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p02")) return
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -342,13 +342,13 @@ class Test234StateMachine(
                 }
             }
             is Test234State.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test234State.S1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
             else -> {}

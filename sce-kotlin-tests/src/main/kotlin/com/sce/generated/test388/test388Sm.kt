@@ -72,6 +72,61 @@ class Test388StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test388State? = when (stateId) {
+        "fail" -> Test388State.Fail
+        "pass" -> Test388State.Pass
+        "s0" -> Test388State.S0
+        "s01" -> Test388State.S01
+        "s011" -> Test388State.S011
+        "s012" -> Test388State.S012
+        "s02" -> Test388State.S02
+        "s021" -> Test388State.S021
+        "s022" -> Test388State.S022
+        "s1" -> Test388State.S1
+        "s2" -> Test388State.S2
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test388State): String = when (state) {
+        is Test388State.Fail -> "fail"
+        is Test388State.Pass -> "pass"
+        is Test388State.S0 -> "s0"
+        is Test388State.S01 -> "s01"
+        is Test388State.S011 -> "s011"
+        is Test388State.S012 -> "s012"
+        is Test388State.S02 -> "s02"
+        is Test388State.S021 -> "s021"
+        is Test388State.S022 -> "s022"
+        is Test388State.S1 -> "s1"
+        is Test388State.S2 -> "s2"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test388State): Boolean = when (state) {
+        is Test388State.S0 -> false
+        is Test388State.S01 -> false
+        is Test388State.S02 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test388State): Int = when (state) {
+        is Test388State.Fail -> 10
+        is Test388State.Pass -> 9
+        is Test388State.S0 -> 0
+        is Test388State.S01 -> 1
+        is Test388State.S011 -> 2
+        is Test388State.S012 -> 3
+        is Test388State.S02 -> 4
+        is Test388State.S021 -> 5
+        is Test388State.S022 -> 6
+        is Test388State.S1 -> 7
+        is Test388State.S2 -> 8
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test388Event? = when (name) {
@@ -297,62 +352,56 @@ class Test388StateMachine(
     override fun onEntry(state: Test388State) {
         when (state) {
             is Test388State.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test388State.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test388State.S0 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             executeAssign("Var1", "Var1 + 1")
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test388State.S01)
             }
             is Test388State.S01 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test388State.S011)
             }
             is Test388State.S011 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s011")) return
             raiseInternal(Test388Event.Entering.S011)
             }
             is Test388State.S012 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s012")) return
             raiseInternal(Test388Event.Entering.S012)
             }
             is Test388State.S02 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test388State.S021)
             }
             is Test388State.S021 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s021")) return
             raiseInternal(Test388Event.Entering.S021)
             }
             is Test388State.S022 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s022")) return
             raiseInternal(Test388Event.Entering.S022)
             }
             is Test388State.S1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             }
             is Test388State.S2 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
             }
             else -> {}
@@ -362,6 +411,12 @@ class Test388StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test388State) {
         when (state) {
+            is Test388State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test388State.Pass -> {
+                activeStateIds.remove("pass")
+            }
             is Test388State.S0 -> {
                 // W3C SCXML 3.11: Record shallow history for s0HistShallow
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
@@ -375,6 +430,30 @@ class Test388StateMachine(
                     isDescendantOf(st, Test388State.S0) && isAtomicState(st)
                 }.toList()
                 activeStateIds.remove("s0")
+            }
+            is Test388State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test388State.S011 -> {
+                activeStateIds.remove("s011")
+            }
+            is Test388State.S012 -> {
+                activeStateIds.remove("s012")
+            }
+            is Test388State.S02 -> {
+                activeStateIds.remove("s02")
+            }
+            is Test388State.S021 -> {
+                activeStateIds.remove("s021")
+            }
+            is Test388State.S022 -> {
+                activeStateIds.remove("s022")
+            }
+            is Test388State.S1 -> {
+                activeStateIds.remove("s1")
+            }
+            is Test388State.S2 -> {
+                activeStateIds.remove("s2")
             }
             else -> {}
         }

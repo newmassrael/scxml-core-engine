@@ -34,12 +34,9 @@
 {% set parallel_grandparent_id = parent_state.parent %}
 {% endif %}
 {% endif %}
-{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or model.has_history_states or has_done_event or is_top_final or has_parallel_children or has_initial_child or has_initial_history or has_deep_initial or grandparent_is_parallel or has_invokes or has_late_datamodel %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
-{% if model.uses_in_predicate or model.has_parallel_states or model.has_history_states %}
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("{{ state_id }}")) return
-{% endif %}
 {% if has_late_datamodel %}
                 // W3C SCXML 5.3: Late binding — initialize state-level datamodel on entry
                 run {
@@ -198,25 +195,6 @@
 {% for region_id in model.parallel_regions[state_id] %}
                 onEntry({{ machine_name }}State.{{ region_id | to_state_class_name }})
 {% endfor %}
-{% elif has_deep_initial %}
-{% if state.initial_transition_actions %}
-                // W3C SCXML 3.3.2: Execute initial transition content
-{% for action in state.initial_transition_actions %}
-    {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-{% endif %}
-                // W3C SCXML 3.6: Enter deep initial targets via ancestor path
-{% for entry in deep_initial_entries[state_id] %}
-{% if not entry.is_target %}
-                activeStateIds.add("{{ entry.id }}")
-{% set ancestor_state = model.states[entry.id] %}
-{% for action in ancestor_state.on_entry %}
-    {% include 'actions/_render.kt.jinja2' with context %}
-{% endfor %}
-{% else %}
-                onEntry({{ machine_name }}State.{{ entry.id | to_state_class_name }})
-{% endif %}
-{% endfor %}
 {% elif has_initial_history %}
 {% if state.initial_transition_actions %}
                 // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
@@ -246,18 +224,13 @@
                         onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
                     }
                 }
-{% elif has_initial_child %}
-{% if state.initial_transition_actions %}
+{% elif state.initial_transition_actions %}
                 // W3C SCXML 3.3.2: Execute initial transition content
 {% for action in state.initial_transition_actions %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
-{% endif %}
             }
-{% endif %}
 {% endfor %}
             else -> {}
         }
@@ -271,7 +244,6 @@
 {% set is_parallel = state.is_parallel and state_id in model.parallel_regions %}
 {% set exit_has_invokes = state_id in invoke_entries %}
 {% set has_history_children = model.history_states.values() | selectattr('parent', 'equalto', state_id) | list %}
-{% if state.on_exit or model.uses_in_predicate or model.has_parallel_states or is_parallel or exit_has_invokes or has_history_children %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
 {% if exit_has_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
@@ -316,14 +288,11 @@
 {% endif %}
 {% endif %}
 {% endfor %}
-{% if model.uses_in_predicate or model.has_parallel_states or model.has_history_states %}
                 activeStateIds.remove("{{ state_id }}")
-{% endif %}
 {% for action in state.on_exit %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
             }
-{% endif %}
 {% endfor %}
             else -> {}
         }

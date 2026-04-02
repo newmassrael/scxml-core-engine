@@ -58,7 +58,7 @@ class Test580StateMachine(
         else -> state
     }
 
-    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test580State? = when (stateId) {
         "fail" -> Test580State.Fail
         "p1" -> Test580State.P1
@@ -288,13 +288,13 @@ class Test580StateMachine(
     override fun onEntry(state: Test580State) {
         when (state) {
             is Test580State.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test580State.P1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p1")) return
             scheduleSend("__send_0", 2000L, Test580Event.Timeout)
                 // W3C SCXML 3.4: Enter all child regions of parallel state
@@ -302,17 +302,17 @@ class Test580StateMachine(
                 onEntry(Test580State.S1)
             }
             is Test580State.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test580State.S0 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             }
             is Test580State.S1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
                 // W3C SCXML 3.11: Enter history-restored state or default target
                 run {
@@ -330,11 +330,11 @@ class Test580StateMachine(
                 }
             }
             is Test580State.S11 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
             }
             is Test580State.S12 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s12")) return
             }
             else -> {}

@@ -38,6 +38,34 @@ class Test519StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test519State? = when (stateId) {
+        "fail" -> Test519State.Fail
+        "pass" -> Test519State.Pass
+        "s0" -> Test519State.S0
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test519State): String = when (state) {
+        is Test519State.Fail -> "fail"
+        is Test519State.Pass -> "pass"
+        is Test519State.S0 -> "s0"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test519State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test519State): Int = when (state) {
+        is Test519State.Fail -> 2
+        is Test519State.Pass -> 1
+        is Test519State.S0 -> 0
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test519Event? = when (name) {
@@ -179,14 +207,20 @@ class Test519StateMachine(
     override fun onEntry(state: Test519State) {
         when (state) {
             is Test519State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test519State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test519State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 30000L, Test519Event.Timeout)
             // W3C SCXML 5.10: Evaluate params/namelist for event data
             run {
@@ -206,6 +240,15 @@ class Test519StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test519State) {
         when (state) {
+            is Test519State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test519State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test519State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             else -> {}
         }
     }

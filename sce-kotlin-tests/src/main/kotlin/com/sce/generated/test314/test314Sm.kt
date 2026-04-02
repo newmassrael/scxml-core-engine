@@ -55,6 +55,44 @@ class Test314StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test314State? = when (stateId) {
+        "fail" -> Test314State.Fail
+        "pass" -> Test314State.Pass
+        "s0" -> Test314State.S0
+        "s01" -> Test314State.S01
+        "s02" -> Test314State.S02
+        "s03" -> Test314State.S03
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test314State): String = when (state) {
+        is Test314State.Fail -> "fail"
+        is Test314State.Pass -> "pass"
+        is Test314State.S0 -> "s0"
+        is Test314State.S01 -> "s01"
+        is Test314State.S02 -> "s02"
+        is Test314State.S03 -> "s03"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test314State): Boolean = when (state) {
+        is Test314State.S0 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test314State): Int = when (state) {
+        is Test314State.Fail -> 5
+        is Test314State.Pass -> 4
+        is Test314State.S0 -> 0
+        is Test314State.S01 -> 1
+        is Test314State.S02 -> 2
+        is Test314State.S03 -> 3
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test314Event? = when (name) {
@@ -253,18 +291,32 @@ class Test314StateMachine(
     override fun onEntry(state: Test314State) {
         when (state) {
             is Test314State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test314State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test314State.S0 -> {
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test314State.S01)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
+            }
+            is Test314State.S01 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s01")) return
+            }
+            is Test314State.S02 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s02")) return
             }
             is Test314State.S03 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s03")) return
             executeAssign("Var1", "undefined.invalidProperty")
             raiseInternal(Test314Event.Foo)
             }
@@ -275,6 +327,24 @@ class Test314StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test314State) {
         when (state) {
+            is Test314State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test314State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test314State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test314State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test314State.S02 -> {
+                activeStateIds.remove("s02")
+            }
+            is Test314State.S03 -> {
+                activeStateIds.remove("s03")
+            }
             else -> {}
         }
     }

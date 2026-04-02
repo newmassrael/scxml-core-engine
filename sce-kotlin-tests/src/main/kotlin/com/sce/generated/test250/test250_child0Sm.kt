@@ -48,6 +48,35 @@ class Test250Child0StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test250Child0State? = when (stateId) {
+        "sub0" -> Test250Child0State.Sub0
+        "sub01" -> Test250Child0State.Sub01
+        "subFinal" -> Test250Child0State.SubFinal
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test250Child0State): String = when (state) {
+        is Test250Child0State.Sub0 -> "sub0"
+        is Test250Child0State.Sub01 -> "sub01"
+        is Test250Child0State.SubFinal -> "subFinal"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test250Child0State): Boolean = when (state) {
+        is Test250Child0State.Sub0 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test250Child0State): Int = when (state) {
+        is Test250Child0State.Sub0 -> 0
+        is Test250Child0State.Sub01 -> 1
+        is Test250Child0State.SubFinal -> 2
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test250Child0Event? = when (name) {
@@ -192,11 +221,17 @@ class Test250Child0StateMachine(
     override fun onEntry(state: Test250Child0State) {
         when (state) {
             is Test250Child0State.Sub0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("sub0")) return
             scheduleSend("__send_0", 2000L, Test250Child0Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test250Child0State.Sub01)
+            }
+            is Test250Child0State.Sub01 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("sub01")) return
             }
             is Test250Child0State.SubFinal -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("subFinal")) return
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'entering final state, invocation was not cancelled'")?.toString() ?: ""))
@@ -212,16 +247,21 @@ class Test250Child0StateMachine(
     override fun onExit(state: Test250Child0State) {
         when (state) {
             is Test250Child0State.Sub0 -> {
+                activeStateIds.remove("sub0")
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub0'")?.toString() ?: ""))
             } catch (_: Exception) {}
             }
             is Test250Child0State.Sub01 -> {
+                activeStateIds.remove("sub01")
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub01'")?.toString() ?: ""))
             } catch (_: Exception) {}
+            }
+            is Test250Child0State.SubFinal -> {
+                activeStateIds.remove("subFinal")
             }
             else -> {}
         }

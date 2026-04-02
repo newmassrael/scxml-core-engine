@@ -80,6 +80,85 @@ class Test387StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test387State? = when (stateId) {
+        "fail" -> Test387State.Fail
+        "pass" -> Test387State.Pass
+        "s0" -> Test387State.S0
+        "s01" -> Test387State.S01
+        "s011" -> Test387State.S011
+        "s012" -> Test387State.S012
+        "s02" -> Test387State.S02
+        "s021" -> Test387State.S021
+        "s022" -> Test387State.S022
+        "s1" -> Test387State.S1
+        "s11" -> Test387State.S11
+        "s111" -> Test387State.S111
+        "s112" -> Test387State.S112
+        "s12" -> Test387State.S12
+        "s121" -> Test387State.S121
+        "s122" -> Test387State.S122
+        "s3" -> Test387State.S3
+        "s4" -> Test387State.S4
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test387State): String = when (state) {
+        is Test387State.Fail -> "fail"
+        is Test387State.Pass -> "pass"
+        is Test387State.S0 -> "s0"
+        is Test387State.S01 -> "s01"
+        is Test387State.S011 -> "s011"
+        is Test387State.S012 -> "s012"
+        is Test387State.S02 -> "s02"
+        is Test387State.S021 -> "s021"
+        is Test387State.S022 -> "s022"
+        is Test387State.S1 -> "s1"
+        is Test387State.S11 -> "s11"
+        is Test387State.S111 -> "s111"
+        is Test387State.S112 -> "s112"
+        is Test387State.S12 -> "s12"
+        is Test387State.S121 -> "s121"
+        is Test387State.S122 -> "s122"
+        is Test387State.S3 -> "s3"
+        is Test387State.S4 -> "s4"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test387State): Boolean = when (state) {
+        is Test387State.S0 -> false
+        is Test387State.S01 -> false
+        is Test387State.S02 -> false
+        is Test387State.S1 -> false
+        is Test387State.S11 -> false
+        is Test387State.S12 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test387State): Int = when (state) {
+        is Test387State.Fail -> 17
+        is Test387State.Pass -> 16
+        is Test387State.S0 -> 0
+        is Test387State.S01 -> 1
+        is Test387State.S011 -> 2
+        is Test387State.S012 -> 3
+        is Test387State.S02 -> 4
+        is Test387State.S021 -> 5
+        is Test387State.S022 -> 6
+        is Test387State.S1 -> 7
+        is Test387State.S11 -> 8
+        is Test387State.S111 -> 9
+        is Test387State.S112 -> 10
+        is Test387State.S12 -> 11
+        is Test387State.S121 -> 12
+        is Test387State.S122 -> 13
+        is Test387State.S3 -> 14
+        is Test387State.S4 -> 15
+        else -> 0
+    }
 
 
 
@@ -212,100 +291,88 @@ class Test387StateMachine(
     override fun onEntry(state: Test387State) {
         when (state) {
             is Test387State.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test387State.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test387State.S0 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test387State.S01)
             }
             is Test387State.S01 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test387State.S011)
             }
             is Test387State.S011 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s011")) return
             raiseInternal(Test387Event.EnteringS011)
             }
             is Test387State.S012 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s012")) return
             raiseInternal(Test387Event.EnteringS012)
             }
             is Test387State.S02 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s02")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test387State.S021)
             }
             is Test387State.S021 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s021")) return
             raiseInternal(Test387Event.EnteringS021)
             }
             is Test387State.S022 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s022")) return
             raiseInternal(Test387Event.EnteringS022)
             }
             is Test387State.S1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test387State.S11)
             }
             is Test387State.S11 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test387State.S111)
             }
             is Test387State.S111 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s111")) return
             raiseInternal(Test387Event.EnteringS111)
             }
             is Test387State.S112 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s112")) return
             raiseInternal(Test387Event.EnteringS112)
             }
             is Test387State.S12 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s12")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test387State.S121)
             }
             is Test387State.S121 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s121")) return
             raiseInternal(Test387Event.EnteringS121)
             }
             is Test387State.S122 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s122")) return
             raiseInternal(Test387Event.EnteringS122)
             }
             is Test387State.S3 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
             scheduleSend("__send_0", 1000L, Test387Event.Timeout)
             }
             is Test387State.S4 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s4")) return
             }
             else -> {}
@@ -315,6 +382,12 @@ class Test387StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test387State) {
         when (state) {
+            is Test387State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test387State.Pass -> {
+                activeStateIds.remove("pass")
+            }
             is Test387State.S0 -> {
                 // W3C SCXML 3.11: Record shallow history for s0HistShallow
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
@@ -329,6 +402,24 @@ class Test387StateMachine(
                 }.toList()
                 activeStateIds.remove("s0")
             }
+            is Test387State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test387State.S011 -> {
+                activeStateIds.remove("s011")
+            }
+            is Test387State.S012 -> {
+                activeStateIds.remove("s012")
+            }
+            is Test387State.S02 -> {
+                activeStateIds.remove("s02")
+            }
+            is Test387State.S021 -> {
+                activeStateIds.remove("s021")
+            }
+            is Test387State.S022 -> {
+                activeStateIds.remove("s022")
+            }
             is Test387State.S1 -> {
                 // W3C SCXML 3.11: Record shallow history for s1HistShallow
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
@@ -342,6 +433,30 @@ class Test387StateMachine(
                     isDescendantOf(st, Test387State.S1) && isAtomicState(st)
                 }.toList()
                 activeStateIds.remove("s1")
+            }
+            is Test387State.S11 -> {
+                activeStateIds.remove("s11")
+            }
+            is Test387State.S111 -> {
+                activeStateIds.remove("s111")
+            }
+            is Test387State.S112 -> {
+                activeStateIds.remove("s112")
+            }
+            is Test387State.S12 -> {
+                activeStateIds.remove("s12")
+            }
+            is Test387State.S121 -> {
+                activeStateIds.remove("s121")
+            }
+            is Test387State.S122 -> {
+                activeStateIds.remove("s122")
+            }
+            is Test387State.S3 -> {
+                activeStateIds.remove("s3")
+            }
+            is Test387State.S4 -> {
+                activeStateIds.remove("s4")
             }
             else -> {}
         }

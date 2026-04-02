@@ -38,6 +38,34 @@ class Test401StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test401State? = when (stateId) {
+        "fail" -> Test401State.Fail
+        "pass" -> Test401State.Pass
+        "s0" -> Test401State.S0
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test401State): String = when (state) {
+        is Test401State.Fail -> "fail"
+        is Test401State.Pass -> "pass"
+        is Test401State.S0 -> "s0"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test401State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test401State): Int = when (state) {
+        is Test401State.Fail -> 2
+        is Test401State.Pass -> 1
+        is Test401State.S0 -> 0
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test401Event? = when (name) {
@@ -181,14 +209,20 @@ class Test401StateMachine(
     override fun onEntry(state: Test401State) {
         when (state) {
             is Test401State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test401State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test401State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             send(Test401Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test401Event.Error.Execution, EventMetadata.platform())
@@ -200,6 +234,15 @@ class Test401StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test401State) {
         when (state) {
+            is Test401State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test401State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test401State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             else -> {}
         }
     }

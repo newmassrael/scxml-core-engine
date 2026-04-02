@@ -70,7 +70,7 @@ class Test417StateMachine(
         else -> state
     }
 
-    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test417State? = when (stateId) {
         "fail" -> Test417State.Fail
         "pass" -> Test417State.Pass
@@ -240,43 +240,39 @@ class Test417StateMachine(
     override fun onEntry(state: Test417State) {
         when (state) {
             is Test417State.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test417State.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test417State.S1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             scheduleSend("__send_0", 1000L, Test417Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test417State.S1p1)
             }
             is Test417State.S1p1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1p1")) return
                 // W3C SCXML 3.4: Enter all child regions of parallel state
                 onEntry(Test417State.S1p11)
                 onEntry(Test417State.S1p12)
             }
             is Test417State.S1p11 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1p11")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test417State.S1p111)
             }
             is Test417State.S1p111 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1p111")) return
             }
             is Test417State.S1p11final -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1p11final")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test417Event.Done.State.S1p11, EventMetadata.platform())
@@ -286,17 +282,15 @@ class Test417StateMachine(
                 }
             }
             is Test417State.S1p12 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1p12")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test417State.S1p121)
             }
             is Test417State.S1p121 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1p121")) return
             }
             is Test417State.S1p12final -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1p12final")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test417Event.Done.State.S1p12, EventMetadata.platform())

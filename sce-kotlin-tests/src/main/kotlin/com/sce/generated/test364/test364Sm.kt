@@ -102,7 +102,7 @@ class Test364StateMachine(
         else -> state
     }
 
-    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test364State? = when (stateId) {
         "fail" -> Test364State.Fail
         "pass" -> Test364State.Pass
@@ -412,164 +412,132 @@ class Test364StateMachine(
     override fun onEntry(state: Test364State) {
         when (state) {
             is Test364State.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test364State.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test364State.S1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             scheduleSend("__send_0", 1000L, Test364Event.Timeout)
-                // W3C SCXML 3.6: Enter deep initial targets via ancestor path
-                activeStateIds.add("s11")
-                activeStateIds.add("s11p1")
-                activeStateIds.add("s11p11")
-                onEntry(Test364State.S11p112)
-                activeStateIds.add("s11p12")
-                onEntry(Test364State.S11p122)
             }
             is Test364State.S11 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S111)
             }
             is Test364State.S111 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s111")) return
             }
             is Test364State.S11p1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p1")) return
                 // W3C SCXML 3.4: Enter all child regions of parallel state
                 onEntry(Test364State.S11p11)
                 onEntry(Test364State.S11p12)
             }
             is Test364State.S11p11 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p11")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S11p111)
             }
             is Test364State.S11p111 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p111")) return
             }
             is Test364State.S11p112 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p112")) return
             raiseInternal(Test364Event.InS11p112)
             }
             is Test364State.S11p12 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p12")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S11p121)
             }
             is Test364State.S11p121 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p121")) return
             }
             is Test364State.S11p122 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p122")) return
             }
             is Test364State.S2 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
-                // W3C SCXML 3.6: Enter deep initial targets via ancestor path
-                activeStateIds.add("s21")
-                activeStateIds.add("s21p1")
-                activeStateIds.add("s21p11")
-                onEntry(Test364State.S21p112)
-                activeStateIds.add("s21p12")
-                onEntry(Test364State.S21p122)
             }
             is Test364State.S21 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S211)
             }
             is Test364State.S211 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s211")) return
             }
             is Test364State.S21p1 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p1")) return
                 // W3C SCXML 3.4: Enter all child regions of parallel state
                 onEntry(Test364State.S21p11)
                 onEntry(Test364State.S21p12)
             }
             is Test364State.S21p11 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p11")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S21p111)
             }
             is Test364State.S21p111 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p111")) return
             }
             is Test364State.S21p112 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p112")) return
             raiseInternal(Test364Event.InS21p112)
             }
             is Test364State.S21p12 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p12")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S21p121)
             }
             is Test364State.S21p121 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p121")) return
             }
             is Test364State.S21p122 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s21p122")) return
             }
             is Test364State.S3 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S31)
             }
             is Test364State.S31 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s31")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S311)
             }
             is Test364State.S311 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s311")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test364State.S3111)
             }
             is Test364State.S3111 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3111")) return
             }
             is Test364State.S3112 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s3112")) return
             }
             is Test364State.S312 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s312")) return
             }
             is Test364State.S32 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s32")) return
             }
             else -> {}

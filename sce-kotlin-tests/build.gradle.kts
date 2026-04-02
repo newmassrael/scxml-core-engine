@@ -21,6 +21,15 @@ tasks.test {
     // W3C test timeouts: 10s per test (most complete in <100ms)
     systemProperty("junit.jupiter.execution.timeout.default", "10s")
 
+    // JUnit5 parallel execution
+    systemProperty("junit.jupiter.execution.parallel.enabled", "true")
+    systemProperty("junit.jupiter.execution.parallel.mode.default", "concurrent")
+    systemProperty("junit.jupiter.execution.parallel.config.strategy", "dynamic")
+    systemProperty("junit.jupiter.execution.parallel.config.dynamic.factor", "2")
+
+    // Gradle-level fork control
+    maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
+
     testLogging {
         events("passed", "skipped", "failed")
         showStandardStreams = false

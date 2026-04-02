@@ -11,5 +11,4 @@ import org.junit.jupiter.api.DisplayName
 class Test423 : W3CTestBase<Test423State, Test423Event>() {
     override fun createStateMachine() = Test423StateMachine()
     override val expectedPassState: Test423State = Test423State.Pass
-    override val timeoutMs: Long = 10_000L
 }

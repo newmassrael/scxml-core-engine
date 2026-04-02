@@ -54,6 +54,47 @@ class Test506StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test506State? = when (stateId) {
+        "fail" -> Test506State.Fail
+        "pass" -> Test506State.Pass
+        "s1" -> Test506State.S1
+        "s2" -> Test506State.S2
+        "s21" -> Test506State.S21
+        "s3" -> Test506State.S3
+        "s4" -> Test506State.S4
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test506State): String = when (state) {
+        is Test506State.Fail -> "fail"
+        is Test506State.Pass -> "pass"
+        is Test506State.S1 -> "s1"
+        is Test506State.S2 -> "s2"
+        is Test506State.S21 -> "s21"
+        is Test506State.S3 -> "s3"
+        is Test506State.S4 -> "s4"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test506State): Boolean = when (state) {
+        is Test506State.S2 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test506State): Int = when (state) {
+        is Test506State.Fail -> 6
+        is Test506State.Pass -> 5
+        is Test506State.S1 -> 0
+        is Test506State.S2 -> 1
+        is Test506State.S21 -> 2
+        is Test506State.S3 -> 3
+        is Test506State.S4 -> 4
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test506Event? = when (name) {
@@ -256,20 +297,38 @@ class Test506StateMachine(
     override fun onEntry(state: Test506State) {
         when (state) {
             is Test506State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test506State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test506State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
             raiseInternal(Test506Event.Foo)
             raiseInternal(Test506Event.Bar)
             }
             is Test506State.S2 -> {
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test506State.S21)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s2")) return
+            }
+            is Test506State.S21 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s21")) return
+            }
+            is Test506State.S3 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s3")) return
+            }
+            is Test506State.S4 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s4")) return
             }
             else -> {}
         }
@@ -278,11 +337,28 @@ class Test506StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test506State) {
         when (state) {
+            is Test506State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test506State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test506State.S1 -> {
+                activeStateIds.remove("s1")
+            }
             is Test506State.S2 -> {
+                activeStateIds.remove("s2")
             executeAssign("Var1", "Var1 + 1")
             }
             is Test506State.S21 -> {
+                activeStateIds.remove("s21")
             executeAssign("Var2", "Var2 + 1")
+            }
+            is Test506State.S3 -> {
+                activeStateIds.remove("s3")
+            }
+            is Test506State.S4 -> {
+                activeStateIds.remove("s4")
             }
             else -> {}
         }

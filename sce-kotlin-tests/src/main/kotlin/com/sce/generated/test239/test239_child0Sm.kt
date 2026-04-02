@@ -26,6 +26,28 @@ class Test239Child0StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test239Child0State? = when (stateId) {
+        "final" -> Test239Child0State.Final
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test239Child0State): String = when (state) {
+        is Test239Child0State.Final -> "final"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test239Child0State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test239Child0State): Int = when (state) {
+        is Test239Child0State.Final -> 0
+        else -> 0
+    }
 
 
 
@@ -44,6 +66,8 @@ class Test239Child0StateMachine(
     override fun onEntry(state: Test239Child0State) {
         when (state) {
             is Test239Child0State.Final -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("final")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -54,6 +78,9 @@ class Test239Child0StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test239Child0State) {
         when (state) {
+            is Test239Child0State.Final -> {
+                activeStateIds.remove("final")
+            }
             else -> {}
         }
     }

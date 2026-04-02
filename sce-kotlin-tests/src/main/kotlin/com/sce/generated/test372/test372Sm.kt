@@ -56,6 +56,38 @@ class Test372StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test372State? = when (stateId) {
+        "fail" -> Test372State.Fail
+        "pass" -> Test372State.Pass
+        "s0" -> Test372State.S0
+        "s0final" -> Test372State.S0final
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test372State): String = when (state) {
+        is Test372State.Fail -> "fail"
+        is Test372State.Pass -> "pass"
+        is Test372State.S0 -> "s0"
+        is Test372State.S0final -> "s0final"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test372State): Boolean = when (state) {
+        is Test372State.S0 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test372State): Int = when (state) {
+        is Test372State.Fail -> 3
+        is Test372State.Pass -> 2
+        is Test372State.S0 -> 0
+        is Test372State.S0final -> 1
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test372Event? = when (name) {
@@ -210,19 +242,25 @@ class Test372StateMachine(
     override fun onEntry(state: Test372State) {
         when (state) {
             is Test372State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test372State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test372State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test372Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test372State.S0final)
             }
             is Test372State.S0final -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0final")) return
             executeAssign("Var1", "2")
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test372Event.Done.State.S0, EventMetadata.platform())
@@ -234,7 +272,17 @@ class Test372StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test372State) {
         when (state) {
+            is Test372State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test372State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test372State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             is Test372State.S0final -> {
+                activeStateIds.remove("s0final")
             executeAssign("Var1", "3")
             }
             else -> {}

@@ -30,6 +30,28 @@ class Test232Child0StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test232Child0State? = when (stateId) {
+        "subFinal" -> Test232Child0State.SubFinal
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test232Child0State): String = when (state) {
+        is Test232Child0State.SubFinal -> "subFinal"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test232Child0State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test232Child0State): Int = when (state) {
+        is Test232Child0State.SubFinal -> 0
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test232Child0Event? = when (name) {
@@ -63,6 +85,8 @@ class Test232Child0StateMachine(
     override fun onEntry(state: Test232Child0State) {
         when (state) {
             is Test232Child0State.SubFinal -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("subFinal")) return
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
             onSendToParent?.invoke("childToParent1", "")
             // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
@@ -77,6 +101,9 @@ class Test232Child0StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test232Child0State) {
         when (state) {
+            is Test232Child0State.SubFinal -> {
+                activeStateIds.remove("subFinal")
+            }
             else -> {}
         }
     }

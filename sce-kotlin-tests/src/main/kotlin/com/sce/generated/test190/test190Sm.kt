@@ -43,6 +43,37 @@ class Test190StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test190State? = when (stateId) {
+        "fail" -> Test190State.Fail
+        "pass" -> Test190State.Pass
+        "s0" -> Test190State.S0
+        "s1" -> Test190State.S1
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test190State): String = when (state) {
+        is Test190State.Fail -> "fail"
+        is Test190State.Pass -> "pass"
+        is Test190State.S0 -> "s0"
+        is Test190State.S1 -> "s1"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test190State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test190State): Int = when (state) {
+        is Test190State.Fail -> 3
+        is Test190State.Pass -> 2
+        is Test190State.S0 -> 0
+        is Test190State.S1 -> 1
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test190Event? = when (name) {
@@ -212,14 +243,20 @@ class Test190StateMachine(
     override fun onEntry(state: Test190State) {
         when (state) {
             is Test190State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test190State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test190State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             // W3C SCXML 6.2: Dynamic target evaluation (test173)
             run {
                 ensureScriptEngine()
@@ -254,6 +291,10 @@ class Test190StateMachine(
             raiseInternal(Test190Event.Event1)
             send(Test190Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }
+            is Test190State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
+            }
             else -> {}
         }
     }
@@ -261,6 +302,18 @@ class Test190StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test190State) {
         when (state) {
+            is Test190State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test190State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test190State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test190State.S1 -> {
+                activeStateIds.remove("s1")
+            }
             else -> {}
         }
     }

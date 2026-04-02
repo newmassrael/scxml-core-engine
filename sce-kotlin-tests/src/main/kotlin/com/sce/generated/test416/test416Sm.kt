@@ -58,6 +58,45 @@ class Test416StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test416State? = when (stateId) {
+        "fail" -> Test416State.Fail
+        "pass" -> Test416State.Pass
+        "s1" -> Test416State.S1
+        "s11" -> Test416State.S11
+        "s111" -> Test416State.S111
+        "s11final" -> Test416State.S11final
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test416State): String = when (state) {
+        is Test416State.Fail -> "fail"
+        is Test416State.Pass -> "pass"
+        is Test416State.S1 -> "s1"
+        is Test416State.S11 -> "s11"
+        is Test416State.S111 -> "s111"
+        is Test416State.S11final -> "s11final"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test416State): Boolean = when (state) {
+        is Test416State.S1 -> false
+        is Test416State.S11 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test416State): Int = when (state) {
+        is Test416State.Fail -> 5
+        is Test416State.Pass -> 4
+        is Test416State.S1 -> 0
+        is Test416State.S11 -> 1
+        is Test416State.S111 -> 2
+        is Test416State.S11final -> 3
+        else -> 0
+    }
 
 
 
@@ -138,23 +177,33 @@ class Test416StateMachine(
     override fun onEntry(state: Test416State) {
         when (state) {
             is Test416State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test416State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test416State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
             scheduleSend("__send_0", 1000L, Test416Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test416State.S11)
             }
             is Test416State.S11 -> {
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test416State.S111)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s11")) return
+            }
+            is Test416State.S111 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s111")) return
             }
             is Test416State.S11final -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s11final")) return
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
                 raiseInternal(Test416Event.Done.State.S11, EventMetadata.platform())
             }
@@ -165,6 +214,24 @@ class Test416StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test416State) {
         when (state) {
+            is Test416State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test416State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test416State.S1 -> {
+                activeStateIds.remove("s1")
+            }
+            is Test416State.S11 -> {
+                activeStateIds.remove("s11")
+            }
+            is Test416State.S111 -> {
+                activeStateIds.remove("s111")
+            }
+            is Test416State.S11final -> {
+                activeStateIds.remove("s11final")
+            }
             else -> {}
         }
     }

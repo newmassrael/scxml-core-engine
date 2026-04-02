@@ -8,27 +8,20 @@ package com.sce.w3c
 import com.sce.runtime.Event
 import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
 /**
  * Abstract base class for W3C SCXML conformance tests.
  *
- * Each generated test extends this class and provides:
+ * Matches C++ AOT test harness (SimpleAotTest / ScheduledAotTest):
  *   - [createStateMachine]: Factory for the generated StateMachineEngine
  *   - [expectedPassState]: The "pass" final state object
  *
- * The test harness starts the state machine, waits for it to reach
- * a final state, and asserts the final state is the expected "pass" state.
- *
- * W3C SCXML test convention: Each test has "pass" and "fail" final states.
- *
- * Threading: The SM microstep loop runs on Dispatchers.Default.
- * [isInFinalState] is guaranteed to be set only after [currentState]
- * reflects the final state (see [StateMachineEngine.markFinalStateReached]).
+ * Execution model (C++ AOT parity):
+ *   - sm.initialize() — synchronous, all microsteps complete immediately
+ *   - Simple tests: SM reaches final state during initialize
+ *   - Scheduled tests: poll with sm.tick() for delayed sends/invokes
  *
  * @param S State sealed interface type
  * @param E Event sealed interface type
@@ -39,34 +32,33 @@ abstract class W3CTestBase<S : State, E : Event> {
     abstract val expectedPassState: S
 
     /**
-     * Timeout for state machine completion in milliseconds.
+     * Timeout for scheduled tests in milliseconds (C++ default: 2s).
      * Override for tests with delayed sends that need more time.
      */
-    open val timeoutMs: Long = 5000L
+    open val timeoutMs: Long = 2000L
 
     @Test
-    fun testW3CConformance() = runBlocking {
+    fun testW3CConformance() {
         val sm = createStateMachine()
-        sm.start(this)
+        sm.initialize()
+
+        // C++ ScheduledAotTest pattern: poll for delayed sends/invokes
+        if (!sm.isInFinalState) {
+            val deadline = System.currentTimeMillis() + timeoutMs
+            while (!sm.isInFinalState && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10)
+                sm.tick()
+            }
+        }
 
         try {
-            withTimeout(timeoutMs) {
-                // Poll until the SM reaches a final state.
-                // isInFinalState is @Volatile and guaranteed to be set
-                // only after currentState.value reflects the final state
-                // (enforced by markFinalStateReached() deferred flush).
-                while (!sm.isInFinalState) {
-                    delay(1)
-                }
-            }
-
             assertEquals(
                 expectedPassState,
                 sm.currentState.value,
                 "W3C conformance failed: expected Pass but reached ${sm.currentState.value}"
             )
         } finally {
-            sm.stop()
+            sm.cleanup()
         }
     }
 }

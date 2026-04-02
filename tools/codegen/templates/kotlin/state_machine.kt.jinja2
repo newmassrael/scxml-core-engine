@@ -75,8 +75,7 @@ class {{ machine_name }}StateMachine(
     }
 {% endif %}
 
-{% if model.has_parallel_states or model.uses_in_predicate %}
-    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): {{ machine_name }}State? = when (stateId) {
 {% for state_id in model.states | sort %}
         "{{ state_id }}" -> {{ machine_name }}State.{{ state_id | to_state_class_name }}
@@ -110,7 +109,6 @@ class {{ machine_name }}StateMachine(
 {% endfor %}
         else -> 0
     }
-{% endif %}
 
 {% if model.has_invoke or model.has_parent_communication or model.needs_script_engine %}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)

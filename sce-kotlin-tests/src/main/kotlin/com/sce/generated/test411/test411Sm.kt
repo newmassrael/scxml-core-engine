@@ -50,7 +50,7 @@ class Test411StateMachine(
         else -> state
     }
 
-    // W3C SCXML: Resolve state ID string to State object (for parallel processing)
+    // W3C SCXML: Resolve state ID string to State object
     override fun resolveState(stateId: String): Test411State? = when (stateId) {
         "fail" -> Test411State.Fail
         "pass" -> Test411State.Pass
@@ -119,29 +119,27 @@ class Test411StateMachine(
     override fun onEntry(state: Test411State) {
         when (state) {
             is Test411State.Fail -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test411State.Pass -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test411State.S0 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test411Event.Timeout)
             if (isStateActive("s01")) {
             raiseInternal(Test411Event.Event1)
             }
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test411State.S01)
             }
             is Test411State.S01 -> {
-                // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01")) return
             if (isStateActive("s01")) {
             raiseInternal(Test411Event.Event2)

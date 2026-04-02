@@ -30,6 +30,37 @@ class Test144StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test144State? = when (stateId) {
+        "fail" -> Test144State.Fail
+        "pass" -> Test144State.Pass
+        "s0" -> Test144State.S0
+        "s1" -> Test144State.S1
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test144State): String = when (state) {
+        is Test144State.Fail -> "fail"
+        is Test144State.Pass -> "pass"
+        is Test144State.S0 -> "s0"
+        is Test144State.S1 -> "s1"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test144State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test144State): Int = when (state) {
+        is Test144State.Fail -> 3
+        is Test144State.Pass -> 2
+        is Test144State.S0 -> 0
+        is Test144State.S1 -> 1
+        else -> 0
+    }
 
 
 
@@ -68,16 +99,26 @@ class Test144StateMachine(
     override fun onEntry(state: Test144State) {
         when (state) {
             is Test144State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test144State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test144State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             raiseInternal(Test144Event.Foo)
             raiseInternal(Test144Event.Bar)
+            }
+            is Test144State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
             }
             else -> {}
         }
@@ -86,6 +127,18 @@ class Test144StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test144State) {
         when (state) {
+            is Test144State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test144State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test144State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test144State.S1 -> {
+                activeStateIds.remove("s1")
+            }
             else -> {}
         }
     }

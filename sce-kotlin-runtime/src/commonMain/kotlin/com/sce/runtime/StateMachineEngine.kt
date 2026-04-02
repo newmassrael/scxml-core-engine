@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlin.time.TimeSource
 
 /**
  * W3C SCXML 5.10: Event metadata for _event system variable.
@@ -184,6 +185,28 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     private val internalEventQueue = ArrayDeque<QueuedEvent<E>>()
 
+    /** External event queue for sync mode (C++ externalQueue_ pattern). */
+    private val externalEventQueue = ArrayDeque<QueuedEvent<E>>()
+
+    // --- Sync Execution (C++ AOT StaticExecutionEngine pattern) ---
+
+    private var syncMode = false
+    private val engineCreationMark = TimeSource.Monotonic.markNow()
+    private fun engineElapsedMs(): Long = engineCreationMark.elapsedNow().inWholeMilliseconds
+
+    private data class ScheduledSendEntry(
+        val fireTimeMs: Long,
+        val sequenceNum: Long,
+        val sendId: String,
+        val event: Any?,
+        val metadata: EventMetadata,
+        val isParentSend: Boolean = false,
+        val parentEventName: String = "",
+        val parentEventData: String = ""
+    )
+    private val scheduledSends = mutableListOf<ScheduledSendEntry>()
+    private var schedulerSequence = 0L
+
     // --- Lifecycle ---
 
     private var job: Job? = null
@@ -253,9 +276,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Execute entry actions for a state.
      *
-     * W3C SCXML 3.8: `<onentry>` executable content.
+     * W3C SCXML 3.8: `<onentry>` executable content + initial child entry.
      */
     abstract fun onEntry(state: S)
+
 
     /**
      * Execute exit actions for a state.
@@ -345,7 +369,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * are silently discarded (SM no longer processes events per W3C SCXML 3.7).
      */
     fun send(event: E) {
-        eventChannel.trySend(QueuedEvent(event))
+        if (syncMode) {
+            externalEventQueue.addLast(QueuedEvent(event))
+        } else {
+            eventChannel.trySend(QueuedEvent(event))
+        }
     }
 
     /**
@@ -354,7 +382,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Used by generated send actions that need to attach event metadata.
      */
     fun send(event: E, metadata: EventMetadata) {
-        eventChannel.trySend(QueuedEvent(event, metadata))
+        if (syncMode) {
+            externalEventQueue.addLast(QueuedEvent(event, metadata))
+        } else {
+            eventChannel.trySend(QueuedEvent(event, metadata))
+        }
     }
 
     /**
@@ -407,8 +439,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // R4 fix: Execute initial entry on Dispatchers.Default, not caller thread
             enterInitialConfiguration()
 
-            // Resolve to leaf state after initial configuration
-            _currentState.value = resolveLeafState(_currentState.value)
+            // Resolve to actual leaf state after initial configuration (C++ pattern)
+            _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
+                ?: resolveLeafState(_currentState.value)
 
             // Flush pending final state from initial entry (e.g., test415:
             // initial state IS a final state)
@@ -435,6 +468,109 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // Per spec, terminated sessions must not deliver delayed events (test187)
             delayedSendJobs.values.forEach { it.cancel() }
             delayedSendJobs.clear()
+        }
+    }
+
+    // --- Sync Execution API (C++ AOT StaticExecutionEngine pattern) ---
+
+    /**
+     * W3C SCXML 3.2/3.3: Synchronous initialization (C++ initialize() pattern).
+     *
+     * Enters initial configuration, runs macrostep completion loop until stable.
+     * No coroutines — completes immediately for simple state machines.
+     * For delayed sends/invokes, follow with [tick] polling loop.
+     */
+    fun initialize() {
+        syncMode = true
+        enterInitialConfiguration()
+        _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
+            ?: resolveLeafState(_currentState.value)
+        flushPendingFinalState()
+
+        // W3C SCXML C.1: Macrostep completion loop
+        macrostepLoop()
+
+        // W3C SCXML 6.4: Execute pending invokes after macrostep completes
+        executePendingInvokes()
+
+        // C++ pattern: process events raised by completed invokes
+        macrostepLoop()
+    }
+
+    /**
+     * W3C SCXML 6.2: Single tick — poll scheduler, tick children, process events.
+     * Call repeatedly for tests with delayed sends (C++ tick() pattern).
+     */
+    fun tick() {
+        if (isInFinalState) return
+        pollScheduler()
+        tickChildren()
+        macrostepLoop()
+        executePendingInvokes()
+        cleanupCompletedInvokes()
+    }
+
+    /**
+     * Destroy script engine session and release resources (sync mode cleanup).
+     * Call after test assertions. Does not reset state — [currentState] remains readable.
+     */
+    fun cleanup() {
+        scheduledSends.clear()
+        externalEventQueue.clear()
+        for ((_, entry) in activeInvokes) {
+            entry.child.cleanup()
+        }
+        activeInvokes.clear()
+        pendingInvokes.clear()
+        if (scriptEngineInitialized) {
+            scriptSessionId?.let { scriptEngine?.destroySession(it) }
+            scriptEngineInitialized = false
+            scriptSessionId = null
+        }
+    }
+
+    /** C++ PullScheduler::popReadyEvent pattern — pop ready events from time-ordered queue. */
+    private fun pollScheduler() {
+        val now = engineElapsedMs()
+        while (scheduledSends.isNotEmpty() && scheduledSends.first().fireTimeMs <= now) {
+            val entry = scheduledSends.removeAt(0)
+            if (entry.isParentSend) {
+                onSendToParent?.invoke(entry.parentEventName, entry.parentEventData)
+            } else {
+                @Suppress("UNCHECKED_CAST")
+                externalEventQueue.addLast(QueuedEvent(entry.event as E, entry.metadata))
+            }
+        }
+    }
+
+    /** C++ tickChildren pattern — tick all active child SMs. */
+    private fun tickChildren() {
+        for ((_, entry) in activeInvokes.toList()) {
+            if (entry.child.isInFinalState) continue
+            entry.child.tick()
+            if (entry.child.isInFinalState) {
+                entry.onComplete?.invoke()
+            }
+        }
+    }
+
+    /**
+     * C++ initialize() macrostep loop: eventless + internal + external until stable.
+     * Matches: checkEventlessTransitions() → processEventQueues() → loop
+     */
+    private fun macrostepLoop() {
+        while (!isInFinalState) {
+            drainEventlessAndInternal()
+            if (externalEventQueue.isEmpty()) break
+            // C++ processEventQueues: process external queue
+            while (externalEventQueue.isNotEmpty() && !isInFinalState) {
+                val queued = externalEventQueue.removeFirst()
+                currentEventMetadata = queued.metadata
+                executeFinalizeForChildEvent(queued.event)
+                autoForwardEvent(queued.event)
+                processOneEvent(queued.event)
+                flushPendingFinalState()
+            }
         }
     }
 
@@ -469,6 +605,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
         isInFinalState = false
         pendingFinalState = false
         internalEventQueue.clear()
+        externalEventQueue.clear()
+        scheduledSends.clear()
+        syncMode = false
         completion = CompletableDeferred()
     }
 
@@ -514,12 +653,25 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * W3C SCXML 6.2: Schedule a delayed event send with metadata.
      */
     protected fun scheduleSend(sendId: String, delayMs: Long, event: E, metadata: EventMetadata) {
-        val scope = engineScope ?: return
-        delayedSendJobs[sendId]?.cancel()
-        delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
-            kotlinx.coroutines.delay(delayMs)
-            send(event, metadata)
-            delayedSendJobs.remove(sendId)
+        if (syncMode) {
+            // C++ PullScheduler pattern: record in time-ordered queue
+            cancelSend(sendId)
+            scheduledSends.add(ScheduledSendEntry(
+                fireTimeMs = engineElapsedMs() + delayMs,
+                sequenceNum = schedulerSequence++,
+                sendId = sendId,
+                event = event,
+                metadata = metadata
+            ))
+            scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
+        } else {
+            val scope = engineScope ?: return
+            delayedSendJobs[sendId]?.cancel()
+            delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
+                kotlinx.coroutines.delay(delayMs)
+                send(event, metadata)
+                delayedSendJobs.remove(sendId)
+            }
         }
     }
 
@@ -529,7 +681,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param sendId Identifier of the send to cancel
      */
     protected fun cancelSend(sendId: String) {
-        delayedSendJobs.remove(sendId)?.cancel()
+        if (syncMode) {
+            scheduledSends.removeAll { it.sendId == sendId }
+        } else {
+            delayedSendJobs.remove(sendId)?.cancel()
+        }
     }
 
     /**
@@ -544,12 +700,31 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * W3C SCXML 6.4: Schedule a delayed send to parent with event data.
      */
     protected fun scheduleParentSend(sendId: String, delayMs: Long, eventName: String, eventData: String) {
-        val scope = engineScope ?: return
-        delayedSendJobs[sendId]?.cancel()
-        delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
-            kotlinx.coroutines.delay(delayMs)
-            onSendToParent?.invoke(eventName, eventData)
-            delayedSendJobs.remove(sendId)
+        if (syncMode) {
+            cancelSend(sendId)
+            if (delayMs <= 0) {
+                onSendToParent?.invoke(eventName, eventData)
+            } else {
+                scheduledSends.add(ScheduledSendEntry(
+                    fireTimeMs = engineElapsedMs() + delayMs,
+                    sequenceNum = schedulerSequence++,
+                    sendId = sendId,
+                    event = null,
+                    metadata = EventMetadata.EMPTY,
+                    isParentSend = true,
+                    parentEventName = eventName,
+                    parentEventData = eventData
+                ))
+                scheduledSends.sortWith(compareBy<ScheduledSendEntry> { it.fireTimeMs }.thenBy { it.sequenceNum })
+            }
+        } else {
+            val scope = engineScope ?: return
+            delayedSendJobs[sendId]?.cancel()
+            delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
+                kotlinx.coroutines.delay(delayMs)
+                onSendToParent?.invoke(eventName, eventData)
+                delayedSendJobs.remove(sendId)
+            }
         }
     }
 
@@ -578,7 +753,8 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val child: StateMachineEngine<*, *>,
         val monitorJob: Job,
         val autoforward: Boolean,
-        val finalizeScript: String = ""
+        val finalizeScript: String = "",
+        val onComplete: (() -> Unit)? = null
     )
     private val activeInvokes = mutableMapOf<String, InvokeEntry>()
 
@@ -680,10 +856,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         finalizeScript: String = "",
         generatedInvokeId: String = invokeId
     ) {
-        val scope = engineScope ?: return
-
         // W3C SCXML 6.4: Set up child->parent event routing with metadata
-        // Child-to-parent events carry the generated invoke ID (matches idlocation value)
         child.onSendToParent = { eventName, eventData ->
             resolveEventByName(eventName)?.let {
                 send(it, EventMetadata(
@@ -696,24 +869,38 @@ abstract class StateMachineEngine<S : State, E : Event>(
             }
         }
 
-        // Start child on the same scope
+        if (syncMode) {
+            // C++ AOT pattern: synchronous child initialization
+            val onComplete = if (doneEvent != null) {
+                {
+                    externalEventQueue.addLast(QueuedEvent(doneEvent, EventMetadata(
+                        type = "platform",
+                        invokeId = invokeId
+                    )))
+                }
+            } else null
+
+            child.initialize()
+            activeInvokes[invokeId] = InvokeEntry(child, Job(), autoforward, finalizeScript, onComplete)
+
+            // C++ pattern: if child completed immediately, raise done.invoke
+            if (child.isInFinalState) {
+                onComplete?.invoke()
+            }
+            return
+        }
+
+        val scope = engineScope ?: return
         child.start(scope)
 
-        // Monitor child completion for done.invoke
-        // Run on Dispatchers.Default to avoid BlockingEventLoop deadlock in tests
         val monitorJob = scope.launch(Dispatchers.Default) {
             child.completion.await()
             if (doneEvent != null) {
-                // W3C SCXML 5.10: done.invoke uses static invoke ID
                 send(doneEvent, EventMetadata(
                     type = "platform",
                     invokeId = invokeId
                 ))
             }
-            // W3C SCXML 6.5: Do NOT remove from activeInvokes here.
-            // The removal must happen on the parent's microstep thread after
-            // finalize has had a chance to execute. The parent's event loop
-            // cleans up completed invokes via cleanupCompletedInvokes().
         }
 
         activeInvokes[invokeId] = InvokeEntry(child, monitorJob, autoforward, finalizeScript)
@@ -923,10 +1110,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * W3C SCXML 3.13: Document order determines transition priority
      * when multiple parallel children could handle the same event.
-     * Returns empty list for simple machines (no activeStateIds).
+     * Returns empty list only when no states are active (before start or after final).
      */
     private fun activeLeafStatesInDocumentOrder(): List<S> {
-        if (activeStateIds.isEmpty()) return emptyList()
         val leaves = mutableListOf<Pair<S, Int>>()
         for (stateId in activeStateIds) {
             val state = resolveState(stateId) ?: continue
@@ -950,38 +1136,28 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * different parallel regions execute simultaneously.
      */
     private fun drainEventlessAndInternal() {
-        while (!isInFinalState) {
+        var iterations = 0
+        val maxIterations = 100  // C++ checkEventlessTransitions safety limit
+        while (!isInFinalState && iterations++ < maxIterations) {
             // W3C SCXML Appendix D: Eventless transitions take priority
             var foundEventless = false
 
+            // W3C SCXML Appendix D: Unified eventless processing (C++ pattern)
             val leaves = activeLeafStatesInDocumentOrder()
-            if (leaves.isNotEmpty()) {
-                // W3C SCXML Appendix D: Select ALL enabled eventless transitions
-                val enabledTransitions = mutableListOf<Pair<S, TransitionResult<S>>>()
-                for (state in leaves) {
-                    val nullResult = processNullEvent(state)
-                    if (nullResult !is TransitionResult.Ignored) {
-                        enabledTransitions.add(state to nullResult)
-                    }
-                }
-
-                if (enabledTransitions.size > 1) {
-                    // W3C SCXML Appendix D.2: Multiple simultaneous transitions
-                    // in different parallel regions — batch microstep
-                    applySimultaneousTransitions(enabledTransitions)
-                    foundEventless = true
-                } else if (enabledTransitions.size == 1) {
-                    val (source, result) = enabledTransitions[0]
-                    applyTransitionFrom(source, result, null)
-                    foundEventless = true
-                }
-            } else {
-                // Simple machines without activeStateIds tracking — use _currentState
-                val nullResult = processNullEvent(_currentState.value)
+            val enabledTransitions = mutableListOf<Pair<S, TransitionResult<S>>>()
+            for (state in leaves) {
+                val nullResult = processNullEvent(state)
                 if (nullResult !is TransitionResult.Ignored) {
-                    applyTransition(nullResult, null)
-                    foundEventless = true
+                    enabledTransitions.add(state to nullResult)
                 }
+            }
+            if (enabledTransitions.size > 1) {
+                applySimultaneousTransitions(enabledTransitions)
+                foundEventless = true
+            } else if (enabledTransitions.size == 1) {
+                val (source, result) = enabledTransitions[0]
+                applyTransitionFrom(source, result, null)
+                foundEventless = true
             }
             if (foundEventless) {
                 flushPendingFinalState()
@@ -1075,20 +1251,13 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * W3C SCXML 3.13: Document order priority for conflict resolution.
      */
     private fun processOneEvent(event: E) {
-        val leaves = activeLeafStatesInDocumentOrder()
-        if (leaves.isNotEmpty()) {
-            for (state in leaves) {
-                val result = processEvent(state, event)
-                if (result !is TransitionResult.Ignored) {
-                    applyTransitionFrom(state, result, event)
-                    return
-                }
+        // W3C SCXML 3.13: Unified event processing (C++ pattern)
+        for (state in activeLeafStatesInDocumentOrder()) {
+            val result = processEvent(state, event)
+            if (result !is TransitionResult.Ignored) {
+                applyTransitionFrom(state, result, event)
+                return
             }
-            // No active state handled the event — ignored
-        } else {
-            // Simple machine: use _currentState
-            val result = processEvent(_currentState.value, event)
-            applyTransition(result, event)
         }
     }
 
@@ -1142,30 +1311,45 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 exitHierarchy(source, target, result.transitionSource)
                 executeTransitionActions(source, event)
 
-                // W3C SCXML 3.13: Enter ancestors of target that were exited
-                // Walk up from target to find the lowest active ancestor, then enter
-                // from its child downward. This ensures parallel states are properly
-                // re-entered with all their child regions (C++ entry pattern).
-                if (activeStateIds.isNotEmpty() || parentOf(target) != null) {
-                    val ancestorsToEnter = mutableListOf<S>()
-                    var anc = parentOf(target)
-                    while (anc != null) {
-                        val ancId = stateIdOf(anc)
-                        if (ancId.isNotEmpty() && !activeStateIds.contains(ancId)) {
-                            ancestorsToEnter.add(0, anc)
-                        } else {
-                            break
-                        }
-                        anc = parentOf(anc)
+                // W3C SCXML 3.13: Enter ancestors on path from LCCA to target
+                // C++ buildEntryChainFromParent: [ancestor1, ancestor2, ..., target]
+                // All use same onEntry — duplicate guard prevents double initial child entry
+                val ancestorsToEnter = mutableListOf<S>()
+                var anc = parentOf(target)
+                while (anc != null) {
+                    val ancId = stateIdOf(anc)
+                    if (ancId.isNotEmpty() && !activeStateIds.contains(ancId)) {
+                        ancestorsToEnter.add(0, anc)
+                    } else {
+                        break
                     }
-                    for (ancestor in ancestorsToEnter) {
-                        onEntry(ancestor)
-                    }
+                    anc = parentOf(anc)
+                }
+                for (ancestor in ancestorsToEnter) {
+                    onEntry(ancestor)
                 }
                 onEntry(target)
 
-                // Resolve to actual active leaf state (may differ from default initial
-                // when history restoration enters a different child)
+                // W3C SCXML 3.3: Enter initial children chain (C++ buildEntryChain pattern)
+                // onEntry does NOT enter initial children — they must be entered here
+                var compound = target
+                while (true) {
+                    val initial = resolveLeafState(compound)
+                    if (initial == compound) break
+                    // Enter intermediate compound states on path to leaf
+                    val intermediates = mutableListOf<S>()
+                    var cur: S? = initial
+                    while (cur != null && cur != compound) {
+                        intermediates.add(0, cur)
+                        cur = parentOf(cur)
+                    }
+                    for (state in intermediates) {
+                        onEntry(state)
+                    }
+                    break
+                }
+
+                // W3C SCXML 3.13: Resolve to actual active leaf (C++ pattern)
                 val leafTarget = activeLeafStatesInDocumentOrder().lastOrNull()
                     ?: resolveLeafState(target)
 
@@ -1193,26 +1377,21 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 val target = result.target
                 val txSource = result.transitionSource
 
-                // Exit active descendants of transitionSource that are not target or its descendants
-                if (activeStateIds.isNotEmpty()) {
-                    val statesToExit = mutableListOf<Pair<S, Int>>()
-                    for (stateId in activeStateIds.toList()) {
-                        val state = resolveState(stateId) ?: continue
-                        if (state == txSource) continue  // Don't exit the source
-                        if (state == target || isDescendantOf(state, target)) continue
-                        if (!isDescendantOf(state, txSource)) continue
-                        statesToExit.add(state to documentOrderOf(state))
+                // W3C SCXML 3.13: Exit active descendants of transitionSource (unified C++ pattern)
+                // Target is included in exit set (will be re-entered)
+                val statesToExit = mutableListOf<Pair<S, Int>>()
+                for (stateId in activeStateIds.toList()) {
+                    val state = resolveState(stateId) ?: continue
+                    if (state == txSource) continue  // Don't exit the source itself
+                    if (!isDescendantOf(state, txSource)) continue
+                    statesToExit.add(state to documentOrderOf(state))
+                }
+                statesToExit.sortByDescending { it.second }
+                for ((state, _) in statesToExit) {
+                    val sid = stateIdOf(state)
+                    if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
+                        onExit(state)
                     }
-                    statesToExit.sortByDescending { it.second }
-                    for ((state, _) in statesToExit) {
-                        val sid = stateIdOf(state)
-                        if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
-                            onExit(state)
-                        }
-                    }
-                } else {
-                    // Simple machine — just exit the current leaf state
-                    onExit(source)
                 }
 
                 executeTransitionActions(source, event)
@@ -1261,30 +1440,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * are already removed by the time the parallel state's onExit runs.
      */
     private fun exitHierarchy(source: S, target: S, transitionSource: S? = null) {
-        if (activeStateIds.isEmpty()) {
-            // Non-parallel machine — exit source and ancestors up to LCCA
-            onExit(source)
-            // W3C SCXML 3.13: Exit ancestor states when transitioning out.
-            // Walk up from source, exiting each ancestor until we reach the LCCA
-            // (the first ancestor that contains the target as a descendant).
-            // For flat machines parentOf returns null immediately, so this is a no-op.
-            var ancestor = parentOf(source)
-            while (ancestor != null) {
-                if (isDescendantOf(target, ancestor)) {
-                    // LCCA found — ancestor contains both source and target.
-                    // Don't exit it (both sides live under it).
-                    break
-                }
-                // Exit this ancestor (target is outside it).
-                // W3C SCXML 3.13: type="external" transitions to an ancestor
-                // exit-and-reenter the ancestor itself (ancestor == target case).
-                onExit(ancestor)
-                if (ancestor == target) break
-                ancestor = parentOf(ancestor)
-            }
-            return
-        }
-
+        // W3C SCXML 3.13: Unified exit (C++ StaticExecutionEngine pattern)
         // Step 1: Find LCCA (Least Common Compound Ancestor)
         // W3C SCXML 3.13: Use transition source (where transition is defined)
         // for LCCA computation when available, instead of the leaf state.

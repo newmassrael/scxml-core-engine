@@ -38,6 +38,34 @@ class Test460StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test460State? = when (stateId) {
+        "fail" -> Test460State.Fail
+        "pass" -> Test460State.Pass
+        "s0" -> Test460State.S0
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test460State): String = when (state) {
+        is Test460State.Fail -> "fail"
+        is Test460State.Pass -> "pass"
+        is Test460State.S0 -> "s0"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test460State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test460State): Int = when (state) {
+        is Test460State.Fail -> 2
+        is Test460State.Pass -> 1
+        is Test460State.S0 -> 0
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test460Event? = when (name) {
@@ -195,6 +223,8 @@ class Test460StateMachine(
     override fun onEntry(state: Test460State) {
         when (state) {
             is Test460State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
@@ -203,6 +233,8 @@ class Test460StateMachine(
                 markFinalStateReached()
             }
             is Test460State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
             // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
             try {
                 println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
@@ -211,6 +243,8 @@ class Test460StateMachine(
                 markFinalStateReached()
             }
             is Test460State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
@@ -232,6 +266,15 @@ class Test460StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test460State) {
         when (state) {
+            is Test460State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test460State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test460State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             else -> {}
         }
     }

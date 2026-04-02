@@ -38,6 +38,31 @@ class Test226sub1StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test226sub1State? = when (stateId) {
+        "final" -> Test226sub1State.Final
+        "s0" -> Test226sub1State.S0
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test226sub1State): String = when (state) {
+        is Test226sub1State.Final -> "final"
+        is Test226sub1State.S0 -> "s0"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test226sub1State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test226sub1State): Int = when (state) {
+        is Test226sub1State.Final -> 1
+        is Test226sub1State.S0 -> 0
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test226sub1Event? = when (name) {
@@ -188,8 +213,14 @@ class Test226sub1StateMachine(
     override fun onEntry(state: Test226sub1State) {
         when (state) {
             is Test226sub1State.Final -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("final")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
+            }
+            is Test226sub1State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             }
             else -> {}
         }
@@ -198,6 +229,12 @@ class Test226sub1StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test226sub1State) {
         when (state) {
+            is Test226sub1State.Final -> {
+                activeStateIds.remove("final")
+            }
+            is Test226sub1State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             else -> {}
         }
     }

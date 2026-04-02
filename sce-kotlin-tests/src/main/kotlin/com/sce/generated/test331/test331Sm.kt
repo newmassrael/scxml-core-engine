@@ -45,6 +45,49 @@ class Test331StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test331State? = when (stateId) {
+        "fail" -> Test331State.Fail
+        "pass" -> Test331State.Pass
+        "s0" -> Test331State.S0
+        "s1" -> Test331State.S1
+        "s2" -> Test331State.S2
+        "s3" -> Test331State.S3
+        "s4" -> Test331State.S4
+        "s5" -> Test331State.S5
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test331State): String = when (state) {
+        is Test331State.Fail -> "fail"
+        is Test331State.Pass -> "pass"
+        is Test331State.S0 -> "s0"
+        is Test331State.S1 -> "s1"
+        is Test331State.S2 -> "s2"
+        is Test331State.S3 -> "s3"
+        is Test331State.S4 -> "s4"
+        is Test331State.S5 -> "s5"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test331State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test331State): Int = when (state) {
+        is Test331State.Fail -> 7
+        is Test331State.Pass -> 6
+        is Test331State.S0 -> 0
+        is Test331State.S1 -> 1
+        is Test331State.S2 -> 2
+        is Test331State.S3 -> 3
+        is Test331State.S4 -> 4
+        is Test331State.S5 -> 5
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test331Event? = when (name) {
@@ -244,22 +287,44 @@ class Test331StateMachine(
     override fun onEntry(state: Test331State) {
         when (state) {
             is Test331State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test331State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test331State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             raiseInternal(Test331Event.Foo)
             }
+            is Test331State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
+            }
             is Test331State.S2 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s2")) return
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal(Test331Event.Error.Execution, EventMetadata.platform())
             }
+            is Test331State.S3 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s3")) return
+            }
             is Test331State.S4 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s4")) return
             send(Test331Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            }
+            is Test331State.S5 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s5")) return
             }
             else -> {}
         }
@@ -268,6 +333,30 @@ class Test331StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test331State) {
         when (state) {
+            is Test331State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test331State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test331State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test331State.S1 -> {
+                activeStateIds.remove("s1")
+            }
+            is Test331State.S2 -> {
+                activeStateIds.remove("s2")
+            }
+            is Test331State.S3 -> {
+                activeStateIds.remove("s3")
+            }
+            is Test331State.S4 -> {
+                activeStateIds.remove("s4")
+            }
+            is Test331State.S5 -> {
+                activeStateIds.remove("s5")
+            }
             else -> {}
         }
     }

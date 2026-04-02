@@ -54,6 +54,44 @@ class Test505StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test505State? = when (stateId) {
+        "fail" -> Test505State.Fail
+        "pass" -> Test505State.Pass
+        "s1" -> Test505State.S1
+        "s11" -> Test505State.S11
+        "s2" -> Test505State.S2
+        "s3" -> Test505State.S3
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test505State): String = when (state) {
+        is Test505State.Fail -> "fail"
+        is Test505State.Pass -> "pass"
+        is Test505State.S1 -> "s1"
+        is Test505State.S11 -> "s11"
+        is Test505State.S2 -> "s2"
+        is Test505State.S3 -> "s3"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test505State): Boolean = when (state) {
+        is Test505State.S1 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test505State): Int = when (state) {
+        is Test505State.Fail -> 5
+        is Test505State.Pass -> 4
+        is Test505State.S1 -> 0
+        is Test505State.S11 -> 1
+        is Test505State.S2 -> 2
+        is Test505State.S3 -> 3
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test505Event? = when (name) {
@@ -249,18 +287,34 @@ class Test505StateMachine(
     override fun onEntry(state: Test505State) {
         when (state) {
             is Test505State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test505State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test505State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
             raiseInternal(Test505Event.Foo)
             raiseInternal(Test505Event.Bar)
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test505State.S11)
+            }
+            is Test505State.S11 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s11")) return
+            }
+            is Test505State.S2 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s2")) return
+            }
+            is Test505State.S3 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s3")) return
             }
             else -> {}
         }
@@ -269,11 +323,25 @@ class Test505StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test505State) {
         when (state) {
+            is Test505State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test505State.Pass -> {
+                activeStateIds.remove("pass")
+            }
             is Test505State.S1 -> {
+                activeStateIds.remove("s1")
             executeAssign("Var1", "Var1 + 1")
             }
             is Test505State.S11 -> {
+                activeStateIds.remove("s11")
             executeAssign("Var2", "Var2 + 1")
+            }
+            is Test505State.S2 -> {
+                activeStateIds.remove("s2")
+            }
+            is Test505State.S3 -> {
+                activeStateIds.remove("s3")
             }
             else -> {}
         }

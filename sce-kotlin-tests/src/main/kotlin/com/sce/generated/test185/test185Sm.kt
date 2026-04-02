@@ -33,6 +33,37 @@ class Test185StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test185State? = when (stateId) {
+        "fail" -> Test185State.Fail
+        "pass" -> Test185State.Pass
+        "s0" -> Test185State.S0
+        "s1" -> Test185State.S1
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test185State): String = when (state) {
+        is Test185State.Fail -> "fail"
+        is Test185State.Pass -> "pass"
+        is Test185State.S0 -> "s0"
+        is Test185State.S1 -> "s1"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test185State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test185State): Int = when (state) {
+        is Test185State.Fail -> 3
+        is Test185State.Pass -> 2
+        is Test185State.S0 -> 0
+        is Test185State.S1 -> 1
+        else -> 0
+    }
 
 
 
@@ -71,16 +102,26 @@ class Test185StateMachine(
     override fun onEntry(state: Test185State) {
         when (state) {
             is Test185State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test185State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test185State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test185Event.Event2)
             send(Test185Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            }
+            is Test185State.S1 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s1")) return
             }
             else -> {}
         }
@@ -89,6 +130,18 @@ class Test185StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test185State) {
         when (state) {
+            is Test185State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test185State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test185State.S0 -> {
+                activeStateIds.remove("s0")
+            }
+            is Test185State.S1 -> {
+                activeStateIds.remove("s1")
+            }
             else -> {}
         }
     }

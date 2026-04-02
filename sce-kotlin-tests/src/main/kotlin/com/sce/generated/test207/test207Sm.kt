@@ -59,6 +59,41 @@ class Test207StateMachine(
         else -> state
     }
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test207State? = when (stateId) {
+        "fail" -> Test207State.Fail
+        "pass" -> Test207State.Pass
+        "s0" -> Test207State.S0
+        "s01" -> Test207State.S01
+        "s02" -> Test207State.S02
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test207State): String = when (state) {
+        is Test207State.Fail -> "fail"
+        is Test207State.Pass -> "pass"
+        is Test207State.S0 -> "s0"
+        is Test207State.S01 -> "s01"
+        is Test207State.S02 -> "s02"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test207State): Boolean = when (state) {
+        is Test207State.S0 -> false
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test207State): Int = when (state) {
+        is Test207State.Fail -> 4
+        is Test207State.Pass -> 3
+        is Test207State.S0 -> 0
+        is Test207State.S01 -> 1
+        is Test207State.S02 -> 2
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test207Event? = when (name) {
@@ -122,14 +157,20 @@ class Test207StateMachine(
     override fun onEntry(state: Test207State) {
         when (state) {
             is Test207State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test207State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test207State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 2000L, Test207Event.Timeout)
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
@@ -141,8 +182,14 @@ class Test207StateMachine(
                         startInvoke("_invoke_0", childSM, false, Test207Event.Done.Invoke, "", generatedInvokeId)
                     }
                 }
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test207State.S01)
+            }
+            is Test207State.S01 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s01")) return
+            }
+            is Test207State.S02 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s02")) return
             }
             else -> {}
         }
@@ -151,11 +198,24 @@ class Test207StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test207State) {
         when (state) {
+            is Test207State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test207State.Pass -> {
+                activeStateIds.remove("pass")
+            }
             is Test207State.S0 -> {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
                 cancelPendingInvokesForState(state)
                 // W3C SCXML 6.4: Cancel active invoked child on state exit
                 cancelInvoke("_invoke_0")
+                activeStateIds.remove("s0")
+            }
+            is Test207State.S01 -> {
+                activeStateIds.remove("s01")
+            }
+            is Test207State.S02 -> {
+                activeStateIds.remove("s02")
             }
             else -> {}
         }

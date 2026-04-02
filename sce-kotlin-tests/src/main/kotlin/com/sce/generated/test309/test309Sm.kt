@@ -36,6 +36,34 @@ class Test309StateMachine(
 
 
 
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): Test309State? = when (stateId) {
+        "fail" -> Test309State.Fail
+        "pass" -> Test309State.Pass
+        "s0" -> Test309State.S0
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: Test309State): String = when (state) {
+        is Test309State.Fail -> "fail"
+        is Test309State.Pass -> "pass"
+        is Test309State.S0 -> "s0"
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: Test309State): Boolean = when (state) {
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: Test309State): Int = when (state) {
+        is Test309State.Fail -> 2
+        is Test309State.Pass -> 1
+        is Test309State.S0 -> 0
+        else -> 0
+    }
 
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): Test309Event? = when (name) {
@@ -179,12 +207,20 @@ class Test309StateMachine(
     override fun onEntry(state: Test309State) {
         when (state) {
             is Test309State.Fail -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("fail")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test309State.Pass -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("pass")) return
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
+            }
+            is Test309State.S0 -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("s0")) return
             }
             else -> {}
         }
@@ -193,6 +229,15 @@ class Test309StateMachine(
     // Exit Actions (W3C SCXML 3.9)
     override fun onExit(state: Test309State) {
         when (state) {
+            is Test309State.Fail -> {
+                activeStateIds.remove("fail")
+            }
+            is Test309State.Pass -> {
+                activeStateIds.remove("pass")
+            }
+            is Test309State.S0 -> {
+                activeStateIds.remove("s0")
+            }
             else -> {}
         }
     }
