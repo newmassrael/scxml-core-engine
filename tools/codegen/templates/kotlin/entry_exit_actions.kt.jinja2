@@ -83,16 +83,22 @@
                     val invokeParams = mutableMapOf<String, Any?>()
 {% for param in inv.params %}
 {% if param.expr %}
+                    // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
                     try {
                         invokeParams["{{ param.name }}"] = engineInv.evaluateExpr(sidInv, "{{ param.expr | escape_kotlin }}")
-                    } catch (_: Exception) {}
+                    } catch (_: Exception) {
+                        return@run  // C++ pattern: invoke cancelled on param error
+                    }
 {% endif %}
 {% endfor %}
 {% if inv.namelist %}
 {% for var_name in inv.namelist.split() %}
+                    // W3C SCXML 6.4: Namelist variable must exist in parent
                     try {
                         invokeParams["{{ var_name }}"] = engineInv.getVariable(sidInv, "{{ var_name }}")
-                    } catch (_: Exception) {}
+                    } catch (_: Exception) {
+                        return@run  // C++ pattern: invoke cancelled on namelist error
+                    }
 {% endfor %}
 {% endif %}
                     setInvokeParams(childSM, invokeParams)
@@ -116,7 +122,8 @@
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
                     try {
                         val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.contentexpr | escape_kotlin }}")
-                        doneEventData = contentResult?.toString() ?: ""
+                        // C++ DoneDataHelper::evaluateContent: convertScriptValueToJson
+                        doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
                         raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
                     }
@@ -124,7 +131,7 @@
                     // W3C SCXML 5.5: Evaluate <content> inline text
                     try {
                         val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.content | escape_kotlin }}")
-                        doneEventData = contentResult?.toString() ?: ""
+                        doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
                     } catch (_: Exception) {
                         raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
                     }

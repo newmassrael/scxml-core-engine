@@ -126,3 +126,4 @@ archive/
 # Kotlin generated W3C test code (regenerate via tools/generate_kotlin_w3c.py)
 sce-kotlin-tests/src/main/kotlin/com/sce/generated/
 sce-kotlin-tests/src/test/kotlin/com/sce/w3c/Test[0-9]*.kt
+build_debug_qjs/

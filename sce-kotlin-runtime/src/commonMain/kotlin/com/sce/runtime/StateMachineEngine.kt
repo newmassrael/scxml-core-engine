@@ -680,7 +680,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         return sb.toString()
     }
 
-    private fun valueToJson(value: Any?): String = when (value) {
+    protected fun valueToJson(value: Any?): String = when (value) {
         null -> "null"
         is Boolean -> value.toString()
         is Number -> {

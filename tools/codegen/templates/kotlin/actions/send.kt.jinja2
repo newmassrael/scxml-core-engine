@@ -56,8 +56,14 @@
                     raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
                     return@run
                 }
+                // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
                 if (dynamicTarget.startsWith("!")) {
                     raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata(type = "platform", sendId = "{{ action.auto_send_id }}"))
+                    return@run
+                }
+                // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
+                if (dynamicTarget.isEmpty() || dynamicTarget == "undefined") {
+                    raiseInternal({{ machine_name }}Event.Error.Communication, EventMetadata.platform())
                     return@run
                 }
 {% if action.event %}

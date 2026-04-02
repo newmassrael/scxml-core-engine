@@ -151,13 +151,22 @@ class Test329StateMachine(
         val sid = scriptSessionId ?: return
         val eventName = eventNameOf(event) ?: return
         val meta = currentEventMetadata
+        // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
+        val effectiveType = when {
+            eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"
+            else -> meta.type
+        }
+        // W3C SCXML 5.10.1: C++ pattern — origin/origintype only for external events
+        // Internal events (<raise>) have empty origin; external events (<send>) have session ID
+        val effectiveOrigin = if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
         engine.setCurrentEvent(
             sid, eventName,
             data = meta.data,
-            type = meta.type,
+            type = effectiveType,
             sendId = meta.sendId,
-            origin = meta.origin.ifEmpty { scriptSessionId ?: "" },
-            originType = meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" },
+            origin = effectiveOrigin,
+            originType = effectiveOriginType,
             invokeId = meta.invokeId
         )
     }
