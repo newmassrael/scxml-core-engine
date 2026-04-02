@@ -1,3 +1,10 @@
-{% if action.location and action.expr %}
+{# W3C SCXML 5.3: <assign> — three-way: script engine | static Kotlin | no-op #}
+{% if model.needs_script_engine and action.location %}
+{% if action.content %}
+            executeAssign("{{ action.location | escape_kotlin }}", "{{ action.content | escape_kotlin }}")
+{% elif action.expr %}
+            executeAssign("{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
+{% endif %}
+{% elif action.location and action.expr %}
             {{ action.location | to_camel_case }} = {{ action.expr }}
 {% endif %}

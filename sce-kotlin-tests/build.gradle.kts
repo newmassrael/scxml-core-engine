@@ -8,6 +8,7 @@ version = "1.0.0"
 dependencies {
     implementation(project(":sce-kotlin-runtime"))
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.rhino)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)

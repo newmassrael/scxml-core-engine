@@ -7,17 +7,40 @@
     - processEvent() dispatching to per-state handlers
     - processNullEvent() for eventless transitions (W3C SCXML Appendix D)
     - Per-state handler functions with exhaustive when expressions
-    - W3C SCXML 3.13: Ancestor transition routing (child → parent → grandparent)
-    - kt: prefix guard conditions as direct Kotlin expressions
-    - In() predicate guards as isStateActive() calls
+    - W3C SCXML 3.13: Ancestor transition routing (child -> parent -> grandparent)
+    - Three-way condition pattern: In() predicate | safeEvaluateGuard() | static Kotlin
     - History state target resolution (W3C SCXML 3.11)
     - Multi-descriptor event matching (W3C SCXML 3.12.1)
 #}
+{# --- Macro for rendering a condition expression (three-way pattern) --- #}
+{# Returns a Kotlin boolean expression string for use in when {} branches #}
+{% macro render_cond(trans) -%}
+{% if trans.is_pure_in_predicate -%}
+{{ trans.cond_kt }}
+{%- elif trans.is_kt_condition -%}
+{{ trans.cond_kt }}
+{%- elif model.needs_script_engine and trans.cond and not trans.is_cpp_condition -%}
+safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
+{%- elif trans.cond and not trans.is_cpp_condition -%}
+{{ trans.cond }}
+{%- endif -%}
+{%- endmacro %}
+{% if model.needs_script_engine %}
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
+    override fun processEvent(
+        state: {{ machine_name }}State,
+        event: {{ machine_name }}Event
+    ): TransitionResult<{{ machine_name }}State> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
+{% else %}
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
     override fun processEvent(
         state: {{ machine_name }}State,
         event: {{ machine_name }}Event
     ): TransitionResult<{{ machine_name }}State> = when (state) {
+{% endif %}
 {% for state_id in model.states | sort %}
 {% set state = model.states[state_id] %}
 {% if not state.is_parallel %}
@@ -80,11 +103,14 @@
 {% endfor %}
         }
 {% endif %}
-{# else: no event transitions anywhere → falls to else -> Ignored #}
+{# else: no event transitions anywhere -> falls to else -> Ignored #}
 {% endif %}
 {% endfor %}
         else -> TransitionResult.Ignored
     }
+{% if model.needs_script_engine %}
+    }
+{% endif %}
 
 {% set ns_has_eventless = namespace(value=false) %}
 {% for state_id in model.states | sort %}
@@ -172,36 +198,25 @@
 
     private fun processNull{{ state_id | to_state_class_name }}(
     ): TransitionResult<{{ machine_name }}State> = when {
+{% set ns_rendered_else = namespace(done=false) %}
 {% for trans in state.transitions %}
-{% if not trans.event and trans.target %}
+{% if not trans.event and trans.target and not ns_rendered_else.done %}
 {# --- Determine target expression (history resolution) --- #}
 {% if trans.history_leaf_target is defined %}
 {% set target_expr = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
 {% else %}
 {% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
 {% endif %}
-{% if trans.is_pure_in_predicate %}
-        // W3C SCXML 5.9.2: Eventless In() predicate guard
-        {{ trans.cond_kt }} -> TransitionResult.External({{ target_expr }})
-{% elif trans.is_kt_condition %}
-        // Eventless guarded transition
-        {{ trans.cond_kt }} -> TransitionResult.External({{ target_expr }})
-{% elif trans.cond and not trans.is_cpp_condition %}
-        // Eventless guarded transition (cond="{{ trans.cond }}")
-        {{ trans.cond }} -> TransitionResult.External({{ target_expr }})
+{% if trans.cond %}
+        {{ render_cond(trans) }} -> TransitionResult.External({{ target_expr }})
 {% else %}
-        // Eventless unconditional transition
+        // W3C SCXML 3.13: First unconditional transition wins (document order)
         else -> TransitionResult.External({{ target_expr }})
+{% set ns_rendered_else.done = true %}
 {% endif %}
 {% endif %}
 {% endfor %}
-{% set ns_has_unconditional = namespace(value=false) %}
-{% for trans in state.transitions %}
-{% if not trans.event and trans.target and not trans.cond and not trans.is_pure_in_predicate and not trans.is_kt_condition %}
-{% set ns_has_unconditional.value = true %}
-{% endif %}
-{% endfor %}
-{% if not ns_has_unconditional.value %}
+{% if not ns_rendered_else.done %}
         else -> TransitionResult.Ignored
 {% endif %}
     }
@@ -244,23 +259,17 @@
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
         // W3C SCXML 3.12.1: Prefix match for "{{ trans.event }}"
         ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
-{%- if trans.is_pure_in_predicate %} && {{ trans.cond_kt }}{% elif trans.is_kt_condition %} && {{ trans.cond_kt }}{% elif trans.cond and not trans.is_cpp_condition %} && {{ trans.cond }}{% endif %} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
+{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
 
 {% else %}
-{# --- Resolve single event: use prefix_matching_events[0] if available, else raw trans.event --- #}
+{# --- Resolve single event --- #}
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
 {% set resolved_event = trans.prefix_matching_events[0] %}
 {% else %}
 {% set resolved_event = trans.event %}
 {% endif %}
-{% if trans.is_pure_in_predicate %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond_kt }} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
-
-{% elif trans.is_kt_condition %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond_kt }} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
-
-{% elif trans.cond and not trans.is_cpp_condition %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond }} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
+{% if trans.cond %}
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
 
 {% else %}
         event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {% if trans.type == 'internal' %}TransitionResult.Internal{% else %}TransitionResult.External({{ target_expr }}){% endif %}
@@ -269,20 +278,22 @@
 {% endif %}
 {% elif trans.event and trans.event != '*' and trans.event != '.*' and not trans.target %}
 {# --- Targetless transitions --- #}
+{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
+        // W3C SCXML 3.12.1: Multi-descriptor targetless "{{ trans.event }}"
+        ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
+{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> TransitionResult.Internal
+{% else %}
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
 {% set resolved_event = trans.prefix_matching_events[0] %}
 {% else %}
 {% set resolved_event = trans.event %}
 {% endif %}
-{% if trans.is_pure_in_predicate %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond_kt }} -> TransitionResult.Internal
-{% elif trans.is_kt_condition %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond_kt }} -> TransitionResult.Internal
-{% elif trans.cond and not trans.is_cpp_condition %}
-        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond }} -> TransitionResult.Internal
+{% if trans.cond %}
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> TransitionResult.Internal
 {% else %}
         // W3C SCXML 3.13: Targetless transition (actions only)
         event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> TransitionResult.Internal
+{% endif %}
 {% endif %}
 {% endif %}
 {% endfor %}

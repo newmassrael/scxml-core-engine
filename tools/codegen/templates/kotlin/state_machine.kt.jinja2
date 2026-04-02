@@ -22,12 +22,14 @@ import com.sce.runtime.*
 
 // --- State Machine (W3C SCXML) ---
 
-class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>() {
+class {{ machine_name }}StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>(scriptEngine) {
 {% if model.variables %}
 
     // Datamodel (W3C SCXML 5.3)
 {% for var in model.variables %}
-{% if var.type != 'runtime' %}
+{% if var.type != 'runtime' and not model.needs_script_engine %}
     var {{ var.id | to_camel_case }}: {{ var.type | to_kotlin_type }} = {{ kotlin_default(var) }}
 {% endif %}
 {% endfor %}
@@ -39,7 +41,17 @@ class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}Stat
     // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
     // through compound/parallel hierarchy to populate activeStateIds)
     override fun enterInitialConfiguration() {
+{% if model.needs_script_engine %}
+        ensureScriptEngine()
+{% endif %}
         onEntry({{ machine_name }}State.{{ initial_entry_root | to_state_class_name }})
+    }
+{% elif model.needs_script_engine %}
+
+    // W3C SCXML B.1: Initialize script engine before entering initial state
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        onEntry(initialState)
     }
 {% endif %}
 
@@ -100,7 +112,7 @@ class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}Stat
     }
 {% endif %}
 
-{% if model.has_invoke or model.has_parent_communication %}
+{% if model.has_invoke or model.has_parent_communication or model.needs_script_engine %}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
 {% for event_name in leaf_events | sort %}
@@ -109,7 +121,7 @@ class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}Stat
         else -> null
     }
 
-    // W3C SCXML 6.4: Resolve Event object to event name string (for autoforward)
+    // W3C SCXML 6.4: Resolve Event object to event name string
     override fun eventNameOf(event: {{ machine_name }}Event): String? = when (event) {
 {% for event_name in leaf_events | sort %}
         is {{ machine_name }}Event.{{ event_name | to_event_ref }} -> "{{ event_name }}"
@@ -117,6 +129,8 @@ class {{ machine_name }}StateMachine : StateMachineEngine<{{ machine_name }}Stat
         else -> null
     }
 {% endif %}
+
+{% include 'scriptengine_helpers.kt.jinja2' %}
 
 {% include 'process_event.kt.jinja2' %}
 

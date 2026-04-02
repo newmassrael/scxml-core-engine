@@ -1,7 +1,25 @@
-{# W3C SCXML 4.6: <foreach> — iteration #}
-{# Phase 1: Static-only iteration (array must be a known variable) #}
+{# W3C SCXML 4.6: <foreach> — script engine iteration or static Kotlin #}
+{% if model.needs_script_engine %}
+            run {
+                ensureScriptEngine()
+                val engine = scriptEngine ?: return@run
+                val sid = scriptSessionId ?: return@run
+                try {
+                    engine.executeForeach(sid, "{{ action.array | escape_kotlin }}", "{{ action.item }}", "{{ action.index }}") {
+{% for body_action in action.actions %}
+{% set action = body_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+                    }
+                } catch (e: Exception) {
+                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                }
+            }
+{% else %}
             {{ action.array }}.forEach { {{ action.item }} ->
 {% for body_action in action.actions %}
-{% include 'actions/' + body_action.type + '.kt.jinja2' with context %}
+{% set action = body_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
             }
+{% endif %}

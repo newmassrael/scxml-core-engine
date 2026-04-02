@@ -9,7 +9,20 @@
 
     Uses effective_transitions (self + ancestor transitions) for ancestor routing.
     Uses actions/_render.kt.jinja2 for action dispatch (shared with entry_exit_actions).
+    Three-way condition pattern: In() predicate | safeEvaluateGuard() | static Kotlin.
 #}
+{# --- Condition rendering macro (same as process_event) --- #}
+{% macro render_cond(trans) -%}
+{% if trans.is_pure_in_predicate -%}
+{{ trans.cond_kt }}
+{%- elif trans.is_kt_condition -%}
+{{ trans.cond_kt }}
+{%- elif model.needs_script_engine and trans.cond and not trans.is_cpp_condition -%}
+safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
+{%- elif trans.cond and not trans.is_cpp_condition -%}
+{{ trans.cond }}
+{%- endif -%}
+{%- endmacro %}
     // Transition Actions (W3C SCXML 3.13)
     override fun executeTransitionActions(
         source: {{ machine_name }}State,
@@ -33,19 +46,15 @@
             event != null -> {
 {% elif trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
             ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
-{%- if trans.is_pure_in_predicate %} && {{ trans.cond_kt }}{% elif trans.is_kt_condition %} && {{ trans.cond_kt }}{% elif trans.cond and not trans.is_cpp_condition %} && {{ trans.cond }}{% endif %} -> {
+{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {
 {% else %}
 {% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
 {% set resolved_event = trans.prefix_matching_events[0] %}
 {% else %}
 {% set resolved_event = trans.event %}
 {% endif %}
-{% if trans.is_pure_in_predicate %}
-            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond_kt }} -> {
-{% elif trans.is_kt_condition %}
-            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond_kt }} -> {
-{% elif trans.cond and not trans.is_cpp_condition %}
-            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ trans.cond }} -> {
+{% if trans.cond %}
+            event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {
 {% else %}
             event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {
 {% endif %}
@@ -59,12 +68,8 @@
 {# --- Eventless transition actions (event == null) --- #}
 {% for trans in eff_transitions %}
 {% if trans.actions and not trans.event %}
-{% if trans.is_pure_in_predicate %}
-            event == null && {{ trans.cond_kt }} -> {
-{% elif trans.is_kt_condition %}
-            event == null && {{ trans.cond_kt }} -> {
-{% elif trans.cond and not trans.is_cpp_condition %}
-            event == null && {{ trans.cond }} -> {
+{% if trans.cond %}
+            event == null && {{ render_cond(trans) }} -> {
 {% else %}
             event == null -> {
 {% endif %}

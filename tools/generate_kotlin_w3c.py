@@ -3,7 +3,7 @@
 Kotlin W3C SCXML Test Generator
 
 Generates Kotlin state machine code and JUnit5 test classes for all
-W3C SCXML conformance tests that can be statically compiled to Kotlin.
+W3C SCXML conformance tests (pure static AND script-engine hybrid).
 
 Usage:
     python3 tools/generate_kotlin_w3c.py [--test TEST_ID] [--clean]
@@ -34,7 +34,7 @@ TEST_OUTPUT_DIR = TESTS_MODULE / 'src' / 'test' / 'kotlin' / 'com' / 'sce' / 'w3
 # C++ CMakeLists.txt — source of truth for test IDs and types
 CMAKE_FILE = PROJECT_ROOT / 'tests' / 'CMakeLists.txt'
 
-# Tests excluded from Kotlin codegen (empty — all codegen bugs resolved)
+# Tests excluded from Kotlin codegen (structural issues only, not script engine)
 CODEGEN_EXCLUDE: set = set()
 
 
@@ -134,7 +134,7 @@ def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
                 child_name.startswith(f'test{num}sub')):
             continue
 
-        # Generate child SM
+        # Generate child SM (script engine or pure static — both supported now)
         child_result = subprocess.run(
             [
                 sys.executable, str(CODEGEN_SCRIPT),
@@ -147,22 +147,21 @@ def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
             env={**os.environ, 'SPDLOG_LEVEL': 'warn'},
         )
 
-        # Children that need script engine: generate a no-op stub
-        # Check BEFORE 'Generated:' — codegen may write a broken SM file alongside the flag.
-        # Does NOT markFinalStateReached — prevents incorrect done.invoke to parent.
-        # Parent will timeout and follow fallback transition (matches C++ Interpreter behavior).
-        if 'Needs ScriptEngine: True' in child_result.stdout:
+        if 'Generated:' not in child_result.stdout:
+            # Codegen failed for structural reasons — generate a no-op stub
             child_sm_file = output_dir / f'{child_name}Sm.kt'
             child_class = to_pascal_case(child_name)
             stub_content = (
-                f"// GENERATED STUB — child requires script engine (no-op)\n"
+                f"// GENERATED STUB — child codegen failed (no-op)\n"
                 f"package com.sce.generated.{parent_package}\n\n"
                 f"import com.sce.runtime.*\n\n"
                 f"sealed interface {child_class}State : State {{\n"
                 f"    data object Initial : {child_class}State\n"
                 f"}}\n"
                 f"sealed interface {child_class}Event : Event\n\n"
-                f"class {child_class}StateMachine : StateMachineEngine<{child_class}State, {child_class}Event>() {{\n"
+                f"class {child_class}StateMachine(\n"
+                f"    scriptEngine: ScxmlScriptEngine? = null\n"
+                f") : StateMachineEngine<{child_class}State, {child_class}Event>(scriptEngine) {{\n"
                 f"    override val initialState = {child_class}State.Initial\n"
                 f"    override fun processEvent(state: {child_class}State, event: {child_class}Event) = TransitionResult.Ignored as TransitionResult<{child_class}State>\n"
                 f"    override fun onEntry(state: {child_class}State) {{}}\n"
@@ -172,9 +171,6 @@ def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
             )
             child_sm_file.write_text(stub_content)
             count += 1
-            continue
-
-        if 'Generated:' not in child_result.stdout:
             continue
 
         # Fix package name: child SM must be in same package as parent
@@ -193,14 +189,13 @@ def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
     return count
 
 
-def generate_sm(test_id: str, scxml_path: Path) -> str:
+def generate_sm(test_id: str, scxml_path: Path) -> tuple[str, bool]:
     """
     Run Kotlin codegen for a single test.
 
     Returns:
-        'generated' — SM file written successfully
-        'script_engine' — needs script engine, skipped
-        'failed' — codegen error
+        ('generated', needs_script_engine) — SM file written successfully
+        ('failed', False) — codegen error
     """
     output_dir = SM_OUTPUT_BASE / f'test{test_id}'
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -218,14 +213,13 @@ def generate_sm(test_id: str, scxml_path: Path) -> str:
     )
 
     stdout = result.stdout
-    if 'Needs ScriptEngine: True' in stdout:
-        shutil.rmtree(output_dir, ignore_errors=True)
-        return 'script_engine'
+    needs_script = 'Needs ScriptEngine: True' in stdout
+
     if 'Generated:' in stdout:
         # Generate child SMs for invoke tests
         generate_child_sms(test_id, scxml_path, output_dir)
-        return 'generated'
-    return 'failed'
+        return 'generated', needs_script
+    return 'failed', False
 
 
 def detect_pass_state(test_id: str) -> str | None:
@@ -242,7 +236,7 @@ def detect_pass_state(test_id: str) -> str | None:
     content = sm_file.read_text()
 
     # Find which states are final (markFinalStateReached() in onEntry)
-    # Strategy: scan line-by-line through onEntry for state → markFinalStateReached pairs.
+    # Strategy: scan line-by-line through onEntry for state -> markFinalStateReached pairs.
     # This avoids fragile nested-brace regex parsing.
     final_states = set()
     in_on_entry = False
@@ -279,7 +273,8 @@ def detect_pass_state(test_id: str) -> str | None:
     return None
 
 
-def generate_test_class(test_id: str, metadata: dict, test_type: str) -> bool:
+def generate_test_class(test_id: str, metadata: dict, test_type: str,
+                        needs_script_engine: bool) -> bool:
     """Generate a JUnit5 test class for a W3C test. Returns False if pass state not detected."""
     pass_state = detect_pass_state(test_id)
     if not pass_state:
@@ -295,19 +290,35 @@ def generate_test_class(test_id: str, metadata: dict, test_type: str) -> bool:
     else:
         timeout_override = ''
 
+    # Script engine injection for hybrid tests
+    if needs_script_engine:
+        imports = (
+            f"import com.sce.generated.{sm_package}.{sm_class}Event\n"
+            f"import com.sce.generated.{sm_package}.{sm_class}State\n"
+            f"import com.sce.generated.{sm_package}.{sm_class}StateMachine\n"
+            f"import com.sce.scripting.RhinoScriptEngine\n"
+            f"import org.junit.jupiter.api.DisplayName\n"
+        )
+        create_sm = f"    override fun createStateMachine() = {sm_class}StateMachine(RhinoScriptEngine())\n"
+    else:
+        imports = (
+            f"import com.sce.generated.{sm_package}.{sm_class}Event\n"
+            f"import com.sce.generated.{sm_package}.{sm_class}State\n"
+            f"import com.sce.generated.{sm_package}.{sm_class}StateMachine\n"
+            f"import org.junit.jupiter.api.DisplayName\n"
+        )
+        create_sm = f"    override fun createStateMachine() = {sm_class}StateMachine()\n"
+
     content = (
         f"// GENERATED — DO NOT EDIT (generate_kotlin_w3c.py)\n"
         f"package com.sce.w3c\n"
         f"\n"
-        f"import com.sce.generated.{sm_package}.{sm_class}Event\n"
-        f"import com.sce.generated.{sm_package}.{sm_class}State\n"
-        f"import com.sce.generated.{sm_package}.{sm_class}StateMachine\n"
-        f"import org.junit.jupiter.api.DisplayName\n"
+        f"{imports}"
         f"\n"
         f"// W3C SCXML {specnum}: {description}\n"
         f"@DisplayName(\"Test {test_id} -- W3C SCXML {specnum}\")\n"
         f"class Test{to_pascal_case(test_id)} : W3CTestBase<{sm_class}State, {sm_class}Event>() {{\n"
-        f"    override fun createStateMachine() = {sm_class}StateMachine()\n"
+        f"{create_sm}"
         f"    override val expectedPassState: {sm_class}State = {sm_class}State.{pass_state}\n"
         f"{timeout_override}"
         f"}}\n"
@@ -360,8 +371,8 @@ def main():
     else:
         test_ids = sorted(cmake_tests.keys(), key=lambda x: (len(x), x))
 
-    generated = []
-    skipped_script = []
+    generated_static = []
+    generated_script = []
     skipped_other = []
     failed = []
 
@@ -375,30 +386,32 @@ def main():
             skipped_other.append((test_id, 'known codegen bug'))
             continue
 
-        # Single codegen call: generates output AND detects script engine
-        result = generate_sm(test_id, scxml)
+        # Single codegen call: generates output for both static and script engine tests
+        result, needs_script = generate_sm(test_id, scxml)
 
-        if result == 'script_engine':
-            skipped_script.append(test_id)
-            continue
-        elif result == 'failed':
+        if result == 'failed':
             failed.append((test_id, 'codegen failed'))
             continue
 
         metadata = read_metadata(test_id)
         test_type = cmake_tests.get(test_id, {}).get('type', 'SIMPLE')
 
-        if generate_test_class(test_id, metadata, test_type):
-            generated.append(test_id)
+        if generate_test_class(test_id, metadata, test_type, needs_script):
+            if needs_script:
+                generated_script.append(test_id)
+            else:
+                generated_static.append(test_id)
         else:
             failed.append((test_id, 'pass state not detected'))
 
     # Summary
+    total_generated = len(generated_static) + len(generated_script)
     print(f"\n{'='*60}")
     print(f"Kotlin W3C Test Generation Summary")
     print(f"{'='*60}")
-    print(f"  Generated (pure static):    {len(generated)}")
-    print(f"  Skipped (script engine):    {len(skipped_script)}")
+    print(f"  Generated (pure static):    {len(generated_static)}")
+    print(f"  Generated (script engine):  {len(generated_script)}")
+    print(f"  Generated (total):          {total_generated}")
     print(f"  Skipped (other):            {len(skipped_other)}")
     print(f"  Failed:                     {len(failed)}")
     print(f"  Total:                      {len(test_ids)}")
@@ -413,10 +426,12 @@ def main():
         for tid, reason in failed:
             print(f"  {tid}: {reason}")
 
-    if generated:
+    if total_generated:
         print(f"\nGenerated SM classes: {SM_OUTPUT_BASE}")
         print(f"Generated test classes: {TEST_OUTPUT_DIR}")
-        print(f"\nGenerated test IDs: {' '.join(generated)}")
+        print(f"\nGenerated test IDs (static): {' '.join(generated_static)}")
+        if generated_script:
+            print(f"Generated test IDs (script): {' '.join(generated_script)}")
 
 
 if __name__ == '__main__':

@@ -36,7 +36,28 @@ import kotlinx.coroutines.launch
  * @param S State sealed interface type
  * @param E Event sealed interface type
  */
-abstract class StateMachineEngine<S : State, E : Event> {
+abstract class StateMachineEngine<S : State, E : Event>(
+    protected val scriptEngine: ScxmlScriptEngine? = null
+) {
+
+    // --- Script Engine Session (W3C SCXML B.1) ---
+
+    /** Session ID for script engine scope isolation. */
+    protected var scriptSessionId: String? = null
+        private set
+
+    /** Lazy initialization flag — generated ensureScriptEngine() sets this. */
+    protected var scriptEngineInitialized: Boolean = false
+
+    /**
+     * Allocate a script engine session ID.
+     * Called by generated ensureScriptEngine() during lazy initialization.
+     */
+    protected fun allocateScriptSession(): String {
+        val sid = "session_${hashCode()}"
+        scriptSessionId = sid
+        return sid
+    }
 
     // --- Active State Configuration (W3C SCXML 5.9.2) ---
 
@@ -363,6 +384,12 @@ abstract class StateMachineEngine<S : State, E : Event> {
             entry.monitorJob.cancel()
         }
         activeInvokes.clear()
+        // W3C SCXML B.1: Destroy script engine session
+        if (scriptEngineInitialized) {
+            scriptSessionId?.let { scriptEngine?.destroySession(it) }
+            scriptEngineInitialized = false
+            scriptSessionId = null
+        }
         // Reset state for stop/start reuse
         activeStateIds.clear()
         isInFinalState = false

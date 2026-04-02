@@ -23,6 +23,7 @@
 {% set has_deep_initial = state_id in deep_initial_entries %}
 {% set has_initial_child = not state.is_final and not state.is_parallel and state.initial and state.initial != state_id and not has_deep_initial %}
 {% set has_invokes = state_id in invoke_entries %}
+{% set has_late_datamodel = model.needs_script_engine and model.binding == 'late' and state.datamodel %}
 {# W3C SCXML 3.7.1: Check if this final state's grandparent is parallel #}
 {% set grandparent_is_parallel = false %}
 {% if state.is_final and state.parent %}
@@ -32,11 +33,38 @@
 {% set parallel_grandparent_id = parent_state.parent %}
 {% endif %}
 {% endif %}
-{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or has_done_event or is_top_final or has_parallel_children or has_initial_child or has_deep_initial or grandparent_is_parallel or has_invokes %}
+{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or has_done_event or is_top_final or has_parallel_children or has_initial_child or has_deep_initial or grandparent_is_parallel or has_invokes or has_late_datamodel %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
 {% if model.uses_in_predicate or model.has_parallel_states %}
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
                 if (!activeStateIds.add("{{ state_id }}")) return
+{% endif %}
+{% if has_late_datamodel %}
+                // W3C SCXML 5.3: Late binding — initialize state-level datamodel on entry
+                run {
+                    ensureScriptEngine()
+                    val engine = scriptEngine ?: return@run
+                    val sid = scriptSessionId ?: return@run
+{% for dm_var in state.datamodel %}
+{% if dm_var.expr %}
+                    try {
+                        val v = engine.evaluateExpr(sid, "{{ dm_var.expr | escape_kotlin }}")
+                        engine.setVariable(sid, "{{ dm_var.id }}", v)
+                    } catch (e: Exception) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                    }
+{% elif dm_var.content %}
+                    try {
+                        val v = engine.evaluateExpr(sid, "{{ dm_var.content | escape_kotlin }}")
+                        engine.setVariable(sid, "{{ dm_var.id }}", v)
+                    } catch (e: Exception) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                    }
+{% else %}
+                    engine.setVariable(sid, "{{ dm_var.id }}", null)
+{% endif %}
+{% endfor %}
+                }
 {% endif %}
 {% for action in state.on_entry %}
     {% include 'actions/_render.kt.jinja2' with context %}
@@ -45,7 +73,7 @@
 {% for inv in invoke_entries[state_id] %}
 {% if inv.child_class %}
                 // W3C SCXML 6.4: Start invoked child state machine
-                startInvoke("{{ inv.invoke_id }}", {{ inv.child_class }}StateMachine(), {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %})
+                startInvoke("{{ inv.invoke_id }}", {{ inv.child_class }}StateMachine(scriptEngine), {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %})
 {% endif %}
 {% endfor %}
 {% endif %}

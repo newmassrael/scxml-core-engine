@@ -1,2 +1,6 @@
-{# W3C SCXML 3.8.6: <script> — Phase 1: not supported #}
-            // <script> not supported in Kotlin Phase 1 (pure static)
+{# W3C SCXML 3.8.6: <script> — three-way: kt: function | script engine | no-op #}
+{% if action.get('is_kt_function', false) %}
+            {{ action.content_kt | trim }}
+{% elif model.needs_script_engine and action.content %}
+            executeScriptBlock("{{ action.content | escape_kotlin }}")
+{% endif %}
