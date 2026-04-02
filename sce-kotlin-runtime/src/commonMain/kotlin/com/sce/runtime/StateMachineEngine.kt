@@ -107,6 +107,20 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected val activeStateIds: MutableSet<String> = mutableSetOf()
 
     /**
+     * W3C SCXML 3.11: History state storage.
+     * Maps history state ID to recorded active state IDs at time of parent exit.
+     * Shallow history stores direct children; deep history stores leaf descendants.
+     */
+    protected val historyStore: MutableMap<String, List<String>> = mutableMapOf()
+
+    /**
+     * W3C SCXML 3.11: Pre-transition active states snapshot.
+     * Captured before exit phase so history recording sees the full configuration.
+     * Matches C++ activeStatesBeforeTransition pattern.
+     */
+    protected var preTransitionActiveStates: Set<String> = emptySet()
+
+    /**
      * W3C SCXML 5.9.2: Check if a state is in the active configuration.
      *
      * Used by generated code for In() predicate evaluation.
@@ -1120,14 +1134,40 @@ abstract class StateMachineEngine<S : State, E : Event>(
             is TransitionResult.External -> {
                 val target = result.target
 
+                // W3C SCXML 3.11: Capture active states before exit for history recording
+                preTransitionActiveStates = activeStateIds.toSet()
+
                 // W3C SCXML 3.13: Exit -> Transition Actions -> Entry
                 // When transitionSource is set, use it for LCCA in the parallel path
                 exitHierarchy(source, target, result.transitionSource)
                 executeTransitionActions(source, event)
+
+                // W3C SCXML 3.13: Enter ancestors of target that were exited
+                // Walk up from target to find the lowest active ancestor, then enter
+                // from its child downward. This ensures parallel states are properly
+                // re-entered with all their child regions (C++ entry pattern).
+                if (activeStateIds.isNotEmpty() || parentOf(target) != null) {
+                    val ancestorsToEnter = mutableListOf<S>()
+                    var anc = parentOf(target)
+                    while (anc != null) {
+                        val ancId = stateIdOf(anc)
+                        if (ancId.isNotEmpty() && !activeStateIds.contains(ancId)) {
+                            ancestorsToEnter.add(0, anc)
+                        } else {
+                            break
+                        }
+                        anc = parentOf(anc)
+                    }
+                    for (ancestor in ancestorsToEnter) {
+                        onEntry(ancestor)
+                    }
+                }
                 onEntry(target)
 
-                // Resolve to leaf state for compound/parallel targets
-                val leafTarget = resolveLeafState(target)
+                // Resolve to actual active leaf state (may differ from default initial
+                // when history restoration enters a different child)
+                val leafTarget = activeLeafStatesInDocumentOrder().lastOrNull()
+                    ?: resolveLeafState(target)
 
                 // Update observable state BEFORE flushing isInFinalState.
                 _currentState.value = leafTarget
@@ -1252,25 +1292,25 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val lccaStart = transitionSource ?: source
         var lcca: S? = parentOf(lccaStart)
         while (lcca != null) {
-            if (lcca == target || isDescendantOf(target, lcca)) break
+            // W3C SCXML 3.13: LCCA must be a PROPER ancestor of both source and target.
+            // For external transitions to an ancestor, the ancestor itself is NOT the LCCA
+            // (it must be exited and re-entered).
+            if (isDescendantOf(target, lcca)) break
             lcca = parentOf(lcca)
         }
 
         // Step 2: Collect active states to exit
+        // W3C SCXML: Exit set = all active states that are proper descendants of domain(t)
+        // For external transitions, this includes the target if it's active (it will be re-entered)
         val statesToExit = mutableListOf<Pair<S, Int>>()
         for (stateId in activeStateIds.toList()) {
             val state = resolveState(stateId) ?: continue
-            // Don't exit target or its descendants
-            if (state == target || isDescendantOf(state, target)) continue
             if (lcca != null) {
-                // Normal case: exit descendants of LCCA (but not LCCA itself)
+                // Normal case: exit all descendants of LCCA (but not LCCA itself)
                 if (state == lcca) continue
                 if (!isDescendantOf(state, lcca)) continue
-            } else {
-                // No common ancestor: exit source and all its ancestors/descendants
-                // This handles root→root transitions (e.g., parallel root to final)
-                if (state != source && !isDescendantOf(state, source) && !isDescendantOf(source, state)) continue
             }
+            // lcca == null: domain is implicit root — exit ALL active states
             statesToExit.add(state to documentOrderOf(state))
         }
 

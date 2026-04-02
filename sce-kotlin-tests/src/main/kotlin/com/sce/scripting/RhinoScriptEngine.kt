@@ -259,6 +259,16 @@ class RhinoScriptEngine : ScxmlScriptEngine {
     ) {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
+
+        // W3C SCXML 4.6: Validate item variable name (C++ ForeachHelper::isLegalVariableName)
+        if (!isLegalVariableName(item)) {
+            throw ScriptEngineException("Illegal foreach item variable name: '$item'")
+        }
+        // W3C SCXML 4.6: Validate index variable name if specified
+        if (index.isNotEmpty() && !isLegalVariableName(index)) {
+            throw ScriptEngineException("Illegal foreach index variable name: '$index'")
+        }
+
         val cx = Context.enter()
         try {
             cx.languageVersion = Context.VERSION_ES6
@@ -301,6 +311,20 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         } finally {
             Context.exit()
         }
+    }
+
+    /**
+     * W3C SCXML B.2: Validate ECMAScript variable name.
+     * Mirrors C++ ForeachHelper::isLegalVariableName().
+     */
+    private fun isLegalVariableName(name: String): Boolean {
+        if (name.isEmpty()) return false
+        // Must not be quoted (e.g., 'continue' or "continue")
+        if (name.first() == '\'' || name.first() == '"') return false
+        // Must start with letter, underscore, or dollar sign
+        if (!name.first().isLetter() && name.first() != '_' && name.first() != '$') return false
+        // Must contain only alphanumeric, underscore, or dollar sign
+        return name.all { it.isLetterOrDigit() || it == '_' || it == '$' }
     }
 
     // --- Private Helpers ---

@@ -75,6 +75,7 @@ class Test452StateMachine(
             raiseInternal(Test452Event.Error.Execution)
         }
 
+
         // W3C SCXML 5.8: Execute global scripts at document load time
         try {
             engine.executeScript(sid, "function testobject() {\n    this.bar = 0;}")

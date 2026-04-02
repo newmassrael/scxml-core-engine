@@ -74,6 +74,7 @@ class Test307StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -199,7 +200,10 @@ class Test307StateMachine(
                 markFinalStateReached()
             }
             is Test307State.S0 -> {
-            println("entering s0 value of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "Var1")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("entering s0 value of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "Var1")?.toString() ?: ""))
+            } catch (_: Exception) {}
             raiseInternal(Test307Event.Foo)
             }
             is Test307State.S1 -> {
@@ -215,7 +219,10 @@ class Test307StateMachine(
                         raiseInternal(Test307Event.Error.Execution)
                     }
                 }
-            println("entering s1, value of non-existent substructure of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "Var1.foo")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("entering s1, value of non-existent substructure of Var 1 is: : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "Var1.foo")?.toString() ?: ""))
+            } catch (_: Exception) {}
             raiseInternal(Test307Event.Bar)
             }
             else -> {}
@@ -236,7 +243,10 @@ class Test307StateMachine(
         when (source) {
         is Test307State.S0 -> when {
             (event is Test307Event.Error || event is Test307Event.Error.Execution) -> {
-            println("error in state s0: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("error in state s0: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event")?.toString() ?: ""))
+            } catch (_: Exception) {}
             }
             event is Test307Event.Foo -> {
             println("no error in s0")
@@ -245,7 +255,10 @@ class Test307StateMachine(
         }
         is Test307State.S1 -> when {
             (event is Test307Event.Error || event is Test307Event.Error.Execution) -> {
-            println("error in state s1: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("error in state s1: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event")?.toString() ?: ""))
+            } catch (_: Exception) {}
             }
             event is Test307Event.Bar -> {
             println("No error in s1")

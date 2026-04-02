@@ -86,6 +86,7 @@ class Test155StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -213,7 +214,7 @@ class Test155StateMachine(
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var3", "Var2", "") {
-            executeAssign("Var1", "Var1 + Var2")
+            engine.assign(sid, "Var1", "Var1 + Var2")
                     }
                 } catch (e: Exception) {
                     raiseInternal(Test155Event.Error.Execution)

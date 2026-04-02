@@ -182,6 +182,7 @@ class Test504StateMachine(
         }
 
 
+
         // W3C SCXML 5.9.2: Register In() predicate callback
         engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
 

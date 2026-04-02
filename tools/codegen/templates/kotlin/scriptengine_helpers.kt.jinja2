@@ -51,6 +51,37 @@
 {% endif %}
 {% endfor %}
 
+{% if model.states.values() | selectattr('datamodel') | list %}
+{% if model.binding == 'early' %}
+        // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
+{% for state_id, state in model.states.items() %}
+{% if state.datamodel %}
+{% for dm_var in state.datamodel %}
+{% if dm_var.expr %}
+        // State '{{ state_id }}' variable '{{ dm_var.id }}'
+        try {
+            val initResult_{{ dm_var.id | to_camel_case }} = engine.evaluateExpr(sid, "{{ dm_var.expr | escape_kotlin }}")
+            engine.setVariable(sid, "{{ dm_var.id }}", initResult_{{ dm_var.id | to_camel_case }})
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+{% elif dm_var.content %}
+        // State '{{ state_id }}' variable '{{ dm_var.id }}' (inline content)
+        try {
+            val initResult_{{ dm_var.id | to_camel_case }} = engine.evaluateExpr(sid, "{{ dm_var.content | escape_kotlin }}")
+            engine.setVariable(sid, "{{ dm_var.id }}", initResult_{{ dm_var.id | to_camel_case }})
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+{% else %}
+        engine.setVariable(sid, "{{ dm_var.id }}", null)
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+
 {% if model.global_scripts %}
         // W3C SCXML 5.8: Execute global scripts at document load time
 {% for script in model.global_scripts %}

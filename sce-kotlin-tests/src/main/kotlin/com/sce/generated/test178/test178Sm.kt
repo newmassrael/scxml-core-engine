@@ -68,6 +68,7 @@ class Test178StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -213,7 +214,10 @@ class Test178StateMachine(
         when (source) {
         is Test178State.S0 -> when {
             event is Test178Event.Event1 -> {
-            println("_event : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.raw")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("_event : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.raw")?.toString() ?: ""))
+            } catch (_: Exception) {}
             }
             else -> {}
         }

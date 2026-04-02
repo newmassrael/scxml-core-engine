@@ -71,6 +71,7 @@ class Test513StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -179,12 +180,18 @@ class Test513StateMachine(
     override fun onEntry(state: Test513State) {
         when (state) {
             is Test513State.Fail -> {
-            println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\"")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 FAIL: BasicHTTP Event I/O Processor did not respond with 200 OK\"")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test513State.Pass -> {
-            println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\"")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513 PASS: BasicHTTP Event I/O Processor success response validated\"")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -210,10 +217,16 @@ class Test513StateMachine(
         when (source) {
         is Test513State.S0 -> when {
             event is Test513Event.Test -> {
-            println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513: Received HTTP event - server responded with 200 OK\"")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513: Received HTTP event - server responded with 200 OK\"")?.toString() ?: ""))
+            } catch (_: Exception) {}
             }
             event is Test513Event.Timeout -> {
-            println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513: Timeout - no HTTP event received\"")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "\"Test 513: Timeout - no HTTP event received\"")?.toString() ?: ""))
+            } catch (_: Exception) {}
             }
             else -> {}
         }

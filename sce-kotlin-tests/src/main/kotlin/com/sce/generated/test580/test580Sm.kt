@@ -137,6 +137,7 @@ class Test580StateMachine(
         }
 
 
+
         // W3C SCXML 5.9.2: Register In() predicate callback
         engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
 
@@ -261,7 +262,7 @@ class Test580StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test580State> = when {
         isStateActive("sh1") -> TransitionResult.External(Test580State.Fail)
-        safeEvaluateGuard("Var1 == 0") -> TransitionResult.External(Test580State.S11)
+        safeEvaluateGuard("Var1 == 0") -> TransitionResult.External((historyStore["sh1"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test580State.S11))
         safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test580State.Pass)
         else -> TransitionResult.Ignored
     }
@@ -313,8 +314,20 @@ class Test580StateMachine(
             is Test580State.S1 -> {
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
                 if (!activeStateIds.add("s1")) return
-                // W3C SCXML 3.3: Enter initial child of compound state
-                onEntry(Test580State.S11)
+                // W3C SCXML 3.11: Enter history-restored state or default target
+                run {
+                    val stored = historyStore["sh1"]
+                    if (stored != null && stored.isNotEmpty()) {
+                        val histTarget = resolveState(stored[0])
+                        if (histTarget != null) {
+                            onEntry(histTarget)
+                        } else {
+                            onEntry(Test580State.S11)
+                        }
+                    } else {
+                        onEntry(Test580State.S11)
+                    }
+                }
             }
             is Test580State.S11 -> {
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
@@ -366,6 +379,12 @@ class Test580StateMachine(
                 activeStateIds.remove("s0")
             }
             is Test580State.S1 -> {
+                // W3C SCXML 3.11: Record shallow history for sh1
+                // Uses preTransitionActiveStates (captured before exits, C++ pattern)
+                historyStore["sh1"] = preTransitionActiveStates.filter { stateId ->
+                    val st = resolveState(stateId) ?: return@filter false
+                    parentOf(st)?.let { stateIdOf(it) } == "s1"
+                }.toList()
                 activeStateIds.remove("s1")
             executeAssign("Var1", "Var1 + 1")
             }

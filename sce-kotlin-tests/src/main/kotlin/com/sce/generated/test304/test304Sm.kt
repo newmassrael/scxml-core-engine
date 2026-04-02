@@ -63,6 +63,7 @@ class Test304StateMachine(
         engine.setupSystemVariables(sid, "test304")
 
 
+
         // W3C SCXML 5.8: Execute global scripts at document load time
         try {
             engine.executeScript(sid, "Var1 = 1")

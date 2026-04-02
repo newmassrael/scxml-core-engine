@@ -95,6 +95,7 @@ class Test230StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -284,13 +285,34 @@ class Test230StateMachine(
         when (source) {
         is Test230State.S01 -> when {
             event is Test230Event.ChildToParent -> {
-            println("name is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.name")?.toString() ?: ""))
-            println("type is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.type")?.toString() ?: ""))
-            println("sendid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.sendid")?.toString() ?: ""))
-            println("origin is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.origin")?.toString() ?: ""))
-            println("origintype is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.origintype")?.toString() ?: ""))
-            println("invokeid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.invokeid")?.toString() ?: ""))
-            println("data is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.data")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("name is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.name")?.toString() ?: ""))
+            } catch (_: Exception) {}
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("type is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.type")?.toString() ?: ""))
+            } catch (_: Exception) {}
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("sendid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.sendid")?.toString() ?: ""))
+            } catch (_: Exception) {}
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("origin is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.origin")?.toString() ?: ""))
+            } catch (_: Exception) {}
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("origintype is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.origintype")?.toString() ?: ""))
+            } catch (_: Exception) {}
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("invokeid is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.invokeid")?.toString() ?: ""))
+            } catch (_: Exception) {}
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("data is : " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "_event.data")?.toString() ?: ""))
+            } catch (_: Exception) {}
             }
             else -> {}
         }

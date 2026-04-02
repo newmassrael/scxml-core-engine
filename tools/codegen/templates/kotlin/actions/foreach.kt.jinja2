@@ -1,5 +1,9 @@
 {# W3C SCXML 4.6: <foreach> — script engine iteration or static Kotlin #}
 {% if model.needs_script_engine %}
+{% if not action.array or not action.item %}
+            // W3C SCXML 4.6: Missing required foreach attribute (array/item)
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+{% else %}
             run {
                 ensureScriptEngine()
                 val engine = scriptEngine ?: return@run
@@ -8,6 +12,7 @@
                     engine.executeForeach(sid, "{{ action.array | escape_kotlin }}", "{{ action.item }}", "{{ action.index }}") {
 {% for body_action in action.actions %}
 {% set action = body_action %}
+{% set _in_foreach_body = True %}
 {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
                     }
@@ -15,6 +20,7 @@
                     raiseInternal({{ machine_name }}Event.Error.Execution)
                 }
             }
+{% endif %}
 {% else %}
             {{ action.array }}.forEach { {{ action.item }} ->
 {% for body_action in action.actions %}

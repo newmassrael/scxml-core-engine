@@ -104,6 +104,7 @@ class Test152StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -246,33 +247,13 @@ class Test152StateMachine(
                 markFinalStateReached()
             }
             is Test152State.S0 -> {
-            run {
-                ensureScriptEngine()
-                val engine = scriptEngine ?: return@run
-                val sid = scriptSessionId ?: return@run
-                try {
-                    engine.executeForeach(sid, "", "Var2", "Var3") {
-            executeAssign("Var1", "Var1 + 1")
-                    }
-                } catch (e: Exception) {
-                    raiseInternal(Test152Event.Error.Execution)
-                }
-            }
+            // W3C SCXML 4.6: Missing required foreach attribute (array/item)
+            raiseInternal(Test152Event.Error.Execution)
             raiseInternal(Test152Event.Foo)
             }
             is Test152State.S1 -> {
-            run {
-                ensureScriptEngine()
-                val engine = scriptEngine ?: return@run
-                val sid = scriptSessionId ?: return@run
-                try {
-                    engine.executeForeach(sid, "Var5", "", "Var3") {
-            executeAssign("Var1", "Var1 + 1")
-                    }
-                } catch (e: Exception) {
-                    raiseInternal(Test152Event.Error.Execution)
-                }
-            }
+            // W3C SCXML 4.6: Missing required foreach attribute (array/item)
+            raiseInternal(Test152Event.Error.Execution)
             raiseInternal(Test152Event.Bar)
             }
             else -> {}

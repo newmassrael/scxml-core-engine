@@ -217,8 +217,9 @@ TransitionResult.External({{ target_expr }})
 {% for trans in state.transitions %}
 {% if not trans.event and trans.target and not ns_rendered_else.done %}
 {# --- Determine target expression (history resolution) --- #}
-{% if trans.history_leaf_target is defined %}
-{% set target_expr = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% if trans.history_target is defined %}
+{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
 {% else %}
 {% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
 {% endif %}
@@ -265,8 +266,9 @@ TransitionResult.External({{ target_expr }})
 {% for trans in state.transitions %}
 {% if trans.event and trans.event != '*' and trans.event != '.*' and trans.target %}
 {# --- Determine target expression (history resolution) --- #}
-{% if trans.history_leaf_target is defined %}
-{% set target_expr = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% if trans.history_target is defined %}
+{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
 {% else %}
 {% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
 {% endif %}

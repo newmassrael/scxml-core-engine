@@ -98,6 +98,7 @@ class Test459StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -211,12 +212,18 @@ class Test459StateMachine(
     override fun onEntry(state: Test459State) {
         when (state) {
             is Test459State.Fail -> {
-            println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test459State.Pass -> {
-            println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -228,9 +235,9 @@ class Test459StateMachine(
                 try {
                     engine.executeForeach(sid, "Var4", "Var2", "Var3") {
             if (safeEvaluateGuard("Var1<Var2")) {
-            executeAssign("Var1", "Var2")
+            engine.assign(sid, "Var1", "Var2")
             } else {
-            executeAssign("Var5", "0")
+            engine.assign(sid, "Var5", "0")
             }
                     }
                 } catch (e: Exception) {

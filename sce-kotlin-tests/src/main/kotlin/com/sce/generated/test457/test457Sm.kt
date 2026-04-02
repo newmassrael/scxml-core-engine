@@ -112,6 +112,7 @@ class Test457StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -254,12 +255,18 @@ class Test457StateMachine(
     override fun onEntry(state: Test457State) {
         when (state) {
             is Test457State.Fail -> {
-            println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test457State.Pass -> {
-            println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -270,7 +277,7 @@ class Test457StateMachine(
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var4", "Var2", "Var3") {
-            executeAssign("Var1", "Var1 + 1")
+            engine.assign(sid, "Var1", "Var1 + 1")
                     }
                 } catch (e: Exception) {
                     raiseInternal(Test457Event.Error.Execution)
@@ -285,7 +292,7 @@ class Test457StateMachine(
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var5", "'continue'", "Var3") {
-            executeAssign("Var1", "Var1 + 1")
+            engine.assign(sid, "Var1", "Var1 + 1")
                     }
                 } catch (e: Exception) {
                     raiseInternal(Test457Event.Error.Execution)
@@ -301,7 +308,7 @@ class Test457StateMachine(
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var5", "Var2", "") {
-            executeAssign("Var6", "Var6 + Var2")
+            engine.assign(sid, "Var6", "Var6 + Var2")
                     }
                 } catch (e: Exception) {
                     raiseInternal(Test457Event.Error.Execution)

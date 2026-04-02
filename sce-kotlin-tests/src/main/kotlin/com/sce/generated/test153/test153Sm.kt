@@ -93,6 +93,7 @@ class Test153StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -221,9 +222,9 @@ class Test153StateMachine(
                 try {
                     engine.executeForeach(sid, "Var3", "Var2", "") {
             if (safeEvaluateGuard("Var1 < Var2")) {
-            executeAssign("Var1", "Var2")
+            engine.assign(sid, "Var1", "Var2")
             } else {
-            executeAssign("Var4", "0")
+            engine.assign(sid, "Var4", "0")
             }
                     }
                 } catch (e: Exception) {

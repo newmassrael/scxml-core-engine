@@ -21,6 +21,7 @@
 {% set is_top_final = state.is_final and not state.parent %}
 {% set has_parallel_children = state.is_parallel and state_id in model.parallel_regions %}
 {% set has_deep_initial = state_id in deep_initial_entries %}
+{% set has_initial_history = state.initial_history_id is defined and state.initial_history_id %}
 {% set has_initial_child = not state.is_final and not state.is_parallel and state.initial and state.initial != state_id and not has_deep_initial %}
 {% set has_invokes = state_id in invoke_entries %}
 {% set has_late_datamodel = model.needs_script_engine and model.binding == 'late' and state.datamodel %}
@@ -33,9 +34,9 @@
 {% set parallel_grandparent_id = parent_state.parent %}
 {% endif %}
 {% endif %}
-{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or has_done_event or is_top_final or has_parallel_children or has_initial_child or has_deep_initial or grandparent_is_parallel or has_invokes or has_late_datamodel %}
+{% if state.on_entry or model.uses_in_predicate or model.has_parallel_states or model.has_history_states or has_done_event or is_top_final or has_parallel_children or has_initial_child or has_initial_history or has_deep_initial or grandparent_is_parallel or has_invokes or has_late_datamodel %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
-{% if model.uses_in_predicate or model.has_parallel_states %}
+{% if model.uses_in_predicate or model.has_parallel_states or model.has_history_states %}
                 // W3C SCXML 3.8: Skip duplicate entry (parallel re-entry guard)
                 if (!activeStateIds.add("{{ state_id }}")) return
 {% endif %}
@@ -216,6 +217,35 @@
                 onEntry({{ machine_name }}State.{{ entry.id | to_state_class_name }})
 {% endif %}
 {% endfor %}
+{% elif has_initial_history %}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+{% if state.initial_history_default_actions %}
+                // W3C SCXML 3.11: Execute history default transition content only if no stored history
+                if (!historyStore.containsKey("{{ state.initial_history_id }}") || historyStore["{{ state.initial_history_id }}"].isNullOrEmpty()) {
+{% for action in state.initial_history_default_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+                }
+{% endif %}
+                // W3C SCXML 3.11: Enter history-restored state or default target
+                run {
+                    val stored = historyStore["{{ state.initial_history_id }}"]
+                    if (stored != null && stored.isNotEmpty()) {
+                        val histTarget = resolveState(stored[0])
+                        if (histTarget != null) {
+                            onEntry(histTarget)
+                        } else {
+                            onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+                        }
+                    } else {
+                        onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+                    }
+                }
 {% elif has_initial_child %}
 {% if state.initial_transition_actions %}
                 // W3C SCXML 3.3.2: Execute initial transition content
@@ -240,7 +270,8 @@
 {% set state = model.states[state_id] %}
 {% set is_parallel = state.is_parallel and state_id in model.parallel_regions %}
 {% set exit_has_invokes = state_id in invoke_entries %}
-{% if state.on_exit or model.uses_in_predicate or model.has_parallel_states or is_parallel or exit_has_invokes %}
+{% set has_history_children = model.history_states.values() | selectattr('parent', 'equalto', state_id) | list %}
+{% if state.on_exit or model.uses_in_predicate or model.has_parallel_states or is_parallel or exit_has_invokes or has_history_children %}
             is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
 {% if exit_has_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
@@ -267,7 +298,25 @@
                     onExit(desc)
                 }
 {% endif %}
-{% if model.uses_in_predicate or model.has_parallel_states %}
+{% for history_id, history_info in model.history_states.items() %}
+{% if history_info.parent == state_id %}
+{% if history_info.type == 'shallow' %}
+                // W3C SCXML 3.11: Record shallow history for {{ history_id }}
+                // Uses preTransitionActiveStates (captured before exits, C++ pattern)
+                historyStore["{{ history_id }}"] = preTransitionActiveStates.filter { stateId ->
+                    val st = resolveState(stateId) ?: return@filter false
+                    parentOf(st)?.let { stateIdOf(it) } == "{{ state_id }}"
+                }.toList()
+{% else %}
+                // W3C SCXML 3.11: Record deep history for {{ history_id }}
+                historyStore["{{ history_id }}"] = preTransitionActiveStates.filter { stateId ->
+                    val st = resolveState(stateId) ?: return@filter false
+                    isDescendantOf(st, {{ machine_name }}State.{{ state_id | to_state_class_name }}) && isAtomicState(st)
+                }.toList()
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if model.uses_in_predicate or model.has_parallel_states or model.has_history_states %}
                 activeStateIds.remove("{{ state_id }}")
 {% endif %}
 {% for action in state.on_exit %}

@@ -1,5 +1,15 @@
 {# W3C SCXML 5.3: <assign> — three-way: script engine | static Kotlin | no-op #}
 {% if model.needs_script_engine %}
+{% if _in_foreach_body is defined and _in_foreach_body %}
+{# W3C SCXML 4.6: Inside foreach body, throw on error to stop iteration (C++ in_foreach pattern) #}
+{% if not action.location %}
+            throw com.sce.runtime.ScriptEngineException("W3C SCXML 5.3: Empty assign location")
+{% elif action.content %}
+            engine.assign(sid, "{{ action.location | escape_kotlin }}", "{{ action.content | escape_kotlin }}")
+{% elif action.expr %}
+            engine.assign(sid, "{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
+{% endif %}
+{% else %}
 {% if not action.location %}
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
@@ -7,6 +17,7 @@
             executeAssign("{{ action.location | escape_kotlin }}", "{{ action.content | escape_kotlin }}")
 {% elif action.expr %}
             executeAssign("{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
+{% endif %}
 {% endif %}
 {% elif action.location and action.expr %}
             {{ action.location | to_camel_case }} = {{ action.expr }}

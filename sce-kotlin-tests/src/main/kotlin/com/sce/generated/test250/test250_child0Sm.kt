@@ -79,6 +79,7 @@ class Test250Child0StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -196,7 +197,10 @@ class Test250Child0StateMachine(
                 onEntry(Test250Child0State.Sub01)
             }
             is Test250Child0State.SubFinal -> {
-            println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'entering final state, invocation was not cancelled'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'entering final state, invocation was not cancelled'")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -208,10 +212,16 @@ class Test250Child0StateMachine(
     override fun onExit(state: Test250Child0State) {
         when (state) {
             is Test250Child0State.Sub0 -> {
-            println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub0'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub0'")?.toString() ?: ""))
+            } catch (_: Exception) {}
             }
             is Test250Child0State.Sub01 -> {
-            println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub01'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println((scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'Exiting sub01'")?.toString() ?: ""))
+            } catch (_: Exception) {}
             }
             else -> {}
         }

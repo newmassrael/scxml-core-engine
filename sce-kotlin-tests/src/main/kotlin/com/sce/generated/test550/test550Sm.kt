@@ -64,6 +64,15 @@ class Test550StateMachine(
         engine.setupSystemVariables(sid, "test550")
 
 
+        // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
+        // State 's1' variable 'Var1'
+        try {
+            val initResult_Var1 = engine.evaluateExpr(sid, "2")
+            engine.setVariable(sid, "Var1", initResult_Var1)
+        } catch (e: Exception) {
+            raiseInternal(Test550Event.Error.Execution)
+        }
+
 
 
         // W3C SCXML 6.4: Apply pending invoke params from parent

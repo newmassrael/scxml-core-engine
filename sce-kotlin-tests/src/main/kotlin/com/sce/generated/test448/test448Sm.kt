@@ -130,6 +130,22 @@ class Test448StateMachine(
         engine.setupSystemVariables(sid, "test448")
 
 
+        // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
+        // State 's01' variable 'var1'
+        try {
+            val initResult_var1 = engine.evaluateExpr(sid, "1")
+            engine.setVariable(sid, "var1", initResult_var1)
+        } catch (e: Exception) {
+            raiseInternal(Test448Event.Error.Execution)
+        }
+        // State 's01p2' variable 'var2'
+        try {
+            val initResult_var2 = engine.evaluateExpr(sid, "1")
+            engine.setVariable(sid, "var2", initResult_var2)
+        } catch (e: Exception) {
+            raiseInternal(Test448Event.Error.Execution)
+        }
+
 
         // W3C SCXML 5.9.2: Register In() predicate callback
         engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }

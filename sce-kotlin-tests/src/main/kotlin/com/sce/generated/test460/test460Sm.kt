@@ -81,6 +81,7 @@ class Test460StateMachine(
 
 
 
+
         // W3C SCXML 6.4: Apply pending invoke params from parent
         // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
         if (pendingInvokeParams.isNotEmpty()) {
@@ -194,12 +195,18 @@ class Test460StateMachine(
     override fun onEntry(state: Test460State) {
         when (state) {
             is Test460State.Fail -> {
-            println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'fail'")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
             is Test460State.Pass -> {
-            println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println("Outcome: " + (scriptEngine?.evaluateExpr(scriptSessionId ?: "", "'pass'")?.toString() ?: ""))
+            } catch (_: Exception) {}
                 // W3C SCXML 3.7: Top-level final state reached
                 markFinalStateReached()
             }
@@ -210,8 +217,8 @@ class Test460StateMachine(
                 val sid = scriptSessionId ?: return@run
                 try {
                     engine.executeForeach(sid, "Var1", "Var3", "") {
-            executeAssign("Var1", "[].concat(Var1, [4])")
-            executeAssign("Var2", "Var2 + 1")
+            engine.assign(sid, "Var1", "[].concat(Var1, [4])")
+            engine.assign(sid, "Var2", "Var2 + 1")
                     }
                 } catch (e: Exception) {
                     raiseInternal(Test460Event.Error.Execution)
