@@ -1,0 +1,15 @@
+// GENERATED — DO NOT EDIT (generate_kotlin_w3c.py)
+package com.sce.w3c
+
+import com.sce.generated.test567.Test567Event
+import com.sce.generated.test567.Test567State
+import com.sce.generated.test567.Test567StateMachine
+import com.sce.scripting.RhinoScriptEngine
+import org.junit.jupiter.api.DisplayName
+
+// W3C SCXML C.2: The processor MUST use any message content other than '_scxmleventname' to populate _event.data.
+@DisplayName("Test 567 -- W3C SCXML C.2")
+class Test567 : W3CTestBase<Test567State, Test567Event>() {
+    override fun createStateMachine() = Test567StateMachine(RhinoScriptEngine())
+    override val expectedPassState: Test567State = Test567State.Pass
+}

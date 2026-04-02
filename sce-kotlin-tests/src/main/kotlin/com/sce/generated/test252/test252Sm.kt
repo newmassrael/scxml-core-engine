@@ -1,0 +1,173 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/252/test252.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test252
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test252State : State {
+    data object Fail : Test252State
+    data object Pass : Test252State
+    data object S0 : Test252State
+    data object S01 : Test252State
+    data object S02 : Test252State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test252Event : Event {
+    sealed interface Cancel : Test252Event {
+        data object Invoke : Cancel
+    }
+    data object ChildToParent : Test252Event
+    sealed interface Done : Test252Event {
+        data object Invoke : Done
+    }
+    sealed interface Error : Test252Event {
+        data object Execution : Error
+    }
+    data object Foo : Test252Event
+    data object Timeout : Test252Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test252StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test252State, Test252Event>(scriptEngine) {
+
+    override val initialState: Test252State = Test252State.S01
+
+    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
+    // through compound/parallel hierarchy to populate activeStateIds)
+    override fun enterInitialConfiguration() {
+        onEntry(Test252State.S0)
+    }
+
+    // W3C SCXML 3.3: State hierarchy parent mapping
+    override fun parentOf(state: Test252State): Test252State? = when (state) {
+        is Test252State.S01 -> Test252State.S0
+        is Test252State.S02 -> Test252State.S0
+        else -> null
+    }
+
+    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
+    override fun resolveLeafState(state: Test252State): Test252State = when (state) {
+        is Test252State.S0 -> Test252State.S01
+        else -> state
+    }
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test252Event? = when (name) {
+        "cancel.invoke" -> Test252Event.Cancel.Invoke
+        "childToParent" -> Test252Event.ChildToParent
+        "done.invoke" -> Test252Event.Done.Invoke
+        "error.execution" -> Test252Event.Error.Execution
+        "foo" -> Test252Event.Foo
+        "timeout" -> Test252Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test252Event): String? = when (event) {
+        is Test252Event.Cancel.Invoke -> "cancel.invoke"
+        is Test252Event.ChildToParent -> "childToParent"
+        is Test252Event.Done.Invoke -> "done.invoke"
+        is Test252Event.Error.Execution -> "error.execution"
+        is Test252Event.Foo -> "foo"
+        is Test252Event.Timeout -> "timeout"
+        else -> null
+    }
+
+
+    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    override fun processEvent(
+        state: Test252State,
+        event: Test252Event
+    ): TransitionResult<Test252State> = when (state) {
+        is Test252State.S0 -> processS0(event)
+        is Test252State.S01 -> {
+            val result = processS01(event)
+            // W3C SCXML 3.13: Ancestor transition routing
+            if (result !is TransitionResult.Ignored) result
+            else {
+                val anc1 = processS0(event)
+                if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+            }
+        }
+        // W3C SCXML 3.13: Ancestor-only routing (s02 has no own event transitions)
+        is Test252State.S02 -> {
+            val anc1 = processS0(event)
+            if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+        }
+        else -> TransitionResult.Ignored
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processS0(
+        event: Test252Event
+    ): TransitionResult<Test252State> = when {
+        event is Test252Event.Timeout -> TransitionResult.External(Test252State.Pass)
+        event is Test252Event.ChildToParent -> TransitionResult.External(Test252State.Fail)
+        event is Test252Event.Done.Invoke -> TransitionResult.External(Test252State.Fail)
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processS01(
+        event: Test252Event
+    ): TransitionResult<Test252State> = when {
+        event is Test252Event.Foo -> TransitionResult.External(Test252State.S02)
+        else -> TransitionResult.Ignored
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test252State) {
+        when (state) {
+            is Test252State.Fail -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test252State.Pass -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test252State.S0 -> {
+            scheduleSend("__send_0", 1000L, Test252Event.Timeout)
+                // W3C SCXML 3.3: Enter initial child of compound state
+                onEntry(Test252State.S01)
+            }
+            is Test252State.S01 -> {
+            send(Test252Event.Foo, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+                // W3C SCXML 6.4: Start invoked child state machine
+                startInvoke("_invoke_0", Test252Child0StateMachine(scriptEngine), false, Test252Event.Done.Invoke)
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test252State) {
+        when (state) {
+            is Test252State.S01 -> {
+                // W3C SCXML 6.4: Cancel invoked child on state exit
+                cancelInvoke("_invoke_0")
+            }
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test252State,
+        event: Test252Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

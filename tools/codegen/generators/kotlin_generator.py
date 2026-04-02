@@ -522,6 +522,8 @@ class KotlinCodeGenerator(BaseCodeGenerator):
                         'autoforward': si.get('autoforward', False),
                         'done_event': done_event,
                         'has_done_event': done_event in model.events or 'done.invoke' in model.events,
+                        'params': si.get('params', []),
+                        'namelist': si.get('namelist', ''),
                     })
                 invoke_entries[state_id] = entries
 

@@ -1,0 +1,333 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/294/test294.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test294
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test294State : State {
+    data object Fail : Test294State
+    data object Pass : Test294State
+    data object S0 : Test294State
+    data object S01 : Test294State
+    data object S02 : Test294State
+    data object S1 : Test294State
+    data object S11 : Test294State
+    data object S12 : Test294State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test294Event : Event {
+    sealed interface Done : Test294Event {
+        sealed interface State : Done {
+            data object S0 : State
+            data object S1 : State
+        }
+    }
+    sealed interface Error : Test294Event {
+        data object Execution : Error
+    }
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test294StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test294State, Test294Event>(scriptEngine) {
+
+    // Datamodel (W3C SCXML 5.3)
+
+    override val initialState: Test294State = Test294State.S01
+
+    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
+    // through compound/parallel hierarchy to populate activeStateIds)
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        onEntry(Test294State.S0)
+    }
+
+    // W3C SCXML 3.3: State hierarchy parent mapping
+    override fun parentOf(state: Test294State): Test294State? = when (state) {
+        is Test294State.S01 -> Test294State.S0
+        is Test294State.S02 -> Test294State.S0
+        is Test294State.S11 -> Test294State.S1
+        is Test294State.S12 -> Test294State.S1
+        else -> null
+    }
+
+    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
+    override fun resolveLeafState(state: Test294State): Test294State = when (state) {
+        is Test294State.S0 -> Test294State.S01
+        is Test294State.S1 -> Test294State.S11
+        else -> state
+    }
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test294Event? = when (name) {
+        "done.state.s0" -> Test294Event.Done.State.S0
+        "done.state.s1" -> Test294Event.Done.State.S1
+        "error.execution" -> Test294Event.Error.Execution
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test294Event): String? = when (event) {
+        is Test294Event.Done.State.S0 -> "done.state.s0"
+        is Test294Event.Done.State.S1 -> "done.state.s1"
+        is Test294Event.Error.Execution -> "error.execution"
+        else -> null
+    }
+
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: return
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        engine.setupSystemVariables(sid, "test294")
+
+        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
+        try {
+            val initResult_Var1 = engine.evaluateExpr(sid, "0")
+            engine.setVariable(sid, "Var1", initResult_Var1)
+        } catch (e: Exception) {
+            raiseInternal(Test294Event.Error.Execution)
+        }
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return false
+        val sid = scriptSessionId ?: return false
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raiseInternal(Test294Event.Error.Execution)
+            false
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    private fun executeAssign(location: String, expr: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.assign(sid, location, expr)
+        } catch (e: Exception) {
+            raiseInternal(Test294Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 3.8.6: Script block execution
+    private fun executeScriptBlock(script: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.executeScript(sid, script)
+        } catch (e: Exception) {
+            raiseInternal(Test294Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: Test294Event) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        val eventName = eventNameOf(event) ?: return
+        val meta = currentEventMetadata
+        engine.setCurrentEvent(
+            sid, eventName,
+            data = meta.data,
+            type = meta.type,
+            sendId = meta.sendId,
+            origin = meta.origin.ifEmpty { scriptSessionId ?: "" },
+            originType = meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" },
+            invokeId = meta.invokeId
+        )
+    }
+
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
+    override fun processEvent(
+        state: Test294State,
+        event: Test294Event
+    ): TransitionResult<Test294State> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
+        is Test294State.S0 -> processS0(event)
+        // W3C SCXML 3.13: Ancestor-only routing (s01 has no own event transitions)
+        is Test294State.S01 -> {
+            val anc1 = processS0(event)
+            if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+        }
+        // W3C SCXML 3.13: Ancestor-only routing (s02 has no own event transitions)
+        is Test294State.S02 -> {
+            val anc1 = processS0(event)
+            if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+        }
+        is Test294State.S1 -> processS1(event)
+        // W3C SCXML 3.13: Ancestor-only routing (s11 has no own event transitions)
+        is Test294State.S11 -> {
+            val anc1 = processS1(event)
+            if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+        }
+        // W3C SCXML 3.13: Ancestor-only routing (s12 has no own event transitions)
+        is Test294State.S12 -> {
+            val anc1 = processS1(event)
+            if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+        }
+        else -> TransitionResult.Ignored
+    }
+    }
+
+    // W3C SCXML Appendix D: Eventless (null) transition check
+    override fun processNullEvent(
+        state: Test294State
+    ): TransitionResult<Test294State> = when (state) {
+        is Test294State.S01 -> processNullS01()
+        is Test294State.S11 -> processNullS11()
+        else -> TransitionResult.Ignored
+    }
+
+    // --- Per-State Null (Eventless) Handlers ---
+
+    private fun processNullS01(
+    ): TransitionResult<Test294State> = when {
+        // W3C SCXML 3.13: First unconditional transition wins (document order)
+        else -> TransitionResult.External(Test294State.S02)
+    }
+
+    private fun processNullS11(
+    ): TransitionResult<Test294State> = when {
+        // W3C SCXML 3.13: First unconditional transition wins (document order)
+        else -> TransitionResult.External(Test294State.S12)
+    }
+
+    // --- Per-State Event Handlers ---
+
+    private fun processS0(
+        event: Test294Event
+    ): TransitionResult<Test294State> = when {
+        event is Test294Event.Done.State.S0 && safeEvaluateGuard("_event.data.Var1 == 1") -> TransitionResult.External(Test294State.S1)
+        event is Test294Event.Done.State.S0 -> TransitionResult.External(Test294State.Fail)
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processS1(
+        event: Test294Event
+    ): TransitionResult<Test294State> = when {
+        event is Test294Event.Done.State.S1 && safeEvaluateGuard("_event.data == 'foo'") -> TransitionResult.External(Test294State.Pass)
+        event is Test294Event.Done.State.S1 -> TransitionResult.External(Test294State.Fail)
+        else -> TransitionResult.Ignored
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test294State) {
+        when (state) {
+            is Test294State.Fail -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test294State.Pass -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test294State.S0 -> {
+                // W3C SCXML 3.3: Enter initial child of compound state
+                onEntry(Test294State.S01)
+            }
+            is Test294State.S02 -> {
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                run {
+                    ensureScriptEngine()
+                    val engineDD = scriptEngine ?: return@run
+                    val sidDD = scriptSessionId ?: return@run
+                    var doneEventData = ""
+                    // W3C SCXML 5.5: Evaluate <param> elements
+                    val doneParams = mutableMapOf<String, Any?>()
+                    try {
+                        doneParams["Var1"] = engineDD.evaluateExpr(sidDD, "1")
+                    } catch (_: Exception) {
+                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        raiseInternal(Test294Event.Error.Execution, EventMetadata.platform())
+                    }
+                    if (doneParams.isNotEmpty()) {
+                        doneEventData = buildJsonFromParams(doneParams)
+                    }
+                    // W3C SCXML 3.7: Final child state reached, raise done.state with data
+                    raiseInternal(Test294Event.Done.State.S0, EventMetadata.platform(doneEventData))
+                }
+            }
+            is Test294State.S1 -> {
+                // W3C SCXML 3.3: Enter initial child of compound state
+                onEntry(Test294State.S11)
+            }
+            is Test294State.S12 -> {
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                run {
+                    ensureScriptEngine()
+                    val engineDD = scriptEngine ?: return@run
+                    val sidDD = scriptSessionId ?: return@run
+                    var doneEventData = ""
+                    // W3C SCXML 5.5: Evaluate <content> inline text
+                    try {
+                        val contentResult = engineDD.evaluateExpr(sidDD, "'foo'")
+                        doneEventData = contentResult?.toString() ?: ""
+                    } catch (_: Exception) {
+                        raiseInternal(Test294Event.Error.Execution, EventMetadata.platform())
+                    }
+                    // W3C SCXML 3.7: Final child state reached, raise done.state with data
+                    raiseInternal(Test294Event.Done.State.S1, EventMetadata.platform(doneEventData))
+                }
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test294State) {
+        when (state) {
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test294State,
+        event: Test294Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

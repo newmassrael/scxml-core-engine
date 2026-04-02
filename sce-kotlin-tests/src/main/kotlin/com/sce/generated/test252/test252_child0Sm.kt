@@ -1,0 +1,104 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/252/test252_child0.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test252
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test252Child0State : State {
+    data object Sub0 : Test252Child0State
+    data object SubFinal : Test252Child0State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test252Child0Event : Event {
+    data object ChildToParent : Test252Child0Event
+    sealed interface Error : Test252Child0Event {
+        data object Execution : Error
+    }
+    data object Timeout : Test252Child0Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test252Child0StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test252Child0State, Test252Child0Event>(scriptEngine) {
+
+    override val initialState: Test252Child0State = Test252Child0State.Sub0
+
+
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test252Child0Event? = when (name) {
+        "childToParent" -> Test252Child0Event.ChildToParent
+        "error.execution" -> Test252Child0Event.Error.Execution
+        "timeout" -> Test252Child0Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test252Child0Event): String? = when (event) {
+        is Test252Child0Event.ChildToParent -> "childToParent"
+        is Test252Child0Event.Error.Execution -> "error.execution"
+        is Test252Child0Event.Timeout -> "timeout"
+        else -> null
+    }
+
+
+    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    override fun processEvent(
+        state: Test252Child0State,
+        event: Test252Child0Event
+    ): TransitionResult<Test252Child0State> = when (state) {
+        is Test252Child0State.Sub0 -> processSub0(event)
+        else -> TransitionResult.Ignored
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processSub0(
+        event: Test252Child0Event
+    ): TransitionResult<Test252Child0State> = when {
+        event is Test252Child0Event.Timeout -> TransitionResult.External(Test252Child0State.SubFinal)
+        else -> TransitionResult.Ignored
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test252Child0State) {
+        when (state) {
+            is Test252Child0State.Sub0 -> {
+            scheduleSend("__send_0", 500L, Test252Child0Event.Timeout)
+            }
+            is Test252Child0State.SubFinal -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test252Child0State) {
+        when (state) {
+            is Test252Child0State.Sub0 -> {
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
+            onSendToParent?.invoke("childToParent", "")
+            }
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test252Child0State,
+        event: Test252Child0Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

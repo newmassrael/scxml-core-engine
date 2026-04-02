@@ -1,0 +1,127 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/229/test229.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test229
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test229State : State {
+    data object Fail : Test229State
+    data object Pass : Test229State
+    data object S0 : Test229State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test229Event : Event {
+    sealed interface Cancel : Test229Event {
+        data object Invoke : Cancel
+    }
+    data object ChildToParent : Test229Event
+    sealed interface Done : Test229Event {
+        data object Invoke : Done
+    }
+    sealed interface Error : Test229Event {
+        data object Execution : Error
+    }
+    data object EventReceived : Test229Event
+    data object Timeout : Test229Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test229StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test229State, Test229Event>(scriptEngine) {
+
+    override val initialState: Test229State = Test229State.S0
+
+
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test229Event? = when (name) {
+        "cancel.invoke" -> Test229Event.Cancel.Invoke
+        "childToParent" -> Test229Event.ChildToParent
+        "done.invoke" -> Test229Event.Done.Invoke
+        "error.execution" -> Test229Event.Error.Execution
+        "eventReceived" -> Test229Event.EventReceived
+        "timeout" -> Test229Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test229Event): String? = when (event) {
+        is Test229Event.Cancel.Invoke -> "cancel.invoke"
+        is Test229Event.ChildToParent -> "childToParent"
+        is Test229Event.Done.Invoke -> "done.invoke"
+        is Test229Event.Error.Execution -> "error.execution"
+        is Test229Event.EventReceived -> "eventReceived"
+        is Test229Event.Timeout -> "timeout"
+        else -> null
+    }
+
+
+    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    override fun processEvent(
+        state: Test229State,
+        event: Test229Event
+    ): TransitionResult<Test229State> = when (state) {
+        is Test229State.S0 -> processS0(event)
+        else -> TransitionResult.Ignored
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processS0(
+        event: Test229Event
+    ): TransitionResult<Test229State> = when {
+        // W3C SCXML 3.13: Targetless transition (actions only)
+        event is Test229Event.ChildToParent -> TransitionResult.Internal
+        event is Test229Event.EventReceived -> TransitionResult.External(Test229State.Pass)
+        // W3C SCXML 3.12.1: Wildcard transition
+        else -> TransitionResult.External(Test229State.Fail)
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test229State) {
+        when (state) {
+            is Test229State.Fail -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test229State.Pass -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test229State.S0 -> {
+            scheduleSend("__send_0", 3000L, Test229Event.Timeout)
+                // W3C SCXML 6.4: Start invoked child state machine
+                startInvoke("_invoke_0", Test229Child0StateMachine(scriptEngine), true, Test229Event.Done.Invoke)
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test229State) {
+        when (state) {
+            is Test229State.S0 -> {
+                // W3C SCXML 6.4: Cancel invoked child on state exit
+                cancelInvoke("_invoke_0")
+            }
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test229State,
+        event: Test229Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

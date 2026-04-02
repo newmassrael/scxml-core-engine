@@ -1,0 +1,122 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/187/test187.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test187
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test187State : State {
+    data object Fail : Test187State
+    data object Pass : Test187State
+    data object S0 : Test187State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test187Event : Event {
+    sealed interface Cancel : Test187Event {
+        data object Invoke : Cancel
+    }
+    data object ChildToParent : Test187Event
+    sealed interface Done : Test187Event {
+        data object Invoke : Done
+    }
+    sealed interface Error : Test187Event {
+        data object Execution : Error
+    }
+    data object Timeout : Test187Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test187StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test187State, Test187Event>(scriptEngine) {
+
+    override val initialState: Test187State = Test187State.S0
+
+
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test187Event? = when (name) {
+        "cancel.invoke" -> Test187Event.Cancel.Invoke
+        "childToParent" -> Test187Event.ChildToParent
+        "done.invoke" -> Test187Event.Done.Invoke
+        "error.execution" -> Test187Event.Error.Execution
+        "timeout" -> Test187Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test187Event): String? = when (event) {
+        is Test187Event.Cancel.Invoke -> "cancel.invoke"
+        is Test187Event.ChildToParent -> "childToParent"
+        is Test187Event.Done.Invoke -> "done.invoke"
+        is Test187Event.Error.Execution -> "error.execution"
+        is Test187Event.Timeout -> "timeout"
+        else -> null
+    }
+
+
+    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    override fun processEvent(
+        state: Test187State,
+        event: Test187Event
+    ): TransitionResult<Test187State> = when (state) {
+        is Test187State.S0 -> processS0(event)
+        else -> TransitionResult.Ignored
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processS0(
+        event: Test187Event
+    ): TransitionResult<Test187State> = when {
+        event is Test187Event.ChildToParent -> TransitionResult.External(Test187State.Fail)
+        event is Test187Event.Timeout -> TransitionResult.External(Test187State.Pass)
+        else -> TransitionResult.Ignored
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test187State) {
+        when (state) {
+            is Test187State.Fail -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test187State.Pass -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test187State.S0 -> {
+            scheduleSend("__send_0", 1000L, Test187Event.Timeout)
+                // W3C SCXML 6.4: Start invoked child state machine
+                startInvoke("_invoke_0", Test187Child0StateMachine(scriptEngine), false, Test187Event.Done.Invoke)
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test187State) {
+        when (state) {
+            is Test187State.S0 -> {
+                // W3C SCXML 6.4: Cancel invoked child on state exit
+                cancelInvoke("_invoke_0")
+            }
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test187State,
+        event: Test187Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

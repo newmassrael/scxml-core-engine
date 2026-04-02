@@ -1,0 +1,15 @@
+// GENERATED — DO NOT EDIT (generate_kotlin_w3c.py)
+package com.sce.w3c
+
+import com.sce.generated.test562.Test562Event
+import com.sce.generated.test562.Test562State
+import com.sce.generated.test562.Test562StateMachine
+import com.sce.scripting.RhinoScriptEngine
+import org.junit.jupiter.api.DisplayName
+
+// W3C SCXML B.2: In the ECMAScript data model, if the content provided to populate _event.data is neither key-value pairs nor JSON nor a valid XML document, the Processor MUST treat the content treat the content as a space-normalized string literal and assign it as the value of _event.data.
+@DisplayName("Test 562 -- W3C SCXML B.2")
+class Test562 : W3CTestBase<Test562State, Test562Event>() {
+    override fun createStateMachine() = Test562StateMachine(RhinoScriptEngine())
+    override val expectedPassState: Test562State = Test562State.Pass
+}

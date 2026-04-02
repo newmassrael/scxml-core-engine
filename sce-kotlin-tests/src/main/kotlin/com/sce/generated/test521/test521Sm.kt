@@ -1,0 +1,228 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/521/test521.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test521
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test521State : State {
+    data object Fail : Test521State
+    data object Pass : Test521State
+    data object S0 : Test521State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test521Event : Event {
+    sealed interface Error : Test521Event {
+        data object Communication : Error
+        data object Execution : Error
+    }
+    data object Event2 : Test521Event
+    data object Timeout : Test521Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test521StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test521State, Test521Event>(scriptEngine) {
+
+    override val initialState: Test521State = Test521State.S0
+
+    // W3C SCXML B.1: Initialize script engine before entering initial state
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        onEntry(initialState)
+    }
+
+
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test521Event? = when (name) {
+        "error.communication" -> Test521Event.Error.Communication
+        "error.execution" -> Test521Event.Error.Execution
+        "event2" -> Test521Event.Event2
+        "timeout" -> Test521Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test521Event): String? = when (event) {
+        is Test521Event.Error.Communication -> "error.communication"
+        is Test521Event.Error.Execution -> "error.execution"
+        is Test521Event.Event2 -> "event2"
+        is Test521Event.Timeout -> "timeout"
+        else -> null
+    }
+
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: return
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        engine.setupSystemVariables(sid, "test521")
+
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return false
+        val sid = scriptSessionId ?: return false
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raiseInternal(Test521Event.Error.Execution)
+            false
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    private fun executeAssign(location: String, expr: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.assign(sid, location, expr)
+        } catch (e: Exception) {
+            raiseInternal(Test521Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 3.8.6: Script block execution
+    private fun executeScriptBlock(script: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.executeScript(sid, script)
+        } catch (e: Exception) {
+            raiseInternal(Test521Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: Test521Event) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        val eventName = eventNameOf(event) ?: return
+        val meta = currentEventMetadata
+        engine.setCurrentEvent(
+            sid, eventName,
+            data = meta.data,
+            type = meta.type,
+            sendId = meta.sendId,
+            origin = meta.origin.ifEmpty { scriptSessionId ?: "" },
+            originType = meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" },
+            invokeId = meta.invokeId
+        )
+    }
+
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
+    override fun processEvent(
+        state: Test521State,
+        event: Test521Event
+    ): TransitionResult<Test521State> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
+        is Test521State.S0 -> processS0(event)
+        else -> TransitionResult.Ignored
+    }
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processS0(
+        event: Test521Event
+    ): TransitionResult<Test521State> = when {
+        event is Test521Event.Error.Communication -> TransitionResult.External(Test521State.Pass)
+        // W3C SCXML 3.12.1: Wildcard transition
+        else -> TransitionResult.External(Test521State.Fail)
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test521State) {
+        when (state) {
+            is Test521State.Fail -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test521State.Pass -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test521State.S0 -> {
+            // W3C SCXML 6.2: Dynamic target evaluation (test173)
+            run {
+                ensureScriptEngine()
+                val engineT = scriptEngine ?: return@run
+                val sidT = scriptSessionId ?: return@run
+                val dynamicTarget: String
+                try {
+                    val v = engineT.evaluateExpr(sidT, "undefined")
+                    dynamicTarget = v?.toString() ?: ""
+                } catch (_: Exception) {
+                    raiseInternal(Test521Event.Error.Execution, EventMetadata.platform())
+                    return@run
+                }
+                if (dynamicTarget.startsWith("!")) {
+                    raiseInternal(Test521Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
+                    return@run
+                }
+                if (dynamicTarget == "#_internal") {
+                    raiseInternal(Test521Event.Event2)
+                } else if (dynamicTarget == "#_parent") {
+                    onSendToParent?.invoke("event2", "")
+                } else {
+                    send(Test521Event.Event2, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+                }
+            }
+            send(Test521Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test521State) {
+        when (state) {
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test521State,
+        event: Test521Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

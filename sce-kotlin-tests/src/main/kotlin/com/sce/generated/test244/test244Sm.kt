@@ -1,0 +1,240 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/244/test244.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test244
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test244State : State {
+    data object Fail : Test244State
+    data object Pass : Test244State
+    data object S0 : Test244State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test244Event : Event {
+    sealed interface Cancel : Test244Event {
+        data object Invoke : Cancel
+    }
+    sealed interface Done : Test244Event {
+        data object Invoke : Done
+    }
+    sealed interface Error : Test244Event {
+        data object Execution : Error
+    }
+    data object Failure : Test244Event
+    data object Success : Test244Event
+    data object Timeout : Test244Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test244StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test244State, Test244Event>(scriptEngine) {
+
+    // Datamodel (W3C SCXML 5.3)
+
+    override val initialState: Test244State = Test244State.S0
+
+    // W3C SCXML B.1: Initialize script engine before entering initial state
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        onEntry(initialState)
+    }
+
+
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test244Event? = when (name) {
+        "cancel.invoke" -> Test244Event.Cancel.Invoke
+        "done.invoke" -> Test244Event.Done.Invoke
+        "error.execution" -> Test244Event.Error.Execution
+        "failure" -> Test244Event.Failure
+        "success" -> Test244Event.Success
+        "timeout" -> Test244Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test244Event): String? = when (event) {
+        is Test244Event.Cancel.Invoke -> "cancel.invoke"
+        is Test244Event.Done.Invoke -> "done.invoke"
+        is Test244Event.Error.Execution -> "error.execution"
+        is Test244Event.Failure -> "failure"
+        is Test244Event.Success -> "success"
+        is Test244Event.Timeout -> "timeout"
+        else -> null
+    }
+
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: return
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        engine.setupSystemVariables(sid, "test244")
+
+        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
+        try {
+            val initResult_Var1 = engine.evaluateExpr(sid, "1")
+            engine.setVariable(sid, "Var1", initResult_Var1)
+        } catch (e: Exception) {
+            raiseInternal(Test244Event.Error.Execution)
+        }
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return false
+        val sid = scriptSessionId ?: return false
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raiseInternal(Test244Event.Error.Execution)
+            false
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    private fun executeAssign(location: String, expr: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.assign(sid, location, expr)
+        } catch (e: Exception) {
+            raiseInternal(Test244Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 3.8.6: Script block execution
+    private fun executeScriptBlock(script: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.executeScript(sid, script)
+        } catch (e: Exception) {
+            raiseInternal(Test244Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: Test244Event) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        val eventName = eventNameOf(event) ?: return
+        val meta = currentEventMetadata
+        engine.setCurrentEvent(
+            sid, eventName,
+            data = meta.data,
+            type = meta.type,
+            sendId = meta.sendId,
+            origin = meta.origin.ifEmpty { scriptSessionId ?: "" },
+            originType = meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" },
+            invokeId = meta.invokeId
+        )
+    }
+
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
+    override fun processEvent(
+        state: Test244State,
+        event: Test244Event
+    ): TransitionResult<Test244State> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
+        is Test244State.S0 -> processS0(event)
+        else -> TransitionResult.Ignored
+    }
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processS0(
+        event: Test244Event
+    ): TransitionResult<Test244State> = when {
+        event is Test244Event.Success -> TransitionResult.External(Test244State.Pass)
+        // W3C SCXML 3.12.1: Wildcard transition
+        else -> TransitionResult.External(Test244State.Fail)
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test244State) {
+        when (state) {
+            is Test244State.Fail -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test244State.Pass -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test244State.S0 -> {
+            scheduleSend("__send_0", 2000L, Test244Event.Timeout)
+                // W3C SCXML 6.4: Start invoked child state machine
+                run {
+                    val childSM = Test244Child0StateMachine(scriptEngine)
+                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    ensureScriptEngine()
+                    val engineInv = scriptEngine ?: return@run
+                    val sidInv = scriptSessionId ?: return@run
+                    val invokeParams = mutableMapOf<String, Any?>()
+                    try {
+                        invokeParams["Var1"] = engineInv.getVariable(sidInv, "Var1")
+                    } catch (_: Exception) {}
+                    setInvokeParams(childSM, invokeParams)
+                    startInvoke("_invoke_0", childSM, false, Test244Event.Done.Invoke)
+                }
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test244State) {
+        when (state) {
+            is Test244State.S0 -> {
+                // W3C SCXML 6.4: Cancel invoked child on state exit
+                cancelInvoke("_invoke_0")
+            }
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test244State,
+        event: Test244Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

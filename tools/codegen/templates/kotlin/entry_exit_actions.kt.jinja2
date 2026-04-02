@@ -73,27 +73,93 @@
 {% for inv in invoke_entries[state_id] %}
 {% if inv.child_class %}
                 // W3C SCXML 6.4: Start invoked child state machine
+{% if (inv.params or inv.namelist) and model.needs_script_engine %}
+                run {
+                    val childSM = {{ inv.child_class }}StateMachine(scriptEngine)
+                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    ensureScriptEngine()
+                    val engineInv = scriptEngine ?: return@run
+                    val sidInv = scriptSessionId ?: return@run
+                    val invokeParams = mutableMapOf<String, Any?>()
+{% for param in inv.params %}
+{% if param.expr %}
+                    try {
+                        invokeParams["{{ param.name }}"] = engineInv.evaluateExpr(sidInv, "{{ param.expr | escape_kotlin }}")
+                    } catch (_: Exception) {}
+{% endif %}
+{% endfor %}
+{% if inv.namelist %}
+{% for var_name in inv.namelist.split() %}
+                    try {
+                        invokeParams["{{ var_name }}"] = engineInv.getVariable(sidInv, "{{ var_name }}")
+                    } catch (_: Exception) {}
+{% endfor %}
+{% endif %}
+                    setInvokeParams(childSM, invokeParams)
+                    startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %})
+                }
+{% else %}
                 startInvoke("{{ inv.invoke_id }}", {{ inv.child_class }}StateMachine(scriptEngine), {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %})
+{% endif %}
 {% endif %}
 {% endfor %}
 {% endif %}
 {% if has_done_event %}
-{% if state.donedata and state.donedata.contentexpr %}
-                // W3C SCXML 4.6: Unevaluable donedata content expr raises error.execution
-                // Phase 1 (pure static): all ECMAScript exprs are unevaluable.
-                // Phase 2: conditionally raise only when expr evaluation fails.
-                raiseInternal({{ machine_name }}Event.Error.Execution)
-{% endif %}
-{% if state.donedata and state.donedata.params %}
+{% if state.donedata and model.needs_script_engine %}
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                run {
+                    ensureScriptEngine()
+                    val engineDD = scriptEngine ?: return@run
+                    val sidDD = scriptSessionId ?: return@run
+                    var doneEventData = ""
+{% if state.donedata.contentexpr %}
+                    // W3C SCXML 5.5: Evaluate <content expr="..."/>
+                    try {
+                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.contentexpr | escape_kotlin }}")
+                        doneEventData = contentResult?.toString() ?: ""
+                    } catch (_: Exception) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    }
+{% elif state.donedata.content %}
+                    // W3C SCXML 5.5: Evaluate <content> inline text
+                    try {
+                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.content | escape_kotlin }}")
+                        doneEventData = contentResult?.toString() ?: ""
+                    } catch (_: Exception) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    }
+{% elif state.donedata.params %}
+                    // W3C SCXML 5.5: Evaluate <param> elements
+                    val doneParams = mutableMapOf<String, Any?>()
 {% for param in state.donedata.params %}
-{% if param.location or param.expr %}
-                // W3C SCXML 4.6: Unevaluable donedata param raises error.execution
-                raiseInternal({{ machine_name }}Event.Error.Execution)
+{% if param.expr %}
+                    try {
+                        doneParams["{{ param.name }}"] = engineDD.evaluateExpr(sidDD, "{{ param.expr | escape_kotlin }}")
+                    } catch (_: Exception) {
+                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    }
+{% elif param.location %}
+                    try {
+                        val locVal = engineDD.evaluateExpr(sidDD, "{{ param.location }}")
+                        doneParams["{{ param.name }}"] = locVal
+                    } catch (_: Exception) {
+                        // W3C SCXML 5.7: Invalid location — raise error.execution but continue
+                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    }
 {% endif %}
 {% endfor %}
+                    if (doneParams.isNotEmpty()) {
+                        doneEventData = buildJsonFromParams(doneParams)
+                    }
 {% endif %}
+                    // W3C SCXML 3.7: Final child state reached, raise done.state with data
+                    raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }}, EventMetadata.platform(doneEventData))
+                }
+{% else %}
                 // W3C SCXML 3.7: Final child state reached, raise done.state for parent
-                raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }})
+                raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }}, EventMetadata.platform())
+{% endif %}
 {% endif %}
 {% if is_top_final %}
                 // W3C SCXML 3.7: Top-level final state reached

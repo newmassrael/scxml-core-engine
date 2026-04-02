@@ -67,6 +67,17 @@
         engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
 {% endif %}
 
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
         scriptEngineInitialized = true
     }
 
@@ -113,6 +124,15 @@
         val engine = scriptEngine ?: return
         val sid = scriptSessionId ?: return
         val eventName = eventNameOf(event) ?: return
-        engine.setCurrentEvent(sid, eventName)
+        val meta = currentEventMetadata
+        engine.setCurrentEvent(
+            sid, eventName,
+            data = meta.data,
+            type = meta.type,
+            sendId = meta.sendId,
+            origin = meta.origin.ifEmpty { scriptSessionId ?: "" },
+            originType = meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" },
+            invokeId = meta.invokeId
+        )
     }
 {% endif %}

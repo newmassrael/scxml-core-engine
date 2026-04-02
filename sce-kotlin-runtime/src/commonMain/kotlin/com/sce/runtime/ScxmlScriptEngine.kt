@@ -104,6 +104,18 @@ interface ScxmlScriptEngine {
     fun getVariable(sessionId: String, name: String): Any?
 
     /**
+     * W3C SCXML 6.4: Check if a variable is declared in the datamodel.
+     *
+     * Used by invoke param validation to skip variables not declared in child's datamodel.
+     * Returns true if the variable property exists in the session scope.
+     *
+     * @param sessionId Active session
+     * @param name Variable name to check
+     * @return true if the variable is declared
+     */
+    fun hasVariable(sessionId: String, name: String): Boolean
+
+    /**
      * W3C SCXML 5.3: Assign a value to a location using an expression.
      *
      * Evaluates [expr] and assigns the result to [location].

@@ -20,6 +20,40 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
+ * W3C SCXML 5.10: Event metadata for _event system variable.
+ *
+ * Carries type, data, sendid, origin, origintype, and invokeid
+ * alongside events through the processing pipeline.
+ */
+data class EventMetadata(
+    val data: String = "",
+    val type: String = "external",
+    val sendId: String = "",
+    val origin: String = "",
+    val originType: String = "",
+    val invokeId: String = ""
+) {
+    companion object {
+        val EMPTY = EventMetadata()
+        fun internal() = EventMetadata(type = "internal")
+        fun platform() = EventMetadata(type = "platform")
+        fun platform(data: String) = EventMetadata(type = "platform", data = data)
+        fun external(
+            sendId: String = "",
+            origin: String = "",
+            originType: String = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+            data: String = ""
+        ) = EventMetadata(
+            type = "external",
+            sendId = sendId,
+            origin = origin,
+            originType = originType,
+            data = data
+        )
+    }
+}
+
+/**
  * Abstract base class for generated SCXML state machines.
  *
  * Provides the event processing loop, state observation via StateFlow,
@@ -110,19 +144,31 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
     // --- Event Queue ---
 
+    // --- Event Metadata (W3C SCXML 5.10) ---
+
+    /** Internal wrapper pairing an event with its W3C SCXML 5.10 metadata. */
+    private data class QueuedEvent<E>(val event: E, val metadata: EventMetadata = EventMetadata.EMPTY)
+
+    /**
+     * W3C SCXML 5.10: Metadata for the event currently being processed.
+     * Set before processEvent/processNullEvent so that generated
+     * setCurrentEventInScriptEngine() can read it.
+     */
+    protected var currentEventMetadata: EventMetadata = EventMetadata.EMPTY
+
     /**
      * W3C SCXML 3.12.1: Event channel (FIFO, unbounded).
      *
      * Channel.UNLIMITED ensures [send] never blocks and never drops events.
      * Recreated on each [start] to support stop/start cycles.
      */
-    private var eventChannel = Channel<E>(Channel.UNLIMITED)
+    private var eventChannel = Channel<QueuedEvent<E>>(Channel.UNLIMITED)
 
     /**
      * W3C SCXML 3.12.1: Internal events from <raise> are processed
      * before external events. This queue is drained first each microstep.
      */
-    private val internalEventQueue = ArrayDeque<E>()
+    private val internalEventQueue = ArrayDeque<QueuedEvent<E>>()
 
     // --- Lifecycle ---
 
@@ -285,7 +331,16 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * are silently discarded (SM no longer processes events per W3C SCXML 3.7).
      */
     fun send(event: E) {
-        eventChannel.trySend(event)
+        eventChannel.trySend(QueuedEvent(event))
+    }
+
+    /**
+     * W3C SCXML 5.10: Submit an event with metadata (type, data, sendid, etc.).
+     *
+     * Used by generated send actions that need to attach event metadata.
+     */
+    fun send(event: E, metadata: EventMetadata) {
+        eventChannel.trySend(QueuedEvent(event, metadata))
     }
 
     /**
@@ -329,7 +384,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
         if (job != null) return  // Already started
 
         // R3 fix: Recreate channel for stop/start reuse
-        eventChannel = Channel(Channel.UNLIMITED)
+        eventChannel = Channel<QueuedEvent<E>>(Channel.UNLIMITED)
 
         // R2 fix: Store scope for delayed send support
         engineScope = scope
@@ -352,9 +407,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
             // W3C SCXML 3.7: Only enter event loop if not already in final state
             // (child SMs may reach final state during drainEventlessAndInternal)
             if (!isInFinalState) {
-                for (event in eventChannel) {
+                for (queued in eventChannel) {
                     if (isInFinalState) break
-                    processMicrostep(event)
+                    currentEventMetadata = queued.metadata
+                    processMicrostep(queued.event)
                 }
             }
 
@@ -405,9 +461,19 @@ abstract class StateMachineEngine<S : State, E : Event>(
      *
      * Called from generated onEntry/onExit/executeTransitionActions code.
      * Always called from the microstep coroutine (single-threaded access).
+     * Default metadata type = "internal" per W3C SCXML 5.10.
      */
     protected fun raiseInternal(event: E) {
-        internalEventQueue.addLast(event)
+        internalEventQueue.addLast(QueuedEvent(event, EventMetadata.internal()))
+    }
+
+    /**
+     * W3C SCXML 5.10: Raise an internal event with explicit metadata.
+     *
+     * Used for platform events (done.state, error.*) and events carrying data.
+     */
+    protected fun raiseInternal(event: E, metadata: EventMetadata) {
+        internalEventQueue.addLast(QueuedEvent(event, metadata))
     }
 
     // --- Delayed Send Support ---
@@ -423,11 +489,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param event Event to send after delay
      */
     protected fun scheduleSend(sendId: String, delayMs: Long, event: E) {
+        scheduleSend(sendId, delayMs, event, EventMetadata.EMPTY)
+    }
+
+    /**
+     * W3C SCXML 6.2: Schedule a delayed event send with metadata.
+     */
+    protected fun scheduleSend(sendId: String, delayMs: Long, event: E, metadata: EventMetadata) {
         val scope = engineScope ?: return
         delayedSendJobs[sendId]?.cancel()
         delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
             kotlinx.coroutines.delay(delayMs)
-            send(event)
+            send(event, metadata)
             delayedSendJobs.remove(sendId)
         }
     }
@@ -446,11 +519,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * Cancelled when child session stops (all delayedSendJobs are cancelled in stop()).
      */
     protected fun scheduleParentSend(sendId: String, delayMs: Long, eventName: String) {
+        scheduleParentSend(sendId, delayMs, eventName, "")
+    }
+
+    /**
+     * W3C SCXML 6.4: Schedule a delayed send to parent with event data.
+     */
+    protected fun scheduleParentSend(sendId: String, delayMs: Long, eventName: String, eventData: String) {
         val scope = engineScope ?: return
         delayedSendJobs[sendId]?.cancel()
         delayedSendJobs[sendId] = scope.launch(Dispatchers.Default) {
             kotlinx.coroutines.delay(delayMs)
-            onSendToParent?.invoke(eventName)
+            onSendToParent?.invoke(eventName, eventData)
             delayedSendJobs.remove(sendId)
         }
     }
@@ -469,9 +549,10 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * W3C SCXML 6.4: Callback for child SMs to send events to parent.
      * Set by parent when starting an invoked child SM.
      * Called from generated code when child executes send target="#_parent".
+     * Parameters: (eventName: String, eventData: String)
      */
     @Volatile
-    var onSendToParent: ((String) -> Unit)? = null
+    var onSendToParent: ((String, String) -> Unit)? = null
         internal set
 
     /** Active invoked child sessions, keyed by invoke ID. */
@@ -490,6 +571,26 @@ abstract class StateMachineEngine<S : State, E : Event>(
      * @param autoforward Forward parent events to child
      * @param doneEvent Event to send when child completes (done.invoke)
      */
+    /**
+     * W3C SCXML 6.4: Set invoke parameters on a child SM before starting it.
+     *
+     * Stores param values that will be applied when the child's script engine
+     * is initialized. Called by generated code between child construction
+     * and startInvoke.
+     *
+     * @param child Child state machine instance
+     * @param params Map of variable name to value pairs
+     */
+    protected fun setInvokeParams(child: StateMachineEngine<*, *>, params: Map<String, Any?>) {
+        child.pendingInvokeParams = params
+    }
+
+    /**
+     * W3C SCXML 6.4: Pending invoke parameters to be applied during script engine init.
+     * Set by parent's setInvokeParams, consumed by child's ensureScriptEngine.
+     */
+    protected var pendingInvokeParams: Map<String, Any?> = emptyMap()
+
     protected fun startInvoke(
         invokeId: String,
         child: StateMachineEngine<*, *>,
@@ -498,9 +599,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
     ) {
         val scope = engineScope ?: return
 
-        // W3C SCXML 6.4: Set up child→parent event routing
-        child.onSendToParent = { eventName ->
-            resolveEventByName(eventName)?.let { send(it) }
+        // W3C SCXML 6.4: Set up child→parent event routing with metadata
+        child.onSendToParent = { eventName, eventData ->
+            resolveEventByName(eventName)?.let {
+                send(it, EventMetadata(
+                    type = "external",
+                    invokeId = invokeId,
+                    origin = child.scriptSessionId ?: "",
+                    originType = "http://www.w3.org/TR/scxml/#SCXMLEventProcessor",
+                    data = eventData
+                ))
+            }
         }
 
         // Start child on the same scope
@@ -511,7 +620,11 @@ abstract class StateMachineEngine<S : State, E : Event>(
         val monitorJob = scope.launch(Dispatchers.Default) {
             child.completion.await()
             if (doneEvent != null) {
-                send(doneEvent)
+                // W3C SCXML 5.10: done.invoke is a platform event with invokeid
+                send(doneEvent, EventMetadata(
+                    type = "platform",
+                    invokeId = invokeId
+                ))
             }
             activeInvokes.remove(invokeId)
         }
@@ -543,6 +656,40 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     internal fun sendByName(name: String) {
         resolveEventByName(name)?.let { send(it) }
+    }
+
+    // --- Event Data Helpers ---
+
+    /**
+     * W3C SCXML 5.10: Build JSON object from evaluated param name/value pairs.
+     *
+     * Matches C++ EventDataHelper::buildJsonFromParams behavior.
+     * Used by generated send/donedata code to construct _event.data payload.
+     */
+    protected fun buildJsonFromParams(params: Map<String, Any?>): String {
+        if (params.isEmpty()) return ""
+        val sb = StringBuilder("{")
+        var first = true
+        for ((key, value) in params) {
+            if (!first) sb.append(",")
+            first = false
+            sb.append("\"").append(key).append("\":")
+            sb.append(valueToJson(value))
+        }
+        sb.append("}")
+        return sb.toString()
+    }
+
+    private fun valueToJson(value: Any?): String = when (value) {
+        null -> "null"
+        is Boolean -> value.toString()
+        is Number -> {
+            val d = value.toDouble()
+            if (d == d.toLong().toDouble() && !d.isInfinite()) d.toLong().toString()
+            else d.toString()
+        }
+        is String -> "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+        else -> "\"${value.toString().replace("\\", "\\\\").replace("\"", "\\\"")}\""
     }
 
     /**
@@ -677,8 +824,9 @@ abstract class StateMachineEngine<S : State, E : Event>(
 
             // W3C SCXML 3.12.1: Internal events next
             if (internalEventQueue.isNotEmpty()) {
-                val internalEvent = internalEventQueue.removeFirst()
-                processOneEvent(internalEvent)
+                val queued = internalEventQueue.removeFirst()
+                currentEventMetadata = queued.metadata
+                processOneEvent(queued.event)
                 flushPendingFinalState()
                 continue
             }
@@ -936,6 +1084,27 @@ abstract class StateMachineEngine<S : State, E : Event>(
             if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
                 onExit(state)
             }
+        }
+    }
+
+    // --- Delay Parsing Helper ---
+
+    /**
+     * W3C SCXML 6.2: Parse delay string (e.g., "500ms", "1s", "2.5s") to milliseconds.
+     * Matches C++ SendSchedulingHelper::parseDelayString behavior.
+     */
+    protected fun parseDelay(delay: String): Long {
+        val trimmed = delay.trim()
+        if (trimmed.isEmpty()) return 0L
+        return when {
+            trimmed.endsWith("ms") -> {
+                trimmed.dropLast(2).trim().toDoubleOrNull()?.toLong() ?: 0L
+            }
+            trimmed.endsWith("s") -> {
+                val seconds = trimmed.dropLast(1).trim().toDoubleOrNull() ?: 0.0
+                (seconds * 1000).toLong()
+            }
+            else -> trimmed.toDoubleOrNull()?.toLong() ?: 0L
         }
     }
 

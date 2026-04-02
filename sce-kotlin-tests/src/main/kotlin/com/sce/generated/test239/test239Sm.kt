@@ -1,0 +1,183 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/239/test239.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test239
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test239State : State {
+    data object Fail : Test239State
+    data object Pass : Test239State
+    data object S0 : Test239State
+    data object S01 : Test239State
+    data object S02 : Test239State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test239Event : Event {
+    sealed interface Cancel : Test239Event {
+        data object Invoke : Cancel
+    }
+    sealed interface Done : Test239Event {
+        data object Invoke : Done
+    }
+    sealed interface Error : Test239Event {
+        data object Execution : Error
+    }
+    data object Timeout : Test239Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test239StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test239State, Test239Event>(scriptEngine) {
+
+    override val initialState: Test239State = Test239State.S01
+
+    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
+    // through compound/parallel hierarchy to populate activeStateIds)
+    override fun enterInitialConfiguration() {
+        onEntry(Test239State.S0)
+    }
+
+    // W3C SCXML 3.3: State hierarchy parent mapping
+    override fun parentOf(state: Test239State): Test239State? = when (state) {
+        is Test239State.S01 -> Test239State.S0
+        is Test239State.S02 -> Test239State.S0
+        else -> null
+    }
+
+    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
+    override fun resolveLeafState(state: Test239State): Test239State = when (state) {
+        is Test239State.S0 -> Test239State.S01
+        else -> state
+    }
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test239Event? = when (name) {
+        "cancel.invoke" -> Test239Event.Cancel.Invoke
+        "done.invoke" -> Test239Event.Done.Invoke
+        "error.execution" -> Test239Event.Error.Execution
+        "timeout" -> Test239Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test239Event): String? = when (event) {
+        is Test239Event.Cancel.Invoke -> "cancel.invoke"
+        is Test239Event.Done.Invoke -> "done.invoke"
+        is Test239Event.Error.Execution -> "error.execution"
+        is Test239Event.Timeout -> "timeout"
+        else -> null
+    }
+
+
+    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    override fun processEvent(
+        state: Test239State,
+        event: Test239Event
+    ): TransitionResult<Test239State> = when (state) {
+        is Test239State.S0 -> processS0(event)
+        is Test239State.S01 -> {
+            val result = processS01(event)
+            // W3C SCXML 3.13: Ancestor transition routing
+            if (result !is TransitionResult.Ignored) result
+            else {
+                val anc1 = processS0(event)
+                if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+            }
+        }
+        is Test239State.S02 -> {
+            val result = processS02(event)
+            // W3C SCXML 3.13: Ancestor transition routing
+            if (result !is TransitionResult.Ignored) result
+            else {
+                val anc1 = processS0(event)
+                if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+            }
+        }
+        else -> TransitionResult.Ignored
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processS0(
+        event: Test239Event
+    ): TransitionResult<Test239State> = when {
+        event is Test239Event.Timeout -> TransitionResult.External(Test239State.Fail)
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processS01(
+        event: Test239Event
+    ): TransitionResult<Test239State> = when {
+        event is Test239Event.Done.Invoke -> TransitionResult.External(Test239State.S02)
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processS02(
+        event: Test239Event
+    ): TransitionResult<Test239State> = when {
+        event is Test239Event.Done.Invoke -> TransitionResult.External(Test239State.Pass)
+        else -> TransitionResult.Ignored
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test239State) {
+        when (state) {
+            is Test239State.Fail -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test239State.Pass -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test239State.S0 -> {
+            scheduleSend("__send_0", 2000L, Test239Event.Timeout)
+                // W3C SCXML 3.3: Enter initial child of compound state
+                onEntry(Test239State.S01)
+            }
+            is Test239State.S01 -> {
+                // W3C SCXML 6.4: Start invoked child state machine
+                startInvoke("_invoke_0", Test239sub1StateMachine(scriptEngine), false, Test239Event.Done.Invoke)
+            }
+            is Test239State.S02 -> {
+                // W3C SCXML 6.4: Start invoked child state machine
+                startInvoke("_invoke_1", Test239Child0StateMachine(scriptEngine), false, Test239Event.Done.Invoke)
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test239State) {
+        when (state) {
+            is Test239State.S01 -> {
+                // W3C SCXML 6.4: Cancel invoked child on state exit
+                cancelInvoke("_invoke_0")
+            }
+            is Test239State.S02 -> {
+                // W3C SCXML 6.4: Cancel invoked child on state exit
+                cancelInvoke("_invoke_1")
+            }
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test239State,
+        event: Test239Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

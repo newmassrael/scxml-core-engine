@@ -147,6 +147,16 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         }
     }
 
+    override fun hasVariable(sessionId: String, name: String): Boolean {
+        val session = sessions[sessionId] ?: return false
+        Context.enter()
+        try {
+            return ScriptableObject.hasProperty(session.scope, name)
+        } finally {
+            Context.exit()
+        }
+    }
+
     override fun assign(sessionId: String, location: String, expr: String) {
         val session = sessions[sessionId]
             ?: throw ScriptEngineException("Session not found: $sessionId")
@@ -196,7 +206,16 @@ class RhinoScriptEngine : ScxmlScriptEngine {
 
             // W3C SCXML 5.10: _event.data — try to parse as structured data
             if (data.isNotEmpty()) {
-                ScriptableObject.putProperty(eventObj, "data", data)
+                // Try to evaluate as JS expression (handles JSON objects, arrays, primitives)
+                try {
+                    cx.languageVersion = Context.VERSION_ES6
+                    cx.optimizationLevel = -1
+                    val parsed = cx.evaluateString(scope, "($data)", "event-data", 1, null)
+                    ScriptableObject.putProperty(eventObj, "data", parsed)
+                } catch (_: Exception) {
+                    // Fall back to raw string
+                    ScriptableObject.putProperty(eventObj, "data", data)
+                }
             } else {
                 ScriptableObject.putProperty(eventObj, "data", Undefined.instance)
             }

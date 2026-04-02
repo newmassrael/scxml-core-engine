@@ -1,0 +1,105 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/422/test422_child1.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test422
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test422Child1State : State {
+    data object Sub1 : Test422Child1State
+    data object SubFinal1 : Test422Child1State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test422Child1Event : Event {
+    sealed interface Error : Test422Child1Event {
+        data object Execution : Error
+    }
+    data object InvokeS11 : Test422Child1Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test422Child1StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test422Child1State, Test422Child1Event>(scriptEngine) {
+
+    override val initialState: Test422Child1State = Test422Child1State.Sub1
+
+
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test422Child1Event? = when (name) {
+        "error.execution" -> Test422Child1Event.Error.Execution
+        "invokeS11" -> Test422Child1Event.InvokeS11
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test422Child1Event): String? = when (event) {
+        is Test422Child1Event.Error.Execution -> "error.execution"
+        is Test422Child1Event.InvokeS11 -> "invokeS11"
+        else -> null
+    }
+
+
+    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    override fun processEvent(
+        state: Test422Child1State,
+        event: Test422Child1Event
+    ): TransitionResult<Test422Child1State> = when (state) {
+        else -> TransitionResult.Ignored
+    }
+
+    // W3C SCXML Appendix D: Eventless (null) transition check
+    override fun processNullEvent(
+        state: Test422Child1State
+    ): TransitionResult<Test422Child1State> = when (state) {
+        is Test422Child1State.Sub1 -> processNullSub1()
+        else -> TransitionResult.Ignored
+    }
+
+    // --- Per-State Null (Eventless) Handlers ---
+
+    private fun processNullSub1(
+    ): TransitionResult<Test422Child1State> = when {
+        // W3C SCXML 3.13: First unconditional transition wins (document order)
+        else -> TransitionResult.External(Test422Child1State.SubFinal1)
+    }
+
+    // --- Per-State Event Handlers ---
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test422Child1State) {
+        when (state) {
+            is Test422Child1State.Sub1 -> {
+            // W3C SCXML 6.4 (test191): Send event to parent via invoke callback
+            onSendToParent?.invoke("invokeS11", "")
+            }
+            is Test422Child1State.SubFinal1 -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test422Child1State) {
+        when (state) {
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test422Child1State,
+        event: Test422Child1Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

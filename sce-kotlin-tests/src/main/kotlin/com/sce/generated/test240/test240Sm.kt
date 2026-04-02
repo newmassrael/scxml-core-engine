@@ -1,0 +1,313 @@
+// GENERATED CODE — DO NOT EDIT
+// Source: resources/240/test240.scxml
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.test240
+
+import com.sce.runtime.*
+
+// --- States (W3C SCXML 3.2) ---
+
+sealed interface Test240State : State {
+    data object Fail : Test240State
+    data object Pass : Test240State
+    data object S0 : Test240State
+    data object S01 : Test240State
+    data object S02 : Test240State
+}
+// --- Events (W3C SCXML 3.12.1) ---
+
+sealed interface Test240Event : Event {
+    sealed interface Cancel : Test240Event {
+        data object Invoke : Cancel
+    }
+    sealed interface Done : Test240Event {
+        data object Invoke : Done
+    }
+    sealed interface Error : Test240Event {
+        data object Execution : Error
+    }
+    data object Failure : Test240Event
+    data object Success : Test240Event
+    data object Timeout : Test240Event
+}
+// --- State Machine (W3C SCXML) ---
+
+class Test240StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<Test240State, Test240Event>(scriptEngine) {
+
+    // Datamodel (W3C SCXML 5.3)
+
+    override val initialState: Test240State = Test240State.S01
+
+    // W3C SCXML 3.2/3.4: Enter from top-level initial state (recursive descent
+    // through compound/parallel hierarchy to populate activeStateIds)
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        onEntry(Test240State.S0)
+    }
+
+    // W3C SCXML 3.3: State hierarchy parent mapping
+    override fun parentOf(state: Test240State): Test240State? = when (state) {
+        is Test240State.S01 -> Test240State.S0
+        is Test240State.S02 -> Test240State.S0
+        else -> null
+    }
+
+    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
+    override fun resolveLeafState(state: Test240State): Test240State = when (state) {
+        is Test240State.S0 -> Test240State.S01
+        else -> state
+    }
+
+
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test240Event? = when (name) {
+        "cancel.invoke" -> Test240Event.Cancel.Invoke
+        "done.invoke" -> Test240Event.Done.Invoke
+        "error.execution" -> Test240Event.Error.Execution
+        "failure" -> Test240Event.Failure
+        "success" -> Test240Event.Success
+        "timeout" -> Test240Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test240Event): String? = when (event) {
+        is Test240Event.Cancel.Invoke -> "cancel.invoke"
+        is Test240Event.Done.Invoke -> "done.invoke"
+        is Test240Event.Error.Execution -> "error.execution"
+        is Test240Event.Failure -> "failure"
+        is Test240Event.Success -> "success"
+        is Test240Event.Timeout -> "timeout"
+        else -> null
+    }
+
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: return
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        engine.setupSystemVariables(sid, "test240")
+
+        // W3C SCXML 5.3: Initialize variable 'Var1' with expr
+        try {
+            val initResult_Var1 = engine.evaluateExpr(sid, "1")
+            engine.setVariable(sid, "Var1", initResult_Var1)
+        } catch (e: Exception) {
+            raiseInternal(Test240Event.Error.Execution)
+        }
+
+
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return false
+        val sid = scriptSessionId ?: return false
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raiseInternal(Test240Event.Error.Execution)
+            false
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    private fun executeAssign(location: String, expr: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.assign(sid, location, expr)
+        } catch (e: Exception) {
+            raiseInternal(Test240Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 3.8.6: Script block execution
+    private fun executeScriptBlock(script: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.executeScript(sid, script)
+        } catch (e: Exception) {
+            raiseInternal(Test240Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: Test240Event) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        val eventName = eventNameOf(event) ?: return
+        val meta = currentEventMetadata
+        engine.setCurrentEvent(
+            sid, eventName,
+            data = meta.data,
+            type = meta.type,
+            sendId = meta.sendId,
+            origin = meta.origin.ifEmpty { scriptSessionId ?: "" },
+            originType = meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" },
+            invokeId = meta.invokeId
+        )
+    }
+
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
+    override fun processEvent(
+        state: Test240State,
+        event: Test240Event
+    ): TransitionResult<Test240State> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
+        is Test240State.S0 -> processS0(event)
+        is Test240State.S01 -> {
+            val result = processS01(event)
+            // W3C SCXML 3.13: Ancestor transition routing
+            if (result !is TransitionResult.Ignored) result
+            else {
+                val anc1 = processS0(event)
+                if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+            }
+        }
+        is Test240State.S02 -> {
+            val result = processS02(event)
+            // W3C SCXML 3.13: Ancestor transition routing
+            if (result !is TransitionResult.Ignored) result
+            else {
+                val anc1 = processS0(event)
+                if (anc1 !is TransitionResult.Ignored) anc1
+            else TransitionResult.Ignored
+            }
+        }
+        else -> TransitionResult.Ignored
+    }
+    }
+
+
+    // --- Per-State Event Handlers ---
+
+    private fun processS0(
+        event: Test240Event
+    ): TransitionResult<Test240State> = when {
+        event is Test240Event.Timeout -> TransitionResult.External(Test240State.Fail)
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processS01(
+        event: Test240Event
+    ): TransitionResult<Test240State> = when {
+        event is Test240Event.Success -> TransitionResult.External(Test240State.S02)
+        event is Test240Event.Failure -> TransitionResult.External(Test240State.Fail)
+        else -> TransitionResult.Ignored
+    }
+
+    private fun processS02(
+        event: Test240Event
+    ): TransitionResult<Test240State> = when {
+        event is Test240Event.Success -> TransitionResult.External(Test240State.Pass)
+        event is Test240Event.Failure -> TransitionResult.External(Test240State.Fail)
+        else -> TransitionResult.Ignored
+    }
+
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: Test240State) {
+        when (state) {
+            is Test240State.Fail -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test240State.Pass -> {
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+            }
+            is Test240State.S0 -> {
+            scheduleSend("__send_0", 2000L, Test240Event.Timeout)
+                // W3C SCXML 3.3: Enter initial child of compound state
+                onEntry(Test240State.S01)
+            }
+            is Test240State.S01 -> {
+                // W3C SCXML 6.4: Start invoked child state machine
+                run {
+                    val childSM = Test240Child0StateMachine(scriptEngine)
+                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    ensureScriptEngine()
+                    val engineInv = scriptEngine ?: return@run
+                    val sidInv = scriptSessionId ?: return@run
+                    val invokeParams = mutableMapOf<String, Any?>()
+                    try {
+                        invokeParams["Var1"] = engineInv.getVariable(sidInv, "Var1")
+                    } catch (_: Exception) {}
+                    setInvokeParams(childSM, invokeParams)
+                    startInvoke("_invoke_0", childSM, false, Test240Event.Done.Invoke)
+                }
+            }
+            is Test240State.S02 -> {
+                // W3C SCXML 6.4: Start invoked child state machine
+                run {
+                    val childSM = Test240Child1StateMachine(scriptEngine)
+                    // W3C SCXML 6.4: Evaluate and pass invoke params to child before start
+                    ensureScriptEngine()
+                    val engineInv = scriptEngine ?: return@run
+                    val sidInv = scriptSessionId ?: return@run
+                    val invokeParams = mutableMapOf<String, Any?>()
+                    try {
+                        invokeParams["Var1"] = engineInv.evaluateExpr(sidInv, "1")
+                    } catch (_: Exception) {}
+                    setInvokeParams(childSM, invokeParams)
+                    startInvoke("_invoke_1", childSM, false, Test240Event.Done.Invoke)
+                }
+            }
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: Test240State) {
+        when (state) {
+            is Test240State.S01 -> {
+                // W3C SCXML 6.4: Cancel invoked child on state exit
+                cancelInvoke("_invoke_0")
+            }
+            is Test240State.S02 -> {
+                // W3C SCXML 6.4: Cancel invoked child on state exit
+                cancelInvoke("_invoke_1")
+            }
+            else -> {}
+        }
+    }
+    // Transition Actions (W3C SCXML 3.13)
+    override fun executeTransitionActions(
+        source: Test240State,
+        event: Test240Event?
+    ) {
+        when (source) {
+        else -> {}
+        }
+    }
+}

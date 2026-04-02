@@ -162,16 +162,16 @@ class BaseCodeGenerator(ABC):
             # Parse SCXML into language-agnostic model
             model = self._parse_scxml(scxml_path, as_child)
 
-            print(f"Generating code for: {model.name}")
-            print(f"  States: {len(model.states)}")
-            print(f"  Events: {len(model.events)}")
-            print(f"  Needs ScriptEngine: {model.needs_script_engine}")
-
             # Shared analysis pipeline
             self._classify_variables(model)
             self._analyze_model_features(model)
             self._add_system_events(model)
             self._build_prefix_matching(model)
+
+            print(f"Generating code for: {model.name}")
+            print(f"  States: {len(model.states)}")
+            print(f"  Events: {len(model.events)}")
+            print(f"  Needs ScriptEngine: {model.needs_script_engine}")
 
             # Check if static generation is possible
             if not self._can_generate_static(model):
