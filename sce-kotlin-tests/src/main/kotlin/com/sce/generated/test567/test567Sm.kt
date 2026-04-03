@@ -252,15 +252,20 @@ class Test567StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 3000L, Test567Event.Timeout)
-            // W3C SCXML 5.10: Evaluate params/namelist for event data
+            // W3C SCXML C.2: BasicHTTP send with script engine evaluation
             run {
                 ensureScriptEngine()
-                val engineE = scriptEngine ?: return@run
-                val sidE = scriptSessionId ?: return@run
-                val paramsE = mutableMapOf<String, Any?>()
-                try { paramsE["param1"] = engineE.evaluateExpr(sidE, "2") } catch (_: Exception) { paramsE["param1"] = "" }
-                val eventDataE = buildJsonFromParams(paramsE)
-                send(Test567Event.Test, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
+                val engineH = scriptEngine ?: return@run
+                val sidH = scriptSessionId ?: return@run
+                val httpParams = mutableMapOf<String, List<String>>()
+                try {
+                    val v = engineH.evaluateExpr(sidH, "2")
+                    httpParams["param1"] = listOf(v?.toString() ?: "")
+                } catch (_: Exception) {
+                    httpParams["param1"] = listOf("")
+                }
+                val httpContent = ""
+                performHttpSend("http://localhost:8080/test", "test", httpContent, httpParams, "__send_1")
             }
             }
             is Test567State.S1 -> {

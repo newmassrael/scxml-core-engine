@@ -93,9 +93,9 @@ class Test525StateMachine(
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         engine.setupSystemVariables(sid, "test525")
 
-        // W3C SCXML B.2: Initialize variable 'Var1' with inline content
+        // W3C SCXML B.2: Initialize variable 'Var1' with inline content (C++ parseEventData pattern)
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, "[1,2,3]")
+            val initResult_Var1 = engine.parseDataValue(sid, "[1,2,3]")
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raiseInternal(Test525Event.Error.Execution)

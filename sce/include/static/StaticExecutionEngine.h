@@ -38,12 +38,25 @@
 #endif
 #include <chrono>
 #include <cstdint>
+#include <functional>
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace SCE::Static {
+
+/// W3C SCXML C.2: HTTP send request data for BasicHTTPEventProcessor callback.
+/// Matches Kotlin HttpSendRequest — transport-agnostic data struct passed to onHttpSend callback.
+struct HttpSendRequest {
+    std::string target;
+    std::string eventName;
+    std::string content;
+    std::map<std::string, std::vector<std::string>> params;
+    std::string sendId;
+};
 
 /**
  * @brief Template-based SCXML execution engine for static code generation
@@ -385,6 +398,7 @@ private:
         externalQueue_;  // W3C SCXML C.1: External event queue (low priority)
     bool isRunning_ = false;
     std::function<void()> completionCallback_;  // W3C SCXML 6.4: Callback for done.invoke
+    std::function<void(const HttpSendRequest &)> onHttpSend_;  // W3C SCXML C.2: BasicHTTP callback
     SCE::PullScheduler<Event> scheduler_;       // W3C SCXML 6.2: Delayed event scheduler
 
 protected:
@@ -1016,6 +1030,35 @@ public:
      */
     void setCompletionCallback(std::function<void()> callback) {
         completionCallback_ = callback;
+    }
+
+    /**
+     * @brief Set HTTP send callback for BasicHTTPEventProcessor (W3C SCXML C.2)
+     *
+     * Matches Kotlin StateMachineEngine.onHttpSend pattern.
+     * Generated code calls performHttpSend() which delegates to this callback.
+     * The test harness or application provides the actual HTTP transport.
+     *
+     * @param callback Function receiving HttpSendRequest (nullptr to clear)
+     */
+    void setHttpSendCallback(std::function<void(const HttpSendRequest &)> callback) {
+        onHttpSend_ = std::move(callback);
+    }
+
+    /**
+     * @brief Dispatch BasicHTTP send via callback (W3C SCXML C.2)
+     *
+     * Called by AOT-generated code for BasicHTTPEventProcessor sends.
+     * Delegates to onHttpSend_ callback set by test harness or application.
+     * Matches Kotlin StateMachineEngine.performHttpSend() pattern.
+     */
+    void performHttpSend(const std::string &target, const std::string &eventName,
+                         const std::string &content,
+                         const std::map<std::string, std::vector<std::string>> &params,
+                         const std::string &sendId) {
+        if (onHttpSend_) {
+            onHttpSend_(HttpSendRequest{target, eventName, content, params, sendId});
+        }
     }
 
     /**

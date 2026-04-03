@@ -32,7 +32,7 @@ class Test230Child0StateMachine(
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()
-        onEntry(initialState)
+        super.enterInitialConfiguration()
     }
 
 
@@ -55,6 +55,7 @@ class Test230Child0StateMachine(
     override fun isAtomicState(state: Test230Child0State): Boolean = when (state) {
         else -> true
     }
+
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test230Child0State): Int = when (state) {
@@ -196,7 +197,7 @@ class Test230Child0StateMachine(
         event is Test230Child0Event.ChildToParent -> TransitionResult.External(Test230Child0State.SubFinal, Test230Child0State.Sub0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test230Child0State.SubFinal)
+        else -> TransitionResult.External(Test230Child0State.SubFinal, Test230Child0State.Sub0)
     }
 
     // Entry Actions (W3C SCXML 3.8)

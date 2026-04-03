@@ -64,8 +64,11 @@ abstract class W3CHttpTestBase<S : State, E : Event> : W3CTestBase<S, E>() {
                         .header("Content-Type", contentType)
                         .POST(HttpRequest.BodyPublishers.ofString(body))
                         .build()
-                    // Fire-and-forget — response handled by server callback
-                    httpClient.sendAsync(httpRequest, HttpResponse.BodyHandlers.ofString())
+                    // W3C SCXML C.2: Synchronous send ensures server callback (which injects
+                    // the response event into SM queue) completes BEFORE performHttpSend returns.
+                    // W3CHttpTestServer delivers callback before HTTP response (line 131),
+                    // so event ordering is preserved when multiple sends share an onentry block.
+                    httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString())
                 } catch (_: Exception) {
                     // Match C++ pattern: log and continue
                 }

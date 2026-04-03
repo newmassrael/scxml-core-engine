@@ -4,7 +4,11 @@
 #include "AotTestRegistry.h"
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
+#include "events/CppHttplibClient.h"
+#include "events/IHttpClient.h"
+#include "common/SendHelper.h"
 #endif
+#include "static/StaticExecutionEngine.h"
 #include "common/TestUtils.h"
 #include <chrono>
 #include <thread>
@@ -88,6 +92,44 @@ public:
                 sm.raiseExternal(eventMeta);
             } else {
                 SCE_LOG_WARN("HttpAotTest {}: Unknown HTTP event: {}", TestNum, eventName);
+            }
+        });
+
+        // W3C SCXML C.2: Wire performHttpSend() callback (Kotlin W3CHttpTestBase parity)
+        // Generated code calls engine.performHttpSend() which delegates to this callback.
+        // Synchronous send ensures server callback (which injects response event into SM)
+        // completes before performHttpSend returns, preserving event ordering.
+        sm.setHttpSendCallback([](const SCE::Static::HttpSendRequest &request) {
+            SCE_LOG_DEBUG("HttpAotTest {}: performHttpSend target='{}' event='{}' content='{}'",
+                      TestNum, request.target, request.eventName, request.content);
+
+            // W3C SCXML C.2: Build HTTP POST body (Zero Duplication with SendHelper)
+            std::string body;
+            std::string contentType;
+
+            if (!request.eventName.empty() || !request.params.empty()) {
+                body = ::SCE::SendHelper::buildHttpPostBody(request.eventName, request.params);
+                contentType = "application/x-www-form-urlencoded";
+            } else if (!request.content.empty()) {
+                body = request.content;
+                contentType = "text/plain";
+            } else {
+                contentType = "application/x-www-form-urlencoded";
+            }
+
+            // W3C SCXML C.2: Synchronous HTTP POST (Kotlin httpClient.send parity)
+            SCE::CppHttplibClient httpClient;
+            SCE::HttpClient::Request httpReq;
+            httpReq.method = "POST";
+            httpReq.url = request.target;
+            httpReq.body = body;
+            httpReq.contentType = contentType;
+
+            auto future = httpClient.sendRequest(httpReq);
+            try {
+                future.get();  // Synchronous: server callback fires before this returns
+            } catch (const std::exception &e) {
+                SCE_LOG_ERROR("HttpAotTest {}: HTTP POST failed: {}", TestNum, e.what());
             }
         });
 

@@ -97,9 +97,9 @@ class Test551StateMachine(
 
 
         // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
-        // State 's1' variable 'Var1' (inline content)
+        // State 's1' variable 'Var1' (inline content, C++ parseEventData pattern)
         try {
-            val initResult_Var1 = engine.evaluateExpr(sid, "[1,2,3]")
+            val initResult_Var1 = engine.parseDataValue(sid, "[1,2,3]")
             engine.setVariable(sid, "Var1", initResult_Var1)
         } catch (e: Exception) {
             raiseInternal(Test551Event.Error.Execution)

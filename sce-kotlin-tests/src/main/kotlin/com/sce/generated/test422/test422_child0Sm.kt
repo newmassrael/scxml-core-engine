@@ -49,6 +49,7 @@ class Test422Child0StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test422Child0State): Int = when (state) {
         is Test422Child0State.Sub0 -> 0
@@ -92,7 +93,7 @@ class Test422Child0StateMachine(
     private fun processNullSub0(
     ): TransitionResult<Test422Child0State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test422Child0State.SubFinal0)
+        else -> TransitionResult.External(Test422Child0State.SubFinal0, Test422Child0State.Sub0)
     }
 
     // --- Per-State Event Handlers ---

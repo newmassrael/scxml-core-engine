@@ -30,7 +30,7 @@ class Test234Child0StateMachine(
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()
-        onEntry(initialState)
+        super.enterInitialConfiguration()
     }
 
 
@@ -51,6 +51,7 @@ class Test234Child0StateMachine(
     override fun isAtomicState(state: Test234Child0State): Boolean = when (state) {
         else -> true
     }
+
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test234Child0State): Int = when (state) {

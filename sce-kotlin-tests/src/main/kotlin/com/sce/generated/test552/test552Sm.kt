@@ -97,7 +97,7 @@ class Test552StateMachine(
         try {
             val srcContent_Var1 = engine.loadDataFromSrc("file:test552.txt", "resources/552")
             if (srcContent_Var1 != null) {
-                val srcValue_Var1 = engine.evaluateExpr(sid, srcContent_Var1)
+                val srcValue_Var1 = engine.parseDataValue(sid, srcContent_Var1)
                 engine.setVariable(sid, "Var1", srcValue_Var1)
             }
         } catch (e: Exception) {

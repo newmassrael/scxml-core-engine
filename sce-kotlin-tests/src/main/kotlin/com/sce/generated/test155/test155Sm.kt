@@ -105,9 +105,9 @@ class Test155StateMachine(
             engine.evaluateExpr(sid, "undefined")
             engine.setVariable(sid, "Var2", null)
         } catch (_: Exception) {}
-        // W3C SCXML B.2: Initialize variable 'Var3' with inline content
+        // W3C SCXML B.2: Initialize variable 'Var3' with inline content (C++ parseEventData pattern)
         try {
-            val initResult_Var3 = engine.evaluateExpr(sid, "[1,2,3]")
+            val initResult_Var3 = engine.parseDataValue(sid, "[1,2,3]")
             engine.setVariable(sid, "Var3", initResult_Var3)
         } catch (e: Exception) {
             raiseInternal(Test155Event.Error.Execution)

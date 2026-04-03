@@ -43,6 +43,7 @@ class Test224Child0StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test224Child0State): Int = when (state) {
         is Test224Child0State.SubFinal -> 0

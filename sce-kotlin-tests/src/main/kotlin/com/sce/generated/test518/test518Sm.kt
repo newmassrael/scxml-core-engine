@@ -232,23 +232,26 @@ class Test518StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 30000L, Test518Event.Timeout)
-            // W3C SCXML 5.10: Evaluate params/namelist for event data
+            // W3C SCXML C.2: BasicHTTP send with script engine evaluation
             run {
                 ensureScriptEngine()
-                val engineE = scriptEngine ?: return@run
-                val sidE = scriptSessionId ?: return@run
-                val paramsE = mutableMapOf<String, Any?>()
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
-                if (!engineE.hasVariable(sidE, "Var1")) {
-                    raiseInternal(Test518Event.Error.Execution)
-                    return@run  // W3C SCXML 6.2: Abort send if namelist variable not found
-                }
-                try { paramsE["Var1"] = engineE.getVariable(sidE, "Var1") } catch (_: Exception) {
+                val engineH = scriptEngine ?: return@run
+                val sidH = scriptSessionId ?: return@run
+                val httpParams = mutableMapOf<String, List<String>>()
+                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
+                if (!engineH.hasVariable(sidH, "Var1")) {
                     raiseInternal(Test518Event.Error.Execution)
                     return@run
                 }
-                val eventDataE = buildJsonFromParams(paramsE)
-                send(Test518Event.Test, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
+                try {
+                    val v = engineH.getVariable(sidH, "Var1")
+                    httpParams["Var1"] = listOf(v?.toString() ?: "")
+                } catch (_: Exception) {
+                    raiseInternal(Test518Event.Error.Execution)
+                    return@run
+                }
+                val httpContent = ""
+                performHttpSend("http://localhost:8080/test", "test", httpContent, httpParams, "__send_1")
             }
             }
             else -> {}

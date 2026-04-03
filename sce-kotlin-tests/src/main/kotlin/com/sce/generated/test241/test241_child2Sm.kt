@@ -34,7 +34,7 @@ class Test241Child2StateMachine(
     // W3C SCXML B.1: Initialize script engine before entering initial state
     override fun enterInitialConfiguration() {
         ensureScriptEngine()
-        onEntry(initialState)
+        super.enterInitialConfiguration()
     }
 
 
@@ -57,6 +57,7 @@ class Test241Child2StateMachine(
     override fun isAtomicState(state: Test241Child2State): Boolean = when (state) {
         else -> true
     }
+
 
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test241Child2State): Int = when (state) {
@@ -207,9 +208,9 @@ class Test241Child2StateMachine(
 
     private fun processNullSub03(
     ): TransitionResult<Test241Child2State> = when {
-        safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test241Child2State.SubFinal3)
+        safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test241Child2State.SubFinal3, Test241Child2State.Sub03)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test241Child2State.SubFinal3)
+        else -> TransitionResult.External(Test241Child2State.SubFinal3, Test241Child2State.Sub03)
     }
 
     // --- Per-State Event Handlers ---

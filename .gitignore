@@ -116,6 +116,7 @@ docker_tsan/docker-tsan-build.log
 
 tools/codegen/__pycache__/
 tools/codegen/generators/__pycache__/
+tools/codegen/tests/__pycache__/
 archive/
 *.wasm
 

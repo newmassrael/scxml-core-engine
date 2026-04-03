@@ -342,12 +342,12 @@ class Test241StateMachine(
                     val engineInv = scriptEngine ?: return@run
                     val sidInv = scriptSessionId ?: return@run
                     val invokeParams = mutableMapOf<String, Any?>()
-                    // W3C SCXML 6.4: Namelist variable must exist in parent
-                    try {
-                        invokeParams["Var1"] = engineInv.getVariable(sidInv, "Var1")
-                    } catch (_: Exception) {
+                    // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
+                    if (!engineInv.hasVariable(sidInv, "Var1")) {
+                        raiseInternal(Test241Event.Error.Execution)
                         return@run  // C++ pattern: invoke cancelled on namelist error
                     }
+                    invokeParams["Var1"] = engineInv.getVariable(sidInv, "Var1")
                     deferInvoke(state, generatedInvokeId) {
                         val childSM = Test241Child0StateMachine(scriptEngine)
                         setInvokeParams(childSM, invokeParams)
