@@ -11,6 +11,11 @@ import org.mozilla.javascript.Context
 import org.mozilla.javascript.ScriptableObject
 import org.mozilla.javascript.Scriptable
 import org.mozilla.javascript.Undefined
+import javax.xml.parsers.DocumentBuilderFactory
+import org.w3c.dom.Element
+import org.w3c.dom.Document
+import org.xml.sax.InputSource
+import java.io.StringReader
 
 /**
  * JVM ECMAScript engine using Mozilla Rhino.
@@ -170,9 +175,21 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         try {
             cx.languageVersion = Context.VERSION_ES6
             cx.optimizationLevel = -1
-            // Evaluate expression and assign to location
-            val result = cx.evaluateString(session.scope, expr, "assign", 1, null)
-            ScriptableObject.putProperty(session.scope, location, result)
+
+            // C++ AssignmentExecutionHelper 3-path strategy:
+            // 1. System variable reference in expr → executeScript (preserves JS object references)
+            if (isSystemVariableReference(expr)) {
+                cx.evaluateString(session.scope, "$location = $expr;", "assign", 1, null)
+            }
+            // 2. Simple variable name → evaluate + setVariable
+            else if (isSimpleVariableName(location)) {
+                val result = cx.evaluateString(session.scope, expr, "assign", 1, null)
+                ScriptableObject.putProperty(session.scope, location, result)
+            }
+            // 3. Complex path (e.g., "foo.bar") → executeScript
+            else {
+                cx.evaluateString(session.scope, "$location = ($expr);", "assign", 1, null)
+            }
         } catch (e: ScriptEngineException) {
             throw e
         } catch (e: Exception) {
@@ -180,6 +197,27 @@ class RhinoScriptEngine : ScxmlScriptEngine {
         } finally {
             Context.exit()
         }
+    }
+
+    /**
+     * C++ AssignmentExecutionHelper::isSystemVariableReference pattern.
+     * W3C SCXML 5.10: System variables that require direct script execution
+     * to preserve JavaScript object reference semantics (test 329: Var2 = _event).
+     */
+    private fun isSystemVariableReference(expr: String): Boolean {
+        return expr == "_sessionid" || expr == "_event" || expr == "_name" ||
+               expr == "_ioprocessors" || expr == "_x"
+    }
+
+    /**
+     * C++ AssignmentExecutionHelper regex: ^[a-zA-Z_][a-zA-Z0-9_]*$
+     * Simple variable names use setVariable, complex paths use executeScript.
+     */
+    private fun isSimpleVariableName(name: String): Boolean {
+        if (name.isEmpty()) return false
+        val first = name[0]
+        if (!first.isLetter() && first != '_') return false
+        return name.all { it.isLetterOrDigit() || it == '_' }
     }
 
     override fun setCurrentEvent(
@@ -204,18 +242,10 @@ class RhinoScriptEngine : ScxmlScriptEngine {
             ScriptableObject.putProperty(eventObj, "origintype", originType)
             ScriptableObject.putProperty(eventObj, "invokeid", invokeId)
 
-            // W3C SCXML 5.10: _event.data — try to parse as structured data
+            // W3C SCXML B.2: Parse event data using C++ parseEventData pattern
             if (data.isNotEmpty()) {
-                // Try to evaluate as JS expression (handles JSON objects, arrays, primitives)
-                try {
-                    cx.languageVersion = Context.VERSION_ES6
-                    cx.optimizationLevel = -1
-                    val parsed = cx.evaluateString(scope, "($data)", "event-data", 1, null)
-                    ScriptableObject.putProperty(eventObj, "data", parsed)
-                } catch (_: Exception) {
-                    // Fall back to raw string
-                    ScriptableObject.putProperty(eventObj, "data", data)
-                }
+                val parsed = parseDataValueInternal(cx, scope, data)
+                ScriptableObject.putProperty(eventObj, "data", parsed ?: Undefined.instance)
             } else {
                 ScriptableObject.putProperty(eventObj, "data", Undefined.instance)
             }
@@ -328,6 +358,20 @@ class RhinoScriptEngine : ScxmlScriptEngine {
     }
 
     /**
+     * W3C SCXML B.2: Parse raw data value as XML DOM, JSON, or space-normalized string.
+     * C++ parseEventData() pattern.
+     */
+    override fun parseDataValue(sessionId: String, data: String): Any? {
+        val session = sessions[sessionId] ?: return data
+        val cx = Context.enter()
+        try {
+            return parseDataValueInternal(cx, session.scope, data)
+        } finally {
+            Context.exit()
+        }
+    }
+
+    /**
      * W3C SCXML B.2: Validate ECMAScript variable name.
      * Mirrors C++ ForeachHelper::isLegalVariableName().
      */
@@ -342,6 +386,141 @@ class RhinoScriptEngine : ScxmlScriptEngine {
     }
 
     // --- Private Helpers ---
+
+    /**
+     * W3C SCXML B.2: Internal parseDataValue with pre-entered Context.
+     * C++ parseEventData() pattern: XML → DOM, JSON → JS object, else → space-normalized string.
+     */
+    private fun parseDataValueInternal(cx: Context, scope: ScriptableObject, data: String): Any? {
+        // Step 1: XML detection (C++ pattern: skip leading whitespace, check for '<')
+        val firstNonWhitespace = data.indexOfFirst { it != ' ' && it != '\t' && it != '\r' && it != '\n' }
+        if (firstNonWhitespace >= 0 && data[firstNonWhitespace] == '<') {
+            val domObj = createRhinoDOMObject(cx, scope, data)
+            if (domObj != null) return domObj
+        }
+
+        // Step 2: Try strict JSON parsing (C++ JS_ParseJSON pattern)
+        // Use JSON.parse() via script — Rhino 1.7.15 NativeJSON.parse() NPEs on null reviver
+        try {
+            cx.languageVersion = Context.VERSION_ES6
+            cx.optimizationLevel = -1
+            // Store data in temp variable to avoid escaping issues, then JSON.parse it
+            ScriptableObject.putProperty(scope, "__sce_tmp_data__", data)
+            val parsed = cx.evaluateString(scope, "JSON.parse(__sce_tmp_data__)", "json-parse", 1, null)
+            ScriptableObject.deleteProperty(scope, "__sce_tmp_data__")
+            if (parsed != null && parsed !is Undefined) return parsed
+        } catch (_: Exception) {
+            ScriptableObject.deleteProperty(scope, "__sce_tmp_data__")
+            // Not valid JSON — fall through
+        }
+
+        // Step 3: Space normalization (C++ parseEventData fallback)
+        return normalizeWhitespace(data)
+    }
+
+    /**
+     * W3C SCXML B.2: Create Rhino-compatible DOM object from XML content.
+     * C++ DOMBinding::createDOMObject() pattern using Java javax.xml.
+     */
+    private fun createRhinoDOMObject(cx: Context, scope: ScriptableObject, xmlContent: String): Scriptable? {
+        return try {
+            val factory = DocumentBuilderFactory.newInstance()
+            factory.isNamespaceAware = true
+            val builder = factory.newDocumentBuilder()
+            val doc = builder.parse(InputSource(StringReader(xmlContent)))
+            val docElement = doc.documentElement
+
+            // Create Rhino object with getElementsByTagName() and getAttribute()
+            createRhinoElementWrapper(cx, scope, doc, docElement)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Create a Rhino Scriptable wrapper for a DOM element.
+     * C++ DOMBinding::createElementObject() pattern.
+     *
+     * @param topScope The session's top-level scope (for object/array creation)
+     */
+    private fun createRhinoElementWrapper(
+        cx: Context,
+        topScope: ScriptableObject,
+        doc: Document?,
+        element: Element
+    ): Scriptable {
+        val obj = cx.newObject(topScope)
+
+        // getElementsByTagName method (C++ dom_getElementsByTagName_wrapper)
+        val getElementsFunc = object : org.mozilla.javascript.BaseFunction() {
+            override fun call(
+                cx: Context, scope: Scriptable, thisObj: Scriptable, args: Array<out Any?>
+            ): Any {
+                if (args.isEmpty()) return cx.newArray(topScope, 0)
+                val tagName = Context.toString(args[0])
+                val nodeList = if (doc != null) {
+                    doc.getElementsByTagName(tagName)
+                } else {
+                    element.getElementsByTagName(tagName)
+                }
+                // Rhino requires Object[] component type, not Scriptable[]
+                val arr = arrayOfNulls<Any>(nodeList.length)
+                for (i in 0 until nodeList.length) {
+                    arr[i] = createRhinoElementWrapper(cx, topScope, null, nodeList.item(i) as Element)
+                }
+                return cx.newArray(topScope, arr)
+            }
+            override fun getArity(): Int = 1
+            override fun getFunctionName(): String = "getElementsByTagName"
+        }
+        ScriptableObject.putProperty(obj, "getElementsByTagName", getElementsFunc)
+
+        // getAttribute method (C++ dom_getAttribute_wrapper)
+        val getAttrFunc = object : org.mozilla.javascript.BaseFunction() {
+            override fun call(
+                cx: Context, scope: Scriptable, thisObj: Scriptable, args: Array<out Any?>
+            ): Any {
+                if (args.isEmpty()) return ""
+                val attrName = Context.toString(args[0])
+                return element.getAttribute(attrName) ?: ""
+            }
+            override fun getArity(): Int = 1
+            override fun getFunctionName(): String = "getAttribute"
+        }
+        ScriptableObject.putProperty(obj, "getAttribute", getAttrFunc)
+
+        return obj
+    }
+
+    /**
+     * W3C SCXML B.2: Space normalization for plain text data.
+     * C++ parseEventData fallback: collapse whitespace, strip leading/trailing.
+     */
+    private fun normalizeWhitespace(data: String): String {
+        val normalized = StringBuilder(data.length)
+        var inWhitespace = false
+        var hasContent = false
+
+        for (c in data) {
+            if (c == ' ' || c == '\t' || c == '\r' || c == '\n') {
+                if (hasContent && !inWhitespace) {
+                    normalized.append(' ')
+                    inWhitespace = true
+                }
+            } else {
+                normalized.append(c)
+                inWhitespace = false
+                hasContent = true
+            }
+        }
+
+        // Remove trailing whitespace
+        if (normalized.isNotEmpty() && normalized.last() == ' ') {
+            normalized.deleteCharAt(normalized.length - 1)
+        }
+
+        return normalized.toString()
+    }
 
     /**
      * Register the SCXML In() predicate as a JavaScript function.

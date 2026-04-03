@@ -97,9 +97,9 @@ class Test558StateMachine(
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         engine.setupSystemVariables(sid, "test558")
 
-        // W3C SCXML B.2: Initialize variable 'var1' with inline content
+        // W3C SCXML B.2: Initialize variable 'var1' with inline content (C++ parseEventData pattern)
         try {
-            val initResult_var1 = engine.evaluateExpr(sid, "this  is \na string")
+            val initResult_var1 = engine.parseDataValue(sid, "this  is \na string")
             engine.setVariable(sid, "var1", initResult_var1)
         } catch (e: Exception) {
             raiseInternal(Test558Event.Error.Execution)
@@ -108,7 +108,7 @@ class Test558StateMachine(
         try {
             val srcContent_var2 = engine.loadDataFromSrc("file:test558.txt", "resources/558")
             if (srcContent_var2 != null) {
-                val srcValue_var2 = engine.evaluateExpr(sid, srcContent_var2)
+                val srcValue_var2 = engine.parseDataValue(sid, srcContent_var2)
                 engine.setVariable(sid, "var2", srcValue_var2)
             }
         } catch (e: Exception) {

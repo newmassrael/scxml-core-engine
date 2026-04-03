@@ -206,6 +206,25 @@ interface ScxmlScriptEngine {
      * @return File content as string, or null if resolution fails
      */
     fun loadDataFromSrc(src: String, basePath: String): String? = null
+
+    /**
+     * W3C SCXML B.2: Parse raw data value as XML DOM, JSON, or space-normalized string.
+     *
+     * C++ parseEventData() pattern. Used for:
+     * - Inline <content> in <data> elements
+     * - External <data src="..."> file content
+     * - Event data in <send>/<content>
+     *
+     * Detection order:
+     * 1. XML (starts with '<') → DOM object with getElementsByTagName()/getAttribute()
+     * 2. JSON → parsed JavaScript value
+     * 3. Plain text → space-normalized string (collapse whitespace, strip leading/trailing)
+     *
+     * @param sessionId Active session (needed for creating JS-compatible objects)
+     * @param data Raw data string
+     * @return Parsed value suitable for the script engine's datamodel
+     */
+    fun parseDataValue(sessionId: String, data: String): Any? = data
 }
 
 /**

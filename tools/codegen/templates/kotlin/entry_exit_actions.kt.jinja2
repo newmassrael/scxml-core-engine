@@ -53,7 +53,7 @@
                     }
 {% elif dm_var.content %}
                     try {
-                        val v = engine.evaluateExpr(sid, "{{ dm_var.content | escape_kotlin }}")
+                        val v = engine.parseDataValue(sid, "{{ dm_var.content | escape_kotlin }}")
                         engine.setVariable(sid, "{{ dm_var.id }}", v)
                     } catch (e: Exception) {
                         raiseInternal({{ machine_name }}Event.Error.Execution)
@@ -116,12 +116,12 @@
 {% endfor %}
 {% if inv.namelist %}
 {% for var_name in inv.namelist.split() %}
-                    // W3C SCXML 6.4: Namelist variable must exist in parent
-                    try {
-                        invokeParams["{{ var_name }}"] = engineInv.getVariable(sidInv, "{{ var_name }}")
-                    } catch (_: Exception) {
+                    // W3C SCXML 6.4.1: Namelist variable must exist in parent (C++ NamelistHelper pattern)
+                    if (!engineInv.hasVariable(sidInv, "{{ var_name }}")) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution)
                         return@run  // C++ pattern: invoke cancelled on namelist error
                     }
+                    invokeParams["{{ var_name }}"] = engineInv.getVariable(sidInv, "{{ var_name }}")
 {% endfor %}
 {% endif %}
 {% endif %}
