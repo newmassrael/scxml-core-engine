@@ -117,10 +117,11 @@ def to_pascal_case(name: str) -> str:
 
 def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
     """
-    Generate child state machines for invoke tests.
+    Generate child state machines for static invoke tests.
 
     Finds child SCXML files extracted by the parser (_child0, _machineName, sub1, etc.)
     and generates Kotlin SMs in the same package as the parent.
+    Skips children not referenced by the parent SM (hybrid invokes use ScxmlRuntimeInterpreter).
 
     Returns number of children generated.
     """
@@ -135,6 +136,11 @@ def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
         return 0
     num = num_prefix.group(1)
 
+    # Read parent SM to check which child classes are actually referenced
+    # Hybrid invoke tests use ScxmlRuntimeInterpreter (no static child class reference)
+    parent_sm_file = output_dir / f'{parent_stem}Sm.kt'
+    parent_sm_content = parent_sm_file.read_text() if parent_sm_file.exists() else ''
+
     for child_scxml in resource_dir.glob('*.scxml'):
         child_name = child_scxml.stem
         # Skip the parent itself
@@ -143,6 +149,11 @@ def generate_child_sms(test_id: str, scxml_path: Path, output_dir: Path) -> int:
         # Match: test191_child0, test191_machineName, test226sub1, etc.
         if not (child_name.startswith(f'test{num}_') or
                 child_name.startswith(f'test{num}sub')):
+            continue
+
+        # Skip if parent SM doesn't reference this child class (hybrid invoke — runtime loaded)
+        child_class = to_pascal_case(child_name)
+        if f'{child_class}StateMachine' not in parent_sm_content:
             continue
 
         # Generate child SM (script engine or pure static — both supported now)

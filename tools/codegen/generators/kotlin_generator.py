@@ -415,7 +415,11 @@ class KotlinCodeGenerator(BaseCodeGenerator):
                         trans.internal_source = state_id
 
         # C++ DataModelInitHelper pattern: store base path for runtime src resolution
-        model.scxml_base_path = str(Path(scxml_path).parent)
+        # Use relative path from CWD for portability (Gradle workingDir = rootProject.projectDir)
+        try:
+            model.scxml_base_path = str(Path(scxml_path).parent.relative_to(Path.cwd()))
+        except ValueError:
+            model.scxml_base_path = str(Path(scxml_path).parent)
 
         # Build event tree for sealed interface hierarchy
         # Filter out synthetic events not meaningful in Kotlin
@@ -556,6 +560,37 @@ class KotlinCodeGenerator(BaseCodeGenerator):
                         'finalize_content': si.get('finalize_content', ''),
                         'state_id': state_id,
                         'child_needs_script_engine': si.get('child_needs_script_engine', False),
+                    })
+                invoke_entries[state_id] = entries
+
+        # W3C SCXML 6.4: Hybrid invoke support (srcexpr/contentexpr)
+        # C++ parity: AOT parent evaluates expression at runtime, creates Interpreter child dynamically.
+        # Kotlin uses ScxmlRuntimeInterpreter.fromFile()/fromString() — no pre-generated child needed.
+        for state_id, state in model.states.items():
+            if state.hybrid_invokes:
+                entries = invoke_entries.get(state_id, [])
+                for hi in state.hybrid_invokes:
+                    invoke_id = hi.get('invoke_id', '')
+                    specific_done = f"done.invoke.{invoke_id}" if invoke_id else ""
+                    if specific_done and specific_done in model.events:
+                        done_event = specific_done
+                    else:
+                        done_event = 'done.invoke'
+                    entries.append({
+                        'invoke_id': invoke_id,
+                        'child_class': '',  # Not needed — runtime interpreter creates child dynamically
+                        'autoforward': hi.get('autoforward', False),
+                        'done_event': done_event,
+                        'has_done_event': done_event in model.events or 'done.invoke' in model.events,
+                        'params': hi.get('params', []),
+                        'namelist': '',
+                        'idlocation': hi.get('idlocation', ''),
+                        'finalize_content': '',
+                        'state_id': state_id,
+                        'child_needs_script_engine': False,
+                        'is_hybrid': True,
+                        'srcexpr': hi.get('srcexpr', ''),
+                        'contentexpr': hi.get('contentexpr', ''),
                     })
                 invoke_entries[state_id] = entries
 

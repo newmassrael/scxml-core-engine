@@ -5,6 +5,7 @@
 package com.sce.generated.test216
 
 import com.sce.runtime.*
+import com.sce.interpreter.ScxmlRuntimeInterpreter
 
 // --- States (W3C SCXML 3.2) ---
 
@@ -235,6 +236,26 @@ class Test216StateMachine(
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 5000L, Test216Event.Timeout)
             executeAssign("Var1", "'file:test216sub1.scxml'")
+                // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
+                // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
+                run {
+                    val generatedInvokeId = "s0.${System.identityHashCode(this)}._invoke_0"
+                    deferInvoke(state, generatedInvokeId) {
+                        ensureScriptEngine()
+                        val eng = scriptEngine ?: return@deferInvoke
+                        val sid = scriptSessionId ?: return@deferInvoke
+                        try {
+                            // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child
+                            val pathResult = eng.evaluateExpr(sid, "Var1")
+                            val filePath = pathResult?.toString() ?: return@deferInvoke
+                            val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "resources/216", scriptEngine)
+                            startInvoke("_invoke_0", childSM, false, Test216Event.Done.Invoke, "", generatedInvokeId)
+                        } catch (_: Exception) {
+                            // W3C SCXML 6.4: Expression evaluation or child creation failed (C++ parity)
+                            raiseInternal(Test216Event.Error.Execution)
+                        }
+                    }
+                }
             }
             else -> {}
         }
@@ -250,6 +271,10 @@ class Test216StateMachine(
                 activeStateIds.remove("pass")
             }
             is Test216State.S0 -> {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("_invoke_0")
                 activeStateIds.remove("s0")
             }
             else -> {}

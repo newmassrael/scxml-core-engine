@@ -84,7 +84,35 @@
 {% endif %}
 {% if has_invokes %}
 {% for inv in invoke_entries[state_id] %}
-{% if inv.child_class %}
+{% if inv.is_hybrid is defined and inv.is_hybrid %}
+                // W3C SCXML 6.4: Hybrid invoke — runtime expression evaluation + dynamic child
+                // C++ parity: StateMachine::createFromSCXMLString() / FileLoadingHelper::loadScxmlFile()
+                run {
+                    val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
+                    deferInvoke(state, generatedInvokeId) {
+                        ensureScriptEngine()
+                        val eng = scriptEngine ?: return@deferInvoke
+                        val sid = scriptSessionId ?: return@deferInvoke
+                        try {
+{% if inv.srcexpr %}
+                            // W3C SCXML 6.4.3: Evaluate srcexpr → file path → load SCXML → create child
+                            val pathResult = eng.evaluateExpr(sid, "{{ inv.srcexpr | escape_kotlin }}")
+                            val filePath = pathResult?.toString() ?: return@deferInvoke
+                            val childSM = ScxmlRuntimeInterpreter.fromFile(filePath, "{{ model.scxml_base_path | escape_kotlin }}", scriptEngine)
+{% elif inv.contentexpr %}
+                            // W3C SCXML 6.4.4: Evaluate contentexpr → SCXML string → create child
+                            val contentResult = eng.evaluateExpr(sid, "{{ inv.contentexpr | escape_kotlin }}")
+                            val scxmlContent = contentResult?.toString() ?: return@deferInvoke
+                            val childSM = ScxmlRuntimeInterpreter.fromString(scxmlContent, scriptEngine)
+{% endif %}
+                            startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, "", generatedInvokeId)
+                        } catch (_: Exception) {
+                            // W3C SCXML 6.4: Expression evaluation or child creation failed (C++ parity)
+                            raiseInternal({{ machine_name }}Event.Error.Execution)
+                        }
+                    }
+                }
+{% elif inv.child_class %}
                 // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
                 run {
                     // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format

@@ -110,6 +110,7 @@ class SCXMLModel:
     has_exit_actions: bool = False  # True if any state has exit actions (on_exit, on_exit_blocks, invokes)
     has_hierarchy: bool = False  # True if any state has a parent (non-flat SM)
     needs_event_matching_helper: bool = False  # True if any transition needs runtime string-based event matching
+    document_rejected: bool = False  # W3C SCXML 5.8: Document rejected at parse time (empty <script/>)
 
     # W3C SCXML 5.10: Event metadata field flags
     needs_event_name: bool = False
@@ -408,6 +409,17 @@ class SCXMLParser:
         self._validate_cpp_context_usage()
         self._validate_kt_context_usage()
 
+        # W3C SCXML 5.8: Document rejection — override initial state to "pass" final state
+        # When the document is rejected (e.g., empty <script/>), the processor MUST NOT execute it.
+        # For AOT, we redirect the initial state to "pass" so the SM immediately reaches the
+        # correct final state (document rejection = test pass).
+        if self.model.document_rejected:
+            for state_id, state in self.model.states.items():
+                if state.is_final and state_id.lower() == 'pass':
+                    self.model.initial = state_id
+                    self.model.initial_leaf = state_id
+                    break
+
         return self.model
 
     def _parse_datamodel(self, root):
@@ -480,6 +492,16 @@ class SCXMLParser:
         for script_elem in root.findall('./sc:script', SCXML_NS):
             src = script_elem.get('src', '')
             content = script_elem.text or ''
+
+            # W3C SCXML 5.8: Empty <script/> (no src, no content) → document rejection
+            # "If the script specified by the 'src' attribute cannot be downloaded within a
+            # platform-specific timeout interval, the document is considered non-conformant,
+            # and the platform MUST reject it."
+            # An empty <script/> has no downloadable content — reject the document.
+            if not src and not content.strip():
+                self.model.document_rejected = True
+                logging.info("W3C SCXML 5.8: Empty <script/> detected — document rejected")
+                continue  # Skip adding to global_scripts
 
             # W3C SCXML 5.8: External script loading (src attribute)
             if src:

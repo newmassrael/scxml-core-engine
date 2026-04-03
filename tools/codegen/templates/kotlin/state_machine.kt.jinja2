@@ -15,6 +15,9 @@
 package com.sce.generated.{{ model.name | lower }}
 
 import com.sce.runtime.*
+{% if model.has_hybrid_invoke %}
+import com.sce.interpreter.ScxmlRuntimeInterpreter
+{% endif %}
 
 {% include 'states.kt.jinja2' %}
 

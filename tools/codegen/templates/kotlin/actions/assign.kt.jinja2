@@ -5,7 +5,8 @@
 {% if not action.location %}
             throw com.sce.runtime.ScriptEngineException("W3C SCXML 5.3: Empty assign location")
 {% elif action.content %}
-            engine.assign(sid, "{{ action.location | escape_kotlin }}", "{{ action.content | escape_kotlin }}")
+{# W3C SCXML 5.4: Inline XML content → JS string literal (C++ wraps in single quotes) #}
+            engine.assign(sid, "{{ action.location | escape_kotlin }}", "'{{ action.content | escape_kotlin }}'")
 {% elif action.expr %}
             engine.assign(sid, "{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
 {% endif %}
@@ -14,7 +15,8 @@
             // W3C SCXML 5.3: Empty location raises error.execution (C++ ActionExecutorImpl pattern)
             raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
 {% elif action.content %}
-            executeAssign("{{ action.location | escape_kotlin }}", "{{ action.content | escape_kotlin }}")
+{# W3C SCXML 5.4: Inline XML content → JS string literal (C++ wraps in single quotes) #}
+            executeAssign("{{ action.location | escape_kotlin }}", "'{{ action.content | escape_kotlin }}'")
 {% elif action.expr %}
             executeAssign("{{ action.location | escape_kotlin }}", "{{ action.expr | escape_kotlin }}")
 {% endif %}
