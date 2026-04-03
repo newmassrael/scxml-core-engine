@@ -8,9 +8,14 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
-{% if model.user_context_objects %}
+{% if model.context_objects %}
 #include <iostream>  // C++ function integration: Required for std namespace usage
 {% endif %}
+{% for ctx in model.context_objects %}
+{% if ctx.cpp_include %}
+#include "{{ ctx.cpp_include }}"
+{% endif %}
+{% endfor %}
 #include "static/StaticExecutionEngine.h"
 {% if model.static_invokes %}
 
@@ -98,14 +103,55 @@
         } \
     } while(0)
 
+{# ═══ Named Context: precompute template parameter/argument lists ═══ #}
+{# Contexts with cpp_type use concrete types (no template param needed).    #}
+{# Contexts without cpp_type use template parameters (duck typing).         #}
+{# _tpl_params/_tpl_args only contain template parameters, NOT concrete.    #}
+{% set _tpl_params = [] %}
+{% set _tpl_args = [] %}
+{% set _sm_tpl_args = [] %}
+{% for ctx in model.context_objects %}
+{% if not ctx.cpp_type %}
+{# Template parameter: duck typing #}
+{{ _tpl_params.append('typename ' + ctx.id | capitalize + 'T') or '' }}
+{{ _tpl_args.append(ctx.id | capitalize + 'T') or '' }}
+{{ _sm_tpl_args.append(ctx.id | capitalize + 'T') or '' }}
+{% endif %}
+{% endfor %}
+{% if model.has_parent_communication %}
+{{ _tpl_params.append('typename ParentStateMachine') or '' }}
+{{ _tpl_args.append('ParentStateMachine') or '' }}
+{{ _sm_tpl_args.append('ParentStateMachine') or '' }}
+{% endif %}
+{% if model.static_invokes %}
+{{ _tpl_params.append('typename SelfType') or '' }}
+{{ _tpl_args.append('SelfType') or '' }}
+{# SelfType = fully qualified SM class (CRTP) #}
+{% if _sm_tpl_args %}
+{{ _sm_tpl_args.append(model.name + '<' + _sm_tpl_args | join(', ') + '>') or '' }}
+{% else %}
+{{ _sm_tpl_args.append(model.name) or '' }}
+{% endif %}
+{% endif %}
+{# _has_tpl: whether any template parameters exist #}
+{% set _has_tpl = _tpl_params | length > 0 %}
+{# _sm_tpl_params: SM class uses same params as Policy, minus SelfType #}
+{% set _sm_tpl_params = [] %}
+{% for ctx in model.context_objects %}
+{% if not ctx.cpp_type %}
+{{ _sm_tpl_params.append('typename ' + ctx.id | capitalize + 'T') or '' }}
+{% endif %}
+{% endfor %}
+{% if model.has_parent_communication %}
+{{ _sm_tpl_params.append('typename ParentStateMachine') or '' }}
+{% endif %}
+{% set _has_sm_tpl = _sm_tpl_params | length > 0 %}
+
 namespace SCE::Generated::{{ model.name }} {
 
-{% if model.user_context_objects and model.has_parent_communication %}
-template<typename UserContext, typename ParentStateMachine>
-{% elif model.user_context_objects %}
-template<typename UserContext>
-{% elif model.has_parent_communication %}
-template<typename ParentStateMachine>
+{# Forward declaration #}
+{% if _has_sm_tpl %}
+template<{{ _sm_tpl_params | join(', ') }}>
 {% endif %}
 class {{ model.name }};
 
@@ -145,21 +191,8 @@ struct TransitionInfo {
 
 {# Policy class #}
 // State policy for {{ model.name }}
-{% if model.user_context_objects and model.has_parent_communication %}
-template<typename UserContext, typename ParentStateMachine>
-{% elif model.user_context_objects %}
-template<typename UserContext>
-{% elif model.has_parent_communication %}
-template<typename ParentStateMachine>
-{% elif model.static_invokes %}
-template<typename SelfType>
-{% elif model.hybrid_invokes %}
-{# Hybrid invokes don't need SelfType template parameter because:
-   - Interpreter children (StateMachine instances) don't use CRTP (Curiously Recurring Template Pattern)
-   - No parent pointer needed - children are isolated Interpreter instances
-   - AOT parent communicates via done.invoke events, not direct pointers to parent
-   - See ARCHITECTURE.md "Hybrid Strategy" for memory efficiency details
-   - Parent stays AOT (~300 bytes), child is Interpreter (~100KB) #}
+{% if _has_tpl %}
+template<{{ _tpl_params | join(', ') }}>
 {% endif %}
 struct {{ model.name }}Policy {
     using State = ::SCE::Generated::{{ model.name }}::State;
@@ -171,9 +204,11 @@ struct {{ model.name }}Policy {
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
     static constexpr bool NEEDS_SCRIPT_ENGINE = {{ 'true' if model.needs_script_engine else 'false' }};
 
-    {% if model.user_context_objects %}
-    // User context pointer for dependency injection (C++ function integration)
-    UserContext* user_ = nullptr;
+    {% if model.context_objects %}
+    // Named Context: individual pointers for dependency injection
+    {% for ctx in model.context_objects %}
+    {% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}* {{ ctx.id }}_ = nullptr;
+    {% endfor %}
     {% endif %}
 
     {% if model.variables %}
@@ -421,46 +456,31 @@ struct {{ model.name }}Policy {
 
 
 // User-facing state machine class
-{% if model.user_context_objects and model.has_parent_communication %}
-template<typename UserContext, typename ParentStateMachine>
-{% elif model.user_context_objects %}
-template<typename UserContext>
-{% elif model.has_parent_communication %}
-template<typename ParentStateMachine>
+{% if _has_sm_tpl %}
+template<{{ _sm_tpl_params | join(', ') }}>
 {% endif %}
-class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{% if model.user_context_objects and model.has_parent_communication %}{{ model.name }}Policy<UserContext, ParentStateMachine>{% elif model.user_context_objects %}{{ model.name }}Policy<UserContext>{% elif model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %}> {
+{% set _pol_inst = model.name + 'Policy' %}
+{% if _sm_tpl_args %}
+{% set _pol_inst = _pol_inst + '<' + _sm_tpl_args | join(', ') + '>' %}
+{% endif %}
+class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{{ _pol_inst }}> {
 public:
     // W3C SCXML: Policy type alias for test infrastructure
-    using PolicyType = {% if model.user_context_objects and model.has_parent_communication %}{{ model.name }}Policy<UserContext, ParentStateMachine>{% elif model.user_context_objects %}{{ model.name }}Policy<UserContext>{% elif model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %};
+    using PolicyType = {{ _pol_inst }};
 
-{% if model.user_context_objects and model.has_parent_communication %}
-    // W3C SCXML 6.2: Parent state machine pointer for #_parent support (Zero Overhead)
-    // W3C SCXML 6.5: childSessionId for finalize origin matching (test233)
-    // UserContext: Dependency injection for C++ function integration
-    explicit {{ model.name }}(UserContext& user, ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = "") {
-        this->policy_.user_ = &user;
+{% if model.context_objects or model.has_parent_communication %}
+    explicit {{ model.name }}(
+        {%- for ctx in model.context_objects %}{% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}& {{ ctx.id }}{{ ', ' if not loop.last or model.has_parent_communication }}{% endfor %}
+        {%- if model.has_parent_communication %}ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = ""{% endif -%}
+    ) {
+        {% for ctx in model.context_objects %}
+        this->policy_.{{ ctx.id }}_ = &{{ ctx.id }};
+        {% endfor %}
+        {% if model.has_parent_communication %}
         this->policy_.parent_ = parent;
         this->policy_.invokeId_ = invokeId;
         this->policy_.childSessionId_ = childSessionId;
-        {% if model.static_invokes %}
-        this->policy_.self_ = this;
         {% endif %}
-    }
-{% elif model.user_context_objects %}
-    // UserContext: Dependency injection for C++ function integration
-    explicit {{ model.name }}(UserContext& user) {
-        this->policy_.user_ = &user;
-        {% if model.static_invokes %}
-        this->policy_.self_ = this;
-        {% endif %}
-    }
-{% elif model.has_parent_communication %}
-    // W3C SCXML 6.2: Parent state machine pointer for #_parent support (Zero Overhead)
-    // W3C SCXML 6.5: childSessionId for finalize origin matching (test233)
-    explicit {{ model.name }}(ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = "") {
-        this->policy_.parent_ = parent;
-        this->policy_.invokeId_ = invokeId;
-        this->policy_.childSessionId_ = childSessionId;
         {% if model.static_invokes %}
         this->policy_.self_ = this;
         {% endif %}
@@ -483,7 +503,7 @@ public:
 
 // W3C SCXML: Compile-time StatePolicy interface verification
 // Ensures generated policy satisfies required concepts (see core/StatePolicyConcepts.h)
-{% if model.user_context_objects or model.has_parent_communication or model.static_invokes %}
+{% if _has_tpl %}
 // Template class — concept verified at instantiation (cannot static_assert uninstantiated templates)
 {% else %}
 static_assert(::SCE::Core::EventNamingPolicy<{{ model.name }}Policy>,

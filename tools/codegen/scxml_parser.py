@@ -15,6 +15,12 @@ from pathlib import Path
 
 # W3C SCXML namespace
 SCXML_NS = {'sc': 'http://www.w3.org/2005/07/scxml'}
+
+# SCE extension namespace for Named Context declarations
+SCE_NS = 'urn:sce:extensions'
+
+# C++ extension namespace for concrete type declarations
+CPP_NS = 'urn:sce:cpp'
 def ns_find(elem, tag):
     """Find element with namespace"""
     return elem.find(f'sc:{tag}', SCXML_NS)
@@ -31,7 +37,7 @@ class Transition:
     target: str = ""
     cond: str = ""  # guard condition (original SCXML expression)
     cond_cpp: str = ""  # C++ code for pure In() predicates or cpp: prefix conditions
-    cond_cpp_transformed: str = ""  # C++ code with this->policy_.user_-> prefix for UserContext
+    cond_cpp_transformed: str = ""  # C++ code with Named Context pointer dereference (this->ctx_->)
     is_pure_in_predicate: bool = False  # True if cond is ONLY In() predicates
     is_cpp_condition: bool = False  # True if cond uses cpp: prefix for direct C++ evaluation
     cond_kt: str = ""  # Kotlin code for kt: prefix conditions
@@ -118,11 +124,12 @@ class SCXMLModel:
     # W3C SCXML 3.4: Parallel state regions (parallel_id -> [child_region_ids])
     parallel_regions: Dict[str, List[str]] = field(default_factory=dict)
 
-    # User context objects (for UserContext template dependency injection)
-    user_context_objects: Set[str] = field(default_factory=set)  # Set of object names used in C++ code (e.g., hardware, logger)
+    # Named Context: declared <sce:context> objects for C++ function integration
+    context_objects: List[Dict] = field(default_factory=list)    # [{'id': 'hardware'}, ...] ordered by declaration
+    context_object_ids: Set[str] = field(default_factory=set)    # {'hardware', ...} for O(1) lookup during transform
 
     # Lambda capture flag: True if entry/exit lambdas need [this, &engine], False if [&engine] suffices
-    # Computed from: needs_script_engine OR static_invokes OR has_parent_communication OR has_parallel_states OR uses_in_predicate OR user_context_objects
+    # Computed from: needs_script_engine OR static_invokes OR has_parent_communication OR has_parallel_states OR uses_in_predicate OR context_objects
     needs_nonstatic_method: bool = False
 
     def resolve_to_leaf(self, state_id: str) -> str:
@@ -183,82 +190,50 @@ class SCXMLParser:
         self.invoke_counter = 0  # W3C SCXML 6.4.1: Generate invoke IDs when missing
         self.send_counter = 0  # W3C SCXML 6.2: Generate unique send IDs (C++ UniqueIdGenerator pattern)
 
-    def _extract_user_objects(self, cpp_code: str) -> Set[str]:
+    def _transform_cpp_code_with_named_contexts(self, cpp_code: str, declared_ids: Set[str]) -> str:
         """
-        Extract user object names from C++ code for UserContext template.
-        
-        Examples:
-            "hardware.powerOff()" -> {"hardware"}
-            "hardware.sensor.read()" -> {"hardware"}
-            "logger.info(msg)" -> {"logger"}
-            "obj1.method(); obj2.field" -> {"obj1", "obj2"}
-        
-        Args:
-            cpp_code: C++ code string (from <cpp> tag or cpp: prefix)
-            
-        Returns:
-            Set of top-level object names
-        """
-        # Match identifiers followed by dot (member access)
-        # Pattern: word boundary + identifier + optional whitespace + dot
-        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.'
-        matches = re.findall(pattern, cpp_code)
-        return set(matches)
-
-    def _transform_cpp_code_with_user_prefix(self, cpp_code: str, user_objects: Set[str]) -> str:
-        """
-        Transform C++ code by adding this->user_-> prefix to user objects.
+        Transform C++ code by replacing declared context object access with pointer dereference.
+        Only declared context names (from <sce:context>) are transformed.
         Preserves string literals unchanged.
-        
+
         Examples:
-            "hardware.powerOff()" -> "this->user_->hardware.powerOff()"
-            "logger.info(msg)" -> "this->user_->logger.info(msg)"
-            "obj.field = 5" -> "this->user_->obj.field = 5"
-            "text with OFF" -> "text with OFF" (string literals preserved)
-        
-        Supported C++ Patterns:
-            ✅ Member access: object.method(), object.field
-            ✅ Method chains: obj.getX().process()
-            ✅ Nested members: obj.field.subfield
-        
-        Unsupported Patterns (not detected/transformed):
-            ❌ Pointer access: object->method() (use . syntax instead)
-            ❌ Array indexing: object[index].method() (use . syntax first)
-            ❌ Templates: std::vector<T>.method() (namespace collision risk)
-            ⚠️  Workaround: Extract to intermediate variable, then use . syntax
-        
+            "hardware.powerOff()" -> "this->hardware_->powerOff()"
+            "hardware.sensor.read()" -> "this->hardware_->sensor.read()"
+            "combo.onActive(); berserk.onExit()" -> "this->combo_->onActive(); this->berserk_->onExit()"
+            "undeclared.method()" -> "undeclared.method()" (not transformed)
+
         Args:
             cpp_code: Original C++ code
-            user_objects: Set of object names to transform
-            
+            declared_ids: Set of declared context IDs from <sce:context> elements
+
         Returns:
-            Transformed C++ code with user_-> prefix (for Policy class context)
+            Transformed C++ code with named context pointer access
         """
         # Step 1: Extract string literals and replace with placeholders
         string_literals = []
         def save_string(match):
             string_literals.append(match.group(0))
             return f'__STRING_PLACEHOLDER_{len(string_literals) - 1}__'
-        
+
         # Match both single and double quoted strings (including escaped quotes)
         string_pattern = r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\''
         code_with_placeholders = re.sub(string_pattern, save_string, cpp_code)
-        
-        # Step 2: Transform user objects outside of string literals
+
+        # Step 2: Transform declared context objects outside of string literals
         result = code_with_placeholders
-        for obj_name in user_objects:
-            # Replace "objname." with "this->user_->objname."
-            # Note: this-> refers to Policy object (not main state machine class)
-            # Word boundary + object name + optional whitespace + dot
-            pattern = rf'\b{re.escape(obj_name)}(\s*\.)'
-            replacement = rf'this->user_->{obj_name}\1'
+        for ctx_id in declared_ids:
+            # Replace "ctx_id." with "this->ctx_id_->"
+            # Only the first dot (member access) becomes pointer dereference
+            # Example: hardware.sensor.read() -> this->hardware_->sensor.read()
+            pattern = rf'\b{re.escape(ctx_id)}\s*\.'
+            replacement = f'this->{ctx_id}_->'
             result = re.sub(pattern, replacement, result)
-        
+
         # Step 3: Restore string literals
         for i, literal in enumerate(string_literals):
             placeholder = f'__STRING_PLACEHOLDER_{i}__'
             result = result.replace(placeholder, literal)
-        
+
         return result
 
     def parse_file(self, scxml_path: str) -> SCXMLModel:
@@ -312,6 +287,9 @@ class SCXMLParser:
 
         # W3C SCXML 5.8: Parse global (top-level) scripts
         self._parse_global_scripts(root)
+
+        # Parse Named Context declarations (must be before _parse_states for transform)
+        self._parse_sce_contexts(root)
 
         # Parse states recursively
         self._parse_states(root, None)
@@ -368,8 +346,11 @@ class SCXMLParser:
             self.model.has_parent_communication or
             self.model.has_parallel_states or
             self.model.uses_in_predicate or
-            bool(self.model.user_context_objects)
+            bool(self.model.context_objects)
         )
+
+        # Validate cpp: code references match <sce:context> declarations
+        self._validate_cpp_context_usage()
 
         return self.model
 
@@ -514,6 +495,72 @@ class SCXMLParser:
 
             # W3C SCXML 5.8: Global scripts require JSEngine
             self.model.needs_script_engine = True
+
+    def _parse_sce_contexts(self, root):
+        """
+        Parse <sce:context> elements for Named Context declarations.
+
+        Named Context: each declared context object becomes an individual template
+        parameter and pointer in the generated Policy struct, eliminating the need
+        for a wrapper UserContext struct.
+
+        Example SCXML:
+            <scxml xmlns:sce="urn:sce:extensions" xmlns:cpp="urn:sce:cpp" ...>
+              <sce:context id="hardware" cpp:type="Hardware" cpp:include="hardware.h"/>
+              <sce:context id="timer"/>
+            </scxml>
+
+        If cpp:type is specified, concrete type is used instead of template parameter.
+        If cpp:include is specified, the header is auto-included in generated code.
+        """
+        for ctx_elem in root.findall(f'{{{SCE_NS}}}context'):
+            ctx_id = ctx_elem.get('id')
+            if not ctx_id:
+                raise ValueError("<sce:context> element must have an 'id' attribute")
+            if ctx_id in self.model.context_object_ids:
+                raise ValueError(f"Duplicate <sce:context> declaration: '{ctx_id}'")
+            cpp_type = ctx_elem.get(f'{{{CPP_NS}}}type', '')
+            cpp_include = ctx_elem.get(f'{{{CPP_NS}}}include', '')
+            self.model.context_objects.append({
+                'id': ctx_id,
+                'cpp_type': cpp_type,
+                'cpp_include': cpp_include,
+            })
+            self.model.context_object_ids.add(ctx_id)
+
+    def _validate_cpp_context_usage(self):
+        """
+        Validate that all cpp: object references have corresponding <sce:context> declarations.
+
+        If cpp: code contains 'obj.method()' patterns but no <sce:context> elements are
+        declared, raise an error to prevent silent false-positive transformations.
+        """
+        if self.model.context_object_ids:
+            return  # Declarations exist, validation passes
+
+        # Check if any cpp: code references objects (identifier followed by dot)
+        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.'
+        for state in self.model.states.values():
+            for trans in state.transitions:
+                if trans.is_cpp_condition and re.search(pattern, trans.cond_cpp):
+                    raise ValueError(
+                        f"cpp: condition '{trans.cond_cpp}' references objects but no <sce:context> "
+                        f"declarations found. Add <sce:context id=\"...\"/> to your SCXML root element."
+                    )
+            for block in state.on_entry_blocks:
+                for action in block:
+                    if action.get('is_cpp_function') and re.search(pattern, action.get('content', '')):
+                        raise ValueError(
+                            f"<cpp> action references objects but no <sce:context> declarations found. "
+                            f"Add <sce:context id=\"...\"/> to your SCXML root element."
+                        )
+            for block in state.on_exit_blocks:
+                for action in block:
+                    if action.get('is_cpp_function') and re.search(pattern, action.get('content', '')):
+                        raise ValueError(
+                            f"<cpp> action references objects but no <sce:context> declarations found. "
+                            f"Add <sce:context id=\"...\"/> to your SCXML root element."
+                        )
 
     def _parse_states(self, parent_elem, parent_id: Optional[str]):
         """
@@ -785,13 +832,9 @@ class SCXMLParser:
             is_cpp_condition = True
             cond_cpp = cond[4:]  # Remove 'cpp:' prefix
 
-            # Extract user object names for UserContext template
-            user_objects = self._extract_user_objects(cond_cpp)
-            self.model.user_context_objects.update(user_objects)
-
-            # Transform code with user_-> prefix if user objects exist
-            if user_objects:
-                cond_cpp_transformed = self._transform_cpp_code_with_user_prefix(cond_cpp, user_objects)
+            # Named Context: transform declared context references to pointer dereference
+            if self.model.context_object_ids:
+                cond_cpp_transformed = self._transform_cpp_code_with_named_contexts(cond_cpp, self.model.context_object_ids)
             else:
                 cond_cpp_transformed = cond_cpp
         elif cond and cond.startswith('kt:'):
@@ -1136,13 +1179,9 @@ class SCXMLParser:
                     action['content'] = cpp_code
                     action['is_cpp_function'] = True
 
-                    # Extract user object names for UserContext template
-                    user_objects = self._extract_user_objects(cpp_code)
-                    self.model.user_context_objects.update(user_objects)
-
-                    # Transform code with user_-> prefix if user objects exist
-                    if user_objects:
-                        action['content_transformed'] = self._transform_cpp_code_with_user_prefix(cpp_code, user_objects)
+                    # Named Context: transform declared context references to pointer dereference
+                    if self.model.context_object_ids:
+                        action['content_transformed'] = self._transform_cpp_code_with_named_contexts(cpp_code, self.model.context_object_ids)
                     else:
                         action['content_transformed'] = cpp_code
                 elif kt_elem is not None:

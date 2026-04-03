@@ -34,7 +34,9 @@
 
   W3C SCXML 1.0 compliant (W3C SCXML 3.4 compound states)
 -->
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="idle" name="combo_state" datamodel="null">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="urn:sce:extensions" version="1.0" initial="idle" name="combo_state" datamodel="null">
+    <sce:context id="combo"/>
+    <sce:context id="berserk"/>
 
     <state id="idle">
         <onentry>

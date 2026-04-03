@@ -36,7 +36,7 @@
 #}
 
     template<typename Engine>
-{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.user_context_objects %}    [[gnu::hot]] static void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
+{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
 {% else %}    [[gnu::hot]] void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
@@ -352,7 +352,7 @@
     }
 
     template<typename Engine>
-{% if not model.needs_script_engine and not model.static_invokes and not model.needs_event_scheduler and not model.has_parallel_states and not model.user_context_objects %}    [[gnu::hot]] static void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% else %}    [[gnu::hot]] void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 

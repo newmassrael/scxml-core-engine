@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" name="SmartLight" initial="off">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="urn:sce:extensions" xmlns:cpp="urn:sce:cpp" version="1.0" name="SmartLight" initial="off">
+  <sce:context id="hardware" cpp:type="Hardware" cpp:include="hardware.h"/>
   <state id="off">
     <onentry>
       <script><cpp>hardware.powerOff()</cpp></script>

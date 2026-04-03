@@ -72,7 +72,7 @@ int SCE_GetPlayerKillCount(void);
 }
 
 // ============================================
-// Aim Assist SCXML UserContext: C++ Callback Integration
+// Aim Assist SCXML Named Context: C++ Callback Integration
 // ============================================
 
 // Global flag for DOOM to check aim assist status
@@ -88,7 +88,7 @@ static inline void js_notify_combo_timer(double remaining_ms, double total_ms);
  * @brief Callback handler for aim assist state machine
  *
  * Implements onentry actions for each state as defined in aim_assist_state.scxml.
- * The generated code calls user_->aim.onXxx() when entering each state.
+ * The generated code calls this->{name}_->aim.onXxx() when entering each state.
  */
 struct AimCallbacks {
     void onDisabled() {
@@ -133,20 +133,15 @@ struct AimCallbacks {
 };
 
 /**
- * @brief UserContext for aim assist state machine
+ * @brief Named Context for aim assist state machine
  *
- * The generated code expects UserContext with an 'aim' member.
- * Calls to aim.onXxx() in SCXML become user_->aim.onXxx() in C++.
+ * The generated code expects Named Context with an 'aim' member.
+ * Named Context: aim.onXxx() in SCXML becomes this->aim_->onXxx() in generated C++.
  */
-struct AimContext {
-    AimCallbacks aim;
-};
-
-// Global aim context instance
-static AimContext g_aim_context;
+static AimCallbacks g_aim_callbacks;
 
 // ============================================
-// Combo SCXML UserContext: C++ Callback Integration
+// Combo SCXML Named Context: C++ Callback Integration
 // ============================================
 
 // Forward declaration for JS callbacks
@@ -195,7 +190,7 @@ static int g_berserk_intensity = 0;
  * @brief Callback handler for combo state machine (normal mode)
  *
  * Implements onentry actions for each state as defined in combo_state.scxml.
- * The generated code calls user_->combo.onXxx() when entering each state.
+ * The generated code calls this->{name}_->combo.onXxx() when entering each state.
  */
 struct ComboCallbacks {
     void onIdle() {
@@ -236,7 +231,7 @@ struct ComboCallbacks {
  * @brief Callback handler for berserk mode (compound sub-state)
  *
  * Implements onentry/onexit actions for berserk state.
- * The generated code calls user_->berserk.onXxx() when entering/exiting berserk.
+ * The generated code calls this->{name}_->berserk.onXxx() when entering/exiting berserk.
  */
 struct BerserkCallbacks {
     void onActive() {
@@ -288,22 +283,17 @@ struct BerserkCallbacks {
 };
 
 /**
- * @brief UserContext for combo state machine (W3C SCXML 3.4 compound states)
+ * @brief Named Context for combo state machine (W3C SCXML 3.4 compound states)
  *
- * The generated code expects UserContext with 'combo' and 'berserk' members.
- * Calls to combo.onXxx() in SCXML become user_->combo.onXxx() in C++.
- * Calls to berserk.onXxx() in SCXML become user_->berserk.onXxx() in C++.
+ * The generated code expects Named Context with 'combo' and 'berserk' members.
+ * Calls to combo.onXxx() in SCXML become this->{name}_->combo.onXxx() in C++.
+ * Named Context: combo.onXxx() / berserk.onXxx() in SCXML becomes this->combo_->onXxx() / this->berserk_->onXxx()
  */
-struct ComboContext {
-    ComboCallbacks combo;
-    BerserkCallbacks berserk;
-};
-
-// Global combo context instance
-static ComboContext g_combo_context;
+static ComboCallbacks g_combo_callbacks;
+static BerserkCallbacks g_berserk_callbacks;
 
 // ============================================
-// Game SCXML UserContext: C++ Callback Integration
+// Game SCXML Named Context: C++ Callback Integration
 // ============================================
 
 // Forward declaration for JS callback
@@ -316,7 +306,7 @@ extern "C" void sce_combo_reset(void);
  * @brief Callback handler for game state machine
  *
  * Implements onentry/onexit actions for each state as defined in game_state.scxml.
- * The generated code calls user_->game.onXxx() when entering/exiting each state.
+ * The generated code calls this->{name}_->game.onXxx() when entering/exiting each state.
  */
 struct GameCallbacks {
     void onDemoScreen() {
@@ -353,20 +343,15 @@ struct GameCallbacks {
 };
 
 /**
- * @brief UserContext for game state machine
+ * @brief Named Context for game state machine
  *
- * The generated code expects UserContext with a 'game' member.
- * Calls to game.onXxx() in SCXML become user_->game.onXxx() in C++.
+ * The generated code expects Named Context with a 'game' member.
+ * Named Context: game.onXxx() in SCXML becomes this->game_->onXxx() in generated C++.
  */
-struct GameContext {
-    GameCallbacks game;
-};
-
-// Global game context instance
-static GameContext g_game_context;
+static GameCallbacks g_game_callbacks;
 
 // ============================================
-// Player SCXML UserContext: C++ Callback Integration
+// Player SCXML Named Context: C++ Callback Integration
 // ============================================
 
 // Forward declaration for JS callback
@@ -376,7 +361,7 @@ static inline void js_notify_player_callback(const char *callback_type);
  * @brief Callback handler for player state machine
  *
  * Implements onentry actions for each state as defined in player_state.scxml.
- * The generated code calls user_->player.onXxx() when entering each state.
+ * The generated code calls this->{name}_->player.onXxx() when entering each state.
  */
 struct PlayerCallbacks {
     void onAlive() {
@@ -410,20 +395,15 @@ struct PlayerCallbacks {
 };
 
 /**
- * @brief UserContext for player state machine
+ * @brief Named Context for player state machine
  *
- * The generated code expects UserContext with a 'player' member.
- * Calls to player.onXxx() in SCXML become user_->player.onXxx() in C++.
+ * The generated code expects Named Context with a 'player' member.
+ * Named Context: player.onXxx() in SCXML becomes this->player_->onXxx() in generated C++.
  */
-struct PlayerContext {
-    PlayerCallbacks player;
-};
-
-// Global player context instance
-static PlayerContext g_player_context;
+static PlayerCallbacks g_player_callbacks;
 
 // ============================================
-// Weapon SCXML UserContext: C++ Callback Integration
+// Weapon SCXML Named Context: C++ Callback Integration
 // ============================================
 
 // Forward declaration for JS callback
@@ -433,7 +413,7 @@ static inline void js_notify_weapon_callback(const char *callback_type);
  * @brief Callback handler for weapon state machine
  *
  * Implements onentry actions for each state as defined in weapon_state.scxml.
- * The generated code calls user_->weapon.onXxx() when entering each state.
+ * The generated code calls this->{name}_->weapon.onXxx() when entering each state.
  */
 struct WeaponCallbacks {
     void onReady() {
@@ -462,27 +442,22 @@ struct WeaponCallbacks {
 };
 
 /**
- * @brief UserContext for weapon state machine
+ * @brief Named Context for weapon state machine
  *
- * The generated code expects UserContext with a 'weapon' member.
- * Calls to weapon.onXxx() in SCXML become user_->weapon.onXxx() in C++.
+ * The generated code expects Named Context with a 'weapon' member.
+ * Named Context: weapon.onXxx() in SCXML becomes this->weapon_->onXxx() in generated C++.
  */
-struct WeaponContext {
-    WeaponCallbacks weapon;
-};
-
-// Global weapon context instance
-static WeaponContext g_weapon_context;
+static WeaponCallbacks g_weapon_callbacks;
 
 // ============================================
-// Secret SCXML UserContext: C++ Callback Integration
+// Secret SCXML Named Context: C++ Callback Integration
 // ============================================
 
 /**
  * @brief Callback handler for secret hint state machine
  *
  * Implements onentry actions for each state as defined in secret_hint_state.scxml.
- * The generated code calls user_->secret.onXxx() when entering each state.
+ * The generated code calls this->{name}_->secret.onXxx() when entering each state.
  */
 // BFS result storage for clean event separation
 // Set by onCalculating callback, processed by caller after step() returns
@@ -594,20 +569,15 @@ struct SecretCallbacks {
 };
 
 /**
- * @brief UserContext for secret hint state machine
+ * @brief Named Context for secret hint state machine
  *
- * The generated code expects UserContext with a 'secret' member.
- * Calls to secret.onXxx() in SCXML become user_->secret.onXxx() in C++.
+ * The generated code expects Named Context with a 'secret' member.
+ * Named Context: secret.onXxx() in SCXML becomes this->secret_->onXxx() in generated C++.
  */
-struct SecretContext {
-    SecretCallbacks secret;
-};
-
-// Global secret context instance
-static SecretContext g_secret_context;
+static SecretCallbacks g_secret_callbacks;
 
 // ============================================
-// Enemy SCXML UserContext: C++ Callback Integration (Multi-Instance)
+// Enemy SCXML Named Context: C++ Callback Integration (Multi-Instance)
 // ============================================
 
 // Forward declarations for enemy callbacks
@@ -625,7 +595,7 @@ static const char *get_enemy_state_name(EnemyState state);
  *
  * Implements onentry actions for each state as defined in enemy_state.scxml.
  * Each enemy instance has its own EnemyCallbacks with slot/instance info.
- * The generated code calls user_->enemy.onXxx() when entering each state.
+ * The generated code calls this->{name}_->enemy.onXxx() when entering each state.
  */
 struct EnemyCallbacks {
     int slot = -1;
@@ -664,18 +634,16 @@ struct EnemyCallbacks {
 };
 
 /**
- * @brief UserContext for enemy state machine (per-instance)
+ * @brief Named Context for enemy state machine (per-instance)
  *
- * The generated code expects UserContext with an 'enemy' member.
- * Calls to enemy.onXxx() in SCXML become user_->enemy.onXxx() in C++.
- * Each enemy instance has its own EnemyContext with slot info.
+ * The generated code expects Named Context with an 'enemy' member.
+ * Calls to enemy.onXxx() in SCXML become this->{name}_->enemy.onXxx() in C++.
+ * Each enemy instance has its own EnemyCallbacks with slot info.
+ * Named Context: enemy.onXxx() in SCXML becomes this->enemy_->onXxx() in generated C++.
  */
-struct EnemyContext {
-    EnemyCallbacks enemy;
-};
 
-// Type aliases for enemy state machine with UserContext
-using EnemySM = SCE::Generated::enemy_state::enemy_state<EnemyContext>;
+// Type aliases for enemy state machine with Named Context
+using EnemySM = SCE::Generated::enemy_state::enemy_state<EnemyCallbacks>;
 using EnemyEvent = SCE::Generated::enemy_state::Event;
 
 // ============================================
@@ -685,7 +653,7 @@ struct EnemyInstance {
     void *mobj_ptr = nullptr;
     int instance_id = 0;
     const char *type_name = "UNKNOWN";
-    EnemyContext context;  // Per-instance context for callbacks
+    EnemyCallbacks enemy;  // Per-instance callbacks for Named Context
     std::unique_ptr<EnemySM> sm;  // SCXML state machine instance
     bool active = false;
 };
@@ -736,33 +704,33 @@ static int g_next_instance_id = 1;
 // ============================================
 // State Machine Instances
 // ============================================
-// Game state machine with UserContext for C++ callbacks
-using GameSM = SCE::Generated::game_state::game_state<GameContext>;
+// Game state machine with Named Context for C++ callbacks
+using GameSM = SCE::Generated::game_state::game_state<GameCallbacks>;
 using GameEvent = SCE::Generated::game_state::Event;
 static std::unique_ptr<GameSM> g_game_sm;
 
-// Player state machine with UserContext for C++ callbacks
-using PlayerSM = SCE::Generated::player_state::player_state<PlayerContext>;
+// Player state machine with Named Context for C++ callbacks
+using PlayerSM = SCE::Generated::player_state::player_state<PlayerCallbacks>;
 using PlayerEvent = SCE::Generated::player_state::Event;
 static std::unique_ptr<PlayerSM> g_player_sm;
 
-// Weapon state machine with UserContext for C++ callbacks
-using WeaponSM = SCE::Generated::weapon_state::weapon_state<WeaponContext>;
+// Weapon state machine with Named Context for C++ callbacks
+using WeaponSM = SCE::Generated::weapon_state::weapon_state<WeaponCallbacks>;
 using WeaponEvent = SCE::Generated::weapon_state::Event;
 static std::unique_ptr<WeaponSM> g_weapon_sm;
-// Secret state machine with UserContext for C++ callbacks
-using SecretSM = SCE::Generated::secret_hint_state::secret_hint_state<SecretContext>;
+// Secret state machine with Named Context for C++ callbacks
+using SecretSM = SCE::Generated::secret_hint_state::secret_hint_state<SecretCallbacks>;
 using SecretEvent = SCE::Generated::secret_hint_state::Event;
 static std::unique_ptr<SecretSM> g_secret_sm;
 
-// Aim assist state machine with UserContext for C++ callbacks
-using AimSM = SCE::Generated::aim_assist_state::aim_assist_state<AimContext>;
+// Aim assist state machine with Named Context for C++ callbacks
+using AimSM = SCE::Generated::aim_assist_state::aim_assist_state<AimCallbacks>;
 using AimEvent = SCE::Generated::aim_assist_state::Event;
 static std::unique_ptr<AimSM> g_aim_sm;
 
 // Kill combo state machine with external pausable timer management
 // Uses external C++ timers (not SCXML <send delay>) for menu pause support
-using ComboSM = SCE::Generated::combo_state::combo_state<ComboContext>;
+using ComboSM = SCE::Generated::combo_state::combo_state<ComboCallbacks, BerserkCallbacks>;
 using ComboEvent = SCE::Generated::combo_state::Event;
 using ComboState = SCE::Generated::combo_state::State;
 static std::unique_ptr<ComboSM> g_combo_sm;
@@ -798,13 +766,13 @@ static inline void js_notify_target_info(const char *type_name, const char *name
  * so we must recreate the state machine objects to properly reset them.
  */
 static void reset_player_and_weapon_state_machines() {
-    // Recreate player state machine with UserContext (initialize() doesn't reset currentState_)
-    g_player_sm = std::make_unique<PlayerSM>(g_player_context);
+    // Recreate player state machine with Named Context (initialize() doesn't reset currentState_)
+    g_player_sm = std::make_unique<PlayerSM>(g_player_callbacks);
     g_player_sm->initialize();
     // Note: onentry callback handles js_notify_state_change
 
-    // Recreate weapon state machine with UserContext (initialize() doesn't reset currentState_)
-    g_weapon_sm = std::make_unique<WeaponSM>(g_weapon_context);
+    // Recreate weapon state machine with Named Context (initialize() doesn't reset currentState_)
+    g_weapon_sm = std::make_unique<WeaponSM>(g_weapon_callbacks);
     g_weapon_sm->initialize();
     // Note: onentry callback handles js_notify_state_change
 }
@@ -1085,18 +1053,18 @@ const char *sce_combo_get_state(void);
 
 EMSCRIPTEN_KEEPALIVE
 void sce_init(void) {
-    // Game state machine: pass UserContext for C++ callback integration
-    g_game_sm = std::make_unique<GameSM>(g_game_context);
-    // Player state machine: pass UserContext for C++ callback integration
-    g_player_sm = std::make_unique<PlayerSM>(g_player_context);
-    // Weapon state machine: pass UserContext for C++ callback integration
-    g_weapon_sm = std::make_unique<WeaponSM>(g_weapon_context);
-    // Secret state machine: pass UserContext for C++ callback integration
-    g_secret_sm = std::make_unique<SecretSM>(g_secret_context);
-    // Aim assist state machine: pass UserContext for C++ callback integration
-    g_aim_sm = std::make_unique<AimSM>(g_aim_context);
+    // Game state machine: pass Named Context for C++ callback integration
+    g_game_sm = std::make_unique<GameSM>(g_game_callbacks);
+    // Player state machine: pass Named Context for C++ callback integration
+    g_player_sm = std::make_unique<PlayerSM>(g_player_callbacks);
+    // Weapon state machine: pass Named Context for C++ callback integration
+    g_weapon_sm = std::make_unique<WeaponSM>(g_weapon_callbacks);
+    // Secret state machine: pass Named Context for C++ callback integration
+    g_secret_sm = std::make_unique<SecretSM>(g_secret_callbacks);
+    // Aim assist state machine: pass Named Context for C++ callback integration
+    g_aim_sm = std::make_unique<AimSM>(g_aim_callbacks);
     // Kill combo state machine with external pausable timer management
-    g_combo_sm = std::make_unique<ComboSM>(g_combo_context);
+    g_combo_sm = std::make_unique<ComboSM>(g_combo_callbacks, g_berserk_callbacks);
 
     g_game_sm->initialize();
     g_player_sm->initialize();
@@ -1390,12 +1358,12 @@ void sce_enemy_spawn(void *mobj, const char *type_name) {
     g_enemies[slot].active = true;
 
     // Initialize context with slot info for callbacks
-    g_enemies[slot].context.enemy.slot = slot;
-    g_enemies[slot].context.enemy.instance_id = g_enemies[slot].instance_id;
-    g_enemies[slot].context.enemy.type_name = type_name;
+    g_enemies[slot].enemy.slot = slot;
+    g_enemies[slot].enemy.instance_id = g_enemies[slot].instance_id;
+    g_enemies[slot].enemy.type_name = type_name;
 
-    // Create and initialize SCXML state machine for this enemy with UserContext
-    g_enemies[slot].sm = std::make_unique<EnemySM>(g_enemies[slot].context);
+    // Create and initialize SCXML state machine for this enemy with Named Context
+    g_enemies[slot].sm = std::make_unique<EnemySM>(g_enemies[slot].enemy);
     g_enemies[slot].sm->initialize();
     // Note: onentry callback (onDormant) handles js_notify_enemy_update
 
@@ -2117,8 +2085,8 @@ void sce_combo_reset(void) {
         // Reset external timer state
         clear_external_timer();
 
-        // Recreate state machine to properly reset state with UserContext
-        g_combo_sm = std::make_unique<ComboSM>(g_combo_context);
+        // Recreate state machine to properly reset state with Named Context
+        g_combo_sm = std::make_unique<ComboSM>(g_combo_callbacks, g_berserk_callbacks);
         g_combo_sm->initialize();
         // Note: onentry callback (onIdle) handles js_notify_state_change
 

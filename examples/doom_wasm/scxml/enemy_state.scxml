@@ -17,8 +17,9 @@
     Note: Each enemy instance has its own state machine instance
     W3C SCXML 1.0 compliant
 -->
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="urn:sce:extensions" version="1.0"
        name="EnemyState" initial="dormant" datamodel="null">
+    <sce:context id="enemy"/>
 
     <!-- dormant: Enemy idle, hasn't seen player -->
     <state id="dormant">

@@ -1,43 +1,16 @@
 #include <iostream>
-
-// Include generated header first
 #include "smart_light_sm.h"
-
-// Hardware abstraction layer
-struct Hardware {
-    bool hasPower() {
-        std::cout << "  [Hardware] Checking power... OK\n";
-        return true;
-    }
-
-    void powerOn() {
-        std::cout << "  [Hardware] Power ON\n";
-    }
-
-    void powerOff() {
-        std::cout << "  [Hardware] Power OFF\n";
-    }
-
-    void setBrightness(int level) {
-        std::cout << "  [Hardware] Brightness: " << level << "%\n";
-    }
-};
-
-// UserContext: Dependency injection container for user objects
-struct SmartLightContext {
-    Hardware hardware;
-};
 
 int main() {
     using namespace SCE::Generated::smart_light;
 
-    std::cout << "=== Smart Light Example (C++ Function Integration with UserContext) ===\n\n";
+    std::cout << "=== Smart Light Example (Named Context) ===\n\n";
 
-    // Create user context with hardware dependencies
-    SmartLightContext context;
+    // Named Context: pass hardware directly (no wrapper struct needed)
+    Hardware hardware;
 
-    // Create state machine with dependency injection
-    smart_light light(context);
+    // Create state machine with Named Context dependency injection
+    smart_light light(hardware);
     light.initialize();
     std::cout << "State machine initialized\n\n";
 

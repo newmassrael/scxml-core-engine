@@ -17,7 +17,8 @@
 
   W3C SCXML 1.0 compliant
 -->
-<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="ready" datamodel="null">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="urn:sce:extensions" version="1.0" initial="ready" datamodel="null">
+    <sce:context id="weapon"/>
 
     <!-- Ready state - weapon can fire or be switched -->
     <state id="ready">

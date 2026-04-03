@@ -28,10 +28,11 @@
 
     W3C SCXML 1.0 compliant
 -->
-<scxml xmlns="http://www.w3.org/2005/07/scxml"
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="urn:sce:extensions"
        version="1.0"
        initial="disabled"
        datamodel="null">
+    <sce:context id="aim"/>
 
     <!-- Aim assist disabled - normal DOOM aiming -->
     <state id="disabled">
