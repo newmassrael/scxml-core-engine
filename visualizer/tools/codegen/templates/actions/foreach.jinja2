@@ -39,11 +39,11 @@
 {% if action.actions and action.actions | length > 0 %}
 {
     // Execute foreach: array={{ action.array }}, item={{ action.item }}, index={{ action.index }}
-    this->ensureJSEngine();
-    auto& jsEngine = getScriptEngine();
+    this->ensureScriptEngine();
+    auto& scriptEngine = getScriptEngine();
     // W3C SCXML 4.6: Use ForeachHelper for centralized error handling
     bool foreachSuccess = ::SCE::Core::ForeachHelper::executeForeachWithActions(
-        jsEngine, sessionId_.value(),
+        scriptEngine, sessionId_.value(),
         "{{ action.array }}", "{{ action.item }}", "{{ action.index }}",
         [&]([[maybe_unused]] size_t i) -> bool {
             // W3C SCXML 4.6: Track overall success of all actions in this iteration
@@ -86,10 +86,10 @@
 }
 {% else %}
 {
-    this->ensureJSEngine();
-    auto& jsEngine = getScriptEngine();
+    this->ensureScriptEngine();
+    auto& scriptEngine = getScriptEngine();
     bool foreachSuccess = ::SCE::Core::ForeachHelper::executeForeachWithoutBody(
-        jsEngine, sessionId_.value(),
+        scriptEngine, sessionId_.value(),
         "{{ action.array }}", "{{ action.item }}", "{{ action.index }}"
     );
     // W3C SCXML 4.6: Check foreach execution result and raise error.execution on failure

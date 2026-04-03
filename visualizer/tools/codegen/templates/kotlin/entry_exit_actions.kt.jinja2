@@ -1,0 +1,348 @@
+{#
+    Kotlin Entry/Exit Actions Template
+
+    W3C SCXML 3.8/3.9: Entry and exit action rendering.
+    Actions are separated from transitions — the engine controls W3C ordering.
+
+    W3C SCXML 3.7: Final state done.state event emission.
+    W3C SCXML 3.7.1: Parallel state completion detection.
+    W3C SCXML 3.4: Parallel state recursive child region entry.
+    W3C SCXML 3.3: Compound state initial child entry.
+    W3C SCXML 3.4/3.13: Parallel state recursive descendant exit.
+
+    Uses actions/_render.kt.jinja2 for action dispatch (shared with transition_actions).
+#}
+    // Entry Actions (W3C SCXML 3.8)
+    override fun onEntry(state: {{ machine_name }}State) {
+        when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% set has_done_event = state.is_final and state.parent %}
+{% set is_top_final = state.is_final and not state.parent %}
+{% set has_parallel_children = state.is_parallel and state_id in model.parallel_regions %}
+{% set has_deep_initial = state_id in deep_initial_entries %}
+{% set has_initial_history = state.initial_history_id is defined and state.initial_history_id %}
+{% set has_initial_child = not state.is_final and not state.is_parallel and state.initial and state.initial != state_id and not has_deep_initial %}
+{% set has_invokes = state_id in invoke_entries %}
+{% set has_late_datamodel = model.needs_script_engine and model.binding == 'late' and state.datamodel %}
+{# W3C SCXML 3.7.1: Check if this final state's grandparent is parallel #}
+{% set grandparent_is_parallel = false %}
+{% if state.is_final and state.parent %}
+{% set parent_state = model.states[state.parent] %}
+{% if parent_state.parent and model.states[parent_state.parent].is_parallel %}
+{% set grandparent_is_parallel = true %}
+{% set parallel_grandparent_id = parent_state.parent %}
+{% endif %}
+{% endif %}
+            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+                // W3C SCXML 3.8: Track active state, skip duplicate entry
+                if (!activeStateIds.add("{{ state_id }}")) return
+{% if has_late_datamodel %}
+                // W3C SCXML 5.3: Late binding — initialize state-level datamodel on entry
+                run {
+                    ensureScriptEngine()
+                    val engine = scriptEngine ?: return@run
+                    val sid = scriptSessionId ?: return@run
+{% for dm_var in state.datamodel %}
+{% if dm_var.expr %}
+                    try {
+                        val v = engine.evaluateExpr(sid, "{{ dm_var.expr | escape_kotlin }}")
+                        engine.setVariable(sid, "{{ dm_var.id }}", v)
+                    } catch (e: Exception) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                    }
+{% elif dm_var.content %}
+                    try {
+                        val v = engine.evaluateExpr(sid, "{{ dm_var.content | escape_kotlin }}")
+                        engine.setVariable(sid, "{{ dm_var.id }}", v)
+                    } catch (e: Exception) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution)
+                    }
+{% else %}
+                    engine.setVariable(sid, "{{ dm_var.id }}", null)
+{% endif %}
+{% endfor %}
+                }
+{% endif %}
+{% if state.on_entry_blocks | length > 1 %}
+{% for block in state.on_entry_blocks %}
+                // W3C SCXML 3.8: Onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }}
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
+{% for action in block %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+                }
+{% endfor %}
+{% else %}
+{% for action in state.on_entry %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+{% if has_invokes %}
+{% for inv in invoke_entries[state_id] %}
+{% if inv.child_class %}
+                // W3C SCXML 6.4: Defer invoked child state machine until macrostep end
+                run {
+                    // W3C SCXML 3.12.1: Generate invoke ID in "stateid.platformid.index" format
+                    val generatedInvokeId = "{{ inv.state_id }}.${System.identityHashCode(this)}.{{ inv.invoke_id }}"
+{% if inv.idlocation and model.needs_script_engine %}
+                    // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation
+                    ensureScriptEngine()
+                    scriptEngine?.let { eng ->
+                        scriptSessionId?.let { sid ->
+                            eng.setVariable(sid, "{{ inv.idlocation }}", generatedInvokeId)
+                        }
+                    }
+{% endif %}
+{% if (inv.params or inv.namelist) and model.needs_script_engine %}
+                    // W3C SCXML 6.4: Evaluate params at defer time (parent context)
+                    ensureScriptEngine()
+                    val engineInv = scriptEngine ?: return@run
+                    val sidInv = scriptSessionId ?: return@run
+                    val invokeParams = mutableMapOf<String, Any?>()
+{% for param in inv.params %}
+{% if param.expr %}
+                    // W3C SCXML 6.4: Param expr evaluation failure cancels invoke
+                    try {
+                        invokeParams["{{ param.name }}"] = engineInv.evaluateExpr(sidInv, "{{ param.expr | escape_kotlin }}")
+                    } catch (_: Exception) {
+                        return@run  // C++ pattern: invoke cancelled on param error
+                    }
+{% endif %}
+{% endfor %}
+{% if inv.namelist %}
+{% for var_name in inv.namelist.split() %}
+                    // W3C SCXML 6.4: Namelist variable must exist in parent
+                    try {
+                        invokeParams["{{ var_name }}"] = engineInv.getVariable(sidInv, "{{ var_name }}")
+                    } catch (_: Exception) {
+                        return@run  // C++ pattern: invoke cancelled on namelist error
+                    }
+{% endfor %}
+{% endif %}
+{% endif %}
+                    deferInvoke(state, generatedInvokeId) {
+                        val childSM = {{ inv.child_class }}StateMachine(scriptEngine)
+{% if (inv.params or inv.namelist) and model.needs_script_engine %}
+                        setInvokeParams(childSM, invokeParams)
+{% endif %}
+                        // W3C SCXML 6.4: Static ID for done.invoke/cancel, generated ID for child events
+                        startInvoke("{{ inv.invoke_id }}", childSM, {{ 'true' if inv.autoforward else 'false' }}, {% if inv.has_done_event %}{{ machine_name }}Event.{{ inv.done_event | to_event_ref }}{% else %}null{% endif %}, {% if inv.finalize_content %}"{{ inv.finalize_content | escape_kotlin }}"{% else %}""{% endif %}, generatedInvokeId)
+                    }
+                }
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if has_done_event %}
+{% if state.donedata and model.needs_script_engine %}
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                run {
+                    ensureScriptEngine()
+                    val engineDD = scriptEngine ?: return@run
+                    val sidDD = scriptSessionId ?: return@run
+                    var doneEventData = ""
+{% if state.donedata.contentexpr %}
+                    // W3C SCXML 5.5: Evaluate <content expr="..."/>
+                    try {
+                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.contentexpr | escape_kotlin }}")
+                        // C++ DoneDataHelper::evaluateContent: convertScriptValueToJson
+                        doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
+                    } catch (_: Exception) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    }
+{% elif state.donedata.content %}
+                    // W3C SCXML 5.5: Evaluate <content> inline text
+                    try {
+                        val contentResult = engineDD.evaluateExpr(sidDD, "{{ state.donedata.content | escape_kotlin }}")
+                        doneEventData = if (contentResult != null) valueToJson(contentResult) else ""
+                    } catch (_: Exception) {
+                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    }
+{% elif state.donedata.params %}
+                    // W3C SCXML 5.5: Evaluate <param> elements
+                    val doneParams = mutableMapOf<String, Any?>()
+{% for param in state.donedata.params %}
+{% if param.expr %}
+                    try {
+                        doneParams["{{ param.name }}"] = engineDD.evaluateExpr(sidDD, "{{ param.expr | escape_kotlin }}")
+                    } catch (_: Exception) {
+                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    }
+{% elif param.location %}
+                    try {
+                        val locVal = engineDD.evaluateExpr(sidDD, "{{ param.location }}")
+                        doneParams["{{ param.name }}"] = locVal
+                    } catch (_: Exception) {
+                        // W3C SCXML 5.7: Invalid location — raise error.execution but continue
+                        raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    }
+{% endif %}
+{% endfor %}
+                    if (doneParams.isNotEmpty()) {
+                        doneEventData = buildJsonFromParams(doneParams)
+                    }
+{% endif %}
+                    // W3C SCXML 3.7: Final child state reached, raise done.state with data
+                    raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }}, EventMetadata.platform(doneEventData))
+                }
+{% else %}
+                // W3C SCXML 3.7: Final child state reached, raise done.state for parent
+                raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ state.parent) | to_event_ref }}, EventMetadata.platform())
+{% endif %}
+{% endif %}
+{% if is_top_final %}
+                // W3C SCXML 3.7: Top-level final state reached
+                markFinalStateReached()
+{% endif %}
+{% if grandparent_is_parallel %}
+                // W3C SCXML 3.7.1: Check if all regions of parallel grandparent are complete
+                if ({{ parallel_grandparent_id | to_parallel_complete_check }}) {
+                    raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ parallel_grandparent_id) | to_event_ref }})
+                }
+{% endif %}
+{% if has_parallel_children %}
+                // W3C SCXML 3.4: Enter all child regions of parallel state
+{% for region_id in model.parallel_regions[state_id] %}
+                onEntry({{ machine_name }}State.{{ region_id | to_state_class_name }})
+{% endfor %}
+{% elif has_initial_history %}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+{% if state.initial_history_default_actions %}
+                // W3C SCXML 3.11: Execute history default transition content only if no stored history
+                if (!historyStore.containsKey("{{ state.initial_history_id }}") || historyStore["{{ state.initial_history_id }}"].isNullOrEmpty()) {
+{% for action in state.initial_history_default_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+                }
+{% endif %}
+                // W3C SCXML 3.11: Enter history-restored state or default target
+                run {
+                    val stored = historyStore["{{ state.initial_history_id }}"]
+                    if (stored != null && stored.isNotEmpty()) {
+                        val histTarget = resolveState(stored[0])
+                        if (histTarget != null) {
+                            onEntry(histTarget)
+                        } else {
+                            onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+                        }
+                    } else {
+                        onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+                    }
+                }
+{% elif model.parallel_regions and has_deep_initial %}
+{# C++ pattern: only enter initial children in onEntry for parallel SMs.
+   Non-parallel SMs use buildEntryChain in the runtime. #}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+                // W3C SCXML 3.6: Enter deep initial targets (C++ enterDeepInitialTargets pattern)
+{% for entry in deep_initial_entries[state_id] %}
+                onEntry({{ machine_name }}State.{{ entry.id | to_state_class_name }})
+{% endfor %}
+{% elif model.parallel_regions and has_initial_child %}
+{# C++ pattern: only enter initial children in onEntry for parallel SMs. #}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+{% elif state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute initial transition content
+{% for action in state.initial_transition_actions %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+            }
+{% endfor %}
+            else -> {}
+        }
+    }
+
+    // Exit Actions (W3C SCXML 3.9)
+    override fun onExit(state: {{ machine_name }}State) {
+        when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% set is_parallel = state.is_parallel and state_id in model.parallel_regions %}
+{% set exit_has_invokes = state_id in invoke_entries %}
+{% set has_history_children = model.history_states.values() | selectattr('parent', 'equalto', state_id) | list %}
+            is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% if exit_has_invokes %}
+                // W3C SCXML 6.4: Cancel pending invokes for exited state (deferred but not yet executed)
+                cancelPendingInvokesForState(state)
+{% for inv in invoke_entries[state_id] %}
+                // W3C SCXML 6.4: Cancel active invoked child on state exit
+                cancelInvoke("{{ inv.invoke_id }}")
+{% endfor %}
+{% endif %}
+{% if is_parallel %}
+                // W3C SCXML 3.4/3.13: Exit active descendants of parallel state
+                // in reverse document order (deepest states exit first).
+                // Defensive: when called from exitHierarchy, descendants are already
+                // exited and removed from activeStateIds — the contains() checks below
+                // prevent double-exit. This code is needed for direct onExit() calls.
+                val toExit = mutableListOf<Pair<{{ machine_name }}State, Int>>()
+{% for desc_id in parallel_descendants[state_id] %}
+                if (activeStateIds.contains("{{ desc_id }}")) {
+                    toExit.add({{ machine_name }}State.{{ desc_id | to_state_class_name }} to {{ model.states[desc_id].document_order }})
+                }
+{% endfor %}
+                toExit.sortByDescending { it.second }
+                for ((desc, _) in toExit) {
+                    onExit(desc)
+                }
+{% endif %}
+{% for history_id, history_info in model.history_states.items() %}
+{% if history_info.parent == state_id %}
+{% if history_info.type == 'shallow' %}
+                // W3C SCXML 3.11: Record shallow history for {{ history_id }}
+                // Uses preTransitionActiveStates (captured before exits, C++ pattern)
+                historyStore["{{ history_id }}"] = preTransitionActiveStates.filter { stateId ->
+                    val st = resolveState(stateId) ?: return@filter false
+                    parentOf(st)?.let { stateIdOf(it) } == "{{ state_id }}"
+                }.toList()
+{% else %}
+                // W3C SCXML 3.11: Record deep history for {{ history_id }}
+                historyStore["{{ history_id }}"] = preTransitionActiveStates.filter { stateId ->
+                    val st = resolveState(stateId) ?: return@filter false
+                    isDescendantOf(st, {{ machine_name }}State.{{ state_id | to_state_class_name }}) && isAtomicState(st)
+                }.toList()
+{% endif %}
+{% endif %}
+{% endfor %}
+                activeStateIds.remove("{{ state_id }}")
+{% if state.on_exit_blocks | length > 1 %}
+{% for block in state.on_exit_blocks %}
+                // W3C SCXML 3.9: Onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
+{% for action in block %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+                }
+{% endfor %}
+{% else %}
+{% for action in state.on_exit %}
+    {% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endif %}
+            }
+{% endfor %}
+            else -> {}
+        }
+    }

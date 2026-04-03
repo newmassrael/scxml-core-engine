@@ -1,0 +1,3 @@
+{% if action.sendid %}
+            cancelSend("{{ action.sendid | escape_kotlin }}")
+{% endif %}

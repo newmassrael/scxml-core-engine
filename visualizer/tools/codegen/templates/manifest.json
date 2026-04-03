@@ -3,7 +3,7 @@
     "state_machine.jinja2",
     "process_transition.jinja2",
     "entry_exit_actions.jinja2",
-    "jsengine_helpers.jinja2",
+    "scriptengine_helpers.jinja2",
     "utility_methods.jinja2",
     "license_header.jinja2",
     "datamodel_macros.jinja2",

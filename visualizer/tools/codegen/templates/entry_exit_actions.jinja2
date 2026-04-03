@@ -36,12 +36,11 @@
 #}
 
     template<typename Engine>
-{% if not model.needs_jsengine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.user_context_objects %}    [[gnu::hot]] static void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
-{% else %}    [[gnu::hot]] void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
+{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
+{% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        // Check for duplicates before adding (parallel region re-entry may call this multiple times)
         {
             ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
             bool alreadyActive = false;
@@ -55,15 +54,15 @@
                 AOT_DEBUG("AOT executeEntryActions: Adding state {} to activeStates", static_cast<int>(state));
                 activeStates_.push_back(state);
             } else {
-                AOT_DEBUG("AOT executeEntryActions: State {} already in activeStates, skipping duplicate", static_cast<int>(state));
                 return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
             }
         }
 {% endif %}
+{% if model.has_entry_actions %}
         switch (state) {
 {% for state_id, state in model.states.items() %}
             case State::{{ state_id | capitalize }}:
-{% if state.datamodel or state.on_entry or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
+{% if state.datamodel or state.on_entry or state.on_entry_blocks or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
                 // ============================================================
@@ -71,8 +70,8 @@
                 // ARCHITECTURE.md Zero Duplication: DataModelInitHelper shared with Interpreter
                 // ARCHITECTURE.md DRY Principle: Uses datamodel_macros.jinja2
                 // ============================================================
-                ensureJSEngine();
-                auto& jsEngine = getScriptEngine();
+                ensureScriptEngine();
+                auto& scriptEngine = getScriptEngine();
 {% import 'datamodel_macros.jinja2' as dm %}
 {{ dm.initialize_state_datamodel(state, state_id, "AOT executeEntryActions: Late binding initialized", base_path) }}
 
@@ -91,9 +90,9 @@
                 {% if invoke_info.idlocation %}
                 // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
                 {
-                    ensureJSEngine();
-                    auto& jsEngine = getScriptEngine();
-                    jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
+                    ensureScriptEngine();
+                    auto& scriptEngine = getScriptEngine();
+                    scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
                     AOT_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
                 }
                 {% endif %}
@@ -118,9 +117,9 @@
                 {% if invoke_info.idlocation %}
                 // W3C SCXML 6.4.1: Store generated invokeId in parent datamodel via idlocation (at defer time)
                 {
-                    ensureJSEngine();
-                    auto& jsEngine = getScriptEngine();
-                    jsEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
+                    ensureScriptEngine();
+                    auto& scriptEngine = getScriptEngine();
+                    scriptEngine.setVariable(sessionId_.value(), "{{ invoke_info.idlocation }}", generatedInvokeId_{{ invoke_info.invoke_id }}).get();
                     AOT_DEBUG("Set idlocation {{ invoke_info.idlocation }} = {}", generatedInvokeId_{{ invoke_info.invoke_id }});
                 }
                 {% endif %}
@@ -195,10 +194,11 @@
                 // W3C SCXML 5.5: Evaluate donedata for final state
                 {
                     std::string eventData;
+                    std::optional<ScriptValue> typedData;
 {% if state.donedata.params %}
                     // W3C SCXML 5.5: Evaluate <param> elements
-                    this->ensureJSEngine();
-                    auto& jsEngine = getScriptEngine();
+                    this->ensureScriptEngine();
+                    auto& scriptEngine = getScriptEngine();
                     std::vector<std::pair<std::string, std::string>> params = {
 {% for param in state.donedata.params %}
                         {"{{ param.name }}", "{{ param.location if param.location else param.expr }}"}{{ "," if not loop.last }}
@@ -208,14 +208,15 @@
                     // W3C SCXML 5.7: "If the location expression does not denote a valid location in the data model..."
                     // Empty param location raises error.execution and prevents done.state event generation
                     bool success = ::SCE::DoneDataHelper::evaluateParams(
-                        jsEngine,
+                        scriptEngine,
                         sessionId_.value(),
                         params,
                         eventData,
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata param evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-                        }
+                        },
+                        &typedData
                     );
 
                     // W3C SCXML 5.7: If structural error (empty location), skip done.state event
@@ -225,31 +226,33 @@
                     }
 {% elif state.donedata.contentexpr %}
                     // W3C SCXML 5.5: Evaluate <content expr="..."/>
-                    this->ensureJSEngine();
-                    auto& jsEngine = getScriptEngine();
+                    this->ensureScriptEngine();
+                    auto& scriptEngine = getScriptEngine();
                     ::SCE::DoneDataHelper::evaluateContent(
-                        jsEngine,
+                        scriptEngine,
                         sessionId_.value(),
                         "{{ state.donedata.contentexpr }}",
                         eventData,
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-                        }
+                        },
+                        &typedData
                     );
 {% elif state.donedata.content %}
                     // W3C SCXML 5.5: Evaluate <content> expression
-                    this->ensureJSEngine();
-                    auto& jsEngine = getScriptEngine();
+                    this->ensureScriptEngine();
+                    auto& scriptEngine = getScriptEngine();
                     ::SCE::DoneDataHelper::evaluateContent(
-                        jsEngine,
+                        scriptEngine,
                         sessionId_.value(),
                         "{{ state.donedata.content | escape_cpp }}",
                         eventData,
                         [&engine](const std::string& msg) {
                             SCE_LOG_WARN("Donedata content evaluation failed: {}", msg);
                             engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
-                        }
+                        },
+                        &typedData
                     );
 {% endif %}
 
@@ -260,7 +263,9 @@
                 {
                     AOT_DEBUG("Final state {{ state_id }} entered, generating done.state.{{ state.parent }}");
 {% if state.donedata %}
-                    engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}, eventData));
+                    auto doneMeta = typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}, eventData);
+                    doneMeta.typedData = std::move(typedData);
+                    engine.raise(std::move(doneMeta));
 {% else %}
                     engine.raise(typename Engine::EventWithMetadata(Event::Done_state_{{ state.parent }}));
 {% endif %}
@@ -294,6 +299,7 @@
             default:
                 break;
         }
+{% endif %}{# model.has_entry_actions #}
 {% if model.has_parallel_states %}
 
         // W3C SCXML 3.4: If entering parallel state, enter all child regions and their initial children
@@ -346,8 +352,8 @@
     }
 
     template<typename Engine>
-{% if not model.needs_jsengine and not model.static_invokes and not model.needs_event_scheduler and not model.has_parallel_states and not model.user_context_objects %}    [[gnu::hot]] static void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
-{% else %}    [[gnu::hot]] void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 
 {% if model.has_parallel_states %}
@@ -420,12 +426,12 @@
         }
         {% endfor %}
         {% endif %}
-        AOT_DEBUG("AOT executeExitActions: Entering switch for state {}", static_cast<int>(state));
+{% if model.has_exit_actions %}
         switch (state) {
 {% for state_id, state in model.states.items() %}
+{% if state.on_exit or state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
             case State::{{ state_id | capitalize }}:
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
-                AOT_DEBUG("AOT executeExitActions: About to execute exit action block for state {}", static_cast<int>(state));
 {% if state.on_exit or state.static_invokes or state.hybrid_invokes %}
                 {
 {% if state.static_invokes %}
@@ -501,10 +507,12 @@
                 }
 {% endif %}
                 break;
+{% endif %}{# state has exit actions #}
 {% endfor %}
             default:
                 break;
         }
+{% endif %}{# model.has_exit_actions #}
     }
 
 {% if model.static_invokes or model.hybrid_invokes %}
@@ -541,11 +549,11 @@
 
                         // Step 1: Validate namelist variables before creating child
                         {
-                            ensureJSEngine();
-                            auto& jsEngine = getScriptEngine();
+                            ensureScriptEngine();
+                            auto& scriptEngine = getScriptEngine();
 
                             bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
-                                jsEngine,
+                                scriptEngine,
                                 sessionId_.value(),
                                 "{{ invoke_info.namelist }}",
                                 namelistParams,
@@ -578,7 +586,7 @@
 
                         {% if invoke_info.namelist %}
                         // W3C SCXML 6.4.1: Pass namelist values to child datamodel (Step 2)
-                        {% if invoke_info.child_needs_jsengine %}
+                        {% if invoke_info.child_needs_script_engine %}
                         // W3C SCXML 6.3.2: Child datamodel variables for validation
                         // ARCHITECTURE.md Zero Duplication: Matches InvokeExecutor.cpp:322-359 logic
                         static const std::set<std::string> childDatamodelVars_{{ invoke_info.invoke_id }} = DatamodelValidationHelper::buildChildDatamodelSet({{ '{' }}{% for var in invoke_info.child_datamodel_vars %}"{{ var }}"{{ ", " if not loop.last }}{% endfor %}{{ '}' }});
@@ -592,7 +600,7 @@
                             
                             if (!values.empty()) {
                                 AOT_DEBUG("Setting namelist variable '{}' = '{}' in child {{ invoke_info.invoke_id }}", varName, values[0]);
-                                child_{{ invoke_info.invoke_id }}_->setParamInJSEngine(varName, values[0]);
+                                child_{{ invoke_info.invoke_id }}_->setParamInScriptEngine(varName, values[0]);
                             }
                         }
                         {% else %}
@@ -604,8 +612,8 @@
                         {% if invoke_info.params %}
                         // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
                         {% for param in invoke_info.params %}
-                        {% if invoke_info.child_needs_jsengine %}
-                        child_{{ invoke_info.invoke_id }}_->setParamInJSEngine("{{ param.name }}", "{{ param.expr }}");
+                        {% if invoke_info.child_needs_script_engine %}
+                        child_{{ invoke_info.invoke_id }}_->setParamInScriptEngine("{{ param.name }}", "{{ param.expr }}");
                         {% else %}
                         // Child does not use JSEngine - params handled via static datamodel
                         AOT_DEBUG("Param {{ param.name }}={{ param.expr }} - child uses static datamodel");
@@ -668,9 +676,9 @@
                         AOT_DEBUG("Executing hybrid invoke: {{ invoke_info.invoke_id }} (srcexpr: {{ invoke_info.srcexpr }})");
 
                         // Evaluate srcexpr via JSEngine to get file path
-                        ensureJSEngine();
-                        auto& jsEngine = getScriptEngine();
-                        auto pathResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.srcexpr }}").get();
+                        ensureScriptEngine();
+                        auto& scriptEngine = getScriptEngine();
+                        auto pathResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.srcexpr }}").get();
                         std::string filePath = pathResult.getValue<std::string>();
 
                         // W3C SCXML 6.4.3: Load SCXML file via FileLoadingHelper (ARCHITECTURE.md Zero Duplication)
@@ -683,9 +691,9 @@
                         AOT_DEBUG("Executing hybrid invoke: {{ invoke_info.invoke_id }} (contentexpr: {{ invoke_info.contentexpr }})");
 
                         // Evaluate contentexpr via JSEngine
-                        ensureJSEngine();
-                        auto& jsEngine = getScriptEngine();
-                        auto contentResult = jsEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.contentexpr }}").get();
+                        ensureScriptEngine();
+                        auto& scriptEngine = getScriptEngine();
+                        auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.contentexpr }}").get();
                         std::string scxmlContent = contentResult.getValue<std::string>();
 
                         AOT_DEBUG("Hybrid invoke contentexpr evaluated to {} bytes SCXML", scxmlContent.size());

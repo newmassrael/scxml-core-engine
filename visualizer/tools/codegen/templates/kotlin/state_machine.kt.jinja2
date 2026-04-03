@@ -1,0 +1,128 @@
+{#
+    Kotlin State Machine Template
+
+    Generates a single .kt file containing:
+    - State sealed interface hierarchy (W3C SCXML 3.2)
+    - Event sealed interface hierarchy (W3C SCXML 3.12.1)
+    - StateMachine class extending StateMachineEngine<S, E>
+
+    Design: See KOTLIN_CODEGEN_DESIGN.md
+#}
+// GENERATED CODE — DO NOT EDIT
+// Source: {{ model.scxml_source_path }}
+// Generator: SCE Kotlin Code Generator v1.0
+
+package com.sce.generated.{{ model.name | lower }}
+
+import com.sce.runtime.*
+
+{% include 'states.kt.jinja2' %}
+
+{% include 'events.kt.jinja2' %}
+
+// --- State Machine (W3C SCXML) ---
+
+class {{ machine_name }}StateMachine(
+    scriptEngine: ScxmlScriptEngine? = null
+) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>(scriptEngine) {
+{% if model.variables %}
+
+    // Datamodel (W3C SCXML 5.3)
+{% for var in model.variables %}
+{% if var.type != 'runtime' and not model.needs_script_engine %}
+    var {{ var.id | to_camel_case }}: {{ var.type | to_kotlin_type }} = {{ kotlin_default(var) }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+    override val initialState: {{ machine_name }}State = {{ machine_name }}State.{{ model.initial_leaf | to_state_class_name if model.initial_leaf else model.initial | to_state_class_name }}
+{% if model.needs_script_engine %}
+
+    // W3C SCXML B.1: Initialize script engine before entering initial state
+    override fun enterInitialConfiguration() {
+        ensureScriptEngine()
+        super.enterInitialConfiguration()
+    }
+{% endif %}
+
+{% if parent_map %}
+    // W3C SCXML 3.3: State hierarchy parent mapping
+    override fun parentOf(state: {{ machine_name }}State): {{ machine_name }}State? = when (state) {
+{% for child_id, parent_id in parent_map.items() | sort %}
+        is {{ machine_name }}State.{{ child_id | to_state_class_name }} -> {{ machine_name }}State.{{ parent_id | to_state_class_name }}
+{% endfor %}
+        else -> null
+    }
+{% endif %}
+
+{% if leaf_map %}
+    // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
+    override fun resolveLeafState(state: {{ machine_name }}State): {{ machine_name }}State = when (state) {
+{% for compound_id, leaf_id in leaf_map.items() | sort %}
+        is {{ machine_name }}State.{{ compound_id | to_state_class_name }} -> {{ machine_name }}State.{{ leaf_id | to_state_class_name }}
+{% endfor %}
+        else -> state
+    }
+{% endif %}
+
+    // W3C SCXML: Resolve state ID string to State object
+    override fun resolveState(stateId: String): {{ machine_name }}State? = when (stateId) {
+{% for state_id in model.states | sort %}
+        "{{ state_id }}" -> {{ machine_name }}State.{{ state_id | to_state_class_name }}
+{% endfor %}
+        else -> null
+    }
+
+    // W3C SCXML: Get state ID string from State object
+    override fun stateIdOf(state: {{ machine_name }}State): String = when (state) {
+{% for state_id in model.states | sort %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> "{{ state_id }}"
+{% endfor %}
+        else -> ""
+    }
+
+    // W3C SCXML 3.4: Check if state is atomic (leaf — no children)
+    override fun isAtomicState(state: {{ machine_name }}State): Boolean = when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% if state.is_parallel or state.initial or (state_id in model.parallel_regions) %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> false
+{% endif %}
+{% endfor %}
+        else -> true
+    }
+
+    // W3C SCXML 3.13: Document order for exit ordering
+    override fun documentOrderOf(state: {{ machine_name }}State): Int = when (state) {
+{% for state_id in model.states | sort %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {{ model.states[state_id].document_order }}
+{% endfor %}
+        else -> 0
+    }
+
+{% if model.has_invoke or model.has_parent_communication or model.needs_script_engine %}
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
+{% for event_name in leaf_events | sort %}
+        "{{ event_name }}" -> {{ machine_name }}Event.{{ event_name | to_event_ref }}
+{% endfor %}
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: {{ machine_name }}Event): String? = when (event) {
+{% for event_name in leaf_events | sort %}
+        is {{ machine_name }}Event.{{ event_name | to_event_ref }} -> "{{ event_name }}"
+{% endfor %}
+        else -> null
+    }
+{% endif %}
+
+{% include 'scriptengine_helpers.kt.jinja2' %}
+
+{% include 'process_event.kt.jinja2' %}
+
+{% include 'entry_exit_actions.kt.jinja2' %}
+
+{% include 'transition_actions.kt.jinja2' %}
+

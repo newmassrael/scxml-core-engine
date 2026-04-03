@@ -49,7 +49,7 @@ async function loadSCXMLContent() {
     // Source 2: Base64 encoded SCXML (#scxml=<base64>)
     if (params.scxml) {
         logger.debug('Loading SCXML from base64');
-        return atob(params.scxml);
+        return decodeURIComponent(escape(atob(params.scxml)));
     }
 
     // Source 3: External URL (#url=<url>)

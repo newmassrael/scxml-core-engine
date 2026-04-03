@@ -1,0 +1,192 @@
+    // Helper: Ensure session ID is initialized
+    void ensureSessionId() const {
+        if (!sessionId_.has_value()) {
+            sessionId_ = "session_" + std::to_string(reinterpret_cast<uintptr_t>(this));
+        }
+    }
+
+{% if model.needs_script_engine %}
+    // Script engine accessor (pluggable: override for alternative engines like Lua)
+    static ::SCE::IScriptEngine& getScriptEngine() {
+        return ::SCE::ScriptEngineProvider::getScriptEngine();
+    }
+
+    // Helper: Ensure JSEngine is initialized (lazy initialization)
+    void ensureScriptEngine() const {
+        if (scriptEngineInitialized_) return;
+        ensureSessionId();
+        if (!sessionId_.has_value()) return;
+        auto& scriptEngine = getScriptEngine();
+        scriptEngine.createSession(sessionId_.value());
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
+        auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        if (!setupResult.isSuccess()) {
+            SCE_LOG_ERROR("AOT ensureScriptEngine: Failed to setup system variables: {}", setupResult.getErrorMessage());
+        }
+
+{% for var in model.variables %}
+{% if var.expr %}
+        auto initExpr_{{ var.id }} = scriptEngine.evaluateExpression(sessionId_.value(), "{{ var.expr | escape_cpp }}").get();
+        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
+            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
+        } else {
+            scriptEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
+        }
+{% elif var.content %}
+        auto initExpr_{{ var.id }} = scriptEngine.evaluateExpression(sessionId_.value(), R"({{ var.content | escape_cpp }})").get();
+        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
+            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
+        } else {
+            scriptEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
+        }
+{% elif var.type == 'runtime' %}
+        auto initExpr_{{ var.id }} = scriptEngine.evaluateExpression(sessionId_.value(), "undefined").get();
+        if (!::SCE::ScriptResultUtils::isSuccess(initExpr_{{ var.id }})) {
+            SCE_LOG_ERROR("Failed to evaluate expression for variable: {{ var.id }}");
+        } else {
+            scriptEngine.setVariable(sessionId_.value(), "{{ var.id }}", initExpr_{{ var.id }}.getInternalValue());
+        }
+{% endif %}
+{% endfor %}
+
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register state query callback for In() predicate support
+        // ARCHITECTURE.md All-or-Nothing Strategy: Static AOT engines cannot hold StateMachine*
+        // pointers (no base class). Callback mechanism provides In() capability while maintaining
+        // compile-time static structure. isStateActive() uses InPredicateHelper for shared logic.
+        scriptEngine.setStateQueryCallback(
+            [this](const std::string& stateId) { return this->isStateActive(stateId); },
+            sessionId_.value()
+        );
+        AOT_DEBUG("AOT ensureScriptEngine: Registered state query callback for In() predicate");
+{% endif %}
+
+        scriptEngineInitialized_ = true;
+    }
+
+    // ARCHITECTURE.MD: Zero Duplication - Use DataModelInitHelper (shared with Interpreter)
+    // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution if failed
+    // Called during StaticExecutionEngine::initialize() to ensure proper error event timing
+    template<typename Engine>
+    void initializeDataModel([[maybe_unused]] Engine& engine) {
+        if (scriptEngineInitialized_) return;
+        ensureSessionId();
+        if (!sessionId_.has_value()) return;
+        auto& scriptEngine = getScriptEngine();
+        scriptEngine.createSession(sessionId_.value());
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        std::vector<std::string> ioProcessors = {"scxml"};  // W3C SCXML I/O Processors
+        auto setupResult = scriptEngine.setupSystemVariables(sessionId_.value(), "{{ model.name }}", ioProcessors).get();
+        if (!setupResult.isSuccess()) {
+            SCE_LOG_ERROR("AOT initializeDataModel: Failed to setup system variables: {}", setupResult.getErrorMessage());
+        }
+{% if not model.variables and not (model.states.values() | selectattr('datamodel') | list) and not model.global_scripts %}
+        // No variables or scripts to initialize
+{% endif %}
+
+{% for var in model.variables %}
+{% if var.src %}
+        // W3C SCXML 5.2.2: Load datamodel variable from external file
+        // ARCHITECTURE.md: basePath resolved from executable location for execution independence
+        ::SCE::DataModelInitHelper::initializeVariableFromSrc(
+            scriptEngine, sessionId_.value(), "{{ var.id }}", "{{ var.src }}",
+            ::SCE::DataModelInitHelper::resolveExecutableBasePath("{{ base_path }}"),
+            [&engine](const ::std::string& msg) {
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            });
+{% elif var.expr %}
+{# ARCHITECTURE.md: Zero Duplication - Function detection matches DataModelInitHelper::isFunctionExpression() #}
+{# W3C SCXML B.2: Template-time detection (Python) for code generation optimization #}
+{% set is_function_expr = var.expr.strip().startswith('function') %}
+{% if is_function_expr %}
+        // W3C SCXML B.2: For function expressions, use direct JavaScript assignment to preserve function type
+        // Test 453: ECMAScript function literals must be stored as functions, not converted to C++
+        // ARCHITECTURE.md Zero Duplication: Matches Interpreter behavior (StateMachine.cpp:1615-1635)
+        {
+            auto scriptResult = scriptEngine.executeScript(sessionId_.value(), "{{ var.id }} = {{ var.expr | escape_cpp }}").get();
+            if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
+                std::string errorMsg = "Failed to assign function expression for '{{ var.id }}'";
+                SCE_LOG_ERROR("AOT initializeDataModel: {}", errorMsg);
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+            }
+            AOT_DEBUG("AOT initializeDataModel: Initialized function variable '{{ var.id }}'");
+        }
+{% else %}
+        // W3C SCXML 5.2/5.3: Use initializeVariableFromExpr for expr attribute
+        // Test 277: expr evaluation failure must raise error.execution (no fallback)
+        ::SCE::DataModelInitHelper::initializeVariableFromExpr(
+            scriptEngine, sessionId_.value(), "{{ var.id }}", "{{ var.expr | escape_cpp }}",
+            [&engine](const ::std::string& msg) {
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            });
+{% endif %}
+{% elif var.content %}
+        // W3C SCXML B.2: Initialize with inline XML content (DOM creation)
+        ::SCE::DataModelInitHelper::initializeVariable(
+            scriptEngine, sessionId_.value(), "{{ var.id }}", R"({{ var.content }})",
+            [&engine](const ::std::string& msg) {
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            });
+{% elif var.type == 'runtime' %}
+        // W3C SCXML 5.2: Runtime datamodel variable (late binding)
+        ::SCE::DataModelInitHelper::initializeVariable(
+            scriptEngine, sessionId_.value(), "{{ var.id }}", "",
+            [&engine](const ::std::string& msg) {
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, msg));
+            });
+{% endif %}
+{% endfor %}
+
+{% if model.states.values() | selectattr('datamodel') | list %}
+{% if model.binding == 'early' %}
+        // W3C SCXML 5.3: Early binding - Initialize state-level datamodel variables at startup
+        // All datamodel variables are globally accessible regardless of state entry
+        // ARCHITECTURE.md Zero Duplication: Uses datamodel_macros.jinja2 (DRY principle)
+{% import 'datamodel_macros.jinja2' as dm %}
+{% for state_id, state in model.states.items() %}
+{% if state.datamodel %}
+        // State {{ state_id }} datamodel variables
+{{ dm.initialize_state_datamodel(state, state_id, "AOT initializeDataModel", base_path) }}
+{% endif %}
+{% endfor %}
+{% else %}
+        // W3C SCXML 5.9: Late binding - State datamodel variables initialized on state entry
+        // Variables are NOT initialized here, but in executeEntryActions() for each state
+        // ARCHITECTURE.md Zero Duplication: Uses datamodel_macros.jinja2 (DRY principle)
+{% endif %}
+{% endif %}
+
+{% if model.global_scripts %}
+        // W3C SCXML 5.8: Execute global (top-level) scripts at document load time
+        // ARCHITECTURE.md Zero Duplication: Matches Interpreter behavior (StateMachine.cpp execution order)
+        // Execution order: datamodel init → global scripts → state machine start
+{% for script in model.global_scripts %}
+        {
+            auto scriptResult = scriptEngine.executeScript(sessionId_.value(), "{{ script.content | escape_cpp }}").get();
+            if (!::SCE::ScriptResultUtils::isSuccess(scriptResult)) {
+                std::string errorMsg = "Global script execution failed";
+                SCE_LOG_ERROR("W3C SCXML 5.8: {}", errorMsg);
+                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+            }
+        }
+{% endfor %}
+{% endif %}
+
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register state query callback for In() predicate support
+        // ARCHITECTURE.md All-or-Nothing Strategy: Static AOT engines cannot hold StateMachine*
+        // pointers (no base class). Callback mechanism provides In() capability while maintaining
+        // compile-time static structure. isStateActive() uses InPredicateHelper for shared logic.
+        scriptEngine.setStateQueryCallback(
+            [this](const std::string& stateId) { return this->isStateActive(stateId); },
+            sessionId_.value()
+        );
+        AOT_DEBUG("AOT initializeDataModel: Registered state query callback for In() predicate");
+{% endif %}
+
+        scriptEngineInitialized_ = true;
+    }
+{% endif %}

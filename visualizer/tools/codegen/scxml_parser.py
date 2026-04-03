@@ -6,6 +6,8 @@ Parses W3C SCXML files and extracts state machine model for code generation.
 Replaces C++ SCXMLParser for Python-based code generation.
 """
 
+import re
+
 from lxml import etree
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Set
@@ -13,6 +15,12 @@ from pathlib import Path
 
 # W3C SCXML namespace
 SCXML_NS = {'sc': 'http://www.w3.org/2005/07/scxml'}
+
+# SCE extension namespace for Named Context declarations
+SCE_NS = 'urn:sce:extensions'
+
+# C++ extension namespace for concrete type declarations
+CPP_NS = 'urn:sce:cpp'
 def ns_find(elem, tag):
     """Find element with namespace"""
     return elem.find(f'sc:{tag}', SCXML_NS)
@@ -29,11 +37,15 @@ class Transition:
     target: str = ""
     cond: str = ""  # guard condition (original SCXML expression)
     cond_cpp: str = ""  # C++ code for pure In() predicates or cpp: prefix conditions
-    cond_cpp_transformed: str = ""  # C++ code with this->policy_.user_-> prefix for UserContext
+    cond_cpp_transformed: str = ""  # C++ code with Named Context pointer dereference (this->ctx_->)
     is_pure_in_predicate: bool = False  # True if cond is ONLY In() predicates
     is_cpp_condition: bool = False  # True if cond uses cpp: prefix for direct C++ evaluation
+    cond_kt: str = ""  # Kotlin code for kt: prefix conditions
+    is_kt_condition: bool = False  # True if cond uses kt: prefix for direct Kotlin evaluation
     type: str = "external"  # external or internal
     actions: List[Dict] = field(default_factory=list)  # executable content
+    needs_string_matching: bool = False  # True if event needs runtime string matching (wildcards, prefix)
+    matching_enum_values: List[str] = field(default_factory=list)  # Precomputed enum values for direct comparison
 
 
 @dataclass
@@ -87,9 +99,13 @@ class SCXMLModel:
     has_event_metadata: bool = False
     has_parent_communication: bool = False  # True if <send target="#_parent"> detected
     has_child_communication: bool = False  # True if <send target="#_child"> detected
-    needs_jsengine: bool = False
+    needs_script_engine: bool = False
     uses_in_predicate: bool = False  # W3C SCXML 3.12.1: True if In() predicate used (requires activeStates_ management)
     has_transition_actions: bool = False  # W3C SCXML 3.13: True if any transition has executable content
+    has_entry_actions: bool = False  # True if any state has entry actions (on_entry, on_entry_blocks, invokes, donedata)
+    has_exit_actions: bool = False  # True if any state has exit actions (on_exit, on_exit_blocks, invokes)
+    has_hierarchy: bool = False  # True if any state has a parent (non-flat SM)
+    needs_event_matching_helper: bool = False  # True if any transition needs runtime string-based event matching
 
     # W3C SCXML 5.10: Event metadata field flags
     needs_event_name: bool = False
@@ -114,12 +130,44 @@ class SCXMLModel:
     # W3C SCXML 3.4: Parallel state regions (parallel_id -> [child_region_ids])
     parallel_regions: Dict[str, List[str]] = field(default_factory=dict)
 
-    # User context objects (for UserContext template dependency injection)
-    user_context_objects: Set[str] = field(default_factory=set)  # Set of object names used in C++ code (e.g., hardware, logger)
+    # Named Context: declared <sce:context> objects for C++ function integration
+    context_objects: List[Dict] = field(default_factory=list)    # [{'id': 'hardware'}, ...] ordered by declaration
+    context_object_ids: Set[str] = field(default_factory=set)    # {'hardware', ...} for O(1) lookup during transform
 
     # Lambda capture flag: True if entry/exit lambdas need [this, &engine], False if [&engine] suffices
-    # Computed from: needs_jsengine OR static_invokes OR has_parent_communication OR has_parallel_states OR uses_in_predicate OR user_context_objects
+    # Computed from: needs_script_engine OR static_invokes OR has_parent_communication OR has_parallel_states OR uses_in_predicate OR context_objects
     needs_nonstatic_method: bool = False
+
+    def resolve_to_leaf(self, state_id: str) -> str:
+        """
+        Resolve a state ID to its leaf by following initial attrs and parallel first children.
+
+        W3C SCXML 3.3/3.4: Shared utility for parser and code generators.
+        """
+        MAX_DEPTH = 20
+        current = state_id
+        depth = 0
+        while depth < MAX_DEPTH:
+            if current not in self.states:
+                return current
+            state = self.states[current]
+            if state.initial and state.initial in self.states:
+                current = state.initial
+                depth += 1
+            elif state.is_parallel:
+                first_child = None
+                for child_id, child_state in self.states.items():
+                    if child_state.parent == current:
+                        first_child = child_id
+                        break
+                if first_child:
+                    current = first_child
+                    depth += 1
+                else:
+                    break
+            else:
+                break
+        return current
 
 
 class SCXMLParser:
@@ -146,86 +194,52 @@ class SCXMLParser:
         self.model = None
         self.document_order_counter = 0  # W3C SCXML 3.13: Track document order
         self.invoke_counter = 0  # W3C SCXML 6.4.1: Generate invoke IDs when missing
+        self.send_counter = 0  # W3C SCXML 6.2: Generate unique send IDs (C++ UniqueIdGenerator pattern)
 
-    def _extract_user_objects(self, cpp_code: str) -> Set[str]:
+    def _transform_cpp_code_with_named_contexts(self, cpp_code: str, declared_ids: Set[str]) -> str:
         """
-        Extract user object names from C++ code for UserContext template.
-        
-        Examples:
-            "hardware.powerOff()" -> {"hardware"}
-            "hardware.sensor.read()" -> {"hardware"}
-            "logger.info(msg)" -> {"logger"}
-            "obj1.method(); obj2.field" -> {"obj1", "obj2"}
-        
-        Args:
-            cpp_code: C++ code string (from <cpp> tag or cpp: prefix)
-            
-        Returns:
-            Set of top-level object names
-        """
-        import re
-        # Match identifiers followed by dot (member access)
-        # Pattern: word boundary + identifier + optional whitespace + dot
-        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.'
-        matches = re.findall(pattern, cpp_code)
-        return set(matches)
-
-    def _transform_cpp_code_with_user_prefix(self, cpp_code: str, user_objects: Set[str]) -> str:
-        """
-        Transform C++ code by adding this->user_-> prefix to user objects.
+        Transform C++ code by replacing declared context object access with pointer dereference.
+        Only declared context names (from <sce:context>) are transformed.
         Preserves string literals unchanged.
-        
+
         Examples:
-            "hardware.powerOff()" -> "this->user_->hardware.powerOff()"
-            "logger.info(msg)" -> "this->user_->logger.info(msg)"
-            "obj.field = 5" -> "this->user_->obj.field = 5"
-            "text with OFF" -> "text with OFF" (string literals preserved)
-        
-        Supported C++ Patterns:
-            ✅ Member access: object.method(), object.field
-            ✅ Method chains: obj.getX().process()
-            ✅ Nested members: obj.field.subfield
-        
-        Unsupported Patterns (not detected/transformed):
-            ❌ Pointer access: object->method() (use . syntax instead)
-            ❌ Array indexing: object[index].method() (use . syntax first)
-            ❌ Templates: std::vector<T>.method() (namespace collision risk)
-            ⚠️  Workaround: Extract to intermediate variable, then use . syntax
-        
+            "hardware.powerOff()" -> "this->hardware_->powerOff()"
+            "hardware.sensor.read()" -> "this->hardware_->sensor.read()"
+            "combo.onActive(); berserk.onExit()" -> "this->combo_->onActive(); this->berserk_->onExit()"
+            "undeclared.method()" -> "undeclared.method()" (not transformed)
+
         Args:
             cpp_code: Original C++ code
-            user_objects: Set of object names to transform
-            
+            declared_ids: Set of declared context IDs from <sce:context> elements
+
         Returns:
-            Transformed C++ code with user_-> prefix (for Policy class context)
+            Transformed C++ code with named context pointer access
         """
-        import re
-        
         # Step 1: Extract string literals and replace with placeholders
         string_literals = []
         def save_string(match):
             string_literals.append(match.group(0))
             return f'__STRING_PLACEHOLDER_{len(string_literals) - 1}__'
-        
+
         # Match both single and double quoted strings (including escaped quotes)
         string_pattern = r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\''
         code_with_placeholders = re.sub(string_pattern, save_string, cpp_code)
-        
-        # Step 2: Transform user objects outside of string literals
+
+        # Step 2: Transform declared context objects outside of string literals
         result = code_with_placeholders
-        for obj_name in user_objects:
-            # Replace "objname." with "this->user_->objname."
-            # Note: this-> refers to Policy object (not main state machine class)
-            # Word boundary + object name + optional whitespace + dot
-            pattern = rf'\b{re.escape(obj_name)}(\s*\.)'
-            replacement = rf'this->user_->{obj_name}\1'
+        for ctx_id in declared_ids:
+            # Replace "ctx_id." with "this->ctx_id_->"
+            # Only the first dot (member access) becomes pointer dereference
+            # Example: hardware.sensor.read() -> this->hardware_->sensor.read()
+            pattern = rf'\b{re.escape(ctx_id)}\s*\.'
+            replacement = f'this->{ctx_id}_->'
             result = re.sub(pattern, replacement, result)
-        
+
         # Step 3: Restore string literals
         for i, literal in enumerate(string_literals):
             placeholder = f'__STRING_PLACEHOLDER_{i}__'
             result = result.replace(placeholder, literal)
-        
+
         return result
 
     def parse_file(self, scxml_path: str) -> SCXMLModel:
@@ -280,6 +294,9 @@ class SCXMLParser:
         # W3C SCXML 5.8: Parse global (top-level) scripts
         self._parse_global_scripts(root)
 
+        # Parse Named Context declarations (must be before _parse_states for transform)
+        self._parse_sce_contexts(root)
+
         # Parse states recursively
         self._parse_states(root, None)
 
@@ -313,6 +330,12 @@ class SCXMLParser:
         # W3C SCXML 3.13: Check if any transitions have actions (for static optimization)
         self._detect_transition_actions()
 
+        # Detect entry/exit actions for conditional code generation (empty body optimization)
+        self._detect_entry_exit_actions()
+
+        # Detect hierarchy for flat SM optimization (skip parent traversal loop)
+        self._detect_hierarchy()
+
         # W3C SCXML 3.7: Add done.state events for states with final children
         self._add_done_state_events()
 
@@ -330,13 +353,16 @@ class SCXMLParser:
         # Compute lambda capture flag for entry/exit action templates
         # True if any feature requires non-static methods (this pointer needed in lambdas)
         self.model.needs_nonstatic_method = (
-            self.model.needs_jsengine or
+            self.model.needs_script_engine or
             bool(self.model.static_invokes) or
             self.model.has_parent_communication or
             self.model.has_parallel_states or
             self.model.uses_in_predicate or
-            bool(self.model.user_context_objects)
+            bool(self.model.context_objects)
         )
+
+        # Validate cpp: code references match <sce:context> declarations
+        self._validate_cpp_context_usage()
 
         return self.model
 
@@ -386,7 +412,7 @@ class SCXMLParser:
 
                 # Detect if expression requires JSEngine
                 # W3C SCXML 5.2: All datamodel variables are runtime-evaluated (handled by JSEngine)
-                self.model.needs_jsengine = True
+                self.model.needs_script_engine = True
 
     def _parse_global_scripts(self, root):
         """
@@ -480,7 +506,73 @@ class SCXMLParser:
             })
 
             # W3C SCXML 5.8: Global scripts require JSEngine
-            self.model.needs_jsengine = True
+            self.model.needs_script_engine = True
+
+    def _parse_sce_contexts(self, root):
+        """
+        Parse <sce:context> elements for Named Context declarations.
+
+        Named Context: each declared context object becomes an individual template
+        parameter and pointer in the generated Policy struct, eliminating the need
+        for a wrapper UserContext struct.
+
+        Example SCXML:
+            <scxml xmlns:sce="urn:sce:extensions" xmlns:cpp="urn:sce:cpp" ...>
+              <sce:context id="hardware" cpp:type="Hardware" cpp:include="hardware.h"/>
+              <sce:context id="timer"/>
+            </scxml>
+
+        If cpp:type is specified, concrete type is used instead of template parameter.
+        If cpp:include is specified, the header is auto-included in generated code.
+        """
+        for ctx_elem in root.findall(f'{{{SCE_NS}}}context'):
+            ctx_id = ctx_elem.get('id')
+            if not ctx_id:
+                raise ValueError("<sce:context> element must have an 'id' attribute")
+            if ctx_id in self.model.context_object_ids:
+                raise ValueError(f"Duplicate <sce:context> declaration: '{ctx_id}'")
+            cpp_type = ctx_elem.get(f'{{{CPP_NS}}}type', '')
+            cpp_include = ctx_elem.get(f'{{{CPP_NS}}}include', '')
+            self.model.context_objects.append({
+                'id': ctx_id,
+                'cpp_type': cpp_type,
+                'cpp_include': cpp_include,
+            })
+            self.model.context_object_ids.add(ctx_id)
+
+    def _validate_cpp_context_usage(self):
+        """
+        Validate that all cpp: object references have corresponding <sce:context> declarations.
+
+        If cpp: code contains 'obj.method()' patterns but no <sce:context> elements are
+        declared, raise an error to prevent silent false-positive transformations.
+        """
+        if self.model.context_object_ids:
+            return  # Declarations exist, validation passes
+
+        # Check if any cpp: code references objects (identifier followed by dot)
+        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.'
+        for state in self.model.states.values():
+            for trans in state.transitions:
+                if trans.is_cpp_condition and re.search(pattern, trans.cond_cpp):
+                    raise ValueError(
+                        f"cpp: condition '{trans.cond_cpp}' references objects but no <sce:context> "
+                        f"declarations found. Add <sce:context id=\"...\"/> to your SCXML root element."
+                    )
+            for block in state.on_entry_blocks:
+                for action in block:
+                    if action.get('is_cpp_function') and re.search(pattern, action.get('content', '')):
+                        raise ValueError(
+                            f"<cpp> action references objects but no <sce:context> declarations found. "
+                            f"Add <sce:context id=\"...\"/> to your SCXML root element."
+                        )
+            for block in state.on_exit_blocks:
+                for action in block:
+                    if action.get('is_cpp_function') and re.search(pattern, action.get('content', '')):
+                        raise ValueError(
+                            f"<cpp> action references objects but no <sce:context> declarations found. "
+                            f"Add <sce:context id=\"...\"/> to your SCXML root element."
+                        )
 
     def _parse_states(self, parent_elem, parent_id: Optional[str]):
         """
@@ -739,30 +831,34 @@ class SCXMLParser:
         # W3C SCXML 3.13: Guard condition can be specified via 'cond' or 'expr' attribute
         cond = trans_elem.get('cond', '') or trans_elem.get('expr', '')
         
-        # Check for cpp: prefix for direct C++ condition evaluation
+        # Check for language-specific prefixes for direct native condition evaluation
         is_cpp_condition = False
+        is_kt_condition = False
         is_pure_in = False
         cond_cpp = ''
-        
+        cond_cpp_transformed = ''
+        cond_kt = ''
+
         if cond and cond.startswith('cpp:'):
             # Direct C++ condition - no JSEngine needed
             is_cpp_condition = True
             cond_cpp = cond[4:]  # Remove 'cpp:' prefix
-            
-            # Extract user object names for UserContext template
-            user_objects = self._extract_user_objects(cond_cpp)
-            self.model.user_context_objects.update(user_objects)
-            
-            # Transform code with user_-> prefix if user objects exist
-            if user_objects:
-                cond_cpp_transformed = self._transform_cpp_code_with_user_prefix(cond_cpp, user_objects)
+
+            # Named Context: transform declared context references to pointer dereference
+            if self.model.context_object_ids:
+                cond_cpp_transformed = self._transform_cpp_code_with_named_contexts(cond_cpp, self.model.context_object_ids)
             else:
                 cond_cpp_transformed = cond_cpp
+        elif cond and cond.startswith('kt:'):
+            # Direct Kotlin condition - no JSEngine needed
+            is_kt_condition = True
+            cond_kt = cond[3:]  # Remove 'kt:' prefix
         elif cond and self._is_pure_in_predicate(cond):
             # W3C SCXML 5.9.2: Check if condition is pure In() predicate
             is_pure_in = True
             cond_cpp = self._convert_in_to_cpp(cond)
-        
+            cond_kt = self._convert_in_to_kotlin(cond)
+
         transition = Transition(
             event=trans_elem.get('event', ''),
             target=trans_elem.get('target', ''),
@@ -771,6 +867,8 @@ class SCXMLParser:
             cond_cpp_transformed=cond_cpp_transformed if is_cpp_condition else cond_cpp,
             is_pure_in_predicate=is_pure_in,
             is_cpp_condition=is_cpp_condition,
+            cond_kt=cond_kt,
+            is_kt_condition=is_kt_condition,
             type=trans_elem.get('type', 'external')
         )
 
@@ -778,10 +876,10 @@ class SCXMLParser:
         transition.actions = self._parse_executable_content(trans_elem)
 
         # Detect guard conditions requiring JSEngine
-        # cpp: prefix conditions are evaluated directly in C++ — skip JSEngine check
-        if transition.cond and not transition.is_cpp_condition:
-            if self._requires_jsengine(transition.cond):
-                self.model.needs_jsengine = True
+        # cpp:/kt: prefix conditions are evaluated directly in native code — skip JSEngine check
+        if transition.cond and not transition.is_cpp_condition and not transition.is_kt_condition:
+            if self._requires_script_engine(transition.cond):
+                self.model.needs_script_engine = True
 
         return transition
 
@@ -823,7 +921,18 @@ class SCXMLParser:
                 action['typeexpr'] = child.get('typeexpr', '')  # W3C SCXML 6.2: Dynamic type evaluation (test174)
                 action['delay'] = child.get('delay', '')
                 action['delayexpr'] = child.get('delayexpr', '')
+                action['delay_ms'] = self._parse_delay_to_ms(action['delay'])
                 action['id'] = child.get('id', '')
+                # W3C SCXML 6.2: Generate unique auto send ID if not specified.
+                # C++ uses UniqueIdGenerator::generateSendId() at runtime;
+                # Kotlin AOT generates unique IDs at parse time for determinism.
+                # When id is explicit (e.g., <send id="foo"/>), auto_send_id == "foo"
+                # so <cancel sendid="foo"/> (which uses action['sendid']) matches correctly.
+                if not action['id']:
+                    action['auto_send_id'] = f"__send_{self.send_counter}"
+                    self.send_counter += 1
+                else:
+                    action['auto_send_id'] = action['id']
                 action['idlocation'] = child.get('idlocation', '')
                 action['namelist'] = child.get('namelist', '')  # W3C SCXML C.1: namelist for event data
                 
@@ -831,7 +940,7 @@ class SCXMLParser:
                 # W3C SCXML C.1: NamelistHelper::evaluateNamelist() uses JSEngine.getVariable()
                 # Even if namelist contains static variable names, we need JSEngine to check if they exist at runtime
                 if action['namelist']:
-                    self.model.needs_jsengine = True
+                    self.model.needs_script_engine = True
 
                 # Parse <param> children
                 action['params'] = []
@@ -858,7 +967,7 @@ class SCXMLParser:
                     # Static literals (e.g., 'test') can be optimized at parse time (Pure Static)
                     # Dynamic expressions (including number literals like '2') require JSEngine
                     if param_expr and not is_static_literal:
-                        self.model.needs_jsengine = True
+                        self.model.needs_script_engine = True
 
                 # Parse <content>
                 content_elems = ns_findall(child, 'content')
@@ -889,7 +998,7 @@ class SCXMLParser:
                 # Detect dynamic expressions
                 if action['eventexpr'] or action['targetexpr'] or action['delayexpr'] or action['typeexpr']:
                     self.model.has_dynamic_expressions = True
-                    self.model.needs_jsengine = True
+                    self.model.needs_script_engine = True
 
                 # W3C SCXML C.1 (test 496): targetexpr may result in unreachable target → error.communication
                 if action['targetexpr']:
@@ -926,7 +1035,7 @@ class SCXMLParser:
 
                 # W3C SCXML 5.3: All assignments in ECMAScript datamodel require JSEngine
                 # This matches C++ generator behavior
-                self.model.needs_jsengine = True
+                self.model.needs_script_engine = True
 
             elif tag == 'if':
                 # W3C SCXML 3.12.1: <if><elseif><else> with complex sibling structure
@@ -938,12 +1047,15 @@ class SCXMLParser:
                 # W3C SCXML 5.9.2: Check if condition is pure In() predicate
                 is_pure_in = False
                 cond_cpp = ''
+                cond_kt = ''
                 if cond and self._is_pure_in_predicate(cond):
                     is_pure_in = True
                     cond_cpp = self._convert_in_to_cpp(cond)
+                    cond_kt = self._convert_in_to_kotlin(cond)
 
                 action['cond'] = cond
                 action['cond_cpp'] = cond_cpp
+                action['cond_kt'] = cond_kt
                 action['is_pure_in_predicate'] = is_pure_in
                 action['elseif_branches'] = []
                 action['else_actions'] = []
@@ -968,13 +1080,16 @@ class SCXMLParser:
                         # W3C SCXML 5.9.2: Check if condition is pure In() predicate
                         elseif_is_pure_in = False
                         elseif_cond_cpp = ''
+                        elseif_cond_kt = ''
                         if elseif_cond and self._is_pure_in_predicate(elseif_cond):
                             elseif_is_pure_in = True
                             elseif_cond_cpp = self._convert_in_to_cpp(elseif_cond)
+                            elseif_cond_kt = self._convert_in_to_kotlin(elseif_cond)
 
                         branch = {
                             'cond': elseif_cond,
                             'cond_cpp': elseif_cond_cpp,
+                            'cond_kt': elseif_cond_kt,
                             'is_pure_in_predicate': elseif_is_pure_in,
                             'actions': []
                         }
@@ -1024,7 +1139,7 @@ class SCXMLParser:
                                 'expr': elem.get('expr', '')
                             })
                             # W3C SCXML 5.3: All assignments require JSEngine
-                            self.model.needs_jsengine = True
+                            self.model.needs_script_engine = True
                         elif elem_tag == 'log':
                             branch_action.update({
                                 'label': elem.get('label', ''),
@@ -1035,14 +1150,14 @@ class SCXMLParser:
                                 'src': elem.get('src', ''),
                                 'content': elem.text or ''
                             })
-                            self.model.needs_jsengine = True
+                            self.model.needs_script_engine = True
                         
                         current_branch.append(branch_action)
                     
                     i += 1
                 
-                if self._requires_jsengine(action['cond']):
-                    self.model.needs_jsengine = True
+                if self._requires_script_engine(action['cond']):
+                    self.model.needs_script_engine = True
 
             elif tag == 'foreach':
                 # W3C SCXML 4.6: <foreach>
@@ -1050,7 +1165,7 @@ class SCXMLParser:
                 action['item'] = child.get('item', '')
                 action['index'] = child.get('index', '')
                 action['actions'] = self._parse_executable_content(child)
-                self.model.needs_jsengine = True
+                self.model.needs_script_engine = True
 
             elif tag == 'log':
                 # W3C SCXML 3.8.8: <log>
@@ -1060,7 +1175,7 @@ class SCXMLParser:
                 # W3C SCXML 5.10: Any expr attribute requires JSEngine for variable/expression evaluation
                 # This includes: _event, Var1, or any ECMAScript expression
                 if action['expr']:
-                    self.model.needs_jsengine = True
+                    self.model.needs_script_engine = True
 
             elif tag == 'script':
                 # W3C SCXML 3.8.6: <script>
@@ -1068,25 +1183,29 @@ class SCXMLParser:
                 
                 # Check for nested <cpp> tag for direct C++ function calls
                 cpp_elem = child.find('{http://www.w3.org/2005/07/scxml}cpp')
+                # Check for nested <kt> tag for direct Kotlin function calls
+                kt_elem = child.find('{http://www.w3.org/2005/07/scxml}kt')
                 if cpp_elem is not None:
                     # Direct C++ function call - no JSEngine needed
                     cpp_code = cpp_elem.text or ''
                     action['content'] = cpp_code
                     action['is_cpp_function'] = True
-                    
-                    # Extract user object names for UserContext template
-                    user_objects = self._extract_user_objects(cpp_code)
-                    self.model.user_context_objects.update(user_objects)
-                    
-                    # Transform code with user_-> prefix if user objects exist
-                    if user_objects:
-                        action['content_transformed'] = self._transform_cpp_code_with_user_prefix(cpp_code, user_objects)
+
+                    # Named Context: transform declared context references to pointer dereference
+                    if self.model.context_object_ids:
+                        action['content_transformed'] = self._transform_cpp_code_with_named_contexts(cpp_code, self.model.context_object_ids)
                     else:
                         action['content_transformed'] = cpp_code
+                elif kt_elem is not None:
+                    # Direct Kotlin function call - no JSEngine needed
+                    kt_code = kt_elem.text or ''
+                    action['content'] = kt_code
+                    action['content_kt'] = kt_code
+                    action['is_kt_function'] = True
                 else:
                     # JavaScript execution via JSEngine
                     action['content'] = child.text or ''
-                    self.model.needs_jsengine = True
+                    self.model.needs_script_engine = True
 
             elif tag == 'cancel':
                 # W3C SCXML 6.2: <cancel>
@@ -1249,11 +1368,11 @@ class SCXMLParser:
 
         if is_hybrid_invoke:
             self.model.has_hybrid_invoke = True
-            self.model.needs_jsengine = True  # JSEngine for srcexpr/contentexpr evaluation
+            self.model.needs_script_engine = True  # JSEngine for srcexpr/contentexpr evaluation
 
         # W3C SCXML 6.4.1: Namelist validation requires JSEngine (even for static invokes)
         if is_static_invoke and invoke['namelist']:
-            self.model.needs_jsengine = True  # JSEngine for namelist variable validation
+            self.model.needs_script_engine = True  # JSEngine for namelist variable validation
         
         if is_dynamic_file_invoke:
             # Deprecated: srcexpr now handled as hybrid invoke
@@ -1284,9 +1403,7 @@ class SCXMLParser:
         """
         if not expr or 'In(' not in expr:
             return False
-        
-        import re
-        
+
         # W3C SCXML B.1: XML entity escaping - convert back for parsing
         # &amp;&amp; → &&, &amp;| → ||
         clean_expr = expr.replace('&amp;&amp;', '&&').replace('&amp;|', '||').strip()
@@ -1307,34 +1424,31 @@ class SCXMLParser:
         
         return True
     
-    def _convert_in_to_cpp(self, expr: str) -> str:
+    def _convert_in_predicate(self, expr: str, replacement: str) -> str:
         """
-        Convert In() predicates to direct C++ isStateActive() calls
-        
-        W3C SCXML 5.9.2: In(stateId) → this->isStateActive("stateId")
-        ARCHITECTURE.md Zero Duplication: Uses InPredicateHelper internally
-        
-        Examples:
-        - "In('s1')" → "this->isStateActive(\"s1\")"
-        - "In('s1') && In('s2')" → "this->isStateActive(\"s1\") && this->isStateActive(\"s2\")"
-        - "In('s1') || In('s2')" → "this->isStateActive(\"s1\") || this->isStateActive(\"s2\")"
-        
+        Convert In() predicates using the given replacement template.
+
+        W3C SCXML 5.9.2: In(stateId) is a built-in function.
+        Handles XML entity escaping and transforms each In('...') call.
+
         Args:
             expr: Pure In() predicate expression
-            
+            replacement: Regex replacement string (e.g. r'isStateActive("\\1")')
+
         Returns:
-            C++ code with direct isStateActive() calls
+            Converted code with isStateActive() calls
         """
-        import re
-        
-        # W3C SCXML B.1: XML entity escaping - convert for C++ code
-        cpp_expr = expr.replace('&amp;&amp;', '&&').replace('&amp;|', '||')
-        
-        # Transform: In('state') → this->isStateActive("state")
-        # Use double quotes in C++ for consistency with generated code
-        cpp_expr = re.sub(r"In\('([^']+)'\)", r'this->isStateActive("\1")', cpp_expr)
-        
-        return cpp_expr
+        result = expr.replace('&amp;&amp;', '&&').replace('&amp;|', '||')
+        result = re.sub(r"In\('([^']+)'\)", replacement, result)
+        return result
+
+    def _convert_in_to_cpp(self, expr: str) -> str:
+        """W3C SCXML 5.9.2: In('s1') → this->isStateActive("s1")"""
+        return self._convert_in_predicate(expr, r'this->isStateActive("\1")')
+
+    def _convert_in_to_kotlin(self, expr: str) -> str:
+        """W3C SCXML 5.9.2: In('s1') → isStateActive("s1")"""
+        return self._convert_in_predicate(expr, r'isStateActive("\1")')
 
     def _actions_to_javascript(self, actions: List[Dict]) -> str:
         """
@@ -1407,7 +1521,7 @@ class SCXMLParser:
         
         return ' '.join(js_lines)
 
-    def _requires_jsengine(self, expr: str) -> bool:
+    def _requires_script_engine(self, expr: str) -> bool:
         """
         Detect if expression requires JSEngine evaluation
 
@@ -1440,7 +1554,6 @@ class SCXMLParser:
 
         # W3C SCXML 5.9 & C.2: System-reserved identifiers starting with underscore
         # Examples: _event, _scxmleventname, _name (require JSEngine for runtime access)
-        import re
         if re.search(r'\b_[a-zA-Z]\w*\b', expr):
             return True
 
@@ -1486,6 +1599,37 @@ class SCXMLParser:
 
         return False
 
+    def _parse_delay_to_ms(self, delay_str: str) -> int:
+        """
+        Parse W3C SCXML delay string to milliseconds.
+
+        W3C SCXML 6.2.5: The delay attribute uses CSS2 time format:
+        - "1s" → 1000ms
+        - "1.5s" → 1500ms
+        - "200ms" → 200ms
+        - ".5" → 500ms (bare number defaults to seconds)
+        - "" → 0 (no delay)
+
+        @param delay_str Raw delay attribute value
+        @return Delay in milliseconds (0 if empty or unparseable)
+        """
+        if not delay_str:
+            return 0
+        stripped = delay_str.strip()
+        # Try with explicit unit first
+        m = re.match(r'^(\d*\.?\d+)(s|ms)$', stripped)
+        if m:
+            value = float(m.group(1))
+            unit = m.group(2)
+            if unit == 's':
+                return int(value * 1000)
+            return int(value)
+        # Bare number: default to seconds (common in W3C test suite)
+        m = re.match(r'^(\d*\.?\d+)$', stripped)
+        if m:
+            return int(float(m.group(1)) * 1000)
+        return 0
+
     def _is_static_string_literal(self, expr: str) -> bool:
         """
         Detect if expression is a static string literal (e.g., 'test', "test")
@@ -1500,10 +1644,9 @@ class SCXMLParser:
         """
         if not expr:
             return False
-        
-        import re
+
         expr_stripped = expr.strip()
-        
+
         # Match simple single-quoted or double-quoted string literals
         # Pattern: quote + any chars except that quote or backslash + quote
         # This excludes complex strings with variables, concatenation, or escape sequences
@@ -1522,7 +1665,6 @@ class SCXMLParser:
         Assumes expr has been validated with _is_static_string_literal()
         Returns the string value without quotes
         """
-        import re
         expr_stripped = expr.strip()
         
         # Extract content between quotes
@@ -1600,11 +1742,11 @@ class SCXMLParser:
                     try:
                         child_parser = SCXMLParser()
                         child_model = child_parser.parse_file(str(child_scxml_path))
-                        matching_static['child_needs_jsengine'] = child_model.needs_jsengine
+                        matching_static['child_needs_script_engine'] = child_model.needs_script_engine
                         # W3C SCXML 6.3.2: Extract child datamodel variable names for namelist validation
                         matching_static['child_datamodel_vars'] = [var['id'] for var in child_model.variables]
                     except Exception:
-                        matching_static['child_needs_jsengine'] = True
+                        matching_static['child_needs_script_engine'] = True
                         matching_static['child_datamodel_vars'] = []  # Empty list for safety
 
                 # Handle external src (existing logic)
@@ -1620,25 +1762,25 @@ class SCXMLParser:
                     matching_static['child_name'] = child_name
 
                     # Parse child SCXML file to detect if it needs JSEngine
-                    child_needs_jsengine = False
+                    child_needs_script_engine = False
                     try:
                         # Construct child SCXML path relative to parent
                         parent_dir = Path(self.scxml_path).parent if hasattr(self, 'scxml_path') else Path('.')
                         child_scxml_path = parent_dir / f"{child_name}.scxml"
 
                         if child_scxml_path.exists():
-                            # Parse child to check needs_jsengine and extract datamodel variables
+                            # Parse child to check needs_script_engine and extract datamodel variables
                             child_parser = SCXMLParser()
                             child_model = child_parser.parse_file(str(child_scxml_path))
-                            child_needs_jsengine = child_model.needs_jsengine
+                            child_needs_script_engine = child_model.needs_script_engine
                             # W3C SCXML 6.3.2: Extract child datamodel variable names for namelist validation
                             child_datamodel_vars = [var['id'] for var in child_model.variables]
                     except Exception:
                         # If we can't parse child, assume it needs JSEngine for safety
-                        child_needs_jsengine = True
+                        child_needs_script_engine = True
                         child_datamodel_vars = []  # Empty list for safety
 
-                    matching_static['child_needs_jsengine'] = child_needs_jsengine
+                    matching_static['child_needs_script_engine'] = child_needs_script_engine
                     matching_static['child_datamodel_vars'] = child_datamodel_vars
 
                 # Generate invoke ID if not specified (matches C++ generator logic)
@@ -1713,51 +1855,61 @@ class SCXMLParser:
     def _apply_parallel_initial_overrides(self):
         """
         Apply parallel initial state overrides (W3C SCXML 3.13)
-        
+
         When scxml initial="s1 s2", these states override the initial attributes
         of their parent regions in parallel states.
-        
+
+        W3C SCXML 3.6 (test576): Walk up from each target through ALL ancestors,
+        overriding compound states' initial to point to the child on the path.
+        Parallel states are skipped (they enter all children automatically).
+
         Example:
-          <scxml initial="s2p112 s2p122">
-            <parallel id="s2p1">
-              <state id="s2p11" initial="s2p111">  <!-- Override to s2p112 -->
-                <state id="s2p111"/>
-                <state id="s2p112"/>
+          <scxml initial="s11p112 s11p122">
+            <state id="s1">
+              <state id="s11" initial="s111">  <!-- Override to s11p1 -->
+                <state id="s111"/>
+                <parallel id="s11p1">
+                  <state id="s11p11" initial="s11p111">  <!-- Override to s11p112 -->
+                    <state id="s11p111"/>
+                    <state id="s11p112"/>
+                  </state>
+                  <state id="s11p12" initial="s11p121">  <!-- Override to s11p122 -->
+                    <state id="s11p121"/>
+                    <state id="s11p122"/>
+                  </state>
+                </parallel>
               </state>
-              <state id="s2p12" initial="s2p121">  <!-- Override to s2p122 -->
-                <state id="s2p121"/>
-                <state id="s2p122"/>
-              </state>
-            </parallel>
+            </state>
         """
         if not self.model.initial:
             return
-        
+
         # Check if initial contains space-separated states (parallel initial states)
         initial_states = self.model.initial.split()
-        
+
         if len(initial_states) <= 1:
             # Single initial state - no overrides needed
             return
-        
-        # W3C SCXML 3.13: Override parent region initial attributes
+
+        # W3C SCXML 3.13: Walk up from each target through all ancestors,
+        # overriding compound states' initial to point to the child on the path.
+        # Skip parallel states (they enter all children automatically).
         for state_id in initial_states:
             if state_id not in self.model.states:
-                # State not found - skip
                 continue
-            
-            # Find parent of this initial state
-            state = self.model.states[state_id]
-            parent_id = state.parent
-            
-            if not parent_id or parent_id not in self.model.states:
-                # No parent or parent not found
-                continue
-            
-            # Override parent's initial attribute
-            parent_state = self.model.states[parent_id]
-            parent_state.initial = state_id
-        
+
+            current = state_id
+            while current in self.model.states:
+                state = self.model.states[current]
+                parent_id = state.parent
+                if not parent_id or parent_id not in self.model.states:
+                    break
+                parent_state = self.model.states[parent_id]
+                # Only override compound states, not parallel (which enter all children)
+                if not parent_state.is_parallel:
+                    parent_state.initial = current
+                current = parent_id
+
         # After overrides, set model.initial to the first state
         # The parallel regions will use their overridden initial attributes
         self.model.initial = initial_states[0]
@@ -1786,6 +1938,8 @@ class SCXMLParser:
                     # Add history restoration marker to transition
                     if not hasattr(transition, 'history_target'):
                         transition.history_target = transition.target
+                    # W3C SCXML 3.11: Resolved leaf target for languages without history runtime (Kotlin Phase 1)
+                    transition.history_leaf_target = self.model.history_states[transition.target]['leaf_target']
                     # Keep original target for template to generate restoration logic
         
         # W3C SCXML 3.11: Mark states whose initial transition targets history
@@ -1807,36 +1961,8 @@ class SCXMLParser:
                 state.initial = leaf_target
 
     def _resolve_to_leaf_state(self, state_id: str) -> str:
-        """
-        Resolve a state ID to its leaf state by following initial attributes
-
-        Args:
-            state_id: State ID to resolve
-
-        Returns:
-            Leaf state ID (atomic state with no initial attribute)
-        """
-        MAX_DEPTH = 20  # Safety limit
-        current = state_id
-        depth = 0
-
-        while depth < MAX_DEPTH:
-            if current not in self.model.states:
-                # State not found - return as is
-                return current
-
-            state = self.model.states[current]
-
-            # Check if state has an initial child
-            if state.initial and state.initial in self.model.states:
-                # Follow to initial child
-                current = state.initial
-                depth += 1
-            else:
-                # Reached leaf state (or final state, or state without initial)
-                break
-
-        return current
+        """Delegate to SCXMLModel.resolve_to_leaf (Single Source of Truth)."""
+        return self.model.resolve_to_leaf(state_id)
 
     def _compute_parallel_regions(self):
         """
@@ -1859,7 +1985,7 @@ class SCXMLParser:
     def _detect_transition_actions(self):
         """
         Detect if any transitions have executable content (W3C SCXML 3.13)
-        
+
         Sets has_transition_actions flag for conditional static optimization.
         If no transitions have actions, tryTransitionInState can remain static.
         """
@@ -1868,9 +1994,42 @@ class SCXMLParser:
                 if transition.actions:
                     self.model.has_transition_actions = True
                     return  # Early exit once we find any action
-        
+
         # No transition actions found
         self.model.has_transition_actions = False
+
+    def _detect_entry_exit_actions(self):
+        """
+        Detect if any state has entry or exit actions.
+
+        Sets has_entry_actions and has_exit_actions flags for conditional code generation.
+        When no state has entry/exit actions, generate empty function body instead of switch-case.
+        """
+        for state in self.model.states.values():
+            if not self.model.has_entry_actions:
+                if (state.on_entry or state.on_entry_blocks or state.static_invokes or
+                    state.hybrid_invokes or state.datamodel or
+                    state.initial_transition_actions or state.initial_history_id or
+                    (state.is_final and (state.donedata or state.parent))):
+                    self.model.has_entry_actions = True
+            if not self.model.has_exit_actions:
+                if state.on_exit or state.on_exit_blocks or state.static_invokes or state.hybrid_invokes:
+                    self.model.has_exit_actions = True
+            if self.model.has_entry_actions and self.model.has_exit_actions:
+                return  # Both found, early exit
+
+    def _detect_hierarchy(self):
+        """
+        Detect if any state has a parent (non-flat state machine).
+
+        Sets has_hierarchy flag. When False, hierarchy traversal loop in
+        processTransition can be replaced with direct tryTransitionInState() call.
+        """
+        for state in self.model.states.values():
+            if state.parent:
+                self.model.has_hierarchy = True
+                return
+        self.model.has_hierarchy = False
 
     def _add_done_state_events(self):
         """
@@ -2051,7 +2210,7 @@ class SCXMLParser:
         - has_parallel_states
         - has_invoke
         - has_event_metadata
-        - needs_jsengine
+        - needs_script_engine
         """
         # Check for event metadata in guards
         for state in self.model.states.values():
@@ -2060,11 +2219,11 @@ class SCXMLParser:
                     for field in self.EVENT_METADATA_FIELDS:
                         if field in transition.cond:
                             self.model.has_event_metadata = True
-                            self.model.needs_jsengine = True
+                            self.model.needs_script_engine = True
 
         # Summary
         return {
-            'needs_jsengine': self.model.needs_jsengine,
+            'needs_script_engine': self.model.needs_script_engine,
             'uses_in_predicate': self.model.uses_in_predicate,
             'has_dynamic_expressions': self.model.has_dynamic_expressions,
             'has_parallel_states': self.model.has_parallel_states,
@@ -2087,5 +2246,5 @@ if __name__ == '__main__':
     print(f"Initial: {model.initial}")
     print(f"States: {len(model.states)}")
     print(f"Events: {len(model.events)}")
-    print(f"Needs JSEngine: {model.needs_jsengine}")
+    print(f"Needs ScriptEngine: {model.needs_script_engine}")
     print(f"Variables: {len(model.variables)}")

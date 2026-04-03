@@ -1,0 +1,178 @@
+{#
+    Kotlin Script Engine Helpers Template
+
+    W3C SCXML B.1: ECMAScript datamodel support for hybrid (static + script engine) SMs.
+    Ported 1:1 from C++ scriptengine_helpers.jinja2 + utility_methods.jinja2.
+
+    Generates:
+    - ensureScriptEngine(): Lazy session init, system vars, datamodel, In() callback, global scripts
+    - safeEvaluateGuard(): Guard condition evaluation with error.execution on failure
+    - executeAssign(): Variable assignment via script engine
+    - executeScriptBlock(): <script> block execution via script engine
+    - setCurrentEventInScriptEngine(): Set _event before event processing
+#}
+{% if model.needs_script_engine %}
+
+    // --- Script Engine Helpers (W3C SCXML B.1) ---
+
+    // W3C SCXML B.1: Lazy script engine initialization
+    private fun ensureScriptEngine() {
+        if (scriptEngineInitialized) return
+        val engine = scriptEngine ?: return
+        val sid = allocateScriptSession()
+        engine.createSession(sid)
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        engine.setupSystemVariables(sid, "{{ model.name }}")
+
+{% for var in model.variables %}
+{% if var.expr %}
+        // W3C SCXML 5.3: Initialize variable '{{ var.id }}' with expr
+        try {
+            val initResult_{{ var.id | to_camel_case }} = engine.evaluateExpr(sid, "{{ var.expr | escape_kotlin }}")
+            engine.setVariable(sid, "{{ var.id }}", initResult_{{ var.id | to_camel_case }})
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+{% elif var.content %}
+        // W3C SCXML B.2: Initialize variable '{{ var.id }}' with inline content
+        try {
+            val initResult_{{ var.id | to_camel_case }} = engine.evaluateExpr(sid, "{{ var.content | escape_kotlin }}")
+            engine.setVariable(sid, "{{ var.id }}", initResult_{{ var.id | to_camel_case }})
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+{% elif var.type == 'runtime' %}
+        // W3C SCXML 5.2: Runtime variable '{{ var.id }}' (late binding, undefined)
+        try {
+            engine.evaluateExpr(sid, "undefined")
+            engine.setVariable(sid, "{{ var.id }}", null)
+        } catch (_: Exception) {}
+{% endif %}
+{% endfor %}
+
+{% if model.states.values() | selectattr('datamodel') | list %}
+{% if model.binding == 'early' %}
+        // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
+{% for state_id, state in model.states.items() %}
+{% if state.datamodel %}
+{% for dm_var in state.datamodel %}
+{% if dm_var.expr %}
+        // State '{{ state_id }}' variable '{{ dm_var.id }}'
+        try {
+            val initResult_{{ dm_var.id | to_camel_case }} = engine.evaluateExpr(sid, "{{ dm_var.expr | escape_kotlin }}")
+            engine.setVariable(sid, "{{ dm_var.id }}", initResult_{{ dm_var.id | to_camel_case }})
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+{% elif dm_var.content %}
+        // State '{{ state_id }}' variable '{{ dm_var.id }}' (inline content)
+        try {
+            val initResult_{{ dm_var.id | to_camel_case }} = engine.evaluateExpr(sid, "{{ dm_var.content | escape_kotlin }}")
+            engine.setVariable(sid, "{{ dm_var.id }}", initResult_{{ dm_var.id | to_camel_case }})
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+{% else %}
+        engine.setVariable(sid, "{{ dm_var.id }}", null)
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endif %}
+
+{% if model.global_scripts %}
+        // W3C SCXML 5.8: Execute global scripts at document load time
+{% for script in model.global_scripts %}
+        try {
+            engine.executeScript(sid, "{{ script.content | escape_kotlin }}")
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+{% endfor %}
+{% endif %}
+
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register In() predicate callback
+        engine.setStateQueryCallback(sid) { stateId -> isStateActive(stateId) }
+{% endif %}
+
+        // W3C SCXML 6.4: Apply pending invoke params from parent
+        // Only set params matching child's declared datamodel variables (C++ DatamodelValidationHelper)
+        if (pendingInvokeParams.isNotEmpty()) {
+            for ((pName, pValue) in pendingInvokeParams) {
+                if (engine.hasVariable(sid, pName)) {
+                    try { engine.setVariable(sid, pName, pValue) } catch (_: Exception) {}
+                }
+            }
+            pendingInvokeParams = emptyMap()
+        }
+
+        scriptEngineInitialized = true
+    }
+
+    // W3C SCXML 5.9: Guard evaluation with error.execution on failure
+    private fun safeEvaluateGuard(guardExpr: String): Boolean {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return false
+        val sid = scriptSessionId ?: return false
+        return try {
+            engine.evaluateCondition(sid, guardExpr)
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+            false
+        }
+    }
+
+    // W3C SCXML 5.3: Assignment via script engine
+    private fun executeAssign(location: String, expr: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.assign(sid, location, expr)
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 3.8.6: Script block execution
+    private fun executeScriptBlock(script: String) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        try {
+            engine.executeScript(sid, script)
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event before event processing
+    private fun setCurrentEventInScriptEngine(event: {{ machine_name }}Event) {
+        ensureScriptEngine()
+        val engine = scriptEngine ?: return
+        val sid = scriptSessionId ?: return
+        val eventName = eventNameOf(event) ?: return
+        val meta = currentEventMetadata
+        // W3C SCXML 5.10.1: C++ classifyEventType — platform events override type
+        val effectiveType = when {
+            eventName.startsWith("done.") || eventName.startsWith("error.") -> "platform"
+            else -> meta.type
+        }
+        // W3C SCXML 5.10.1: C++ pattern — origin/origintype only for external events
+        // Internal events (<raise>) have empty origin; external events (<send>) have session ID
+        val effectiveOrigin = if (meta.type == "external") meta.origin.ifEmpty { scriptSessionId ?: "" } else meta.origin
+        val effectiveOriginType = if (meta.type == "external") meta.originType.ifEmpty { "http://www.w3.org/TR/scxml/#SCXMLEventProcessor" } else meta.originType
+        engine.setCurrentEvent(
+            sid, eventName,
+            data = meta.data,
+            type = effectiveType,
+            sendId = meta.sendId,
+            origin = effectiveOrigin,
+            originType = effectiveOriginType,
+            invokeId = meta.invokeId
+        )
+    }
+{% endif %}

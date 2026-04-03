@@ -1,0 +1,29 @@
+{# W3C SCXML: Common action dispatcher for entry/exit/transition contexts.
+   Expects `action` and `machine_name` variables in scope.
+   Three-way pattern: script engine | static Kotlin | fallback. #}
+{% if action.type == 'raise' %}
+            raiseInternal({{ machine_name }}Event.{{ action.event | to_event_ref }})
+{% elif action.type == 'assign' %}
+{% include 'actions/assign.kt.jinja2' with context %}
+{% elif action.type == 'log' and action.expr %}
+{% if model.needs_script_engine %}
+            // W3C SCXML 3.8.8: Log expression evaluation (non-fatal on error, C++ pattern)
+            try {
+                println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}(scriptEngine?.evaluateExpr(scriptSessionId ?: "", "{{ action.expr | escape_kotlin }}")?.toString() ?: ""))
+            } catch (_: Exception) {}
+{% else %}
+            println({% if action.label %}"{{ action.label | escape_kotlin }}: " + {% endif %}{{ action.expr | to_kotlin_string_expr }})
+{% endif %}
+{% elif action.type == 'log' and action.label %}
+            println("{{ action.label | escape_kotlin }}")
+{% elif action.type == 'send' %}
+{% include 'actions/send.kt.jinja2' with context %}
+{% elif action.type == 'script' %}
+{% include 'actions/script.kt.jinja2' with context %}
+{% elif action.type == 'cancel' and action.sendid %}
+            cancelSend("{{ action.sendid | escape_kotlin }}")
+{% elif action.type == 'if' %}
+{% include 'actions/if.kt.jinja2' with context %}
+{% elif action.type == 'foreach' %}
+{% include 'actions/foreach.kt.jinja2' with context %}
+{% endif %}

@@ -287,8 +287,8 @@ int main() {
                 return;
             }
 
-            // Base64 encode SCXML
-            const base64 = btoa(scxml);
+            // Base64 encode SCXML (UTF-8 safe)
+            const base64 = btoa(unescape(encodeURIComponent(scxml)));
 
             // Open visualizer in new tab
             const visualizerUrl = `visualizer.html#scxml=${encodeURIComponent(base64)}`;

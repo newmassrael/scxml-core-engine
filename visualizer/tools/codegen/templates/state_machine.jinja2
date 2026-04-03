@@ -1,16 +1,23 @@
 {% include 'license_header.jinja2' %}
 
 #pragma once
-#include <chrono>
 #include <cstdint>
-#include <memory>
-#include <stdexcept>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-{% if model.user_context_objects %}
-#include <iostream>  // C++ function integration: Required for std namespace usage
+{% if model.needs_event_scheduler or model.has_parent_communication %}
+#include <chrono>
 {% endif %}
+{% if model.static_invokes or model.hybrid_invokes or model.needs_script_engine %}
+#include <memory>
+{% endif %}
+{% if model.static_invokes %}
+#include <unordered_map>
+{% endif %}
+{% for ctx in model.context_objects %}
+{% if ctx.cpp_include %}
+#include "{{ ctx.cpp_include }}"
+{% endif %}
+{% endfor %}
 #include "static/StaticExecutionEngine.h"
 {% if model.static_invokes %}
 
@@ -35,7 +42,7 @@
 #include "common/NamelistHelper.h"
 #include "common/DatamodelValidationHelper.h"
 {% endif %}
-{% if model.needs_jsengine %}
+{% if model.needs_script_engine %}
 #include "common/FinalizeHelper.h"
 {% endif %}
 {% if model.needs_event_scheduler %}
@@ -45,7 +52,9 @@
 #include "core/HistoryHelper.h"
 #include "core/StateEntryHelper.h"
 #include "core/EntryExitHelper.h"
+{% if model.needs_event_matching_helper %}
 #include "core/EventMatchingHelper.h"
+{% endif %}
 {% if model.has_parallel_states %}
 #include "core/ParallelStateHelper.h"
 #include "core/ParallelExitEntryHelper.h"
@@ -59,12 +68,12 @@
 #include "common/DoneDataHelper.h"
 {% endif %}
 #include "common/InPredicateHelper.h"
-{% if model.needs_jsengine %}
+{% if model.needs_script_engine %}
 #include "common/DataModelInitHelper.h"
 #include "common/EventTypeHelper.h"
 #include <optional>
 #include "common/Logger.h"
-#include "scripting/JSEngine.h"
+#include "scripting/ScriptEngineProvider.h"
 #include "scripting/ScriptResultUtils.h"
 #include "common/AssignHelper.h"
 #include "common/AssignmentExecutionHelper.h"
@@ -82,6 +91,10 @@
 #endif
 
 // Transition execution macro - compresses repetitive transition code
+#ifdef AOT_EXECUTE_TRANSITION
+#undef AOT_EXECUTE_TRANSITION
+#endif
+{% if model.has_parallel_states %}
 #define AOT_EXECUTE_TRANSITION(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS) \
     do { \
         AOT_DEBUG("AOT processTransition: Transition matched in state {}", static_cast<int>(SRC)); \
@@ -97,15 +110,67 @@
             transitionTaken = true; \
         } \
     } while(0)
+{% else %}
+#define AOT_EXECUTE_TRANSITION(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS) \
+    do { \
+        AOT_DEBUG("AOT processTransition: Transition matched in state {} -> {}", static_cast<int>(SRC), static_cast<int>(TGT)); \
+        lastTransitionSourceState_ = SRC; \
+        lastTransitionIsInternal_ = IS_INTERNAL; \
+        lastTransitionIsTargetless_ = IS_TARGETLESS; \
+        currentState = TGT; \
+        transitionTaken = true; \
+    } while(0)
+{% endif %}
+
+{# ═══ Named Context: precompute template parameter/argument lists ═══ #}
+{# Contexts with cpp_type use concrete types (no template param needed).    #}
+{# Contexts without cpp_type use template parameters (duck typing).         #}
+{# _tpl_params/_tpl_args only contain template parameters, NOT concrete.    #}
+{% set _tpl_params = [] %}
+{% set _tpl_args = [] %}
+{% set _sm_tpl_args = [] %}
+{% for ctx in model.context_objects %}
+{% if not ctx.cpp_type %}
+{# Template parameter: duck typing #}
+{{ _tpl_params.append('typename ' + ctx.id | capitalize + 'T') or '' }}
+{{ _tpl_args.append(ctx.id | capitalize + 'T') or '' }}
+{{ _sm_tpl_args.append(ctx.id | capitalize + 'T') or '' }}
+{% endif %}
+{% endfor %}
+{% if model.has_parent_communication %}
+{{ _tpl_params.append('typename ParentStateMachine') or '' }}
+{{ _tpl_args.append('ParentStateMachine') or '' }}
+{{ _sm_tpl_args.append('ParentStateMachine') or '' }}
+{% endif %}
+{% if model.static_invokes %}
+{{ _tpl_params.append('typename SelfType') or '' }}
+{{ _tpl_args.append('SelfType') or '' }}
+{# SelfType = fully qualified SM class (CRTP) #}
+{% if _sm_tpl_args %}
+{{ _sm_tpl_args.append(model.name + '<' + _sm_tpl_args | join(', ') + '>') or '' }}
+{% else %}
+{{ _sm_tpl_args.append(model.name) or '' }}
+{% endif %}
+{% endif %}
+{# _has_tpl: whether any template parameters exist #}
+{% set _has_tpl = _tpl_params | length > 0 %}
+{# _sm_tpl_params: SM class uses same params as Policy, minus SelfType #}
+{% set _sm_tpl_params = [] %}
+{% for ctx in model.context_objects %}
+{% if not ctx.cpp_type %}
+{{ _sm_tpl_params.append('typename ' + ctx.id | capitalize + 'T') or '' }}
+{% endif %}
+{% endfor %}
+{% if model.has_parent_communication %}
+{{ _sm_tpl_params.append('typename ParentStateMachine') or '' }}
+{% endif %}
+{% set _has_sm_tpl = _sm_tpl_params | length > 0 %}
 
 namespace SCE::Generated::{{ model.name }} {
 
-{% if model.user_context_objects and model.has_parent_communication %}
-template<typename UserContext, typename ParentStateMachine>
-{% elif model.user_context_objects %}
-template<typename UserContext>
-{% elif model.has_parent_communication %}
-template<typename ParentStateMachine>
+{# Forward declaration #}
+{% if _has_sm_tpl %}
+template<{{ _sm_tpl_params | join(', ') }}>
 {% endif %}
 class {{ model.name }};
 
@@ -124,6 +189,7 @@ enum class Event : uint8_t {
     {% endfor %}
 };
 
+{% if model.has_parallel_states %}
 {# Transition descriptor for W3C SCXML Appendix D optimal transition set #}
 /**
  * @brief Transition information for microstep execution
@@ -142,24 +208,12 @@ struct TransitionInfo {
     TransitionInfo(State src, State tgt, int idx, bool actions, bool internal = false, bool targetless = false)
         : source(src), target(tgt), transitionIndex(idx), hasActions(actions), isInternal(internal), isTargetless(targetless) {}
 };
+{% endif %}
 
 {# Policy class #}
 // State policy for {{ model.name }}
-{% if model.user_context_objects and model.has_parent_communication %}
-template<typename UserContext, typename ParentStateMachine>
-{% elif model.user_context_objects %}
-template<typename UserContext>
-{% elif model.has_parent_communication %}
-template<typename ParentStateMachine>
-{% elif model.static_invokes %}
-template<typename SelfType>
-{% elif model.hybrid_invokes %}
-{# Hybrid invokes don't need SelfType template parameter because:
-   - Interpreter children (StateMachine instances) don't use CRTP (Curiously Recurring Template Pattern)
-   - No parent pointer needed - children are isolated Interpreter instances
-   - AOT parent communicates via done.invoke events, not direct pointers to parent
-   - See ARCHITECTURE.md "Hybrid Strategy" for memory efficiency details
-   - Parent stays AOT (~300 bytes), child is Interpreter (~100KB) #}
+{% if _has_tpl %}
+template<{{ _tpl_params | join(', ') }}>
 {% endif %}
 struct {{ model.name }}Policy {
     using State = ::SCE::Generated::{{ model.name }}::State;
@@ -169,11 +223,13 @@ struct {{ model.name }}Policy {
     static constexpr bool HAS_PARALLEL_STATES = {{ 'true' if model.has_parallel_states else 'false' }};
 
     // W3C SCXML 5.9: Flag indicating JSEngine requirement (ECMAScript expressions)
-    static constexpr bool NEEDS_JSENGINE = {{ 'true' if model.needs_jsengine else 'false' }};
+    static constexpr bool NEEDS_SCRIPT_ENGINE = {{ 'true' if model.needs_script_engine else 'false' }};
 
-    {% if model.user_context_objects %}
-    // User context pointer for dependency injection (C++ function integration)
-    UserContext* user_ = nullptr;
+    {% if model.context_objects %}
+    // Named Context: individual pointers for dependency injection
+    {% for ctx in model.context_objects %}
+    {{ ctx.cpp_type if ctx.cpp_type else (ctx.id | capitalize + 'T') }}* {{ ctx.id }}_ = nullptr;
+    {% endfor %}
     {% endif %}
 
     {% if model.variables %}
@@ -206,12 +262,12 @@ struct {{ model.name }}Policy {
     mutable ::SCE::PullScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
     {% endif %}
 
-    {% if model.needs_jsengine or model.static_invokes %}
+    {% if model.needs_script_engine or model.static_invokes %}
     // Session ID for JSEngine/Invoke (lazy-initialized)
     mutable ::std::optional<::std::string> sessionId_;
     {% endif %}
-    {% if model.needs_jsengine %}
-    mutable bool jsEngineInitialized_ = false;
+    {% if model.needs_script_engine %}
+    mutable bool scriptEngineInitialized_ = false;
     {% endif %}
     {% if model.has_hybrid_invoke or model.static_invokes %}
     // W3C SCXML 6.4: Source SCXML file path for child invoke resolution
@@ -226,6 +282,10 @@ struct {{ model.name }}Policy {
     // W3C SCXML 5.10: Event data storage for _event.data access
     // Required for: <send> params, error.execution event data (W3C SCXML 5.3)
     mutable ::std::string pendingEventData_;
+    {% endif %}
+    {% if model.needs_event_data %}
+    // W3C SCXML 5.5/C.1: Typed event data for engine-agnostic ScriptValue pipeline
+    mutable ::std::optional<ScriptValue> pendingEventTypedData_;
     {% endif %}
     {% if model.needs_event_type %}
     // W3C SCXML 5.10.1: Event type storage for _event.type access (test331)
@@ -342,17 +402,17 @@ struct {{ model.name }}Policy {
     }
     {% endif %}
 
-    {% if model.needs_jsengine or model.has_parent_communication %}
+    {% if model.needs_script_engine or model.has_parent_communication %}
     // Destructor: Clean up resources (RAII pattern)
     ~{{ model.name }}Policy() {
         {% if model.has_parent_communication %}
         // W3C SCXML 6.4.5: Cancel all pending delayed sends to parent on child termination
         // SimpleScheduler destructor automatically cleans up pending events
         {% endif %}
-        {% if model.needs_jsengine or model.static_invokes %}
+        {% if model.needs_script_engine or model.static_invokes %}
         if (sessionId_.has_value()) {
-            auto& jsEngine = getScriptEngine();
-            jsEngine.destroySession(sessionId_.value());
+            auto& scriptEngine = getScriptEngine();
+            scriptEngine.destroySession(sessionId_.value());
         }
         {% endif %}
     }
@@ -409,173 +469,39 @@ struct {{ model.name }}Policy {
         }
     }
 
-    // W3C SCXML 3.6: Get initial children of compound state (supports space-separated descendant targets)
-    static std::vector<State> getInitialChildren(State state) {
-        switch (state) {
-            {% for state_id, state in model.states.items() %}
-            {% if state.initial_children %}
-            case State::{{ state_id | capitalize }}:
-                return {
-                    {%- for child in state.initial_children -%}
-                    State::{{ child | capitalize }}{{ ", " if not loop.last else "" }}
-                    {%- endfor -%}
-                };
-            {% endif %}
-            {% endfor %}
-            default:
-                return {};  // Not compound or no initial child
-        }
-    }
-
-    // W3C SCXML 3.3: Get single initial child (backward compatibility - returns first child)
-    static State getInitialChild(State state) {
-        auto children = getInitialChildren(state);
-        return children.empty() ? state : children[0];
-    }
-
-    // W3C SCXML 3.11: Get initial or history-restored child of compound state
-    // Non-static version that checks history before returning initial child
-    State getInitialOrHistoryChild(State state) const {
-        switch (state) {
-            {% for state_id, state in model.states.items() %}
-            {% if state.initial_history_id %}
-            case State::{{ state_id | capitalize }}:
-                // W3C SCXML 3.11: Check history for {{ state.initial_history_id }}
-                if (history_{{ state.initial_history_id }}.has_value() && !history_{{ state.initial_history_id }}->empty()) {
-                    return history_{{ state.initial_history_id }}->front();  // Restore to first state in history
-                }
-                return getInitialChild(State::{{ state_id | capitalize }});  // No history, use default
-            {% elif state.initial_children %}
-            case State::{{ state_id | capitalize }}:
-                return getInitialChild(State::{{ state_id | capitalize }});
-            {% endif %}
-            {% endfor %}
-            default:
-                return state;  // Not compound or no initial child
-        }
-    }
-
-    // W3C SCXML 3.6: Enter deep initial targets (delegate to StateEntryHelper)
-    {% for state_id, state in model.states.items() %}
-    {% if state.initial_children and state.initial_children|length > 0 %}
-    template<typename Engine>
-    void enterDeepInitialTargets_{{ state_id | capitalize }}(Engine& engine) {
-        // W3C SCXML 3.6: Deep initial targets for {{ state_id }}: initial="{{ state.initial }}"
-        // Delegate to StateEntryHelper (ARCHITECTURE.md Zero Duplication Principle)
-        auto targets = getInitialChildren(State::{{ state_id | capitalize }});
-        
-        // W3C SCXML 3.6: Use StateEntryHelper as Single Source of Truth
-        ::SCE::Core::StateEntryHelper::enterDeepTargets<State>(
-            State::{{ state_id | capitalize }},
-            targets,
-            [](State s) -> std::optional<State> { return {{ model.name }}Policy::getParent(s); },
-            [this, &engine](State s) { this->executeEntryActions(s, engine); }
-        );
-    }
-    {% endif %}
-    {% endfor %}
-
-{% if model.has_parallel_states %}
-    // W3C SCXML 3.4: Check if state is a parallel state
-    static bool isParallelState(State state) {
-        switch (state) {
-            {% for state_id, state in model.states.items() %}
-            {% if state.is_parallel %}
-            case State::{{ state_id | capitalize }}:
-                return true;
-            {% endif %}
-            {% endfor %}
-            default:
-                return false;
-        }
-    }
-
-    // W3C SCXML 3.4: Get child regions of a parallel state
-    static ::std::vector<State> getParallelRegions(State state) {
-        switch (state) {
-            {% for parallel_id, regions in model.parallel_regions.items() %}
-            case State::{{ parallel_id | capitalize }}:
-                return { {% for region in regions %}State::{{ region | capitalize }}{{ ", " if not loop.last }}{% endfor %} };
-            {% endfor %}
-            default:
-                return {};
-        }
-    }
-
-    // W3C SCXML 3.4: Check if descendant is a descendant of ancestor
-    // ARCHITECTURE.MD: Zero Duplication - delegates to HierarchicalStateHelper
-    static bool isDescendantOf(State descendant, State ancestor) {
-        return ::SCE::Core::HierarchicalStateHelper<{{ model.name }}Policy>::isDescendantOf(descendant, ancestor);
-    }
-
-    // W3C SCXML 3.13: Get document order for exit order tie-breaking
-    static int getDocumentOrder(State state) {
-        switch (state) {
-            {% for state_id, state in model.states.items() %}
-            case State::{{ state_id | capitalize }}:
-                return {{ state.document_order }};
-            {% endfor %}
-            default:
-                return 0;
-        }
-    }
-{% endif %}
-
-{% include 'entry_exit_actions.jinja2' %}
-
-    {% include 'process_transition.jinja2' %}
-
-public:
-    {% if model.needs_jsengine or model.static_invokes %}
-    {% include 'jsengine_helpers.jinja2' %}
-    {% endif %}
-
-    {% include 'utility_methods.jinja2' %}
-
-private:
+    // Method implementations in separate .inl file for readability
+    // All large method bodies (entry/exit actions, transitions, script engine, utilities)
+    // are generated into the .inl file and textually included here.
+#include "{{ inl_filename }}"
 };
 
+
 // User-facing state machine class
-{% if model.user_context_objects and model.has_parent_communication %}
-template<typename UserContext, typename ParentStateMachine>
-{% elif model.user_context_objects %}
-template<typename UserContext>
-{% elif model.has_parent_communication %}
-template<typename ParentStateMachine>
+{% if _has_sm_tpl %}
+template<{{ _sm_tpl_params | join(', ') }}>
 {% endif %}
-class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{% if model.user_context_objects and model.has_parent_communication %}{{ model.name }}Policy<UserContext, ParentStateMachine>{% elif model.user_context_objects %}{{ model.name }}Policy<UserContext>{% elif model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %}> {
+{% set _pol_inst = model.name + 'Policy' %}
+{% if _sm_tpl_args %}
+{% set _pol_inst = _pol_inst + '<' + _sm_tpl_args | join(', ') + '>' %}
+{% endif %}
+class {{ model.name }} : public ::SCE::Static::StaticExecutionEngine<{{ _pol_inst }}> {
 public:
     // W3C SCXML: Policy type alias for test infrastructure
-    using PolicyType = {% if model.user_context_objects and model.has_parent_communication %}{{ model.name }}Policy<UserContext, ParentStateMachine>{% elif model.user_context_objects %}{{ model.name }}Policy<UserContext>{% elif model.has_parent_communication %}{{ model.name }}Policy<ParentStateMachine>{% elif model.static_invokes %}{{ model.name }}Policy<{{ model.name }}>{% else %}{{ model.name }}Policy{% endif %};
+    using PolicyType = {{ _pol_inst }};
 
-{% if model.user_context_objects and model.has_parent_communication %}
-    // W3C SCXML 6.2: Parent state machine pointer for #_parent support (Zero Overhead)
-    // W3C SCXML 6.5: childSessionId for finalize origin matching (test233)
-    // UserContext: Dependency injection for C++ function integration
-    explicit {{ model.name }}(UserContext& user, ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = "") {
-        this->policy_.user_ = &user;
+{% if model.context_objects or model.has_parent_communication %}
+    explicit {{ model.name }}(
+        {%- for ctx in model.context_objects %}{% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}& {{ ctx.id }}{{ ', ' if not loop.last or model.has_parent_communication }}{% endfor %}
+        {%- if model.has_parent_communication %}ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = ""{% endif -%}
+    ) {
+        {% for ctx in model.context_objects %}
+        this->policy_.{{ ctx.id }}_ = &{{ ctx.id }};
+        {% endfor %}
+        {% if model.has_parent_communication %}
         this->policy_.parent_ = parent;
         this->policy_.invokeId_ = invokeId;
         this->policy_.childSessionId_ = childSessionId;
-        {% if model.static_invokes %}
-        this->policy_.self_ = this;
         {% endif %}
-    }
-{% elif model.user_context_objects %}
-    // UserContext: Dependency injection for C++ function integration
-    explicit {{ model.name }}(UserContext& user) {
-        this->policy_.user_ = &user;
-        {% if model.static_invokes %}
-        this->policy_.self_ = this;
-        {% endif %}
-    }
-{% elif model.has_parent_communication %}
-    // W3C SCXML 6.2: Parent state machine pointer for #_parent support (Zero Overhead)
-    // W3C SCXML 6.5: childSessionId for finalize origin matching (test233)
-    explicit {{ model.name }}(ParentStateMachine* parent, const std::string& invokeId = "", const std::string& childSessionId = "") {
-        this->policy_.parent_ = parent;
-        this->policy_.invokeId_ = invokeId;
-        this->policy_.childSessionId_ = childSessionId;
         {% if model.static_invokes %}
         this->policy_.self_ = this;
         {% endif %}
@@ -588,25 +514,27 @@ public:
     {{ model.name }}() = default;
 {% endif %}
 
-{% if model.needs_jsengine %}
+{% if model.needs_script_engine %}
     // W3C SCXML 6.4.1: Wrapper for setting invoke params (delegates to policy)
-    void setParamInJSEngine(const std::string& paramName, const std::string& paramExpr) {
-        this->policy_.setParamInJSEngine(paramName, paramExpr);
+    void setParamInScriptEngine(const std::string& paramName, const std::string& paramExpr) {
+        this->policy_.setParamInScriptEngine(paramName, paramExpr);
     }
 {% endif %}
 };
 
 // W3C SCXML: Compile-time StatePolicy interface verification
 // Ensures generated policy satisfies required concepts (see core/StatePolicyConcepts.h)
-{% if model.user_context_objects or model.has_parent_communication or model.static_invokes %}
+{% if _has_tpl %}
 // Template class — concept verified at instantiation (cannot static_assert uninstantiated templates)
 {% else %}
+#if __cpp_concepts >= 202002L
 static_assert(::SCE::Core::EventNamingPolicy<{{ model.name }}Policy>,
     "Generated {{ model.name }}Policy must satisfy EventNamingPolicy concept");
 {% if model.has_parallel_states %}
 static_assert(::SCE::Core::ParallelStatePolicy<{{ model.name }}Policy>,
     "Generated {{ model.name }}Policy must satisfy ParallelStatePolicy concept (HAS_PARALLEL_STATES=true)");
 {% endif %}
+#endif
 {% endif %}
 
 } // namespace SCE::Generated::{{ model.name }}

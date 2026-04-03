@@ -1,0 +1,340 @@
+{#
+    Kotlin Process Event Template
+
+    W3C SCXML 3.12: Event processing — pure function mapping (State, Event) -> TransitionResult.
+
+    Generates:
+    - processEvent() dispatching to per-state handlers
+    - processNullEvent() for eventless transitions (W3C SCXML Appendix D)
+    - Per-state handler functions with exhaustive when expressions
+    - W3C SCXML 3.13: Ancestor transition routing (child -> parent -> grandparent)
+    - Three-way condition pattern: In() predicate | safeEvaluateGuard() | static Kotlin
+    - History state target resolution (W3C SCXML 3.11)
+    - Multi-descriptor event matching (W3C SCXML 3.12.1)
+#}
+{# --- Macro for rendering a condition expression (three-way pattern) --- #}
+{# Returns a Kotlin boolean expression string for use in when {} branches #}
+{% macro render_cond(trans) -%}
+{% if trans.is_pure_in_predicate -%}
+{{ trans.cond_kt }}
+{%- elif trans.is_kt_condition -%}
+{{ trans.cond_kt }}
+{%- elif model.needs_script_engine and trans.cond and not trans.is_cpp_condition -%}
+safeEvaluateGuard("{{ trans.cond | escape_kotlin }}")
+{%- elif trans.cond and not trans.is_cpp_condition -%}
+{{ trans.cond }}
+{%- endif -%}
+{%- endmacro %}
+{# --- Macro for rendering transition result (External/InternalToTarget/Internal) --- #}
+{# Handles: true internal with target (InternalToTarget), external with ancestor source, targetless internal #}
+{% macro render_result(trans, target_expr, state_id) -%}
+{% if trans.is_true_internal is defined and trans.is_true_internal -%}
+TransitionResult.InternalToTarget({{ target_expr }}, {{ machine_name }}State.{{ trans.internal_source | to_state_class_name }})
+{%- elif trans.type == 'internal' and not trans.target -%}
+TransitionResult.Internal
+{%- else -%}
+TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
+{%- endif -%}
+{%- endmacro %}
+{# --- Macro for null event transition result (no transitionSource needed) --- #}
+{% macro render_null_result(target_expr) -%}
+TransitionResult.External({{ target_expr }})
+{%- endmacro %}
+{% if model.needs_script_engine %}
+    // W3C SCXML 3.12: Event processing with script engine condition evaluation
+    override fun processEvent(
+        state: {{ machine_name }}State,
+        event: {{ machine_name }}Event
+    ): TransitionResult<{{ machine_name }}State> {
+        // W3C SCXML 5.10: Set _event before guard evaluation
+        setCurrentEventInScriptEngine(event)
+        return when (state) {
+{% else %}
+    // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
+    override fun processEvent(
+        state: {{ machine_name }}State,
+        event: {{ machine_name }}Event
+    ): TransitionResult<{{ machine_name }}State> = when (state) {
+{% endif %}
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% if not state.is_parallel %}
+{% set ancestors = ancestor_chains[state_id] %}
+{# Check if state has any event-based or wildcard transitions (excluding eventless) #}
+{% set ns_self = namespace(has_event_trans=false) %}
+{% for trans in state.transitions %}
+{% if trans.event %}
+{% set ns_self.has_event_trans = true %}
+{% endif %}
+{% endfor %}
+{# Collect ancestor IDs that have event-based transitions #}
+{% set ns_anc = namespace(ids=[]) %}
+{% for anc_id in ancestors %}
+{% set ns_anc_event = namespace(has=false) %}
+{% for trans in model.states[anc_id].transitions %}
+{% if trans.event %}
+{% set ns_anc_event.has = true %}
+{% endif %}
+{% endfor %}
+{% if ns_anc_event.has %}
+{% set ns_anc.ids = ns_anc.ids + [anc_id] %}
+{% endif %}
+{% endfor %}
+{% if ns_self.has_event_trans and ns_anc.ids | length > 0 %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+            val result = process{{ state_id | to_state_class_name }}(event)
+            // W3C SCXML 3.13: Ancestor transition routing
+            if (result !is TransitionResult.Ignored) result
+{% for anc_id in ns_anc.ids %}
+            else {
+                val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
+                if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
+{% endfor %}
+            else TransitionResult.Ignored
+{% for anc_id in ns_anc.ids %}
+            }
+{% endfor %}
+        }
+{% elif ns_self.has_event_trans %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> process{{ state_id | to_state_class_name }}(event)
+{% elif ns_anc.ids | length > 0 %}
+        // W3C SCXML 3.13: Ancestor-only routing ({{ state_id }} has no own event transitions)
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% for anc_id in ns_anc.ids %}
+{% if loop.first %}
+            val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
+            if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
+{% else %}
+            else {
+                val anc{{ loop.index }} = process{{ anc_id | to_state_class_name }}(event)
+                if (anc{{ loop.index }} !is TransitionResult.Ignored) anc{{ loop.index }}
+{% endif %}
+{% endfor %}
+            else TransitionResult.Ignored
+{% for anc_id in ns_anc.ids %}
+{% if not loop.first %}
+            }
+{% endif %}
+{% endfor %}
+        }
+{% endif %}
+{# else: no event transitions anywhere -> falls to else -> Ignored #}
+{% endif %}
+{% endfor %}
+        else -> TransitionResult.Ignored
+    }
+{% if model.needs_script_engine %}
+    }
+{% endif %}
+
+{% set ns_has_eventless = namespace(value=false) %}
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target %}
+{% set ns_has_eventless.value = true %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% if ns_has_eventless.value %}
+    // W3C SCXML Appendix D: Eventless (null) transition check
+    override fun processNullEvent(
+        state: {{ machine_name }}State
+    ): TransitionResult<{{ machine_name }}State> = when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% if not state.is_parallel %}
+{# Check if this state has eventless transitions (self or ancestors) #}
+{% set ns_null_self = namespace(has=false) %}
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target %}
+{% set ns_null_self.has = true %}
+{% endif %}
+{% endfor %}
+{# Check ancestor eventless transitions #}
+{% set ancestors = ancestor_chains[state_id] %}
+{% set ns_null_anc = namespace(ids=[]) %}
+{% for anc_id in ancestors %}
+{% set ns_anc_null = namespace(has=false) %}
+{% for trans in model.states[anc_id].transitions %}
+{% if not trans.event and trans.target %}
+{% set ns_anc_null.has = true %}
+{% endif %}
+{% endfor %}
+{% if ns_anc_null.has %}
+{% set ns_null_anc.ids = ns_null_anc.ids + [anc_id] %}
+{% endif %}
+{% endfor %}
+{# Collect all null sources: self first, then ancestors #}
+{% set ns_null_sources = namespace(ids=[]) %}
+{% if ns_null_self.has %}
+{% set ns_null_sources.ids = ns_null_sources.ids + [state_id] %}
+{% endif %}
+{% for anc_id in ns_null_anc.ids %}
+{% set ns_null_sources.ids = ns_null_sources.ids + [anc_id] %}
+{% endfor %}
+{% if ns_null_sources.ids | length == 1 %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> processNull{{ ns_null_sources.ids[0] | to_state_class_name }}()
+{% elif ns_null_sources.ids | length > 1 %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
+{% for src_id in ns_null_sources.ids %}
+{% if loop.first %}
+            val null{{ loop.index }} = processNull{{ src_id | to_state_class_name }}()
+            if (null{{ loop.index }} !is TransitionResult.Ignored) null{{ loop.index }}
+{% else %}
+            else {
+                val null{{ loop.index }} = processNull{{ src_id | to_state_class_name }}()
+                if (null{{ loop.index }} !is TransitionResult.Ignored) null{{ loop.index }}
+{% endif %}
+{% endfor %}
+            else TransitionResult.Ignored
+{% for src_id in ns_null_sources.ids %}
+{% if not loop.first %}
+            }
+{% endif %}
+{% endfor %}
+        }
+{% endif %}
+{% endif %}
+{% endfor %}
+        else -> TransitionResult.Ignored
+    }
+
+    // --- Per-State Null (Eventless) Handlers ---
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% set ns_null = namespace(has=false) %}
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target %}
+{% set ns_null.has = true %}
+{% endif %}
+{% endfor %}
+{% if ns_null.has %}
+
+    private fun processNull{{ state_id | to_state_class_name }}(
+    ): TransitionResult<{{ machine_name }}State> = when {
+{% set ns_rendered_else = namespace(done=false) %}
+{% for trans in state.transitions %}
+{% if not trans.event and trans.target and not ns_rendered_else.done %}
+{# --- Determine target expression (history resolution) --- #}
+{% if trans.history_target is defined %}
+{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
+{% else %}
+{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
+{% endif %}
+{% if trans.cond %}
+        {{ render_cond(trans) }} -> TransitionResult.External({{ target_expr }})
+{% else %}
+        // W3C SCXML 3.13: First unconditional transition wins (document order)
+        else -> TransitionResult.External({{ target_expr }})
+{% set ns_rendered_else.done = true %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% if not ns_rendered_else.done %}
+        else -> TransitionResult.Ignored
+{% endif %}
+    }
+{% endif %}
+{% endfor %}
+{% endif %}
+
+    // --- Per-State Event Handlers ---
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{# Only generate handler if state has event-based transitions #}
+{% set ns_event = namespace(has=false) %}
+{% for trans in state.transitions %}
+{% if trans.event %}
+{% set ns_event.has = true %}
+{% endif %}
+{% endfor %}
+{% if ns_event.has %}
+{# --- Pre-scan for wildcards --- #}
+{% set ns = namespace(has_wildcard=false) %}
+{% for trans in state.transitions %}
+{% if trans.event == '*' or trans.event == '.*' %}
+{% set ns.has_wildcard = true %}
+{% endif %}
+{% endfor %}
+
+    private fun process{{ state_id | to_state_class_name }}(
+        event: {{ machine_name }}Event
+    ): TransitionResult<{{ machine_name }}State> = when {
+{# --- Event-based transitions --- #}
+{% for trans in state.transitions %}
+{% if trans.event and trans.event != '*' and trans.event != '.*' and trans.target %}
+{# --- Determine target expression (history resolution) --- #}
+{% if trans.history_target is defined %}
+{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
+{% else %}
+{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
+{% endif %}
+{# --- Resolve effective event name(s) via prefix matching --- #}
+{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
+        // W3C SCXML 3.12.1: Prefix match for "{{ trans.event }}"
+        ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
+{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> {{ render_result(trans, target_expr, state_id) }}
+
+{% else %}
+{# --- Resolve single event --- #}
+{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
+{% set resolved_event = trans.prefix_matching_events[0] %}
+{% else %}
+{% set resolved_event = trans.event %}
+{% endif %}
+{% if trans.cond %}
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> {{ render_result(trans, target_expr, state_id) }}
+
+{% else %}
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> {{ render_result(trans, target_expr, state_id) }}
+
+{% endif %}
+{% endif %}
+{% elif trans.event and trans.event != '*' and trans.event != '.*' and not trans.target %}
+{# --- Targetless transitions --- #}
+{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length > 1 %}
+        // W3C SCXML 3.12.1: Multi-descriptor targetless "{{ trans.event }}"
+        ({% for matched_event in trans.prefix_matching_events | sort %}event is {{ machine_name }}Event.{{ matched_event | to_event_class_name }}{% if not loop.last %} || {% endif %}{% endfor %})
+{%- if trans.cond %} && {{ render_cond(trans) }}{% endif %} -> TransitionResult.Internal
+{% else %}
+{% if trans.prefix_matching_events is defined and trans.prefix_matching_events | length == 1 %}
+{% set resolved_event = trans.prefix_matching_events[0] %}
+{% else %}
+{% set resolved_event = trans.event %}
+{% endif %}
+{% if trans.cond %}
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} && {{ render_cond(trans) }} -> TransitionResult.Internal
+{% else %}
+        // W3C SCXML 3.13: Targetless transition (actions only)
+        event is {{ machine_name }}Event.{{ resolved_event | to_event_class_name }} -> TransitionResult.Internal
+{% endif %}
+{% endif %}
+{% endif %}
+{% endfor %}
+{# --- Wildcard transition as else --- #}
+{% if ns.has_wildcard %}
+{% for trans in state.transitions %}
+{% if trans.event == '*' or trans.event == '.*' %}
+{% if trans.history_leaf_target is defined %}
+{% set target_expr = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% else %}
+{% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
+{% endif %}
+{% if trans.target %}
+        // W3C SCXML 3.12.1: Wildcard transition
+        else -> TransitionResult.External({{ target_expr }})
+{% else %}
+        // W3C SCXML 3.12.1: Wildcard targetless transition
+        else -> TransitionResult.Internal
+{% endif %}
+{% endif %}
+{% endfor %}
+{% else %}
+        else -> TransitionResult.Ignored
+{% endif %}
+    }
+{% endif %}
+{% endfor %}

@@ -1,0 +1,38 @@
+{# W3C SCXML 3.8.5: <if>/<elseif>/<else> — conditional execution
+   Three-way condition: In() predicate | safeEvaluateGuard() | static Kotlin #}
+{# Save outer action to avoid scoping conflict with nested action includes #}
+{% set outer_if_action = action %}
+{% if outer_if_action.is_pure_in_predicate and outer_if_action.cond_kt %}
+            if ({{ outer_if_action.cond_kt }}) {
+{% elif model.needs_script_engine and outer_if_action.cond %}
+            if (safeEvaluateGuard("{{ outer_if_action.cond | escape_kotlin }}")) {
+{% elif outer_if_action.cond %}
+            if ({{ outer_if_action.cond }}) {
+{% endif %}
+{% for then_action in outer_if_action.then_actions %}
+{% set action = then_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% for elseif in outer_if_action.elseif_branches %}
+{% if elseif.is_pure_in_predicate and elseif.cond_kt %}
+            } else if ({{ elseif.cond_kt }}) {
+{% elif model.needs_script_engine and elseif.cond %}
+            } else if (safeEvaluateGuard("{{ elseif.cond | escape_kotlin }}")) {
+{% else %}
+            } else if ({{ elseif.cond }}) {
+{% endif %}
+{% for elif_action in elseif.actions %}
+{% set action = elif_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+{% endfor %}
+{% if outer_if_action.else_actions %}
+            } else {
+{% for else_action in outer_if_action.else_actions %}
+{% set action = else_action %}
+{% include 'actions/_render.kt.jinja2' with context %}
+{% endfor %}
+            }
+{% else %}
+            }
+{% endif %}
