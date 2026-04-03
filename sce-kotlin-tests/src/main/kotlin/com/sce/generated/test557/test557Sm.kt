@@ -62,6 +62,7 @@ class Test557StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test557State): Int = when (state) {
         is Test557State.Fail -> 3
@@ -103,11 +104,16 @@ class Test557StateMachine(
         } catch (e: Exception) {
             raiseInternal(Test557Event.Error.Execution)
         }
-        // W3C SCXML 5.2: Runtime variable 'var2' (late binding, undefined)
+        // W3C SCXML 5.2.2: Load variable 'var2' from external source (C++ DataModelInitHelper pattern)
         try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "var2", null)
-        } catch (_: Exception) {}
+            val srcContent_var2 = engine.loadDataFromSrc("file:test557.txt", "resources/557")
+            if (srcContent_var2 != null) {
+                val srcValue_var2 = engine.evaluateExpr(sid, srcContent_var2)
+                engine.setVariable(sid, "var2", srcValue_var2)
+            }
+        } catch (e: Exception) {
+            raiseInternal(Test557Event.Error.Execution)
+        }
 
 
 
@@ -215,16 +221,16 @@ class Test557StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test557State> = when {
-        safeEvaluateGuard("var1.getElementsByTagName('book')[0].getAttribute('title') == 'title1'") -> TransitionResult.External(Test557State.S1)
+        safeEvaluateGuard("var1.getElementsByTagName('book')[0].getAttribute('title') == 'title1'") -> TransitionResult.External(Test557State.S1, Test557State.S0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test557State.Fail)
+        else -> TransitionResult.External(Test557State.Fail, Test557State.S0)
     }
 
     private fun processNullS1(
     ): TransitionResult<Test557State> = when {
-        safeEvaluateGuard("var2.getElementsByTagName('book')[1].getAttribute('title') == 'title2'") -> TransitionResult.External(Test557State.Pass)
+        safeEvaluateGuard("var2.getElementsByTagName('book')[1].getAttribute('title') == 'title2'") -> TransitionResult.External(Test557State.Pass, Test557State.S1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test557State.Fail)
+        else -> TransitionResult.External(Test557State.Fail, Test557State.S1)
     }
 
     // --- Per-State Event Handlers ---

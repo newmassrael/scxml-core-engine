@@ -314,6 +314,20 @@ class RhinoScriptEngine : ScxmlScriptEngine {
     }
 
     /**
+     * W3C SCXML 5.2.2: Load external data source content at runtime.
+     * C++ DataModelInitHelper::initializeVariableFromSrc pattern.
+     */
+    override fun loadDataFromSrc(src: String, basePath: String): String? {
+        val filename = if (src.startsWith("file:")) src.substring(5) else src
+        val file = java.io.File(basePath, filename)
+        return try {
+            file.readText(Charsets.UTF_8).trim()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * W3C SCXML B.2: Validate ECMAScript variable name.
      * Mirrors C++ ForeachHelper::isLegalVariableName().
      */

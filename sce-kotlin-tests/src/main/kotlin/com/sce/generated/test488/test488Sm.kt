@@ -83,6 +83,7 @@ class Test488StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test488State): Int = when (state) {
         is Test488State.Fail -> 5
@@ -242,7 +243,7 @@ class Test488StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test488State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test488State.S02)
+        else -> TransitionResult.External(Test488State.S02, Test488State.S01)
     }
 
     // --- Per-State Event Handlers ---
@@ -265,7 +266,7 @@ class Test488StateMachine(
         event is Test488Event.Done.State.S0 -> TransitionResult.External(Test488State.Pass, Test488State.S1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test488State.Fail)
+        else -> TransitionResult.External(Test488State.Fail, Test488State.S1)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -300,14 +301,17 @@ class Test488StateMachine(
                     val engineDD = scriptEngine ?: return@run
                     val sidDD = scriptSessionId ?: return@run
                     var doneEventData = ""
-                    // W3C SCXML 5.5: Evaluate <param> elements
+                    // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
+                    var doneParamStructuralError = false
                     try {
                         doneParams["someParam"] = engineDD.evaluateExpr(sidDD, "undefined.invalidProperty")
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
                         raiseInternal(Test488Event.Error.Execution, EventMetadata.platform())
                     }
+                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
+                    if (doneParamStructuralError) return@run
                     if (doneParams.isNotEmpty()) {
                         doneEventData = buildJsonFromParams(doneParams)
                     }

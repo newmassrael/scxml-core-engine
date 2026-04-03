@@ -62,6 +62,7 @@ class Test149StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test149State): Int = when (state) {
         is Test149State.Fail -> 2
@@ -212,7 +213,7 @@ class Test149StateMachine(
         event is Test149Event.Bat && safeEvaluateGuard("Var1 == 0") -> TransitionResult.External(Test149State.Pass, Test149State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test149State.Fail)
+        else -> TransitionResult.External(Test149State.Fail, Test149State.S0)
     }
 
     // Entry Actions (W3C SCXML 3.8)

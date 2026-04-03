@@ -59,6 +59,7 @@ class Test153StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test153State): Int = when (state) {
         is Test153State.Fail -> 2
@@ -224,9 +225,9 @@ class Test153StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test153State> = when {
-        safeEvaluateGuard("Var4 == 0") -> TransitionResult.External(Test153State.Fail)
+        safeEvaluateGuard("Var4 == 0") -> TransitionResult.External(Test153State.Fail, Test153State.S0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test153State.Pass)
+        else -> TransitionResult.External(Test153State.Pass, Test153State.S0)
     }
 
     // --- Per-State Event Handlers ---

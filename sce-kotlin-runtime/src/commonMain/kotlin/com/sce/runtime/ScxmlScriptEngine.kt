@@ -194,6 +194,18 @@ interface ScxmlScriptEngine {
         index: String,
         body: () -> Unit
     )
+
+    /**
+     * W3C SCXML 5.2.2: Load external data source content at runtime.
+     *
+     * C++ DataModelInitHelper::initializeVariableFromSrc pattern.
+     * Resolves file:// URIs relative to [basePath] and returns file content.
+     *
+     * @param src Source URI (e.g., "file:test552.txt")
+     * @param basePath Base directory for relative path resolution
+     * @return File content as string, or null if resolution fails
+     */
+    fun loadDataFromSrc(src: String, basePath: String): String? = null
 }
 
 /**

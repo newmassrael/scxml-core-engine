@@ -61,6 +61,7 @@ class Test518StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test518State): Int = when (state) {
         is Test518State.Fail -> 2
@@ -209,7 +210,7 @@ class Test518StateMachine(
         event is Test518Event.Test -> TransitionResult.External(Test518State.Pass, Test518State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test518State.Fail)
+        else -> TransitionResult.External(Test518State.Fail, Test518State.S0)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -237,7 +238,15 @@ class Test518StateMachine(
                 val engineE = scriptEngine ?: return@run
                 val sidE = scriptSessionId ?: return@run
                 val paramsE = mutableMapOf<String, Any?>()
-                try { paramsE["Var1"] = engineE.getVariable(sidE, "Var1") } catch (_: Exception) {}
+                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
+                if (!engineE.hasVariable(sidE, "Var1")) {
+                    raiseInternal(Test518Event.Error.Execution)
+                    return@run  // W3C SCXML 6.2: Abort send if namelist variable not found
+                }
+                try { paramsE["Var1"] = engineE.getVariable(sidE, "Var1") } catch (_: Exception) {
+                    raiseInternal(Test518Event.Error.Execution)
+                    return@run
+                }
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test518Event.Test, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
             }

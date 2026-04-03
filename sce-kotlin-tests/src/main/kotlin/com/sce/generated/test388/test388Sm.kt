@@ -111,6 +111,7 @@ class Test388StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test388State): Int = when (state) {
         is Test388State.Fail -> 10
@@ -316,13 +317,13 @@ class Test388StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test388State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External((historyStore["s0HistDeep"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test388State.S022))
+        else -> TransitionResult.External((historyStore["s0HistDeep"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test388State.S022), Test388State.S1)
     }
 
     private fun processNullS2(
     ): TransitionResult<Test388State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External((historyStore["s0HistShallow"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test388State.S021))
+        else -> TransitionResult.External((historyStore["s0HistShallow"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test388State.S021), Test388State.S2)
     }
 
     // --- Per-State Event Handlers ---

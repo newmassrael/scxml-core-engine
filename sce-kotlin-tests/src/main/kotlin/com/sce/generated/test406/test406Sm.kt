@@ -96,6 +96,18 @@ class Test406StateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test406State): Boolean = when (state) {
+        is Test406State.S0p2 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test406State): List<Test406State> = when (state) {
+        is Test406State.S0p2 -> listOf(Test406State.S01p21, Test406State.S01p22)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test406State): Int = when (state) {
         is Test406State.Fail -> 9
@@ -191,7 +203,7 @@ class Test406StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test406State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test406State.S0p2)
+        else -> TransitionResult.External(Test406State.S0p2, Test406State.S01)
     }
 
     // --- Per-State Event Handlers ---
@@ -210,7 +222,7 @@ class Test406StateMachine(
         event is Test406Event.Event2 -> TransitionResult.External(Test406State.S04, Test406State.S03)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test406State.Fail)
+        else -> TransitionResult.External(Test406State.Fail, Test406State.S03)
     }
 
     private fun processS04(
@@ -219,7 +231,7 @@ class Test406StateMachine(
         event is Test406Event.Event3 -> TransitionResult.External(Test406State.S05, Test406State.S04)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test406State.Fail)
+        else -> TransitionResult.External(Test406State.Fail, Test406State.S04)
     }
 
     private fun processS05(
@@ -228,7 +240,7 @@ class Test406StateMachine(
         event is Test406Event.Event4 -> TransitionResult.External(Test406State.Pass, Test406State.S05)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test406State.Fail)
+        else -> TransitionResult.External(Test406State.Fail, Test406State.S05)
     }
 
     private fun processS0p2(
@@ -258,8 +270,10 @@ class Test406StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test406Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test406State.S01)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test406State.S01)
+                }
             }
             is Test406State.S01 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -291,7 +305,8 @@ class Test406StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0p2")) return
             raiseInternal(Test406Event.Event2)
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test406State.S01p21)
                 onEntry(Test406State.S01p22)
             }

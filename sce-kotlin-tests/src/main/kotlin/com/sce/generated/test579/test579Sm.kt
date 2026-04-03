@@ -89,6 +89,7 @@ class Test579StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test579State): Int = when (state) {
         is Test579State.Fail -> 7
@@ -251,7 +252,7 @@ class Test579StateMachine(
         event is Test579Event.Event1 -> TransitionResult.External(Test579State.S02, Test579State.S01)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test579State.Fail)
+        else -> TransitionResult.External(Test579State.Fail, Test579State.S01)
     }
 
     private fun processS02(
@@ -260,7 +261,7 @@ class Test579StateMachine(
         event is Test579Event.Event2 -> TransitionResult.External(Test579State.S03, Test579State.S02)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test579State.Fail)
+        else -> TransitionResult.External(Test579State.Fail, Test579State.S02)
     }
 
     private fun processS03(
@@ -271,7 +272,7 @@ class Test579StateMachine(
         event is Test579Event.Event1 && safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test579State.S2, Test579State.S03)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test579State.Fail)
+        else -> TransitionResult.External(Test579State.Fail, Test579State.S03)
     }
 
     private fun processS2(
@@ -280,7 +281,7 @@ class Test579StateMachine(
         event is Test579Event.Event2 -> TransitionResult.External(Test579State.S3, Test579State.S2)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test579State.Fail)
+        else -> TransitionResult.External(Test579State.Fail, Test579State.S2)
     }
 
     private fun processS3(
@@ -313,24 +314,26 @@ class Test579StateMachine(
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test579Event.Timeout)
             raiseInternal(Test579Event.Event1)
-                // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
             raiseInternal(Test579Event.Event2)
-                // W3C SCXML 3.11: Execute history default transition content only if no stored history
-                if (!historyStore.containsKey("sh1") || historyStore["sh1"].isNullOrEmpty()) {
+                    // W3C SCXML 3.11: Execute history default transition content only if no stored history
+                    if (!historyStore.containsKey("sh1") || historyStore["sh1"].isNullOrEmpty()) {
             raiseInternal(Test579Event.Event3)
-                }
-                // W3C SCXML 3.11: Enter history-restored state or default target
-                run {
-                    val stored = historyStore["sh1"]
-                    if (stored != null && stored.isNotEmpty()) {
-                        val histTarget = resolveState(stored[0])
-                        if (histTarget != null) {
-                            onEntry(histTarget)
+                    }
+                    // W3C SCXML 3.11: Enter history-restored state or default target
+                    run {
+                        val stored = historyStore["sh1"]
+                        if (stored != null && stored.isNotEmpty()) {
+                            val histTarget = resolveState(stored[0])
+                            if (histTarget != null) {
+                                onEntry(histTarget)
+                            } else {
+                                onEntry(Test579State.S01)
+                            }
                         } else {
                             onEntry(Test579State.S01)
                         }
-                    } else {
-                        onEntry(Test579State.S01)
                     }
                 }
             }

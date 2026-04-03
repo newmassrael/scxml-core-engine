@@ -70,12 +70,14 @@
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+{% set in_run_block = true %}
 {% for action in block %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
                 }
 {% endfor %}
 {% else %}
+{% set in_run_block = false %}
 {% for action in state.on_entry %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
@@ -161,26 +163,35 @@
                         raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
                     }
 {% elif state.donedata.params %}
-                    // W3C SCXML 5.5: Evaluate <param> elements
+                    // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
+                    var doneParamStructuralError = false
 {% for param in state.donedata.params %}
-{% if param.expr %}
+{% if param.expr is not none %}
                     try {
                         doneParams["{{ param.name }}"] = engineDD.evaluateExpr(sidDD, "{{ param.expr | escape_kotlin }}")
                     } catch (_: Exception) {
                         // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
                         raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
                     }
-{% elif param.location %}
+{% elif param.location is not none %}
+{% if param.location %}
                     try {
                         val locVal = engineDD.evaluateExpr(sidDD, "{{ param.location }}")
                         doneParams["{{ param.name }}"] = locVal
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Invalid location — raise error.execution but continue
+                        // W3C SCXML 5.7: Runtime location error — raise error.execution but continue
                         raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
                     }
+{% else %}
+                    // W3C SCXML 5.7: Empty location — structural error (C++ DoneDataHelper returns false)
+                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    doneParamStructuralError = true
+{% endif %}
 {% endif %}
 {% endfor %}
+                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
+                    if (doneParamStructuralError) return@run
                     if (doneParams.isNotEmpty()) {
                         doneEventData = buildJsonFromParams(doneParams)
                     }
@@ -203,63 +214,71 @@
                     raiseInternal({{ machine_name }}Event.{{ ("done.state." ~ parallel_grandparent_id) | to_event_ref }})
                 }
 {% endif %}
+{# C++ executeEntryActions vs buildEntryChain separation:
+   When suppressChildEntry is true, only entry actions execute (no child entry).
+   This matches C++ where ancestors use executeEntryActions() and only
+   the target gets full child entry via buildEntryChain. #}
 {% if has_parallel_children %}
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
 {% for region_id in model.parallel_regions[state_id] %}
                 onEntry({{ machine_name }}State.{{ region_id | to_state_class_name }})
 {% endfor %}
 {% elif has_initial_history %}
+                if (!suppressChildEntry) {
 {% if state.initial_transition_actions %}
-                // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
+                    // W3C SCXML 3.3.2: Execute initial transition content (always, even with stored history)
 {% for action in state.initial_transition_actions %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}
 {% if state.initial_history_default_actions %}
-                // W3C SCXML 3.11: Execute history default transition content only if no stored history
-                if (!historyStore.containsKey("{{ state.initial_history_id }}") || historyStore["{{ state.initial_history_id }}"].isNullOrEmpty()) {
+                    // W3C SCXML 3.11: Execute history default transition content only if no stored history
+                    if (!historyStore.containsKey("{{ state.initial_history_id }}") || historyStore["{{ state.initial_history_id }}"].isNullOrEmpty()) {
 {% for action in state.initial_history_default_actions %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
-                }
+                    }
 {% endif %}
-                // W3C SCXML 3.11: Enter history-restored state or default target
-                run {
-                    val stored = historyStore["{{ state.initial_history_id }}"]
-                    if (stored != null && stored.isNotEmpty()) {
-                        val histTarget = resolveState(stored[0])
-                        if (histTarget != null) {
-                            onEntry(histTarget)
+                    // W3C SCXML 3.11: Enter history-restored state or default target
+                    run {
+                        val stored = historyStore["{{ state.initial_history_id }}"]
+                        if (stored != null && stored.isNotEmpty()) {
+                            val histTarget = resolveState(stored[0])
+                            if (histTarget != null) {
+                                onEntry(histTarget)
+                            } else {
+                                onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+                            }
                         } else {
                             onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
                         }
-                    } else {
-                        onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
                     }
                 }
 {% elif model.parallel_regions and has_deep_initial %}
-{# C++ pattern: only enter initial children in onEntry for parallel SMs.
-   Non-parallel SMs use buildEntryChain in the runtime. #}
+                if (!suppressChildEntry) {
 {% if state.initial_transition_actions %}
-                // W3C SCXML 3.3.2: Execute initial transition content
+                    // W3C SCXML 3.3.2: Execute initial transition content
 {% for action in state.initial_transition_actions %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}
-                // W3C SCXML 3.6: Enter deep initial targets (C++ enterDeepInitialTargets pattern)
+                    // W3C SCXML 3.6: Enter deep initial targets (C++ enterDeepInitialTargets pattern)
 {% for entry in deep_initial_entries[state_id] %}
-                onEntry({{ machine_name }}State.{{ entry.id | to_state_class_name }})
+                    onEntry({{ machine_name }}State.{{ entry.id | to_state_class_name }})
 {% endfor %}
+                }
 {% elif model.parallel_regions and has_initial_child %}
-{# C++ pattern: only enter initial children in onEntry for parallel SMs. #}
+                if (!suppressChildEntry) {
 {% if state.initial_transition_actions %}
-                // W3C SCXML 3.3.2: Execute initial transition content
+                    // W3C SCXML 3.3.2: Execute initial transition content
 {% for action in state.initial_transition_actions %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry({{ machine_name }}State.{{ state.initial | to_state_class_name }})
+                }
 {% elif state.initial_transition_actions %}
                 // W3C SCXML 3.3.2: Execute initial transition content
 {% for action in state.initial_transition_actions %}
@@ -331,12 +350,14 @@
                 // C++ EntryExitHelper pattern: each block executes independently
                 // Action-level error handling (try-catch in each action) provides isolation
                 run {
+{% set in_run_block = true %}
 {% for action in block %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
                 }
 {% endfor %}
 {% else %}
+{% set in_run_block = false %}
 {% for action in state.on_exit %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}

@@ -53,6 +53,7 @@ class Test189StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test189State): Int = when (state) {
         is Test189State.Fail -> 2

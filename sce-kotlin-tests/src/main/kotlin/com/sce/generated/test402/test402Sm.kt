@@ -83,6 +83,7 @@ class Test402StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test402State): Int = when (state) {
         is Test402State.Fail -> 5
@@ -269,7 +270,7 @@ class Test402StateMachine(
         event is Test402Event.Event1 -> TransitionResult.External(Test402State.S02, Test402State.S01)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test402State.Fail)
+        else -> TransitionResult.External(Test402State.Fail, Test402State.S01)
     }
 
     private fun processS02(
@@ -279,7 +280,7 @@ class Test402StateMachine(
         (event is Test402Event.Error || event is Test402Event.Error.Execution) -> TransitionResult.External(Test402State.S03, Test402State.S02)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test402State.Fail)
+        else -> TransitionResult.External(Test402State.Fail, Test402State.S02)
     }
 
     private fun processS03(
@@ -288,7 +289,7 @@ class Test402StateMachine(
         event is Test402Event.Event2 -> TransitionResult.External(Test402State.Pass, Test402State.S03)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test402State.Fail)
+        else -> TransitionResult.External(Test402State.Fail, Test402State.S03)
     }
 
     // Entry Actions (W3C SCXML 3.8)

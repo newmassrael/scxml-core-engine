@@ -34,6 +34,17 @@
         } catch (e: Exception) {
             raiseInternal({{ machine_name }}Event.Error.Execution)
         }
+{% elif var.src %}
+        // W3C SCXML 5.2.2: Load variable '{{ var.id }}' from external source (C++ DataModelInitHelper pattern)
+        try {
+            val srcContent_{{ var.id | to_camel_case }} = engine.loadDataFromSrc("{{ var.src }}", "{{ model.scxml_base_path }}")
+            if (srcContent_{{ var.id | to_camel_case }} != null) {
+                val srcValue_{{ var.id | to_camel_case }} = engine.evaluateExpr(sid, srcContent_{{ var.id | to_camel_case }})
+                engine.setVariable(sid, "{{ var.id }}", srcValue_{{ var.id | to_camel_case }})
+            }
+        } catch (e: Exception) {
+            raiseInternal({{ machine_name }}Event.Error.Execution)
+        }
 {% elif var.content %}
         // W3C SCXML B.2: Initialize variable '{{ var.id }}' with inline content
         try {

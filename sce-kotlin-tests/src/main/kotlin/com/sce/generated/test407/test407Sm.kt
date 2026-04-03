@@ -62,6 +62,7 @@ class Test407StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test407State): Int = when (state) {
         is Test407State.Fail -> 3
@@ -211,14 +212,14 @@ class Test407StateMachine(
     private fun processNullS0(
     ): TransitionResult<Test407State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test407State.S1)
+        else -> TransitionResult.External(Test407State.S1, Test407State.S0)
     }
 
     private fun processNullS1(
     ): TransitionResult<Test407State> = when {
-        safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test407State.Pass)
+        safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test407State.Pass, Test407State.S1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test407State.Fail)
+        else -> TransitionResult.External(Test407State.Fail, Test407State.S1)
     }
 
     // --- Per-State Event Handlers ---

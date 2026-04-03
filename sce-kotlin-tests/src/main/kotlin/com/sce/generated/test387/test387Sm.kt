@@ -137,6 +137,7 @@ class Test387StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test387State): Int = when (state) {
         is Test387State.Fail -> 17
@@ -258,13 +259,13 @@ class Test387StateMachine(
     private fun processNullS3(
     ): TransitionResult<Test387State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External((historyStore["s0HistShallow"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test387State.S011))
+        else -> TransitionResult.External((historyStore["s0HistShallow"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test387State.S011), Test387State.S3)
     }
 
     private fun processNullS4(
     ): TransitionResult<Test387State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External((historyStore["s1HistDeep"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test387State.S122))
+        else -> TransitionResult.External((historyStore["s1HistDeep"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test387State.S122), Test387State.S4)
     }
 
     // --- Per-State Event Handlers ---
@@ -275,7 +276,7 @@ class Test387StateMachine(
         event is Test387Event.EnteringS011 -> TransitionResult.External(Test387State.S4, Test387State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test387State.Fail)
+        else -> TransitionResult.External(Test387State.Fail, Test387State.S0)
     }
 
     private fun processS1(
@@ -284,7 +285,7 @@ class Test387StateMachine(
         event is Test387Event.EnteringS122 -> TransitionResult.External(Test387State.Pass, Test387State.S1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test387State.Fail)
+        else -> TransitionResult.External(Test387State.Fail, Test387State.S1)
     }
 
     // Entry Actions (W3C SCXML 3.8)

@@ -53,6 +53,7 @@ class Test375StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test375State): Int = when (state) {
         is Test375State.Fail -> 3
@@ -83,7 +84,7 @@ class Test375StateMachine(
         event is Test375Event.Event1 -> TransitionResult.External(Test375State.S1, Test375State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test375State.Fail)
+        else -> TransitionResult.External(Test375State.Fail, Test375State.S0)
     }
 
     private fun processS1(
@@ -92,7 +93,7 @@ class Test375StateMachine(
         event is Test375Event.Event2 -> TransitionResult.External(Test375State.Pass, Test375State.S1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test375State.Fail)
+        else -> TransitionResult.External(Test375State.Fail, Test375State.S1)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -113,16 +114,18 @@ class Test375StateMachine(
             is Test375State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
-                // W3C SCXML 3.8: Onentry block 1/2 (error-isolated)
-                fun entryBlock1() {
+                // W3C SCXML 3.8: Onentry block 1/2
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
             raiseInternal(Test375Event.Event1)
                 }
-                entryBlock1()
-                // W3C SCXML 3.8: Onentry block 2/2 (error-isolated)
-                fun entryBlock2() {
+                // W3C SCXML 3.8: Onentry block 2/2
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
             raiseInternal(Test375Event.Event2)
                 }
-                entryBlock2()
             }
             is Test375State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

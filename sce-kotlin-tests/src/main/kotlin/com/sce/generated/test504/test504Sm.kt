@@ -100,6 +100,18 @@ class Test504StateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test504State): Boolean = when (state) {
+        is Test504State.P -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test504State): List<Test504State> = when (state) {
+        is Test504State.P -> listOf(Test504State.Ps1, Test504State.Ps2)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test504State): Int = when (state) {
         is Test504State.Fail -> 10
@@ -305,35 +317,35 @@ class Test504StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test504State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.P)
+        else -> TransitionResult.External(Test504State.P, Test504State.S1)
     }
 
     private fun processNullS3(
     ): TransitionResult<Test504State> = when {
-        safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test504State.S4)
+        safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test504State.S4, Test504State.S3)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.Fail)
+        else -> TransitionResult.External(Test504State.Fail, Test504State.S3)
     }
 
     private fun processNullS4(
     ): TransitionResult<Test504State> = when {
-        safeEvaluateGuard("Var2 == 2") -> TransitionResult.External(Test504State.S5)
+        safeEvaluateGuard("Var2 == 2") -> TransitionResult.External(Test504State.S5, Test504State.S4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.Fail)
+        else -> TransitionResult.External(Test504State.Fail, Test504State.S4)
     }
 
     private fun processNullS5(
     ): TransitionResult<Test504State> = when {
-        safeEvaluateGuard("Var3 == 2") -> TransitionResult.External(Test504State.S6)
+        safeEvaluateGuard("Var3 == 2") -> TransitionResult.External(Test504State.S6, Test504State.S5)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.Fail)
+        else -> TransitionResult.External(Test504State.Fail, Test504State.S5)
     }
 
     private fun processNullS6(
     ): TransitionResult<Test504State> = when {
-        safeEvaluateGuard("Var5 == 1") -> TransitionResult.External(Test504State.Pass)
+        safeEvaluateGuard("Var5 == 1") -> TransitionResult.External(Test504State.Pass, Test504State.S6)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test504State.Fail)
+        else -> TransitionResult.External(Test504State.Fail, Test504State.S6)
     }
 
     // --- Per-State Event Handlers ---
@@ -362,7 +374,8 @@ class Test504StateMachine(
             is Test504State.P -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p")) return
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test504State.Ps1)
                 onEntry(Test504State.Ps2)
             }
@@ -389,8 +402,10 @@ class Test504StateMachine(
             is Test504State.S2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test504State.P)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test504State.P)
+                }
             }
             is Test504State.S3 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

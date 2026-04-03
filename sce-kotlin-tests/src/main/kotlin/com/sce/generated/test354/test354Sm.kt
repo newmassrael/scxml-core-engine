@@ -71,6 +71,7 @@ class Test354StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test354State): Int = when (state) {
         is Test354State.Fail -> 5
@@ -239,16 +240,16 @@ class Test354StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test354State> = when {
-        safeEvaluateGuard("Var2 == 1") -> TransitionResult.External(Test354State.S2)
+        safeEvaluateGuard("Var2 == 1") -> TransitionResult.External(Test354State.S2, Test354State.S1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test354State.Fail)
+        else -> TransitionResult.External(Test354State.Fail, Test354State.S1)
     }
 
     private fun processNullS2(
     ): TransitionResult<Test354State> = when {
-        safeEvaluateGuard("Var3 == 2") -> TransitionResult.External(Test354State.S3)
+        safeEvaluateGuard("Var3 == 2") -> TransitionResult.External(Test354State.S3, Test354State.S2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test354State.Fail)
+        else -> TransitionResult.External(Test354State.Fail, Test354State.S2)
     }
 
     // --- Per-State Event Handlers ---
@@ -259,7 +260,7 @@ class Test354StateMachine(
         event is Test354Event.Event1 -> TransitionResult.External(Test354State.S1, Test354State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test354State.Fail)
+        else -> TransitionResult.External(Test354State.Fail, Test354State.S0)
     }
 
     private fun processS3(
@@ -268,7 +269,7 @@ class Test354StateMachine(
         event is Test354Event.Event2 -> TransitionResult.External(Test354State.Pass, Test354State.S3)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test354State.Fail)
+        else -> TransitionResult.External(Test354State.Fail, Test354State.S3)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -297,7 +298,15 @@ class Test354StateMachine(
                 val sidE = scriptSessionId ?: return@run
                 val paramsE = mutableMapOf<String, Any?>()
                 try { paramsE["param1"] = engineE.evaluateExpr(sidE, "2") } catch (_: Exception) { paramsE["param1"] = "" }
-                try { paramsE["Var1"] = engineE.getVariable(sidE, "Var1") } catch (_: Exception) {}
+                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
+                if (!engineE.hasVariable(sidE, "Var1")) {
+                    raiseInternal(Test354Event.Error.Execution)
+                    return@run  // W3C SCXML 6.2: Abort send if namelist variable not found
+                }
+                try { paramsE["Var1"] = engineE.getVariable(sidE, "Var1") } catch (_: Exception) {
+                    raiseInternal(Test354Event.Error.Execution)
+                    return@run
+                }
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test354Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
             }

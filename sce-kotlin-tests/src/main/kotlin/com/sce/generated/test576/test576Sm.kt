@@ -110,6 +110,18 @@ class Test576StateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test576State): Boolean = when (state) {
+        is Test576State.S11p1 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test576State): List<Test576State> = when (state) {
+        is Test576State.S11p1 -> listOf(Test576State.S11p11, Test576State.S11p12)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test576State): Int = when (state) {
         is Test576State.Fail -> 12
@@ -204,7 +216,7 @@ class Test576StateMachine(
     private fun processNullS0(
     ): TransitionResult<Test576State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test576State.Fail)
+        else -> TransitionResult.External(Test576State.Fail, Test576State.S0)
     }
 
     // --- Per-State Event Handlers ---
@@ -248,14 +260,18 @@ class Test576StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
             scheduleSend("__send_0", 1000L, Test576Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test576State.S11)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test576State.S11)
+                }
             }
             is Test576State.S11 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test576State.S11p1)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test576State.S11p1)
+                }
             }
             is Test576State.S111 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -264,15 +280,18 @@ class Test576StateMachine(
             is Test576State.S11p1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p1")) return
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test576State.S11p11)
                 onEntry(Test576State.S11p12)
             }
             is Test576State.S11p11 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p11")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test576State.S11p112)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test576State.S11p112)
+                }
             }
             is Test576State.S11p111 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -286,8 +305,10 @@ class Test576StateMachine(
             is Test576State.S11p12 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s11p12")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test576State.S11p122)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test576State.S11p122)
+                }
             }
             is Test576State.S11p121 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

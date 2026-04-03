@@ -59,6 +59,7 @@ class Test553StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test553State): Int = when (state) {
         is Test553State.Fail -> 2
@@ -229,7 +230,15 @@ class Test553StateMachine(
                 val engineE = scriptEngine ?: return@run
                 val sidE = scriptSessionId ?: return@run
                 val paramsE = mutableMapOf<String, Any?>()
-                try { paramsE["__undefined_variable_for_error__"] = engineE.getVariable(sidE, "__undefined_variable_for_error__") } catch (_: Exception) {}
+                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern, test553)
+                if (!engineE.hasVariable(sidE, "__undefined_variable_for_error__")) {
+                    raiseInternal(Test553Event.Error.Execution)
+                    return@run  // W3C SCXML 6.2: Abort send if namelist variable not found
+                }
+                try { paramsE["__undefined_variable_for_error__"] = engineE.getVariable(sidE, "__undefined_variable_for_error__") } catch (_: Exception) {
+                    raiseInternal(Test553Event.Error.Execution)
+                    return@run
+                }
                 val eventDataE = buildJsonFromParams(paramsE)
                 send(Test553Event.Event1, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: "", data = eventDataE))
             }

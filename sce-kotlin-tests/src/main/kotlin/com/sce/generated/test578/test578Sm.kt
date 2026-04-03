@@ -58,6 +58,7 @@ class Test578StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test578State): Int = when (state) {
         is Test578State.Fail -> 2
@@ -197,7 +198,7 @@ class Test578StateMachine(
         event is Test578Event.Foo && safeEvaluateGuard("_event.data.productName == 'bar'") -> TransitionResult.External(Test578State.Pass, Test578State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test578State.Fail)
+        else -> TransitionResult.External(Test578State.Fail, Test578State.S0)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -218,7 +219,8 @@ class Test578StateMachine(
             is Test578State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
-            send(Test578Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            // W3C SCXML B.2: Set event data from <content> (C++ EventDataHelper::jsonStringToScriptValue pattern)
+            send(Test578Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = "{ \"productName\" : \"bar\", \"size\" : 27 }"))
             }
             else -> {}
         }

@@ -62,6 +62,7 @@ class Test446StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test446State): Int = when (state) {
         is Test446State.Fail -> 3
@@ -103,11 +104,16 @@ class Test446StateMachine(
         } catch (e: Exception) {
             raiseInternal(Test446Event.Error.Execution)
         }
-        // W3C SCXML 5.2: Runtime variable 'var2' (late binding, undefined)
+        // W3C SCXML 5.2.2: Load variable 'var2' from external source (C++ DataModelInitHelper pattern)
         try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "var2", null)
-        } catch (_: Exception) {}
+            val srcContent_var2 = engine.loadDataFromSrc("file:test446.txt", "resources/446")
+            if (srcContent_var2 != null) {
+                val srcValue_var2 = engine.evaluateExpr(sid, srcContent_var2)
+                engine.setVariable(sid, "var2", srcValue_var2)
+            }
+        } catch (e: Exception) {
+            raiseInternal(Test446Event.Error.Execution)
+        }
 
 
 
@@ -215,16 +221,16 @@ class Test446StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test446State> = when {
-        safeEvaluateGuard("var1 instanceof Array") -> TransitionResult.External(Test446State.S1)
+        safeEvaluateGuard("var1 instanceof Array") -> TransitionResult.External(Test446State.S1, Test446State.S0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test446State.Fail)
+        else -> TransitionResult.External(Test446State.Fail, Test446State.S0)
     }
 
     private fun processNullS1(
     ): TransitionResult<Test446State> = when {
-        safeEvaluateGuard("var2 instanceof Array") -> TransitionResult.External(Test446State.Pass)
+        safeEvaluateGuard("var2 instanceof Array") -> TransitionResult.External(Test446State.Pass, Test446State.S1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test446State.Fail)
+        else -> TransitionResult.External(Test446State.Fail, Test446State.S1)
     }
 
     // --- Per-State Event Handlers ---

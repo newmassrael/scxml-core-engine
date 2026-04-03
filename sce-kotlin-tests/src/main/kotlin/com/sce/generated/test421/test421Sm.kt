@@ -74,6 +74,7 @@ class Test421StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test421State): Int = when (state) {
         is Test421State.Fail -> 4

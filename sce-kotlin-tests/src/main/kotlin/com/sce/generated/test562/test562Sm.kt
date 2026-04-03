@@ -58,6 +58,7 @@ class Test562StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test562State): Int = when (state) {
         is Test562State.Fail -> 2
@@ -197,7 +198,7 @@ class Test562StateMachine(
         event is Test562Event.Foo && safeEvaluateGuard("_event.data == 'this is a string'") -> TransitionResult.External(Test562State.Pass, Test562State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test562State.Fail)
+        else -> TransitionResult.External(Test562State.Fail, Test562State.S0)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -218,7 +219,8 @@ class Test562StateMachine(
             is Test562State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
-            send(Test562Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            // W3C SCXML B.2: Set event data from <content> (C++ EventDataHelper::jsonStringToScriptValue pattern)
+            send(Test562Event.Foo, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: "", data = "this is  a  \nstring"))
             }
             else -> {}
         }

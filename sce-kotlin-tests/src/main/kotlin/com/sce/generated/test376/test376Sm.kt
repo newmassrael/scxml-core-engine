@@ -60,6 +60,7 @@ class Test376StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test376State): Int = when (state) {
         is Test376State.Fail -> 2
@@ -208,9 +209,9 @@ class Test376StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test376State> = when {
-        safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test376State.Pass)
+        safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test376State.Pass, Test376State.S0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test376State.Fail)
+        else -> TransitionResult.External(Test376State.Fail, Test376State.S0)
     }
 
     // --- Per-State Event Handlers ---
@@ -233,18 +234,20 @@ class Test376StateMachine(
             is Test376State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
-                // W3C SCXML 3.8: Onentry block 1/2 (error-isolated)
-                fun entryBlock1() {
+                // W3C SCXML 3.8: Onentry block 1/2
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
             // W3C SCXML 6.2 (test194): Invalid target raises error.execution
             raiseInternal(Test376Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
-            return  // W3C SCXML 5.10: Stop subsequent executable content
+            return@run  // W3C SCXML 5.10: Stop subsequent executable content in this block
                 }
-                entryBlock1()
-                // W3C SCXML 3.8: Onentry block 2/2 (error-isolated)
-                fun entryBlock2() {
+                // W3C SCXML 3.8: Onentry block 2/2
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
             executeAssign("Var1", "Var1 + 1")
                 }
-                entryBlock2()
             }
             else -> {}
         }

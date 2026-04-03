@@ -36,9 +36,9 @@ TransitionResult.Internal
 TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
 {%- endif -%}
 {%- endmacro %}
-{# --- Macro for null event transition result (no transitionSource needed) --- #}
-{% macro render_null_result(target_expr) -%}
-TransitionResult.External({{ target_expr }})
+{# --- Macro for null event transition result (with transitionSource for correct LCCA) --- #}
+{% macro render_null_result(target_expr, state_id) -%}
+TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
 {%- endmacro %}
 {% if model.needs_script_engine %}
     // W3C SCXML 3.12: Event processing with script engine condition evaluation
@@ -216,18 +216,19 @@ TransitionResult.External({{ target_expr }})
 {% set ns_rendered_else = namespace(done=false) %}
 {% for trans in state.transitions %}
 {% if not trans.event and trans.target and not ns_rendered_else.done %}
-{# --- Determine target expression (history resolution) --- #}
+{# --- Determine target expression (C++ selection-time history resolution) --- #}
 {% if trans.history_target is defined %}
+{# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
 {% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
 {% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
 {% else %}
 {% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
 {% endif %}
 {% if trans.cond %}
-        {{ render_cond(trans) }} -> TransitionResult.External({{ target_expr }})
+        {{ render_cond(trans) }} -> TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
 {% else %}
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External({{ target_expr }})
+        else -> TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
 {% set ns_rendered_else.done = true %}
 {% endif %}
 {% endif %}
@@ -266,6 +267,7 @@ TransitionResult.External({{ target_expr }})
 {% for trans in state.transitions %}
 {% if trans.event and trans.event != '*' and trans.event != '.*' and trans.target %}
 {# --- Determine target expression (history resolution) --- #}
+{# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
 {% if trans.history_target is defined %}
 {% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
 {% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
@@ -318,14 +320,16 @@ TransitionResult.External({{ target_expr }})
 {% if ns.has_wildcard %}
 {% for trans in state.transitions %}
 {% if trans.event == '*' or trans.event == '.*' %}
-{% if trans.history_leaf_target is defined %}
-{% set target_expr = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{# W3C SCXML 3.11: Resolve history target at selection time (C++ resolvedHistoryTarget pattern) #}
+{% if trans.history_target is defined %}
+{% set default_hist_target = machine_name ~ "State." ~ (trans.history_leaf_target | to_state_class_name) %}
+{% set target_expr = "(historyStore[\"" ~ trans.history_target ~ "\"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: " ~ default_hist_target ~ ")" %}
 {% else %}
 {% set target_expr = machine_name ~ "State." ~ (trans.target | to_state_class_name) %}
 {% endif %}
 {% if trans.target %}
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External({{ target_expr }})
+        else -> TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id | to_state_class_name }})
 {% else %}
         // W3C SCXML 3.12.1: Wildcard targetless transition
         else -> TransitionResult.Internal

@@ -88,6 +88,18 @@ class Test580StateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test580State): Boolean = when (state) {
+        is Test580State.P1 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test580State): List<Test580State> = when (state) {
+        is Test580State.P1 -> listOf(Test580State.S0, Test580State.S1)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test580State): Int = when (state) {
         is Test580State.Fail -> 1
@@ -254,23 +266,23 @@ class Test580StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test580State> = when {
-        isStateActive("sh1") -> TransitionResult.External(Test580State.Fail)
+        isStateActive("sh1") -> TransitionResult.External(Test580State.Fail, Test580State.S0)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullS1(
     ): TransitionResult<Test580State> = when {
-        isStateActive("sh1") -> TransitionResult.External(Test580State.Fail)
-        safeEvaluateGuard("Var1 == 0") -> TransitionResult.External((historyStore["sh1"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test580State.S11))
-        safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test580State.Pass)
+        isStateActive("sh1") -> TransitionResult.External(Test580State.Fail, Test580State.S1)
+        safeEvaluateGuard("Var1 == 0") -> TransitionResult.External((historyStore["sh1"]?.takeIf { it.isNotEmpty() }?.let { resolveState(it[0]) } ?: Test580State.S11), Test580State.S1)
+        safeEvaluateGuard("Var1 == 1") -> TransitionResult.External(Test580State.Pass, Test580State.S1)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullS11(
     ): TransitionResult<Test580State> = when {
-        isStateActive("sh1") -> TransitionResult.External(Test580State.Fail)
+        isStateActive("sh1") -> TransitionResult.External(Test580State.Fail, Test580State.S11)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test580State.S12)
+        else -> TransitionResult.External(Test580State.S12, Test580State.S11)
     }
 
     // --- Per-State Event Handlers ---
@@ -296,7 +308,8 @@ class Test580StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p1")) return
             scheduleSend("__send_0", 2000L, Test580Event.Timeout)
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test580State.S0)
                 onEntry(Test580State.S1)
             }
@@ -313,18 +326,20 @@ class Test580StateMachine(
             is Test580State.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s1")) return
-                // W3C SCXML 3.11: Enter history-restored state or default target
-                run {
-                    val stored = historyStore["sh1"]
-                    if (stored != null && stored.isNotEmpty()) {
-                        val histTarget = resolveState(stored[0])
-                        if (histTarget != null) {
-                            onEntry(histTarget)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.11: Enter history-restored state or default target
+                    run {
+                        val stored = historyStore["sh1"]
+                        if (stored != null && stored.isNotEmpty()) {
+                            val histTarget = resolveState(stored[0])
+                            if (histTarget != null) {
+                                onEntry(histTarget)
+                            } else {
+                                onEntry(Test580State.S11)
+                            }
                         } else {
                             onEntry(Test580State.S11)
                         }
-                    } else {
-                        onEntry(Test580State.S11)
                     }
                 }
             }

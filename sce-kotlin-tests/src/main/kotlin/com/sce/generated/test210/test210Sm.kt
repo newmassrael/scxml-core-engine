@@ -61,6 +61,7 @@ class Test210StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test210State): Int = when (state) {
         is Test210State.Fail -> 2
@@ -209,7 +210,7 @@ class Test210StateMachine(
         event is Test210Event.Event2 -> TransitionResult.External(Test210State.Pass, Test210State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test210State.Fail)
+        else -> TransitionResult.External(Test210State.Fail, Test210State.S0)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -233,6 +234,17 @@ class Test210StateMachine(
             scheduleSend("foo", 1000L, Test210Event.Event1)
             scheduleSend("__send_0", 1500L, Test210Event.Event2)
             executeAssign("Var1", "'foo'")
+            // W3C SCXML 6.3: Dynamic sendid evaluation (test210)
+            run {
+                ensureScriptEngine()
+                val engineCancel = scriptEngine ?: return@run
+                val sidCancel = scriptSessionId ?: return@run
+                try {
+                    val v = engineCancel.evaluateExpr(sidCancel, "Var1")
+                    val sendidToCancel = v?.toString() ?: ""
+                    if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
+                } catch (_: Exception) {}
+            }
             }
             else -> {}
         }

@@ -88,6 +88,18 @@ class Test234StateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test234State): Boolean = when (state) {
+        is Test234State.P0 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test234State): List<Test234State> = when (state) {
+        is Test234State.P0 -> listOf(Test234State.P01, Test234State.P02)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test234State): Int = when (state) {
         is Test234State.Fail -> 2
@@ -270,9 +282,9 @@ class Test234StateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test234State> = when {
-        safeEvaluateGuard("Var2 == 1") -> TransitionResult.External(Test234State.Pass)
+        safeEvaluateGuard("Var2 == 1") -> TransitionResult.External(Test234State.Pass, Test234State.S1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test234State.Fail)
+        else -> TransitionResult.External(Test234State.Fail, Test234State.S1)
     }
 
     // --- Per-State Event Handlers ---
@@ -308,7 +320,8 @@ class Test234StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
             scheduleSend("__send_0", 3000L, Test234Event.Timeout)
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test234State.P01)
                 onEntry(Test234State.P02)
             }

@@ -91,6 +91,18 @@ class Test533StateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test533State): Boolean = when (state) {
+        is Test533State.P -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test533State): List<Test533State> = when (state) {
+        is Test533State.P -> listOf(Test533State.Ps1, Test533State.Ps2)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test533State): Int = when (state) {
         is Test533State.Fail -> 5
@@ -286,28 +298,28 @@ class Test533StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test533State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test533State.P)
+        else -> TransitionResult.External(Test533State.P, Test533State.S1)
     }
 
     private fun processNullS2(
     ): TransitionResult<Test533State> = when {
-        safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test533State.S3)
+        safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test533State.S3, Test533State.S2)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test533State.Fail)
+        else -> TransitionResult.External(Test533State.Fail, Test533State.S2)
     }
 
     private fun processNullS3(
     ): TransitionResult<Test533State> = when {
-        safeEvaluateGuard("Var2 == 2") -> TransitionResult.External(Test533State.S4)
+        safeEvaluateGuard("Var2 == 2") -> TransitionResult.External(Test533State.S4, Test533State.S3)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test533State.Fail)
+        else -> TransitionResult.External(Test533State.Fail, Test533State.S3)
     }
 
     private fun processNullS4(
     ): TransitionResult<Test533State> = when {
-        safeEvaluateGuard("Var3 == 2") -> TransitionResult.External(Test533State.Pass)
+        safeEvaluateGuard("Var3 == 2") -> TransitionResult.External(Test533State.Pass, Test533State.S4)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test533State.Fail)
+        else -> TransitionResult.External(Test533State.Fail, Test533State.S4)
     }
 
     // --- Per-State Event Handlers ---
@@ -336,7 +348,8 @@ class Test533StateMachine(
             is Test533State.P -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p")) return
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test533State.Ps1)
                 onEntry(Test533State.Ps2)
             }

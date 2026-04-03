@@ -414,6 +414,9 @@ class KotlinCodeGenerator(BaseCodeGenerator):
                         trans.is_true_internal = True
                         trans.internal_source = state_id
 
+        # C++ DataModelInitHelper pattern: store base path for runtime src resolution
+        model.scxml_base_path = str(Path(scxml_path).parent)
+
         # Build event tree for sealed interface hierarchy
         # Filter out synthetic events not meaningful in Kotlin
         kotlin_events = {e for e in model.events if e != 'Wildcard'}

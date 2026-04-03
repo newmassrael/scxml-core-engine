@@ -87,6 +87,7 @@ class Test412StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test412State): Int = when (state) {
         is Test412State.Fail -> 7
@@ -166,7 +167,7 @@ class Test412StateMachine(
     private fun processNullS011(
     ): TransitionResult<Test412State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test412State.S02)
+        else -> TransitionResult.External(Test412State.S02, Test412State.S011)
     }
 
     // --- Per-State Event Handlers ---
@@ -189,7 +190,7 @@ class Test412StateMachine(
         event is Test412Event.Event1 -> TransitionResult.External(Test412State.S03, Test412State.S02)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test412State.Fail)
+        else -> TransitionResult.External(Test412State.Fail, Test412State.S02)
     }
 
     private fun processS03(
@@ -198,7 +199,7 @@ class Test412StateMachine(
         event is Test412Event.Event2 -> TransitionResult.External(Test412State.S04, Test412State.S03)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test412State.Fail)
+        else -> TransitionResult.External(Test412State.Fail, Test412State.S03)
     }
 
     private fun processS04(
@@ -207,7 +208,7 @@ class Test412StateMachine(
         event is Test412Event.Event3 -> TransitionResult.External(Test412State.Pass, Test412State.S04)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test412State.Fail)
+        else -> TransitionResult.External(Test412State.Fail, Test412State.S04)
     }
 
     // Entry Actions (W3C SCXML 3.8)

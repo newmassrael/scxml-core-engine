@@ -83,6 +83,7 @@ class Test298StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test298State): Int = when (state) {
         is Test298State.Fail -> 4
@@ -249,7 +250,7 @@ class Test298StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test298State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test298State.S02)
+        else -> TransitionResult.External(Test298State.S02, Test298State.S01)
     }
 
     // --- Per-State Event Handlers ---
@@ -260,7 +261,7 @@ class Test298StateMachine(
         event is Test298Event.Error.Execution -> TransitionResult.External(Test298State.Pass, Test298State.S0)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test298State.Fail)
+        else -> TransitionResult.External(Test298State.Fail, Test298State.S0)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -296,8 +297,14 @@ class Test298StateMachine(
                     val engineDD = scriptEngine ?: return@run
                     val sidDD = scriptSessionId ?: return@run
                     var doneEventData = ""
-                    // W3C SCXML 5.5: Evaluate <param> elements
+                    // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
+                    var doneParamStructuralError = false
+                    // W3C SCXML 5.7: Empty location — structural error (C++ DoneDataHelper returns false)
+                    raiseInternal(Test298Event.Error.Execution, EventMetadata.platform())
+                    doneParamStructuralError = true
+                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
+                    if (doneParamStructuralError) return@run
                     if (doneParams.isNotEmpty()) {
                         doneEventData = buildJsonFromParams(doneParams)
                     }

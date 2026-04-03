@@ -20,8 +20,8 @@
 {% include 'actions/send.kt.jinja2' with context %}
 {% elif action.type == 'script' %}
 {% include 'actions/script.kt.jinja2' with context %}
-{% elif action.type == 'cancel' and action.sendid %}
-            cancelSend("{{ action.sendid | escape_kotlin }}")
+{% elif action.type == 'cancel' %}
+{% include 'actions/cancel.kt.jinja2' with context %}
 {% elif action.type == 'if' %}
 {% include 'actions/if.kt.jinja2' with context %}
 {% elif action.type == 'foreach' %}

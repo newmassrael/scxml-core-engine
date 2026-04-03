@@ -97,6 +97,18 @@ class Test403cStateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test403cState): Boolean = when (state) {
+        is Test403cState.P0 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test403cState): List<Test403cState> = when (state) {
+        is Test403cState.P0 -> listOf(Test403cState.P0s1, Test403cState.P0s2, Test403cState.P0s3, Test403cState.P0s4)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test403cState): Int = when (state) {
         is Test403cState.Fail -> 8
@@ -298,9 +310,9 @@ class Test403cStateMachine(
 
     private fun processNullS1(
     ): TransitionResult<Test403cState> = when {
-        safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test403cState.Pass)
+        safeEvaluateGuard("Var1 == 2") -> TransitionResult.External(Test403cState.Pass, Test403cState.S1)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test403cState.Fail)
+        else -> TransitionResult.External(Test403cState.Fail, Test403cState.S1)
     }
 
     // --- Per-State Event Handlers ---
@@ -362,7 +374,8 @@ class Test403cStateMachine(
             is Test403cState.P0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("p0")) return
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test403cState.P0s1)
                 onEntry(Test403cState.P0s2)
                 onEntry(Test403cState.P0s3)
@@ -395,8 +408,10 @@ class Test403cStateMachine(
                 if (!activeStateIds.add("s0")) return
             raiseInternal(Test403cEvent.Event1)
             scheduleSend("__send_0", 1000L, Test403cEvent.Timeout)
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test403cState.P0)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test403cState.P0)
+                }
             }
             is Test403cState.S1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

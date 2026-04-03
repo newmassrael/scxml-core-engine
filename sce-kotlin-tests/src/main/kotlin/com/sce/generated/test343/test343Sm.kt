@@ -83,6 +83,7 @@ class Test343StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test343State): Int = when (state) {
         is Test343State.Fail -> 5
@@ -242,7 +243,7 @@ class Test343StateMachine(
     private fun processNullS01(
     ): TransitionResult<Test343State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test343State.S02)
+        else -> TransitionResult.External(Test343State.S02, Test343State.S01)
     }
 
     // --- Per-State Event Handlers ---
@@ -265,7 +266,7 @@ class Test343StateMachine(
         event is Test343Event.Done.State.S0 -> TransitionResult.External(Test343State.Pass, Test343State.S1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test343State.Fail)
+        else -> TransitionResult.External(Test343State.Fail, Test343State.S1)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -300,15 +301,18 @@ class Test343StateMachine(
                     val engineDD = scriptEngine ?: return@run
                     val sidDD = scriptSessionId ?: return@run
                     var doneEventData = ""
-                    // W3C SCXML 5.5: Evaluate <param> elements
+                    // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
+                    var doneParamStructuralError = false
                     try {
                         val locVal = engineDD.evaluateExpr(sidDD, "foo")
                         doneParams["someParam"] = locVal
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Invalid location — raise error.execution but continue
+                        // W3C SCXML 5.7: Runtime location error — raise error.execution but continue
                         raiseInternal(Test343Event.Error.Execution, EventMetadata.platform())
                     }
+                    // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
+                    if (doneParamStructuralError) return@run
                     if (doneParams.isNotEmpty()) {
                         doneEventData = buildJsonFromParams(doneParams)
                     }

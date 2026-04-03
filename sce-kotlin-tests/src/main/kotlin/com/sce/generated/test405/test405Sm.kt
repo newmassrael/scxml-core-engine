@@ -112,6 +112,18 @@ class Test405StateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test405State): Boolean = when (state) {
+        is Test405State.S01p -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test405State): List<Test405State> = when (state) {
+        is Test405State.S01p -> listOf(Test405State.S01p1, Test405State.S01p2)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test405State): Int = when (state) {
         is Test405State.Fail -> 12
@@ -245,13 +257,13 @@ class Test405StateMachine(
     private fun processNullS01p11(
     ): TransitionResult<Test405State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test405State.S01p12)
+        else -> TransitionResult.External(Test405State.S01p12, Test405State.S01p11)
     }
 
     private fun processNullS01p21(
     ): TransitionResult<Test405State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test405State.S01p22)
+        else -> TransitionResult.External(Test405State.S01p22, Test405State.S01p21)
     }
 
     // --- Per-State Event Handlers ---
@@ -278,7 +290,7 @@ class Test405StateMachine(
         event is Test405Event.Event2 -> TransitionResult.External(Test405State.S03, Test405State.S02)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test405State.Fail)
+        else -> TransitionResult.External(Test405State.Fail, Test405State.S02)
     }
 
     private fun processS03(
@@ -287,7 +299,7 @@ class Test405StateMachine(
         event is Test405Event.Event3 -> TransitionResult.External(Test405State.S04, Test405State.S03)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test405State.Fail)
+        else -> TransitionResult.External(Test405State.Fail, Test405State.S03)
     }
 
     private fun processS04(
@@ -296,7 +308,7 @@ class Test405StateMachine(
         event is Test405Event.Event4 -> TransitionResult.External(Test405State.Pass, Test405State.S04)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test405State.Fail)
+        else -> TransitionResult.External(Test405State.Fail, Test405State.S04)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -318,21 +330,26 @@ class Test405StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 1000L, Test405Event.Timeout)
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test405State.S01p)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test405State.S01p)
+                }
             }
             is Test405State.S01p -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p")) return
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test405State.S01p1)
                 onEntry(Test405State.S01p2)
             }
             is Test405State.S01p1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p1")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test405State.S01p11)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test405State.S01p11)
+                }
             }
             is Test405State.S01p11 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -345,8 +362,10 @@ class Test405StateMachine(
             is Test405State.S01p2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s01p2")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test405State.S01p21)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test405State.S01p21)
+                }
             }
             is Test405State.S01p21 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

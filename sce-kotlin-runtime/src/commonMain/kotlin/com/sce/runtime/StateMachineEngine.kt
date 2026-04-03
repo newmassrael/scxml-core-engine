@@ -115,6 +115,18 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected val historyStore: MutableMap<String, List<String>> = mutableMapOf()
 
     /**
+     * C++ executeEntryActions vs onEntry separation flag.
+     *
+     * When true, [onEntry] executes entry actions only (adds to activeStateIds,
+     * runs onentry content) WITHOUT entering initial/history children.
+     * Matches C++ buildEntryChain pattern where ancestors are entered with
+     * executeEntryActions() and only the target gets full child entry.
+     *
+     * Set by [applyTransitionFrom] during ancestor entry phase.
+     */
+    protected var suppressChildEntry: Boolean = false
+
+    /**
      * W3C SCXML 3.11: Pre-transition active states snapshot.
      * Captured before exit phase so history recording sees the full configuration.
      * Matches C++ activeStatesBeforeTransition pattern.
@@ -346,6 +358,22 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected open fun isAtomicState(state: S): Boolean = true
 
     /**
+     * W3C SCXML 3.4: Check if a state is a parallel state.
+     *
+     * Override in generated code for state machines with parallel states.
+     * Used to determine if sibling regions need re-entry after transitions.
+     */
+    protected open fun isParallelState(state: S): Boolean = false
+
+    /**
+     * W3C SCXML 3.4: Get child regions of a parallel state.
+     *
+     * C++ getParallelRegions() pattern: returns direct child states of a parallel state.
+     * Override in generated code for state machines with parallel states.
+     */
+    protected open fun getParallelRegions(state: S): List<S> = emptyList()
+
+    /**
      * W3C SCXML 3.13: Get document order index for exit order sorting.
      *
      * Override in generated code. Higher values = later in document.
@@ -428,17 +456,31 @@ abstract class StateMachineEngine<S : State, E : Event>(
     }
 
     /**
-     * W3C SCXML 3.3: Enter initial children of a compound state if no descendant
-     * is already active (e.g., entered via history or parallel region).
+     * W3C SCXML 3.4: Re-enter exited regions of an active parallel state.
      *
-     * C++ HierarchicalStateHelper::buildEntryChain pattern (lines 323-335):
-     * Walk down compound states via resolveLeafState (equivalent to getInitialChild),
-     * entering each intermediate state. Parallel regions are NOT entered here —
-     * they are handled by the generated onEntry (executeEntryActions).
+     * C++ executeMicrostep pattern: when a parallel state is still active but some of its
+     * child regions were exited during the microstep, re-enter those regions with their
+     * initial states.
      *
-     * The activeStateIds check guards against re-entering states already populated
-     * by onEntry (history restoration, parallel region descent).
+     * @param parallelState the parallel state to check
+     * @param allTargets set of all transition targets (skip regions that are explicit targets)
      */
+    private fun reenterParallelRegions(parallelState: S, allTargets: Set<S>) {
+        // C++ executeMicrostep pattern (lines 456-482):
+        // Use getParallelRegions() to find child regions, re-enter only inactive ones.
+        val regions = getParallelRegions(parallelState)
+        for (region in regions) {
+            val regionId = stateIdOf(region)
+            if (regionId.isNotEmpty() && activeStateIds.contains(regionId)) continue
+
+            // Region was exited — re-enter with entry actions
+            onEntry(region)
+
+            // W3C SCXML 3.3: If region is compound, enter initial child
+            enterInitialChildrenIfNeeded(region)
+        }
+    }
+
     private fun enterInitialChildrenIfNeeded(target: S) {
         val leaf = resolveLeafState(target)
         if (leaf == target) return
@@ -1293,18 +1335,342 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /**
      * Process a single event (internal or external).
      *
-     * For parallel state machines, tries all active leaf states in
-     * document order to find a matching transition (first match wins).
-     * W3C SCXML 3.13: Document order priority for conflict resolution.
+     * W3C SCXML Appendix D.2: For parallel state machines, collect ALL enabled
+     * transitions from all active leaf states, remove conflicting transitions,
+     * then execute as an atomic microstep.
+     *
+     * For non-parallel (single active leaf), first match wins.
      */
     private fun processOneEvent(event: E) {
-        // W3C SCXML 3.13: Unified event processing (C++ pattern)
-        for (state in activeLeafStatesInDocumentOrder()) {
+        val leaves = activeLeafStatesInDocumentOrder()
+
+        if (leaves.size <= 1) {
+            // Non-parallel: simple first-match-wins (original behavior)
+            for (state in leaves) {
+                val result = processEvent(state, event)
+                if (result !is TransitionResult.Ignored) {
+                    applyTransitionFrom(state, result, event)
+                    return
+                }
+            }
+            return
+        }
+
+        // W3C SCXML Appendix D.2: Collect transitions from all active leaf states.
+        //
+        // External/InternalToTarget: collect ALL and apply conflict resolution.
+        // Internal (targetless): collect per leaf state for action execution.
+        val enabledTransitions = mutableListOf<Pair<S, TransitionResult<S>>>()
+        val internalTransitions = mutableListOf<Pair<S, TransitionResult<S>>>()
+        for (state in leaves) {
             val result = processEvent(state, event)
             if (result !is TransitionResult.Ignored) {
-                applyTransitionFrom(state, result, event)
-                return
+                if (result is TransitionResult.Internal) {
+                    internalTransitions.add(state to result)
+                } else {
+                    enabledTransitions.add(state to result)
+                }
             }
+        }
+
+        if (enabledTransitions.isEmpty() && internalTransitions.isEmpty()) return
+
+        // W3C SCXML D.2: Internal (targetless) transitions execute actions only.
+        // For parallel states, execute each unique Internal transition's actions.
+        // Dedup: if the generated executeTransitionActions for two different source states
+        // both dispatch to the same ancestor's branch, the actions fire twice. To prevent
+        // this, we use first-match-wins for Internal transitions — only the first leaf
+        // in document order executes actions (it includes ancestor actions via effective_transitions).
+        if (enabledTransitions.isEmpty()) {
+            // Only Internal transitions — first-match-wins
+            if (internalTransitions.isNotEmpty()) {
+                val (source, result) = internalTransitions[0]
+                applyTransitionFrom(source, result, event)
+            }
+            return
+        }
+
+        // Mix of External and Internal transitions
+        // Add Internal transitions to the enabled set for simultaneous execution
+        val allTransitions = enabledTransitions + internalTransitions
+        val filtered = removeConflictingTransitions(allTransitions)
+        if (filtered.size == 1) {
+            val (source, result) = filtered[0]
+            applyTransitionFrom(source, result, event)
+        } else if (filtered.size > 1) {
+            applySimultaneousTransitions(filtered, event)
+        }
+    }
+
+    /**
+     * W3C SCXML Appendix D.2: Remove conflicting transitions from the enabled set.
+     *
+     * Two transitions conflict if their exit sets overlap. The exit set of a
+     * transition is the set of all states that would be exited by it:
+     * - For external: all descendants of the LCCA (domain) of source and target
+     * - For internal/targetless: empty
+     *
+     * When conflicts exist, the transition from the descendant source preempts
+     * the ancestor. For same-depth siblings, document order wins.
+     *
+     * C++ ConflictResolutionHelper pattern.
+     */
+    private fun removeConflictingTransitions(
+        transitions: List<Pair<S, TransitionResult<S>>>
+    ): List<Pair<S, TransitionResult<S>>> {
+        if (transitions.size <= 1) return transitions
+
+        // Compute exit set (as domain state) for each transition
+        data class TransitionWithDomain(
+            val pair: Pair<S, TransitionResult<S>>,
+            val domain: S?,  // LCCA of source and target (null = root domain OR targetless)
+            val isTargetless: Boolean  // W3C SCXML 5.9.2: targetless transitions never conflict
+        )
+
+        val withDomains = transitions.map { pair ->
+            val (source, result) = pair
+            val domain: S? = when (result) {
+                is TransitionResult.External -> {
+                    // Domain = LCCA of transitionSource (or source) and target
+                    val txSource = result.transitionSource ?: source
+                    computeLCCA(txSource, result.target)
+                }
+                is TransitionResult.InternalToTarget -> {
+                    result.transitionSource  // Domain is the transition source for internal-with-target
+                }
+                else -> null  // Targetless: no exit set, never conflicts
+            }
+            val isTargetless = result is TransitionResult.Internal
+            TransitionWithDomain(pair, domain, isTargetless)
+        }
+
+        val result = mutableListOf<TransitionWithDomain>()
+        for (candidate in withDomains) {
+            if (candidate.isTargetless) {
+                // W3C SCXML 5.9.2: Targetless transitions have no exit set.
+                // They don't conflict with External transitions, pass through.
+                // Dedup of same-ancestor targetless transitions is handled in processOneEvent
+                // (Internal transitions use first-match-wins when no External transitions exist).
+                result.add(candidate)
+                continue
+            }
+
+            var dominated = false
+            val toRemove = mutableListOf<TransitionWithDomain>()
+
+            for (existing in result) {
+                if (existing.isTargetless) continue
+
+                // W3C SCXML D.2: Check if exit sets overlap
+                // Exit sets overlap if one domain is ancestor-or-equal of the other's source,
+                // or the domains overlap. Domain=null means root (exits everything).
+                val candidateSource = candidate.pair.first
+                val existingSource = existing.pair.first
+
+                val conflict = if (candidate.domain == null || existing.domain == null) {
+                    // Domain=null (root): conflicts with everything that has an exit set
+                    true
+                } else {
+                    isDescendantOrSelf(existingSource, candidate.domain!!) ||
+                    isDescendantOrSelf(candidateSource, existing.domain!!)
+                }
+
+                if (conflict) {
+                    // W3C SCXML D.2: Use transition source (where transition is defined)
+                    // for preemption, not the leaf state that was checked.
+                    val candidateTxSource = when (val r = candidate.pair.second) {
+                        is TransitionResult.External -> r.transitionSource ?: candidateSource
+                        else -> candidateSource
+                    }
+                    val existingTxSource = when (val r = existing.pair.second) {
+                        is TransitionResult.External -> r.transitionSource ?: existingSource
+                        else -> existingSource
+                    }
+
+                    // Resolve: descendant transition source wins
+                    if (isDescendantOf(candidateTxSource, existingTxSource)) {
+                        // Candidate is more specific -> it preempts existing
+                        toRemove.add(existing)
+                    } else if (isDescendantOf(existingTxSource, candidateTxSource)) {
+                        // Existing is more specific -> it preempts candidate
+                        dominated = true
+                        break
+                    } else {
+                        // Same level or siblings: document order of transition source — lower wins
+                        if (documentOrderOf(existingTxSource) < documentOrderOf(candidateTxSource)) {
+                            dominated = true
+                            break
+                        } else {
+                            toRemove.add(existing)
+                        }
+                    }
+                }
+            }
+
+            if (!dominated) {
+                result.removeAll(toRemove)
+                result.add(candidate)
+            }
+        }
+        return result.map { it.pair }
+    }
+
+    /**
+     * W3C SCXML 3.13: Compute LCCA (Least Common Compound Ancestor) of two states.
+     */
+    private fun computeLCCA(source: S, target: S): S? {
+        // Collect ancestors of source
+        val sourceAncestors = mutableListOf<S>()
+        var anc: S? = parentOf(source)
+        while (anc != null) {
+            sourceAncestors.add(anc)
+            anc = parentOf(anc)
+        }
+
+        // Walk up from target's parent, find first shared ancestor
+        var tAnc: S? = parentOf(target)
+        while (tAnc != null) {
+            if (sourceAncestors.contains(tAnc)) return tAnc
+            tAnc = parentOf(tAnc)
+        }
+
+        // Also check if source itself is ancestor of target
+        anc = parentOf(target)
+        while (anc != null) {
+            if (anc == source) return parentOf(source)
+            anc = parentOf(anc)
+        }
+
+        return null  // Root
+    }
+
+    private fun isDescendantOrSelf(state: S, possibleAncestor: S): Boolean {
+        if (stateIdOf(state) == stateIdOf(possibleAncestor)) return true
+        return isDescendantOf(state, possibleAncestor)
+    }
+
+    /**
+     * Apply multiple non-conflicting event-based transitions as a single microstep.
+     * W3C SCXML Appendix D.2: Compute exit set -> Exit all -> Actions all -> Enter all.
+     *
+     * C++ ParallelTransitionHelper::computeStatesToExit pattern:
+     * The exit set is the union of all individual transitions' exit sets,
+     * but only states that are NOT targets of any transition.
+     */
+    private fun applySimultaneousTransitions(
+        transitions: List<Pair<S, TransitionResult<S>>>,
+        event: E?
+    ) {
+        val externals = mutableListOf<Pair<S, TransitionResult.External<S>>>()
+        val internals = mutableListOf<Pair<S, TransitionResult<S>>>()
+        for ((source, result) in transitions) {
+            when (result) {
+                is TransitionResult.External -> externals.add(source to result)
+                is TransitionResult.InternalToTarget -> {
+                    externals.add(source to TransitionResult.External(result.target, result.transitionSource))
+                }
+                is TransitionResult.Internal -> internals.add(source to result)
+                is TransitionResult.Ignored -> {}
+            }
+        }
+
+        if (externals.isNotEmpty()) {
+            val sorted = externals.sortedBy { documentOrderOf(it.first) }
+
+            // W3C SCXML 3.11: Capture active states before exit for history recording
+            preTransitionActiveStates = activeStateIds.toSet()
+
+            // W3C SCXML Appendix D.2: Compute union exit set (C++ ParallelTransitionHelper pattern)
+            // For each external transition, compute its individual exit set,
+            // then union them. A state is in the exit set if it is a descendant
+            // of the transition's domain AND it's currently active.
+            val exitSet = mutableSetOf<String>()
+            for ((source, result) in sorted) {
+                val txSource = result.transitionSource ?: source
+                // Compute domain (LCCA)
+                var lcca: S? = parentOf(txSource)
+                while (lcca != null) {
+                    if (isDescendantOf(result.target, lcca)) break
+                    lcca = parentOf(lcca)
+                }
+                // Add all active descendants of LCCA to exit set
+                for (stateId in activeStateIds) {
+                    if (lcca != null) {
+                        val state = resolveState(stateId) ?: continue
+                        if (state == lcca) continue
+                        if (!isDescendantOf(state, lcca)) continue
+                    }
+                    exitSet.add(stateId)
+                }
+            }
+
+            // Sort exit set by reverse document order
+            val statesToExit = exitSet.mapNotNull { id ->
+                resolveState(id)?.let { it to documentOrderOf(it) }
+            }.sortedByDescending { it.second }
+
+            // Step 1: Exit all in reverse document order
+            for ((state, _) in statesToExit) {
+                val sid = stateIdOf(state)
+                if (sid.isNotEmpty() && activeStateIds.contains(sid)) {
+                    onExit(state)
+                }
+            }
+
+            // Step 2: Transition actions in document order
+            for ((source, _) in sorted) {
+                executeTransitionActions(source, event)
+            }
+
+            // Step 3: Enter all targets in document order
+            // C++ executeMicrostep pattern: buildEntryChain + parallel region re-entry
+            val allTargets = sorted.map { it.second.target }.toSet()
+            for ((_, result) in sorted) {
+                val target = result.target
+                val ancestorsToEnter = mutableListOf<S>()
+                var parallelAncToReenter: S? = null
+                var anc = parentOf(target)
+                while (anc != null) {
+                    val ancId = stateIdOf(anc)
+                    if (ancId.isNotEmpty() && !activeStateIds.contains(ancId)) {
+                        ancestorsToEnter.add(anc)
+                    } else {
+                        // W3C SCXML 3.4: If active ancestor is parallel, re-enter exited regions
+                        if (isParallelState(anc)) {
+                            parallelAncToReenter = anc
+                        }
+                        break
+                    }
+                    anc = parentOf(anc)
+                }
+                ancestorsToEnter.reverse()
+
+                // C++ buildEntryChain + executeEntryActions: ancestors with actions only
+                suppressChildEntry = true
+                for (ancestor in ancestorsToEnter) {
+                    onEntry(ancestor)
+                }
+                suppressChildEntry = false
+
+                // C++ executeMicrostep: re-enter parallel sibling regions
+                if (parallelAncToReenter != null) {
+                    reenterParallelRegions(parallelAncToReenter!!, allTargets)
+                    parallelAncToReenter = null
+                }
+
+                // Enter target with full entry
+                onEntry(target)
+                enterInitialChildrenIfNeeded(target)
+            }
+
+            _currentState.value = activeLeafStatesInDocumentOrder().lastOrNull()
+                ?: resolveLeafState(sorted.last().second.target)
+            flushPendingFinalState()
+        }
+
+        // Internal transitions: execute actions only
+        for ((source, _) in internals) {
+            executeTransitionActions(source, event)
         }
     }
 
@@ -1362,23 +1728,38 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 // C++ buildEntryChainFromParent: [ancestor1, ancestor2, ..., target]
                 // All use same onEntry — duplicate guard prevents double initial child entry
                 val ancestorsToEnter = mutableListOf<S>()
+                var parallelAncestorToReenter: S? = null
                 var anc = parentOf(target)
                 while (anc != null) {
                     val ancId = stateIdOf(anc)
                     if (ancId.isNotEmpty() && !activeStateIds.contains(ancId)) {
                         ancestorsToEnter.add(anc)
                     } else {
+                        // W3C SCXML 3.4: If active ancestor is parallel, re-enter exited regions
+                        if (isParallelState(anc)) {
+                            parallelAncestorToReenter = anc
+                        }
                         break
                     }
                     anc = parentOf(anc)
                 }
                 ancestorsToEnter.reverse()
+
+                // C++ buildEntryChain + executeEntryActions pattern:
+                // Enter ancestors with actions only (no child entry)
+                suppressChildEntry = true
                 for (ancestor in ancestorsToEnter) {
                     onEntry(ancestor)
                 }
-                onEntry(target)
+                suppressChildEntry = false
 
-                // W3C SCXML 3.3: Enter initial children chain (C++ buildEntryChain pattern)
+                // C++ executeMicrostep: re-enter parallel sibling regions (full entry)
+                if (parallelAncestorToReenter != null) {
+                    reenterParallelRegions(parallelAncestorToReenter, setOf(target))
+                }
+
+                // Enter target with full entry (C++ executeEntryActions + initial child)
+                onEntry(target)
                 enterInitialChildrenIfNeeded(target)
 
                 // W3C SCXML 3.13: Resolve to actual active leaf (C++ pattern)

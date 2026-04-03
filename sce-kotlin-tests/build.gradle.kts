@@ -18,6 +18,9 @@ dependencies {
 tasks.test {
     useJUnitPlatform()
 
+    // C++ DataModelInitHelper pattern: resolve data src paths relative to project root
+    workingDir = rootProject.projectDir
+
     // W3C test timeouts: 10s per test (most complete in <100ms)
     systemProperty("junit.jupiter.execution.timeout.default", "10s")
 

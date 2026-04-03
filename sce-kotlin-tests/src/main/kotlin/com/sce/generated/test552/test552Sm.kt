@@ -59,6 +59,7 @@ class Test552StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test552State): Int = when (state) {
         is Test552State.Fail -> 2
@@ -92,11 +93,16 @@ class Test552StateMachine(
         // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
         engine.setupSystemVariables(sid, "test552")
 
-        // W3C SCXML 5.2: Runtime variable 'Var1' (late binding, undefined)
+        // W3C SCXML 5.2.2: Load variable 'Var1' from external source (C++ DataModelInitHelper pattern)
         try {
-            engine.evaluateExpr(sid, "undefined")
-            engine.setVariable(sid, "Var1", null)
-        } catch (_: Exception) {}
+            val srcContent_Var1 = engine.loadDataFromSrc("file:test552.txt", "resources/552")
+            if (srcContent_Var1 != null) {
+                val srcValue_Var1 = engine.evaluateExpr(sid, srcContent_Var1)
+                engine.setVariable(sid, "Var1", srcValue_Var1)
+            }
+        } catch (e: Exception) {
+            raiseInternal(Test552Event.Error.Execution)
+        }
 
 
 
@@ -203,9 +209,9 @@ class Test552StateMachine(
 
     private fun processNullS0(
     ): TransitionResult<Test552State> = when {
-        safeEvaluateGuard("typeof Var1 !== 'undefined'") -> TransitionResult.External(Test552State.Pass)
+        safeEvaluateGuard("typeof Var1 !== 'undefined'") -> TransitionResult.External(Test552State.Pass, Test552State.S0)
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test552State.Fail)
+        else -> TransitionResult.External(Test552State.Fail, Test552State.S0)
     }
 
     // --- Per-State Event Handlers ---

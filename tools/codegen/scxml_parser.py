@@ -21,6 +21,9 @@ SCE_NS = 'urn:sce:extensions'
 
 # C++ extension namespace for concrete type declarations
 CPP_NS = 'urn:sce:cpp'
+
+# Kotlin extension namespace for concrete type declarations
+KT_NS = 'urn:sce:kotlin'
 def ns_find(elem, tag):
     """Find element with namespace"""
     return elem.find(f'sc:{tag}', SCXML_NS)
@@ -242,6 +245,45 @@ class SCXMLParser:
 
         return result
 
+    @staticmethod
+    def _id_to_camel_case(name: str) -> str:
+        """Convert snake_case/kebab-case id to camelCase (matches KotlinCodeGenerator._to_camel_case)."""
+        if not name:
+            return ""
+        parts = re.split(r'[._\-]', name)
+        return parts[0] + ''.join(p[0].upper() + p[1:] if p else '' for p in parts[1:])
+
+    def _transform_kt_code_with_named_contexts(self, kt_code: str, declared_ids: Set[str]) -> str:
+        """
+        Transform Kotlin code by replacing declared context IDs with camelCase property names.
+        Only declared context names (from <sce:context>) are transformed.
+        Preserves string literals unchanged.
+
+        Examples (id="hardware"):
+            "hardware.powerOff()" -> "hardware.powerOff()"  (already camelCase, no change)
+        Examples (id="my_hardware"):
+            "my_hardware.powerOff()" -> "myHardware.powerOff()"
+        """
+        string_literals = []
+        def save_string(match):
+            string_literals.append(match.group(0))
+            return f'__STRING_PLACEHOLDER_{len(string_literals) - 1}__'
+
+        string_pattern = r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\''
+        code_with_placeholders = re.sub(string_pattern, save_string, kt_code)
+
+        result = code_with_placeholders
+        for ctx_id in declared_ids:
+            camel = self._id_to_camel_case(ctx_id)
+            if camel != ctx_id:
+                pattern = rf'\b{re.escape(ctx_id)}\b'
+                result = re.sub(pattern, camel, result)
+
+        for i, literal in enumerate(string_literals):
+            result = result.replace(f'__STRING_PLACEHOLDER_{i}__', literal)
+
+        return result
+
     def parse_file(self, scxml_path: str) -> SCXMLModel:
         """
         Parse SCXML file and return model
@@ -361,8 +403,9 @@ class SCXMLParser:
             bool(self.model.context_objects)
         )
 
-        # Validate cpp: code references match <sce:context> declarations
+        # Validate cpp:/kt: code references match <sce:context> declarations
         self._validate_cpp_context_usage()
+        self._validate_kt_context_usage()
 
         return self.model
 
@@ -386,8 +429,8 @@ class SCXMLParser:
                 # Parser only handles inline content, runtime handles src files (matches Interpreter)
                 content = ''
                 
-                # W3C SCXML 5.2.2: src attribute handled by DataModelInitHelper at runtime
-                # AOT code generation: Pass empty content for src files, Helper loads file dynamically
+                # W3C SCXML 5.2.2: src attribute deferred to runtime (C++ DataModelInitHelper pattern)
+                # AOT code generation stores src in the variable; runtime loads file dynamically
                 if not src:
                     # No src attribute - check for inline XML child elements (W3C SCXML B.2)
                     if len(data) > 0:
@@ -533,10 +576,12 @@ class SCXMLParser:
                 raise ValueError(f"Duplicate <sce:context> declaration: '{ctx_id}'")
             cpp_type = ctx_elem.get(f'{{{CPP_NS}}}type', '')
             cpp_include = ctx_elem.get(f'{{{CPP_NS}}}include', '')
+            kt_type = ctx_elem.get(f'{{{KT_NS}}}type', '')
             self.model.context_objects.append({
                 'id': ctx_id,
                 'cpp_type': cpp_type,
                 'cpp_include': cpp_include,
+                'kt_type': kt_type,
             })
             self.model.context_object_ids.add(ctx_id)
 
@@ -571,6 +616,37 @@ class SCXMLParser:
                     if action.get('is_cpp_function') and re.search(pattern, action.get('content', '')):
                         raise ValueError(
                             f"<cpp> action references objects but no <sce:context> declarations found. "
+                            f"Add <sce:context id=\"...\"/> to your SCXML root element."
+                        )
+
+    def _validate_kt_context_usage(self):
+        """
+        Validate that all kt: object references have corresponding <sce:context> declarations.
+        Mirrors _validate_cpp_context_usage for Kotlin.
+        """
+        if self.model.context_object_ids:
+            return  # Declarations exist, validation passes
+
+        pattern = r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.'
+        for state in self.model.states.values():
+            for trans in state.transitions:
+                if trans.is_kt_condition and re.search(pattern, trans.cond_kt):
+                    raise ValueError(
+                        f"kt: condition '{trans.cond_kt}' references objects but no <sce:context> "
+                        f"declarations found. Add <sce:context id=\"...\"/> to your SCXML root element."
+                    )
+            for block in state.on_entry_blocks:
+                for action in block:
+                    if action.get('is_kt_function') and re.search(pattern, action.get('content', '')):
+                        raise ValueError(
+                            f"<kt> action references objects but no <sce:context> declarations found. "
+                            f"Add <sce:context id=\"...\"/> to your SCXML root element."
+                        )
+            for block in state.on_exit_blocks:
+                for action in block:
+                    if action.get('is_kt_function') and re.search(pattern, action.get('content', '')):
+                        raise ValueError(
+                            f"<kt> action references objects but no <sce:context> declarations found. "
                             f"Add <sce:context id=\"...\"/> to your SCXML root element."
                         )
 
@@ -853,6 +929,9 @@ class SCXMLParser:
             # Direct Kotlin condition - no JSEngine needed
             is_kt_condition = True
             cond_kt = cond[3:]  # Remove 'kt:' prefix
+            # Named Context: transform declared context references to camelCase property access
+            if self.model.context_object_ids:
+                cond_kt = self._transform_kt_code_with_named_contexts(cond_kt, self.model.context_object_ids)
         elif cond and self._is_pure_in_predicate(cond):
             # W3C SCXML 5.9.2: Check if condition is pure In() predicate
             is_pure_in = True
@@ -1200,7 +1279,11 @@ class SCXMLParser:
                     # Direct Kotlin function call - no JSEngine needed
                     kt_code = kt_elem.text or ''
                     action['content'] = kt_code
-                    action['content_kt'] = kt_code
+                    # Named Context: transform declared context references to camelCase property access
+                    if self.model.context_object_ids:
+                        action['content_kt'] = self._transform_kt_code_with_named_contexts(kt_code, self.model.context_object_ids)
+                    else:
+                        action['content_kt'] = kt_code
                     action['is_kt_function'] = True
                 else:
                     # JavaScript execution via JSEngine
@@ -1225,11 +1308,13 @@ class SCXMLParser:
         }
 
         # Parse <param> elements
+        # W3C SCXML 5.7: Use None for unspecified attributes to distinguish from empty values.
+        # An explicitly empty location="" is invalid and must raise error.execution.
         for param_elem in ns_findall(donedata_elem, 'param'):
             param = {
                 'name': param_elem.get('name', ''),
-                'expr': param_elem.get('expr', ''),
-                'location': param_elem.get('location', '')
+                'expr': param_elem.get('expr'),
+                'location': param_elem.get('location')
             }
             donedata['params'].append(param)
 

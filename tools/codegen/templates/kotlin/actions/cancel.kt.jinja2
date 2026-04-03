@@ -1,3 +1,17 @@
-{% if action.sendid %}
+{# W3C SCXML 6.3: Cancel delayed send event.
+   Ported 1:1 from C++ cancel.jinja2. #}
+{% if action.sendidexpr and model.needs_script_engine %}
+            // W3C SCXML 6.3: Dynamic sendid evaluation (test210)
+            run {
+                ensureScriptEngine()
+                val engineCancel = scriptEngine ?: return@run
+                val sidCancel = scriptSessionId ?: return@run
+                try {
+                    val v = engineCancel.evaluateExpr(sidCancel, "{{ action.sendidexpr | escape_kotlin }}")
+                    val sendidToCancel = v?.toString() ?: ""
+                    if (sendidToCancel.isNotEmpty()) cancelSend(sendidToCancel)
+                } catch (_: Exception) {}
+            }
+{% elif action.sendid %}
             cancelSend("{{ action.sendid | escape_kotlin }}")
 {% endif %}

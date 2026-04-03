@@ -96,6 +96,18 @@ class Test413StateMachine(
         else -> true
     }
 
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: Test413State): Boolean = when (state) {
+        is Test413State.S2p1 -> true
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: Test413State): List<Test413State> = when (state) {
+        is Test413State.S2p1 -> listOf(Test413State.S2p11, Test413State.S2p12)
+        else -> emptyList()
+    }
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test413State): Int = when (state) {
         is Test413State.Fail -> 10
@@ -173,36 +185,36 @@ class Test413StateMachine(
     private fun processNullS1(
     ): TransitionResult<Test413State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test413State.Fail)
+        else -> TransitionResult.External(Test413State.Fail, Test413State.S1)
     }
 
     private fun processNullS2p1(
     ): TransitionResult<Test413State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test413State.Fail)
+        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p1)
     }
 
     private fun processNullS2p111(
     ): TransitionResult<Test413State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test413State.Fail)
+        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p111)
     }
 
     private fun processNullS2p112(
     ): TransitionResult<Test413State> = when {
-        isStateActive("s2p122") -> TransitionResult.External(Test413State.Pass)
+        isStateActive("s2p122") -> TransitionResult.External(Test413State.Pass, Test413State.S2p112)
         else -> TransitionResult.Ignored
     }
 
     private fun processNullS2p121(
     ): TransitionResult<Test413State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test413State.Fail)
+        else -> TransitionResult.External(Test413State.Fail, Test413State.S2p121)
     }
 
     private fun processNullS2p122(
     ): TransitionResult<Test413State> = when {
-        isStateActive("s2p112") -> TransitionResult.External(Test413State.Pass)
+        isStateActive("s2p112") -> TransitionResult.External(Test413State.Pass, Test413State.S2p122)
         else -> TransitionResult.Ignored
     }
 
@@ -230,21 +242,26 @@ class Test413StateMachine(
             is Test413State.S2 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test413State.S2p1)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test413State.S2p1)
+                }
             }
             is Test413State.S2p1 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2p1")) return
-                // W3C SCXML 3.4: Enter all child regions of parallel state
+                // W3C SCXML 3.4: Parallel states ALWAYS enter all child regions
+                // (not affected by suppressChildEntry — C++ buildEntryChain includes parallel children)
                 onEntry(Test413State.S2p11)
                 onEntry(Test413State.S2p12)
             }
             is Test413State.S2p11 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2p11")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test413State.S2p112)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test413State.S2p112)
+                }
             }
             is Test413State.S2p111 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
@@ -257,8 +274,10 @@ class Test413StateMachine(
             is Test413State.S2p12 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s2p12")) return
-                // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
-                onEntry(Test413State.S2p122)
+                if (!suppressChildEntry) {
+                    // W3C SCXML 3.3: Enter initial child (C++ executeEntryActions pattern)
+                    onEntry(Test413State.S2p122)
+                }
             }
             is Test413State.S2p121 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry

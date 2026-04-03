@@ -56,6 +56,7 @@ class Test377StateMachine(
         else -> true
     }
 
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: Test377State): Int = when (state) {
         is Test377State.Fail -> 4
@@ -91,7 +92,7 @@ class Test377StateMachine(
     private fun processNullS0(
     ): TransitionResult<Test377State> = when {
         // W3C SCXML 3.13: First unconditional transition wins (document order)
-        else -> TransitionResult.External(Test377State.S1)
+        else -> TransitionResult.External(Test377State.S1, Test377State.S0)
     }
 
     // --- Per-State Event Handlers ---
@@ -102,7 +103,7 @@ class Test377StateMachine(
         event is Test377Event.Event1 -> TransitionResult.External(Test377State.S2, Test377State.S1)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test377State.Fail)
+        else -> TransitionResult.External(Test377State.Fail, Test377State.S1)
     }
 
     private fun processS2(
@@ -111,7 +112,7 @@ class Test377StateMachine(
         event is Test377Event.Event2 -> TransitionResult.External(Test377State.Pass, Test377State.S2)
 
         // W3C SCXML 3.12.1: Wildcard transition
-        else -> TransitionResult.External(Test377State.Fail)
+        else -> TransitionResult.External(Test377State.Fail, Test377State.S2)
     }
 
     // Entry Actions (W3C SCXML 3.8)
@@ -156,16 +157,18 @@ class Test377StateMachine(
             }
             is Test377State.S0 -> {
                 activeStateIds.remove("s0")
-                // W3C SCXML 3.9: Onexit block 1/2 (error-isolated)
-                fun exitBlock1() {
+                // W3C SCXML 3.9: Onexit block 1/2
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
             raiseInternal(Test377Event.Event1)
                 }
-                exitBlock1()
-                // W3C SCXML 3.9: Onexit block 2/2 (error-isolated)
-                fun exitBlock2() {
+                // W3C SCXML 3.9: Onexit block 2/2
+                // C++ EntryExitHelper pattern: each block executes independently
+                // Action-level error handling (try-catch in each action) provides isolation
+                run {
             raiseInternal(Test377Event.Event2)
                 }
-                exitBlock2()
             }
             is Test377State.S1 -> {
                 activeStateIds.remove("s1")
