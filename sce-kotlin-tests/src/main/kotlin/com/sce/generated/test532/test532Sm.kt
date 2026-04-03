@@ -65,6 +65,23 @@ class Test532StateMachine(
         else -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test532Event? = when (name) {
+        "" -> Test532Event.Empty
+        "error.execution" -> Test532Event.Error.Execution
+        "HTTP.POST" -> Test532Event.HTTP.POST
+        "timeout" -> Test532Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test532Event): String? = when (event) {
+        is Test532Event.Empty -> ""
+        is Test532Event.Error.Execution -> "error.execution"
+        is Test532Event.HTTP.POST -> "HTTP.POST"
+        is Test532Event.Timeout -> "timeout"
+        else -> null
+    }
 
 
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
@@ -107,6 +124,8 @@ class Test532StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 3000L, Test532Event.Timeout)
+            // W3C SCXML C.2: BasicHTTP content-only send (test 520, 532)
+            performHttpSend("http://localhost:8080/test", "", "some content", emptyMap(), "__send_1")
             }
             else -> {}
         }

@@ -102,6 +102,7 @@ class SCXMLModel:
     has_event_metadata: bool = False
     has_parent_communication: bool = False  # True if <send target="#_parent"> detected
     has_child_communication: bool = False  # True if <send target="#_child"> detected
+    needs_http_send: bool = False  # W3C SCXML C.2: True if BasicHTTPEventProcessor send with HTTP target
     needs_script_engine: bool = False
     uses_in_predicate: bool = False  # W3C SCXML 3.12.1: True if In() predicate used (requires activeStates_ management)
     has_transition_actions: bool = False  # W3C SCXML 3.13: True if any transition has executable content

@@ -200,6 +200,88 @@ abstract class StateMachineEngine<S : State, E : Event>(
     /** External event queue for sync mode (C++ externalQueue_ pattern). */
     private val externalEventQueue = ArrayDeque<QueuedEvent<E>>()
 
+    // --- HTTP Send (W3C SCXML C.2: BasicHTTP Event I/O Processor) ---
+
+    /**
+     * W3C SCXML C.2: HTTP send request descriptor.
+     *
+     * Carries all data needed to build and dispatch an HTTP POST request
+     * for BasicHTTPEventProcessor sends. Platform-agnostic — actual HTTP
+     * dispatch is handled by the [onHttpSend] callback set by the test harness.
+     */
+    data class HttpSendRequest(
+        val target: String,
+        val eventName: String = "",
+        val content: String = "",
+        val params: Map<String, List<String>> = emptyMap(),
+        val sendId: String = ""
+    )
+
+    /**
+     * W3C SCXML C.2: Callback for HTTP send dispatch.
+     *
+     * Set by the test harness (W3CHttpTestBase) to route BasicHTTPEventProcessor
+     * sends to an actual HTTP POST client. Matches C++ HttpSendHelper pattern
+     * where the engine delegates HTTP dispatch to a platform-specific client.
+     *
+     * Volatile for visibility across threads (async mode safety).
+     */
+    @Volatile
+    var onHttpSend: ((HttpSendRequest) -> Unit)? = null
+
+    /**
+     * W3C SCXML C.2: Dispatch an HTTP POST send action.
+     *
+     * Called by generated code when send type is BasicHTTPEventProcessor
+     * and target is an HTTP URL. Delegates to [onHttpSend] callback.
+     *
+     * @param target HTTP target URL
+     * @param eventName SCXML event name (becomes _scxmleventname param)
+     * @param content Content body for content-only sends
+     * @param params Form parameters map (multi-value)
+     * @param sendId W3C SCXML sendid for correlation
+     */
+    protected fun performHttpSend(
+        target: String,
+        eventName: String,
+        content: String,
+        params: Map<String, List<String>>,
+        sendId: String
+    ) {
+        onHttpSend?.invoke(HttpSendRequest(target, eventName, content, params, sendId))
+    }
+
+    /**
+     * W3C SCXML C.2: Schedule a delayed HTTP POST send action.
+     *
+     * Stores the HTTP send request in the scheduled sends queue (sync mode)
+     * and dispatches via [performHttpSend] when the delay expires during [tick].
+     *
+     * @param delayMs Delay in milliseconds before dispatching the HTTP POST
+     */
+    protected fun scheduleHttpSend(
+        delayMs: Long,
+        target: String,
+        eventName: String,
+        content: String,
+        params: Map<String, List<String>>,
+        sendId: String
+    ) {
+        val request = HttpSendRequest(target, eventName, content, params, sendId)
+        val fireTime = engineElapsedMs() + delayMs
+        val seqNum = schedulerSequence++
+        scheduledHttpSends.add(ScheduledHttpSendEntry(fireTime, seqNum, sendId, request))
+        scheduledHttpSends.sortWith(compareBy({ it.fireTimeMs }, { it.sequenceNum }))
+    }
+
+    private data class ScheduledHttpSendEntry(
+        val fireTimeMs: Long,
+        val sequenceNum: Long,
+        val sendId: String,
+        val request: HttpSendRequest
+    )
+    private val scheduledHttpSends = mutableListOf<ScheduledHttpSendEntry>()
+
     // --- Sync Execution (C++ AOT StaticExecutionEngine pattern) ---
 
     private var syncMode = false
@@ -603,6 +685,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     fun cleanup() {
         scheduledSends.clear()
+        scheduledHttpSends.clear()
         externalEventQueue.clear()
         for ((_, entry) in activeInvokes) {
             entry.child.cleanup()
@@ -627,6 +710,14 @@ abstract class StateMachineEngine<S : State, E : Event>(
                 @Suppress("UNCHECKED_CAST")
                 externalEventQueue.addLast(QueuedEvent(entry.event as E, entry.metadata))
             }
+        }
+        // W3C SCXML C.2: Fire ready delayed HTTP sends
+        while (scheduledHttpSends.isNotEmpty() && scheduledHttpSends.first().fireTimeMs <= now) {
+            val entry = scheduledHttpSends.removeAt(0)
+            performHttpSend(
+                entry.request.target, entry.request.eventName,
+                entry.request.content, entry.request.params, entry.request.sendId
+            )
         }
     }
 
@@ -770,6 +861,7 @@ abstract class StateMachineEngine<S : State, E : Event>(
     protected fun cancelSend(sendId: String) {
         if (syncMode) {
             scheduledSends.removeAll { it.sendId == sendId }
+            scheduledHttpSends.removeAll { it.sendId == sendId }
         } else {
             delayedSendJobs.remove(sendId)?.cancel()
         }
@@ -1017,6 +1109,17 @@ abstract class StateMachineEngine<S : State, E : Event>(
      */
     internal fun sendByName(name: String) {
         resolveEventByName(name)?.let { send(it) }
+    }
+
+    /**
+     * W3C SCXML C.2: Send event by name with metadata (public, for HTTP callbacks).
+     *
+     * Used by test harness (W3CHttpTestBase) to inject HTTP response events
+     * back into the SM by string name. Resolves name to typed Event via
+     * [resolveEventByName] and dispatches with metadata.
+     */
+    fun sendEventByName(name: String, metadata: EventMetadata = EventMetadata.EMPTY) {
+        resolveEventByName(name)?.let { send(it, metadata) }
     }
 
     // --- Event Data Helpers ---

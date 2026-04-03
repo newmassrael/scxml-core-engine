@@ -62,6 +62,21 @@ class Test531StateMachine(
         else -> 0
     }
 
+    // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
+    override fun resolveEventByName(name: String): Test531Event? = when (name) {
+        "error.execution" -> Test531Event.Error.Execution
+        "test" -> Test531Event.Test
+        "timeout" -> Test531Event.Timeout
+        else -> null
+    }
+
+    // W3C SCXML 6.4: Resolve Event object to event name string
+    override fun eventNameOf(event: Test531Event): String? = when (event) {
+        is Test531Event.Error.Execution -> "error.execution"
+        is Test531Event.Test -> "test"
+        is Test531Event.Timeout -> "timeout"
+        else -> null
+    }
 
 
     // Pure function: (State, Event) -> TransitionResult (W3C SCXML 3.12)
@@ -104,6 +119,12 @@ class Test531StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 3000L, Test531Event.Timeout)
+            // W3C SCXML C.2: BasicHTTP send with static params (test 531)
+            run {
+                val httpParams = mutableMapOf<String, List<String>>()
+                httpParams["_scxmleventname"] = listOf("test")
+                performHttpSend("http://localhost:8080/test", "", "", httpParams, "__send_1")
+            }
             }
             else -> {}
         }

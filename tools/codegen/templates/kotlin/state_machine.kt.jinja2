@@ -131,7 +131,7 @@ class {{ machine_name }}StateMachine(
         else -> 0
     }
 
-{% if model.has_invoke or model.has_parent_communication or model.needs_script_engine %}
+{% if model.has_invoke or model.has_parent_communication or model.needs_script_engine or model.needs_http_send %}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
 {% for event_name in leaf_events | sort %}

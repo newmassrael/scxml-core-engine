@@ -38,7 +38,7 @@ abstract class W3CTestBase<S : State, E : Event> {
     open val timeoutMs: Long = 2000L
 
     @Test
-    fun testW3CConformance() {
+    open fun testW3CConformance() {
         val sm = createStateMachine()
         sm.initialize()
 

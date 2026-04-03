@@ -351,6 +351,12 @@ class BaseCodeGenerator(ABC):
                 model.needs_event_origin = True
             if '_event.invokeid' in str(action):
                 model.needs_event_invokeid = True
+            # W3C SCXML C.2: BasicHTTPEventProcessor with HTTP target
+            send_type = action.get('send_type', '')
+            target = action.get('target', '')
+            if (send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'
+                    and (target.startswith('http://') or target.startswith('https://'))):
+                model.needs_http_send = True
 
         elif action_type == 'cancel':
             model.needs_event_scheduler = True
