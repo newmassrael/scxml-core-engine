@@ -50,7 +50,7 @@ class PyodideCodegen {
             // Load Python files
             if (progressCallback) progressCallback('Loading codegen modules...', 60);
 
-            // Fetch and load Python modules
+            // Fetch and load Python modules (top-level)
             const modules = [
                 'tools/codegen/codegen.py',
                 'tools/codegen/scxml_parser.py',
@@ -63,6 +63,22 @@ class PyodideCodegen {
                 const code = await response.text();
                 const filename = modulePath.split('/').pop();
                 this.pyodide.FS.writeFile(`/${filename}`, code);
+            }
+
+            // Load generators package
+            this.pyodide.FS.mkdir('/generators');
+            const generatorModules = [
+                'tools/codegen/generators/__init__.py',
+                'tools/codegen/generators/base.py',
+                'tools/codegen/generators/cpp_generator.py',
+                'tools/codegen/generators/kotlin_generator.py'
+            ];
+
+            for (const modulePath of generatorModules) {
+                const response = await fetch(`${BASE_PATH}${modulePath}`);
+                const code = await response.text();
+                const filename = modulePath.split('/').pop();
+                this.pyodide.FS.writeFile(`/generators/${filename}`, code);
             }
 
             // Load templates directory structure
@@ -79,7 +95,7 @@ sys.path.insert(0, '/')
 os.makedirs('/output', exist_ok=True)
 
 # Import modules
-from codegen import CodeGenerator
+from generators import get_generator
 from scxml_parser import SCXMLParser
             `);
 
@@ -146,10 +162,10 @@ from scxml_parser import SCXMLParser
 
             // Run Python codegen
             const result = await this.pyodide.runPythonAsync(`
-from codegen import CodeGenerator
+from generators import get_generator
 
-# Initialize generator
-generator = CodeGenerator(template_dir='/templates')
+# Initialize C++ generator
+generator = get_generator('cpp', template_dir='/templates')
 
 # Generate code (writes to /output/)
 generator.generate('/input.scxml', '/output', as_child=False)
