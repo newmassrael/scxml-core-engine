@@ -271,9 +271,174 @@ class ControlHandler {
         }
     }
 
+    /**
+     * Extract unique method signatures referenced via cpp: prefix from transitions
+     * originating from currently active states.
+     * Returns array of {method, expression} where method is e.g. "isLocked"
+     * and expression is the full cond string e.g. "cpp:ctx.isLocked()".
+     */
+    _collectCppMethods() {
+        const structure = this.controller.currentMachine.structure;
+        if (!structure || !structure.transitions) return [];
+
+        // Build set of queued event names (internal + external)
+        const queuedEvents = new Set();
+        try {
+            const eventQueue = this.controller.runner.getEventQueue();
+            if (eventQueue) {
+                if (eventQueue.internal) {
+                    eventQueue.internal.forEach(e => queuedEvents.add(e.name || e));
+                }
+                if (eventQueue.external) {
+                    eventQueue.external.forEach(e => queuedEvents.add(e.name || e));
+                }
+            }
+        } catch (e) {
+            // Fallback: if getEventQueue fails, check hasQueuedEvents
+            if (!this.controller.runner.hasQueuedEvents()) return [];
+        }
+
+        // No queued events → no transitions will fire → no dialog needed
+        if (queuedEvents.size === 0) return [];
+
+        const activeStatesVec = this.controller.runner.getActiveStates();
+        const activeStates = new Set();
+        for (let i = 0; i < activeStatesVec.size(); i++) {
+            activeStates.add(activeStatesVec.get(i));
+        }
+
+        const seen = new Set();
+        const methods = [];
+        const methodRegex = /ctx\.(\w+)\(\)/;
+
+        for (const t of structure.transitions) {
+            if (!t.cond || !t.cond.startsWith('cpp:') || !activeStates.has(t.source)) continue;
+            // Only include transitions whose event is in the queue
+            if (t.event && !queuedEvents.has(t.event)) continue;
+
+            const match = t.cond.match(methodRegex);
+            if (match && !seen.has(match[1])) {
+                seen.add(match[1]);
+                methods.push({ method: match[1], expression: t.cond });
+            }
+        }
+
+        return methods;
+    }
+
+    /**
+     * Show a dialog for the user to set return values for each cpp:ctx method.
+     * Returns a Promise that resolves with a Map<methodName, bool> or null if cancelled.
+     */
+    _showCppMethodDialog(methods) {
+        return new Promise((resolve) => {
+            const overlay = document.getElementById('condition-override-dialog');
+            const listContainer = document.getElementById('condition-override-list');
+            const confirmBtn = document.getElementById('condition-override-confirm');
+            const cancelBtn = document.getElementById('condition-override-cancel');
+
+            const values = new Map();
+            methods.forEach(m => values.set(m.method, false));
+
+            listContainer.innerHTML = '';
+            methods.forEach(m => {
+                const item = document.createElement('div');
+                item.className = 'ctx-method-item';
+
+                const label = document.createElement('span');
+                label.className = 'ctx-method-label';
+                label.innerHTML = `<span class="ctx-obj">ctx</span>.<span class="ctx-method">${m.method}</span><span class="ctx-paren">()</span>`;
+                label.title = m.expression;
+
+                const toggle = document.createElement('div');
+                toggle.className = 'ctx-toggle';
+
+                const trueBtn = document.createElement('button');
+                trueBtn.className = 'ctx-toggle-btn';
+                trueBtn.textContent = 'true';
+
+                const falseBtn = document.createElement('button');
+                falseBtn.className = 'ctx-toggle-btn active-false';
+                falseBtn.textContent = 'false';
+
+                const updateSelection = (val) => {
+                    values.set(m.method, val);
+                    trueBtn.className = val ? 'ctx-toggle-btn active-true' : 'ctx-toggle-btn';
+                    falseBtn.className = val ? 'ctx-toggle-btn' : 'ctx-toggle-btn active-false';
+                };
+
+                trueBtn.onclick = () => updateSelection(true);
+                falseBtn.onclick = () => updateSelection(false);
+
+                toggle.appendChild(trueBtn);
+                toggle.appendChild(falseBtn);
+                item.appendChild(label);
+                item.appendChild(toggle);
+                listContainer.appendChild(item);
+            });
+
+            const cleanup = () => {
+                overlay.style.display = 'none';
+                confirmBtn.onclick = null;
+                cancelBtn.onclick = null;
+                document.removeEventListener('keydown', keyHandler);
+            };
+
+            const keyHandler = (e) => {
+                if (e.key === 'Escape') {
+                    cleanup();
+                    resolve(null);
+                } else if (e.key === 'Enter') {
+                    cleanup();
+                    resolve(values);
+                }
+            };
+
+            confirmBtn.onclick = () => { cleanup(); resolve(values); };
+            cancelBtn.onclick = () => { cleanup(); resolve(null); };
+            document.addEventListener('keydown', keyHandler);
+
+            overlay.style.display = 'flex';
+        });
+    }
+
+    /**
+     * Inject a mock ctx object into the JS engine with user-specified return values.
+     * The cpp: prefix in SCXML conditions acts as a JS label, so
+     * "cpp:ctx.isLocked()" evaluates as label "cpp:" + expression "ctx.isLocked()".
+     */
+    _injectMockCtx(methodValues) {
+        const methodDefs = [];
+        for (const [method, val] of methodValues) {
+            methodDefs.push(`${method}: function() { return ${val}; }`);
+        }
+        const script = `ctx = { ${methodDefs.join(', ')} }`;
+        logger.debug(`Injecting mock ctx: ${script}`);
+        this.controller.runner.evaluateExpression(script);
+    }
+
     async stepForward() {
         try {
+            // Detect cpp:ctx methods that need user-provided return values
+            const cppMethods = this._collectCppMethods();
+
+            if (cppMethods.length > 0) {
+                const methodValues = await this._showCppMethodDialog(cppMethods);
+                if (!methodValues) {
+                    // User cancelled
+                    return;
+                }
+
+                // Inject mock ctx object into JS engine
+                this._injectMockCtx(methodValues);
+            }
+
             const success = this.controller.runner.stepForward();
+
+            // Remove mock ctx after step to prevent stale values in subsequent steps
+            if (cppMethods.length > 0) {
+                this.controller.runner.evaluateExpression('delete ctx');
+            }
 
             if (!success) {
                 this.showMessage('Send an event first (use event buttons below)', 'info');

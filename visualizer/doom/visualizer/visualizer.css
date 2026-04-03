@@ -359,20 +359,18 @@ body {
     user-select: none;
 }
 
-/*/* Event buttons container */
+/* Event buttons container */
 .event-buttons-container {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    align-items: flex-start;
-    max-width: 500px;
+    gap: 6px;
+    align-items: center;
 }
 
 .event-button {
     flex: 0 0 auto;
-    min-width: 100px;
-    padding: 6px 12px;
-    font-size: 13px;
+    padding: 4px 12px;
+    font-size: 12px;
     font-weight: 500;
     background-color: #ffffff;
     border: 1px solid var(--color-border);
@@ -391,22 +389,104 @@ body {
     transform: scale(0.98);
 }
 
-/* Control buttons */
-.btn-step {
-    min-width: 120px;
-    padding: 8px 16px;
-    font-size: 14px;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+/* Header */
+.ctrl-header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 8px 0;
+    flex-wrap: wrap;
 }
 
-#step-counter {
-    font-size: 16px;
+.ctrl-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.ctrl-description {
+    font-size: 12px;
+    color: #656d76;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Control panel layout */
+.ctrl-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 16px;
+}
+
+.ctrl-row-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.ctrl-step-counter {
+    font-size: 15px;
     font-weight: 600;
     color: var(--color-blue);
-    padding: 0 16px;
+    min-width: 64px;
+    text-align: center;
+    padding: 0 8px;
+}
+
+.ctrl-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.ctrl-divider {
+    display: inline-block;
+    width: 1px;
+    height: 20px;
+    background: var(--color-border);
+    margin: 0 4px;
+}
+
+.ctrl-row-events {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border);
+}
+
+.ctrl-event-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #656d76;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+/* Control buttons */
+.btn-step {
+    min-width: 100px;
+    padding: 6px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+}
+
+.btn-step svg,
+.btn svg {
+    vertical-align: middle;
+    flex-shrink: 0;
 }
 
 /* Event queue panel */
@@ -877,15 +957,28 @@ body {
         height: 400px !important;
     }
 
+    .ctrl-row-step {
+        gap: 6px;
+    }
+
     .btn-step {
-        min-width: auto;  /* Remove fixed min-width */
-        padding: 6px 10px;
+        min-width: auto;
+        padding: 5px 10px;
         font-size: 12px;
     }
 
-    #step-counter {
-        font-size: 14px;
-        padding: 0 8px;
+    .ctrl-step-counter {
+        font-size: 13px;
+        padding: 0 4px;
+        min-width: auto;
+    }
+
+    .ctrl-actions {
+        margin-left: 0;
+    }
+
+    .ctrl-row-events {
+        flex-wrap: wrap;
     }
     
     /* Stack buttons on very small screens */
@@ -1721,4 +1814,157 @@ body {
 /* Adjust State Diagram top margin to account for sticky header */
 .sticky-header + .Box {
     margin-top: 16px;
+}
+
+/* Native Context Methods Dialog */
+.ctx-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(27, 31, 36, 0.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+}
+
+.ctx-dialog {
+    width: 480px;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(27, 31, 36, 0.1);
+    animation: ctx-dialog-in 0.15s ease-out;
+}
+
+@keyframes ctx-dialog-in {
+    from { opacity: 0; transform: scale(0.95) translateY(8px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.ctx-dialog-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 20px 20px 16px;
+    border-bottom: 1px solid #d0d7de;
+}
+
+.ctx-dialog-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background: #ddf4ff;
+    color: #0969da;
+    flex-shrink: 0;
+}
+
+.ctx-dialog-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2328;
+    margin: 0;
+    line-height: 1.4;
+}
+
+.ctx-dialog-subtitle {
+    font-size: 12px;
+    color: #656d76;
+    margin: 2px 0 0;
+    line-height: 1.4;
+}
+
+.ctx-dialog-body {
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.ctx-method-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 20px;
+    transition: background-color 0.1s;
+}
+
+.ctx-method-item:hover {
+    background-color: #f6f8fa;
+}
+
+.ctx-method-label {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    color: #1f2328;
+    flex: 1;
+    min-width: 0;
+    margin-right: 16px;
+}
+
+.ctx-method-label .ctx-obj {
+    color: #8250df;
+}
+
+.ctx-method-label .ctx-method {
+    color: #0550ae;
+}
+
+.ctx-method-label .ctx-paren {
+    color: #656d76;
+}
+
+.ctx-toggle {
+    display: flex;
+    border-radius: 6px;
+    border: 1px solid #d0d7de;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.ctx-toggle-btn {
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    background: #fff;
+    color: #656d76;
+    cursor: pointer;
+    transition: all 0.1s;
+    line-height: 1.5;
+}
+
+.ctx-toggle-btn:first-child {
+    border-right: 1px solid #d0d7de;
+}
+
+.ctx-toggle-btn:hover {
+    background: #f6f8fa;
+}
+
+.ctx-toggle-btn.active-true {
+    background: #dafbe1;
+    color: #1a7f37;
+    font-weight: 600;
+}
+
+.ctx-toggle-btn.active-false {
+    background: #ffebe9;
+    color: #cf222e;
+    font-weight: 600;
+}
+
+.ctx-dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 16px 20px;
+    border-top: 1px solid #d0d7de;
 }
