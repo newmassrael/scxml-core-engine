@@ -311,6 +311,14 @@ def detect_pass_state(test_id: str) -> str | None:
     return None
 
 
+def sm_uses_http_send(test_id: str) -> bool:
+    """Check if the generated SM actually uses performHttpSend()."""
+    sm_file = SM_OUTPUT_BASE / f'test{test_id}' / f'test{test_id}Sm.kt'
+    if not sm_file.exists():
+        return False
+    return 'performHttpSend(' in sm_file.read_text()
+
+
 def generate_test_class(test_id: str, metadata: dict, test_type: str,
                         needs_script_engine: bool) -> bool:
     """Generate a JUnit5 test class for a W3C test. Returns False if pass state not detected."""
@@ -323,26 +331,31 @@ def generate_test_class(test_id: str, metadata: dict, test_type: str,
     specnum = metadata.get('specnum', '')
     description = metadata.get('description', '')
 
-    # C++ AOT default timeout: 2s for all tests (no override needed)
+    # W3C SCXML C.2: HTTP tests use W3CHttpTestBase only when SM actually uses performHttpSend()
+    # Some TYPE HTTP tests (e.g., 201) dispatch events internally without real HTTP
+    is_http = test_type == 'HTTP' and sm_uses_http_send(test_id)
+    base_class = 'W3CHttpTestBase' if is_http else 'W3CTestBase'
+
+    # W3C SCXML 6.2: SCHEDULED tests need longer timeout for delayed send/invoke
+    # W3CTestBase default is 2s, SCHEDULED tests get 5s (matches C++ ScheduledAotTest pattern)
     timeout_override = ''
+    if test_type == 'SCHEDULED':
+        timeout_override = f"    override val timeoutMs: Long = 5000L\n"
+
+    # Build imports
+    imports = (
+        f"import com.sce.generated.{sm_package}.{sm_class}Event\n"
+        f"import com.sce.generated.{sm_package}.{sm_class}State\n"
+        f"import com.sce.generated.{sm_package}.{sm_class}StateMachine\n"
+    )
+    if needs_script_engine:
+        imports += f"import com.sce.scripting.RhinoScriptEngine\n"
+    imports += f"import org.junit.jupiter.api.DisplayName\n"
 
     # Script engine injection for hybrid tests
     if needs_script_engine:
-        imports = (
-            f"import com.sce.generated.{sm_package}.{sm_class}Event\n"
-            f"import com.sce.generated.{sm_package}.{sm_class}State\n"
-            f"import com.sce.generated.{sm_package}.{sm_class}StateMachine\n"
-            f"import com.sce.scripting.RhinoScriptEngine\n"
-            f"import org.junit.jupiter.api.DisplayName\n"
-        )
         create_sm = f"    override fun createStateMachine() = {sm_class}StateMachine(RhinoScriptEngine())\n"
     else:
-        imports = (
-            f"import com.sce.generated.{sm_package}.{sm_class}Event\n"
-            f"import com.sce.generated.{sm_package}.{sm_class}State\n"
-            f"import com.sce.generated.{sm_package}.{sm_class}StateMachine\n"
-            f"import org.junit.jupiter.api.DisplayName\n"
-        )
         create_sm = f"    override fun createStateMachine() = {sm_class}StateMachine()\n"
 
     content = (
@@ -353,7 +366,7 @@ def generate_test_class(test_id: str, metadata: dict, test_type: str,
         f"\n"
         f"// W3C SCXML {specnum}: {description}\n"
         f"@DisplayName(\"Test {test_id} -- W3C SCXML {specnum}\")\n"
-        f"class Test{to_pascal_case(test_id)} : W3CTestBase<{sm_class}State, {sm_class}Event>() {{\n"
+        f"class Test{to_pascal_case(test_id)} : {base_class}<{sm_class}State, {sm_class}Event>() {{\n"
         f"{create_sm}"
         f"    override val expectedPassState: {sm_class}State = {sm_class}State.{pass_state}\n"
         f"{timeout_override}"
@@ -363,6 +376,45 @@ def generate_test_class(test_id: str, metadata: dict, test_type: str,
     test_file = TEST_OUTPUT_DIR / f'Test{to_pascal_case(test_id)}.kt'
     write_if_changed(test_file, content)
     return True
+
+
+def clean_stale(valid_test_ids: set[str]) -> int:
+    """
+    Remove generated files for tests no longer in the CMake registry.
+
+    Scans SM output directories and test class files, removing any that
+    don't correspond to a valid (successfully generated) test ID.
+
+    Returns number of stale entries removed.
+    """
+    removed = 0
+
+    # Clean stale SM directories: SM_OUTPUT_BASE/testXXX/
+    if SM_OUTPUT_BASE.exists():
+        for d in SM_OUTPUT_BASE.iterdir():
+            if not d.is_dir() or not d.name.startswith('test'):
+                continue
+            dir_test_id = d.name[len('test'):]
+            if dir_test_id not in valid_test_ids:
+                shutil.rmtree(d)
+                print(f"  Removed stale SM dir: {d.name}")
+                removed += 1
+
+    # Clean stale test classes: TEST_OUTPUT_DIR/TestXxx.kt
+    if TEST_OUTPUT_DIR.exists():
+        for f in TEST_OUTPUT_DIR.glob('Test*.kt'):
+            if f.name == 'W3CTestBase.kt':
+                continue
+            # Extract test ID: "Test144.kt" -> "144", "Test553B.kt" -> "553b" (case-insensitive match)
+            stem = f.stem  # e.g., "Test144"
+            file_test_id = stem[len('Test'):]
+            # Match against valid IDs (case-sensitive as stored in cmake_tests)
+            if file_test_id not in valid_test_ids and file_test_id.lower() not in {t.lower() for t in valid_test_ids}:
+                f.unlink()
+                print(f"  Removed stale test: {f.name}")
+                removed += 1
+
+    return removed
 
 
 def clean_generated():
@@ -438,6 +490,13 @@ def main():
         else:
             failed.append((test_id, 'pass state not detected'))
 
+    # Clean stale files (full generation mode only)
+    stale_removed = 0
+    if not args.test:
+        valid_ids = set(generated_static) | set(generated_script)
+        if valid_ids:
+            stale_removed = clean_stale(valid_ids)
+
     # Summary
     total_generated = len(generated_static) + len(generated_script)
     print(f"\n{'='*60}")
@@ -448,6 +507,7 @@ def main():
     print(f"  Generated (total):          {total_generated}")
     print(f"  Skipped (other):            {len(skipped_other)}")
     print(f"  Failed:                     {len(failed)}")
+    print(f"  Stale removed:              {stale_removed}")
     print(f"  Total:                      {len(test_ids)}")
 
     if skipped_other:

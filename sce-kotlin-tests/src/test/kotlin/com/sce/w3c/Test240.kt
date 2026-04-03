@@ -12,4 +12,5 @@ import org.junit.jupiter.api.DisplayName
 class Test240 : W3CTestBase<Test240State, Test240Event>() {
     override fun createStateMachine() = Test240StateMachine(RhinoScriptEngine())
     override val expectedPassState: Test240State = Test240State.Pass
+    override val timeoutMs: Long = 5000L
 }

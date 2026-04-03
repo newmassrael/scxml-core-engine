@@ -62,7 +62,7 @@
         switch (state) {
 {% for state_id, state in model.states.items() %}
             case State::{{ state_id | capitalize }}:
-{% if state.datamodel or state.on_entry or state.on_entry_blocks or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
+{% if state.datamodel or state.on_entry_blocks or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
                 // ============================================================
@@ -159,13 +159,6 @@
                     );
                 }
 {% endif %}
-{% elif state.on_entry %}
-                // Backward compatibility: flat on_entry list (deprecated - use on_entry_blocks)
-{% for action in state.on_entry %}
-                {% set in_entry_exit = true %}
-                {% include 'actions/' + action.type + '.jinja2' %}
-
-{% endfor %}
 {% endif %}
 {% if state.initial_transition_actions %}
                 // W3C SCXML 3.3.2: Execute <initial> transition executable content
@@ -429,10 +422,10 @@
 {% if model.has_exit_actions %}
         switch (state) {
 {% for state_id, state in model.states.items() %}
-{% if state.on_exit or state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
+{% if state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
             case State::{{ state_id | capitalize }}:
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
-{% if state.on_exit or state.static_invokes or state.hybrid_invokes %}
+{% if state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
                 {
 {% if state.static_invokes %}
                 // W3C SCXML 6.4: Cancel pending invokes for exited state (ARCHITECTURE.md Zero Duplication)
@@ -496,13 +489,6 @@
                     );
                 }
 {% endif %}
-{% elif state.on_exit %}
-                // Backward compatibility: flat on_exit list (deprecated - use on_exit_blocks)
-{% for action in state.on_exit %}
-                {% set in_entry_exit = true %}
-                {% include 'actions/' + action.type + '.jinja2' %}
-
-{% endfor %}
 {% endif %}
                 }
 {% endif %}

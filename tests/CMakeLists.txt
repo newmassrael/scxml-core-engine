@@ -1193,9 +1193,7 @@ add_dependencies(comprehensive_interactive_test sce_runtime)
 
 # ============================================================================
 # Note: C++ StaticCodeGenerator replaced by Python + Jinja2 (codegen.py)
-# - C++ unit tests (test_static_codegen.cpp) removed with StaticCodeGenerator.cpp
-# - Integration tests run via StaticCodegenIntegrationTest (in integration_tests)
-# - TODO: Add Python codegen unit tests (pytest)
+# Integration tests run via StaticCodegenIntegrationTest (in integration_tests)
 # ============================================================================
 
 # ============================================================================

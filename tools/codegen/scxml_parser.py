@@ -61,9 +61,7 @@ class State:
     is_parallel: bool = False
     parent: Optional[str] = None
     transitions: List[Transition] = field(default_factory=list)
-    on_entry: List[Dict] = field(default_factory=list)  # Deprecated: Use on_entry_blocks for W3C SCXML 3.8 compliance
     on_entry_blocks: List[List[Dict]] = field(default_factory=list)  # W3C SCXML 3.8: Each <onentry> is a separate independent block
-    on_exit: List[Dict] = field(default_factory=list)
     on_exit_blocks: List[List[Dict]] = field(default_factory=list)  # W3C SCXML 3.9: Each <onexit> is a separate independent block
     datamodel: List[Dict] = field(default_factory=list)
     invokes: List[Dict] = field(default_factory=list)
@@ -96,9 +94,7 @@ class SCXMLModel:
     has_parallel_states: bool = False
     has_history_states: bool = False
     has_invoke: bool = False
-    has_dynamic_invoke: bool = False  # Deprecated: use has_dynamic_file_invoke or has_hybrid_invoke
     has_hybrid_invoke: bool = False  # True if any invoke uses contentexpr (AOT parent + Interpreter child)
-    has_dynamic_file_invoke: bool = False  # True if any invoke uses srcexpr (Full Interpreter wrapper)
     has_event_metadata: bool = False
     has_parent_communication: bool = False  # True if <send target="#_parent"> detected
     has_child_communication: bool = False  # True if <send target="#_child"> detected
@@ -717,16 +713,12 @@ class SCXMLParser:
                 block = self._parse_executable_content(entry_elem)
                 if block:  # Only add non-empty blocks
                     state.on_entry_blocks.append(block)
-                # Backward compatibility: Also add to flat list for templates not yet updated
-                state.on_entry.extend(block)
 
             # Parse onexit blocks (W3C SCXML 3.9: Each <onexit> is a separate independent block)
             for exit_elem in ns_findall(state_elem, 'onexit'):
                 block = self._parse_executable_content(exit_elem)
                 if block:  # Only add non-empty blocks
                     state.on_exit_blocks.append(block)
-                # Backward compatibility: Also add to flat list for templates not yet updated
-                state.on_exit.extend(block)
 
             # W3C SCXML 3.3.2: Parse <initial> transition executable content
             # This content executes AFTER parent onentry and BEFORE child state entry
@@ -775,9 +767,6 @@ class SCXMLParser:
                     }
                     state.hybrid_invokes.append(hybrid_invoke)
                     self.model.hybrid_invokes.append(hybrid_invoke)
-                elif invoke.get('is_dynamic_file', False):
-                    # Handled by has_dynamic_file_invoke flag (set in parseInvokeElement)
-                    pass
                 elif invoke.get('is_static', False):
                     # Pure static invoke: compile-time known child SCXML (src or inline content)
                         # Pure static invoke: compile-time known child SCXML (src or inline content)
@@ -835,12 +824,16 @@ class SCXMLParser:
             )
             self.document_order_counter += 1
 
-            # Parse onentry/onexit for final states
+            # Parse onentry/onexit for final states (W3C SCXML 3.8/3.9)
             for entry_elem in ns_findall(final_elem, 'onentry'):
-                state.on_entry.extend(self._parse_executable_content(entry_elem))
+                block = self._parse_executable_content(entry_elem)
+                if block:
+                    state.on_entry_blocks.append(block)
 
             for exit_elem in ns_findall(final_elem, 'onexit'):
-                state.on_exit.extend(self._parse_executable_content(exit_elem))
+                block = self._parse_executable_content(exit_elem)
+                if block:
+                    state.on_exit_blocks.append(block)
 
             # Parse <donedata> for final states (W3C SCXML 5.5)
             donedata_elem = ns_find(final_elem, 'donedata')
@@ -876,13 +869,17 @@ class SCXMLParser:
                             if event not in ['*', '.*', '_*'] and not event.endswith('.*'):
                                 self.model.events.add(event)
 
-            # Parse onentry
+            # Parse onentry (W3C SCXML 3.8)
             for entry_elem in ns_findall(parallel_elem, 'onentry'):
-                state.on_entry.extend(self._parse_executable_content(entry_elem))
+                block = self._parse_executable_content(entry_elem)
+                if block:
+                    state.on_entry_blocks.append(block)
 
-            # Parse onexit
+            # Parse onexit (W3C SCXML 3.9)
             for exit_elem in ns_findall(parallel_elem, 'onexit'):
-                state.on_exit.extend(self._parse_executable_content(exit_elem))
+                block = self._parse_executable_content(exit_elem)
+                if block:
+                    state.on_exit_blocks.append(block)
 
             self.model.states[parallel_id] = state
             self.model.has_parallel_states = True
@@ -1463,17 +1460,10 @@ class SCXMLParser:
             (invoke['srcexpr'] != '' or invoke['contentexpr'] != '')  # Runtime expression (srcexpr or contentexpr)
         )
         
-        # Note: srcexpr is no longer considered dynamic file invoke (now Static Hybrid)
-        is_dynamic_file_invoke = False  # Deprecated: srcexpr now handled as hybrid invoke
-
         invoke['is_static'] = is_static_invoke
         invoke['is_hybrid'] = is_hybrid_invoke
-        invoke['is_dynamic_file'] = is_dynamic_file_invoke
 
         # Set model flags
-        # Hybrid Strategy: contentexpr → AOT parent + Interpreter child
-        # Dynamic file invoke (srcexpr) → Full Interpreter wrapper
-
         if is_hybrid_invoke:
             self.model.has_hybrid_invoke = True
             self.model.needs_script_engine = True  # JSEngine for srcexpr/contentexpr evaluation
@@ -1481,11 +1471,6 @@ class SCXMLParser:
         # W3C SCXML 6.4.1: Namelist validation requires JSEngine (even for static invokes)
         if is_static_invoke and invoke['namelist']:
             self.model.needs_script_engine = True  # JSEngine for namelist variable validation
-        
-        if is_dynamic_file_invoke:
-            # Deprecated: srcexpr now handled as hybrid invoke
-            self.model.has_dynamic_file_invoke = True
-            self.model.has_dynamic_expressions = True
 
         return invoke
 
@@ -2115,13 +2100,13 @@ class SCXMLParser:
         """
         for state in self.model.states.values():
             if not self.model.has_entry_actions:
-                if (state.on_entry or state.on_entry_blocks or state.static_invokes or
+                if (state.on_entry_blocks or state.static_invokes or
                     state.hybrid_invokes or state.datamodel or
                     state.initial_transition_actions or state.initial_history_id or
                     (state.is_final and (state.donedata or state.parent))):
                     self.model.has_entry_actions = True
             if not self.model.has_exit_actions:
-                if state.on_exit or state.on_exit_blocks or state.static_invokes or state.hybrid_invokes:
+                if state.on_exit_blocks or state.static_invokes or state.hybrid_invokes:
                     self.model.has_exit_actions = True
             if self.model.has_entry_actions and self.model.has_exit_actions:
                 return  # Both found, early exit
@@ -2247,12 +2232,13 @@ class SCXMLParser:
                 
                 # Scan all states in child
                 for child_state in child_model.states.values():
-                    # Check entry/exit actions
-                    for action in child_state.on_entry + child_state.on_exit:
-                        if action.get('type') == 'send' and action.get('target') == '#_parent':
-                            event = action.get('event', '')
-                            if event:
-                                child_parent_events.add(event)
+                    # Check entry/exit actions (flatten on_entry_blocks/on_exit_blocks)
+                    for block in child_state.on_entry_blocks + child_state.on_exit_blocks:
+                        for action in block:
+                            if action.get('type') == 'send' and action.get('target') == '#_parent':
+                                event = action.get('event', '')
+                                if event:
+                                    child_parent_events.add(event)
                     
                     # Check transition actions
                     for transition in child_state.transitions:

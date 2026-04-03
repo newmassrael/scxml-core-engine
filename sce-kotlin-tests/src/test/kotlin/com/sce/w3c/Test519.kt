@@ -9,7 +9,7 @@ import org.junit.jupiter.api.DisplayName
 
 // W3C SCXML C.2: If one or more param children are present [in send], the SCXML Processor MUST map their names (i.e. name attributes) and values to HTTP POST parameters
 @DisplayName("Test 519 -- W3C SCXML C.2")
-class Test519 : W3CTestBase<Test519State, Test519Event>() {
+class Test519 : W3CHttpTestBase<Test519State, Test519Event>() {
     override fun createStateMachine() = Test519StateMachine(RhinoScriptEngine())
     override val expectedPassState: Test519State = Test519State.Pass
 }

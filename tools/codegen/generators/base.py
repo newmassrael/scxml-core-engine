@@ -276,8 +276,9 @@ class BaseCodeGenerator(ABC):
                 for action in transition.actions:
                     self._analyze_action(action, model)
 
-            for action in state.on_entry + state.on_exit:
-                self._analyze_action(action, model)
+            for block in state.on_entry_blocks + state.on_exit_blocks:
+                for action in block:
+                    self._analyze_action(action, model)
 
         # Script engine implies full event metadata
         if model.needs_script_engine:

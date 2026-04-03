@@ -130,43 +130,11 @@ class CppCodeGenerator(BaseCodeGenerator):
     def _generate_fallback(self, model: SCXMLModel, scxml_path: str,
                            output_dir: str) -> bool:
         """
-        Generate C++ Interpreter wrapper for dynamic features.
+        C++ AOT: No interpreter fallback.
 
-        Creates a wrapper that uses the runtime Interpreter engine
-        for SCXML files with features not supported by static codegen.
+        Per CLAUDE.md: "AOT failures must be fixed in the code generator
+        or helpers, not bypassed with Interpreter."
         """
-        wrapper_template = """#pragma once
-#include <memory>
-#include "runtime/StateMachine.h"
-#include "model/SCXMLModel.h"
-
-namespace SCE::Generated::{{ model.name }} {
-
-// Interpreter wrapper for {{ model.name }}
-// Reason: Static codegen does not support this SCXML file's features
-// Uses runtime/StateMachine for dynamic execution
-class {{ model.name }} {
-public:
-    {{ model.name }}() {
-        // TODO: Load SCXML file and create StateMachine instance
-    }
-
-    void run() {
-        // TODO: Implement using StateMachine
-    }
-};
-
-} // namespace SCE::Generated::{{ model.name }}
-"""
-        template = self.env.from_string(wrapper_template)
-        output = template.render(model=model)
-
-        input_stem = Path(scxml_path).stem
-        output_path = Path(output_dir) / f"{input_stem}_sm.h"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_path, 'w') as f:
-            f.write(output)
-
-        print(f"  Generated wrapper: {output_path}")
-        return True
+        print(f"  C++ AOT: Cannot generate code for '{model.name}' "
+              f"(dynamic features not supported — fix codegen, not fallback)")
+        return False

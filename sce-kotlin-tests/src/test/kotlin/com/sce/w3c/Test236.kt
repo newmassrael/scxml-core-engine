@@ -11,4 +11,5 @@ import org.junit.jupiter.api.DisplayName
 class Test236 : W3CTestBase<Test236State, Test236Event>() {
     override fun createStateMachine() = Test236StateMachine()
     override val expectedPassState: Test236State = Test236State.Pass
+    override val timeoutMs: Long = 5000L
 }

@@ -76,9 +76,9 @@
 {% endfor %}
                 }
 {% endfor %}
-{% else %}
+{% elif state.on_entry_blocks %}
 {% set in_run_block = false %}
-{% for action in state.on_entry %}
+{% for action in state.on_entry_blocks[0] %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}
@@ -384,9 +384,9 @@
 {% endfor %}
                 }
 {% endfor %}
-{% else %}
+{% elif state.on_exit_blocks %}
 {% set in_run_block = false %}
-{% for action in state.on_exit %}
+{% for action in state.on_exit_blocks[0] %}
     {% include 'actions/_render.kt.jinja2' with context %}
 {% endfor %}
 {% endif %}
