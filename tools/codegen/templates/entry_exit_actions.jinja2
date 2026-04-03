@@ -36,12 +36,11 @@
 #}
 
     template<typename Engine>
-{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
-{% else %}    [[gnu::hot]] void executeEntryActions(State state, [[maybe_unused]] Engine& engine) {
+{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
+{% else %}    [[gnu::hot]] void executeEntryActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine) {
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}
         // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
-        // Check for duplicates before adding (parallel region re-entry may call this multiple times)
         {
             ::std::lock_guard<::std::mutex> lock(activeStatesMutex_);
             bool alreadyActive = false;
@@ -55,15 +54,15 @@
                 AOT_DEBUG("AOT executeEntryActions: Adding state {} to activeStates", static_cast<int>(state));
                 activeStates_.push_back(state);
             } else {
-                AOT_DEBUG("AOT executeEntryActions: State {} already in activeStates, skipping duplicate", static_cast<int>(state));
                 return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
             }
         }
 {% endif %}
+{% if model.has_entry_actions %}
         switch (state) {
 {% for state_id, state in model.states.items() %}
             case State::{{ state_id | capitalize }}:
-{% if state.datamodel or state.on_entry or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
+{% if state.datamodel or state.on_entry or state.on_entry_blocks or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
 {% if state.datamodel and model.binding == 'late' %}
                 // ============================================================
@@ -300,6 +299,7 @@
             default:
                 break;
         }
+{% endif %}{# model.has_entry_actions #}
 {% if model.has_parallel_states %}
 
         // W3C SCXML 3.4: If entering parallel state, enter all child regions and their initial children
@@ -352,8 +352,8 @@
     }
 
     template<typename Engine>
-{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
-{% else %}    [[gnu::hot]] void executeExitActions(State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% if not model.needs_script_engine and not model.static_invokes and not model.has_parent_communication and not model.needs_event_scheduler and not model.has_parallel_states and not model.context_objects %}    [[gnu::hot]] static void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
+{% else %}    [[gnu::hot]] void executeExitActions([[maybe_unused]] State state, [[maybe_unused]] Engine& engine, [[maybe_unused]] const std::vector<State>& activeStatesBeforeTransition) {
 {% endif %}
 
 {% if model.has_parallel_states %}
@@ -426,12 +426,12 @@
         }
         {% endfor %}
         {% endif %}
-        AOT_DEBUG("AOT executeExitActions: Entering switch for state {}", static_cast<int>(state));
+{% if model.has_exit_actions %}
         switch (state) {
 {% for state_id, state in model.states.items() %}
+{% if state.on_exit or state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
             case State::{{ state_id | capitalize }}:
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));
-                AOT_DEBUG("AOT executeExitActions: About to execute exit action block for state {}", static_cast<int>(state));
 {% if state.on_exit or state.static_invokes or state.hybrid_invokes %}
                 {
 {% if state.static_invokes %}
@@ -507,10 +507,12 @@
                 }
 {% endif %}
                 break;
+{% endif %}{# state has exit actions #}
 {% endfor %}
             default:
                 break;
         }
+{% endif %}{# model.has_exit_actions #}
     }
 
 {% if model.static_invokes or model.hybrid_invokes %}

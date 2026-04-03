@@ -1,15 +1,17 @@
 {% include 'license_header.jinja2' %}
 
 #pragma once
-#include <chrono>
 #include <cstdint>
-#include <memory>
-#include <stdexcept>
 #include <string>
 #include <string_view>
+{% if model.needs_event_scheduler or model.has_parent_communication %}
+#include <chrono>
+{% endif %}
+{% if model.static_invokes or model.hybrid_invokes or model.needs_script_engine %}
+#include <memory>
+{% endif %}
+{% if model.static_invokes %}
 #include <unordered_map>
-{% if model.context_objects %}
-#include <iostream>  // C++ function integration: Required for std namespace usage
 {% endif %}
 {% for ctx in model.context_objects %}
 {% if ctx.cpp_include %}
@@ -50,7 +52,9 @@
 #include "core/HistoryHelper.h"
 #include "core/StateEntryHelper.h"
 #include "core/EntryExitHelper.h"
+{% if model.needs_event_matching_helper %}
 #include "core/EventMatchingHelper.h"
+{% endif %}
 {% if model.has_parallel_states %}
 #include "core/ParallelStateHelper.h"
 #include "core/ParallelExitEntryHelper.h"
@@ -87,6 +91,10 @@
 #endif
 
 // Transition execution macro - compresses repetitive transition code
+#ifdef AOT_EXECUTE_TRANSITION
+#undef AOT_EXECUTE_TRANSITION
+#endif
+{% if model.has_parallel_states %}
 #define AOT_EXECUTE_TRANSITION(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS) \
     do { \
         AOT_DEBUG("AOT processTransition: Transition matched in state {}", static_cast<int>(SRC)); \
@@ -102,6 +110,17 @@
             transitionTaken = true; \
         } \
     } while(0)
+{% else %}
+#define AOT_EXECUTE_TRANSITION(SRC, TGT, IDX, HAS_ACTIONS, IS_INTERNAL, IS_TARGETLESS) \
+    do { \
+        AOT_DEBUG("AOT processTransition: Transition matched in state {} -> {}", static_cast<int>(SRC), static_cast<int>(TGT)); \
+        lastTransitionSourceState_ = SRC; \
+        lastTransitionIsInternal_ = IS_INTERNAL; \
+        lastTransitionIsTargetless_ = IS_TARGETLESS; \
+        currentState = TGT; \
+        transitionTaken = true; \
+    } while(0)
+{% endif %}
 
 {# ═══ Named Context: precompute template parameter/argument lists ═══ #}
 {# Contexts with cpp_type use concrete types (no template param needed).    #}
@@ -170,6 +189,7 @@ enum class Event : uint8_t {
     {% endfor %}
 };
 
+{% if model.has_parallel_states %}
 {# Transition descriptor for W3C SCXML Appendix D optimal transition set #}
 /**
  * @brief Transition information for microstep execution
@@ -188,6 +208,7 @@ struct TransitionInfo {
     TransitionInfo(State src, State tgt, int idx, bool actions, bool internal = false, bool targetless = false)
         : source(src), target(tgt), transitionIndex(idx), hasActions(actions), isInternal(internal), isTargetless(targetless) {}
 };
+{% endif %}
 
 {# Policy class #}
 // State policy for {{ model.name }}
@@ -207,7 +228,7 @@ struct {{ model.name }}Policy {
     {% if model.context_objects %}
     // Named Context: individual pointers for dependency injection
     {% for ctx in model.context_objects %}
-    {% if ctx.cpp_type %}{{ ctx.cpp_type }}{% else %}{{ ctx.id | capitalize }}T{% endif %}* {{ ctx.id }}_ = nullptr;
+    {{ ctx.cpp_type if ctx.cpp_type else (ctx.id | capitalize + 'T') }}* {{ ctx.id }}_ = nullptr;
     {% endfor %}
     {% endif %}
 

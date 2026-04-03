@@ -403,37 +403,59 @@ class BaseCodeGenerator(ABC):
         W3C SCXML 3.12.1: event="error" matches "error", "error.execution", etc.
         Handles space-separated multiple event descriptors (e.g., "foo bar").
         Handles explicit wildcard descriptors (e.g., "foo.*").
+
+        Also sets per-transition flags for codegen optimization:
+        - needs_string_matching: True if runtime EventMatchingHelper is needed
+        - matching_enum_values: Precomputed enum values for direct comparison
+        - model.needs_event_matching_helper: True if any transition needs runtime matching
         """
         # model.events already contains invoke lifecycle events
         # (added by _add_system_events), no need to extend again
         all_events = list(model.events)
+        model.needs_event_matching_helper = False
 
         for state in model.states.values():
             for transition in state.transitions:
-                if not transition.event or transition.event in ['*', '.*', '_*']:
+                if not transition.event:
+                    continue
+
+                # W3C SCXML 5.9.3: Wildcards and glob patterns need runtime matching (C++)
+                # but still compute prefix_matching_events for Kotlin codegen
+                if transition.event in ['*', '.*', '_*'] or '.*' in transition.event or ' ' in transition.event:
+                    transition.needs_string_matching = True
+                    model.needs_event_matching_helper = True
+
+                    # Compute prefix_matching_events for Kotlin templates
+                    matching_events = set()
+                    descriptors = transition.event.split()
+                    for descriptor in descriptors:
+                        if descriptor in ['*', '.*', '_*']:
+                            matching_events.update(all_events)
+                        elif descriptor.endswith('.*'):
+                            base = descriptor[:-2]
+                            for event_name in all_events:
+                                if event_name.startswith(base + '.'):
+                                    matching_events.add(event_name)
+                        else:
+                            for event_name in all_events:
+                                if event_name == descriptor or event_name.startswith(descriptor + '.'):
+                                    matching_events.add(event_name)
+                    transition.prefix_matching_events = sorted(matching_events)
                     continue
 
                 matching_events = set()
 
-                # W3C SCXML 3.12.1: Split space-separated event descriptors
-                descriptors = transition.event.split()
+                # Standard prefix matching: "foo" matches "foo" and "foo.bar"
+                for event_name in all_events:
+                    if event_name == transition.event:
+                        matching_events.add(event_name)
+                    elif event_name.startswith(transition.event + '.'):
+                        matching_events.add(event_name)
 
-                for descriptor in descriptors:
-                    if descriptor.endswith('.*'):
-                        # W3C SCXML 3.12.1: "foo.*" matches descendants only (not "foo" itself)
-                        base = descriptor[:-2]
-                        for event_name in all_events:
-                            if event_name.startswith(base + '.'):
-                                matching_events.add(event_name)
-                    else:
-                        # Standard prefix matching: "foo" matches "foo" and "foo.bar"
-                        for event_name in all_events:
-                            if event_name == descriptor:
-                                matching_events.add(event_name)
-                            elif event_name.startswith(descriptor + '.'):
-                                matching_events.add(event_name)
-
-                transition.prefix_matching_events = sorted(matching_events)
+                sorted_matching = sorted(matching_events)
+                transition.prefix_matching_events = sorted_matching
+                transition.matching_enum_values = sorted_matching
+                transition.needs_string_matching = False
 
     def _can_generate_static(self, model: SCXMLModel) -> bool:
         """

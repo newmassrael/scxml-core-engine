@@ -65,9 +65,7 @@
 {% if trans.history_target is defined %}
                     // W3C SCXML 3.11: History transition - resolve target at runtime
                     State resolvedHistoryTarget_{{ trans.history_target }};
-                    // W3C SCXML 3.11: Restore history or use default transition (matches Interpreter logic)
                     if (history_{{ trans.history_target }}.has_value()) {
-                        // Restore from recorded history (may contain multiple states for parallel regions)
                         const auto& recordedStates = history_{{ trans.history_target }}.value();
                         if (!recordedStates.empty()) {
                             resolvedHistoryTarget_{{ trans.history_target }} = recordedStates[0];
@@ -76,48 +74,42 @@
                         } else {
 {% set history_info = model.history_states[trans.history_target] %}
 {% set leaf_target = history_info.leaf_target %}
-                            // W3C SCXML 3.11: Empty history was recorded (valid scenario) - use default transition
                             resolvedHistoryTarget_{{ trans.history_target }} = State::{{ leaf_target | capitalize }};
-                            AOT_DEBUG("AOT processTransition: Empty history for {{ trans.history_target }}, using default transition -> {}", static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
+                            AOT_DEBUG("AOT processTransition: Empty history for {{ trans.history_target }}, using default -> {}", static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
                         }
                     } else {
 {% set history_info = model.history_states[trans.history_target] %}
 {% set leaf_target = history_info.leaf_target %}
-                        // History never recorded - use default transition
                         resolvedHistoryTarget_{{ trans.history_target }} = State::{{ leaf_target | capitalize }};
-                        AOT_DEBUG("AOT processTransition: No history recorded for {{ trans.history_target }}, using default transition -> {}", static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
+                        AOT_DEBUG("AOT processTransition: No history for {{ trans.history_target }}, using default -> {}", static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
                     }
 
+{% if model.has_parallel_states %}
                     // W3C SCXML Appendix D + 3.10: Support collection mode for history transitions
-                    // This ensures proper exit set computation (including active parent state)
                     if (collectMode != nullptr) {
-                        // Collection mode: Store resolved history transition
-                        AOT_DEBUG("AOT processTransition: Collecting history transition {} -> {}", static_cast<int>(checkState), static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
                         collectMode->push_back(TransitionInfo(checkState, resolvedHistoryTarget_{{ trans.history_target }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }}, false));
-                        // Note: transitionTaken will be set by caller after processing collected transitions
                     } else {
-                        // Immediate execution mode
-                        AOT_DEBUG("AOT processTransition: Immediate history transition {} -> {}", static_cast<int>(currentState), static_cast<int>(resolvedHistoryTarget_{{ trans.history_target }}));
                         currentState = resolvedHistoryTarget_{{ trans.history_target }};
                         transitionTaken = true;
                     }
 {% else %}
-                    // W3C SCXML Appendix D: Use macro for transition execution
-                    AOT_EXECUTE_TRANSITION(checkState, State::{{ trans.target | capitalize }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }}, false);
-                    return true;
+                    currentState = resolvedHistoryTarget_{{ trans.history_target }};
+                    transitionTaken = true;
 {% endif %}
 {% else %}
-                    // W3C SCXML 5.9.2: Targetless internal transition (consumes event only, no exit/enter)
+                    AOT_EXECUTE_TRANSITION(checkState, State::{{ trans.target | capitalize }}, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }}, false);
+{% endif %}
+{% else %}
+                    // W3C SCXML 5.9.2: Targetless internal transition (consumes event only)
+{% if model.has_parallel_states %}
                     if (collectMode != nullptr) {
-                        // Collection mode: Store targetless transition
-                        // Use source state as both source and target (will be handled specially by StaticExecutionEngine)
-                        AOT_DEBUG("AOT processTransition: Collecting targetless internal transition {}", static_cast<int>(checkState));
                         collectMode->push_back(TransitionInfo(checkState, checkState, {{ trans_index }}, {{ 'true' if trans.actions else 'false' }}, true, true));
-                        // Note: transitionTaken will be set by caller after processing collected transitions
                     } else {
-                        // Immediate execution mode
                         transitionTaken = true;
                     }
+{% else %}
+                    transitionTaken = true;
+{% endif %}
 {% endif %}
 {% endmacro %}
 
@@ -295,8 +287,8 @@
             }
         }
 {% else %}
+{% if model.has_hierarchy %}
         // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
-        // Match Interpreter engine's hierarchical transition logic:
         // Check transitions from current state up through parent hierarchy
         State checkState = currentState;
 
@@ -309,16 +301,13 @@
             }
 
             // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-            // Only check the current active state for eventless transitions
             if (event == Event()) [[unlikely]] {
-                AOT_DEBUG("AOT processTransition: Eventless transition - not checking parent states");
                 break;
             }
 
             // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling (external events only)
             auto parent = {{ model.name }}Policy::getParent(checkState);
             if (!parent.has_value()) [[unlikely]] {
-                // Reached root, no more parents to check
                 break;
             }
 
@@ -326,6 +315,10 @@
                       static_cast<int>(checkState), static_cast<int>(parent.value()));
             checkState = parent.value();
         }
+{% else %}
+        // Flat state machine: no hierarchy, direct transition check
+        tryTransitionInState(currentState, event, currentState, transitionTaken, engine);
+{% endif %}
 {% endif %}
 
 {% if model.has_parent_communication %}
@@ -520,16 +513,16 @@ private:
 {% endif %}
 
     // W3C SCXML 3.12: Helper method for hierarchical transition checking
+{% if model.has_parallel_states %}
     // W3C SCXML Appendix D: Supports both immediate execution and collection modes
     // - collectMode = nullptr: Immediate execution (traditional behavior)
     // - collectMode = vector: Collection only (for optimal transition set)
+{% endif %}
     template<typename Engine>
-    // W3C SCXML 3.13: Always non-static (uses lastTransitionSourceState_ and lastTransitionIsInternal_)
     [[gnu::hot]]
     bool tryTransitionInState([[maybe_unused]] State checkState, [[maybe_unused]] Event event,
                               [[maybe_unused]] State& currentState, [[maybe_unused]] bool& transitionTaken,
-                              [[maybe_unused]] Engine& engine,
-                              [[maybe_unused]] ::std::vector<TransitionInfo>* collectMode = nullptr) {
+                              [[maybe_unused]] Engine& engine{{ ', [[maybe_unused]] ::std::vector<TransitionInfo>* collectMode = nullptr' if model.has_parallel_states else '' }}) {
         switch (checkState) {
 {% for state_id, state in model.states.items() %}
         case State::{{ state_id | capitalize }}:
@@ -555,16 +548,21 @@ private:
 {# Document order ensures this: if SCXML has entering.s011 before entering, check in that order #}
 {% set prev_event = namespace(value='') %}
 {% for trans in event_transitions %}
-{# Generate event matching condition using prefix matching #}
-{% if trans.event in ['*', '.*', '_*'] or trans.event.find('.*') != -1 or ' ' in trans.event %}
-            // W3C SCXML 5.9.3: Event descriptor matching (wildcards, patterns, multiple events)
+{# Generate event matching condition: enum comparison or runtime string matching #}
+{% if trans.needs_string_matching %}
+            // W3C SCXML 5.9.3: Runtime event descriptor matching (wildcards/patterns/multi-token)
             if (event != Event::NONE && ::SCE::Core::EventMatchingHelper::matchesEventDescriptor(
                 {{ model.name }}Policy::getEventName(event), "{{ trans.event }}")) {
+{% elif trans.matching_enum_values | length == 1 %}
+            // W3C SCXML 5.9.3: Direct enum comparison (exact match, no prefix matching needed)
+            if (event == Event::{{ trans.matching_enum_values[0] | replace('.', '_') | replace('-', '_') | capitalize }}) {
+{% elif trans.matching_enum_values | length > 1 %}
+            // W3C SCXML 5.9.3: Precomputed prefix match — "{{ trans.event }}" matches {{ trans.matching_enum_values | length }} events
+            if ({% for ev in trans.matching_enum_values %}event == Event::{{ ev | replace('.', '_') | replace('-', '_') | capitalize }}{{ ' || ' if not loop.last }}{% endfor %}) {
 {% else %}
-            // W3C SCXML 5.9.3: Event descriptor matching with prefix matching
-            // Descriptor "{{ trans.event }}" matches "{{ trans.event }}" exactly or "{{ trans.event }}.*" prefix
-            if (event != Event::NONE && ::SCE::Core::EventMatchingHelper::matchesEventDescriptor(
-                {{ model.name }}Policy::getEventName(event), "{{ trans.event }}")) {
+            // W3C SCXML 5.9.3: Event "{{ trans.event }}" has no matching enum values in this SM
+            // This is unreachable in well-formed SCXML — kept as defensive guard
+            if (false) {
 {% endif %}
 {# Initialize JSEngine if needed (only once per transition) #}
 {% if model.needs_script_engine %}

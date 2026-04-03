@@ -44,6 +44,8 @@ class Transition:
     is_kt_condition: bool = False  # True if cond uses kt: prefix for direct Kotlin evaluation
     type: str = "external"  # external or internal
     actions: List[Dict] = field(default_factory=list)  # executable content
+    needs_string_matching: bool = False  # True if event needs runtime string matching (wildcards, prefix)
+    matching_enum_values: List[str] = field(default_factory=list)  # Precomputed enum values for direct comparison
 
 
 @dataclass
@@ -100,6 +102,10 @@ class SCXMLModel:
     needs_script_engine: bool = False
     uses_in_predicate: bool = False  # W3C SCXML 3.12.1: True if In() predicate used (requires activeStates_ management)
     has_transition_actions: bool = False  # W3C SCXML 3.13: True if any transition has executable content
+    has_entry_actions: bool = False  # True if any state has entry actions (on_entry, on_entry_blocks, invokes, donedata)
+    has_exit_actions: bool = False  # True if any state has exit actions (on_exit, on_exit_blocks, invokes)
+    has_hierarchy: bool = False  # True if any state has a parent (non-flat SM)
+    needs_event_matching_helper: bool = False  # True if any transition needs runtime string-based event matching
 
     # W3C SCXML 5.10: Event metadata field flags
     needs_event_name: bool = False
@@ -323,6 +329,12 @@ class SCXMLParser:
 
         # W3C SCXML 3.13: Check if any transitions have actions (for static optimization)
         self._detect_transition_actions()
+
+        # Detect entry/exit actions for conditional code generation (empty body optimization)
+        self._detect_entry_exit_actions()
+
+        # Detect hierarchy for flat SM optimization (skip parent traversal loop)
+        self._detect_hierarchy()
 
         # W3C SCXML 3.7: Add done.state events for states with final children
         self._add_done_state_events()
@@ -1973,7 +1985,7 @@ class SCXMLParser:
     def _detect_transition_actions(self):
         """
         Detect if any transitions have executable content (W3C SCXML 3.13)
-        
+
         Sets has_transition_actions flag for conditional static optimization.
         If no transitions have actions, tryTransitionInState can remain static.
         """
@@ -1982,9 +1994,42 @@ class SCXMLParser:
                 if transition.actions:
                     self.model.has_transition_actions = True
                     return  # Early exit once we find any action
-        
+
         # No transition actions found
         self.model.has_transition_actions = False
+
+    def _detect_entry_exit_actions(self):
+        """
+        Detect if any state has entry or exit actions.
+
+        Sets has_entry_actions and has_exit_actions flags for conditional code generation.
+        When no state has entry/exit actions, generate empty function body instead of switch-case.
+        """
+        for state in self.model.states.values():
+            if not self.model.has_entry_actions:
+                if (state.on_entry or state.on_entry_blocks or state.static_invokes or
+                    state.hybrid_invokes or state.datamodel or
+                    state.initial_transition_actions or state.initial_history_id or
+                    (state.is_final and (state.donedata or state.parent))):
+                    self.model.has_entry_actions = True
+            if not self.model.has_exit_actions:
+                if state.on_exit or state.on_exit_blocks or state.static_invokes or state.hybrid_invokes:
+                    self.model.has_exit_actions = True
+            if self.model.has_entry_actions and self.model.has_exit_actions:
+                return  # Both found, early exit
+
+    def _detect_hierarchy(self):
+        """
+        Detect if any state has a parent (non-flat state machine).
+
+        Sets has_hierarchy flag. When False, hierarchy traversal loop in
+        processTransition can be replaced with direct tryTransitionInState() call.
+        """
+        for state in self.model.states.values():
+            if state.parent:
+                self.model.has_hierarchy = True
+                return
+        self.model.has_hierarchy = False
 
     def _add_done_state_events(self):
         """
