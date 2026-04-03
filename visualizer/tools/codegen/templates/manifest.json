@@ -1,6 +1,7 @@
 {
   "templates": [
     "state_machine.jinja2",
+    "state_machine_inl.jinja2",
     "process_transition.jinja2",
     "entry_exit_actions.jinja2",
     "scriptengine_helpers.jinja2",
