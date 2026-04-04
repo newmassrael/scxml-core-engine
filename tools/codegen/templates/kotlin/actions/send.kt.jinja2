@@ -84,65 +84,12 @@
                     raiseInternal({{ machine_name }}Event.Error.Communication, EventMetadata.platform())
                     return@run
                 }
-                // W3C SCXML C.2: BasicHTTP send with dynamic target — dispatch via performHttpSend()
-{% set http_needs_script = (action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) or action.namelist or action.contentexpr %}
-{% if http_needs_script %}
-                val httpParams = mutableMapOf<String, List<String>>()
-{% for param in action.params %}
-{% if param.is_static_literal %}
-                httpParams["{{ param.name }}"] = listOf("{{ param.static_value }}")
-{% elif param.expr %}
-                try {
-                    val v = engineT.evaluateExpr(sidT, "{{ param.expr | escape_kotlin }}")
-                    httpParams["{{ param.name }}"] = listOf(v?.toString() ?: "")
-                } catch (_: Exception) {
-                    httpParams["{{ param.name }}"] = listOf("")
-                }
-{% endif %}
-{% endfor %}
-{% if action.namelist %}
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
-{% for var_name in action.namelist.split() %}
-                if (!engineT.hasVariable(sidT, "{{ var_name }}")) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
-                    return@run
-                }
-                try {
-                    val v = engineT.getVariable(sidT, "{{ var_name }}")
-                    httpParams["{{ var_name }}"] = listOf(v?.toString() ?: "")
-                } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
-                    return@run
-                }
-{% endfor %}
-{% endif %}
-{% if action.contentexpr %}
-                // W3C SCXML C.2: Dynamic content expression
-                val httpContent: String
-                try {
-                    val v = engineT.evaluateExpr(sidT, "{{ action.contentexpr | escape_kotlin }}")
-                    httpContent = v?.toString() ?: ""
-                } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
-                    return@run
-                }
-{% else %}
-                val httpContent = "{{ action.content | escape_kotlin }}"
-{% endif %}
-                performHttpSend(dynamicTarget, "{{ action.event }}", httpContent, httpParams, "{{ action.auto_send_id }}")
-{% elif action.params %}
-                val httpParams = mutableMapOf<String, List<String>>()
-{% for param in action.params %}
-                httpParams["{{ param.name }}"] = listOf("{{ param.static_value }}")
-{% endfor %}
-                performHttpSend(dynamicTarget, "{{ action.event }}", "", httpParams, "{{ action.auto_send_id }}")
-{% elif action.content %}
-                performHttpSend(dynamicTarget, "{{ action.event }}", "{{ action.content | escape_kotlin }}", emptyMap(), "{{ action.auto_send_id }}")
-{% elif action.event %}
-                performHttpSend(dynamicTarget, "{{ action.event }}", "", emptyMap(), "{{ action.auto_send_id }}")
-{% else %}
-                performHttpSend(dynamicTarget, "", "", emptyMap(), "{{ action.auto_send_id }}")
-{% endif %}
+                // W3C SCXML C.2: BasicHTTP send with dynamic target (C++ http_target_cpp pattern)
+{% set http_target = 'dynamicTarget' %}
+{% set http_engine = 'engineT' %}
+{% set http_sid = 'sidT' %}
+{% set http_in_run_block = true %}
+{% include 'actions/_http_send_body.kt.jinja2' with context %}
 {% else %}
 {% if action.event %}
 {% set needs_params = action.params or action.namelist %}
@@ -235,105 +182,12 @@
             sendToChild("{{ action.target[2:] }}", "{{ action.event }}")
 {% endif %}
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and action.target and (action.target.startswith('http://') or action.target.startswith('https://')) %}
-{# W3C SCXML C.2: BasicHTTP send — dispatch via HTTP POST (C++ HttpSendHelper pattern) #}
-{% set http_needs_script = (action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) or action.namelist or action.contentexpr or action.delayexpr %}
-{% if http_needs_script and model.needs_script_engine %}
-            // W3C SCXML C.2: BasicHTTP send with script engine evaluation
-            run {
-                ensureScriptEngine()
-                val engineH = scriptEngine ?: return@run
-                val sidH = scriptSessionId ?: return@run
-                val httpParams = mutableMapOf<String, List<String>>()
-{% for param in action.params %}
-{% if param.is_static_literal %}
-                httpParams["{{ param.name }}"] = listOf("{{ param.static_value }}")
-{% elif param.expr %}
-                try {
-                    val v = engineH.evaluateExpr(sidH, "{{ param.expr | escape_kotlin }}")
-                    httpParams["{{ param.name }}"] = listOf(v?.toString() ?: "")
-                } catch (_: Exception) {
-                    httpParams["{{ param.name }}"] = listOf("")
-                }
-{% endif %}
-{% endfor %}
-{% if action.namelist %}
-                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
-{% for var_name in action.namelist.split() %}
-                if (!engineH.hasVariable(sidH, "{{ var_name }}")) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
-                    return@run
-                }
-                try {
-                    val v = engineH.getVariable(sidH, "{{ var_name }}")
-                    httpParams["{{ var_name }}"] = listOf(v?.toString() ?: "")
-                } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution)
-                    return@run
-                }
-{% endfor %}
-{% endif %}
-{% if action.contentexpr %}
-                // W3C SCXML C.2: Dynamic content expression
-                val httpContent: String
-                try {
-                    val v = engineH.evaluateExpr(sidH, "{{ action.contentexpr | escape_kotlin }}")
-                    httpContent = v?.toString() ?: ""
-                } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
-                    return@run
-                }
-{% else %}
-                val httpContent = "{{ action.content | escape_kotlin }}"
-{% endif %}
-{% if action.delayexpr %}
-                // W3C SCXML C.2: Dynamic delay for HTTP send
-                val delayStrH: String
-                try {
-                    val v = engineH.evaluateExpr(sidH, "{{ action.delayexpr | escape_kotlin }}")
-                    delayStrH = v?.toString() ?: "0s"
-                } catch (_: Exception) {
-                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
-                    return@run
-                }
-                val delayMsH = parseDelay(delayStrH)
-                scheduleHttpSend(delayMsH, "{{ action.target }}", "{{ action.event }}", httpContent, httpParams, "{{ action.auto_send_id }}")
-{% elif action.delay %}
-                scheduleHttpSend({{ action.delay_ms | default(0) }}L, "{{ action.target }}", "{{ action.event }}", httpContent, httpParams, "{{ action.auto_send_id }}")
-{% else %}
-                performHttpSend("{{ action.target }}", "{{ action.event }}", httpContent, httpParams, "{{ action.auto_send_id }}")
-{% endif %}
-            }
-{% elif action.params %}
-            // W3C SCXML C.2: BasicHTTP send with static params (test 531)
-            run {
-                val httpParams = mutableMapOf<String, List<String>>()
-{% for param in action.params %}
-                httpParams["{{ param.name }}"] = listOf("{{ param.static_value }}")
-{% endfor %}
-{% if action.delay %}
-                scheduleHttpSend({{ action.delay_ms | default(0) }}L, "{{ action.target }}", "{{ action.event }}", "", httpParams, "{{ action.auto_send_id }}")
-{% else %}
-                performHttpSend("{{ action.target }}", "{{ action.event }}", "", httpParams, "{{ action.auto_send_id }}")
-{% endif %}
-            }
-{% elif action.content %}
-            // W3C SCXML C.2: BasicHTTP content-only send (test 520, 532)
-{% if action.delay %}
-            scheduleHttpSend({{ action.delay_ms | default(0) }}L, "{{ action.target }}", "{{ action.event }}", "{{ action.content | escape_kotlin }}", emptyMap(), "{{ action.auto_send_id }}")
-{% else %}
-            performHttpSend("{{ action.target }}", "{{ action.event }}", "{{ action.content | escape_kotlin }}", emptyMap(), "{{ action.auto_send_id }}")
-{% endif %}
-{% elif action.event %}
-            // W3C SCXML C.2: BasicHTTP event send (test 534)
-{% if action.delay %}
-            scheduleHttpSend({{ action.delay_ms | default(0) }}L, "{{ action.target }}", "{{ action.event }}", "", emptyMap(), "{{ action.auto_send_id }}")
-{% else %}
-            performHttpSend("{{ action.target }}", "{{ action.event }}", "", emptyMap(), "{{ action.auto_send_id }}")
-{% endif %}
-{% else %}
-            // W3C SCXML C.2: BasicHTTP send with no event/content/params
-            performHttpSend("{{ action.target }}", "", "", emptyMap(), "{{ action.auto_send_id }}")
-{% endif %}
+{# W3C SCXML C.2: BasicHTTP send with static target (C++ http_target_cpp pattern) #}
+{% set http_target = '"' ~ action.target ~ '"' %}
+{% set http_engine = 'engineH' %}
+{% set http_sid = 'sidH' %}
+{% set http_in_run_block = false %}
+{% include 'actions/_http_send_body.kt.jinja2' with context %}
 {% else %}
 {# Default: send to self (external queue) #}
 {% set needs_params = action.params or action.namelist %}

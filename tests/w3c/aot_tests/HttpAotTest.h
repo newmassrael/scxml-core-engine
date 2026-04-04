@@ -2,15 +2,13 @@
 #include "AotTestBase.h"
 #include "core/LogMacros.h"
 #include "AotTestRegistry.h"
+#include "events/IHttpClient.h"
+#include "common/SendHelper.h"
 #ifndef __EMSCRIPTEN__
 #include "W3CHttpTestServer.h"
 #include "events/CppHttplibClient.h"
-#include "events/IHttpClient.h"
-#include "common/SendHelper.h"
 #else
 #include "events/EmscriptenFetchClient.h"
-#include "events/IHttpClient.h"
-#include "common/SendHelper.h"
 #include <nlohmann/json.hpp>
 #endif
 #include "static/StaticExecutionEngine.h"
