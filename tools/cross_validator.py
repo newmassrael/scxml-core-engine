@@ -1,48 +1,50 @@
 #!/usr/bin/env python3
 """
-C++/Kotlin Cross-Validator for SCXML Code Generation
+N-Way Cross-Validator for SCXML Code Generation
 
-Validates production readiness of Kotlin codegen by comparing structural
-parity with C++ codegen across all W3C SCXML tests.
+Auto-detects all registered language generators and validates that they
+produce structurally equivalent output for all W3C SCXML tests.
 
-Comparison levels:
-  1. Codegen success: Both generators succeed on same SCXML
-  2. Structural parity: Same states, events, initial state, features
-  3. Test result parity: Both pass/fail identically (Kotlin JUnit XML)
+Design:
+  - SCXMLModel is the canonical reference (language-agnostic)
+  - Generators are auto-discovered via generators.supported_languages()
+  - Any new language added to the registry is automatically validated
 
 Usage:
-  python3 tools/cross_validator.py                  # Full validation
+  python3 tools/cross_validator.py                  # All languages, all tests
   python3 tools/cross_validator.py --test 144       # Single test
-  python3 tools/cross_validator.py --json            # JSON output
-  python3 tools/cross_validator.py --verbose         # Show all, not just failures
+  python3 tools/cross_validator.py --lang cpp,kotlin # Specific languages
+  python3 tools/cross_validator.py --json           # JSON output
+  python3 tools/cross_validator.py -v               # Verbose
 """
 
 import argparse
 import contextlib
 import io
 import json
-import os
 import re
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set
 
 # Add codegen to path
 TOOLS_DIR = Path(__file__).resolve().parent
 CODEGEN_DIR = TOOLS_DIR / "codegen"
 sys.path.insert(0, str(CODEGEN_DIR))
 
-from generators.kotlin_generator import KotlinCodeGenerator
-from generators.cpp_generator import CppCodeGenerator
+from generators import get_generator, supported_languages
+from scxml_parser import SCXMLParser
 
 PROJECT_ROOT = TOOLS_DIR.parent
 RESOURCES_DIR = PROJECT_ROOT / "resources"
-KOTLIN_TEST_RESULTS_DIR = (
-    PROJECT_ROOT / "sce-kotlin-tests" / "build" / "test-results" / "test"
-)
+
+# JUnit XML test result directories per language
+_TEST_RESULT_DIRS = {
+    "kotlin": PROJECT_ROOT / "sce-kotlin-tests" / "build" / "test-results" / "test",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -50,10 +52,8 @@ KOTLIN_TEST_RESULTS_DIR = (
 # ---------------------------------------------------------------------------
 
 @dataclass
-class CodegenInfo:
-    """Extracted structural information from generated code."""
-    success: bool = False
-    error: str = ""
+class CanonicalInfo:
+    """Canonical structural info extracted from SCXMLModel (language-agnostic)."""
     states: List[str] = field(default_factory=list)
     events: List[str] = field(default_factory=list)
     initial_state: str = ""
@@ -64,239 +64,100 @@ class CodegenInfo:
 
 
 @dataclass
+class LangResult:
+    """Code generation result for a single language on a single test."""
+    success: bool = False
+    error: str = ""
+
+
+@dataclass
 class TestComparison:
-    """Comparison result for a single test."""
-    test_id: int
-    cpp: CodegenInfo = field(default_factory=CodegenInfo)
-    kotlin: CodegenInfo = field(default_factory=CodegenInfo)
-    kotlin_test_result: str = "UNKNOWN"  # PASS, FAIL, SKIP, ERROR, UNKNOWN
-    # Parity checks
-    both_generate: bool = False
-    states_match: bool = False
-    events_match: bool = False
-    initial_match: bool = False
-    features_match: bool = False
-    # Differences
-    state_diff: str = ""
-    event_diff: str = ""
-    feature_diff: str = ""
+    """Comparison result for a single test across all languages."""
+    test_id: str  # e.g. "144", "403a"
+    canonical: CanonicalInfo = field(default_factory=CanonicalInfo)
+    results: Dict[str, LangResult] = field(default_factory=dict)
+    test_results: Dict[str, str] = field(default_factory=dict)  # lang -> PASS/FAIL/SKIP
+    all_generate: bool = False
 
 
 @dataclass
 class ValidationReport:
     """Full cross-validation report."""
+    languages: List[str] = field(default_factory=list)
     total_tests: int = 0
-    both_generate_ok: int = 0
-    cpp_only: int = 0
-    kotlin_only: int = 0
-    neither_generates: int = 0
-    states_match: int = 0
-    events_match: int = 0
-    initial_match: int = 0
-    features_match: int = 0
-    full_parity: int = 0
-    kotlin_pass: int = 0
-    kotlin_fail: int = 0
-    kotlin_skip: int = 0
-    kotlin_unknown: int = 0
-    failures: List[Dict] = field(default_factory=list)
+    all_generate_ok: int = 0
+    per_language: Dict[str, Dict] = field(default_factory=dict)
+    generation_mismatches: List[Dict] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
-# Code parsing: extract structure from generated output
+# Canonical model extraction
 # ---------------------------------------------------------------------------
 
-# C++ infrastructure events not present in Kotlin sealed interfaces.
-# C++ enumerates all possible events (including error/lifecycle) in enum for type safety.
-# Kotlin handles infrastructure events via string matching at runtime.
-CPP_INFRA_EVENTS = {"NONE", "Wildcard"}
-
-# C++ infrastructure event prefixes that Kotlin handles differently
-CPP_INFRA_EVENT_PREFIXES = (
-    "Error_",       # W3C SCXML error events (error.execution, error.communication)
-    "Error",        # Generic error event
-    "Cancel_invoke",  # Invoke lifecycle
-    "Done_invoke",    # Invoke lifecycle
-    "Done_state_",    # Parallel state completion (done.state.X)
-    "HTTP_",          # HTTP infrastructure events
+# Infrastructure events added by generators, not from SCXML source
+_INFRA_EVENT_PREFIXES = (
+    "error.", "cancel.invoke", "done.invoke", "done.state.", "Wildcard",
 )
 
 
-def _strip_cpp_line_comments(text: str) -> str:
-    """Remove C++ // comments from each line before parsing enums."""
-    lines = text.split("\n")
-    return "\n".join(line.split("//")[0] for line in lines)
+def _is_infra_event(event_name: str) -> bool:
+    """Check if an event is infrastructure (not user-defined in SCXML)."""
+    return any(event_name.startswith(p) or event_name == p
+               for p in _INFRA_EVENT_PREFIXES)
 
 
-def extract_cpp_info(header_content: str, inline_content: str) -> CodegenInfo:
-    """Extract structural info from generated C++ header + inline."""
-    info = CodegenInfo(success=True)
-
-    # Strip line comments before parsing enums to avoid comma confusion
-    header_no_comments = _strip_cpp_line_comments(header_content)
-
-    # States: enum class State : uint8_t { Fail, Pass, S0, S1 };
-    state_match = re.search(
-        r"enum\s+class\s+State\s*:\s*uint8_t\s*\{([^}]+)\}", header_no_comments
-    )
-    if state_match:
-        raw = state_match.group(1)
-        info.states = sorted(
-            s.strip() for s in raw.split(",") if s.strip()
-        )
-
-    # Events: enum class Event : uint8_t { NONE, Bar, Foo, Wildcard };
-    event_match = re.search(
-        r"enum\s+class\s+Event\s*:\s*uint8_t\s*\{([^}]+)\}", header_no_comments
-    )
-    if event_match:
-        raw = event_match.group(1)
-        all_events = [e.strip() for e in raw.split(",") if e.strip()]
-        # Filter infrastructure events (exact match + prefix match)
-        info.events = sorted(
-            e for e in all_events
-            if e not in CPP_INFRA_EVENTS
-            and not any(e.startswith(p) for p in CPP_INFRA_EVENT_PREFIXES)
-        )
-
-    # Initial state: static constexpr initialState() { return State::S0; }
-    init_match = re.search(
-        r"initialState\(\)[^{]*\{[^}]*return\s+State::(\w+)", header_content
-    )
-    if not init_match:
-        init_match = re.search(r"initialState_\s*=\s*State::(\w+)", header_content)
-    if init_match:
-        info.initial_state = init_match.group(1)
-
-    # Script engine
-    if "NEEDS_SCRIPT_ENGINE = true" in header_content:
-        info.needs_script_engine = True
-
-    # Parallel states
-    if "HAS_PARALLEL_STATES = true" in header_content:
-        info.has_parallel = True
-
-    # HTTP send
-    if "performHttpSend(" in inline_content or "performHttpSend(" in header_content:
-        info.needs_http_send = True
-
-    # History: check for actual usage, not just #include
-    if ("historyDefault" in inline_content or "saveHistory" in inline_content or
-            "restoreHistory" in inline_content or "HistoryType::" in header_content):
-        info.has_history = True
-
-    return info
-
-
-def _normalize_event_name(name: str) -> str:
+def extract_canonical(scxml_path: str) -> CanonicalInfo:
     """
-    Normalize event name to canonical form for cross-language comparison.
+    Extract canonical structural info from SCXML via SCXMLParser.
 
-    Both C++ and Kotlin represent SCXML dot-separated events differently:
-      - C++: underscore-separated enum (Foo_zoo, In_s11p112)
-      - Kotlin: sealed interface hierarchy (Foo.Zoo, InS11p112)
-
-    Canonical form: lowercase, no separators (foozoo, ins11p112)
+    This is the single source of truth -- all languages should agree
+    with this model if their generation succeeds.
     """
-    # Remove .Self suffix (Kotlin uses .Self for exact match of branch events)
-    name = re.sub(r"\.Self$", "", name)
-    # Convert dots and underscores to nothing, then lowercase
-    return re.sub(r"[._]", "", name).lower()
+    parser = SCXMLParser()
+    model = parser.parse_file(scxml_path)
 
+    info = CanonicalInfo()
 
-def extract_kotlin_info(kt_content: str) -> CodegenInfo:
-    """Extract structural info from generated Kotlin file."""
-    info = CodegenInfo(success=True)
-
-    # States: sealed interface TestXXXState : State { data object Foo : TestXXXState }
-    state_objects = re.findall(r"data\s+object\s+(\w+)\s*:\s*\w+State", kt_content)
-    info.states = sorted(state_objects)
-
-    # Events: Capture both direct data objects and nested sealed interface hierarchies.
-    # Kotlin uses sealed interface hierarchy for prefix matching:
-    #   sealed interface Foo : TestXXXEvent {
-    #       data object Self : Foo   // exact "foo" event
-    #       data object Zoo : Foo    // "foo.zoo" event
-    #   }
-    #   data object Bar : TestXXXEvent  // flat event
-
-    # Step 1: Find direct event data objects (flat events)
-    direct_events = re.findall(r"data\s+object\s+(\w+)\s*:\s*\w+Event", kt_content)
-
-    # Step 2: Find sealed interface branches and their children
-    # Pattern: sealed interface Foo : TestXXXEvent { ... data object Self : Foo ... data object Zoo : Foo ... }
-    branch_pattern = re.compile(
-        r"sealed\s+interface\s+(\w+)\s*:\s*\w+Event\s*\{", re.MULTILINE
-    )
-    branch_events = []
-    for m in branch_pattern.finditer(kt_content):
-        branch_name = m.group(1)
-        # Find child data objects of this branch
-        # They're declared as: data object XXX : BranchName
-        children = re.findall(
-            rf"data\s+object\s+(\w+)\s*:\s*{re.escape(branch_name)}\b", kt_content
-        )
-        for child in children:
-            if child == "Self":
-                branch_events.append(branch_name)  # Foo.Self → Foo
-            else:
-                branch_events.append(f"{branch_name}_{child}")  # Foo.Zoo → Foo_Zoo
-
-    all_events = set(direct_events + branch_events)
-    # Filter infrastructure events (same as C++ filtering)
-    info.events = sorted(
-        e for e in all_events
-        if e not in CPP_INFRA_EVENTS
-        and not any(_normalize_event_name(e).startswith(p.lower().replace("_", ""))
-                    for p in CPP_INFRA_EVENT_PREFIXES)
+    # States: capitalize first letter to match generator output convention
+    info.states = sorted(
+        s_id[0].upper() + s_id[1:] if s_id else s_id
+        for s_id in model.states.keys()
     )
 
-    # Initial state: override val initialState = TestXXXState.S0
-    init_match = re.search(r"override\s+val\s+initialState.*?=\s*\w+State\.(\w+)", kt_content)
-    if init_match:
-        info.initial_state = init_match.group(1)
+    # Events: filter infrastructure events, normalize to capitalized form
+    user_events = [e for e in model.events if not _is_infra_event(e)]
+    info.events = sorted(user_events)
 
-    # Script engine
-    if "ensureScriptEngine()" in kt_content:
-        info.needs_script_engine = True
+    # Initial state
+    if model.initial:
+        init = model.initial
+        info.initial_state = init[0].upper() + init[1:] if init else ""
 
-    # Parallel: check for isParallelState returning true
-    if re.search(r"isParallelState\(.*?\).*?true", kt_content, re.DOTALL):
-        info.has_parallel = True
-
-    # HTTP send
-    if "performHttpSend(" in kt_content:
-        info.needs_http_send = True
-
-    # History: check for actual history save/restore, not just imports
-    if re.search(r"saveHistory\(|restoreHistory\(|historyDefault", kt_content):
-        info.has_history = True
+    # Feature flags
+    info.needs_script_engine = model.needs_script_engine
+    info.needs_http_send = model.needs_http_send
+    info.has_parallel = model.has_parallel_states
+    info.has_history = model.has_history_states
 
     return info
 
 
 # ---------------------------------------------------------------------------
-# Kotlin JUnit XML result parsing
+# JUnit XML test result parsing
 # ---------------------------------------------------------------------------
 
-def parse_kotlin_results() -> Dict[int, str]:
-    """Parse Kotlin JUnit XML test results. Returns {test_id: 'PASS'|'FAIL'|'SKIP'|'ERROR'}."""
+def parse_test_results(language: str) -> Dict[str, str]:
+    """Parse JUnit XML test results for a language. Returns {test_id: status}."""
+    results_dir = _TEST_RESULT_DIRS.get(language)
+    if not results_dir or not results_dir.exists():
+        return {}
+
     results = {}
-    if not KOTLIN_TEST_RESULTS_DIR.exists():
-        return results
-
-    for xml_file in KOTLIN_TEST_RESULTS_DIR.glob("TEST-com.sce.w3c.Test*.xml"):
-        # Extract test ID from filename: TEST-com.sce.w3c.Test144.xml -> 144
+    for xml_file in results_dir.glob("TEST-*.xml"):
         match = re.search(r"Test(\d+[a-z]?)\.xml$", xml_file.name)
         if not match:
             continue
-        test_id_str = match.group(1)
-        # Handle variant tests like 403a, 403b
-        try:
-            test_id = int(test_id_str)
-        except ValueError:
-            # Variant test (e.g., "403a") — use base number
-            test_id = int(re.match(r"(\d+)", test_id_str).group(1))
+        test_id = match.group(1)  # e.g. "144", "403a"
 
         try:
             tree = ET.parse(xml_file)
@@ -320,129 +181,65 @@ def parse_kotlin_results() -> Dict[int, str]:
 
 
 # ---------------------------------------------------------------------------
-# Core comparison logic
+# Core comparison
 # ---------------------------------------------------------------------------
 
-def compare_test(test_id: int, cpp_gen: CppCodeGenerator,
-                 kt_gen: KotlinCodeGenerator, tmp_dir: Path,
-                 kotlin_results: Dict[int, str]) -> TestComparison:
-    """Run both generators on a test and compare outputs."""
-    comp = TestComparison(test_id=test_id)
-    comp.kotlin_test_result = kotlin_results.get(test_id, "UNKNOWN")
+def _find_scxml(test_id: str) -> Optional[Path]:
+    """Locate SCXML file for a test ID (handles variants like 403a)."""
+    # Standard: resources/144/test144.scxml
+    p = RESOURCES_DIR / test_id / f"test{test_id}.scxml"
+    if p.exists():
+        return p
+    # Variant: resources/403/test403a.scxml (numeric prefix directory)
+    base_num = re.match(r"(\d+)", test_id)
+    if base_num:
+        p = RESOURCES_DIR / base_num.group(1) / f"test{test_id}.scxml"
+        if p.exists():
+            return p
+    return None
 
-    scxml_path = RESOURCES_DIR / str(test_id) / f"test{test_id}.scxml"
-    if not scxml_path.exists():
-        comp.cpp.error = "SCXML not found"
-        comp.kotlin.error = "SCXML not found"
+
+def compare_test(test_id: str, generators: dict, tmp_dir: Path,
+                 test_results: Dict[str, Dict[str, str]]) -> TestComparison:
+    """Run all generators on a test and compare success/failure."""
+    comp = TestComparison(test_id=test_id)
+
+    scxml_path = _find_scxml(test_id)
+    if not scxml_path:
         return comp
 
-    # Suppress codegen stdout noise
+    # Extract canonical model
+    try:
+        comp.canonical = extract_canonical(str(scxml_path))
+    except Exception:
+        pass
+
+    # Test results per language
+    for lang, lang_results in test_results.items():
+        comp.test_results[lang] = lang_results.get(test_id, "UNKNOWN")
+
+    # Generate with each language
     _devnull = io.StringIO()
-
-    # Generate C++
-    cpp_dir = tmp_dir / f"cpp_{test_id}"
-    cpp_dir.mkdir(exist_ok=True)
-    try:
-        with contextlib.redirect_stdout(_devnull):
-            cpp_ok = cpp_gen.generate(str(scxml_path), str(cpp_dir))
-        if cpp_ok:
-            header_path = cpp_dir / f"test{test_id}_sm.h"
-            inline_path = cpp_dir / f"test{test_id}_sm.inl"
-            if header_path.exists():
-                header_text = header_path.read_text()
-                inline_text = inline_path.read_text() if inline_path.exists() else ""
-                comp.cpp = extract_cpp_info(header_text, inline_text)
+    stem = scxml_path.stem  # e.g. "test403a"
+    for lang, gen in generators.items():
+        lang_dir = tmp_dir / f"{lang}_{test_id}"
+        lang_dir.mkdir(exist_ok=True)
+        result = LangResult()
+        try:
+            with contextlib.redirect_stdout(_devnull):
+                ok = gen.generate(str(scxml_path.resolve()), str(lang_dir))
+            if ok:
+                result.success = True
             else:
-                comp.cpp.error = "Header not generated"
-        else:
-            comp.cpp.error = "Generation returned False"
-    except Exception as e:
-        comp.cpp.error = str(e)
+                result.error = "Generation returned False"
+        except Exception as e:
+            result.error = str(e)
+        comp.results[lang] = result
 
-    # Generate Kotlin
-    kt_dir = tmp_dir / f"kt_{test_id}"
-    kt_dir.mkdir(exist_ok=True)
-    try:
-        with contextlib.redirect_stdout(_devnull):
-            kt_ok = kt_gen.generate(str(scxml_path), str(kt_dir))
-        if kt_ok:
-            kt_path = kt_dir / f"test{test_id}Sm.kt"
-            if kt_path.exists():
-                comp.kotlin = extract_kotlin_info(kt_path.read_text())
-            else:
-                comp.kotlin.error = "Kotlin file not generated"
-        else:
-            comp.kotlin.error = "Generation returned False"
-    except Exception as e:
-        comp.kotlin.error = str(e)
-
-    # Parity checks
-    comp.both_generate = comp.cpp.success and comp.kotlin.success
-
-    if comp.both_generate:
-        # States comparison
-        if comp.cpp.states == comp.kotlin.states:
-            comp.states_match = True
-        else:
-            cpp_set = set(comp.cpp.states)
-            kt_set = set(comp.kotlin.states)
-            missing_in_kt = cpp_set - kt_set
-            extra_in_kt = kt_set - cpp_set
-            parts = []
-            if missing_in_kt:
-                parts.append(f"missing in Kotlin: {sorted(missing_in_kt)}")
-            if extra_in_kt:
-                parts.append(f"extra in Kotlin: {sorted(extra_in_kt)}")
-            comp.state_diff = "; ".join(parts)
-
-        # Events comparison: use normalized names for cross-language parity
-        cpp_norm = {_normalize_event_name(e) for e in comp.cpp.events}
-        kt_norm = {_normalize_event_name(e) for e in comp.kotlin.events}
-        if cpp_norm == kt_norm:
-            comp.events_match = True
-        else:
-            missing_in_kt = cpp_norm - kt_norm
-            extra_in_kt = kt_norm - cpp_norm
-            parts = []
-            if missing_in_kt:
-                # Show original names for clarity
-                missing_orig = sorted(
-                    e for e in comp.cpp.events
-                    if _normalize_event_name(e) in missing_in_kt
-                )
-                parts.append(f"missing in Kotlin: {missing_orig}")
-            if extra_in_kt:
-                extra_orig = sorted(
-                    e for e in comp.kotlin.events
-                    if _normalize_event_name(e) in extra_in_kt
-                )
-                parts.append(f"extra in Kotlin: {extra_orig}")
-            comp.event_diff = "; ".join(parts)
-
-        # Initial state
-        comp.initial_match = comp.cpp.initial_state == comp.kotlin.initial_state
-
-        # Feature flags
-        feature_diffs = []
-        if comp.cpp.needs_script_engine != comp.kotlin.needs_script_engine:
-            feature_diffs.append(
-                f"script_engine: C++={comp.cpp.needs_script_engine}, Kotlin={comp.kotlin.needs_script_engine}"
-            )
-        if comp.cpp.needs_http_send != comp.kotlin.needs_http_send:
-            feature_diffs.append(
-                f"http_send: C++={comp.cpp.needs_http_send}, Kotlin={comp.kotlin.needs_http_send}"
-            )
-        if comp.cpp.has_parallel != comp.kotlin.has_parallel:
-            feature_diffs.append(
-                f"parallel: C++={comp.cpp.has_parallel}, Kotlin={comp.kotlin.has_parallel}"
-            )
-        if comp.cpp.has_history != comp.kotlin.has_history:
-            feature_diffs.append(
-                f"history: C++={comp.cpp.has_history}, Kotlin={comp.kotlin.has_history}"
-            )
-
-        comp.features_match = len(feature_diffs) == 0
-        comp.feature_diff = "; ".join(feature_diffs)
+    # Check if all languages agree
+    successes = {lang for lang, r in comp.results.items() if r.success}
+    failures = {lang for lang, r in comp.results.items() if not r.success}
+    comp.all_generate = len(failures) == 0
 
     return comp
 
@@ -451,83 +248,84 @@ def compare_test(test_id: int, cpp_gen: CppCodeGenerator,
 # Discovery
 # ---------------------------------------------------------------------------
 
-def discover_test_ids() -> List[int]:
-    """Discover all test IDs from resources directory."""
-    test_ids = []
+def discover_test_ids() -> List[str]:
+    """Discover all test IDs from resources directory, including variants (e.g. 403a)."""
+    test_ids: Set[str] = set()
     if not RESOURCES_DIR.exists():
-        return test_ids
+        return []
     for entry in RESOURCES_DIR.iterdir():
-        if entry.is_dir() and entry.name.isdigit():
-            test_id = int(entry.name)
-            scxml = entry / f"test{test_id}.scxml"
-            if scxml.exists():
-                test_ids.append(test_id)
-    return sorted(test_ids)
+        if not entry.is_dir():
+            continue
+        # Find all test*.scxml in this directory
+        for scxml in entry.glob("test*.scxml"):
+            # Extract test ID from filename: test144.scxml -> "144", test403a.scxml -> "403a"
+            m = re.match(r"test(\d+[a-z]?)\.scxml$", scxml.name)
+            if m:
+                test_ids.add(m.group(1))
+    # Sort: numeric first, then variants (144, 145, ..., 403a, 403b, 403c, ...)
+    return sorted(test_ids, key=lambda x: (int(re.match(r"(\d+)", x).group(1)), x))
 
 
 # ---------------------------------------------------------------------------
-# Report generation
+# Report
 # ---------------------------------------------------------------------------
 
-def build_report(comparisons: List[TestComparison]) -> ValidationReport:
+def build_report(comparisons: List[TestComparison],
+                 languages: List[str]) -> ValidationReport:
     """Aggregate comparisons into a validation report."""
-    report = ValidationReport(total_tests=len(comparisons))
+    report = ValidationReport(
+        languages=languages,
+        total_tests=len(comparisons),
+    )
+
+    # Per-language stats
+    for lang in languages:
+        report.per_language[lang] = {
+            "generate_ok": 0,
+            "generate_fail": 0,
+            "test_pass": 0,
+            "test_fail": 0,
+            "test_skip": 0,
+            "test_unknown": 0,
+        }
 
     for comp in comparisons:
-        # Codegen parity
-        if comp.both_generate:
-            report.both_generate_ok += 1
-        elif comp.cpp.success and not comp.kotlin.success:
-            report.cpp_only += 1
-        elif not comp.cpp.success and comp.kotlin.success:
-            report.kotlin_only += 1
-        else:
-            report.neither_generates += 1
+        if comp.all_generate:
+            report.all_generate_ok += 1
 
-        # Structural parity (only for tests where both generate)
-        if comp.both_generate:
-            if comp.states_match:
-                report.states_match += 1
-            if comp.events_match:
-                report.events_match += 1
-            if comp.initial_match:
-                report.initial_match += 1
-            if comp.features_match:
-                report.features_match += 1
-            if (comp.states_match and comp.events_match and
-                    comp.initial_match and comp.features_match):
-                report.full_parity += 1
+        # Per-language generation stats
+        for lang in languages:
+            r = comp.results.get(lang)
+            if r and r.success:
+                report.per_language[lang]["generate_ok"] += 1
+            else:
+                report.per_language[lang]["generate_fail"] += 1
 
-        # Kotlin test results
-        if comp.kotlin_test_result == "PASS":
-            report.kotlin_pass += 1
-        elif comp.kotlin_test_result == "FAIL":
-            report.kotlin_fail += 1
-        elif comp.kotlin_test_result == "SKIP":
-            report.kotlin_skip += 1
-        else:
-            report.kotlin_unknown += 1
+            # Test results
+            tr = comp.test_results.get(lang, "UNKNOWN")
+            if tr == "PASS":
+                report.per_language[lang]["test_pass"] += 1
+            elif tr == "FAIL":
+                report.per_language[lang]["test_fail"] += 1
+            elif tr == "SKIP":
+                report.per_language[lang]["test_skip"] += 1
+            else:
+                report.per_language[lang]["test_unknown"] += 1
 
-        # Collect failures
-        if comp.both_generate and not (
-            comp.states_match and comp.events_match and
-            comp.initial_match and comp.features_match
-        ):
-            failure = {
-                "test_id": comp.test_id,
-                "kotlin_test": comp.kotlin_test_result,
+        # Generation mismatches: some languages succeed, others fail
+        successes = [l for l in languages if comp.results.get(l, LangResult()).success]
+        failures = [l for l in languages if not comp.results.get(l, LangResult()).success]
+        if successes and failures:
+            errors = {
+                l: comp.results[l].error
+                for l in failures if comp.results.get(l)
             }
-            if not comp.states_match:
-                failure["state_diff"] = comp.state_diff
-            if not comp.events_match:
-                failure["event_diff"] = comp.event_diff
-            if not comp.initial_match:
-                failure["initial_diff"] = (
-                    f"C++={comp.cpp.initial_state}, Kotlin={comp.kotlin.initial_state}"
-                )
-            if not comp.features_match:
-                failure["feature_diff"] = comp.feature_diff
-            report.failures.append(failure)
+            report.generation_mismatches.append({
+                "test_id": comp.test_id,
+                "succeed": successes,
+                "fail": failures,
+                "errors": errors,
+            })
 
     return report
 
@@ -535,105 +333,88 @@ def build_report(comparisons: List[TestComparison]) -> ValidationReport:
 def print_report(report: ValidationReport, comparisons: List[TestComparison],
                  verbose: bool = False):
     """Print human-readable report to stdout."""
-    gen = report.both_generate_ok
+    langs = report.languages
     total = report.total_tests
 
     print("=" * 70)
-    print("  C++/Kotlin Cross-Validation Report")
+    print(f"  SCXML Cross-Validation Report ({', '.join(langs)})")
     print("=" * 70)
     print()
 
-    # Codegen summary
+    # Per-language generation summary
     print("--- Code Generation ---")
+    print(f"  {'Language':<12} {'OK':>6} {'Fail':>6} {'Rate':>8}")
+    for lang in langs:
+        s = report.per_language[lang]
+        ok = s["generate_ok"]
+        fail = s["generate_fail"]
+        rate = f"{ok / total * 100:.1f}%" if total > 0 else "N/A"
+        print(f"  {lang:<12} {ok:>6} {fail:>6} {rate:>8}")
+    print()
+
+    # Cross-language parity
+    print("--- Cross-Language Parity ---")
     print(f"  Total SCXML tests:     {total}")
-    print(f"  Both generate OK:      {gen}")
-    print(f"  C++ only:              {report.cpp_only}")
-    print(f"  Kotlin only:           {report.kotlin_only}")
-    print(f"  Neither generates:     {report.neither_generates}")
+    print(f"  All languages agree:   {report.all_generate_ok}/{total}")
+    mismatches = len(report.generation_mismatches)
+    if mismatches > 0:
+        print(f"  Generation mismatches: {mismatches}")
     print()
 
-    # Structural parity (of those where both generate)
-    print(f"--- Structural Parity (of {gen} shared tests) ---")
-    print(f"  States match:          {report.states_match}/{gen}")
-    print(f"  Events match:          {report.events_match}/{gen}")
-    print(f"  Initial state match:   {report.initial_match}/{gen}")
-    print(f"  Feature flags match:   {report.features_match}/{gen}")
-    print(f"  Full parity:           {report.full_parity}/{gen}")
-    print()
+    # Per-language test results (if available)
+    has_test_results = any(
+        s["test_pass"] + s["test_fail"] + s["test_skip"] > 0
+        for s in report.per_language.values()
+    )
+    if has_test_results:
+        print("--- Test Results ---")
+        print(f"  {'Language':<12} {'PASS':>6} {'FAIL':>6} {'SKIP':>6}")
+        for lang in langs:
+            s = report.per_language[lang]
+            tested = s["test_pass"] + s["test_fail"] + s["test_skip"]
+            if tested > 0:
+                print(f"  {lang:<12} {s['test_pass']:>6} {s['test_fail']:>6} {s['test_skip']:>6}")
+        print()
 
-    # Kotlin test results
-    kt_total = report.kotlin_pass + report.kotlin_fail + report.kotlin_skip
-    print(f"--- Kotlin Test Results ({kt_total} with results) ---")
-    print(f"  PASS:                  {report.kotlin_pass}")
-    print(f"  FAIL:                  {report.kotlin_fail}")
-    print(f"  SKIP:                  {report.kotlin_skip}")
-    print(f"  No result:             {report.kotlin_unknown}")
-    print()
-
-    # Production readiness verdict
-    parity_pct = (report.full_parity / gen * 100) if gen > 0 else 0
-    print("--- Production Readiness ---")
-    if parity_pct == 100 and report.kotlin_fail == 0:
-        print(f"  VERDICT: PRODUCTION READY")
-        print(f"  {gen}/{gen} tests have full structural parity")
-        print(f"  {report.kotlin_pass}/{kt_total} Kotlin tests pass")
-    elif parity_pct >= 95 and report.kotlin_fail == 0:
-        print(f"  VERDICT: NEAR PRODUCTION READY ({parity_pct:.1f}% parity)")
-        print(f"  {len(report.failures)} test(s) with structural differences")
+    # Verdict
+    all_ok = report.all_generate_ok == total
+    any_test_fail = any(
+        s["test_fail"] > 0 for s in report.per_language.values()
+    )
+    print("--- Verdict ---")
+    if all_ok and not any_test_fail:
+        print(f"  PRODUCTION READY: {total}/{total} full parity across {len(langs)} languages")
+    elif mismatches <= total * 0.05 and not any_test_fail:
+        pct = report.all_generate_ok / total * 100 if total > 0 else 0
+        print(f"  NEAR PRODUCTION READY ({pct:.1f}% parity)")
     else:
-        print(f"  VERDICT: NEEDS WORK ({parity_pct:.1f}% parity)")
-        print(f"  {len(report.failures)} test(s) with structural differences")
-        print(f"  {report.kotlin_fail} Kotlin test failure(s)")
+        pct = report.all_generate_ok / total * 100 if total > 0 else 0
+        print(f"  NEEDS WORK ({pct:.1f}% parity)")
     print()
 
-    # Failures
-    if report.failures:
-        print(f"--- Structural Differences ({len(report.failures)}) ---")
-        for f in report.failures:
-            print(f"\n  Test {f['test_id']} (Kotlin: {f['kotlin_test']})")
-            if "state_diff" in f:
-                print(f"    States:   {f['state_diff']}")
-            if "event_diff" in f:
-                print(f"    Events:   {f['event_diff']}")
-            if "initial_diff" in f:
-                print(f"    Initial:  {f['initial_diff']}")
-            if "feature_diff" in f:
-                print(f"    Features: {f['feature_diff']}")
+    # Mismatches detail
+    if report.generation_mismatches:
+        print(f"--- Generation Mismatches ({mismatches}) ---")
+        for m in report.generation_mismatches:
+            print(f"\n  Test {m['test_id']}")
+            print(f"    Succeed: {', '.join(m['succeed'])}")
+            print(f"    Fail:    {', '.join(m['fail'])}")
+            for lang, err in m["errors"].items():
+                print(f"      {lang}: {err}")
         print()
 
-    # Codegen-only failures (one side fails)
-    cpp_only_tests = [c for c in comparisons if c.cpp.success and not c.kotlin.success]
-    kt_only_tests = [c for c in comparisons if not c.cpp.success and c.kotlin.success]
-
-    if cpp_only_tests and verbose:
-        print(f"--- C++ Only ({len(cpp_only_tests)} tests) ---")
-        for c in cpp_only_tests[:10]:
-            print(f"  Test {c.test_id}: Kotlin error: {c.kotlin.error}")
-        if len(cpp_only_tests) > 10:
-            print(f"  ... and {len(cpp_only_tests) - 10} more")
-        print()
-
-    if kt_only_tests and verbose:
-        print(f"--- Kotlin Only ({len(kt_only_tests)} tests) ---")
-        for c in kt_only_tests[:10]:
-            print(f"  Test {c.test_id}: C++ error: {c.cpp.error}")
-        if len(kt_only_tests) > 10:
-            print(f"  ... and {len(kt_only_tests) - 10} more")
-        print()
-
+    # Verbose: all tests
     if verbose:
-        # All tests detail
-        print(f"--- All Tests Detail ---")
+        print("--- All Tests ---")
         for c in comparisons:
-            status = "OK" if (c.both_generate and c.states_match and
-                              c.events_match and c.initial_match and
-                              c.features_match) else "DIFF"
-            gen_status = ("BOTH" if c.both_generate else
-                          "CPP" if c.cpp.success else
-                          "KT" if c.kotlin.success else "NONE")
-            kt_test = c.kotlin_test_result
-            print(f"  Test {c.test_id:4d}  gen={gen_status:4s}  "
-                  f"parity={status:4s}  kotlin_test={kt_test}")
+            parts = []
+            for lang in langs:
+                r = c.results.get(lang, LangResult())
+                tr = c.test_results.get(lang, "")
+                status = "OK" if r.success else "FAIL"
+                tr_str = f"/{tr}" if tr and tr != "UNKNOWN" else ""
+                parts.append(f"{lang}={status}{tr_str}")
+            print(f"  Test {c.test_id:4d}  {' | '.join(parts)}")
 
 
 # ---------------------------------------------------------------------------
@@ -642,15 +423,37 @@ def print_report(report: ValidationReport, comparisons: List[TestComparison],
 
 def main():
     parser = argparse.ArgumentParser(
-        description="C++/Kotlin cross-validator for SCXML codegen"
+        description="N-way cross-validator for SCXML code generation"
     )
-    parser.add_argument("--test", type=int, help="Validate single test ID")
+    parser.add_argument("--test", type=str, help="Validate single test ID (e.g. 144 or 403a)")
+    parser.add_argument("--lang", type=str,
+                        help="Comma-separated languages (default: all registered)")
     parser.add_argument("--json", action="store_true", help="Output JSON report")
     parser.add_argument("--verbose", "-v", action="store_true",
                         help="Show all tests, not just failures")
     parser.add_argument("--output", "-o", type=str,
                         help="Write JSON report to file")
     args = parser.parse_args()
+
+    # Discover languages
+    if args.lang:
+        languages = [l.strip() for l in args.lang.split(",")]
+    else:
+        languages = supported_languages()
+
+    # Create generators
+    generators = {}
+    for lang in languages:
+        try:
+            generators[lang] = get_generator(lang)
+        except ValueError as e:
+            print(f"Warning: {e}", file=sys.stderr)
+
+    if not generators:
+        print("No valid generators found.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"  Languages: {', '.join(generators.keys())}", file=sys.stderr)
 
     # Discover tests
     if args.test:
@@ -662,12 +465,10 @@ def main():
         print("No SCXML tests found in resources/", file=sys.stderr)
         sys.exit(1)
 
-    # Parse Kotlin test results
-    kotlin_results = parse_kotlin_results()
-
-    # Initialize generators
-    cpp_gen = CppCodeGenerator()
-    kt_gen = KotlinCodeGenerator()
+    # Parse test results for all languages
+    test_results = {}
+    for lang in generators:
+        test_results[lang] = parse_test_results(lang)
 
     # Run comparisons
     comparisons = []
@@ -677,14 +478,15 @@ def main():
             if not args.json and not args.test:
                 print(f"\r  Validating: {i + 1}/{len(test_ids)} (test{test_id})",
                       end="", flush=True, file=sys.stderr)
-            comp = compare_test(test_id, cpp_gen, kt_gen, tmp_path, kotlin_results)
+            comp = compare_test(test_id, generators, tmp_path, test_results)
             comparisons.append(comp)
 
     if not args.json and not args.test:
-        print("", file=sys.stderr)  # newline after progress
+        print("", file=sys.stderr)
 
     # Build report
-    report = build_report(comparisons)
+    langs = list(generators.keys())
+    report = build_report(comparisons, langs)
 
     if args.json or args.output:
         report_dict = asdict(report)
@@ -698,7 +500,10 @@ def main():
         print_report(report, comparisons, verbose=args.verbose)
 
     # Exit code: 0 if full parity, 1 otherwise
-    if report.full_parity == report.both_generate_ok and report.kotlin_fail == 0:
+    any_fail = any(
+        s["test_fail"] > 0 for s in report.per_language.values()
+    )
+    if report.all_generate_ok == report.total_tests and not any_fail:
         sys.exit(0)
     else:
         sys.exit(1)
