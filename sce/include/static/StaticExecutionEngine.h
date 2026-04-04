@@ -30,12 +30,6 @@
 #include "core/AOTEventQueue.h"
 #include "core/EventQueueManager.h"
 #include "events/EventDescriptor.h"
-// W3C SCXML C.2: BasicHTTP Event I/O Processor support
-// SCE_ENABLE_HTTP is defined only by sce_runtime (PUBLIC), never by sce_core standalone.
-// HttpSendHelper.h requires sce_runtime linkage (CppHttplibClient.cpp / EmscriptenFetchClient.cpp).
-#ifdef SCE_ENABLE_HTTP
-#include "static/HttpSendHelper.h"
-#endif
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -474,15 +468,6 @@ public:
      * @param eventWithMetadata Event with metadata (including invokeid)
      */
     void raiseExternal(const EventWithMetadata &eventWithMetadata) {
-#ifdef SCE_ENABLE_HTTP
-        // W3C SCXML C.2: Delegate BasicHTTP sends to HttpSendHelper
-        if (HttpSendHelper::isHttpSend(eventWithMetadata.originType, eventWithMetadata.target)) {
-            HttpSendHelper::sendHttpPost(policy_.getEventName(eventWithMetadata.event), eventWithMetadata.data,
-                                         eventWithMetadata.target, eventWithMetadata.sendId, *this);
-            return;
-        }
-#endif
-
         // Normal internal/external queue processing
         SCE_LOG_DEBUG("AOT raiseExternal: Enqueuing external event with metadata (event={}, invokeId='{}')",
                   static_cast<int>(eventWithMetadata.event), eventWithMetadata.invokeId);

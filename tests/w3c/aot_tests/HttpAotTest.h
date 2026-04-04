@@ -7,6 +7,11 @@
 #include "events/CppHttplibClient.h"
 #include "events/IHttpClient.h"
 #include "common/SendHelper.h"
+#else
+#include "events/EmscriptenFetchClient.h"
+#include "events/IHttpClient.h"
+#include "common/SendHelper.h"
+#include <nlohmann/json.hpp>
 #endif
 #include "static/StaticExecutionEngine.h"
 #include "common/TestUtils.h"
@@ -175,9 +180,64 @@ public:
         using SM = typename Derived::SM;
         SM sm;
 
+        // W3C SCXML C.2: Wire performHttpSend() callback for WASM (native parity)
+        // Generated code calls engine.performHttpSend() which delegates to this callback.
+        // EmscriptenFetchClient sends HTTP POST to external server (standalone_http_server.js),
+        // then parses JSON response to route events back into the state machine.
+        sm.setHttpSendCallback([&sm](const SCE::Static::HttpSendRequest &request) {
+            SCE_LOG_DEBUG("HttpAotTest {}: WASM performHttpSend target='{}' event='{}' content='{}'",
+                      TestNum, request.target, request.eventName, request.content);
+
+            // W3C SCXML C.2: Build HTTP POST body (Zero Duplication with SendHelper)
+            std::string body;
+            std::string contentType;
+
+            if (!request.eventName.empty() || !request.params.empty()) {
+                body = ::SCE::SendHelper::buildHttpPostBody(request.eventName, request.params);
+                contentType = "application/x-www-form-urlencoded";
+            } else if (!request.content.empty()) {
+                body = request.content;
+                contentType = "text/plain";
+            } else {
+                contentType = "application/x-www-form-urlencoded";
+            }
+
+            // W3C SCXML C.2: Send via EmscriptenFetchClient to external server
+            SCE::EmscriptenFetchClient httpClient;
+            SCE::HttpClient::Request httpReq;
+            httpReq.method = "POST";
+            httpReq.url = request.target;
+            httpReq.body = body;
+            httpReq.contentType = contentType;
+
+            auto future = httpClient.sendRequest(httpReq);
+            try {
+                auto response = future.get();
+
+                // W3C SCXML C.2: Parse JSON response and route event back to state machine
+                if (response.success && !response.body.empty() && response.body.front() == '{') {
+                    using json = nlohmann::json;
+                    json responseObj = json::parse(response.body);
+
+                    if (responseObj.contains("event")) {
+                        std::string eventName = responseObj["event"].template get<std::string>();
+                        std::string eventData;
+                        if (responseObj.contains("data")) {
+                            eventData = responseObj["data"].dump();
+                        }
+                        sm.raiseExternal(eventName, eventData);
+                    }
+                } else if (!response.success) {
+                    SCE_LOG_ERROR("HttpAotTest {}: WASM HTTP POST failed (status {})",
+                              TestNum, response.statusCode);
+                }
+            } catch (const std::exception &e) {
+                SCE_LOG_ERROR("HttpAotTest {}: WASM HTTP POST exception: {}", TestNum, e.what());
+            }
+        });
+
         // W3C SCXML C.2: Initialize state machine
-        // HTTP POST will be sent during initialize() via EmscriptenFetchClient
-        // External server processes request and returns response
+        // HTTP POST will be sent during initialize() via performHttpSend callback
         sm.initialize();
         SCE_LOG_DEBUG("HttpAotTest {}: WASM state machine initialized", TestNum);
 

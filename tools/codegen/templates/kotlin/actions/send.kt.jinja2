@@ -78,6 +78,72 @@
                     raiseInternal({{ machine_name }}Event.Error.Communication, EventMetadata.platform())
                     return@run
                 }
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' %}
+                // W3C SCXML C.2: Validate dynamic target is HTTP URL (error.communication if not)
+                if (!dynamicTarget.startsWith("http://") && !dynamicTarget.startsWith("https://")) {
+                    raiseInternal({{ machine_name }}Event.Error.Communication, EventMetadata.platform())
+                    return@run
+                }
+                // W3C SCXML C.2: BasicHTTP send with dynamic target — dispatch via performHttpSend()
+{% set http_needs_script = (action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) or action.namelist or action.contentexpr %}
+{% if http_needs_script %}
+                val httpParams = mutableMapOf<String, List<String>>()
+{% for param in action.params %}
+{% if param.is_static_literal %}
+                httpParams["{{ param.name }}"] = listOf("{{ param.static_value }}")
+{% elif param.expr %}
+                try {
+                    val v = engineT.evaluateExpr(sidT, "{{ param.expr | escape_kotlin }}")
+                    httpParams["{{ param.name }}"] = listOf(v?.toString() ?: "")
+                } catch (_: Exception) {
+                    httpParams["{{ param.name }}"] = listOf("")
+                }
+{% endif %}
+{% endfor %}
+{% if action.namelist %}
+                // W3C SCXML C.1: Evaluate namelist — abort send on error (C++ NamelistHelper pattern)
+{% for var_name in action.namelist.split() %}
+                if (!engineT.hasVariable(sidT, "{{ var_name }}")) {
+                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    return@run
+                }
+                try {
+                    val v = engineT.getVariable(sidT, "{{ var_name }}")
+                    httpParams["{{ var_name }}"] = listOf(v?.toString() ?: "")
+                } catch (_: Exception) {
+                    raiseInternal({{ machine_name }}Event.Error.Execution)
+                    return@run
+                }
+{% endfor %}
+{% endif %}
+{% if action.contentexpr %}
+                // W3C SCXML C.2: Dynamic content expression
+                val httpContent: String
+                try {
+                    val v = engineT.evaluateExpr(sidT, "{{ action.contentexpr | escape_kotlin }}")
+                    httpContent = v?.toString() ?: ""
+                } catch (_: Exception) {
+                    raiseInternal({{ machine_name }}Event.Error.Execution, EventMetadata.platform())
+                    return@run
+                }
+{% else %}
+                val httpContent = "{{ action.content | escape_kotlin }}"
+{% endif %}
+                performHttpSend(dynamicTarget, "{{ action.event }}", httpContent, httpParams, "{{ action.auto_send_id }}")
+{% elif action.params %}
+                val httpParams = mutableMapOf<String, List<String>>()
+{% for param in action.params %}
+                httpParams["{{ param.name }}"] = listOf("{{ param.static_value }}")
+{% endfor %}
+                performHttpSend(dynamicTarget, "{{ action.event }}", "", httpParams, "{{ action.auto_send_id }}")
+{% elif action.content %}
+                performHttpSend(dynamicTarget, "{{ action.event }}", "{{ action.content | escape_kotlin }}", emptyMap(), "{{ action.auto_send_id }}")
+{% elif action.event %}
+                performHttpSend(dynamicTarget, "{{ action.event }}", "", emptyMap(), "{{ action.auto_send_id }}")
+{% else %}
+                performHttpSend(dynamicTarget, "", "", emptyMap(), "{{ action.auto_send_id }}")
+{% endif %}
+{% else %}
 {% if action.event %}
 {% set needs_params = action.params or action.namelist %}
 {% if needs_params %}
@@ -111,6 +177,7 @@
                 } else {
                     send({{ machine_name }}Event.{{ action.event | to_event_ref }}, EventMetadata.external(sendId = "{{ action.auto_send_id }}", origin = scriptSessionId ?: ""{% if needs_params %}, data = eventDataT{% endif %}))
                 }
+{% endif %}
 {% endif %}
             }
 {% elif action.target == '#_internal' %}

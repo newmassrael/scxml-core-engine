@@ -276,8 +276,16 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 
 {# W3C SCXML 6.4: Skip fallback queue routing for child invoke targets (already handled above) #}
 {% if action.target != '#_parent' and action.target != '#_child' and not (action.target.startswith('#_') and action.target not in ['#_parent', '#_internal', '#_child']) %}
-{% if action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and action.target and (action.target.startswith('http://') or action.target.startswith('https://')) %}
-{# W3C SCXML C.2: BasicHTTP send — dispatch via performHttpSend() callback (Kotlin parity) #}
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) %}
+{# W3C SCXML C.2: BasicHTTP send — dispatch via performHttpSend() callback (Zero Duplication) #}
+{% if action.targetexpr %}
+// W3C SCXML C.2: Validate dynamic target is HTTP URL (error.communication if not)
+if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
+    return;
+}
+{% endif %}
+{% set http_target_cpp = 'dynamicTarget' if action.targetexpr else '"' ~ action.target ~ '"' %}
 {% set http_needs_script = (action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) or action.namelist or action.contentexpr %}
 {% if http_needs_script and (model.needs_script_engine or model.needs_event_origin) %}
 // W3C SCXML C.2: BasicHTTP send with script engine evaluation
@@ -328,7 +336,7 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 {% else %}
     std::string httpContent = "{{ action.content | escape_cpp }}";
 {% endif %}
-    engine.performHttpSend("{{ action.target }}", "{{ action.event }}", httpContent, httpParams, sendId);
+    engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", httpContent, httpParams, sendId);
 }
 {% elif action.params %}
 // W3C SCXML C.2: BasicHTTP send with static params
@@ -337,17 +345,17 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 {% for param in action.params %}
     httpParams["{{ param.name }}"].push_back("{{ param.static_value }}");
 {% endfor %}
-    engine.performHttpSend("{{ action.target }}", "{{ action.event }}", "", httpParams, sendId);
+    engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", "", httpParams, sendId);
 }
 {% elif action.content %}
 // W3C SCXML C.2: BasicHTTP content send
-engine.performHttpSend("{{ action.target }}", "{{ action.event }}", "{{ action.content | escape_cpp }}", {}, sendId);
+engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", "{{ action.content | escape_cpp }}", {}, sendId);
 {% elif action.event %}
 // W3C SCXML C.2: BasicHTTP event send
-engine.performHttpSend("{{ action.target }}", "{{ action.event }}", "", {}, sendId);
+engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", "", {}, sendId);
 {% else %}
 // W3C SCXML C.2: BasicHTTP send with no event/content/params
-engine.performHttpSend("{{ action.target }}", "", "", {}, sendId);
+engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
 {% endif %}
 {% elif action.eventexpr %}
 // W3C SCXML 6.2: Dynamic event evaluation (test172)
