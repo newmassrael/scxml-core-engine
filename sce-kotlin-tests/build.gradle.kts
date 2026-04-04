@@ -8,6 +8,7 @@ version = "1.0.0"
 dependencies {
     implementation(project(":sce-kotlin-runtime"))
     implementation(project(":sce-kotlin-lua"))
+    implementation(project(":sce-kotlin-quickjs"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.rhino)
 
@@ -76,9 +77,12 @@ tasks.test {
     // C++ DataModelInitHelper pattern: resolve data src paths relative to project root
     workingDir = rootProject.projectDir
 
-    // Lua JNI native library path (from sce-kotlin-lua module)
+    // Native library paths (Lua + QuickJS JNI)
     val luaLibDir = project(":sce-kotlin-lua").layout.buildDirectory.dir("native/lib")
-    systemProperty("java.library.path", luaLibDir.get().asFile.absolutePath)
+    val quickjsLibDir = project(":sce-kotlin-quickjs").layout.buildDirectory.dir("native/lib")
+    val sep = File.pathSeparator
+    systemProperty("java.library.path",
+        "${luaLibDir.get().asFile.absolutePath}${sep}${quickjsLibDir.get().asFile.absolutePath}")
 
     // Forward script engine selection: ./gradlew test -Psce.script.engine=lua
     val engineProp = providers.gradleProperty("sce.script.engine")

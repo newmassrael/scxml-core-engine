@@ -17,4 +17,5 @@ rootProject.name = "scxml-core-engine"
 
 include(":sce-kotlin-runtime")
 include(":sce-kotlin-lua")
+include(":sce-kotlin-quickjs")
 include(":sce-kotlin-tests")

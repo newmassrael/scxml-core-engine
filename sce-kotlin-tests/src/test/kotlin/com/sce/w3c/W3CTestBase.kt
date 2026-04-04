@@ -11,6 +11,7 @@ import com.sce.runtime.State
 import com.sce.runtime.StateMachineEngine
 import com.sce.scripting.RhinoScriptEngine
 import com.sce.scripting.lua.LuaScriptEngine
+import com.sce.scripting.quickjs.QuickJSScriptEngine
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 
@@ -50,6 +51,7 @@ abstract class W3CTestBase<S : State, E : Event> {
             val engineType = System.getProperty("sce.script.engine", "rhino").lowercase()
             return when (engineType) {
                 "lua" -> LuaScriptEngine()
+                "quickjs" -> QuickJSScriptEngine()
                 else -> RhinoScriptEngine()
             }
         }
