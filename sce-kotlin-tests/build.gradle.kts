@@ -7,6 +7,7 @@ version = "1.0.0"
 
 dependencies {
     implementation(project(":sce-kotlin-runtime"))
+    implementation(project(":sce-kotlin-lua"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.rhino)
 
@@ -74,6 +75,16 @@ tasks.test {
 
     // C++ DataModelInitHelper pattern: resolve data src paths relative to project root
     workingDir = rootProject.projectDir
+
+    // Lua JNI native library path (from sce-kotlin-lua module)
+    val luaLibDir = project(":sce-kotlin-lua").layout.buildDirectory.dir("native/lib")
+    systemProperty("java.library.path", luaLibDir.get().asFile.absolutePath)
+
+    // Forward script engine selection: ./gradlew test -Psce.script.engine=lua
+    val engineProp = providers.gradleProperty("sce.script.engine")
+    if (engineProp.isPresent) {
+        systemProperty("sce.script.engine", engineProp.get())
+    }
 
     // W3C test timeouts: 10s per test (most complete in <100ms)
     systemProperty("junit.jupiter.execution.timeout.default", "10s")

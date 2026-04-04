@@ -348,13 +348,12 @@ def generate_test_class(test_id: str, metadata: dict, test_type: str,
         f"import com.sce.generated.{sm_package}.{sm_class}State\n"
         f"import com.sce.generated.{sm_package}.{sm_class}StateMachine\n"
     )
-    if needs_script_engine:
-        imports += f"import com.sce.scripting.RhinoScriptEngine\n"
     imports += f"import org.junit.jupiter.api.DisplayName\n"
 
     # Script engine injection for hybrid tests
+    # Uses W3CTestBase.createEngine() — engine selected via system property, no hardcoded import
     if needs_script_engine:
-        create_sm = f"    override fun createStateMachine() = {sm_class}StateMachine(RhinoScriptEngine())\n"
+        create_sm = f"    override fun createStateMachine() = {sm_class}StateMachine(createEngine())\n"
     else:
         create_sm = f"    override fun createStateMachine() = {sm_class}StateMachine()\n"
 
