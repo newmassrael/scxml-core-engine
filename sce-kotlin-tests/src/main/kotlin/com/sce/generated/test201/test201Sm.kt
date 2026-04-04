@@ -118,7 +118,6 @@ class Test201StateMachine(
             is Test201State.S0 -> {
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
-            // W3C SCXML C.2: BasicHTTP event send (test 534)
             performHttpSend("http://localhost:8080/test", "event1", "", emptyMap(), "__send_0")
             send(Test201Event.Timeout, EventMetadata.external(sendId = "__send_1", origin = scriptSessionId ?: ""))
             }

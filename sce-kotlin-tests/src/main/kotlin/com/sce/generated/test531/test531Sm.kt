@@ -119,7 +119,7 @@ class Test531StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 3000L, Test531Event.Timeout)
-            // W3C SCXML C.2: BasicHTTP send with static params (test 531)
+            // W3C SCXML C.2: BasicHTTP send with static params
             run {
                 val httpParams = mutableMapOf<String, List<String>>()
                 httpParams["_scxmleventname"] = listOf("test")

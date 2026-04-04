@@ -136,7 +136,6 @@ class Test510StateMachine(
                 // W3C SCXML 3.8: Track active state, skip duplicate entry
                 if (!activeStateIds.add("s0")) return
             scheduleSend("__send_0", 30000L, Test510Event.Timeout)
-            // W3C SCXML C.2: BasicHTTP event send (test 534)
             performHttpSend("http://localhost:8080/test", "test", "", emptyMap(), "__send_1")
             raiseInternal(Test510Event.Internal)
             }
