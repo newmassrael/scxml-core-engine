@@ -17,7 +17,7 @@ Architecture:
 import sys
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from scxml_parser import SCXMLParser, SCXMLModel
@@ -463,6 +463,254 @@ class BaseCodeGenerator(ABC):
                 transition.prefix_matching_events = sorted_matching
                 transition.matching_enum_values = sorted_matching
                 transition.needs_string_matching = False
+
+    # ──────────────────────────────────────────────
+    # Model analysis helpers (language-agnostic)
+    #
+    # These compute derived data structures from the parsed SCXML model
+    # that any language generator may need for code generation.
+    # ──────────────────────────────────────────────
+
+    @staticmethod
+    def _resolve_internal_transitions(model: SCXMLModel):
+        """
+        W3C SCXML 3.13: Resolve internal transition types.
+
+        An internal transition falls back to external if the target is not
+        a proper descendant of the source state, or the source is not compound.
+        Mutates transition objects in-place.
+        """
+        for state_id, state in model.states.items():
+            is_compound = (not state.is_parallel and not state.is_final
+                           and any(s.parent == state_id for s in model.states.values()))
+            for trans in state.transitions:
+                if trans.type == 'internal' and trans.target:
+                    is_descendant = False
+                    current = trans.target
+                    while current and current in model.states:
+                        parent = model.states[current].parent
+                        if parent == state_id:
+                            is_descendant = True
+                            break
+                        current = parent
+                    if not is_descendant or not is_compound:
+                        trans.type = 'external'
+                    else:
+                        trans.is_true_internal = True
+                        trans.internal_source = state_id
+
+    @staticmethod
+    def _compute_initial_entry_root(model: SCXMLModel) -> str:
+        """
+        W3C SCXML 3.2/3.4: Compute initial entry root.
+
+        Walks up from the resolved leaf initial state to find the top-level
+        ancestor. Used by enterInitialConfiguration() in generated code.
+        """
+        initial_entry_root = model.initial
+        current = model.initial
+        while current in model.states:
+            parent = model.states[current].parent
+            if parent and parent in model.states:
+                initial_entry_root = parent
+                current = parent
+            else:
+                break
+        return initial_entry_root
+
+    @staticmethod
+    def _compute_ancestor_chains(model: SCXMLModel) -> Dict[str, List[str]]:
+        """
+        W3C SCXML 3.13: Compute ancestor chains for transition routing.
+
+        Each state maps to an ordered list of ancestor state IDs (parent first).
+        Used by processEvent to check ancestor transitions when self returns Ignored.
+        """
+        ancestor_chains: Dict[str, List[str]] = {}
+        for state_id, state in model.states.items():
+            chain: List[str] = []
+            current_id = state.parent
+            while current_id and current_id in model.states:
+                chain.append(current_id)
+                current_id = model.states[current_id].parent
+            ancestor_chains[state_id] = chain
+        return ancestor_chains
+
+    @staticmethod
+    def _compute_effective_transitions(
+        model: SCXMLModel,
+        ancestor_chains: Dict[str, List[str]]
+    ) -> Dict[str, list]:
+        """
+        W3C SCXML 3.13: Compute effective transitions (self + ancestors).
+
+        Used by executeTransitionActions to execute ancestor transition actions.
+        """
+        effective_transitions: Dict[str, list] = {}
+        for state_id, state in model.states.items():
+            transitions = list(state.transitions)
+            for anc_id in ancestor_chains[state_id]:
+                transitions.extend(model.states[anc_id].transitions)
+            effective_transitions[state_id] = transitions
+        return effective_transitions
+
+    @staticmethod
+    def _compute_parent_map(model: SCXMLModel) -> Dict[str, str]:
+        """
+        W3C SCXML 3.3: Build parent map for state hierarchy.
+
+        Maps state_id -> parent_id for states with a parent.
+        """
+        parent_map: Dict[str, str] = {}
+        for state_id, state in model.states.items():
+            if state.parent and state.parent in model.states:
+                parent_map[state_id] = state.parent
+        return parent_map
+
+    @staticmethod
+    def _compute_leaf_map(model: SCXMLModel) -> Dict[str, str]:
+        """
+        W3C SCXML 3.3/3.4: Build leaf map for compound/parallel state resolution.
+
+        Maps non-leaf states to their initial leaf states.
+        """
+        leaf_map: Dict[str, str] = {}
+        for state_id, state in model.states.items():
+            leaf = model.resolve_to_leaf(state_id)
+            if leaf != state_id:
+                leaf_map[state_id] = leaf
+        return leaf_map
+
+    @staticmethod
+    def _collect_descendants(model: SCXMLModel, parent_id: str, result: List[str]):
+        """Collect all descendant state IDs of a parent state (recursive)."""
+        for state_id, state in model.states.items():
+            if state.parent == parent_id:
+                result.append(state_id)
+                BaseCodeGenerator._collect_descendants(model, state_id, result)
+
+    @staticmethod
+    def _compute_parallel_descendants(model: SCXMLModel) -> Dict[str, List[str]]:
+        """
+        W3C SCXML 3.4: Compute descendants for each parallel state.
+
+        Used by onExit to collect and exit active descendants.
+        """
+        parallel_descendants: Dict[str, List[str]] = {}
+        for parallel_id in model.parallel_regions:
+            descendants: List[str] = []
+            BaseCodeGenerator._collect_descendants(model, parallel_id, descendants)
+            parallel_descendants[parallel_id] = descendants
+        return parallel_descendants
+
+    @staticmethod
+    def _compute_deep_initial_entries(
+        model: SCXMLModel,
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        W3C SCXML 3.6: Compute deep initial entry order for space-separated initials.
+
+        When a compound state has initial="target1 target2" (deep descendant targets),
+        the codegen must enter ancestors along the path without triggering their
+        default initial child entry, then enter the actual targets with full onEntry.
+        """
+        deep_initial_entries: Dict[str, List[Dict[str, Any]]] = {}
+        for state_id, state in model.states.items():
+            if len(state.initial_children) > 1:
+                target_set = set(state.initial_children)
+                all_path_states: set = set()
+                for target_id in state.initial_children:
+                    current = target_id
+                    visited: set = set()
+                    while current != state_id and current in model.states:
+                        if current in visited:
+                            break
+                        visited.add(current)
+                        all_path_states.add(current)
+                        current = model.states[current].parent
+                entry_order = []
+                for sid in sorted(all_path_states,
+                                  key=lambda s: model.states[s].document_order):
+                    entry_order.append({
+                        'id': sid,
+                        'is_target': sid in target_set,
+                    })
+                deep_initial_entries[state_id] = entry_order
+        return deep_initial_entries
+
+    @staticmethod
+    def _compute_invoke_entries(model: SCXMLModel) -> Dict[str, list]:
+        """
+        W3C SCXML 6.4: Compute invoke entries for each state.
+
+        Returns language-agnostic invoke info. Each entry contains child_name
+        (raw SCXML name); language generators should post-process to add
+        language-specific class/type names.
+        """
+        invoke_entries: Dict[str, list] = {}
+        for state_id, state in model.states.items():
+            if state.static_invokes:
+                entries = []
+                for si in state.static_invokes:
+                    invoke_id = si.get('invoke_id', '')
+                    specific_done = f"done.invoke.{invoke_id}" if invoke_id else ""
+                    if specific_done and specific_done in model.events:
+                        done_event = specific_done
+                    else:
+                        done_event = 'done.invoke'
+                    entries.append({
+                        'invoke_id': invoke_id,
+                        'child_name': si.get('child_name', ''),
+                        'autoforward': si.get('autoforward', False),
+                        'done_event': done_event,
+                        'has_done_event': done_event in model.events or 'done.invoke' in model.events,
+                        'params': si.get('params', []),
+                        'namelist': si.get('namelist', ''),
+                        'idlocation': si.get('idlocation', ''),
+                        'finalize_content': si.get('finalize_content', ''),
+                        'state_id': state_id,
+                        'child_needs_script_engine': si.get('child_needs_script_engine', False),
+                    })
+                invoke_entries[state_id] = entries
+
+        # W3C SCXML 6.4: Hybrid invoke support (srcexpr/contentexpr)
+        for state_id, state in model.states.items():
+            if state.hybrid_invokes:
+                entries = invoke_entries.get(state_id, [])
+                for hi in state.hybrid_invokes:
+                    invoke_id = hi.get('invoke_id', '')
+                    specific_done = f"done.invoke.{invoke_id}" if invoke_id else ""
+                    if specific_done and specific_done in model.events:
+                        done_event = specific_done
+                    else:
+                        done_event = 'done.invoke'
+                    entries.append({
+                        'invoke_id': invoke_id,
+                        'child_name': '',
+                        'autoforward': hi.get('autoforward', False),
+                        'done_event': done_event,
+                        'has_done_event': done_event in model.events or 'done.invoke' in model.events,
+                        'params': hi.get('params', []),
+                        'namelist': '',
+                        'idlocation': hi.get('idlocation', ''),
+                        'finalize_content': '',
+                        'state_id': state_id,
+                        'child_needs_script_engine': False,
+                        'is_hybrid': True,
+                        'srcexpr': hi.get('srcexpr', ''),
+                        'contentexpr': hi.get('contentexpr', ''),
+                    })
+                invoke_entries[state_id] = entries
+
+        return invoke_entries
+
+    @staticmethod
+    def _compute_scxml_base_path(scxml_path: str) -> str:
+        """Compute relative base path for runtime SCXML resource resolution."""
+        try:
+            return str(Path(scxml_path).parent.relative_to(Path.cwd()))
+        except ValueError:
+            return str(Path(scxml_path).parent)
 
     def _can_generate_static(self, model: SCXMLModel) -> bool:
         """
