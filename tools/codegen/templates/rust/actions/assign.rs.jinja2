@@ -27,21 +27,16 @@ self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_
 {% else %}
     let expr = "{{ action.expr | default("") | to_lua_expr | escape_rust }}";
 {% endif %}
-    match se.evaluate_expression(&sid, expr) {
-        Ok(val) => {
-            if let Err(e) = se.set_variable(&sid, "{{ loc }}", val) {
-                log::error!("Assign failed for '{{ loc }}': {}", e);
+    // W3C SCXML 5.3: Assign via execute_script preserves Lua reference identity for
+    // table values (e.g. `Var2 = _event` — test 329 requires `Var2 == _event`). Going
+    // through evaluate_expression + set_variable would round-trip through ScriptValue
+    // and create a fresh table, breaking reference equality.
+    let assign_script = format!("{} = {}", "{{ loc }}", expr);
+    if let Err(e) = se.execute_script(&sid, &assign_script) {
+        log::error!("Assign failed for '{{ loc }}': {}", e);
 {% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+        engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
-            }
-        }
-        Err(e) => {
-            log::error!("Assign eval failed for '{{ loc }}': {}", e);
-{% if 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-        }
     }
 {% endif %}
 }

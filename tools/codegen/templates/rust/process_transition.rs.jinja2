@@ -140,6 +140,14 @@
                 }
             }
 
+            // W3C SCXML 3.13: Deduplicate transitions collected from multiple descendants
+            // of the same ancestor (e.g., both parallel regions bubble up to the same parent
+            // transition; test 504). Preserves first-match document order.
+            let mut seen = std::collections::HashSet::new();
+            enabled_transitions.retain(|t| {
+                seen.insert((t.source, t.transition_index))
+            });
+
             // W3C SCXML Appendix D.2: Remove conflicting transitions
             if !enabled_transitions.is_empty() {
                 enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);

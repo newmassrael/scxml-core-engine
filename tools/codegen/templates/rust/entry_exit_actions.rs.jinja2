@@ -23,7 +23,7 @@
 {% if model.has_entry_actions %}
         match state {
 {% for state_id, state in model.states.items() | sort %}
-{% if state.on_entry_blocks or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% if state.datamodel and model.binding == 'late' %}
                 // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
@@ -63,6 +63,16 @@
 {% endfor %}
                 }
 {% endfor %}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute <initial> transition executable content
+                // Runs AFTER parent onentry and BEFORE child state entry
+                'initial_trans_block: {
+{% for action in state.initial_transition_actions %}
+                {% with in_entry_exit=true %}{% include 'actions/' + action.type + '.rs.jinja2' %}{% endwith %}
+
+{% endfor %}
+                }
+{% endif %}
 {% if state.initial_history_id %}
                 // W3C SCXML 3.11: Initial transition targets history state {{ state.initial_history_id }}
                 if self.history_{{ state.initial_history_id }}.as_ref().map_or(true, |h| h.is_empty()) {

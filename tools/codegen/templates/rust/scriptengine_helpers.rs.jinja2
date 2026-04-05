@@ -33,8 +33,38 @@
 
 {% for var in model.variables %}
 {% if var.src %}
-        // W3C SCXML 5.2.2: Load variable from external file (not supported in Rust yet)
-        log::warn!("External data src loading not supported for variable: {{ var.id }}");
+        // W3C SCXML 5.2.2: Load variable from external file (matches C++ DataModelInitHelper::initializeVariableFromSrc)
+        {
+            // Strip "file:" prefix if present, then resolve relative to the SCXML file's directory.
+            let src_raw: &str = "{{ var.src }}";
+            let src_rel: &str = src_raw.strip_prefix("file:").unwrap_or(src_raw);
+            // `CARGO_MANIFEST_DIR` is `sce-rust-tests`; SCXML lives under project root.
+            let full_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../{{ model.scxml_base_path }}/");
+            let file_path = format!("{}{}", full_path, src_rel);
+            match std::fs::read_to_string(&file_path) {
+                Ok(content) => {
+                    let trimmed = content.trim();
+                    // Evaluate as a Lua expression so numeric/JSON literals convert correctly.
+                    match se.evaluate_expression(&sid, trimmed) {
+                        Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
+                        Err(_) => {
+                            // Fallback: store the raw content as a string value.
+                            let _ = se.set_variable(
+                                &sid,
+                                "{{ var.id }}",
+                                sce_rust_runtime::ScriptValue::String(trimmed.to_string()),
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    // W3C SCXML 5.2.2: file read failure leaves variable unset; the
+                    // error.execution event is raised later when the variable is first
+                    // accessed (Lua nil → guard throws via safe_evaluate_guard).
+                    log::error!("Failed to read src file '{}' for variable '{{ var.id }}': {}", file_path, e);
+                }
+            }
+        }
 {% elif var.expr %}
 {% set is_function_expr = var.expr.strip().startswith('function') %}
 {% if is_function_expr %}

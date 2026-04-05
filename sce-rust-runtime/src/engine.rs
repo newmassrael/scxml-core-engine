@@ -694,7 +694,15 @@ impl<P: StatePolicy> Engine<P> {
             }
 
             // Hierarchical exit/entry
-            self.handle_hierarchical_transition(old_state, new_state, &pre_transition_states);
+            // For parallel state machines, `process_transition` already performed a full
+            // microstep (exit/transition-actions/entry) via `execute_microstep` in the
+            // policy. Calling `handle_hierarchical_transition` again would double-run
+            // onexit/onentry (see `execute_transition` for the full explanation).
+            if !P::HAS_PARALLEL_STATES {
+                self.handle_hierarchical_transition(old_state, new_state, &pre_transition_states);
+            } else {
+                self.resolve_current_state_to_leaf();
+            }
 
             // Check for final state
             if self.is_in_final_state() {
@@ -736,12 +744,20 @@ impl<P: StatePolicy> Engine<P> {
         }
 
         // W3C SCXML 3.12: Hierarchical exit/entry
+        //
+        // For parallel state machines the generated `process_transition` already called
+        // `execute_microstep` internally (it handles exit actions, transition actions,
+        // entry actions, and history recording per Appendix D.2). Calling
+        // `handle_hierarchical_transition` again would double-run onexit/onentry actions
+        // and, worse, exit states from `pre_transition_states` that were already restored
+        // (test 504: Var1/Var2/Var3 increment too many times).
         if !P::HAS_PARALLEL_STATES {
             self.handle_hierarchical_transition(old_state, new_state, &pre_transition_states);
         } else {
-            // Phase 2+: parallel state handling via ParallelExitEntryHelper
-            // For Phase 1, fall back to non-parallel path
-            self.handle_hierarchical_transition(old_state, new_state, &pre_transition_states);
+            // W3C SCXML 3.3: Still resolve the current_state leaf (execute_microstep
+            // sets current_state = target or parallel parent; the macrostep loop needs
+            // the deepest active atomic state).
+            self.resolve_current_state_to_leaf();
         }
         self.check_eventless_transitions();
         true
@@ -875,15 +891,19 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// W3C SCXML 3.3: Walk current_state down through initial children to the leaf.
+    /// W3C SCXML 3.3: Walk current_state down through initial children, entering each.
     ///
-    /// After `execute_entry_actions` recursively enters compound state children,
-    /// `current_state` may point to a compound parent rather than the actual leaf.
-    /// This method resolves it to the deepest atomic state, matching the C++ engine's
-    /// behavior where `currentState_` always reflects the deepest entered leaf.
+    /// After `handle_hierarchical_transition` has entered the chain up to a target, the
+    /// target may still be a compound state whose initial child (and its children) has
+    /// not yet been entered. This method cascades into the compound's initial child
+    /// (respecting W3C SCXML 3.11 history restoration) and invokes `execute_on_entry`
+    /// for each descended state, stopping at the deepest atomic leaf.
     ///
-    /// Uses `get_initial_or_history_child` which respects W3C SCXML 3.11 history
-    /// state restoration (falls back to default initial child if no history recorded).
+    /// For non-parallel state machines this is the only place where compound → initial
+    /// child descent happens during a transition; the generated `execute_entry_actions`
+    /// does not recurse in non-parallel mode (to avoid double-entry when the engine's
+    /// pre-built entry chain already visits each ancestor). For parallel state machines
+    /// the cascade is a no-op because the chain is built to the deepest leaf up front.
     fn resolve_current_state_to_leaf(&mut self) {
         const MAX_DEPTH: usize = 50;
         for _ in 0..MAX_DEPTH {
@@ -895,6 +915,7 @@ impl<P: StatePolicy> Engine<P> {
                 break; // No child to descend into
             }
             self.current_state = child;
+            self.execute_on_entry(child);
         }
     }
 }

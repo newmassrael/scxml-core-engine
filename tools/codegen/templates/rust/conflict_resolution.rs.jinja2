@@ -24,10 +24,44 @@
                 let t1_exits = Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
                 let t2_exits = Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
 
-                let intersects = t1_exits.iter().any(|s1| t2_exits.contains(s1));
-                if intersects {
-                    // W3C SCXML Appendix D.2: If t1's source is descendant of t2's source, t1 preempts
-                    if Self::is_descendant_of(t1.source, t2.source) {
+                let mut has_conflict = t1_exits.iter().any(|s1| t2_exits.contains(s1));
+
+                // W3C SCXML Appendix D.2: Target/source conflict — t1 enters a state that t2 leaves
+                // (or vice versa). Matches C++ `ConflictResolutionAlgorithms::removeConflictingTransitions`.
+                if !has_conflict && (t1.target == t2.source || t2.target == t1.source) {
+                    has_conflict = true;
+                }
+
+                // W3C SCXML 3.13: Parallel exit conflict — t1 exits a parallel ancestor of t2's source
+                if !has_conflict && !(t2.is_internal && t2.source == t2.target) {
+                    for &exit_state in &t1_exits {
+                        if Self::is_parallel_state(exit_state)
+                            && Self::is_descendant_of(t2.source, exit_state)
+                        {
+                            has_conflict = true;
+                            break;
+                        }
+                    }
+                }
+                if !has_conflict && !(t1.is_internal && t1.source == t1.target) {
+                    for &exit_state in &t2_exits {
+                        if Self::is_parallel_state(exit_state)
+                            && Self::is_descendant_of(t1.source, exit_state)
+                        {
+                            has_conflict = true;
+                            break;
+                        }
+                    }
+                }
+
+                if has_conflict {
+                    // W3C SCXML Appendix D.2: Preemption rules
+                    if t1.target == t2.source {
+                        to_remove.push(idx);
+                    } else if t2.target == t1.source {
+                        dominated = true;
+                        break;
+                    } else if Self::is_descendant_of(t1.source, t2.source) {
                         to_remove.push(idx);
                     } else {
                         dominated = true;
@@ -49,40 +83,57 @@
     }
 
     // W3C SCXML Appendix D.2: Compute exit set for a transition
+    // Matches C++ `ParallelTransitionHelper::computeExitSet` — returns all states
+    // from `source` up to (but not including) LCA(source, target). For internal
+    // transitions where the target is a descendant of the source, returns empty.
     fn compute_exit_set(source: {{ machine_name }}State, target: {{ machine_name }}State, is_internal: bool, is_targetless: bool) -> Vec<{{ machine_name }}State> {
+        // W3C SCXML 5.9.2: Targetless transitions execute actions only — no exit/entry
         if is_targetless {
             return Vec::new();
         }
 
-        // W3C SCXML Appendix D: Find the transition domain (LCA for external, source for internal if target is descendant)
-        let domain = if is_internal && Self::is_descendant_of(target, source) {
-            source
-        } else {
-            // Find proper LCA
-            let mut anc = source;
+        // W3C SCXML 3.13: Internal transition to a descendant — source stays active
+        if is_internal && Self::is_descendant_of(target, source) {
+            return Vec::new();
+        }
+
+        // W3C SCXML 3.12: Find LCA of source and target by walking up from source
+        // and checking if target is a descendant of each ancestor. If no LCA exists
+        // (both states are top-level siblings), `lca` stays `None` and we walk to root.
+        let lca: Option<{{ machine_name }}State> = {
+            let mut current = source;
+            let mut result = None;
             loop {
-                match Self::get_parent(anc) {
+                match Self::get_parent(current) {
                     Some(parent) => {
-                        if Self::is_descendant_of(target, parent) {
-                            break parent;
+                        if Self::is_descendant_of(target, parent) || target == parent {
+                            result = Some(parent);
+                            break;
                         }
-                        anc = parent;
+                        current = parent;
                     }
-                    None => break anc,
+                    None => break,
                 }
             }
+            result
         };
 
-        // Collect active states that are descendants of the domain
-        // (Static analysis: return states that could potentially be exited)
+        // W3C SCXML Appendix D.2: Collect states from source up to (excluding) LCA
         let mut exit_set = Vec::new();
-        // Use all states as candidates (conservative approximation for static analysis)
-        // At runtime, this would use activeStates_
-        if Self::is_descendant_of(source, domain) || source == domain {
-            exit_set.push(source);
-        }
-        if target != source && (Self::is_descendant_of(target, domain) || target == domain) {
-            exit_set.push(target);
+        let mut current = source;
+        loop {
+            exit_set.push(current);
+            match Self::get_parent(current) {
+                Some(parent) => {
+                    if let Some(lca_state) = lca {
+                        if parent == lca_state {
+                            break;
+                        }
+                    }
+                    current = parent;
+                }
+                None => break,
+            }
         }
         exit_set
     }
@@ -100,30 +151,50 @@
         }
 
         // W3C SCXML Appendix D.2 Step 1-2: Compute states to exit
+        // W3C SCXML 3.13: Transition domain = LCCA(source, target). When there is no
+        // common ancestor (top-level sibling transition), we exit every active ancestor
+        // of source up to the root — modelled here as `domain = None`.
         let mut states_to_exit: Vec<{{ machine_name }}State> = Vec::new();
         for trans in transitions {
             if trans.is_targetless {
                 continue;
             }
+            // W3C SCXML 3.13: Compute transition domain
+            let domain: Option<{{ machine_name }}State> = if trans.is_internal && Self::is_descendant_of(trans.target, trans.source) {
+                Some(trans.source)
+            } else {
+                // Find the lowest ancestor of `source` that also contains `target`.
+                let mut anc_opt = Self::get_parent(trans.source);
+                let mut result = None;
+                while let Some(anc) = anc_opt {
+                    if Self::is_descendant_of(trans.target, anc) || trans.target == anc {
+                        result = Some(anc);
+                        break;
+                    }
+                    anc_opt = Self::get_parent(anc);
+                }
+                result
+            };
+
             for &active_state in &self.active_states {
-                // Find domain of this transition
-                let domain = if trans.is_internal && Self::is_descendant_of(trans.target, trans.source) {
-                    trans.source
-                } else {
-                    let mut anc = trans.source;
-                    loop {
-                        match Self::get_parent(anc) {
-                            Some(parent) => {
-                                if Self::is_descendant_of(trans.target, parent) && Self::is_descendant_of(trans.source, parent) {
-                                    break parent;
-                                }
-                                anc = parent;
-                            }
-                            None => break anc,
+                let should_exit = match domain {
+                    Some(d) => {
+                        // External transition where source is its own LCA (source compound,
+                        // target descendant) — exit source and its active descendants.
+                        if !trans.is_internal && d == trans.source {
+                            active_state == d || Self::is_descendant_of(active_state, d)
+                        } else {
+                            Self::is_descendant_of(active_state, d)
                         }
                     }
+                    // No LCA — exit every active ancestor/descendant on source's chain.
+                    None => {
+                        active_state == trans.source
+                            || Self::is_descendant_of(trans.source, active_state)
+                            || Self::is_descendant_of(active_state, trans.source)
+                    }
                 };
-                if Self::is_descendant_of(active_state, domain) && !states_to_exit.contains(&active_state) {
+                if should_exit && !states_to_exit.contains(&active_state) {
                     states_to_exit.push(active_state);
                 }
             }
