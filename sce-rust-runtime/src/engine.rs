@@ -157,6 +157,9 @@ pub struct Engine<P: StatePolicy> {
     pub(crate) on_http_send: Option<Box<dyn FnMut(HttpSendRequest)>>,
     /// W3C SCXML 6.2: Delayed event scheduler.
     pub(crate) scheduler: PullScheduler<P::Event>,
+    /// W3C SCXML C.2: When true, perform_http_send() simulates a loopback HTTP
+    /// server (W3CHttpTestServer equivalent) that echoes events back to the SM.
+    pub(crate) http_loopback: bool,
 }
 
 impl<P: StatePolicy> Engine<P> {
@@ -179,6 +182,7 @@ impl<P: StatePolicy> Engine<P> {
             completion_callback: None,
             on_http_send: None,
             scheduler: PullScheduler::new(),
+            http_loopback: false,
         }
     }
 
@@ -579,7 +583,20 @@ impl<P: StatePolicy> Engine<P> {
         self.on_http_send = Some(Box::new(callback));
     }
 
+    /// W3C SCXML C.2: Enable HTTP loopback mode for W3C conformance tests.
+    ///
+    /// When enabled, `perform_http_send` simulates the W3C HTTP test server
+    /// (`W3CHttpTestServer`): parses the request, extracts the event name from
+    /// `_scxmleventname` param (or defaults to `HTTP.POST`), and enqueues the
+    /// response event back into this engine's external queue.
+    pub fn enable_http_loopback(&mut self) {
+        self.http_loopback = true;
+    }
+
     /// W3C SCXML C.2: Dispatch a BasicHTTP send through the registered callback.
+    ///
+    /// If HTTP loopback is enabled, also simulates the W3C HTTP test server by
+    /// injecting the response event back into the external queue.
     pub fn perform_http_send(
         &mut self,
         target: String,
@@ -590,12 +607,110 @@ impl<P: StatePolicy> Engine<P> {
     ) {
         if let Some(cb) = self.on_http_send.as_mut() {
             cb(HttpSendRequest {
-                target,
-                event_name,
-                content,
-                params,
-                send_id,
+                target: target.clone(),
+                event_name: event_name.clone(),
+                content: content.clone(),
+                params: params.clone(),
+                send_id: send_id.clone(),
             });
+        }
+
+        if self.http_loopback {
+            self.http_loopback_inject(event_name, content, params);
+        }
+    }
+
+    /// W3C SCXML C.2: Simulate W3CHttpTestServer loopback.
+    ///
+    /// Mirrors the C++ `W3CHttpTestServer::handlePost` logic:
+    /// 1. Check `_scxmleventname` param → use as event name
+    /// 2. Fall back to `event_name` from the send request
+    /// 3. Default to `HTTP.POST` if neither is set
+    /// 4. Build event data from all params as a Lua table literal
+    /// 5. Enqueue as external event
+    fn http_loopback_inject(
+        &mut self,
+        event_name: String,
+        content: String,
+        params: std::collections::HashMap<String, Vec<String>>,
+    ) {
+        // W3C SCXML C.2: Determine response event name
+        let response_event_name = if let Some(names) = params.get("_scxmleventname") {
+            if let Some(first) = names.first() {
+                if !first.is_empty() {
+                    first.clone()
+                } else if !event_name.is_empty() {
+                    event_name.clone()
+                } else {
+                    "HTTP.POST".to_string()
+                }
+            } else if !event_name.is_empty() {
+                event_name.clone()
+            } else {
+                "HTTP.POST".to_string()
+            }
+        } else if !event_name.is_empty() {
+            // W3C SCXML C.2: event attribute becomes _scxmleventname in POST body
+            event_name.clone()
+        } else {
+            "HTTP.POST".to_string()
+        };
+
+        // W3C SCXML C.2: Build event data as Lua table from POST params
+        let data = self.build_http_loopback_data(&event_name, &content, &params);
+
+        // Resolve event name to enum and enqueue
+        if let Some(evt) = P::get_event_from_name(&response_event_name) {
+            let mut meta = EventWithMetadata::new(evt);
+            meta.metadata = EventMetadata::external(String::new(), String::new());
+            meta.metadata.data = data;
+            self.external_queue.raise(meta);
+        }
+    }
+
+    /// Build Lua table literal for HTTP loopback event data.
+    ///
+    /// Mirrors W3CHttpTestServer: all form params become table entries.
+    /// If `event_name` is set, it's included as `_scxmleventname`.
+    /// If only content (no params), data is the raw content string.
+    fn build_http_loopback_data(
+        &self,
+        event_name: &str,
+        content: &str,
+        params: &std::collections::HashMap<String, Vec<String>>,
+    ) -> String {
+        // If no params and no event_name, data is the content body
+        if params.is_empty() && event_name.is_empty() {
+            return content.to_string();
+        }
+
+        let mut parts: Vec<String> = Vec::new();
+
+        // Include _scxmleventname from event attribute (W3C SCXML C.2: test 534)
+        if !event_name.is_empty() {
+            let already_in_params = params.contains_key("_scxmleventname");
+            if !already_in_params {
+                parts.push(format!("[\"_scxmleventname\"]=\"{}\"", event_name));
+            }
+        }
+
+        // Include all params (W3C SCXML C.2: numeric values stay numeric)
+        for (key, values) in params {
+            if let Some(first) = values.first() {
+                if let Ok(i) = first.parse::<i64>() {
+                    parts.push(format!("[\"{}\"]={}", key, i));
+                } else if let Ok(f) = first.parse::<f64>() {
+                    parts.push(format!("[\"{}\"]={}", key, f));
+                } else {
+                    parts.push(format!("[\"{}\"]=\"{}\"", key, first));
+                }
+            }
+        }
+
+        if parts.is_empty() {
+            content.to_string()
+        } else {
+            format!("{{{}}}", parts.join(","))
         }
     }
 

@@ -663,12 +663,10 @@ impl IScriptEngine for LuaEngine {
         if !send_id.is_empty() {
             event_table.set("sendid", send_id).map_err(map_lua_err)?;
         }
-        if !origin.is_empty() {
-            event_table.set("origin", origin).map_err(map_lua_err)?;
-        }
-        if !origin_type.is_empty() {
-            event_table.set("origintype", origin_type).map_err(map_lua_err)?;
-        }
+        // W3C SCXML 5.10.1: Always set origin/origintype so targetexpr="_event.origin"
+        // evaluates to empty string (not nil) when origin is unset (test 336).
+        event_table.set("origin", origin).map_err(map_lua_err)?;
+        event_table.set("origintype", origin_type).map_err(map_lua_err)?;
         if !invoke_id.is_empty() {
             event_table.set("invokeid", invoke_id).map_err(map_lua_err)?;
         }

@@ -286,6 +286,11 @@ def generate_integration_test(test_id: str, pass_state: str | None,
     if needs_script:
         script_init = "    let _ = sce_rust_lua::register();\n"
 
+    # W3C SCXML C.2: HTTP tests need loopback server simulation
+    http_init = ""
+    if test_type == 'HTTP':
+        http_init = "    engine.enable_http_loopback();\n"
+
     content = (
         f"// GENERATED -- DO NOT EDIT (generate_rust_w3c.py)\n"
         f"use std::time::Duration;\n"
@@ -295,6 +300,7 @@ def generate_integration_test(test_id: str, pass_state: str | None,
         f"{script_init}"
         f"    let policy = sce_rust_tests::generated::{mod_name}::{machine_name}Policy::new();\n"
         f"    let mut engine = sce_rust_runtime::Engine::new(policy);\n"
+        f"{http_init}"
         f"    engine.initialize();\n"
         f"    let completed = engine.run_until_completion(\n"
         f"        Duration::from_secs({timeout_secs}),\n"
