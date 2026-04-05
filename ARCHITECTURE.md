@@ -288,6 +288,8 @@ Bridges ECMAScript syntax in W3C SCXML `datamodel="ecmascript"` to Lua evaluatio
 - Operator translation: `===`→`==`, `!==`→`~=`, `!`→`not`, `&&`→`and`, `||`→`or`
 - `typeof` operator, `null`/`undefined` handling, increment/decrement operators
 - Object literals, array indexing (0-based JS → 1-based Lua), ternary operator
+- Math builtins: `Math.sqrt`→`math.sqrt`, `Math.pow(a,b)`→`(a)^(b)`, `Math.PI`→`math.pi`
+- For-in loops: `for (var k in obj) {...}` → `for k, _ in pairs(obj) do ... end`
 - Three-layer expression cache + regex elimination for performance:
   - **Layer 1**: Transformer caches JS→Lua results
   - **Layer 2**: LuaSessionContext caches compiled Lua bytecode (registry refs)
@@ -384,6 +386,28 @@ BasicHTTP Event I/O Processor support for `<send type="BasicHTTPEventProcessor">
 - Configurable memory: `WASM_INITIAL_MEMORY`, fixed allocation (no growth)
 
 **Factory**: `PlatformExecutionHelper::createPlatformExecutor()` selects at compile-time (`#ifdef __EMSCRIPTEN__`).
+
+### Kotlin/JVM & Android
+
+Kotlin/JVM modules provide the same W3C SCXML compliance (202/202) on JVM and Android:
+
+```
+sce-kotlin-runtime      ScxmlScriptEngine interface (Kotlin Multiplatform)
+sce-kotlin-rhino        Rhino ECMAScript engine (pure JVM, fastest on server)
+sce-kotlin-lua           Lua 5.4 engine via JNI (fastest on Android)
+sce-kotlin-quickjs      QuickJS engine via JNI (full ES6, native)
+sce-spring-boot-starter Spring Boot auto-configuration (@AutoConfiguration)
+sce-kotlin-tests        W3C conformance (202/202, all 3 engines)
+sce-kotlin-benchmark    JMH benchmarks (3-engine comparison)
+sce-android-app         Android real-device benchmark (Compose UI)
+```
+
+**Engine selection per platform**:
+- **JVM/Spring** (default: Rhino): Zero JNI overhead, JIT-optimized, pure Java
+- **Android/AAOS** (default: Lua 5.4): Native C via JNI outperforms Rhino on ART (3-8x faster for guard evaluation)
+- **C++** (default: Lua 5.4): `SCE_SCRIPT_ENGINE=lua` in CMake
+
+**Kotlin code generator**: `tools/codegen/generators/kotlin_generator.py` — generates sealed interface hierarchies + coroutine-based state machines from the same SCXML sources.
 
 ---
 

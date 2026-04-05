@@ -1,6 +1,6 @@
 # SCE (SCXML Core Engine)
 
-A high-performance W3C SCXML 1.0 implementation in C++ with dual-engine architecture: Interpreter and AOT (Ahead-of-Time) code generator.
+A high-performance W3C SCXML 1.0 implementation with C++ AOT code generator and Kotlin/JVM runtime. Supports embedded C++, Android (AAOS), and Spring Boot server applications.
 
 [![W3C Tests](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml/badge.svg)](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml)
 
@@ -17,7 +17,7 @@ A high-performance W3C SCXML 1.0 implementation in C++ with dual-engine architec
 
 ### 🎯 Zero-Overhead Static Code Generation
 
-Generate optimized C++ state machines from SCXML with minimal memory footprint - suitable for embedded systems.
+Generate optimized C++ or Kotlin state machines from SCXML with minimal memory footprint - suitable for embedded systems, Android, and server applications.
 
 - **Compile-time state machines**: State and event enums, no runtime overhead
 - **No virtual functions**: Template-based design for complete inlining
@@ -62,6 +62,28 @@ my_machine<MyContext> sm(context);
 - No framework lock-in, no base class requirements
 - Your code remains completely independent
 
+### ☕ Kotlin/JVM & Spring Boot Support
+
+Use SCE from Java/Kotlin applications with a single dependency:
+
+```gradle
+// Spring Boot (auto-configured)
+implementation("com.sce:sce-spring-boot-starter:1.0.0")
+```
+
+```java
+@Autowired ScxmlScriptEngine engine;
+
+engine.createSession("session1");
+engine.evaluateCondition("session1", "x > 5");  // W3C SCXML ECMAScript
+engine.destroySession("session1");
+```
+
+Three script engines available for Kotlin/JVM:
+- **Rhino** (default) — Pure JVM, fastest on server, zero JNI
+- **Lua 5.4** — Native JNI, fastest on Android (20/29 benchmarks won)
+- **QuickJS** — Native JNI, full ES6 compatibility
+
 ### 📐 W3C SCXML 1.0 Compliance
 
 Full specification compliance with intelligent AOT code generation:
@@ -92,7 +114,21 @@ cmake .. -DBUILD_TESTS=ON
 cmake --build . -j$(nproc)
 ```
 
-**Requirements**: CMake 3.14+, C++20 compiler
+**C++ Requirements**: CMake 3.14+, C++17 compiler (C++20 for full runtime)
+**Kotlin/JVM Requirements**: JDK 17+, Gradle 8.11+ (wrapper included)
+
+### Kotlin/JVM & Spring Boot
+
+```bash
+# Build Kotlin modules
+./gradlew build
+
+# Publish to local Maven (~/.m2)
+./gradlew publishToMavenLocal
+
+# Use in your Spring Boot project:
+# implementation("com.sce:sce-spring-boot-starter:1.0.0")
+```
 
 ---
 
@@ -560,7 +596,17 @@ sce/
 tools/codegen/           # Code generator (Python + Jinja2)
 ├── codegen.py
 ├── scxml_parser.py
-└── templates/           # C++ generation templates
+└── templates/           # C++/Kotlin generation templates
+
+# Kotlin/JVM Modules (Gradle):
+sce-kotlin-runtime/      # ScxmlScriptEngine interface (multiplatform)
+sce-kotlin-rhino/        # Rhino ECMAScript engine (pure JVM)
+sce-kotlin-lua/          # Lua 5.4 engine (JNI native)
+sce-kotlin-quickjs/      # QuickJS engine (JNI native)
+sce-spring-boot-starter/ # Spring Boot auto-configuration
+sce-kotlin-tests/        # W3C conformance tests (202/202)
+sce-kotlin-benchmark/    # JMH performance benchmarks
+sce-android-app/         # Android benchmark app (Compose UI)
 
 tests/
 ├── w3c/                 # W3C conformance tests (202 tests)
@@ -570,13 +616,14 @@ tests/
 ### Code Generator
 
 **Input**: SCXML file
-**Output**: Self-contained C++ header file
+**Output**: Self-contained C++ header or Kotlin class
 
 **Generation Strategy**:
 - Analyze SCXML features (static vs dynamic)
 - Choose optimal engine: Static, Static Hybrid, or Interpreter
 - Generate minimal code with zero dependencies on framework internals
-- Your functions are called via simple function pointers or template callbacks
+- C++: Function pointers or template callbacks
+- Kotlin: Generated state machine classes implementing StateMachineEngine interface
 
 ### AOT Engine Architecture
 
@@ -808,7 +855,7 @@ sm.raiseExternal(Event::Update, R"({"temp": 25, "pressure": 1013})");
 
 ### ECMAScript Datamodel
 
-Full ECMAScript support via QuickJS or Lua 5.4 for complex expressions:
+Full ECMAScript support via Lua 5.4 (default), QuickJS, or Rhino for complex expressions:
 
 ```xml
 <datamodel>
@@ -1057,6 +1104,19 @@ cd build
 - All W3C SCXML test categories passing ✅
 - Full specification compliance across all engine types
 - Automated test suite with CI/CD integration
+
+### Kotlin/JVM Tests
+
+```bash
+# W3C conformance (Rhino, default)
+./gradlew :sce-kotlin-tests:test
+
+# W3C conformance (Lua engine)
+./gradlew :sce-kotlin-tests:test -Psce.script.engine=lua
+
+# JMH benchmark (quick)
+./gradlew :sce-kotlin-benchmark:jmh --no-configuration-cache -Pjmh.f=1 -Pjmh.wi=1 -Pjmh.i=1
+```
 
 ### Performance Benchmarks
 
