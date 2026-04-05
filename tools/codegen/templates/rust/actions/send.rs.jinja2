@@ -2,6 +2,7 @@
    Supports static dispatch, delayexpr, params/namelist data building,
    idlocation storage, internal/external targets, BasicHTTP dispatch,
    dynamic event/target expressions, and namelist error abort.
+   Target resolution follows C++ "resolve once, use everywhere" pattern.
 #}
 {
 {% if action.id %}
@@ -133,9 +134,57 @@
     let event_data: &str = "";
 {% endif %}
 
-{# W3C SCXML 6.2: Guard dispatch section — skip if namelist aborted (test 553) #}
+{# W3C SCXML 6.2: Target resolution — resolve once, use everywhere (C++ pattern).
+   Evaluates targetexpr once, validates (invalid/unreachable), stores in Option.
+   All subsequent dispatch branches use the resolved value via _rt. #}
+{% if action.targetexpr and model.needs_script_engine %}
+    // W3C SCXML 6.2: Resolve dynamic target (targetexpr="{{ action.targetexpr }}")
+    let _resolved_target: Option<String> = {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        match se.evaluate_expression(&sid, "{{ action.targetexpr | to_lua_expr | escape_rust }}") {
+            Ok(ref val) if matches!(val, sce_rust_runtime::ScriptValue::Null | sce_rust_runtime::ScriptValue::Undefined) => {
+                // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
+{% if 'error.communication' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
+{% endif %}
+                None
+            }
+            Ok(val) => {
+                let s = val.to_lua_literal();
+                let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"').to_string();
+                if trimmed.starts_with("!") {
+                    // W3C SCXML 6.2: Invalid target raises error.execution
+{% if 'error.execution' in model.events %}
+                    {
+                        let mut err_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }});
+                        err_meta.metadata.send_id = send_id.clone();
+                        engine.raise(err_meta);
+                    }
+{% endif %}
+                    None
+                } else {
+                    Some(trimmed)
+                }
+            }
+            Err(e) => {
+                log::error!("targetexpr eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                None
+            }
+        }
+    };
+{% endif %}
+
+{# W3C SCXML 6.2: Guard dispatch — skip if namelist aborted (test 553) or targetexpr failed #}
 {% if has_namelist %}
     if !_send_aborted {
+{% endif %}
+{% if action.targetexpr and model.needs_script_engine %}
+    if let Some(ref _rt) = _resolved_target {
 {% endif %}
 
 {% if action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
@@ -150,7 +199,7 @@
 {% if in_entry_exit is defined and in_entry_exit %}
     break 'action_block;
 {% endif %}
-{% elif action.target and action.target.startswith('!') %}
+{% elif not action.targetexpr and action.target and action.target.startswith('!') %}
     // W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
 {% if 'error.execution' in model.events %}
     {
@@ -175,7 +224,7 @@
 {% if in_entry_exit is defined and in_entry_exit %}
     break 'action_block;
 {% endif %}
-{% elif action.target == '#_internal' %}
+{% elif not action.targetexpr and action.target == '#_internal' %}
     // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
 {% if action.event %}
     {
@@ -200,9 +249,23 @@
         }
     }
 {% endif %}
-{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and action.target and (action.target.startswith('http://') or action.target.startswith('https://')) %}
-    // W3C SCXML C.2: BasicHTTP send to HTTP target "{{ action.target }}"
+{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) %}
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
+{# C++ resolve-once pattern: unified http_target_rs for both static and dynamic targets #}
+{% if action.targetexpr %}
+{% set http_target_rs = '_rt.to_string()' %}
+{% else %}
+{% set http_target_rs = '"' ~ action.target ~ '".to_string()' %}
+{% endif %}
     {
+{% if action.targetexpr %}
+        // W3C SCXML C.2: Validate dynamic target is HTTP URL
+        if !_rt.starts_with("http://") && !_rt.starts_with("https://") {
+{% if 'error.communication' in model.events %}
+            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
+{% endif %}
+        } else {
+{% endif %}
         let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
 {% if has_params %}
 {% for param in action.params %}
@@ -240,53 +303,15 @@
 {% endfor %}
 {% endif %}
         engine.perform_http_send(
-            "{{ action.target }}".to_string(),
+            {{ http_target_rs }},
             "{{ action.event | default('', true) }}".to_string(),
             "{{ action.content | default('', true) | escape_rust }}".to_string(),
             http_params,
             send_id.clone(),
         );
-    }
-{% elif action.targetexpr and model.needs_script_engine %}
-    // W3C SCXML 6.2: Dynamic target evaluation (targetexpr="{{ action.targetexpr }}")
-    {
-        self.ensure_script_engine();
-        let sid = self.session_id.as_ref().unwrap().clone();
-        let se = sce_rust_runtime::ScriptEngineProvider::get();
-        match se.evaluate_expression(&sid, "{{ action.targetexpr | to_lua_expr | escape_rust }}") {
-            Ok(ref val) if matches!(val, sce_rust_runtime::ScriptValue::Null | sce_rust_runtime::ScriptValue::Undefined) => {
-                // W3C SCXML C.1 (test 496, 521): nil/undefined target raises error.communication
-{% if 'error.communication' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
-{% endif %}
-            }
-            Ok(val) => {
-                let dynamic_target = val.to_lua_literal();
-                let dynamic_target = dynamic_target.trim_matches(|c: char| c == '\'' || c == '"');
-                if dynamic_target.starts_with("!") {
-                    // W3C SCXML 6.2: Invalid target raises error.execution
-{% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-                } else {
-                    // W3C SCXML 6.2: Dispatch to dynamically resolved target
-{% if action.event %}
-                    {
-                        let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
-                        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
-                        meta.metadata.data = event_data.to_string();
-                        engine.raise_external_with_meta(meta);
-                    }
-{% endif %}
-                }
-            }
-            Err(e) => {
-                log::error!("targetexpr eval failed: {}", e);
-{% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-            }
+{% if action.targetexpr %}
         }
+{% endif %}
     }
 {% elif action.delayexpr %}
     // W3C SCXML 6.2: Delayed send via runtime expression "{{ action.delayexpr }}"
@@ -337,7 +362,57 @@
         event_data,
     );
 {% endif %}
-{% elif action.target and action.target != '#_internal' %}
+{% elif action.targetexpr and model.needs_script_engine %}
+    // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
+    if _rt == "#_internal" {
+{% if action.event %}
+        {
+            let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
+            meta.metadata.data = event_data.to_string();
+            engine.raise(meta);
+        }
+{% elif action.eventexpr %}
+        {
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            match se.evaluate_expression(&sid, "{{ action.eventexpr | to_lua_expr | escape_rust }}") {
+                Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
+                    if let Some(evt) = Self::get_event_from_name(&event_name) {
+                        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
+                        meta.metadata.data = event_data.to_string();
+                        engine.raise(meta);
+                    }
+                }
+                _ => {}
+            }
+        }
+{% endif %}
+    } else {
+{% if action.event %}
+        {
+            let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
+            meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
+            meta.metadata.data = event_data.to_string();
+            engine.raise_external_with_meta(meta);
+        }
+{% elif action.eventexpr %}
+        {
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            match se.evaluate_expression(&sid, "{{ action.eventexpr | to_lua_expr | escape_rust }}") {
+                Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
+                    if let Some(evt) = Self::get_event_from_name(&event_name) {
+                        engine.raise_external(evt, event_data, "");
+                    }
+                }
+                _ => {}
+            }
+        }
+{% endif %}
+    }
+{% elif not action.targetexpr and action.target and action.target != '#_internal' %}
     // W3C SCXML 6.2: External send to target "{{ action.target }}"
 {% if action.event %}
     {
@@ -373,6 +448,10 @@
         }
     }
 {% endif %}
+{% endif %}
+
+{% if action.targetexpr and model.needs_script_engine %}
+    } // end of if let Some(ref _rt) = _resolved_target
 {% endif %}
 
 {% if has_namelist %}
