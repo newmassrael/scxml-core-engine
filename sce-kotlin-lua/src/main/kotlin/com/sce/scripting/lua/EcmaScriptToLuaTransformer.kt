@@ -44,6 +44,7 @@ class EcmaScriptToLuaTransformer {
 
         // Stage 2: Transformation pipeline (order matters)
         var result = processed
+        result = transformMathBuiltins(result)
         result = transformCompoundAssignment(result)
         result = transformIncrementDecrement(result)
         result = transformFunctionSyntax(result)
@@ -81,7 +82,9 @@ class EcmaScriptToLuaTransformer {
         val (processed, literals) = protectStringLiterals(preProcessed)
 
         var result = processed
+        result = transformForInLoops(result)
         result = transformForLoops(result)
+        result = transformMathBuiltins(result)
         result = transformCompoundAssignment(result)
         result = transformIncrementDecrement(result)
         result = transformFunctionSyntax(result)
@@ -858,6 +861,83 @@ class EcmaScriptToLuaTransformer {
         return input.replace(".getElementsByTagName(", ":getElementsByTagName(")
             .replace(".getAttribute(", ":getAttribute(")
             .replace(".getTagName(", ":getTagName(")
+    }
+
+    // === Math Builtins ===
+    // W3C SCXML: Math.sqrt(x) → math.sqrt(x), Math.pow(x,y) → (x)^(y), etc.
+
+    private fun transformMathBuiltins(input: String): String {
+        var result = input
+        // Math.pow(a, b) → (a)^(b) — must be done before simple replacements
+        val powRegex = Regex("""Math\.pow\(([^,]+),\s*([^)]+)\)""")
+        result = powRegex.replace(result) { m -> "(${m.groupValues[1].trim()})^(${m.groupValues[2].trim()})" }
+        // Direct mappings: Math.func → math.func
+        result = result.replace("Math.sqrt", "math.sqrt")
+        result = result.replace("Math.abs", "math.abs")
+        result = result.replace("Math.floor", "math.floor")
+        result = result.replace("Math.ceil", "math.ceil")
+        result = result.replace("Math.max", "math.max")
+        result = result.replace("Math.min", "math.min")
+        result = result.replace("Math.random", "math.random")
+        result = result.replace("Math.log", "math.log")
+        result = result.replace("Math.exp", "math.exp")
+        result = result.replace("Math.sin", "math.sin")
+        result = result.replace("Math.cos", "math.cos")
+        result = result.replace("Math.tan", "math.tan")
+        result = result.replace("Math.PI", "math.pi")
+        result = result.replace("Math.E", "math.exp(1)")
+        return result
+    }
+
+    // === For-In Loops ===
+    // W3C SCXML: for (var k in obj) { body } → for k, _ in pairs(obj) do body end
+
+    private fun transformForInLoops(input: String): String {
+        val result = StringBuilder(input.length + 64)
+        var i = 0
+        while (i < input.length) {
+            val forPos = findWord(input, "for", i)
+            if (forPos == -1) { result.append(input, i, input.length); break }
+            result.append(input, i, forPos)
+            i = forPos + 3
+
+            val parenStart = skipSpaces(input, i)
+            if (parenStart >= input.length || input[parenStart] != '(') {
+                result.append("for"); continue
+            }
+
+            // Find matching ')'
+            val parenEnd = findMatchingClose(input, parenStart, '(', ')')
+            val header = input.substring(parenStart + 1, parenEnd).trim()
+
+            // Check for "var/let/const IDENT in EXPR" pattern
+            val inMatch = Regex("""^(?:var|let|const)\s+(\w+)\s+in\s+(.+)$""").find(header)
+                ?: Regex("""^(\w+)\s+in\s+(.+)$""").find(header)
+
+            if (inMatch == null) {
+                // Not a for-in, put back and let transformForLoops handle it
+                result.append("for")
+                i = forPos + 3
+                continue
+            }
+
+            val loopVar = inMatch.groupValues[1]
+            val objExpr = inMatch.groupValues[2].trim()
+            i = parenEnd + 1
+
+            // Find body block
+            val bodyStart = skipSpaces(input, i)
+            if (bodyStart >= input.length || input[bodyStart] != '{') {
+                result.append("for $loopVar, _ in pairs($objExpr) do end")
+                continue
+            }
+            val bodyEnd = findMatchingClose(input, bodyStart, '{', '}')
+            val body = input.substring(bodyStart + 1, bodyEnd).trimBoth()
+            i = bodyEnd + 1
+
+            result.append("for $loopVar, _ in pairs($objExpr) do\n$body\nend\n")
+        }
+        return result.toString()
     }
 
     // === Semicolons ===

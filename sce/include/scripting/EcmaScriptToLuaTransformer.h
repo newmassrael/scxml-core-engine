@@ -77,6 +77,7 @@ private:
     std::string restoreStringLiterals(const std::string &processed, const std::vector<std::string> &literals) const;
 
     // Stage 2: Structural transforms (script-only, must see original JS syntax)
+    std::string transformForInLoops(const std::string &input) const;
     std::string transformForLoops(const std::string &input) const;
     std::string transformConditionalBlocks(const std::string &input) const;
     std::string transformBareExpressions(const std::string &input) const;
@@ -97,6 +98,7 @@ private:
     std::string transformNewExpression(const std::string &input) const;
     std::string transformTernaryOperator(const std::string &input) const;
     std::string transformObjectLiterals(const std::string &input) const;
+    std::string transformMathBuiltins(const std::string &input) const;
     std::string transformDOMMethods(const std::string &input) const;
     std::string transformSemicolons(const std::string &input) const;
     std::string parenthesizeBitwiseOperands(const std::string &input) const;

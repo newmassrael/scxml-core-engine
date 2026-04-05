@@ -219,6 +219,8 @@ std::string EcmaScriptToLuaTransformer::transform(const std::string &ecmaScript,
     auto [processed, literals] = protectStringLiterals(preProcessed);
 
     // Stage 2: Apply transformation pipeline (order matters)
+    // Math builtins must run early (before operator transforms alter the expressions)
+    processed = transformMathBuiltins(processed);
     // Compound assignment and increment/decrement must run before operator transforms
     processed = transformCompoundAssignment(processed);
     processed = transformIncrementDecrement(processed);
@@ -265,10 +267,14 @@ std::string EcmaScriptToLuaTransformer::transformScript(const std::string &scrip
     auto [processed, literals] = protectStringLiterals(preProcessed);
 
     // Stage 2: Structural transforms (must see original JS syntax with semicolons)
+    // For-in must be extracted before for-loops (which expect C-style for headers)
+    processed = transformForInLoops(processed);
     // For-loops must be converted before semicolons are removed
     processed = transformForLoops(processed);
 
     // Stage 3: Apply transformations
+    // Math builtins must run early (before operator transforms alter the expressions)
+    processed = transformMathBuiltins(processed);
     // Compound assignment and increment/decrement must run before operator transforms
     processed = transformCompoundAssignment(processed);
     processed = transformIncrementDecrement(processed);
@@ -1246,6 +1252,164 @@ std::string EcmaScriptToLuaTransformer::transformSemicolons(const std::string &i
             }
         }
         result = std::move(temp);
+    }
+
+    return result;
+}
+
+// === Math Builtins ===
+// W3C SCXML: Math.sqrt(x) → math.sqrt(x), Math.pow(x,y) → (x)^(y), etc.
+
+std::string EcmaScriptToLuaTransformer::transformMathBuiltins(const std::string &input) const {
+    std::string result = input;
+
+    // Math.pow(a, b) → (a)^(b) — must be done before simple replacements
+    // Find and replace all occurrences of Math.pow(...)
+    {
+        std::string temp;
+        temp.reserve(result.size());
+        size_t i = 0;
+        while (i < result.size()) {
+            size_t pos = result.find("Math.pow(", i);
+            if (pos == std::string::npos) {
+                temp.append(result, i, result.size() - i);
+                break;
+            }
+            temp.append(result, i, pos - i);
+
+            // Find the matching ')'
+            size_t argStart = pos + 9; // after "Math.pow("
+            int depth = 1;
+            size_t commaPos = std::string::npos;
+            size_t j = argStart;
+            while (j < result.size() && depth > 0) {
+                if (result[j] == '(') ++depth;
+                else if (result[j] == ')') { --depth; if (depth == 0) break; }
+                else if (result[j] == ',' && depth == 1 && commaPos == std::string::npos) commaPos = j;
+                ++j;
+            }
+            if (depth == 0 && commaPos != std::string::npos) {
+                std::string a = trim(result.substr(argStart, commaPos - argStart));
+                std::string b = trim(result.substr(commaPos + 1, j - commaPos - 1));
+                temp += "(" + a + ")^(" + b + ")";
+                i = j + 1;
+            } else {
+                temp += "Math.pow(";
+                i = argStart;
+            }
+        }
+        result = std::move(temp);
+    }
+
+    // Direct mappings: Math.func → math.func / Lua equivalent
+    auto replaceAll = [](std::string &s, const std::string &from, const std::string &to) {
+        size_t pos = 0;
+        while ((pos = s.find(from, pos)) != std::string::npos) {
+            s.replace(pos, from.size(), to);
+            pos += to.size();
+        }
+    };
+
+    replaceAll(result, "Math.sqrt", "math.sqrt");
+    replaceAll(result, "Math.abs", "math.abs");
+    replaceAll(result, "Math.floor", "math.floor");
+    replaceAll(result, "Math.ceil", "math.ceil");
+    replaceAll(result, "Math.max", "math.max");
+    replaceAll(result, "Math.min", "math.min");
+    replaceAll(result, "Math.random", "math.random");
+    replaceAll(result, "Math.log", "math.log");
+    replaceAll(result, "Math.exp", "math.exp");
+    replaceAll(result, "Math.sin", "math.sin");
+    replaceAll(result, "Math.cos", "math.cos");
+    replaceAll(result, "Math.tan", "math.tan");
+    replaceAll(result, "Math.PI", "math.pi");
+    replaceAll(result, "Math.E", "math.exp(1)");
+
+    return result;
+}
+
+// === For-In Loops ===
+// W3C SCXML: for (var k in obj) { body } → for k, _ in pairs(obj) do body end
+
+std::string EcmaScriptToLuaTransformer::transformForInLoops(const std::string &input) const {
+    std::string result;
+    result.reserve(input.size() + 64);
+    size_t i = 0;
+    size_t len = input.size();
+
+    while (i < len) {
+        size_t forPos = findWord(input, "for", 3, i);
+        if (forPos == std::string::npos) {
+            result.append(input, i, len - i);
+            break;
+        }
+        result.append(input, i, forPos - i);
+        i = forPos + 3;
+
+        size_t parenStart = skipSpaces(input, i);
+        if (parenStart >= len || input[parenStart] != '(') {
+            result += "for";
+            continue;
+        }
+
+        // Find matching ')'
+        size_t parenEnd = findMatchingClose(input, parenStart, '(', ')');
+
+        // Extract header content
+        std::string header = trim(input.substr(parenStart + 1, parenEnd - parenStart - 1));
+
+        // Check for "var/let/const IDENT in EXPR" or "IDENT in EXPR" pattern
+        std::string loopVar;
+        std::string objExpr;
+        bool isForIn = false;
+
+        // Strip var/let/const prefix
+        std::string headerStripped = header;
+        for (const char *kw : {"var ", "let ", "const "}) {
+            if (headerStripped.find(kw) == 0) {
+                headerStripped = headerStripped.substr(std::strlen(kw));
+                break;
+            }
+        }
+        headerStripped = trim(headerStripped);
+
+        // Find " in " keyword (word boundary)
+        size_t inPos = findWord(headerStripped, "in", 2, 0);
+        if (inPos != std::string::npos) {
+            std::string beforeIn = trim(headerStripped.substr(0, inPos));
+            std::string afterIn = trim(headerStripped.substr(inPos + 2));
+            // beforeIn should be a single identifier
+            bool isSingleIdent = !beforeIn.empty();
+            for (char c : beforeIn) {
+                if (!isWordChar(c)) { isSingleIdent = false; break; }
+            }
+            if (isSingleIdent && !afterIn.empty()) {
+                loopVar = beforeIn;
+                objExpr = afterIn;
+                isForIn = true;
+            }
+        }
+
+        if (!isForIn) {
+            // Not a for-in, put back for transformForLoops
+            result += "for";
+            i = forPos + 3;
+            continue;
+        }
+
+        i = parenEnd + 1;
+
+        // Find body block
+        size_t bodyStart = skipSpaces(input, i);
+        if (bodyStart >= len || input[bodyStart] != '{') {
+            result += "for " + loopVar + ", _ in pairs(" + objExpr + ") do end\n";
+            continue;
+        }
+        size_t bodyEnd = findMatchingClose(input, bodyStart, '{', '}');
+        std::string body = trim(input.substr(bodyStart + 1, bodyEnd - bodyStart - 1));
+        i = bodyEnd + 1;
+
+        result += "for " + loopVar + ", _ in pairs(" + objExpr + ") do\n" + body + "\nend\n";
     }
 
     return result;
