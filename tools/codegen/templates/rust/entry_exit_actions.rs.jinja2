@@ -215,7 +215,9 @@
                 }
             }
         }
+{% endif %}
 
+{% if model.has_parallel_states %}
         // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
         if Self::is_compound_state(state) && !Self::is_parallel_state(state) {
             // W3C SCXML 3.6: Deep initial targets support

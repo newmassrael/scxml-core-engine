@@ -92,8 +92,14 @@
             return Vec::new();
         }
 
-        // W3C SCXML 3.13: Internal transition to a descendant — source stays active
-        if is_internal && Self::is_descendant_of(target, source) {
+        // W3C SCXML 3.13: Internal transition to a compound descendant — source stays active.
+        // Matches C++ `isInternalToDescendant`: source must be compound (not parallel) AND
+        // target must be a proper descendant. If source is atomic or parallel, the internal
+        // transition behaves as external (W3C SCXML 3.13).
+        if is_internal
+            && Self::is_compound_state(source) && !Self::is_parallel_state(source)
+            && Self::is_descendant_of(target, source) && target != source
+        {
             return Vec::new();
         }
 
@@ -160,7 +166,12 @@
                 continue;
             }
             // W3C SCXML 3.13: Compute transition domain
-            let domain: Option<{{ machine_name }}State> = if trans.is_internal && Self::is_descendant_of(trans.target, trans.source) {
+            // Matches C++ `computeEffectiveLCA` — internal transition with compound
+            // (non-parallel) source and proper descendant target uses source as domain.
+            let is_internal_to_descendant = trans.is_internal
+                && Self::is_compound_state(trans.source) && !Self::is_parallel_state(trans.source)
+                && Self::is_descendant_of(trans.target, trans.source) && trans.target != trans.source;
+            let domain: Option<{{ machine_name }}State> = if is_internal_to_descendant {
                 Some(trans.source)
             } else {
                 // Find the lowest ancestor of `source` that also contains `target`.

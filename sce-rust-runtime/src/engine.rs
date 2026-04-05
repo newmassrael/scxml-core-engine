@@ -891,19 +891,15 @@ impl<P: StatePolicy> Engine<P> {
         }
     }
 
-    /// W3C SCXML 3.3: Walk current_state down through initial children, entering each.
+    /// W3C SCXML 3.3: Walk current_state down through initial children to the leaf.
     ///
-    /// After `handle_hierarchical_transition` has entered the chain up to a target, the
-    /// target may still be a compound state whose initial child (and its children) has
-    /// not yet been entered. This method cascades into the compound's initial child
-    /// (respecting W3C SCXML 3.11 history restoration) and invokes `execute_on_entry`
-    /// for each descended state, stopping at the deepest atomic leaf.
+    /// For **non-parallel** SMs the generated `execute_entry_actions` does NOT recurse
+    /// into compound→initial child (the engine's entry chain already covers ancestors).
+    /// This method descends into the compound's initial child, calling `execute_on_entry`
+    /// for each level, until it reaches an atomic leaf.
     ///
-    /// For non-parallel state machines this is the only place where compound → initial
-    /// child descent happens during a transition; the generated `execute_entry_actions`
-    /// does not recurse in non-parallel mode (to avoid double-entry when the engine's
-    /// pre-built entry chain already visits each ancestor). For parallel state machines
-    /// the cascade is a no-op because the chain is built to the deepest leaf up front.
+    /// For **parallel** SMs the generated `execute_entry_actions` already recurses (matching
+    /// C++ `executeEntryActions` L319-343), so this is just a pointer walk without entry.
     fn resolve_current_state_to_leaf(&mut self) {
         const MAX_DEPTH: usize = 50;
         for _ in 0..MAX_DEPTH {
@@ -915,7 +911,10 @@ impl<P: StatePolicy> Engine<P> {
                 break; // No child to descend into
             }
             self.current_state = child;
-            self.execute_on_entry(child);
+            if !P::HAS_PARALLEL_STATES {
+                // Non-parallel: template doesn't recurse, so we enter here.
+                self.execute_on_entry(child);
+            }
         }
     }
 }
