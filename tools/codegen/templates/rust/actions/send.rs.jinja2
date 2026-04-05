@@ -1,4 +1,7 @@
-{# W3C SCXML 6.2: <send> - Event dispatch (Phase 2: static send only) #}
+{# W3C SCXML 6.2: <send> - Event dispatch
+   Supports static dispatch, delayexpr, params/namelist data building,
+   idlocation storage, internal/external targets, and dynamic event expressions.
+#}
 {
 {% if action.id %}
     let send_id = "{{ action.id }}".to_string();
@@ -8,44 +11,153 @@
     let send_id = String::new();
 {% endif %}
 
-{% if action.idlocation and not model.needs_script_engine %}
+{% if action.idlocation %}
     // W3C SCXML 6.2.4: Store sendid in idlocation
+{% if model.needs_script_engine %}
+    {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let _ = se.execute_script(
+            &sid,
+            &format!("{} = {:?}", "{{ action.idlocation }}", send_id),
+        );
+    }
+{% else %}
     self.{{ action.idlocation | to_snake_case }} = send_id.clone();
+{% endif %}
+{% endif %}
+
+{# W3C SCXML 6.2: Build event data from <param>, namelist, or <content> at send time.
+   The data is a Lua table literal string (e.g. `{aParam=2, bParam="text"}`) that
+   `set_current_event` parses when the event is later processed. Dynamic expressions
+   (non-static-literal params, namelist) are evaluated NOW so delayed sends see the
+   value at send time (tests 176, 186). Pure static literal params are embedded at
+   codegen time so tests without a script engine still work (test 531). #}
+{% set has_params = action.params and action.params | length > 0 %}
+{% set has_namelist = action.namelist and action.namelist | trim %}
+{# Jinja2 {% set %} inside a loop doesn't propagate to the enclosing scope;
+   use a namespace so `has_dynamic_params` survives the loop (test 567). #}
+{% set ns = namespace(has_dynamic_params=false) %}
+{% if has_params %}
+{% for param in action.params %}
+{% if not param.is_static_literal %}
+{% set ns.has_dynamic_params = true %}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if ns.has_dynamic_params or has_namelist %}
+    // W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+    let event_data_string: String = {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let mut parts: Vec<String> = Vec::new();
+{% if has_params %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+        parts.push(format!("[{:?}]={:?}", "{{ param.name }}", "{{ param.static_value | escape_rust }}"));
+{% elif param.expr %}
+        match se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
+            Ok(val) => {
+                parts.push(format!("[{:?}]={}", "{{ param.name }}", val.to_lua_literal()));
+            }
+            Err(e) => {
+                log::error!("send param '{{ param.name }}' eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+            }
+        }
+{% elif param.location %}
+        match se.evaluate_expression(&sid, "{{ param.location }}") {
+            Ok(val) => {
+                parts.push(format!("[{:?}]={}", "{{ param.name }}", val.to_lua_literal()));
+            }
+            Err(e) => {
+                log::error!("send param '{{ param.name }}' location read failed: {}", e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+            }
+        }
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if has_namelist %}
+        // W3C SCXML C.1: namelist variables become top-level keys in the data table
+{% for name in action.namelist.split() %}
+        match se.evaluate_expression(&sid, "{{ name }}") {
+            Ok(val) => {
+                parts.push(format!("[{:?}]={}", "{{ name }}", val.to_lua_literal()));
+            }
+            Err(e) => {
+                log::error!("send namelist '{{ name }}' eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+            }
+        }
+{% endfor %}
+{% endif %}
+        format!("{{ '{{' }}{}{{ '}}' }}", parts.join(","))
+    };
+    let event_data: &str = &event_data_string;
+{% elif has_params %}
+    // W3C SCXML Appendix B.2: All params are static literals — embed at codegen time
+    let event_data: &str = "{ {% for param in action.params %}[\"{{ param.name | escape_rust }}\"]=\"{{ param.static_value | escape_rust }}\"{% if not loop.last %},{% endif %}{% endfor %} }";
+{% elif action.content %}
+    let event_data: &str = "{{ action.content | escape_rust }}";
+{% else %}
+    let event_data: &str = "";
 {% endif %}
 
 {% if action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
     // W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
 {% if 'error.execution' in model.events %}
-    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+    {
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }});
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+    }
 {% endif %}
 {% if in_entry_exit is defined and in_entry_exit %}
-    // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
     break 'action_block;
 {% endif %}
 {% elif action.target and action.target.startswith('!') %}
     // W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
 {% if 'error.execution' in model.events %}
-    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+    {
+        // W3C SCXML 6.2.4/5.10: test 332 — the error event MUST carry the sendid
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }});
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+    }
 {% endif %}
 {% if in_entry_exit is defined and in_entry_exit %}
-    // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
     break 'action_block;
 {% endif %}
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
     // W3C SCXML C.2: BasicHTTP without target raises error.communication
 {% if 'error.communication' in model.events %}
-    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
+    {
+        let mut err_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }});
+        err_meta.metadata.send_id = send_id.clone();
+        engine.raise(err_meta);
+    }
 {% endif %}
 {% if in_entry_exit is defined and in_entry_exit %}
-    // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
     break 'action_block;
 {% endif %}
 {% elif action.target == '#_internal' %}
     // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
 {% if action.event %}
-    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }}));
+    {
+        let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
+        meta.metadata.data = event_data.to_string();
+        engine.raise(meta);
+    }
 {% elif action.eventexpr %}
-    // W3C SCXML 6.2: Dynamic event expression (internal)
     {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
@@ -53,11 +165,42 @@
         match se.evaluate_expression(&sid, "{{ action.eventexpr | to_lua_expr | escape_rust }}") {
             Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
                 if let Some(evt) = Self::get_event_from_name(&event_name) {
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(evt));
+                    let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
+                    meta.metadata.data = event_data.to_string();
+                    engine.raise(meta);
                 }
             }
             _ => {}
         }
+    }
+{% endif %}
+{% elif action.delayexpr %}
+    // W3C SCXML 6.2: Delayed send via runtime expression "{{ action.delayexpr }}"
+{% if action.event %}
+    {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        let delay_ms = match se.evaluate_expression(&sid, "{{ action.delayexpr | to_lua_expr | escape_rust }}") {
+            Ok(val) => {
+                let s = val.to_lua_literal();
+                let trimmed = s.trim_matches(|c: char| c == '\'' || c == '"');
+                sce_rust_runtime::helpers::send::parse_delay_to_ms(trimmed).unwrap_or(0)
+            }
+            Err(e) => {
+                log::error!("delayexpr eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                0
+            }
+        };
+        engine.schedule_event(
+            {{ machine_name }}Event::{{ action.event | to_event_variant }},
+            std::time::Duration::from_millis(delay_ms),
+            &send_id,
+            event_data,
+        );
     }
 {% endif %}
 {% elif action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0 %}
@@ -67,11 +210,7 @@
         {{ machine_name }}Event::{{ action.event | to_event_variant }},
         std::time::Duration::from_millis({{ action.delay_ms }}),
         &send_id,
-{% if action.content %}
-        "{{ action.content | escape_rust }}",
-{% else %}
-        "",
-{% endif %}
+        event_data,
     );
 {% endif %}
 {% elif action.delay and action.delay != '0s' and action.delay != '0ms' %}
@@ -81,40 +220,31 @@
         {{ machine_name }}Event::{{ action.event | to_event_variant }},
         std::time::Duration::from_millis({{ action.delay_ms | default(0) }}),
         &send_id,
-{% if action.content %}
-        "{{ action.content | escape_rust }}",
-{% else %}
-        "",
-{% endif %}
+        event_data,
     );
 {% endif %}
 {% elif action.target and action.target != '#_internal' %}
     // W3C SCXML 6.2: External send to target "{{ action.target }}"
 {% if action.event %}
-    engine.raise_external(
-        {{ machine_name }}Event::{{ action.event | to_event_variant }},
-{% if action.content %}
-        "{{ action.content | escape_rust }}",
-{% else %}
-        "",
-{% endif %}
-        "",
-    );
+    {
+        let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
+        // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
+        meta.metadata.data = event_data.to_string();
+        engine.raise_external_with_meta(meta);
+    }
 {% endif %}
 {% else %}
     // W3C SCXML 6.2: Default send (no target = external event)
 {% if action.event %}
-    engine.raise_external(
-        {{ machine_name }}Event::{{ action.event | to_event_variant }},
-{% if action.content %}
-        "{{ action.content | escape_rust }}",
-{% else %}
-        "",
-{% endif %}
-        "",
-    );
+    {
+        let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
+        // W3C SCXML 5.10.1: External send — preserve sendid and SCXML event processor origintype
+        meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
+        meta.metadata.data = event_data.to_string();
+        engine.raise_external_with_meta(meta);
+    }
 {% elif action.eventexpr %}
-    // W3C SCXML 6.2: Dynamic event expression (external)
     {
         self.ensure_script_engine();
         let sid = self.session_id.as_ref().unwrap().clone();
@@ -122,7 +252,7 @@
         match se.evaluate_expression(&sid, "{{ action.eventexpr | to_lua_expr | escape_rust }}") {
             Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
                 if let Some(evt) = Self::get_event_from_name(&event_name) {
-                    engine.raise_external(evt, "", "");
+                    engine.raise_external(evt, event_data, "");
                 }
             }
             _ => {}
@@ -131,4 +261,5 @@
 {% endif %}
 {% endif %}
     let _ = send_id;  // suppress unused warning when no send operation
+    let _ = event_data;  // suppress unused warning in branches that skip dispatch
 }

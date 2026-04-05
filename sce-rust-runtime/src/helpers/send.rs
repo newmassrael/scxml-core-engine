@@ -137,3 +137,31 @@ pub fn validate_basic_http_send(
 pub fn generate_send_id() -> String {
     unique_id_generator::generate_send_id()
 }
+
+/// W3C SCXML 6.2: Parse a CSS2-style time duration into milliseconds.
+///
+/// Accepts the same surface syntax as C++ `parseDelayToMs`:
+/// - `"1s"`, `"1.5s"` → seconds (converted to ms)
+/// - `"250ms"` → milliseconds
+/// - bare number `"500"` → milliseconds
+///
+/// Returns `None` on unparseable input; callers typically default to `0` and
+/// may raise `error.execution` (matches C++ behavior).
+pub fn parse_delay_to_ms(s: &str) -> Option<u64> {
+    let s = s.trim();
+    if s.is_empty() {
+        return Some(0);
+    }
+    // Check suffix (order matters: "ms" before "s").
+    if let Some(num) = s.strip_suffix("ms") {
+        num.trim().parse::<f64>().ok().map(|n| n.max(0.0) as u64)
+    } else if let Some(num) = s.strip_suffix('s') {
+        num.trim()
+            .parse::<f64>()
+            .ok()
+            .map(|n| (n.max(0.0) * 1000.0) as u64)
+    } else {
+        // Bare number: interpret as milliseconds (matches C++ fallback).
+        s.parse::<f64>().ok().map(|n| n.max(0.0) as u64)
+    }
+}

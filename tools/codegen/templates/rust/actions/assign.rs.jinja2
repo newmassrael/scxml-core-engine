@@ -37,6 +37,14 @@ self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_
 {% if 'error.execution' in model.events %}
         engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
+{% if in_foreach is defined and in_foreach %}
+        // W3C SCXML 4.6: Stop current foreach iteration and loop on error
+        iteration_success = false;
+        break 'foreach_body;
+{% elif in_entry_exit is defined and in_entry_exit %}
+        // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+        break 'action_block;
+{% endif %}
     }
 {% endif %}
 }

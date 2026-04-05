@@ -38,15 +38,19 @@
                     }
 {% endif %}
 {% if action.actions and action.actions | length > 0 %}
-                    // W3C SCXML 4.6: Execute body actions — stop on first error
+                    // W3C SCXML 4.6: Execute body actions — stop on first error.
+                    // Each body action runs inside a labeled block `'foreach_body`. Action
+                    // templates that raise error.execution also `break 'foreach_body` so
+                    // subsequent body actions for this iteration are skipped, then the
+                    // outer loop is aborted (matches W3C spec and C++ ForeachHelper).
                     let mut iteration_success = true;
+                    'foreach_body: {
 {% for body_action in action.actions %}
-                    if iteration_success {
-                        {% with action=body_action %}
+                        {% with action=body_action, in_foreach=true %}
                         {% include 'actions/' + body_action.type + '.rs.jinja2' %}
                         {% endwith %}
-                    }
 {% endfor %}
+                    }
                     if !iteration_success {
                         log::debug!("Foreach: body action failed at iteration {}, stopping loop (W3C SCXML 4.6)", _idx);
                         foreach_success = false;
