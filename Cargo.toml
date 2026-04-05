@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+#
+# SCE (SCXML Core Engine) — Rust backend workspace
+#
+# Dual Licensed:
+# 1. LGPL-2.1: Free for unmodified use (see LICENSE-LGPL-2.1.md)
+# 2. Commercial: For modifications (contact newmassrael@gmail.com)
+
+[workspace]
+resolver = "2"
+members = [
+    "sce-rust-runtime",
+    "sce-rust-lua",
+    "sce-rust-tests",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "LGPL-2.1-or-later OR LicenseRef-SCE-Commercial"
+repository = "https://github.com/newmassrael/scxml-core-engine"
+authors = ["newmassrael <newmassrael@gmail.com>"]
+
+[workspace.dependencies]
+# Logging facade — matches C++ spdlog conditional logging pattern
+log = "0.4"
+# Error types — matches C++ exception semantics with ergonomics
+thiserror = "2.0"
+# Lua 5.4 bindings — bundled vendored build, matches C++ SCE_SCRIPT_ENGINE=lua default
+mlua = { version = "0.10", features = ["lua54", "vendored", "send"] }
+# Compile-time test registration — C++ AotTestRegistrar equivalent
+linkme = "0.3"
+
+# Release profile optimized for W3C test throughput
+[profile.release]
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+
+# Test profile: opt-level 1 gives reasonable debug symbols + faster runtime
+# (202 W3C tests are compute-heavy enough that debug=0 slows them badly)
+[profile.test]
+opt-level = 1

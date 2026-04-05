@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
+[package]
+name = "sce-rust-lua"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "SCE Lua 5.4 script engine (mlua-based IScriptEngine impl)"
+
+[dependencies]
+sce-rust-runtime = { path = "../sce-rust-runtime", default-features = false }
+mlua = { workspace = true }
+log = { workspace = true }
+thiserror = { workspace = true }

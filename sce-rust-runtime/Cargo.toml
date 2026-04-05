@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
+[package]
+name = "sce-rust-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "SCXML Core Engine — Rust runtime (policy trait, Engine<P>, helpers, IScriptEngine)"
+
+[features]
+# Default: Lua 5.4 via sce-rust-lua (matches C++ SCE_SCRIPT_ENGINE=lua default)
+default = ["script-engine-lua", "http-send"]
+
+# Script engine selection — mutually exclusive, exactly one active
+# Matches C++ ScriptEngineProvider compile-time selection
+script-engine-lua = []
+script-engine-quickjs = []
+no-script = []
+
+# HTTP send callback wiring (W3C SCXML C.2 BasicHTTPEventProcessor)
+http-send = []
+
+# Deterministic fake-clock scheduler for tests (swaps PullScheduler impl)
+test-clock = []
+
+[dependencies]
+log = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+# Env-based log output during tests
+env_logger = "0.11"

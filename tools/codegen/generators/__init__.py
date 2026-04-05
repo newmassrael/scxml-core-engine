@@ -8,16 +8,19 @@ template rendering and output file generation.
 Supported languages:
   - cpp: C++ (header-only .h + .inl, CRTP policy pattern)
   - kotlin: Kotlin (sealed interfaces, StateFlow, coroutines)
+  - rust: Rust (StatePolicy trait + Engine<P>, 1:1 C++ port)
 """
 
 from generators.cpp_generator import CppCodeGenerator
 from generators.kotlin_generator import KotlinCodeGenerator
+from generators.rust_generator import RustCodeGenerator
 
 
 # Registry of available language generators
 _GENERATORS = {
     'cpp': CppCodeGenerator,
     'kotlin': KotlinCodeGenerator,
+    'rust': RustCodeGenerator,
 }
 
 
