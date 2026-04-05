@@ -1,5 +1,7 @@
 # Build directories (covers root build/ and Gradle subproject builds)
 **/build/
+# Rust (Cargo) build output
+target/
 build_debug/
 build_wasm/
 build_tsan/
