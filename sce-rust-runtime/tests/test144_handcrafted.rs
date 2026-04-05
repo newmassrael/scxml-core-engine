@@ -122,6 +122,10 @@ impl StatePolicy for Test144Policy {
         }
     }
 
+    fn null_event() -> Self::Event {
+        Test144Event::None
+    }
+
     // Required field accessors
     fn last_transition_is_internal(&self) -> bool {
         self.last_transition_is_internal

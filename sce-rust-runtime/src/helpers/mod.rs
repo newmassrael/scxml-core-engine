@@ -10,20 +10,60 @@
 //!
 //! ## Phase 1 scope
 //!
-//! Phase 1 ships only the helpers required to boot the engine loop and run
-//! hand-crafted tests:
-//!
 //! - [`hierarchy`]: LCA, entry/exit chain construction (`HierarchicalStateHelper`)
 //! - [`event_queue`]: FIFO internal/external queues (`EventQueueManager`)
 //! - [`logger`]: thin `log` crate re-exports (`SCE_LOG_*` macros)
 //! - [`scxml_constants`]: W3C URIs and string literals
 //! - [`state_policy_concepts`]: Rust trait bounds replacing C++20 concepts
 //!
-//! Phases 2–4 add the remaining helpers (conflict resolution, parallel states,
-//! history, send, invoke, finalize, foreach, guard, datamodel init, etc.).
+//! ## Phase 2 scope
+//!
+//! - [`conflict_resolution`]: W3C Appendix D.2 transition conflict resolution
+//! - [`state_entry`]: Deep initial state entry path calculation
+//! - [`parallel_state`]: Parallel state processing (merged 6 C++ headers)
+//! - [`history`]: History state recording and restoration
+//! - [`event_matching`]: W3C 5.9.3 event descriptor matching
+//! - [`entry_exit`]: Entry/exit action block execution with error isolation
+//! - [`event_processing`]: W3C macrostep algorithm
+//! - [`event_data`]: Event data JSON construction
+//! - [`event_type`]: Event type classification
+//! - [`in_predicate`]: In(stateId) predicate
+//! - [`event_metadata`]: `_event.*` field construction
+//! - [`string_utils`]: Platform event detection
+//! - [`unique_id_generator`]: Session/send/invoke/event ID generation
+//! - [`done_data`]: Donedata processing
+//! - [`send`]: Send action helpers (static-target subset)
+//! - [`assign`]: Assignment location validation (static-value variant)
+//! - [`foreach`]: Foreach iteration (static variant)
+//! - [`guard`]: Guard condition evaluation (In() predicate-based)
+//! - [`datamodel_init`]: Datamodel initialization helpers
+//! - [`url_encoding`]: RFC 3986 URL encoding/decoding
 
+// Phase 1 modules
 pub mod event_queue;
 pub mod hierarchy;
 pub mod logger;
 pub mod scxml_constants;
 pub mod state_policy_concepts;
+
+// Phase 2 modules
+pub mod assign;
+pub mod conflict_resolution;
+pub mod datamodel_init;
+pub mod done_data;
+pub mod entry_exit;
+pub mod event_data;
+pub mod event_matching;
+pub mod event_metadata;
+pub mod event_processing;
+pub mod event_type;
+pub mod foreach;
+pub mod guard;
+pub mod history;
+pub mod in_predicate;
+pub mod parallel_state;
+pub mod send;
+pub mod state_entry;
+pub mod string_utils;
+pub mod unique_id_generator;
+pub mod url_encoding;

@@ -1,0 +1,12 @@
+{# W3C SCXML 5.3/5.4: <assign> - Variable assignment #}
+{% if not model.needs_script_engine %}
+{% if action.location and action.expr %}
+// W3C SCXML 5.3: <assign location="{{ action.location }}" expr="{{ action.expr | escape_rust }}">
+self.{{ action.location | to_snake_case }} = {{ action.expr | to_rust_string_expr }};
+{% elif action.location and action.content %}
+// W3C SCXML 5.3: <assign location="{{ action.location }}"> (inline content)
+self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_expr }};
+{% endif %}
+{% else %}
+// Phase 3: Script engine assign for {{ action.location | default("unknown") }}
+{% endif %}

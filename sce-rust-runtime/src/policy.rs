@@ -174,6 +174,24 @@ pub trait StatePolicy: Sized + 'static {
         ""
     }
 
+    /// Sentinel event value for eventless transition dispatch (W3C SCXML 3.13).
+    ///
+    /// Generated code produces an `Event::Null` variant. The engine passes this
+    /// to `process_transition()` when checking eventless transitions.
+    fn null_event() -> Self::Event;
+
+    /// Get initial children of a compound state (W3C SCXML 3.6).
+    /// Returns the resolved initial child state(s) for deep initial targets.
+    fn get_initial_children(_state: Self::State) -> Vec<Self::State> {
+        Vec::new()
+    }
+
+    /// Get initial child considering history (W3C SCXML 3.11).
+    /// Non-static: checks history before returning initial child.
+    fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
+        state
+    }
+
     // ──────────────────────────────────────────────
     // Required mutable field accessors
     //

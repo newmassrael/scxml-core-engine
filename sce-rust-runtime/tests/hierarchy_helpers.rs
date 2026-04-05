@@ -32,6 +32,7 @@ enum FakeState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum FakeEvent {
+    Null,
     Tick,
 }
 
@@ -106,6 +107,10 @@ impl StatePolicy for FakePolicy {
         } else {
             None
         }
+    }
+
+    fn null_event() -> Self::Event {
+        FakeEvent::Null
     }
 
     fn last_transition_is_internal(&self) -> bool {

@@ -1,0 +1,8 @@
+{# W3C SCXML 6.3: <cancel> - Cancel delayed send event #}
+{% if action.sendidexpr %}
+// Phase 3: Cancel with dynamic sendidexpr evaluation
+// engine.cancel_event(&evaluated_sendid);
+{% elif action.sendid %}
+// W3C SCXML 6.3: <cancel sendid="{{ action.sendid }}">
+engine.cancel_event("{{ action.sendid }}");
+{% endif %}

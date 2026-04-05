@@ -1,0 +1,163 @@
+{#
+    Process Transition Template (Rust Jinja2)
+
+    W3C SCXML 3.12/3.13/Appendix D: Transition processing.
+
+    Generates:
+    - process_transition(&mut self, current_state, event, engine) -> bool
+    - execute_transition_actions(&mut self, engine)
+    - try_transition_in_state() (helper method in impl block)
+
+    Ports from C++ process_transition.jinja2.
+#}
+
+    // W3C SCXML 3.13: Evaluate guards and take a matching transition
+    fn process_transition(
+        &mut self,
+        current_state: &mut Self::State,
+        event: Self::Event,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) -> bool {
+        let mut transition_taken = false;
+
+{% if model.has_parallel_states %}
+        // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
+        if event == Self::null_event() {
+            // W3C SCXML Appendix D: Eventless transitions - collect then execute
+            let mut enabled_transitions: Vec<TransitionInfo> = Vec::new();
+            let mut states_to_check = self.active_states.clone();
+
+            // Sort by document order for consistent processing
+            states_to_check.sort_by_key(|&s| Self::get_document_order(s));
+
+            for active_state in &states_to_check {
+                // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
+                self.try_transition_in_state(*active_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
+            }
+
+            // W3C SCXML Appendix D.2: Remove conflicting transitions
+            if !enabled_transitions.is_empty() {
+                enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
+            }
+
+            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
+            if !enabled_transitions.is_empty() {
+                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
+            }
+        } else {
+            // W3C SCXML Appendix D: External events - collect then execute
+            let mut enabled_transitions: Vec<TransitionInfo> = Vec::new();
+
+            for &active_state in &self.active_states.clone() {
+                let is_non_atomic = Self::is_compound_state(active_state) || Self::is_parallel_state(active_state);
+
+                // W3C SCXML 3.13: Check if this is a done.state event
+                let event_name = Self::get_event_name(event);
+                let is_done_state_event = event != Self::null_event() && event_name.starts_with("done.state.");
+
+                // Skip non-atomic states UNLESS processing done.state event
+                if is_non_atomic && !is_done_state_event {
+                    continue;
+                }
+
+                // W3C SCXML 3.12: Hierarchical event bubbling
+                let mut check_state = active_state;
+                loop {
+                    let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine, Some(&mut enabled_transitions));
+                    if found {
+                        break;
+                    }
+                    match Self::get_parent(check_state) {
+                        Some(parent) => check_state = parent,
+                        None => break,
+                    }
+                }
+            }
+
+            // W3C SCXML Appendix D.2: Remove conflicting transitions
+            if !enabled_transitions.is_empty() {
+                enabled_transitions = Self::remove_conflicting_transitions(&enabled_transitions);
+            }
+
+            // W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
+            if !enabled_transitions.is_empty() {
+                self.execute_microstep(&enabled_transitions, current_state, &mut transition_taken, engine);
+            }
+        }
+{% elif model.has_hierarchy %}
+        // W3C SCXML 3.12: Hierarchical event processing (innermost to outermost)
+        let mut check_state = *current_state;
+
+        loop {
+            let found = self.try_transition_in_state(check_state, event, current_state, &mut transition_taken, engine);
+
+            if found {
+                break;
+            }
+
+            // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
+            if event == Self::null_event() {
+                break;
+            }
+
+            // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling
+            match Self::get_parent(check_state) {
+                Some(parent) => check_state = parent,
+                None => break,
+            }
+        }
+{% else %}
+        // Flat state machine: no hierarchy, direct transition check
+        self.try_transition_in_state(*current_state, event, current_state, &mut transition_taken, engine);
+{% endif %}
+
+        transition_taken
+    }
+
+    // W3C SCXML 3.13: Execute transition actions (called between exit and entry)
+    fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+{% if model.has_transition_actions %}
+        if !self.has_transition_actions {
+            return;
+        }
+
+        // Switch on source state, then transition index
+        match self.last_transition_source_state {
+{% for state_id, state in model.states.items() | sort %}
+{% if state.transitions %}
+{% set has_any_actions = [] %}
+{% for trans in state.transitions %}
+{% if trans.actions %}
+{% set _ = has_any_actions.append(true) %}
+{% endif %}
+{% endfor %}
+{% if has_any_actions %}
+            {{ machine_name }}State::{{ state_id | to_state_variant }} => {
+                match self.last_transition_index {
+{% for trans in state.transitions %}
+{% if trans.actions %}
+                    {{ loop.index0 }} => {
+                        // W3C SCXML 3.13: Transition {{ loop.index0 }} actions
+{% for action in trans.actions %}
+                        {% include 'actions/' + action.type + '.rs.jinja2' %}
+
+{% endfor %}
+                    }
+{% endif %}
+{% endfor %}
+                    _ => {}
+                }
+            }
+{% endif %}
+{% endif %}
+{% endfor %}
+            _ => {}
+        }
+
+        // Reset flags after execution
+        self.has_transition_actions = false;
+{% else %}
+        // W3C SCXML 3.13: No transition actions in this state machine
+        let _ = engine;
+{% endif %}
+    }

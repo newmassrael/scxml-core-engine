@@ -662,23 +662,46 @@ impl<P: StatePolicy> Engine<P> {
     /// W3C SCXML 3.13: Check and execute eventless transitions until stable.
     ///
     /// Uses bounded iteration to prevent infinite loops from cyclic eventless chains.
+    /// Ported from C++ `EventProcessingAlgorithms.h:98-136`.
     pub(crate) fn check_eventless_transitions(&mut self) {
         const MAX_ITERATIONS: usize = 100;
+        let null_event = P::null_event();
 
-        // We need a synthetic "null" event value for the eventless code path. The
-        // generator emits `Event::default()` as the sentinel. For Phase 1 we assume
-        // `P::Event: Default` is not guaranteed — instead, eventless transitions in
-        // the generated code path are opted out via a per-generator mechanism.
-        //
-        // Phase 1 note: eventless transitions are unsupported in hand-crafted tests
-        // because there's no universal `null event` value without a Default bound.
-        // Phase 2 will revisit — the code generator can emit a reserved
-        // `Event::__Null` variant, or we add a `StatePolicy::null_event() -> Event`
-        // method. For now, the loop is a no-op.
-        //
-        // TODO(phase-2): add `null_event()` to StatePolicy and enable this loop.
-        let _ = MAX_ITERATIONS;
-        sce_log_debug!("Engine::check_eventless_transitions: Phase 1 stub (no-op)");
+        for iteration in 0..MAX_ITERATIONS {
+            let old_state = self.current_state;
+            let pre_transition_states = self.get_active_states();
+            let mut new_state = self.current_state;
+
+            let took_transition = self.process_transition_dispatch(&mut new_state, null_event);
+            if !took_transition {
+                break;
+            }
+
+            self.current_state = new_state;
+            let needs_hierarchical =
+                (old_state != new_state) || (!self.policy.last_transition_is_targetless());
+
+            if !needs_hierarchical {
+                // Targetless transition -- execute actions only
+                self.execute_transition_actions_dispatch();
+                continue;
+            }
+
+            // Hierarchical exit/entry
+            self.handle_hierarchical_transition(old_state, new_state, &pre_transition_states);
+
+            // Check for final state
+            if self.is_in_final_state() {
+                break;
+            }
+
+            if iteration == MAX_ITERATIONS - 1 {
+                sce_log_debug!(
+                    "Engine::check_eventless_transitions: max iterations reached ({})",
+                    MAX_ITERATIONS
+                );
+            }
+        }
     }
 
     /// W3C SCXML 3.12/3.13: Dispatch a single transition.

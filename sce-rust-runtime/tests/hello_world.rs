@@ -23,6 +23,7 @@ enum HwState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum HwEvent {
+    Null,
     Play,
     Stop,
     End,
@@ -78,6 +79,7 @@ impl StatePolicy for HwPolicy {
 
     fn get_event_name(event: Self::Event) -> &'static str {
         match event {
+            HwEvent::Null => "",
             HwEvent::Play => "play",
             HwEvent::Stop => "stop",
             HwEvent::End => "end",
@@ -91,6 +93,10 @@ impl StatePolicy for HwPolicy {
             "end" => Some(HwEvent::End),
             _ => None,
         }
+    }
+
+    fn null_event() -> Self::Event {
+        HwEvent::Null
     }
 
     fn last_transition_is_internal(&self) -> bool {

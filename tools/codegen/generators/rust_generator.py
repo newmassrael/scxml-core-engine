@@ -69,6 +69,7 @@ class RustCodeGenerator(BaseCodeGenerator):
         env.filters['to_state_variant'] = self._to_state_variant
         env.filters['to_rust_literal'] = self._to_rust_literal
         env.filters['escape_keyword'] = self._escape_rust_keyword
+        env.filters['to_in_predicate_rust'] = self._to_in_predicate_rust
 
     # ──────────────────────────────────────────────
     # Jinja2 Filters
@@ -225,6 +226,41 @@ class RustCodeGenerator(BaseCodeGenerator):
             return f'"{escaped}".to_string()'
         return 'Default::default()'
 
+    @staticmethod
+    def _to_in_predicate_rust(cond_cpp: str) -> str:
+        """
+        Transform C++ In() predicate code to Rust.
+
+        W3C SCXML 5.9.2: The parser stores In() predicates as C++ code in
+        the ``cond_cpp`` field. This filter converts them to Rust method
+        calls on ``self``.
+
+        Transformations:
+            ``this->isStateActive("s1")``  -> ``self.is_state_active("s1")``
+            ``isStateActive("s1")``        -> ``self.is_state_active("s1")``
+
+        Boolean operators (``&&``, ``||``, ``!``) pass through unchanged
+        since they are identical in C++ and Rust.
+
+        Examples:
+            >>> RustCodeGenerator._to_in_predicate_rust('isStateActive("s1")')
+            'self.is_state_active("s1")'
+            >>> RustCodeGenerator._to_in_predicate_rust('this->isStateActive("s1") && isStateActive("s2")')
+            'self.is_state_active("s1") && self.is_state_active("s2")'
+            >>> RustCodeGenerator._to_in_predicate_rust('!isStateActive("s1")')
+            '!self.is_state_active("s1")'
+        """
+        if not cond_cpp:
+            return ""
+        # Strip the C++ this-> prefix first, then replace the method name
+        result = cond_cpp.replace('this->', '')
+        result = re.sub(
+            r'isStateActive\("([^"]+)"\)',
+            r'self.is_state_active("\1")',
+            result,
+        )
+        return result
+
     # ──────────────────────────────────────────────
     # Code Generation
     # ──────────────────────────────────────────────
@@ -245,7 +281,12 @@ class RustCodeGenerator(BaseCodeGenerator):
         machine_name = self._to_pascal_case(model.name)
         input_stem = Path(scxml_path).stem
 
-        # Load Phase 1 placeholder template
+        # Validate that model has an initial state (required for Rust codegen)
+        if not model.initial:
+            print(f"  Rust codegen: No initial state declared for '{model.name}'")
+            return False
+
+        # Load Rust state machine template
         template = self.env.get_template('state_machine.rs.jinja2')
 
         output = template.render(

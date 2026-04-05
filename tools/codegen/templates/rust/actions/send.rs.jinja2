@@ -1,0 +1,96 @@
+{# W3C SCXML 6.2: <send> - Event dispatch (Phase 2: static send only) #}
+{
+{% if action.id %}
+    let send_id = "{{ action.id }}".to_string();
+{% elif action.auto_send_id %}
+    let send_id = "{{ action.auto_send_id }}".to_string();
+{% else %}
+    let send_id = String::new();
+{% endif %}
+
+{% if action.idlocation and not model.needs_script_engine %}
+    // W3C SCXML 6.2.4: Store sendid in idlocation
+    self.{{ action.idlocation | to_snake_case }} = send_id.clone();
+{% endif %}
+
+{% if action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
+    // W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
+{% if 'error.execution' in model.events %}
+    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+{% elif action.target and action.target.startswith('!') %}
+    // W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
+{% if 'error.execution' in model.events %}
+    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+{% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
+    // W3C SCXML C.2: BasicHTTP without target raises error.communication
+{% if 'error.communication' in model.events %}
+    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
+{% endif %}
+{% elif action.target == '#_internal' %}
+    // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
+{% if action.event %}
+    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }}));
+{% elif action.eventexpr %}
+    // Phase 3: Dynamic event expression
+{% endif %}
+{% elif action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0 %}
+    // W3C SCXML 6.2: Delayed send ({{ action.delay_ms }}ms)
+{% if action.event %}
+    engine.schedule_event(
+        {{ machine_name }}Event::{{ action.event | to_event_variant }},
+        std::time::Duration::from_millis({{ action.delay_ms }}),
+        &send_id,
+{% if action.content %}
+        "{{ action.content | escape_rust }}",
+{% else %}
+        "",
+{% endif %}
+    );
+{% endif %}
+{% elif action.delay and action.delay != '0s' and action.delay != '0ms' %}
+    // W3C SCXML 6.2: Delayed send ({{ action.delay }})
+{% if action.event %}
+    engine.schedule_event(
+        {{ machine_name }}Event::{{ action.event | to_event_variant }},
+        std::time::Duration::from_millis({{ action.delay_ms | default(0) }}),
+        &send_id,
+{% if action.content %}
+        "{{ action.content | escape_rust }}",
+{% else %}
+        "",
+{% endif %}
+    );
+{% endif %}
+{% elif action.target and action.target != '#_internal' %}
+    // W3C SCXML 6.2: External send to target "{{ action.target }}"
+{% if action.event %}
+    engine.raise_external(
+        {{ machine_name }}Event::{{ action.event | to_event_variant }},
+{% if action.content %}
+        "{{ action.content | escape_rust }}",
+{% else %}
+        "",
+{% endif %}
+        "",
+    );
+{% endif %}
+{% else %}
+    // W3C SCXML 6.2: Default send (no target = external event)
+{% if action.event %}
+    engine.raise_external(
+        {{ machine_name }}Event::{{ action.event | to_event_variant }},
+{% if action.content %}
+        "{{ action.content | escape_rust }}",
+{% else %}
+        "",
+{% endif %}
+        "",
+    );
+{% elif action.eventexpr %}
+    // Phase 3: Dynamic event expression
+{% endif %}
+{% endif %}
+    let _ = send_id;  // suppress unused warning when no send operation
+}

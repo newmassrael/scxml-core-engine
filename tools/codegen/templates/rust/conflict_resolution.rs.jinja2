@@ -1,0 +1,208 @@
+{#
+    Conflict Resolution Template (Rust Jinja2)
+
+    W3C SCXML Appendix D.2: removeConflictingTransitions Implementation
+
+    Generates:
+    - remove_conflicting_transitions() for optimal transition set selection
+    - execute_microstep() for atomic microstep execution
+
+    Ports from C++ conflict_resolution.jinja2.
+#}
+
+{% if model.has_parallel_states %}
+    // W3C SCXML Appendix D.2: Remove conflicting transitions
+    fn remove_conflicting_transitions(enabled: &[TransitionInfo]) -> Vec<TransitionInfo> {
+        let mut filtered: Vec<TransitionInfo> = Vec::new();
+
+        for t1 in enabled {
+            let mut dominated = false;
+            let mut to_remove: Vec<usize> = Vec::new();
+
+            for (idx, t2) in filtered.iter().enumerate() {
+                // W3C SCXML Appendix D.2: Check if exit sets intersect
+                let t1_exits = Self::compute_exit_set(t1.source, t1.target, t1.is_internal, t1.is_targetless);
+                let t2_exits = Self::compute_exit_set(t2.source, t2.target, t2.is_internal, t2.is_targetless);
+
+                let intersects = t1_exits.iter().any(|s1| t2_exits.contains(s1));
+                if intersects {
+                    // W3C SCXML Appendix D.2: If t1's source is descendant of t2's source, t1 preempts
+                    if Self::is_descendant_of(t1.source, t2.source) {
+                        to_remove.push(idx);
+                    } else {
+                        dominated = true;
+                        break;
+                    }
+                }
+            }
+
+            if !dominated {
+                // Remove preempted transitions in reverse order
+                for &idx in to_remove.iter().rev() {
+                    filtered.remove(idx);
+                }
+                filtered.push(t1.clone());
+            }
+        }
+
+        filtered
+    }
+
+    // W3C SCXML Appendix D.2: Compute exit set for a transition
+    fn compute_exit_set(source: {{ machine_name }}State, target: {{ machine_name }}State, is_internal: bool, is_targetless: bool) -> Vec<{{ machine_name }}State> {
+        if is_targetless {
+            return Vec::new();
+        }
+
+        // W3C SCXML Appendix D: Find the transition domain (LCA for external, source for internal if target is descendant)
+        let domain = if is_internal && Self::is_descendant_of(target, source) {
+            source
+        } else {
+            // Find proper LCA
+            let mut anc = source;
+            loop {
+                match Self::get_parent(anc) {
+                    Some(parent) => {
+                        if Self::is_descendant_of(target, parent) {
+                            break parent;
+                        }
+                        anc = parent;
+                    }
+                    None => break anc,
+                }
+            }
+        };
+
+        // Collect active states that are descendants of the domain
+        // (Static analysis: return states that could potentially be exited)
+        let mut exit_set = Vec::new();
+        // Use all states as candidates (conservative approximation for static analysis)
+        // At runtime, this would use activeStates_
+        if Self::is_descendant_of(source, domain) || source == domain {
+            exit_set.push(source);
+        }
+        if target != source && (Self::is_descendant_of(target, domain) || target == domain) {
+            exit_set.push(target);
+        }
+        exit_set
+    }
+
+    // W3C SCXML Appendix D.2: Execute microstep with proper ordering
+    fn execute_microstep(
+        &mut self,
+        transitions: &[TransitionInfo],
+        current_state: &mut {{ machine_name }}State,
+        transition_taken: &mut bool,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        if transitions.is_empty() {
+            return;
+        }
+
+        // W3C SCXML Appendix D.2 Step 1-2: Compute states to exit
+        let mut states_to_exit: Vec<{{ machine_name }}State> = Vec::new();
+        for trans in transitions {
+            if trans.is_targetless {
+                continue;
+            }
+            for &active_state in &self.active_states {
+                // Find domain of this transition
+                let domain = if trans.is_internal && Self::is_descendant_of(trans.target, trans.source) {
+                    trans.source
+                } else {
+                    let mut anc = trans.source;
+                    loop {
+                        match Self::get_parent(anc) {
+                            Some(parent) => {
+                                if Self::is_descendant_of(trans.target, parent) && Self::is_descendant_of(trans.source, parent) {
+                                    break parent;
+                                }
+                                anc = parent;
+                            }
+                            None => break anc,
+                        }
+                    }
+                };
+                if Self::is_descendant_of(active_state, domain) && !states_to_exit.contains(&active_state) {
+                    states_to_exit.push(active_state);
+                }
+            }
+        }
+
+        // Sort by reverse document order (deepest first)
+        states_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+
+        // Snapshot active states for history recording
+        let active_snapshot = self.active_states.clone();
+
+        // W3C SCXML Appendix D.2 Step 2: Exit states
+        for &state in &states_to_exit {
+            self.execute_exit_actions(state, engine, &active_snapshot);
+        }
+
+        // W3C SCXML Appendix D.2 Step 3: Execute transition content
+        let mut sorted_transitions = transitions.to_vec();
+        sorted_transitions.sort_by_key(|t| Self::get_document_order(t.source));
+
+        for trans in &sorted_transitions {
+            if trans.has_actions {
+                self.last_transition_source_state = trans.source;
+{% if model.has_transition_actions %}
+                self.last_transition_index = trans.transition_index;
+                self.has_transition_actions = true;
+{% endif %}
+                self.execute_transition_actions(engine);
+{% if model.has_transition_actions %}
+                self.has_transition_actions = false;
+{% endif %}
+            }
+        }
+
+        // W3C SCXML Appendix D.2 Step 4-5: Enter target states
+        sorted_transitions.sort_by_key(|t| Self::get_document_order(t.target));
+
+        for trans in &sorted_transitions {
+            if trans.is_targetless {
+                continue;
+            }
+
+            let target = trans.target;
+
+            // W3C SCXML 3.13: Build hierarchical entry chain from root to target
+            let entry_chain = sce_rust_runtime::helpers::hierarchy::build_entry_chain::<Self>(target);
+
+            for state in &entry_chain {
+                if self.active_states.contains(state) {
+                    // W3C SCXML 3.13: Already active - handle parallel region re-entry
+                    if Self::is_parallel_state(*state) {
+                        let regions = Self::get_parallel_regions(*state);
+                        for &region in regions {
+                            if !self.active_states.contains(&region) {
+                                self.execute_entry_actions(region, engine);
+                                if Self::is_compound_state(region) {
+                                    let initial_child = self.get_initial_or_history_child(region);
+                                    if initial_child != region {
+                                        self.execute_entry_actions(initial_child, engine);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+                self.execute_entry_actions(*state, engine);
+            }
+
+            // W3C SCXML 3.4: For parallel states, maintain currentState at parallel level
+            let mut final_state = target;
+            if let Some(parent) = Self::get_parent(target) {
+                if Self::is_parallel_state(parent) {
+                    final_state = parent;
+                }
+            }
+            *current_state = final_state;
+        }
+
+        *transition_taken = true;
+    }
+{% endif %}
