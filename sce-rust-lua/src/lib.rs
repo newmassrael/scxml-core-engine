@@ -32,6 +32,53 @@ use sce_rust_runtime::scripting::{
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// W3C SCXML: Undeclared variable detection (C++ LuaEngine parity)
+// JavaScript throws ReferenceError for undeclared variables; Lua returns nil.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const LUA_KEYWORDS: &[&str] = &[
+    "and", "break", "do", "else", "elseif", "end", "false", "for", "function", "goto",
+    "if", "in", "local", "nil", "not", "or", "repeat", "return", "then", "true", "until", "while",
+];
+
+/// Check if a single identifier is undeclared (not a keyword, not in declared_vars,
+/// and not a Lua standard library global like `math`, `string`, `table`).
+fn is_undeclared_identifier(name: &str, declared_vars: &HashSet<String>, lua: &Lua) -> bool {
+    if LUA_KEYWORDS.contains(&name) {
+        return false;
+    }
+    if declared_vars.contains(name) {
+        return false;
+    }
+    // Check if it's a Lua standard library global
+    let is_nil: bool = lua.globals().get::<LuaValue>(name)
+        .map(|v| matches!(v, LuaValue::Nil))
+        .unwrap_or(true);
+    is_nil
+}
+
+/// Detect undeclared variable references in simple expressions.
+/// Handles both simple identifiers (`Var1`) and member access (`Var1.bar`, `Var1["key"]`).
+fn is_undeclared_simple_variable(expr: &str, declared_vars: &HashSet<String>, lua: &Lua) -> bool {
+    if expr.is_empty() {
+        return false;
+    }
+    let first = expr.as_bytes()[0];
+    if !first.is_ascii_alphabetic() && first != b'_' {
+        return false;
+    }
+    // Extract base identifier (before first '.' or '[')
+    let base_end = expr.bytes()
+        .position(|b| !b.is_ascii_alphanumeric() && b != b'_')
+        .unwrap_or(expr.len());
+    if base_end == 0 {
+        return false;
+    }
+    let base_name = &expr[..base_end];
+    is_undeclared_identifier(base_name, declared_vars, lua)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Session — one per state machine instance
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -518,6 +565,12 @@ impl IScriptEngine for LuaEngine {
         let sessions = self.sessions.lock().unwrap();
         let session = sessions.get(session_id)
             .ok_or_else(|| ScriptError::SessionNotFound(session_id.to_string()))?;
+
+        // W3C SCXML: Detect undeclared simple variable references (C++ LuaEngine parity)
+        // JavaScript throws ReferenceError for undeclared variables; Lua silently returns nil.
+        if is_undeclared_simple_variable(expression, &session.declared_vars, &session.lua) {
+            return Err(ScriptError::RuntimeError(format!("ReferenceError: {} is not defined", expression)));
+        }
 
         // Wrap as return expression for Lua evaluation
         let lua_expr = format!("return {}", expression);

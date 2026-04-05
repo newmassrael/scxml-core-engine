@@ -214,6 +214,7 @@ impl StatePolicy for {{ machine_name }}Policy {
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = {{ 'true' if model.has_parallel_states else 'false' }};
     const NEEDS_SCRIPT_ENGINE: bool = {{ 'true' if model.needs_script_engine else 'false' }};
+    const NEEDS_DATA_MODEL_INIT: bool = {{ 'true' if model.needs_script_engine else 'false' }};
 {% if model.has_parallel_states or model.uses_in_predicate %}
     const HAS_ACTIVE_STATES: bool = true;
 {% endif %}
@@ -497,6 +498,14 @@ impl StatePolicy for {{ machine_name }}Policy {
 {% include 'entry_exit_actions.rs.jinja2' %}
 
 {% include 'process_transition.rs.jinja2' %}
+
+{% if model.needs_script_engine %}
+    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
+    // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
+    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
+        self.do_initialize_data_model(engine);
+    }
+{% endif %}
 }
 
 // ======================================================================
