@@ -2,9 +2,11 @@
 {% if action.is_pure_in_predicate %}
 // W3C SCXML 5.9.2: In() predicate condition
 if {{ action.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
+{% elif model.needs_script_engine %}
+// W3C SCXML 5.9: Script engine guard ({{ action.cond | escape_rust }})
+if self.safe_evaluate_guard("{{ action.cond | to_lua_guard | escape_rust }}", engine) {
 {% else %}
-// Phase 3: Script engine condition ({{ action.cond | default("") | escape_rust }})
-if false {
+if {{ action.cond }} {
 {% endif %}
 {% for then_action in action.then_actions %}
     {% with action=then_action %}
@@ -12,7 +14,7 @@ if false {
     {% endwith %}
 {% endfor %}
 {% for elseif in action.elseif_branches %}
-} else if {% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% else %}false /* Phase 3: {{ elseif.cond | default("") | escape_rust }} */{% endif %} {
+} else if {% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% elif model.needs_script_engine %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% else %}{{ elseif.cond }}{% endif %} {
 {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
     {% include 'actions/' + elseif_action.type + '.rs.jinja2' %}

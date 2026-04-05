@@ -33,7 +33,20 @@
 {% if action.event %}
     engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }}));
 {% elif action.eventexpr %}
-    // Phase 3: Dynamic event expression
+    // W3C SCXML 6.2: Dynamic event expression (internal)
+    {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        match se.evaluate_expression(&sid, "{{ action.eventexpr | to_lua_expr | escape_rust }}") {
+            Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
+                if let Some(evt) = Self::get_event_from_name(&event_name) {
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new(evt));
+                }
+            }
+            _ => {}
+        }
+    }
 {% endif %}
 {% elif action.delay_ms is defined and action.delay_ms is not none and action.delay_ms > 0 %}
     // W3C SCXML 6.2: Delayed send ({{ action.delay_ms }}ms)
@@ -89,7 +102,20 @@
         "",
     );
 {% elif action.eventexpr %}
-    // Phase 3: Dynamic event expression
+    // W3C SCXML 6.2: Dynamic event expression (external)
+    {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        match se.evaluate_expression(&sid, "{{ action.eventexpr | to_lua_expr | escape_rust }}") {
+            Ok(sce_rust_runtime::ScriptValue::String(event_name)) => {
+                if let Some(evt) = Self::get_event_from_name(&event_name) {
+                    engine.raise_external(evt, "", "");
+                }
+            }
+            _ => {}
+        }
+    }
 {% endif %}
 {% endif %}
     let _ = send_id;  // suppress unused warning when no send operation

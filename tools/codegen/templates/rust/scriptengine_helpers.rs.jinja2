@@ -1,13 +1,158 @@
 {#
     Script Engine Helpers Template (Rust Jinja2)
 
-    Phase 2 stub: Script engine integration deferred to Phase 3.
-    Phase 3 will add:
-    - ensure_script_engine() for lazy initialization
-    - safe_evaluate_guard() for guard expression evaluation
-    - set_current_event_in_script_engine() for _event variable binding
-    - Script engine session lifecycle management
+    W3C SCXML 5.2/5.10: Script engine session lifecycle, system variables,
+    datamodel initialization, guard evaluation, event metadata binding.
 #}
 {% if model.needs_script_engine %}
-    // Phase 3: Script engine helpers will be generated here
+    // W3C SCXML 5.10: Ensure session ID is initialized
+    // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
+    fn ensure_session_id(&mut self) {
+        if self.session_id.is_none() {
+            static SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let id = SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            self.session_id = Some(format!("session_{}", id));
+        }
+    }
+
+    // W3C SCXML 5.2: Lazy script engine initialization
+    fn ensure_script_engine(&mut self) {
+        if self.script_engine_initialized {
+            return;
+        }
+        self.ensure_session_id();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        se.create_session(&sid);
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        let io_processors = vec!["scxml".to_string()];
+        if let Err(e) = se.setup_system_variables(&sid, "{{ model.name }}", &io_processors) {
+            log::error!("Failed to setup system variables: {}", e);
+        }
+
+{% for var in model.variables %}
+{% if var.src %}
+        // W3C SCXML 5.2.2: Load variable from external file (not supported in Rust yet)
+        log::warn!("External data src loading not supported for variable: {{ var.id }}");
+{% elif var.expr %}
+{% set is_function_expr = var.expr.strip().startswith('function') %}
+{% if is_function_expr %}
+        // W3C SCXML B.2: Function expression - use executeScript to preserve function type
+        if let Err(e) = se.execute_script(&sid, "{{ var.id }} = {{ var.expr | to_lua_script | escape_rust }}") {
+            log::error!("Failed to initialize function variable '{{ var.id }}': {}", e);
+        }
+{% else %}
+        // W3C SCXML 5.2/5.3: Initialize variable from expr
+        match se.evaluate_expression(&sid, "{{ var.expr | to_lua_expr | escape_rust }}") {
+            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
+            Err(e) => { log::error!("Failed to evaluate expr for '{{ var.id }}': {}", e); }
+        }
+{% endif %}
+{% elif var.content %}
+        // W3C SCXML B.2: Initialize with inline content
+        match se.evaluate_expression(&sid, "{{ var.content | to_lua_expr | escape_rust }}") {
+            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
+            Err(e) => { log::error!("Failed to evaluate content for '{{ var.id }}': {}", e); }
+        }
+{% elif var.type == 'runtime' %}
+        // W3C SCXML 5.2: Runtime variable (late binding, initialize to nil)
+        let _ = se.set_variable(&sid, "{{ var.id }}", sce_rust_runtime::ScriptValue::Null);
+{% endif %}
+{% endfor %}
+
+{% if model.binding == 'early' %}
+{% for state_id, state in model.states.items() %}
+{% if state.datamodel %}
+        // W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel variables
+{% for var in state.datamodel %}
+{% if var.expr %}
+{% set is_function_expr = var.expr.strip().startswith('function') %}
+{% if is_function_expr %}
+        if let Err(e) = se.execute_script(&sid, "{{ var.id }} = {{ var.expr | to_lua_script | escape_rust }}") {
+            log::error!("Failed to init function var '{{ var.id }}' in state {{ state_id }}: {}", e);
+        }
+{% else %}
+        match se.evaluate_expression(&sid, "{{ var.expr | to_lua_expr | escape_rust }}") {
+            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
+            Err(e) => { log::error!("Failed to init '{{ var.id }}' in state {{ state_id }}: {}", e); }
+        }
+{% endif %}
+{% elif var.content %}
+        match se.evaluate_expression(&sid, "{{ var.content | to_lua_expr | escape_rust }}") {
+            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
+            Err(e) => { log::error!("Failed to init '{{ var.id }}' in state {{ state_id }}: {}", e); }
+        }
+{% else %}
+        let _ = se.set_variable(&sid, "{{ var.id }}", sce_rust_runtime::ScriptValue::Null);
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if model.global_scripts %}
+        // W3C SCXML 5.8: Execute global (top-level) scripts at document load time
+{% for script in model.global_scripts %}
+        if let Err(e) = se.execute_script(&sid, "{{ script.content | to_lua_script | escape_rust }}") {
+            log::error!("Global script execution failed: {}", e);
+        }
+{% endfor %}
+{% endif %}
+
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register In() state query callback ONCE (1:1 with C++ StateMachine)
+        // Uses Arc<Mutex<Vec>> so process_transition can update the active state list.
+        {
+            let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+            self.in_predicate_states = Some(shared_states.clone());
+            se.set_state_query_callback(
+                &sid,
+                Some(Box::new(move |state_id: &str| -> bool {
+                    if let Ok(states) = shared_states.lock() {
+                        states.iter().any(|s| s == state_id)
+                    } else {
+                        false
+                    }
+                })),
+            );
+        }
+{% endif %}
+
+        self.script_engine_initialized = true;
+    }
+
+    // W3C SCXML 5.9: Safe guard evaluation with error handling
+    fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        match se.evaluate_expression(&sid, cond) {
+            Ok(val) => val.to_bool(),
+            Err(e) => {
+                log::error!("Guard evaluation failed for '{}': {}", cond, e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                false
+            }
+        }
+    }
+
+    // W3C SCXML 5.10: Set _event system variable for current event
+    fn set_current_event_in_script_engine(&self, event_name: &str, event_data: &str,
+            event_type: &str, send_id: &str, origin: &str, origin_type: &str, invoke_id: &str) {
+        if let Some(ref sid) = self.session_id {
+            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            let _ = se.set_current_event(sid, event_name, event_data, event_type,
+                send_id, origin, origin_type, invoke_id);
+        }
+    }
+
+{% if model.has_parallel_states or model.uses_in_predicate %}
+    // W3C SCXML 5.9.2: Check if a state name matches a state variant
+    fn state_name_matches(state: {{ machine_name }}State, name: &str) -> bool {
+        Self::get_state_name(state) == name
+    }
+{% endif %}
 {% endif %}

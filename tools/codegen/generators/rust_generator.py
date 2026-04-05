@@ -26,6 +26,10 @@ from jinja2 import Environment
 from generators.base import BaseCodeGenerator
 from scxml_parser import SCXMLModel
 from license_config import LICENSE_CONFIG
+from ecmascript_to_lua import (
+    EcmaScriptToLuaTransformer,
+    ExpressionContext,
+)
 
 
 # Rust reserved keywords (2021 edition) — must be escaped with `r#` prefix
@@ -54,6 +58,10 @@ class RustCodeGenerator(BaseCodeGenerator):
 
     LANGUAGE = 'rust'
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._lua_transformer = EcmaScriptToLuaTransformer()
+
     def _default_template_dir(self) -> Path:
         """Rust templates live in `templates/rust/`."""
         return Path(__file__).parent.parent / 'templates' / 'rust'
@@ -70,6 +78,10 @@ class RustCodeGenerator(BaseCodeGenerator):
         env.filters['to_rust_literal'] = self._to_rust_literal
         env.filters['escape_keyword'] = self._escape_rust_keyword
         env.filters['to_in_predicate_rust'] = self._to_in_predicate_rust
+        # ECMAScript→Lua codegen-time transformation filters
+        env.filters['to_lua_expr'] = self._to_lua_expr
+        env.filters['to_lua_guard'] = self._to_lua_guard
+        env.filters['to_lua_script'] = self._to_lua_script
 
     # ──────────────────────────────────────────────
     # Jinja2 Filters
@@ -260,6 +272,28 @@ class RustCodeGenerator(BaseCodeGenerator):
             result,
         )
         return result
+
+    # ──────────────────────────────────────────────
+    # ECMAScript→Lua Transformation Filters
+    # ──────────────────────────────────────────────
+
+    def _to_lua_expr(self, expr: str) -> str:
+        """Transform ECMAScript expression to Lua at codegen time (General context)."""
+        if not expr:
+            return ''
+        return self._lua_transformer.transform(expr.rstrip(';'), ExpressionContext.General)
+
+    def _to_lua_guard(self, expr: str) -> str:
+        """Transform ECMAScript guard to Lua with truthiness wrapping."""
+        if not expr:
+            return 'true'
+        return self._lua_transformer.transform(expr.rstrip(';'), ExpressionContext.Guard)
+
+    def _to_lua_script(self, script: str) -> str:
+        """Transform ECMAScript script block to Lua."""
+        if not script:
+            return ''
+        return self._lua_transformer.transform_script(script)
 
     # ──────────────────────────────────────────────
     # Code Generation

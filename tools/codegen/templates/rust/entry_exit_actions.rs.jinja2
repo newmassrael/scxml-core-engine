@@ -27,7 +27,31 @@
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% if state.datamodel and model.binding == 'late' %}
                 // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
-                // Phase 3: Script engine datamodel initialization
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+{% for var in state.datamodel %}
+{% if var.expr %}
+                    match se.evaluate_expression(&sid, "{{ var.expr | to_lua_expr | escape_rust }}") {
+                        Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
+                        Err(e) => {
+                            log::error!("Late binding init failed for '{{ var.id }}': {}", e);
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        }
+                    }
+{% elif var.content %}
+                    match se.evaluate_expression(&sid, "{{ var.content | to_lua_expr | escape_rust }}") {
+                        Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
+                        Err(e) => { log::error!("Late binding init failed for '{{ var.id }}': {}", e); }
+                    }
+{% else %}
+                    let _ = se.set_variable(&sid, "{{ var.id }}", sce_rust_runtime::ScriptValue::Null);
+{% endif %}
+{% endfor %}
+                }
 {% endif %}
 {% for block in state.on_entry_blocks %}
                 // W3C SCXML 3.8: onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }}

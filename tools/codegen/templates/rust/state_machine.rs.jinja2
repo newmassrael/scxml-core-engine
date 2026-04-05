@@ -96,10 +96,17 @@ pub struct {{ machine_name }}Policy {
     {{ var.id | to_snake_case }}: String,
 {% elif var.type == 'bool' %}
     {{ var.id | to_snake_case }}: bool,
-{% elif var.type == 'runtime' %}
-    // Phase 3: Runtime-evaluated variable: {{ var.id }}
 {% endif %}
 {% endfor %}
+{% endif %}
+{% if model.needs_script_engine %}
+    // W3C SCXML 5.10: Script engine session management
+    session_id: Option<String>,
+    script_engine_initialized: bool,
+{% if model.has_parallel_states or model.uses_in_predicate %}
+    // W3C SCXML 5.9.2: Shared active state list for In() predicate callback
+    in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
+{% endif %}
 {% endif %}
 }
 
@@ -139,6 +146,13 @@ impl {{ machine_name }}Policy {
             {{ var.id | to_snake_case }}: {{ 'true' if var.expr and var.expr.lower() == 'true' else 'false' }},
 {% endif %}
 {% endfor %}
+{% endif %}
+{% if model.needs_script_engine %}
+            session_id: None,
+            script_engine_initialized: false,
+{% if model.has_parallel_states or model.uses_in_predicate %}
+            in_predicate_states: None,
+{% endif %}
 {% endif %}
         }
     }
@@ -470,8 +484,8 @@ impl {{ machine_name }}Policy {
                     // W3C SCXML 5.9.2: Pure In() predicate
                     if {{ trans.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
 {% elif model.needs_script_engine %}
-                    // Phase 3: Script engine guard evaluation
-                    if false {
+                    // W3C SCXML 5.9: Script engine guard
+                    if self.safe_evaluate_guard("{{ trans.cond | to_lua_guard | escape_rust }}", engine) {
 {% else %}
                     if {{ trans.cond }} {
 {% endif %}
@@ -557,7 +571,7 @@ impl {{ machine_name }}Policy {
 {% if transition.is_pure_in_predicate %}
                     {% if not first_guard[0] %}} else {% endif %}if {{ transition.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
 {% elif model.needs_script_engine %}
-                    {% if not first_guard[0] %}} else {% endif %}if false /* Phase 3: {{ transition.cond | escape_rust }} */ {
+                    {% if not first_guard[0] %}} else {% endif %}if self.safe_evaluate_guard("{{ transition.cond | to_lua_guard | escape_rust }}", engine) {
 {% else %}
                     {% if not first_guard[0] %}} else {% endif %}if {{ transition.cond }} {
 {% endif %}

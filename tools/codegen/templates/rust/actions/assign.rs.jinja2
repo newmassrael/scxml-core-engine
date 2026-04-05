@@ -8,5 +8,41 @@ self.{{ action.location | to_snake_case }} = {{ action.expr | to_rust_string_exp
 self.{{ action.location | to_snake_case }} = {{ action.content | to_rust_string_expr }};
 {% endif %}
 {% else %}
-// Phase 3: Script engine assign for {{ action.location | default("unknown") }}
+{
+    // W3C SCXML 5.3: <assign location="{{ action.location | default("") }}">
+    self.ensure_script_engine();
+    let sid = self.session_id.as_ref().unwrap().clone();
+    let se = sce_rust_runtime::ScriptEngineProvider::get();
+{% set loc = action.location | default("") %}
+{# W3C SCXML B.2: System variables are read-only (1:1 with C++ AssignHelper::isValidLocation) #}
+{% if not loc or loc in ('_sessionid', '_event', '_name', '_ioprocessors') %}
+    // W3C SCXML 5.3/B.2: Invalid or read-only location "{{ loc }}"
+    log::error!("W3C SCXML 5.3: Invalid assign location '{{ loc }}'");
+{% if 'error.execution' in model.events %}
+    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+{% else %}
+{% if action.content %}
+    let expr = "'{{ action.content | escape_rust }}'";
+{% else %}
+    let expr = "{{ action.expr | default("") | to_lua_expr | escape_rust }}";
+{% endif %}
+    match se.evaluate_expression(&sid, expr) {
+        Ok(val) => {
+            if let Err(e) = se.set_variable(&sid, "{{ loc }}", val) {
+                log::error!("Assign failed for '{{ loc }}': {}", e);
+{% if 'error.execution' in model.events %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+            }
+        }
+        Err(e) => {
+            log::error!("Assign eval failed for '{{ loc }}': {}", e);
+{% if 'error.execution' in model.events %}
+            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+        }
+    }
+{% endif %}
+}
 {% endif %}

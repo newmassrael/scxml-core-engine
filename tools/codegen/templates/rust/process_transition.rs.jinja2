@@ -20,6 +20,30 @@
     ) -> bool {
         let mut transition_taken = false;
 
+{% if model.needs_script_engine %}
+        // W3C SCXML 5.10: Ensure script engine and set _event for guard evaluation
+        self.ensure_script_engine();
+{% if model.needs_event_name %}
+        if event != Self::null_event() {
+            let event_name = Self::get_event_name(event);
+{% if model.needs_external_flag %}
+            let event_type = if self.next_event_is_external { "external" } else { "internal" };
+{% else %}
+            let event_type = "internal";
+{% endif %}
+            self.set_current_event_in_script_engine(event_name, "", event_type, "", "", "", "");
+        }
+{% endif %}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Update shared In() active state snapshot
+        if let Some(ref shared) = self.in_predicate_states {
+            let mut states = shared.lock().unwrap();
+            states.clear();
+            states.extend(self.active_states.iter().map(|&s| Self::get_state_name(s).to_string()));
+        }
+{% endif %}
+{% endif %}
+
 {% if model.has_parallel_states %}
         // W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
         if event == Self::null_event() {

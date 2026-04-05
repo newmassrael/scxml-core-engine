@@ -252,7 +252,7 @@ def generate_root_mod(valid_test_ids: list[str]):
 
 
 def generate_integration_test(test_id: str, pass_state: str | None,
-                              test_type: str) -> bool:
+                              test_type: str, needs_script: bool = False) -> bool:
     """
     Generate a Rust integration test file for a W3C test.
 
@@ -281,12 +281,18 @@ def generate_integration_test(test_id: str, pass_state: str | None,
             f"    );\n"
         )
 
+    # Script engine registration for tests that need it
+    script_init = ""
+    if needs_script:
+        script_init = "    let _ = sce_rust_lua::register();\n"
+
     content = (
         f"// GENERATED -- DO NOT EDIT (generate_rust_w3c.py)\n"
         f"use std::time::Duration;\n"
         f"\n"
         f"#[test]\n"
         f"fn test_{test_id}() {{\n"
+        f"{script_init}"
         f"    let policy = sce_rust_tests::generated::{mod_name}::{machine_name}Policy::new();\n"
         f"    let mut engine = sce_rust_runtime::Engine::new(policy);\n"
         f"    engine.initialize();\n"
@@ -429,7 +435,7 @@ def main():
 
         # Generate integration test file
         test_type = cmake_tests.get(test_id, {}).get('type', 'SIMPLE')
-        generate_integration_test(test_id, pass_state, test_type)
+        generate_integration_test(test_id, pass_state, test_type, needs_script=needs_script)
 
         if needs_script:
             generated_script.append(test_id)
