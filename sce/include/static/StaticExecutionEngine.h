@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "common/CompilerHints.h"
 #include "common/EventMetadataHelper.h"
 #include "common/EventTypeHelper.h"
 #include "core/HierarchicalStateHelper.h"

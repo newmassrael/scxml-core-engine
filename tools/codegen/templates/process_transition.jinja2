@@ -296,18 +296,18 @@
             // Try to find a matching transition in checkState
             bool foundTransition = tryTransitionInState(checkState, event, currentState, transitionTaken, engine);
 
-            if (foundTransition) [[likely]] {
+            if (foundTransition) SCE_LIKELY {
                 break;  // Transition taken, exit hierarchy check
             }
 
             // W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
-            if (event == Event()) [[unlikely]] {
+            if (event == Event()) SCE_UNLIKELY {
                 break;
             }
 
             // W3C SCXML 3.12: Move to parent state for hierarchical event bubbling (external events only)
             auto parent = {{ model.name }}Policy::getParent(checkState);
-            if (!parent.has_value()) [[unlikely]] {
+            if (!parent.has_value()) SCE_UNLIKELY {
                 break;
             }
 
@@ -573,15 +573,15 @@ private:
 {% if trans.cond %}
 {% if trans.is_cpp_condition %}
                 // Direct C++ condition evaluation (cpp: prefix)
-                if ({{ trans.cond_cpp_transformed }}) [[likely]] {
+                if ({{ trans.cond_cpp_transformed }}) SCE_LIKELY {
 {% elif trans.is_pure_in_predicate %}
                 // W3C SCXML 5.9.2: Pure In() predicate - direct C++ call (no JSEngine)
-                if ({{ trans.cond_cpp }}) [[likely]] {
+                if ({{ trans.cond_cpp }}) SCE_LIKELY {
 {% elif model.needs_script_engine %}
                 // W3C SCXML 5.9: ECMAScript expression - JSEngine evaluation
-                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ trans.cond | escape_cpp }}", engine)) [[likely]] {
+                if (this->safeEvaluateGuard(scriptEngine, sessionId_.value(), "{{ trans.cond | escape_cpp }}", engine)) SCE_LIKELY {
 {% else %}
-                if ({{ trans.cond }}) [[likely]] {
+                if ({{ trans.cond }}) SCE_LIKELY {
 {% endif %}
                     AOT_DEBUG("AOT processTransition: Event matched descriptor '{{ trans.event }}' in state {}", static_cast<int>(checkState));
 // W3C SCXML 3.4: Track transition source for hierarchical exit/entry (ALWAYS needed by checkEventlessTransitions)
