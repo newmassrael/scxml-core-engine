@@ -57,6 +57,53 @@ impl ScriptValue {
             ScriptValue::Array(_) | ScriptValue::Object(_) | ScriptValue::Dom(_) => true,
         }
     }
+
+    /// W3C SCXML 5.5: Convert to a Lua literal string representation.
+    ///
+    /// Used by donedata evaluation to produce event data strings that the Lua
+    /// script engine can parse back via `return <literal>`. Ports the C++
+    /// `DoneDataHelper::convertScriptValueToJson` but emits Lua syntax instead
+    /// of JSON so the Lua engine's `load("return " .. data)` path works.
+    pub fn to_lua_literal(&self) -> String {
+        match self {
+            ScriptValue::Null | ScriptValue::Undefined => "nil".to_string(),
+            ScriptValue::Bool(b) => if *b { "true" } else { "false" }.to_string(),
+            ScriptValue::Int(i) => i.to_string(),
+            ScriptValue::Double(f) => {
+                if f.fract() == 0.0 && f.is_finite() {
+                    format!("{:.1}", f)
+                } else {
+                    format!("{}", f)
+                }
+            }
+            ScriptValue::String(s) => {
+                let escaped = s
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n")
+                    .replace('\r', "\\r")
+                    .replace('\t', "\\t");
+                format!("\"{}\"", escaped)
+            }
+            ScriptValue::Array(arr) => {
+                let items: Vec<String> = arr.iter().map(|v| v.to_lua_literal()).collect();
+                format!("{{{}}}", items.join(", "))
+            }
+            ScriptValue::Object(map) => {
+                let items: Vec<String> = map
+                    .iter()
+                    .map(|(k, v)| format!("[\"{}\"] = {}", k, v.to_lua_literal()))
+                    .collect();
+                format!("{{{}}}", items.join(", "))
+            }
+            ScriptValue::Dom(s) => {
+                let escaped = s
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"");
+                format!("\"{}\"", escaped)
+            }
+        }
+    }
 }
 
 /// Script engine error. 1:1 port of C++ `ScriptResult::error` field.

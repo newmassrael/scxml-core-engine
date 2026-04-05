@@ -327,4 +327,18 @@ pub trait StatePolicy: Sized + 'static {
     /// Generated only when `HAS_EXTERNAL_EVENT_FLAG` is `true`. Used by the engine's
     /// `raise_external` to mark the next processed event as external for `_event.type`.
     fn set_next_event_is_external(&mut self, _value: bool) {}
+
+    /// W3C SCXML 5.10: Populate pending event metadata fields from an event's metadata.
+    ///
+    /// Ports C++ `EventMetadataHelper::populatePolicyFromMetadata`. Called by the engine
+    /// before dispatching each event from the internal/external queues. Generated code
+    /// stores the metadata in `pending_event_*` struct fields so that `process_transition`
+    /// can pass them to `set_current_event_in_script_engine`.
+    fn populate_event_metadata(&mut self, _metadata: &crate::event::EventMetadata) {}
+
+    /// W3C SCXML 5.10: Clear pending event metadata after transition processing.
+    ///
+    /// Ports C++ `EventMetadataHelper::clearPolicyMetadata`. Called by the engine
+    /// after each event dispatch cycle to reset metadata for the next event.
+    fn clear_event_metadata(&mut self) {}
 }

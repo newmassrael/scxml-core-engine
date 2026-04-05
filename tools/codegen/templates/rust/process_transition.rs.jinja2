@@ -26,12 +26,54 @@
 {% if model.needs_event_name %}
         if event != Self::null_event() {
             let event_name = Self::get_event_name(event);
+            self.pending_event_name = event_name.to_string();
+{% if model.needs_event_type %}
+            // W3C SCXML 5.10.1: Classify event type (ports C++ EventTypeHelper::classifyEventType)
+            let event_type = if event_name.starts_with("error.") || event_name.starts_with("done.") {
+                "platform"
 {% if model.needs_external_flag %}
-            let event_type = if self.next_event_is_external { "external" } else { "internal" };
+            } else if self.next_event_is_external {
+                self.next_event_is_external = false;
+                "external"
+{% endif %}
+            } else {
+                "internal"
+            };
+            self.pending_event_type = event_type.to_string();
+{% elif model.needs_external_flag %}
+            let event_type = if self.next_event_is_external {
+                self.next_event_is_external = false;
+                "external"
+            } else {
+                "internal"
+            };
 {% else %}
             let event_type = "internal";
 {% endif %}
-            self.set_current_event_in_script_engine(event_name, "", event_type, "", "", "", "");
+            // W3C SCXML 5.10: Set _event with all available metadata fields
+{% if model.needs_event_data %}
+            let ev_data: &str = &self.pending_event_data;
+{% else %}
+            let ev_data: &str = "";
+{% endif %}
+{% if model.needs_event_sendid %}
+            let ev_sendid: &str = &self.pending_event_sendid;
+{% else %}
+            let ev_sendid: &str = "";
+{% endif %}
+{% if model.needs_event_origin %}
+            let ev_origin: &str = &self.pending_event_origin;
+{% else %}
+            let ev_origin: &str = "";
+{% endif %}
+{% if model.needs_event_origintype %}
+            let ev_origintype: &str = &self.pending_event_origintype;
+{% else %}
+            let ev_origintype: &str = "";
+{% endif %}
+            self.set_current_event_in_script_engine(
+                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, "",
+            );
         }
 {% endif %}
 {% if model.has_parallel_states or model.uses_in_predicate %}

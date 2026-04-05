@@ -300,6 +300,8 @@ impl<P: StatePolicy> Engine<P> {
         for state in entry_chain {
             self.execute_on_entry(state);
         }
+        // W3C SCXML 3.3: Resolve current_state to the deepest initial leaf
+        self.resolve_current_state_to_leaf();
 
         // W3C SCXML C.1: Macrostep completion loop — drain internal + eventless
         // until a stable configuration is reached.
@@ -640,9 +642,10 @@ impl<P: StatePolicy> Engine<P> {
                 );
                 return;
             }
-            // TODO(phase-3): populate policy metadata from event_with_meta via EventMetadataHelper
-            let _ = event_with_meta.metadata; // silence unused warning in phase 1
+            // W3C SCXML 5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
+            self.policy.populate_event_metadata(&event_with_meta.metadata);
             self.execute_transition(event_with_meta.event);
+            self.policy.clear_event_metadata();
         }
 
         // W3C SCXML C.1: External queue second
@@ -655,7 +658,10 @@ impl<P: StatePolicy> Engine<P> {
                     (*policy_ptr).execute_finalize_for_child_event(&event_with_meta, self);
                 }
             }
+            // W3C SCXML 5.10: Populate policy metadata from event (ports C++ populatePolicyFromMetadata)
+            self.policy.populate_event_metadata(&event_with_meta.metadata);
             self.execute_transition(event_with_meta.event);
+            self.policy.clear_event_metadata();
         }
     }
 
@@ -836,6 +842,12 @@ impl<P: StatePolicy> Engine<P> {
             if let Some(&last) = entry_chain.last() {
                 self.current_state = last;
             }
+
+            // W3C SCXML 3.3: Resolve current_state to the deepest initial leaf.
+            // execute_entry_actions for compound states recursively enters initial
+            // children, but current_state must track the deepest leaf for
+            // eventless transition checks to work correctly.
+            self.resolve_current_state_to_leaf();
         } else {
             // No LCA — top-level transition, exit all ancestors of old_state
             sce_log_debug!("handle_hierarchical_transition: no LCA (top-level)");
@@ -858,6 +870,31 @@ impl<P: StatePolicy> Engine<P> {
             if let Some(&last) = entry_chain.last() {
                 self.current_state = last;
             }
+
+            self.resolve_current_state_to_leaf();
+        }
+    }
+
+    /// W3C SCXML 3.3: Walk current_state down through initial children to the leaf.
+    ///
+    /// After `execute_entry_actions` recursively enters compound state children,
+    /// `current_state` may point to a compound parent rather than the actual leaf.
+    /// This method resolves it to the deepest atomic state, matching the C++ engine's
+    /// behavior where `currentState_` always reflects the deepest entered leaf.
+    ///
+    /// Uses `get_initial_or_history_child` which respects W3C SCXML 3.11 history
+    /// state restoration (falls back to default initial child if no history recorded).
+    fn resolve_current_state_to_leaf(&mut self) {
+        const MAX_DEPTH: usize = 50;
+        for _ in 0..MAX_DEPTH {
+            if !P::is_compound_state(self.current_state) {
+                break;
+            }
+            let child = self.policy.get_initial_or_history_child(self.current_state);
+            if child == self.current_state {
+                break; // No child to descend into
+            }
+            self.current_state = child;
         }
     }
 }

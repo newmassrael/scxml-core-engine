@@ -10,6 +10,7 @@
 #![allow(unused_variables)]
 #![allow(unused_imports)]
 #![allow(unused_mut)]
+#![allow(unused_labels)]
 #![allow(clippy::all)]
 #![allow(unreachable_patterns)]
 #![allow(unreachable_code)]
@@ -83,6 +84,26 @@ pub struct {{ machine_name }}Policy {
     // W3C SCXML 5.10: Event name for _event.name binding
     pending_event_name: String,
 {% endif %}
+{% if model.needs_event_data %}
+    // W3C SCXML 5.10: Event data for _event.data binding
+    pending_event_data: String,
+{% endif %}
+{% if model.needs_event_type %}
+    // W3C SCXML 5.10.1: Event type for _event.type binding
+    pending_event_type: String,
+{% endif %}
+{% if model.needs_event_sendid %}
+    // W3C SCXML 5.10.1: Event sendid for _event.sendid binding
+    pending_event_sendid: String,
+{% endif %}
+{% if model.needs_event_origin %}
+    // W3C SCXML 5.10.1: Event origin for _event.origin binding
+    pending_event_origin: String,
+{% endif %}
+{% if model.needs_event_origintype %}
+    // W3C SCXML 5.10.1: Event origintype for _event.origintype binding
+    pending_event_origintype: String,
+{% endif %}
 {% for history_id, history_info in model.history_states.items() %}
     // W3C SCXML 3.11: History state {{ history_id }} ({{ history_info.type }})
     history_{{ history_id }}: Option<Vec<{{ machine_name }}State>>,
@@ -128,6 +149,21 @@ impl {{ machine_name }}Policy {
 {% endif %}
 {% if model.needs_event_name %}
             pending_event_name: String::new(),
+{% endif %}
+{% if model.needs_event_data %}
+            pending_event_data: String::new(),
+{% endif %}
+{% if model.needs_event_type %}
+            pending_event_type: String::new(),
+{% endif %}
+{% if model.needs_event_sendid %}
+            pending_event_sendid: String::new(),
+{% endif %}
+{% if model.needs_event_origin %}
+            pending_event_origin: String::new(),
+{% endif %}
+{% if model.needs_event_origintype %}
+            pending_event_origintype: String::new(),
 {% endif %}
 {% for history_id in model.history_states %}
             history_{{ history_id }}: None,
@@ -406,6 +442,51 @@ impl StatePolicy for {{ machine_name }}Policy {
 {% if model.needs_external_flag %}
     fn set_next_event_is_external(&mut self, value: bool) {
         self.next_event_is_external = value;
+    }
+{% endif %}
+
+{% if model.needs_event_data or model.needs_event_type or model.needs_event_sendid or model.needs_event_origin or model.needs_event_origintype %}
+    // W3C SCXML 5.10: Populate pending event metadata from EventWithMetadata
+    // Ports C++ EventMetadataHelper::populatePolicyFromMetadata
+    fn populate_event_metadata(&mut self, metadata: &sce_rust_runtime::EventMetadata) {
+{% if model.needs_event_data %}
+        self.pending_event_data = metadata.data.clone();
+{% endif %}
+{% if model.needs_event_type %}
+        self.pending_event_type = metadata.event_type.as_str().to_string();
+{% endif %}
+{% if model.needs_event_sendid %}
+        self.pending_event_sendid = metadata.send_id.clone();
+{% endif %}
+{% if model.needs_event_origin %}
+        self.pending_event_origin = metadata.origin.clone();
+{% endif %}
+{% if model.needs_event_origintype %}
+        self.pending_event_origintype = metadata.origin_type.clone();
+{% endif %}
+    }
+
+    // W3C SCXML 5.10: Clear pending event metadata after transition processing
+    // Ports C++ EventMetadataHelper::clearPolicyMetadata
+    fn clear_event_metadata(&mut self) {
+{% if model.needs_event_name %}
+        self.pending_event_name.clear();
+{% endif %}
+{% if model.needs_event_data %}
+        self.pending_event_data.clear();
+{% endif %}
+{% if model.needs_event_type %}
+        self.pending_event_type.clear();
+{% endif %}
+{% if model.needs_event_sendid %}
+        self.pending_event_sendid.clear();
+{% endif %}
+{% if model.needs_event_origin %}
+        self.pending_event_origin.clear();
+{% endif %}
+{% if model.needs_event_origintype %}
+        self.pending_event_origintype.clear();
+{% endif %}
     }
 {% endif %}
 

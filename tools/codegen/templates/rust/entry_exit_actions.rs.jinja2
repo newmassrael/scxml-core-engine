@@ -55,10 +55,13 @@
 {% endif %}
 {% for block in state.on_entry_blocks %}
                 // W3C SCXML 3.8: onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }}
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
 {% for action in block %}
-                {% include 'actions/' + action.type + '.rs.jinja2' %}
+                {% with in_entry_exit=true %}{% include 'actions/' + action.type + '.rs.jinja2' %}{% endwith %}
 
 {% endfor %}
+                }
 {% endfor %}
 {% if state.initial_history_id %}
                 // W3C SCXML 3.11: Initial transition targets history state {{ state.initial_history_id }}
@@ -72,12 +75,90 @@
 {% endif %}
 {% if state.is_final and state.donedata %}
                 // W3C SCXML 5.5: Evaluate donedata for final state
-                // Phase 3: donedata evaluation (params/content/contentexpr)
+                let mut done_event_data = String::new();
+                let mut done_data_ok = true;
+{% if state.donedata.params %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let mut json_parts: Vec<String> = Vec::new();
+{% for param in state.donedata.params %}
+{% set param_expr = param.expr if param.expr else param.location %}
+{% if not param_expr %}
+                    // W3C SCXML 5.7: Empty location raises error.execution (structural error)
+                    log::error!("Donedata param '{{ param.name }}': empty location (structural error)");
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                    done_data_ok = false;
+{% else %}
+                    match se.evaluate_expression(&sid, "{{ param_expr | to_lua_expr | escape_rust }}") {
+                        Ok(val) => {
+                            let mut part = String::from("[\"{{ param.name }}\"] = ");
+                            part.push_str(&val.to_lua_literal());
+                            json_parts.push(part);
+                        }
+                        Err(e) => {
+                            log::error!("Donedata param '{{ param.name }}' eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        }
+                    }
+{% endif %}
+{% endfor %}
+                    if done_data_ok {
+                        done_event_data = String::from("{");
+                        done_event_data.push_str(&json_parts.join(", "));
+                        done_event_data.push('}');
+                    }
+                }
+{% elif state.donedata.contentexpr %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    match se.evaluate_expression(&sid, "{{ state.donedata.contentexpr | to_lua_expr | escape_rust }}") {
+                        Ok(val) => { done_event_data = val.to_lua_literal(); }
+                        Err(e) => {
+                            log::error!("Donedata content expr eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        }
+                    }
+                }
+{% elif state.donedata.content %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    match se.evaluate_expression(&sid, "{{ state.donedata.content | to_lua_expr | escape_rust }}") {
+                        Ok(val) => { done_event_data = val.to_lua_literal(); }
+                        Err(e) => {
+                            log::error!("Donedata content eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        }
+                    }
+                }
+{% endif %}
 {% endif %}
 {% if state.is_final and state.parent %}
                 // W3C SCXML 3.7: Generate done.state.{{ state.parent }} event
 {% if 'done.state.' + state.parent in model.events %}
+{% if state.donedata %}
+                // W3C SCXML 5.5: Carry evaluated donedata in done.state event
+                if done_data_ok {
+                    let mut done_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' + state.parent) | to_event_variant }});
+                    done_meta.metadata.data = done_event_data;
+                    engine.raise(done_meta);
+                }
+{% else %}
                 engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' + state.parent) | to_event_variant }}));
+{% endif %}
 {% endif %}
 {% if model.has_parallel_states and state.parent in model.states and model.states[state.parent].parent %}
 {% set grandparent_id = model.states[state.parent].parent %}
@@ -216,10 +297,13 @@
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% for block in state.on_exit_blocks %}
                 // W3C SCXML 3.9: onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
+                // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
+                'action_block: {
 {% for action in block %}
-                {% include 'actions/' + action.type + '.rs.jinja2' %}
+                {% with in_entry_exit=true %}{% include 'actions/' + action.type + '.rs.jinja2' %}{% endwith %}
 
 {% endfor %}
+                }
 {% endfor %}
             }
 {% endif %}

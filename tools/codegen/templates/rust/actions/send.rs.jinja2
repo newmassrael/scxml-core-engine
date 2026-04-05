@@ -18,15 +18,27 @@
 {% if 'error.execution' in model.events %}
     engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+    // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+    break 'action_block;
+{% endif %}
 {% elif action.target and action.target.startswith('!') %}
     // W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
 {% if 'error.execution' in model.events %}
     engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
 {% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+    // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+    break 'action_block;
+{% endif %}
 {% elif action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and not action.target and not action.targetexpr %}
     // W3C SCXML C.2: BasicHTTP without target raises error.communication
 {% if 'error.communication' in model.events %}
     engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
+{% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+    // W3C SCXML 3.8/3.9: Error stops subsequent actions in this onentry/onexit block
+    break 'action_block;
 {% endif %}
 {% elif action.target == '#_internal' %}
     // W3C SCXML 6.2: Internal target (#_internal) - raise as internal event
