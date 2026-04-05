@@ -271,8 +271,8 @@
                 } else {
                     // W3C SCXML 6.2: Dispatch to dynamically resolved target
 {% if action.event %}
-                    if let Some(evt) = Self::get_event_from_name("{{ action.event }}") {
-                        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
+                    {
+                        let mut meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }});
                         meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
                         meta.metadata.data = event_data.to_string();
                         engine.raise_external_with_meta(meta);

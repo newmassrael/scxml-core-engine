@@ -359,8 +359,8 @@ impl StatePolicy for Test521Policy {
                     engine.raise(sce_rust_runtime::EventWithMetadata::new(Test521Event::ErrorExecution));
                 } else {
                     // W3C SCXML 6.2: Dispatch to dynamically resolved target
-                    if let Some(evt) = Self::get_event_from_name("event2") {
-                        let mut meta = sce_rust_runtime::EventWithMetadata::new(evt);
+                    {
+                        let mut meta = sce_rust_runtime::EventWithMetadata::new(Test521Event::Event2);
                         meta.metadata = sce_rust_runtime::EventMetadata::external(send_id.clone(), String::new());
                         meta.metadata.data = event_data.to_string();
                         engine.raise_external_with_meta(meta);

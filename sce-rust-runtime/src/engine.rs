@@ -605,18 +605,17 @@ impl<P: StatePolicy> Engine<P> {
         params: std::collections::HashMap<String, Vec<String>>,
         send_id: String,
     ) {
-        if let Some(cb) = self.on_http_send.as_mut() {
-            cb(HttpSendRequest {
-                target: target.clone(),
-                event_name: event_name.clone(),
-                content: content.clone(),
-                params: params.clone(),
-                send_id: send_id.clone(),
-            });
-        }
-
         if self.http_loopback {
-            self.http_loopback_inject(event_name, content, params);
+            // Clone before callback consumes values (both paths need them)
+            let ev = event_name.clone();
+            let ct = content.clone();
+            let pr = params.clone();
+            if let Some(cb) = self.on_http_send.as_mut() {
+                cb(HttpSendRequest { target, event_name, content, params, send_id });
+            }
+            self.http_loopback_inject(ev, ct, pr);
+        } else if let Some(cb) = self.on_http_send.as_mut() {
+            cb(HttpSendRequest { target, event_name, content, params, send_id });
         }
     }
 
@@ -635,26 +634,14 @@ impl<P: StatePolicy> Engine<P> {
         params: std::collections::HashMap<String, Vec<String>>,
     ) {
         // W3C SCXML C.2: Determine response event name
-        let response_event_name = if let Some(names) = params.get("_scxmleventname") {
-            if let Some(first) = names.first() {
-                if !first.is_empty() {
-                    first.clone()
-                } else if !event_name.is_empty() {
-                    event_name.clone()
-                } else {
-                    "HTTP.POST".to_string()
-                }
-            } else if !event_name.is_empty() {
-                event_name.clone()
-            } else {
-                "HTTP.POST".to_string()
-            }
-        } else if !event_name.is_empty() {
-            // W3C SCXML C.2: event attribute becomes _scxmleventname in POST body
-            event_name.clone()
-        } else {
-            "HTTP.POST".to_string()
-        };
+        // Priority: _scxmleventname param > event attribute > "HTTP.POST"
+        let response_event_name = params
+            .get("_scxmleventname")
+            .and_then(|v| v.first())
+            .filter(|s| !s.is_empty())
+            .cloned()
+            .or_else(|| if !event_name.is_empty() { Some(event_name.clone()) } else { None })
+            .unwrap_or_else(|| "HTTP.POST".to_string());
 
         // W3C SCXML C.2: Build event data as Lua table from POST params
         let data = self.build_http_loopback_data(&event_name, &content, &params);
@@ -700,7 +687,11 @@ impl<P: StatePolicy> Engine<P> {
                 if let Ok(i) = first.parse::<i64>() {
                     parts.push(format!("[\"{}\"]={}", key, i));
                 } else if let Ok(f) = first.parse::<f64>() {
-                    parts.push(format!("[\"{}\"]={}", key, f));
+                    if f.is_finite() {
+                        parts.push(format!("[\"{}\"]={}", key, f));
+                    } else {
+                        parts.push(format!("[\"{}\"]=\"{}\"", key, first));
+                    }
                 } else {
                     parts.push(format!("[\"{}\"]=\"{}\"", key, first));
                 }
