@@ -4,6 +4,7 @@ coroutines = "1.10.1"
 junit = "5.10.2"
 rhino = "1.7.15"
 jmh-plugin = "0.7.2"
+spring-boot = "3.4.4"
 agp = "8.9.3"
 compose-bom = "2025.03.00"
 activity-compose = "1.10.1"
@@ -15,6 +16,8 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 rhino = { module = "org.mozilla:rhino", version.ref = "rhino" }
+spring-boot-autoconfigure = { module = "org.springframework.boot:spring-boot-autoconfigure", version.ref = "spring-boot" }
+spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test", version.ref = "spring-boot" }
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
 compose-material3 = { module = "androidx.compose.material3:material3" }
 compose-ui = { module = "androidx.compose.ui:ui" }

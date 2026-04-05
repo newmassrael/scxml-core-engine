@@ -18,10 +18,12 @@ dependencyResolutionManagement {
 rootProject.name = "scxml-core-engine"
 
 include(":sce-kotlin-runtime")
+include(":sce-kotlin-rhino")
 include(":sce-kotlin-lua")
 include(":sce-kotlin-quickjs")
 include(":sce-kotlin-tests")
 include(":sce-kotlin-benchmark")
+include(":sce-spring-boot-starter")
 
 // Android module — requires ANDROID_HOME or sdk.dir in local.properties
 val androidHome = System.getenv("ANDROID_HOME")

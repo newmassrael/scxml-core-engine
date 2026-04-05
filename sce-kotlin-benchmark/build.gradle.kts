@@ -13,10 +13,9 @@ dependencies {
     implementation(project(":sce-kotlin-runtime"))
 
     // All three engine implementations
+    implementation(project(":sce-kotlin-rhino"))
     implementation(project(":sce-kotlin-lua"))
     implementation(project(":sce-kotlin-quickjs"))
-    implementation(project(":sce-kotlin-tests"))  // contains RhinoScriptEngine
-    implementation(libs.rhino)
 }
 
 kotlin {

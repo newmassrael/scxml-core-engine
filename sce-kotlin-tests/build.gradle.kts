@@ -7,10 +7,10 @@ version = "1.0.0"
 
 dependencies {
     implementation(project(":sce-kotlin-runtime"))
+    implementation(project(":sce-kotlin-rhino"))
     implementation(project(":sce-kotlin-lua"))
     implementation(project(":sce-kotlin-quickjs"))
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.rhino)
 
     testImplementation(kotlin("test"))
     testImplementation(libs.kotlinx.coroutines.test)
