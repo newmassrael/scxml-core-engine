@@ -25,7 +25,7 @@
 {% if model.has_entry_actions %}
         match state {
 {% for state_id, state in model.states.items() | sort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') or state.static_invokes %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') or state.static_invokes or state.hybrid_invokes %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% if state.datamodel and model.binding == 'late' %}
                 // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
@@ -66,8 +66,8 @@
 {% endfor %}
                 }
 {% endif %}
-{% if state.static_invokes %}
-                // W3C SCXML 6.4: Defer static invoke execution until macrostep end
+{% if state.static_invokes or state.hybrid_invokes %}
+                // W3C SCXML 6.4: Defer invoke execution until macrostep end
 {% for invoke_info in state.static_invokes %}
                 {
                     let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
@@ -75,6 +75,29 @@
 {% if invoke_info.idlocation %}
                     // W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
                     // W3C SCXML: Full runtime ID stored (test 224 checks format)
+                    self.ensure_script_engine();
+                    {
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = sce_rust_runtime::ScriptEngineProvider::get();
+                        let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
+                            sce_rust_runtime::ScriptValue::String(generated_invoke_id.clone()));
+                    }
+{% endif %}
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                        },
+                    );
+                }
+{% endfor %}
+{% for invoke_info in state.hybrid_invokes %}
+                // W3C SCXML 6.4: Defer hybrid invoke '{{ invoke_info.invoke_id }}' (srcexpr/contentexpr evaluated at macrostep end)
+                {
+                    let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
+                        "{{ state_id }}", self as *const _ as usize);
+{% if invoke_info.idlocation %}
                     self.ensure_script_engine();
                     {
                         let sid = self.session_id.as_ref().unwrap().clone();
@@ -314,13 +337,13 @@
 {% endif %}
 {% set has_invoke_exits = [] %}
 {% for state_id, state in model.states.items() | sort %}
-{% if state.static_invokes %}{% set _ = has_invoke_exits.append(state_id) %}{% endif %}
+{% if state.static_invokes or state.hybrid_invokes %}{% set _ = has_invoke_exits.append(state_id) %}{% endif %}
 {% endfor %}
 {% if has_invoke_exits %}
         // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
         match state {
 {% for state_id, state in model.states.items() | sort %}
-{% if state.static_invokes %}
+{% if state.static_invokes or state.hybrid_invokes %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
                 // W3C SCXML 6.4: Cancel pending invokes for exited state
                 sce_rust_runtime::invoke::cancel_invokes_for_state(
@@ -328,15 +351,22 @@
                     {{ machine_name }}State::{{ state_id | to_state_variant }},
                 );
 {% for invoke_info in state.static_invokes %}
-                // W3C SCXML 6.4: Cleanup running child '{{ invoke_info.invoke_id }}'
+                // W3C SCXML 6.4: Cleanup running static child '{{ invoke_info.invoke_id }}'
                 if self.child_{{ invoke_info.invoke_id }}.is_some() {
-                    // W3C SCXML 6.4: Only raise cancel.invoke if child hasn't completed (test 236)
                     if !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
 {% if 'cancel.invoke' in model.events %}
                         engine.raise(sce_rust_runtime::EventWithMetadata::new(
                             {{ machine_name }}Event::{{ 'cancel.invoke' | to_event_variant }}));
 {% endif %}
                     }
+                    self.child_{{ invoke_info.invoke_id }} = None;
+                }
+                self.active_invokes.remove("{{ invoke_info.invoke_id }}");
+                self.pending_done_invoke_{{ invoke_info.invoke_id }} = false;
+{% endfor %}
+{% for invoke_info in state.hybrid_invokes %}
+                // W3C SCXML 6.4: Cleanup running hybrid child '{{ invoke_info.invoke_id }}'
+                if self.child_{{ invoke_info.invoke_id }}.is_some() {
                     self.child_{{ invoke_info.invoke_id }} = None;
                 }
                 self.active_invokes.remove("{{ invoke_info.invoke_id }}");

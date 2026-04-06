@@ -89,6 +89,17 @@ pub fn eval_or_set_string(
     match se.evaluate_expression(sid, expression) {
         Ok(val) => se.set_variable(sid, var_id, val).map_err(|e| e.to_string()),
         Err(_) => {
+            // W3C SCXML B.2 test 446: Try JSON.parse for file-loaded JSON content
+            // External files may contain JSON ([1,2,3] or {"key":"val"}) which isn't
+            // valid Lua. The C++ engine handles this via its runtime ES→Lua transformer;
+            // in Rust we use JSON.parse (registered as Lua builtin) instead.
+            let trimmed = expression.trim();
+            if trimmed.starts_with('[') || trimmed.starts_with('{') {
+                let json_expr = format!("JSON.parse([==[{}]==])", trimmed);
+                if let Ok(val) = se.evaluate_expression(sid, &json_expr) {
+                    return se.set_variable(sid, var_id, val).map_err(|e| e.to_string());
+                }
+            }
             // W3C SCXML B.2 test 558: Fallback to string when expression evaluation fails
             se.set_variable(sid, var_id, ScriptValue::String(fallback.to_string()))
                 .map_err(|e| e.to_string())

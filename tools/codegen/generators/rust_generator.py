@@ -78,6 +78,7 @@ class RustCodeGenerator(BaseCodeGenerator):
         env.filters['to_rust_literal'] = self._to_rust_literal
         env.filters['escape_keyword'] = self._escape_rust_keyword
         env.filters['to_in_predicate_rust'] = self._to_in_predicate_rust
+        env.filters['normalize_ws'] = self._normalize_whitespace
         # W3C SCXML 6.4: Invoke child name -> Rust type name (same as PascalCase)
         env.filters['to_machine_name'] = self._to_pascal_case
         # ECMAScript→Lua codegen-time transformation filters
@@ -140,6 +141,12 @@ class RustCodeGenerator(BaseCodeGenerator):
             'runtime': 'sce_rust_runtime::ScriptValue',
         }
         return type_map.get(var_type, 'sce_rust_runtime::ScriptValue')
+
+    @staticmethod
+    def _normalize_whitespace(text: str) -> str:
+        """W3C SCXML B.2 test 558: Normalize whitespace (trim + collapse runs to single space)."""
+        import re
+        return re.sub(r'\s+', ' ', text.strip())
 
     @staticmethod
     def _escape_rust_string(text: str) -> str:

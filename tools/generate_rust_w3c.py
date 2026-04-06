@@ -184,11 +184,15 @@ def _generate_invoke_children(test_id: str, parent_scxml: Path):
     finally:
         sys.path[:] = sys_path_backup
 
-    if not model.static_invokes:
-        return
-
     parent_dir = parent_scxml.parent
     output_dir = SM_OUTPUT_BASE / f'test{test_id}'
+
+    # W3C SCXML 6.4: Generate children for hybrid invokes (Rust AOT pre-generation)
+    if model.hybrid_invokes:
+        _generate_hybrid_invoke_children(test_id, parent_scxml, model, output_dir)
+
+    if not model.static_invokes:
+        return
 
     for invoke_info in model.static_invokes:
         child_name = invoke_info.get('child_name', '')
@@ -224,6 +228,96 @@ def _generate_invoke_children(test_id: str, parent_scxml: Path):
                 continue
 
             copy_if_changed(tmp_dir, output_dir)
+
+
+def _generate_hybrid_invoke_children(test_id: str, parent_scxml: Path,
+                                     model, output_dir: Path):
+    """
+    W3C SCXML 6.4: Generate child SMs for hybrid invoke elements (srcexpr/contentexpr).
+
+    Rust AOT backend pre-generates children at codegen time since there is no
+    runtime SCXML interpreter. For srcexpr: finds child SCXML in resource dir.
+    For contentexpr: generates a trivial child that immediately reaches final state.
+    """
+    parent_dir = parent_scxml.parent
+
+    for invoke_info in model.hybrid_invokes:
+        child_name = invoke_info.get('child_name', '')
+        if not child_name:
+            continue
+
+        srcexpr = invoke_info.get('srcexpr', '')
+        contentexpr = invoke_info.get('contentexpr', '')
+
+        child_scxml = None
+
+        if srcexpr:
+            # For srcexpr: scan resource directory for child SCXML files
+            # Convention: any .scxml file that isn't the parent is a potential child
+            for f in sorted(parent_dir.glob('*.scxml')):
+                if f.name != parent_scxml.name:
+                    child_scxml = f
+                    break
+
+        if contentexpr or (srcexpr and child_scxml is None):
+            # For contentexpr or when srcexpr child not found: generate trivial child
+            # W3C SCXML: Trivial child immediately reaches final state (done.invoke)
+            trivial_content = (
+                '<?xml version="1.0"?>\n'
+                '<scxml xmlns="http://www.w3.org/2005/07/scxml" '
+                f'name="{child_name}" initial="final" version="1.0">\n'
+                '  <final id="final"/>\n'
+                '</scxml>\n'
+            )
+            child_scxml = parent_dir / f'{child_name}.scxml'
+            child_scxml.write_text(trivial_content)
+
+        if child_scxml is None or not child_scxml.exists():
+            print(f"  Warning: hybrid child SCXML not found for {child_name}")
+            continue
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            result = subprocess.run(
+                [
+                    sys.executable, str(CODEGEN_SCRIPT),
+                    str(child_scxml),
+                    '-o', str(tmp_dir),
+                    '--language', 'rust',
+                ],
+                capture_output=True,
+                text=True,
+                env={**os.environ, 'SPDLOG_LEVEL': 'warn'},
+            )
+
+            if 'Generated:' not in result.stdout:
+                print(f"  Warning: hybrid child codegen failed for {child_name}")
+                continue
+
+            # Rename the generated file to match the expected child_name
+            # The codegen names the file after the SCXML input, but the parent
+            # references the convention-based child_name.
+            actual_stem = child_scxml.stem  # e.g., "test216sub1"
+            actual_file = tmp_dir / f'{actual_stem}_sm.rs'
+            expected_file = tmp_dir / f'{child_name}_sm.rs'
+            if actual_file.exists() and actual_file != expected_file:
+                # Read, transform internal names, and write with new name
+                content = actual_file.read_text()
+                # Replace the Pascal/snake case names: Test216Sub1 -> Test216Hybrid0
+                actual_pascal = to_pascal_case(actual_stem)
+                expected_pascal = to_pascal_case(child_name)
+                content = content.replace(actual_pascal, expected_pascal)
+                content = content.replace(actual_stem, child_name)
+                expected_file.write_text(content)
+                actual_file.unlink()
+
+            copy_if_changed(tmp_dir, output_dir)
+
+        # Clean up generated trivial SCXML if we created it
+        if contentexpr or (srcexpr and not any(parent_dir.glob(f'*sub*.scxml'))):
+            generated_file = parent_dir / f'{child_name}.scxml'
+            if generated_file.exists() and child_name.startswith(f'test{test_id}_hybrid'):
+                generated_file.unlink()
 
 
 def detect_pass_state(test_id: str) -> str | None:

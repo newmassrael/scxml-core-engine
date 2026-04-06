@@ -496,10 +496,10 @@ impl StatePolicy for Test457Policy {
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = sce_rust_runtime::ScriptEngineProvider::get();
 
-    // Validate item attribute (1:1 with C++ Validation::validateForeachAttributes)
+    // Validate item attribute (1:1 with C++ ForeachHelper::isLegalVariableName)
     let item_name = "Var2";
-    if item_name.is_empty() {
-        log::error!("Foreach validation failed: missing item attribute");
+    if item_name.is_empty() || !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
+        log::error!("Foreach validation failed: '{}' is not a legal variable name", item_name);
         engine.raise(sce_rust_runtime::EventWithMetadata::new(Test457Event::ErrorExecution));
     } else {
         // Evaluate array expression
@@ -583,10 +583,10 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test457Event::Foo));
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = sce_rust_runtime::ScriptEngineProvider::get();
 
-    // Validate item attribute (1:1 with C++ Validation::validateForeachAttributes)
+    // Validate item attribute (1:1 with C++ ForeachHelper::isLegalVariableName)
     let item_name = "'continue'";
-    if item_name.is_empty() {
-        log::error!("Foreach validation failed: missing item attribute");
+    if item_name.is_empty() || !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
+        log::error!("Foreach validation failed: '{}' is not a legal variable name", item_name);
         engine.raise(sce_rust_runtime::EventWithMetadata::new(Test457Event::ErrorExecution));
     } else {
         // Evaluate array expression
@@ -689,10 +689,10 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test457Event::Bar));
     let sid = self.session_id.as_ref().unwrap().clone();
     let se = sce_rust_runtime::ScriptEngineProvider::get();
 
-    // Validate item attribute (1:1 with C++ Validation::validateForeachAttributes)
+    // Validate item attribute (1:1 with C++ ForeachHelper::isLegalVariableName)
     let item_name = "Var2";
-    if item_name.is_empty() {
-        log::error!("Foreach validation failed: missing item attribute");
+    if item_name.is_empty() || !sce_rust_runtime::helpers::foreach::is_legal_variable_name(item_name) {
+        log::error!("Foreach validation failed: '{}' is not a legal variable name", item_name);
         engine.raise(sce_rust_runtime::EventWithMetadata::new(Test457Event::ErrorExecution));
     } else {
         // Evaluate array expression

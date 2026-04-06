@@ -756,8 +756,11 @@ class SCXMLParser:
                 # Track invoke types (static, hybrid, dynamic file)
                 if invoke.get('is_hybrid', False):
                     # Hybrid invoke: AOT parent + Interpreter child (srcexpr or contentexpr)
+                    # W3C SCXML 6.4: Rust backend pre-generates child at codegen time
+                    hybrid_child_index = len(self.model.hybrid_invokes)
                     hybrid_invoke = {
                         'invoke_id': invoke.get('id', ''),
+                        'child_name': f"{self.model.name}_hybrid{hybrid_child_index}",
                         'state_name': state_id,
                         'srcexpr': invoke.get('srcexpr', ''),  # W3C SCXML 6.4: Runtime file path evaluation
                         'contentexpr': invoke.get('contentexpr', ''),  # W3C SCXML 6.4: Runtime content evaluation

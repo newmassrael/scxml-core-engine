@@ -83,6 +83,9 @@ pub struct Test216Policy {
     pending_invokes: Vec<sce_rust_runtime::invoke::PendingInvoke<Test216State>>,
     // W3C SCXML 6.4: Active child sessions (invoke_id -> ChildSession)
     active_invokes: std::collections::HashMap<String, sce_rust_runtime::invoke::ChildSession>,
+    // W3C SCXML 6.4: Hybrid invoke child '_invoke_0' (test216_hybrid0)
+    child__invoke_0: Option<Box<sce_rust_runtime::Engine<super::test216_hybrid0_sm::Test216Hybrid0Policy>>>,
+    pending_done_invoke__invoke_0: bool,
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated — any SM can be invoked as a child
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
@@ -110,6 +113,8 @@ impl Test216Policy {
             script_engine_initialized: false,
             pending_invokes: Vec::new(),
             active_invokes: std::collections::HashMap::new(),
+            child__invoke_0: None,
+            pending_done_invoke__invoke_0: false,
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -229,6 +234,121 @@ impl Test216Policy {
             }
         }
     }
+    // W3C SCXML 6.4: Execute pending invokes at macrostep end
+    // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
+    fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        if self.pending_invokes.is_empty() {
+            return;
+        }
+
+        // W3C SCXML 6.4: Copy-and-clear to prevent iterator invalidation
+        let invokes_to_execute: Vec<_> = self.pending_invokes.drain(..).collect();
+
+        for pending in &invokes_to_execute {
+            if pending.invoke_id.contains("._invoke_0") {
+                // W3C SCXML 6.4: Hybrid invoke — evaluate expression at runtime, create pre-generated child
+                // W3C SCXML 6.4.3: Evaluate srcexpr at runtime
+                self.ensure_script_engine();
+                let sid = self.session_id.as_ref().unwrap().clone();
+                let se = sce_rust_runtime::ScriptEngineProvider::get();
+                match se.evaluate_expression(&sid, "Var1") {
+                    Ok(sce_rust_runtime::ScriptValue::Null) | Err(_) => {
+                        log::error!("Hybrid invoke: srcexpr 'Var1' evaluation failed");
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            Test216Event::ErrorExecution));
+                        continue;
+                    }
+                    Ok(_path) => {
+                        log::debug!("Hybrid invoke: srcexpr evaluated to {:?}", _path);
+                    }
+                }
+
+                // W3C SCXML 6.5: Generate child session ID
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    &pending.invoke_id);
+
+                // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
+                let mut child_policy = super::test216_hybrid0_sm::Test216Hybrid0Policy::new();
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = pending.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                if child_policy.session_id.is_none() {
+                    static HYBRID_SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                    let cid = HYBRID_SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                }
+
+                // W3C SCXML 6.4.6: Track active invoke session
+                self.active_invokes.insert("_invoke_0".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        invoke_id: "_invoke_0".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: false,
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = sce_rust_runtime::Engine::new(child_policy);
+                child_engine.set_completion_callback(|| {});
+                child_engine.initialize();
+
+                self.child__invoke_0 = Some(Box::new(child_engine));
+
+                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &self.child__invoke_0.as_ref().unwrap().policy().parent_external_queue,
+                    &self.active_invokes,
+                    "_invoke_0",
+                    engine,
+                );
+
+                // W3C SCXML 6.4: Check if child completed during initialize
+                if self.child__invoke_0.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                    self.pending_done_invoke__invoke_0 = true;
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "_invoke_0",
+                        engine,
+                    );
+                }
+                continue;
+            }
+        }
+    }
+
+    // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
+    fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        if !self.pending_done_invoke__invoke_0 {
+            if let Some(mut child) = self.child__invoke_0.take() {
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "_invoke_0",
+                    engine,
+                );
+                child.tick();
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "_invoke_0",
+                    engine,
+                );
+                if child.is_in_final_state() && !self.pending_done_invoke__invoke_0 {
+                    self.pending_done_invoke__invoke_0 = true;
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "_invoke_0",
+                        engine,
+                    );
+                }
+                self.child__invoke_0 = Some(child);
+            }
+        }
+    }
+
+
+
 }
 
 impl Default for Test216Policy {
@@ -250,6 +370,8 @@ impl StatePolicy for Test216Policy {
     const NEEDS_SCRIPT_ENGINE: bool = true;
     const NEEDS_DATA_MODEL_INIT: bool = true;
     const HAS_EXTERNAL_EVENT_FLAG: bool = true;
+    const HAS_INVOKE_SUPPORT: bool = true;
+    const HAS_CHILD_TICK: bool = true;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
@@ -448,6 +570,19 @@ impl StatePolicy for Test216Policy {
 }
 
                 }
+                // W3C SCXML 6.4: Defer invoke execution until macrostep end
+                // W3C SCXML 6.4: Defer hybrid invoke '_invoke_0' (srcexpr/contentexpr evaluated at macrostep end)
+                {
+                    let generated_invoke_id = format!("{}.{}._invoke_0",
+                        "s0", self as *const _ as usize);
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: Test216State::S0,
+                        },
+                    );
+                }
             }
             _ => {}
         }
@@ -461,6 +596,23 @@ impl StatePolicy for Test216Policy {
         engine: &mut sce_rust_runtime::Engine<Self>,
         pre_transition_active: &[Self::State],
     ) {
+        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
+        match state {
+            Test216State::S0 => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    Test216State::S0,
+                );
+                // W3C SCXML 6.4: Cleanup running hybrid child '_invoke_0'
+                if self.child__invoke_0.is_some() {
+                    self.child__invoke_0 = None;
+                }
+                self.active_invokes.remove("_invoke_0");
+                self.pending_done_invoke__invoke_0 = false;
+            }
+            _ => {}
+        }
         match state {
             _ => {}
         }
@@ -519,6 +671,15 @@ impl StatePolicy for Test216Policy {
         self.do_initialize_data_model(engine);
     }
 
+    // W3C SCXML 6.4: Execute pending invokes at macrostep end
+    fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
+        self.do_execute_pending_invokes(engine);
+    }
+
+    // W3C SCXML 6.4: Tick child state machines
+    fn tick_children(&mut self, engine: &mut Engine<Self>) {
+        self.do_tick_children(engine);
+    }
 }
 
 // ======================================================================

@@ -143,6 +143,11 @@ pub struct {{ machine_name }}Policy {
     child_{{ invoke_info.invoke_id }}: Option<Box<sce_rust_runtime::Engine<super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy>>>,
     pending_done_invoke_{{ invoke_info.invoke_id }}: bool,
 {% endfor %}
+{% for invoke_info in model.hybrid_invokes %}
+    // W3C SCXML 6.4: Hybrid invoke child '{{ invoke_info.invoke_id }}' ({{ invoke_info.child_name }})
+    child_{{ invoke_info.invoke_id }}: Option<Box<sce_rust_runtime::Engine<super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy>>>,
+    pending_done_invoke_{{ invoke_info.invoke_id }}: bool,
+{% endfor %}
     // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
     // Always generated — any SM can be invoked as a child
     pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
@@ -222,6 +227,10 @@ impl {{ machine_name }}Policy {
             child_{{ invoke_info.invoke_id }}: None,
             pending_done_invoke_{{ invoke_info.invoke_id }}: false,
 {% endfor %}
+{% for invoke_info in model.hybrid_invokes %}
+            child_{{ invoke_info.invoke_id }}: None,
+            pending_done_invoke_{{ invoke_info.invoke_id }}: false,
+{% endfor %}
             parent_external_queue: None,
             invoke_id: String::new(),
             child_session_id: String::new(),
@@ -257,7 +266,7 @@ impl StatePolicy for {{ machine_name }}Policy {
 {% if model.needs_external_flag %}
     const HAS_EXTERNAL_EVENT_FLAG: bool = true;
 {% endif %}
-{% if model.static_invokes %}
+{% if model.static_invokes or model.hybrid_invokes %}
     const HAS_INVOKE_SUPPORT: bool = true;
     const HAS_CHILD_TICK: bool = true;
 {% endif %}
@@ -559,7 +568,7 @@ impl StatePolicy for {{ machine_name }}Policy {
     }
 {% endif %}
 
-{% if model.static_invokes %}
+{% if model.static_invokes or model.hybrid_invokes %}
     // W3C SCXML 6.4: Execute pending invokes at macrostep end
     fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
         self.do_execute_pending_invokes(engine);

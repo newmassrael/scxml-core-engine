@@ -331,6 +331,11 @@ impl LuaEngine {
             end
         "#).exec()?;
 
+        // W3C SCXML B.2: JSON.stringify / JSON.parse (Single Source of Truth)
+        // Shared with C++ LuaEngine via sce/include/scripting/json_builtins.lua
+        lua.load(include_str!("../../sce/include/scripting/json_builtins.lua"))
+            .exec()?;
+
         // Object.keys(tbl): returns array of string keys
         let object_table = lua.create_table()?;
         let keys_fn = lua.create_function(|lua, tbl: LuaValue| {
@@ -478,6 +483,55 @@ fn lua_values_equal(a: &LuaValue, b: &LuaValue) -> bool {
     }
 }
 
+/// W3C SCXML B.2 test 578: Convert JSON object/array notation to Lua table syntax.
+/// Transforms `"key" : value` → `["key"] = value` and handles nested structures.
+fn json_to_lua_table(json: &str) -> String {
+    let mut result = String::with_capacity(json.len());
+    let bytes = json.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if bytes[i] == b'"' {
+            // Capture the full quoted string
+            let mut key = String::from('"');
+            i += 1;
+            while i < len {
+                let c = bytes[i] as char;
+                key.push(c);
+                i += 1;
+                if c == '"' { break; }
+                if c == '\\' && i < len {
+                    key.push(bytes[i] as char);
+                    i += 1;
+                }
+            }
+            // Skip whitespace after string
+            let mut spaces = String::new();
+            while i < len && (bytes[i] as char).is_whitespace() {
+                spaces.push(bytes[i] as char);
+                i += 1;
+            }
+            if i < len && bytes[i] == b':' {
+                i += 1; // consume ':'
+                // JSON key → Lua: ["key"] =
+                result.push('[');
+                result.push_str(&key);
+                result.push(']');
+                result.push_str(&spaces);
+                result.push('=');
+            } else {
+                // Just a string value
+                result.push_str(&key);
+                result.push_str(&spaces);
+            }
+        } else {
+            result.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    result
+}
+
 fn setup_dom_metatable_for(lua: &Lua, table: &LuaTable) -> LuaResult<()> {
     let get_elements = lua.create_function(|lua, (tbl, tag): (LuaTable, String)| {
         let xml: String = tbl.get("__xml").unwrap_or_default();
@@ -487,7 +541,25 @@ fn setup_dom_metatable_for(lua: &Lua, table: &LuaTable) -> LuaResult<()> {
         let mut pos = 0;
         while let Some(start) = xml[pos..].find(&open_tag) {
             let abs_start = pos + start;
+            let after_tag = abs_start + open_tag.len();
+            // W3C SCXML B.2: Handle both self-closing (<tag .../>) and paired (<tag ...>...</tag>) elements
             let close_tag = format!("</{}>", tag);
+            if let Some(self_close) = xml[after_tag..].find("/>") {
+                let self_close_abs = after_tag + self_close;
+                // Check if self-closing comes before any closing tag
+                let paired_end = xml[abs_start..].find(&close_tag).map(|e| abs_start + e);
+                if paired_end.is_none() || self_close_abs < paired_end.unwrap() {
+                    // Self-closing tag: <tag .../>
+                    let element_xml = &xml[abs_start..self_close_abs + 2];
+                    let elem = lua.create_table()?;
+                    elem.set("__xml", element_xml)?;
+                    setup_dom_metatable_for(lua, &elem)?;
+                    result.raw_set(idx, elem)?;
+                    idx += 1;
+                    pos = self_close_abs + 2;
+                    continue;
+                }
+            }
             if let Some(end) = xml[abs_start..].find(&close_tag) {
                 let element_xml = &xml[abs_start..abs_start + end + close_tag.len()];
                 let elem = lua.create_table()?;
@@ -698,14 +770,32 @@ impl IScriptEngine for LuaEngine {
 
         // Parse event_data as Lua value if non-empty
         if !event_data.is_empty() {
-            // Try to evaluate as expression first (handles JSON-like data)
-            let data_result = session.lua.load(&format!("return {}", event_data))
-                .eval::<LuaValue>();
-            match data_result {
-                Ok(val) => { event_table.set("data", val).map_err(map_lua_err)?; }
-                Err(_) => {
-                    // Fall back to string
-                    event_table.set("data", event_data).map_err(map_lua_err)?;
+            // W3C SCXML B.2: XML data → DOM object (test 561)
+            if event_data.trim_start().starts_with('<') {
+                let dom_table = session.lua.create_table().map_err(map_lua_err)?;
+                dom_table.set("__xml", event_data).map_err(map_lua_err)?;
+                setup_dom_metatable_for(&session.lua, &dom_table).map_err(map_lua_err)?;
+                event_table.set("data", dom_table).map_err(map_lua_err)?;
+            } else {
+                // Try to evaluate as Lua expression first
+                let data_result = session.lua.load(&format!("return {}", event_data))
+                    .eval::<LuaValue>();
+                match data_result {
+                    Ok(val) => { event_table.set("data", val).map_err(map_lua_err)?; }
+                    Err(_) => {
+                        // W3C SCXML B.2 test 578: Try JSON-to-Lua conversion ("key": val → ["key"] = val)
+                        let lua_syntax = json_to_lua_table(event_data);
+                        let json_result = session.lua.load(&format!("return {}", lua_syntax))
+                            .eval::<LuaValue>();
+                        match json_result {
+                            Ok(val) => { event_table.set("data", val).map_err(map_lua_err)?; }
+                            Err(_) => {
+                                // W3C SCXML B.2 test 562: Fall back to whitespace-normalized string
+                                let normalized: String = event_data.split_whitespace().collect::<Vec<&str>>().join(" ");
+                                event_table.set("data", normalized).map_err(map_lua_err)?;
+                            }
+                        }
+                    }
                 }
             }
         }
