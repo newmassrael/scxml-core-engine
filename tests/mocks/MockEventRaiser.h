@@ -59,6 +59,9 @@ public:
     void clearEvents();
     int getEventCount() const;
 
+    // IEventRaiser interface
+    void shutdown() override {}
+
     // Test configuration
     void setCallback(std::function<bool(const std::string &, const std::string &)> callback);
     void setReady(bool ready);

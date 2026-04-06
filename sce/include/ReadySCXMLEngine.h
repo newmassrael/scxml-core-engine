@@ -33,16 +33,22 @@ public:
     /**
      * @brief Create engine from SCXML file
      * @param scxmlFile Path to SCXML file
-     * @return Engine instance or nullptr on error
+     * @return Engine instance or nullptr on error (call lastFactoryError() for details)
      */
     static std::unique_ptr<ReadySCXMLEngine> fromFile(const std::string &scxmlFile);
 
     /**
      * @brief Create engine from SCXML string content
      * @param scxmlContent SCXML document as string
-     * @return Engine instance or nullptr on error
+     * @return Engine instance or nullptr on error (call lastFactoryError() for details)
      */
     static std::unique_ptr<ReadySCXMLEngine> fromString(const std::string &scxmlContent);
+
+    /**
+     * @brief Get the error message from the last failed factory call
+     * @return Error detail from the most recent fromFile()/fromString() failure
+     */
+    static const std::string &lastFactoryError();
 
     // === Core State Machine Operations ===
 
@@ -64,6 +70,14 @@ public:
      * @return true if event was processed
      */
     virtual bool sendEvent(const std::string &eventName, const std::string &eventData = "") = 0;
+
+    /**
+     * @brief Send an external event to the state machine's external event queue
+     * @param eventName Name of the event
+     * @param eventData Optional event data (JSON string)
+     * @return true if event was queued successfully
+     */
+    virtual bool sendExternalEvent(const std::string &eventName, const std::string &eventData = "") = 0;
 
     // === State Query Operations ===
 

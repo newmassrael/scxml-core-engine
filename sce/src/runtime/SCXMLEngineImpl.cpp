@@ -6,6 +6,12 @@
 #include "scripting/ScriptResultUtils.h"
 #include "runtime/ExecutionContextImpl.h"
 #include "runtime/StateMachineFactory.h"
+// W3C SCXML event infrastructure for <send>, <invoke>, delayed events
+#include "runtime/EventRaiserImpl.h"
+#include "events/EventSchedulerImpl.h"
+#include "events/EventDispatcherImpl.h"
+#include "events/EventTargetFactoryImpl.h"
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -48,6 +54,14 @@ SCXMLEngineImpl::SCXMLEngineImpl(IScriptEngine &scriptEngine, ISessionManager &s
     : scriptEngine_(scriptEngine), sessionManager_(sessionManager) {}
 
 SCXMLEngineImpl::~SCXMLEngineImpl() {
+    // Shut down event infrastructure to prevent orphaned timer threads
+    // from firing after the engine is destroyed
+    if (eventScheduler_) {
+        eventScheduler_->shutdown(false);
+    }
+    if (eventRaiser_) {
+        eventRaiser_->shutdown();
+    }
     // Do NOT call shutdown() - script engine may be shared by all SCXMLEngine instances
     // Engine lifecycle is managed at process level, not per-instance
     initialized_ = false;
@@ -222,11 +236,51 @@ bool SCXMLEngineImpl::loadSCXMLFromString(const std::string &scxmlContent, const
             defaultSessionId_ = actualSessionId;
         }
 
-        // Create StateMachine WITHOUT auto-initialization
-        // User must call startStateMachine() explicitly to start execution
+        // Tear down previous event infrastructure if re-loading
+        if (eventScheduler_) {
+            eventScheduler_->shutdown(false);
+            eventScheduler_.reset();
+        }
+        if (eventRaiser_) {
+            eventRaiser_->shutdown();
+            eventRaiser_.reset();
+        }
+        eventDispatcher_.reset();
+        stateMachine_.reset();
+
+        // W3C SCXML event infrastructure: EventRaiser, EventScheduler, EventDispatcher
+        // Required for <send>, <invoke>, delayed events, and event routing
+        eventRaiser_ = std::make_shared<EventRaiserImpl>();
+
+        eventScheduler_ = std::make_shared<EventSchedulerImpl>(
+            [](const EventDescriptor &event, std::shared_ptr<IEventTarget> target,
+               const std::string &sendId) -> bool {
+                SCE_LOG_DEBUG("SCXMLEngine: Executing scheduled event '{}' (sendId: '{}')",
+                              event.eventName, sendId);
+                auto future = target->send(event);
+                try {
+                    auto sendResult = future.get();
+                    return sendResult.isSuccess;
+                } catch (const std::exception &e) {
+                    SCE_LOG_ERROR("SCXMLEngine: Failed to send scheduled event '{}': {}",
+                                  event.eventName, e.what());
+                    return false;
+                }
+            });
+
+        // W3C SCXML 6.2: Connect EventRaiser to EventScheduler for delayed event polling
+        auto eventRaiserImpl = std::static_pointer_cast<EventRaiserImpl>(eventRaiser_);
+        eventRaiserImpl->setScheduler(eventScheduler_);
+
+        auto targetFactory = std::make_shared<EventTargetFactoryImpl>(eventRaiser_, eventScheduler_);
+        eventDispatcher_ = std::make_shared<EventDispatcherImpl>(eventScheduler_, targetFactory);
+
+        // Create StateMachine with full W3C event infrastructure
         auto result = StateMachineFactory::builder()
                           .withSCXML(scxmlContent)
-                          .withAutoInitialize(false)  // Do not auto-start
+                          .withAutoInitialize(false)
+                          .withEventDispatcher(eventDispatcher_)
+                          .withEventRaiser(eventRaiser_)
                           .build();
         if (!result.has_value()) {
             sessionErrors_[actualSessionId] = "Failed to create state machine: " + result.error;
@@ -264,7 +318,18 @@ bool SCXMLEngineImpl::loadSCXMLFromFile(const std::string &scxmlFile, const std:
         }
 
         std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-        return loadSCXMLFromString(content, sessionId);
+        if (!loadSCXMLFromString(content, sessionId)) {
+            return false;
+        }
+
+        // W3C SCXML: Register file path for invoke relative path resolution
+        if (stateMachine_) {
+            auto absPath = std::filesystem::absolute(scxmlFile).string();
+            stateMachine_->setSessionFilePath(absPath);
+            SCE_LOG_DEBUG("SCXMLEngine: Registered session file path: {}", absPath);
+        }
+
+        return true;
 
     } catch (const std::exception &e) {
         std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
@@ -339,6 +404,29 @@ bool SCXMLEngineImpl::sendEventSync(const std::string &eventName, const std::str
     } catch (const std::exception &e) {
         sessionErrors_[actualSessionId] = std::string("Event processing exception: ") + e.what();
         SCE_LOG_ERROR("SCXMLEngine: Event '{}' exception: {}", eventName, e.what());
+        return false;
+    }
+}
+
+bool SCXMLEngineImpl::raiseExternalEvent(const std::string &eventName, const std::string &sessionId,
+                                         const std::string &eventData) {
+    std::string actualSessionId = sessionId.empty() ? defaultSessionId_ : sessionId;
+
+    if (!stateMachine_) {
+        sessionErrors_[actualSessionId] = "No state machine available";
+        return false;
+    }
+
+    if (!stateMachine_->isRunning()) {
+        sessionErrors_[actualSessionId] = "State machine is not running";
+        return false;
+    }
+
+    try {
+        return stateMachine_->raiseExternalEvent(eventName, eventData);
+    } catch (const std::exception &e) {
+        sessionErrors_[actualSessionId] = std::string("External event exception: ") + e.what();
+        SCE_LOG_ERROR("SCXMLEngine: External event '{}' exception: {}", eventName, e.what());
         return false;
     }
 }

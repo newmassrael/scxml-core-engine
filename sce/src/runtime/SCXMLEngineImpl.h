@@ -2,6 +2,7 @@
 
 #include "../SCXMLEngine.h"
 
+#include "events/IEventDispatcher.h"
 #include "model/SCXMLModel.h"
 #include "runtime/IActionExecutor.h"
 #include "runtime/StateMachine.h"
@@ -60,6 +61,8 @@ public:
     void stopStateMachine(const std::string &sessionId = "") override;
     bool sendEventSync(const std::string &eventName, const std::string &sessionId = "",
                        const std::string &eventData = "") override;
+    bool raiseExternalEvent(const std::string &eventName, const std::string &sessionId = "",
+                            const std::string &eventData = "") override;
     bool isStateMachineRunning(const std::string &sessionId = "") const override;
     std::string getCurrentStateSync(const std::string &sessionId = "") const override;
     bool isInStateSync(const std::string &stateId, const std::string &sessionId = "") const override;
@@ -102,6 +105,12 @@ private:
     std::string defaultSessionId_;
     std::shared_ptr<StateMachine> stateMachine_;  // shared_ptr required for enable_shared_from_this
     std::map<std::string, std::string> sessionErrors_;
+
+    // W3C SCXML event infrastructure (EventDispatcher, EventRaiser, EventScheduler)
+    // Required for <send>, <invoke>, delayed events, and event routing
+    std::shared_ptr<IEventRaiser> eventRaiser_;
+    std::shared_ptr<IEventScheduler> eventScheduler_;
+    std::shared_ptr<IEventDispatcher> eventDispatcher_;
 };
 
 }  // namespace SCE

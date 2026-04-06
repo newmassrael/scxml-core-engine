@@ -268,6 +268,10 @@ private:
     // W3C SCXML 5.8: Top-level script element pattern (test 302)
     static const std::regex CONF_SCRIPT_ELEMENT;
 
+    // W3C SCXML 5.8: Bad script src for document rejection (test 301)
+    // conf:scriptBadSrc="" -> src="/nonexistent_w3c_test_script.js" (unfetchable)
+    static const std::regex CONF_SCRIPT_BAD_SRC_ATTR;
+
     // W3C SCXML 5.9: Non-boolean expression pattern (test 309)
     static const std::regex CONF_NONBOOLEAN_ATTR;
 

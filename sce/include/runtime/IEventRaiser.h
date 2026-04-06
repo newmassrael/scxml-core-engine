@@ -102,6 +102,14 @@ public:
     virtual bool isReady() const = 0;
 
     /**
+     * @brief Shut down the event raiser and release all resources
+     *
+     * Stops the worker thread, clears event queues, and releases the scheduler.
+     * Safe to call multiple times. After shutdown, raiseEvent calls will fail.
+     */
+    virtual void shutdown() = 0;
+
+    /**
      * @brief Set execution mode for SCXML compliance
      * @param immediate true for immediate processing, false for queued processing
      */

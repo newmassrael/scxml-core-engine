@@ -177,7 +177,9 @@ bool StateMachine::loadSCXMLFromString(const std::string &scxmlContent) {
         // Use parseContent method which exists in SCXMLParser
         model_ = parser.parseContent(scxmlContent);
         if (!model_) {
-            SCE_LOG_ERROR("StateMachine: Failed to parse SCXML content");
+            const auto &errors = parser.getErrorMessages();
+            lastLoadError_ = errors.empty() ? "Failed to parse SCXML content" : errors.back();
+            SCE_LOG_ERROR("StateMachine: {}", lastLoadError_);
             return false;
         }
 
@@ -3937,6 +3939,14 @@ void StateMachine::setEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
         SCE_LOG_DEBUG("StateMachine: EventRaiser passed to ActionExecutor for session: {}", sessionId_);
     }
     // Note: If ActionExecutor doesn't exist yet, it will be set during loadSCXMLFromString
+}
+
+bool StateMachine::raiseExternalEvent(const std::string &eventName, const std::string &eventData) {
+    if (!eventRaiser_) {
+        SCE_LOG_WARN("StateMachine: Cannot raise external event - no EventRaiser");
+        return false;
+    }
+    return eventRaiser_->raiseExternalEvent(eventName, eventData);
 }
 
 std::shared_ptr<IEventDispatcher> StateMachine::getEventDispatcher() const {

@@ -443,6 +443,25 @@ public:
     }
 
     /**
+     * @brief Raise an external event on the external event queue
+     *
+     * Delegates to EventRaiser's raiseExternalEvent for W3C SCXML compliant
+     * external event processing. External events are queued and processed
+     * at the next macrostep boundary.
+     *
+     * @param eventName Name of the event
+     * @param eventData Optional event data (JSON string)
+     * @return true if event was queued successfully, false if no EventRaiser available
+     */
+    bool raiseExternalEvent(const std::string &eventName, const std::string &eventData);
+
+    /**
+     * @brief Get the last error from SCXML loading/parsing
+     * @return Error detail string, empty if no error
+     */
+    const std::string &getLastLoadError() const { return lastLoadError_; }
+
+    /**
      * @brief Restore state machine from snapshot (complete restoration)
      *
      * W3C SCXML 3.13: Time-travel debugging support for InteractiveTestRunner
@@ -608,6 +627,7 @@ private:
     // Script engine integration
     IScriptEngine &scriptEngine_;
     std::string sessionId_;
+    std::string lastLoadError_;  // Parser error detail from loadSCXMLFromString
     std::string currentEventData_;
     std::string currentOriginSessionId_;  // W3C SCXML Test 252: Track origin for cancelled invoke filtering
     bool jsEnvironmentReady_ = false;

@@ -31,7 +31,8 @@ StateMachineFactory::CreationResult StateMachineFactory::createInternal(const st
         // Load SCXML if provided
         if (!scxmlContent.empty()) {
             if (!stateMachine->loadSCXMLFromString(scxmlContent)) {
-                return CreationResult("Failed to load SCXML content");
+                const auto &detail = stateMachine->getLastLoadError();
+                return CreationResult(detail.empty() ? "Failed to load SCXML content" : detail);
             }
         }
 
@@ -53,7 +54,19 @@ StateMachineFactory::CreationResult StateMachineFactory::createInternal(const st
 // === Builder Implementation ===
 
 StateMachineFactory::CreationResult StateMachineFactory::Builder::build() {
-    return StateMachineFactory::createInternal(scxmlContent_, autoInitialize_);
+    auto result = StateMachineFactory::createInternal(scxmlContent_, autoInitialize_);
+
+    // W3C SCXML: Configure event infrastructure if provided
+    if (result.has_value() && result.value) {
+        if (eventDispatcher_) {
+            result.value->setEventDispatcher(eventDispatcher_);
+        }
+        if (eventRaiser_) {
+            result.value->setEventRaiser(eventRaiser_);
+        }
+    }
+
+    return result;
 }
 
 }  // namespace SCE

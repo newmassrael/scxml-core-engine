@@ -235,6 +235,10 @@ const std::regex TXMLConverter::CONF_VARPREFIX_ATTR{R"vp(conf:varPrefix="([0-9]+
 // W3C SCXML 5.8: Top-level script element pattern (test 302)
 const std::regex TXMLConverter::CONF_SCRIPT_ELEMENT{R"(<conf:script\s*/>)", std::regex::optimize};
 
+// W3C SCXML 5.8: Bad script src for document rejection (test 301)
+// conf:scriptBadSrc="" on <script> element -> src attribute with unfetchable path
+const std::regex TXMLConverter::CONF_SCRIPT_BAD_SRC_ATTR{R"(conf:scriptBadSrc="[^"]*")", std::regex::optimize};
+
 // W3C SCXML 5.9: Non-boolean expression pattern (test 309)
 // conf:nonBoolean="" converts to cond="return" which causes JS syntax error → false
 const std::regex TXMLConverter::CONF_NONBOOLEAN_ATTR{R"nb(conf:nonBoolean="([^"]*)")nb", std::regex::optimize};
@@ -638,6 +642,10 @@ std::string TXMLConverter::convertConfAttributes(const std::string &content) {
     std::regex location_general_pattern(R"def(conf:location="([^"]*)")def");
     result = std::regex_replace(result, location_numeric_pattern, R"(location="Var$1")");
     result = std::regex_replace(result, location_general_pattern, R"(location="$1")");
+
+    // W3C SCXML 5.8: Convert conf:scriptBadSrc to unfetchable src attribute (test 301)
+    // Document must be rejected when script cannot be downloaded
+    result = std::regex_replace(result, CONF_SCRIPT_BAD_SRC_ATTR, R"(src="/nonexistent_w3c_test_script.js")");
 
     // Then remove ALL remaining conf: attributes (test framework specific)
     result = std::regex_replace(result, CONF_ALL_ATTRIBUTES, "");

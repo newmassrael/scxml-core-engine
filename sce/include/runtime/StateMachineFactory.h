@@ -62,6 +62,8 @@ public:
     private:
         std::string scxmlContent_;
         bool autoInitialize_ = true;
+        std::shared_ptr<IEventDispatcher> eventDispatcher_;
+        std::shared_ptr<IEventRaiser> eventRaiser_;
 
     public:
         Builder &withSCXML(const std::string &content) {
@@ -71,6 +73,18 @@ public:
 
         Builder &withAutoInitialize(bool autoInit) {
             autoInitialize_ = autoInit;
+            return *this;
+        }
+
+        /// W3C SCXML: Set EventDispatcher for <send>, delayed events, event routing
+        Builder &withEventDispatcher(std::shared_ptr<IEventDispatcher> eventDispatcher) {
+            eventDispatcher_ = std::move(eventDispatcher);
+            return *this;
+        }
+
+        /// W3C SCXML: Set EventRaiser for <raise>, internal events, invoke lifecycle
+        Builder &withEventRaiser(std::shared_ptr<IEventRaiser> eventRaiser) {
+            eventRaiser_ = std::move(eventRaiser);
             return *this;
         }
 

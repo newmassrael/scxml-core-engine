@@ -159,7 +159,7 @@ public:
     /**
      * @brief Shutdown the async processing (for clean destruction)
      */
-    void shutdown();
+    void shutdown() override;
 
     /**
      * @brief Set EventScheduler for delayed event polling (WASM support)

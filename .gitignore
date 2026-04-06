@@ -3,6 +3,7 @@
 # Rust (Cargo) build output
 target/
 build_debug/
+build_python/
 build_wasm/
 build_tsan/
 build_release/
@@ -116,9 +117,7 @@ docker_tsan/docker-tsan-build.log
 # Claude Code local settings
 .claude/
 
-tools/codegen/__pycache__/
-tools/codegen/generators/__pycache__/
-tools/codegen/tests/__pycache__/
+__pycache__/
 archive/
 *.wasm
 

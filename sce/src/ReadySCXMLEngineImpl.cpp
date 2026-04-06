@@ -64,20 +64,8 @@ public:
 
     bool initialize(const std::string &scxmlContent) {
         try {
-            if (!scxmlEngine_) {
-                lastError_ = "SCXMLEngine is null";
-                SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
-                return false;
-            }
+            if (!initEngine()) return false;
 
-            // Initialize the engine
-            if (!scxmlEngine_->initialize()) {
-                lastError_ = "Failed to initialize SCXMLEngine";
-                SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
-                return false;
-            }
-
-            // Load SCXML content using the high-level API
             if (!scxmlEngine_->loadSCXMLFromString(scxmlContent, sessionId_)) {
                 lastError_ = "Failed to load SCXML content: " + scxmlEngine_->getLastStateMachineError(sessionId_);
                 SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
@@ -94,6 +82,45 @@ public:
             return false;
         }
     }
+
+    bool initializeFromFile(const std::string &scxmlFile) {
+        try {
+            if (!initEngine()) return false;
+
+            // W3C SCXML: Use loadSCXMLFromFile to preserve base path for invoke relative resolution
+            if (!scxmlEngine_->loadSCXMLFromFile(scxmlFile, sessionId_)) {
+                lastError_ = "Failed to load SCXML file: " + scxmlEngine_->getLastStateMachineError(sessionId_);
+                SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+                return false;
+            }
+
+            initialized_ = true;
+            SCE_LOG_INFO("ReadySCXMLEngine: Initialized from file with session: {}", sessionId_);
+            return true;
+
+        } catch (const std::exception &e) {
+            lastError_ = std::string("Initialization from file failed: ") + e.what();
+            SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+            return false;
+        }
+    }
+
+private:
+    bool initEngine() {
+        if (!scxmlEngine_) {
+            lastError_ = "SCXMLEngine is null";
+            SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+            return false;
+        }
+        if (!scxmlEngine_->initialize()) {
+            lastError_ = "Failed to initialize SCXMLEngine";
+            SCE_LOG_ERROR("ReadySCXMLEngine: {}", lastError_);
+            return false;
+        }
+        return true;
+    }
+
+public:
 
     // === ReadySCXMLEngine Interface Implementation ===
 
@@ -148,6 +175,25 @@ public:
         } catch (const std::exception &e) {
             lastError_ = std::string("Event processing exception: ") + e.what();
             SCE_LOG_ERROR("ReadySCXMLEngine: Event '{}' exception: {}", eventName, e.what());
+            return false;
+        }
+    }
+
+    bool sendExternalEvent(const std::string &eventName, const std::string &eventData) override {
+        if (!initialized_) {
+            lastError_ = "Engine not initialized";
+            return false;
+        }
+
+        if (!scxmlEngine_) {
+            lastError_ = "No engine available";
+            return false;
+        }
+
+        try {
+            return scxmlEngine_->raiseExternalEvent(eventName, sessionId_, eventData);
+        } catch (const std::exception &e) {
+            lastError_ = std::string("External event error: ") + e.what();
             return false;
         }
     }
@@ -228,34 +274,47 @@ public:
 
 // === Factory Method Implementations ===
 
+// Thread-local storage for factory error messages
+static thread_local std::string s_lastFactoryError;
+
+const std::string &ReadySCXMLEngine::lastFactoryError() {
+    return s_lastFactoryError;
+}
+
 std::unique_ptr<ReadySCXMLEngine> ReadySCXMLEngine::fromFile(const std::string &scxmlFile) {
-    // Check if file exists
+    s_lastFactoryError.clear();
+
     if (!std::filesystem::exists(scxmlFile)) {
-        SCE_LOG_ERROR("ReadySCXMLEngine: SCXML file not found: {}", scxmlFile);
+        s_lastFactoryError = "SCXML file not found: " + scxmlFile;
+        SCE_LOG_ERROR("ReadySCXMLEngine: {}", s_lastFactoryError);
         return nullptr;
     }
 
-    // Read file content
-    std::ifstream file(scxmlFile);
-    if (!file.is_open()) {
-        SCE_LOG_ERROR("ReadySCXMLEngine: Cannot open SCXML file: {}", scxmlFile);
+    auto engine = std::make_unique<ReadySCXMLEngineImpl>();
+
+    // W3C SCXML: Use file-based loading to preserve base path for invoke relative resolution
+    if (!engine->initializeFromFile(scxmlFile)) {
+        s_lastFactoryError = engine->getLastError();
+        SCE_LOG_ERROR("ReadySCXMLEngine: Failed to initialize from file: {}", scxmlFile);
         return nullptr;
     }
 
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
-    return fromString(content);
+    return engine;
 }
 
 std::unique_ptr<ReadySCXMLEngine> ReadySCXMLEngine::fromString(const std::string &scxmlContent) {
+    s_lastFactoryError.clear();
+
     if (scxmlContent.empty()) {
-        SCE_LOG_ERROR("ReadySCXMLEngine: Empty SCXML content");
+        s_lastFactoryError = "Empty SCXML content";
+        SCE_LOG_ERROR("ReadySCXMLEngine: {}", s_lastFactoryError);
         return nullptr;
     }
 
     auto engine = std::make_unique<ReadySCXMLEngineImpl>();
 
     if (!engine->initialize(scxmlContent)) {
+        s_lastFactoryError = engine->getLastError();
         SCE_LOG_ERROR("ReadySCXMLEngine: Failed to initialize with SCXML content");
         return nullptr;
     }

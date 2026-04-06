@@ -213,6 +213,13 @@ if(BUILD_EXAMPLES)
     add_subdirectory(examples/traffic_light_auto)
 endif()
 
+# Python bindings option (disabled by default, excluded from WASM builds)
+option(BUILD_PYTHON_BINDINGS "Build Python bindings via pybind11" OFF)
+if(BUILD_PYTHON_BINDINGS AND NOT EMSCRIPTEN)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter Development)
+    add_subdirectory(sce-python)
+endif()
+
 # =============================================================================
 # Thread Safety Option
 # =============================================================================

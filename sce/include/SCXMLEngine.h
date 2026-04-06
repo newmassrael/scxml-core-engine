@@ -169,6 +169,16 @@ public:
                                const std::string &eventData = "") = 0;
 
     /**
+     * @brief Raise an external event on the state machine's external event queue
+     * @param eventName Name of the event
+     * @param sessionId Target session (uses default if empty)
+     * @param eventData Optional event data (JSON string)
+     * @return true if event was queued successfully
+     */
+    virtual bool raiseExternalEvent(const std::string &eventName, const std::string &sessionId = "",
+                                    const std::string &eventData = "") = 0;
+
+    /**
      * @brief Check if state machine is running (synchronous)
      * @param sessionId Target session (uses default if empty)
      * @return true if running
