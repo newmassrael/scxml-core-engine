@@ -54,7 +54,8 @@ class PyodideCodegen {
             const modules = [
                 'tools/codegen/codegen.py',
                 'tools/codegen/scxml_parser.py',
-                'tools/codegen/license_config.py'
+                'tools/codegen/license_config.py',
+                'tools/codegen/ecmascript_to_lua.py'
             ];
 
             for (const modulePath of modules) {
@@ -71,7 +72,8 @@ class PyodideCodegen {
                 'tools/codegen/generators/__init__.py',
                 'tools/codegen/generators/base.py',
                 'tools/codegen/generators/cpp_generator.py',
-                'tools/codegen/generators/kotlin_generator.py'
+                'tools/codegen/generators/kotlin_generator.py',
+                'tools/codegen/generators/rust_generator.py'
             ];
 
             for (const modulePath of generatorModules) {
