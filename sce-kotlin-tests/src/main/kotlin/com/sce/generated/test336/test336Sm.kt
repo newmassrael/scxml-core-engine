@@ -279,37 +279,40 @@ class Test336StateMachine(
         when (source) {
         is Test336State.S0 -> when {
             event is Test336Event.Foo -> {
-            // W3C SCXML 6.2: Dynamic target evaluation (test173)
-            run {
+            // W3C SCXML 6.2: Resolve dynamic target (targetexpr="_event.origin")
+            var _resolvedTarget: String? = null
+            run resolveTarget@{
                 ensureScriptEngine()
-                val engineT = scriptEngine ?: return@run
-                val sidT = scriptSessionId ?: return@run
-                val dynamicTarget: String
+                val eng = scriptEngine ?: return@resolveTarget
+                val sid = scriptSessionId ?: return@resolveTarget
                 try {
-                    val v = engineT.evaluateExpr(sidT, "_event.origin")
-                    dynamicTarget = v?.toString() ?: ""
+                    val v = eng.evaluateExpr(sid, "_event.origin")
+                    val target = v?.toString() ?: ""
+                    // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
+                    if (target.startsWith("!")) {
+                        raiseInternal(Test336Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
+                        return@resolveTarget
+                    }
+                    // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
+                    if (target.isEmpty() || target == "undefined") {
+                        raiseInternal(Test336Event.Error.Communication, EventMetadata.platform())
+                        return@resolveTarget
+                    }
+                    _resolvedTarget = target
                 } catch (_: Exception) {
                     raiseInternal(Test336Event.Error.Execution, EventMetadata.platform())
-                    return@run
-                }
-                // W3C SCXML 6.2 (test194): Invalid target (C++ SendHelper::isInvalidTarget)
-                if (dynamicTarget.startsWith("!")) {
-                    raiseInternal(Test336Event.Error.Execution, EventMetadata(type = "platform", sendId = "__send_0"))
-                    return@run
-                }
-                // W3C SCXML C.1 (test496): Unreachable target (C++ SendHelper::isUnreachableTarget)
-                if (dynamicTarget.isEmpty() || dynamicTarget == "undefined") {
-                    raiseInternal(Test336Event.Error.Communication, EventMetadata.platform())
-                    return@run
-                }
-                if (dynamicTarget == "#_internal") {
-                    raiseInternal(Test336Event.Bar)
-                } else if (dynamicTarget == "#_parent") {
-                    onSendToParent?.invoke("bar", "")
-                } else {
-                    send(Test336Event.Bar, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
                 }
             }
+            _resolvedTarget?.let { _rt ->
+            // W3C SCXML 6.2: Dispatch to dynamically resolved target (C++ unified pattern)
+            if (_rt == "#_internal") {
+                raiseInternal(Test336Event.Bar)
+            } else if (_rt == "#_parent") {
+                onSendToParent?.invoke("bar", "")
+            } else {
+                send(Test336Event.Bar, EventMetadata.external(sendId = "__send_0", origin = scriptSessionId ?: ""))
+            }
+            } // end of _resolvedTarget?.let
             }
             else -> {}
         }
