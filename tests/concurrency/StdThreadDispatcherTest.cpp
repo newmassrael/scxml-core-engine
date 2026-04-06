@@ -318,11 +318,13 @@ TEST_F(StdThreadDispatcherTest, DestructorStopsRunningDispatcher) {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-        // Destructor should stop dispatcher
-        tempDispatcher.reset();
-
-        // Event loop should exit
+        // Stop dispatcher and join event loop before destroying the object
+        // to avoid data race (event loop thread accessing destroyed object)
+        tempDispatcher->stop();
         eventLoop.join();
+
+        // Destructor runs on reset - timer thread cleanup
+        tempDispatcher.reset();
     }
 
     // Test passes if no hang occurs
@@ -572,11 +574,13 @@ TEST_F(StdThreadDispatcherTest, DestructorStopsTimerThread) {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-        // Destructor should stop both event loop and timer thread
-        tempDispatcher.reset();
-
-        // Event loop should exit
+        // Stop dispatcher and join event loop before destroying the object
+        // to avoid data race (event loop thread accessing destroyed object)
+        tempDispatcher->stop();
         eventLoop.join();
+
+        // Destructor runs on reset - timer thread cleanup
+        tempDispatcher.reset();
     }
 
     // Test passes if no hang occurs

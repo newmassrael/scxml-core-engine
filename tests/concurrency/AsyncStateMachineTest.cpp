@@ -22,7 +22,7 @@ public:
     enum class State { Idle, Active, Final };
     enum class Event { Start, Stop, Reset };
 
-    MockStateMachine() : currentState_(State::Idle), initialized_(false) {}
+    MockStateMachine() : currentState_(State::Idle), initialized_(false), eventCount_(0) {}
 
     void initialize() {
         initialized_ = true;
@@ -30,14 +30,14 @@ public:
     }
 
     void raiseExternal(Event event) {
-        lastEvent_ = event;
-        eventCount_++;
+        lastEvent_.store(event);
+        eventCount_.fetch_add(1);
     }
 
     void raiseExternal(Event event, const std::string &data) {
-        lastEvent_ = event;
+        lastEvent_.store(event);
         lastEventData_ = data;
-        eventCount_++;
+        eventCount_.fetch_add(1);
     }
 
     void step() {
@@ -46,17 +46,20 @@ public:
         }
 
         // Simple state machine logic
-        switch (currentState_) {
+        State current = currentState_.load();
+        Event event = lastEvent_.load();
+
+        switch (current) {
         case State::Idle:
-            if (lastEvent_ == Event::Start) {
-                currentState_ = State::Active;
+            if (event == Event::Start) {
+                currentState_.store(State::Active);
             }
             break;
         case State::Active:
-            if (lastEvent_ == Event::Stop) {
-                currentState_ = State::Final;
-            } else if (lastEvent_ == Event::Reset) {
-                currentState_ = State::Idle;
+            if (event == Event::Stop) {
+                currentState_.store(State::Final);
+            } else if (event == Event::Reset) {
+                currentState_.store(State::Idle);
             }
             break;
         case State::Final:
@@ -64,19 +67,19 @@ public:
             break;
         }
 
-        lastEvent_ = Event::Reset;  // Clear event
+        lastEvent_.store(Event::Reset);  // Clear event
     }
 
     State getCurrentState() const {
-        return currentState_;
+        return currentState_.load();
     }
 
     bool isInFinalState() const {
-        return currentState_ == State::Final;
+        return currentState_.load() == State::Final;
     }
 
     int getEventCount() const {
-        return eventCount_;
+        return eventCount_.load();
     }
 
     std::string getLastEventData() const {
@@ -84,11 +87,11 @@ public:
     }
 
 private:
-    State currentState_;
-    Event lastEvent_{Event::Reset};
+    std::atomic<State> currentState_;
+    std::atomic<Event> lastEvent_{Event::Reset};
     std::string lastEventData_;
     bool initialized_;
-    int eventCount_{0};
+    std::atomic<int> eventCount_;
 };
 
 /**

@@ -86,6 +86,7 @@ public:
 
         running_.store(true);
         stopRequested_.store(false);
+        timerChanged_.store(false);
 
         // Start timer polling thread
         timerThread_ = std::thread([this]() { handleTimers(); });
@@ -183,9 +184,11 @@ protected:
     /**
      * @brief Start platform-specific timer
      *
-     * Wakes up timer thread to check for new timer.
+     * Signals timer thread to wake up and check for the new timer.
+     * Sets timerChanged_ flag so the wait_for predicate returns true.
      */
     void startTimerImpl(int /*timerID*/, unsigned int /*intervalMs*/, bool /*periodic*/) override {
+        timerChanged_.store(true);
         cvTimer_.notify_one();
     }
 
@@ -237,6 +240,13 @@ private:
                     int timerID = earliestTimer->first;
                     TimerInfo info = earliestTimer->second;
 
+                    // Mark one-shot timer as expired BEFORE releasing timerMutex_
+                    // to prevent race condition where isTimerRunning() sees stale expiryTime
+                    // during the lock gap between unlock() and re-lock()
+                    if (!info.periodic) {
+                        earliestTimer->second.expiryTime = std::chrono::steady_clock::time_point::max();
+                    }
+
                     // Enqueue callback on dispatcher thread
                     lock.unlock();  // Release timer lock before enqueueing
                     try {
@@ -246,15 +256,14 @@ private:
                     }
                     lock.lock();  // Re-acquire lock
 
-                    // Handle periodic timer or remove one-shot
+                    // Handle periodic timer rescheduling
                     if (info.periodic) {
-                        // Reschedule periodic timer with drift prevention
                         auto it = runningTimers_.find(timerID);
                         if (it != runningTimers_.end()) {
                             auto &timer = it->second;
 
                             // Calculate next expiry based on original expiry time (drift prevention)
-                            auto nextExpiry = earliestTimer->second.expiryTime + info.interval;
+                            auto nextExpiry = info.expiryTime + info.interval;
 
                             // Catch-up prevention: If processing took longer than interval,
                             // schedule from current time to avoid busy loop
@@ -263,13 +272,6 @@ private:
                             }
 
                             timer.expiryTime = nextExpiry;
-                        }
-                    } else {
-                        // One-shot timer: Mark as expired but keep for restartTimer()
-                        // Set expiryTime to max to prevent re-firing
-                        auto it = runningTimers_.find(timerID);
-                        if (it != runningTimers_.end()) {
-                            it->second.expiryTime = std::chrono::steady_clock::time_point::max();
                         }
                     }
 
@@ -282,14 +284,18 @@ private:
                 }
             }
 
-            // Wait for next timer or stop signal
-            cvTimer_.wait_for(lock, waitTime, [this]() { return stopRequested_.load(); });
+            // Wait for next timer, new timer registration, or stop signal
+            cvTimer_.wait_for(lock, waitTime, [this]() {
+                return stopRequested_.load() || timerChanged_.load();
+            });
+            timerChanged_.store(false);
         }
     }
 
-    std::thread timerThread_;            ///< Timer polling thread
-    std::condition_variable cvTimer_;    ///< Notifies timer thread
-    std::thread::id eventLoopThreadId_;  ///< Event loop thread ID
+    std::thread timerThread_;              ///< Timer polling thread
+    std::condition_variable cvTimer_;      ///< Notifies timer thread
+    std::atomic<bool> timerChanged_{false};  ///< Signals new timer registration to wake wait_for predicate
+    std::thread::id eventLoopThreadId_;    ///< Event loop thread ID
 };
 
 }  // namespace SCE::Dispatchers
