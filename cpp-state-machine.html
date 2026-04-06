@@ -384,9 +384,9 @@ target_link_libraries(my_app PRIVATE sce_runtime)</code></pre>
             <h2>Performance</h2>
 
             <ul>
-                <li><strong>8 bytes</strong> minimal state machine footprint</li>
-                <li><strong>&lt;1 us</strong> per state transition</li>
-                <li><strong>~90 ns</strong> async event enqueue latency</li>
+                <li><strong>8 bytes</strong> minimal state machine footprint (verified via benchmark)</li>
+                <li><strong>Sub-microsecond</strong> state transitions in pure static mode (Release build)</li>
+                <li><strong>Low-latency</strong> async event enqueue via lock-free design</li>
                 <li><strong>&lt;1 ms</strong> timer drift for 100ms intervals</li>
                 <li><strong>Zero virtual functions</strong> in pure static mode</li>
                 <li><strong>C++17</strong> minimum (C++20 for full runtime features)</li>

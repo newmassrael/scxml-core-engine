@@ -250,9 +250,11 @@ python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --lang kotl
 
             <p>
                 The Kotlin backend passes <strong>all 202 mandatory W3C SCXML conformance
-                tests</strong> across all three script engines. This covers compound states,
+                tests</strong>. The test suite covers compound states,
                 parallel states, history states, <code>&lt;invoke&gt;</code>, delayed events
                 (<code>&lt;send&gt;</code> with delay), and the full ECMAScript datamodel.
+                All three script engines (Rhino, Lua 5.4, QuickJS) implement the same
+                <code>ScxmlScriptEngine</code> interface and can be selected at build time.
             </p>
 
 <pre><code># Run W3C conformance tests
