@@ -182,10 +182,28 @@ if(SCE_HAS_SCRIPTING)
         $<$<BOOL:${SCE_ENABLE_LUA}>:src/scripting/LuaDOMBinding.cpp>
     )
 
+    # W3C SCXML B.2: Generate json_builtins_lua.h from shared json_builtins.lua
+    # Single Source of Truth: shared with Rust sce-rust-lua (via include_str!)
+    set(_JSON_LUA_SRC "${CMAKE_CURRENT_SOURCE_DIR}/include/scripting/json_builtins.lua")
+    set(_JSON_LUA_HDR "${CMAKE_CURRENT_BINARY_DIR}/generated/json_builtins_lua.h")
+    add_custom_command(
+        OUTPUT "${_JSON_LUA_HDR}"
+        COMMAND ${CMAKE_COMMAND}
+            -D "LUA_SRC=${_JSON_LUA_SRC}"
+            -D "HDR_OUT=${_JSON_LUA_HDR}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedLuaScript.cmake"
+        DEPENDS "${_JSON_LUA_SRC}"
+        COMMENT "Embedding json_builtins.lua as C++ string literal"
+    )
+    add_custom_target(json_builtins_header DEPENDS "${_JSON_LUA_HDR}")
+    add_dependencies(sce_scripting json_builtins_header)
+
     target_include_directories(sce_scripting
         PRIVATE
             # Implementation headers (Impl classes in src/)
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+            # Generated headers (json_builtins_lua.h)
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated>
     )
 
     # Force include DisableStdOut.h for sce_scripting source files only

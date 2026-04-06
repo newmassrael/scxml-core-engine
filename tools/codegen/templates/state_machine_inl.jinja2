@@ -11,6 +11,7 @@
     - enterDeepInitialTargets_XXX() per compound state
     - Parallel state methods (if applicable)
     - Entry/exit action implementations (entry_exit_actions.jinja2)
+    - Invoke lifecycle methods (invoke_methods.jinja2)
     - Transition processing (process_transition.jinja2)
     - Script engine helpers (scriptengine_helpers.jinja2)
     - Utility methods (utility_methods.jinja2)
@@ -135,10 +136,12 @@
 
 {% include 'entry_exit_actions.jinja2' %}
 
+{% include 'invoke_methods.jinja2' %}
+
     {% include 'process_transition.jinja2' %}
 
 public:
-    {% if model.needs_script_engine or model.static_invokes %}
+    {% if model.needs_script_engine or model.static_invokes or model.hybrid_invokes %}
     {% include 'scriptengine_helpers.jinja2' %}
     {% endif %}
 

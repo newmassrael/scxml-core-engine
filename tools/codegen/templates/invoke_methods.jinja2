@@ -1,0 +1,339 @@
+{#
+    Invoke Methods Template (C++ Jinja2)
+
+    W3C SCXML 6.4: Invoke lifecycle — execute pending, tick children, autoforward, finalize.
+
+    Extracted from entry_exit_actions.jinja2 and utility_methods.jinja2 to match the Rust
+    invoke_methods.rs.jinja2 separation of concerns pattern.
+
+    Contains:
+    - executePendingInvokes()           — execute deferred invokes at macrostep end
+    - tickChildren()                    — tick active child state machines
+    - forwardToAutoforwardChildren()    — W3C SCXML 6.4.6 event forwarding
+    - executeFinalizeForChildEvent()    — W3C SCXML 6.5 finalize execution
+#}
+{% if model.static_invokes or model.hybrid_invokes %}
+
+    // W3C SCXML 6.4: Execute pending invokes at macrostep end
+    // Uses InvokeHelper defer/cancel/execute pattern (ARCHITECTURE.md Zero Duplication)
+    template<typename Engine>
+    void executePendingInvokes(Engine& engine) {
+
+        if (pendingInvokes_.empty()) {
+            return;
+        }
+
+        AOT_DEBUG("Executing {} pending invokes at macrostep end", pendingInvokes_.size());
+
+        // W3C SCXML 6.4: Use InvokeHelper as Single Source of Truth
+        ::SCE::Core::InvokeHelper::executePendingInvokes(
+            pendingInvokes_,
+            [this, &engine](const PendingInvoke& pending) {
+                AOT_DEBUG("Executing pending invoke: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
+
+                // Switch on state to find which invoke to execute
+                {% for state_id, state in model.states.items() %}
+                {% if state.static_invokes %}
+                if (pending.state == State::{{ state_id | capitalize }}) {
+                    {% for invoke_info in state.static_invokes %}
+                    // W3C SCXML 3.12.1: Match runtime-generated invoke ID (stateid.platformid.index format)
+                    // Full ID example: "s0.123456789._invoke_0" where 123456789 is runtime platformid (pointer address)
+                    // Match on "._invoke_0" suffix to identify this invoke - substring matching required because platformid is runtime-only
+                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                        {% if invoke_info.namelist %}
+                        // W3C SCXML 6.4.1: Namelist handling - validate and pass values to child
+                        std::map<std::string, std::vector<std::string>> namelistParams;
+
+                        // Step 1: Validate namelist variables before creating child
+                        {
+                            ensureScriptEngine();
+                            auto& scriptEngine = getScriptEngine();
+
+                            bool namelistValid = ::SCE::NamelistHelper::evaluateNamelist(
+                                scriptEngine,
+                                sessionId_.value(),
+                                "{{ invoke_info.namelist }}",
+                                namelistParams,
+                                [&engine](const std::string& errorMsg) {
+                                    SCE_LOG_ERROR("Namelist evaluation failed for invoke {{ invoke_info.invoke_id }}: {}", errorMsg);
+                                    // W3C SCXML 6.4.1: Raise error.execution on namelist error
+                                    engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, errorMsg));
+                                }
+                            );
+
+                            if (!namelistValid) {
+                                // W3C SCXML 6.4.1: Invoke cancelled due to namelist validation failure
+                                AOT_DEBUG("Skipping invoke {{ invoke_info.invoke_id }} due to namelist validation failure");
+                                return;  // Skip this invoke - don't create child
+                            }
+
+                            AOT_DEBUG("Namelist validation passed for invoke {{ invoke_info.invoke_id }}");
+                        }
+                        {% endif %}
+
+                        // W3C SCXML 6.4: Instantiate and initialize child state machine
+                        AOT_DEBUG("Creating child state machine: {{ invoke_info.child_name }} for invoke {{ invoke_info.invoke_id }}");
+
+                        // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                        // Format: "parentSessionId.invokeId" (e.g., "session123._invoke_0")
+                        std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
+
+                        // Create child instance with parent pointer, invokeId, and childSessionId
+                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+
+                        {% if invoke_info.namelist %}
+                        // W3C SCXML 6.4.1: Pass namelist values to child datamodel (Step 2)
+                        {% if invoke_info.child_needs_script_engine %}
+                        // W3C SCXML 6.3.2: Child datamodel variables for validation
+                        // ARCHITECTURE.md Zero Duplication: Matches InvokeExecutor.cpp:322-359 logic
+                        static const std::set<std::string> childDatamodelVars_{{ invoke_info.invoke_id }} = DatamodelValidationHelper::buildChildDatamodelSet({{ '{' }}{% for var in invoke_info.child_datamodel_vars %}"{{ var }}"{{ ", " if not loop.last }}{% endfor %}{{ '}' }});
+
+                        for (const auto& [varName, values] : namelistParams) {
+                            // W3C SCXML 6.3.2: Only set variable if it exists in child's datamodel
+                            if (!DatamodelValidationHelper::isVariableDeclaredInChild(varName, childDatamodelVars_{{ invoke_info.invoke_id }})) {
+                                AOT_DEBUG("Skipping namelist variable '{}' - not defined in child's datamodel", varName);
+                                continue;
+                            }
+
+                            if (!values.empty()) {
+                                AOT_DEBUG("Setting namelist variable '{}' = '{}' in child {{ invoke_info.invoke_id }}", varName, values[0]);
+                                child_{{ invoke_info.invoke_id }}_->setParamInScriptEngine(varName, values[0]);
+                            }
+                        }
+                        {% else %}
+                        // Child does not use JSEngine - namelist handled via static datamodel
+                        AOT_DEBUG("Namelist variables - child uses static datamodel");
+                        {% endif %}
+                        {% endif %}
+
+                        {% if invoke_info.params %}
+                        // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
+                        {% for param in invoke_info.params %}
+                        {% if invoke_info.child_needs_script_engine %}
+                        child_{{ invoke_info.invoke_id }}_->setParamInScriptEngine("{{ param.name }}", "{{ param.expr }}");
+                        {% else %}
+                        // Child does not use JSEngine - params handled via static datamodel
+                        AOT_DEBUG("Param {{ param.name }}={{ param.expr }} - child uses static datamodel");
+                        {% endif %}
+                        {% endfor %}
+                        {% endif %}
+
+                        // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+                        // Child may send events during initialize() that need autoforward
+                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                            childSessionId,  // W3C SCXML 6.5: Child session ID for finalize origin matching
+                            "{{ invoke_info.invoke_id }}",
+                            sessionId_.has_value() ? sessionId_.value() : "",  // Parent session ID
+                            {{ 'true' if invoke_info.autoforward else 'false' }},  // W3C SCXML 6.4.6: autoforward
+                            "{{ invoke_info.finalize_content | replace('"', '\"') }}"  // W3C SCXML 6.5: finalize
+                        };
+
+                        // W3C SCXML 6.4: Register completion callback BEFORE initialize
+                        // Child may reach final state during initialize() and needs callback ready
+                        child_{{ invoke_info.invoke_id }}_->setCompletionCallback([this]() {
+                            // W3C SCXML 6.4: Send done.invoke immediately (matches Interpreter logic - test 236)
+                            // Interpreter sends done.invoke in completion callback, not deferred
+                            AOT_DEBUG("Child state machine {{ invoke_info.invoke_id }} completed, sending done.invoke");
+
+                            // Mark as completed (for Cancel_invoke logic - test 236)
+                            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
+
+                            // W3C SCXML 6.3.1: Create done.invoke event with invokeId via EventMetadataHelper
+                            // ARCHITECTURE.md Zero Duplication: Single Source of Truth for event metadata
+                            // Send done.invoke to external queue (matches Interpreter event ordering)
+                            self_->raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
+                                typename SelfType::Event, typename SelfType::EventWithMetadata>(
+                                {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
+                                "{{ invoke_info.invoke_id }}"
+                            ));
+                        });
+
+                        // W3C SCXML 6.4: Initialize child state machine
+                        child_{{ invoke_info.invoke_id }}_->initialize();
+
+                        // activeInvokes_ already registered above BEFORE initialize()
+                        // This ensures child events during initialize() can use autoforward
+
+                        AOT_DEBUG("Child state machine {{ invoke_info.invoke_id }} initialized and running");
+                        return;  // Found and executed the invoke
+                    }
+                    {% endfor %}
+                }
+                {% endif %}
+                {% if state.hybrid_invokes %}
+                if (pending.state == State::{{ state_id | capitalize }}) {
+                    {% for invoke_info in state.hybrid_invokes %}
+                    if (pending.invokeId.find(".{{ invoke_info.invoke_id }}") != std::string::npos) {
+                        // W3C SCXML 6.4: Hybrid invoke — evaluate expression, then run pre-generated AOT child
+                        {% if invoke_info.srcexpr %}
+                        // W3C SCXML 6.4.3: Evaluate srcexpr at runtime (validation only — child is pre-generated AOT)
+                        {
+                            ensureScriptEngine();
+                            auto& scriptEngine = getScriptEngine();
+                            auto pathResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.srcexpr }}").get();
+                            if (!::SCE::ScriptResultUtils::isSuccess(pathResult)) {
+                                SCE_LOG_ERROR("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr }}' evaluation failed");
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "srcexpr evaluation failed"));
+                                return;
+                            }
+                            AOT_DEBUG("Hybrid invoke: srcexpr evaluated to {}", pathResult.getValue<std::string>());
+                        }
+                        {% elif invoke_info.contentexpr %}
+                        // W3C SCXML 6.4.4: Evaluate contentexpr at runtime (validation only — child is pre-generated AOT)
+                        {
+                            ensureScriptEngine();
+                            auto& scriptEngine = getScriptEngine();
+                            auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ invoke_info.contentexpr }}").get();
+                            if (!::SCE::ScriptResultUtils::isSuccess(contentResult)) {
+                                SCE_LOG_ERROR("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr }}' evaluation failed");
+                                engine.raise(typename Engine::EventWithMetadata(Event::Error_execution, "contentexpr evaluation failed"));
+                                return;
+                            }
+                            AOT_DEBUG("Hybrid invoke: contentexpr evaluated successfully");
+                        }
+                        {% endif %}
+
+                        // W3C SCXML 6.5: Generate child session ID
+                        std::string childSessionId = (sessionId_.has_value() ? sessionId_.value() : "") + "." + pending.invokeId;
+
+                        // W3C SCXML 6.4: Create pre-generated AOT child (pure AOT — no Interpreter dependency)
+                        child_{{ invoke_info.invoke_id }}_ = std::make_shared<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>>(self_, pending.invokeId, childSessionId);
+
+                        // W3C SCXML 6.4.6: Track active invoke session
+                        activeInvokes_["{{ invoke_info.invoke_id }}"] = ChildSession{
+                            childSessionId,
+                            "{{ invoke_info.invoke_id }}",
+                            sessionId_.has_value() ? sessionId_.value() : "",
+                            {{ 'true' if invoke_info.autoforward else 'false' }},
+                            ""  // No finalize for hybrid invokes
+                        };
+
+                        // W3C SCXML 6.4: Register completion callback BEFORE initialize
+                        child_{{ invoke_info.invoke_id }}_->setCompletionCallback([this]() {
+                            AOT_DEBUG("Hybrid child {{ invoke_info.invoke_id }} completed, sending done.invoke");
+                            pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = true;
+                            self_->raiseExternal(::SCE::Common::EventMetadataHelper::createDoneInvokeEvent<
+                                typename SelfType::Event, typename SelfType::EventWithMetadata>(
+                                {% if invoke_info.use_specific_event %}Event::Done_invoke_{{ invoke_info.invoke_id }}{% else %}Event::Done_invoke{% endif %},
+                                "{{ invoke_info.invoke_id }}"
+                            ));
+                        });
+
+                        // W3C SCXML 6.4: Initialize child state machine
+                        child_{{ invoke_info.invoke_id }}_->initialize();
+
+                        AOT_DEBUG("Hybrid AOT child {{ invoke_info.invoke_id }} initialized and running");
+                        return;
+                    }
+                    {% endfor %}
+                }
+                {% endif %}
+                {% endfor %}
+
+                // No matching static or hybrid invoke found
+                SCE_LOG_ERROR("Pending invoke not found: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
+            }
+        );
+
+        AOT_DEBUG("All pending invokes executed");
+    }
+
+    // W3C SCXML 6.4: Tick all active child state machines to process their events
+    // Child state machines need to run independently during parent's event loop
+    template<typename Engine>
+    void tickChildren([[maybe_unused]] Engine& engine) {
+        {% for state_id, state in model.states.items() %}
+        {% if state.static_invokes %}
+        {% for invoke_info in state.static_invokes %}
+        if (child_{{ invoke_info.invoke_id }}_) {
+            child_{{ invoke_info.invoke_id }}_->tick();
+        }
+        {% endfor %}
+        {% endif %}
+        {% if state.hybrid_invokes %}
+        {% for invoke_info in state.hybrid_invokes %}
+        if (child_{{ invoke_info.invoke_id }}_) {
+            child_{{ invoke_info.invoke_id }}_->tick();
+        }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+    }
+
+    // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
+    // Called by StaticExecutionEngine::raiseExternal before enqueuing to parent
+    template<typename Engine>
+    void forwardToAutoforwardChildren([[maybe_unused]] const std::string& eventName, [[maybe_unused]] Engine& engine) {
+
+        {% for state_id, state in model.states.items() %}
+        {% if state.static_invokes %}
+        {% for invoke_info in state.static_invokes %}
+        // Check if child {{ invoke_info.invoke_id }} has autoforward enabled
+        {
+            auto it = activeInvokes_.find("{{ invoke_info.invoke_id }}");
+            AOT_DEBUG("AOT autoforward check: invokeId='{{ invoke_info.invoke_id }}', found={}, autoforward={}, childPtr={}",
+                      (it != activeInvokes_.end()),
+                      (it != activeInvokes_.end() ? it->second.autoforward : false),
+                      (child_{{ invoke_info.invoke_id }}_ != nullptr));
+
+            if (it != activeInvokes_.end() && it->second.autoforward && child_{{ invoke_info.invoke_id }}_) {
+                AOT_DEBUG("AOT autoforward: Forwarding event '{}' to child {{ invoke_info.invoke_id }}", eventName);
+
+                // W3C SCXML 6.4.6: Forward by event name string to child
+                // Child's raiseExternal(string) will convert to its Event enum and handle gracefully if not found
+                child_{{ invoke_info.invoke_id }}_->raiseExternal(eventName);
+            }
+        }
+        {% endfor %}
+        {% endif %}
+        {% endfor %}
+    }
+
+{% if model.static_invokes %}
+    // W3C SCXML 6.5: Execute finalize for events from invoked children
+    // Finalize runs BEFORE the event is processed, with _event set to child's event
+    template<typename Engine>
+    void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, [[maybe_unused]] Engine& engine) {
+
+        // W3C SCXML 6.5: Only execute finalize for events from child invokes
+        // origin field contains child's session ID
+        if (eventWithMeta.origin.empty()) {
+            return;  // Not from a child
+        }
+
+        // Find which invoke sent this event by matching child session ID
+        for (const auto& [invokeId, childSession] : activeInvokes_) {
+            if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
+                AOT_DEBUG("AOT finalize: Executing finalize for invoke '{}' before processing event", invokeId);
+
+{% if model.needs_script_engine %}
+                // W3C SCXML 6.5: Use FinalizeHelper (ARCHITECTURE.md Zero Duplication)
+                // Single Source of Truth for finalize execution shared with Interpreter
+                std::string eventName = this->getEventName(eventWithMeta.event);
+
+                this->ensureScriptEngine();
+                auto& scriptEngine = getScriptEngine();
+
+                ::SCE::FinalizeHelper::executeFinalizeWithEvent(
+                    scriptEngine,
+                    sessionId_.value(),
+                    childSession.finalizeScript,
+                    eventName,
+                    eventWithMeta.data,
+                    eventWithMeta.sendId,
+                    eventWithMeta.origin,
+                    eventWithMeta.originType,
+                    eventWithMeta.invokeId
+                );
+{% else %}
+                // Pure Static: finalize script should be empty (no ECMAScript expressions)
+                SCE_LOG_WARN("AOT finalize: Finalize script present but JSEngine not available for invoke '{}'", invokeId);
+{% endif %}
+
+                return;  // Found and executed
+            }
+        }
+    }
+{% endif %}
+
+{% endif %}
