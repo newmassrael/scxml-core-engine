@@ -145,12 +145,16 @@ impl Test579Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
 
         // W3C SCXML 5.3: Early binding - Initialize state s0 datamodel variables
-        match se.evaluate_expression(&sid, "0") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var1", val); }
-            Err(e) => { log::error!("Failed to init 'Var1' in state s0: {}", e); }
+        // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (s0)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var1", "0") {
+            log::error!("s0: {}", e);
         }
+
+
 
 
 
@@ -174,15 +178,17 @@ impl Test579Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
 
         // W3C SCXML 5.3: Early binding - Initialize state s0 datamodel variables
-        match se.evaluate_expression(&sid, "0") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var1", val); }
-            Err(e) => {
-                log::error!("Failed to init 'Var1' in state s0: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test579Event::ErrorExecution));
-            }
+        // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (s0)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var1", "0") {
+            log::error!("s0: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test579Event::ErrorExecution));
         }
+
+
 
 
 

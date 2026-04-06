@@ -149,13 +149,16 @@ impl Test224Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2: Runtime variable (late binding, initialize to nil)
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.2: Runtime variable 'Var1' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var1", sce_rust_runtime::ScriptValue::Null);
-        // W3C SCXML 5.2/5.3: Initialize variable from expr
-        match se.evaluate_expression(&sid, "'s0.'") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var2", val); }
-            Err(e) => { log::error!("Failed to evaluate expr for 'Var2': {}", e); }
+
+        // W3C SCXML 5.2/5.3: Initialize 'Var2' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var2", "'s0.'") {
+            log::error!("global: {}", e);
         }
+
 
 
 
@@ -180,15 +183,17 @@ impl Test224Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.2: Runtime variable 'Var1' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var1", sce_rust_runtime::ScriptValue::Null);
-        // W3C SCXML 5.2/5.3: Initialize variable from expr (test 277: raise error.execution on failure)
-        match se.evaluate_expression(&sid, "'s0.'") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var2", val); }
-            Err(e) => {
-                log::error!("Failed to evaluate expr for 'Var2': {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test224Event::ErrorExecution));
-            }
+
+        // W3C SCXML 5.2/5.3: Initialize 'Var2' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var2", "'s0.'") {
+            log::error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test224Event::ErrorExecution));
         }
+
 
 
 

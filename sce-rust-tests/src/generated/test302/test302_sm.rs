@@ -133,6 +133,7 @@ impl Test302Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
 
 
         // W3C SCXML 5.8: Execute global (top-level) scripts at document load time
@@ -161,6 +162,7 @@ impl Test302Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
 
 
         // W3C SCXML 5.8: Execute global scripts at document load time

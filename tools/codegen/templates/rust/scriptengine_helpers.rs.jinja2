@@ -3,7 +3,11 @@
 
     W3C SCXML 5.2/5.10: Script engine session lifecycle, system variables,
     datamodel initialization, guard evaluation, event metadata binding.
+
+    Uses datamodel_macros.rs.jinja2 for Zero Duplication between
+    ensure_script_engine() and do_initialize_data_model().
 #}
+{% from 'datamodel_macros.rs.jinja2' import initialize_variable, initialize_state_datamodel %}
 {% if model.needs_script_engine %}
     // W3C SCXML 5.10: Ensure session ID is initialized
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
@@ -31,92 +35,16 @@
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
 {% for var in model.variables %}
-{% if var.src %}
-        // W3C SCXML 5.2.2: Load variable from external file (matches C++ DataModelInitHelper::initializeVariableFromSrc)
-        {
-            // Strip "file:" prefix if present, then resolve relative to the SCXML file's directory.
-            let src_raw: &str = "{{ var.src }}";
-            let src_rel: &str = src_raw.strip_prefix("file:").unwrap_or(src_raw);
-            // `CARGO_MANIFEST_DIR` is `sce-rust-tests`; SCXML lives under project root.
-            let full_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../{{ model.scxml_base_path }}/");
-            let file_path = format!("{}{}", full_path, src_rel);
-            match std::fs::read_to_string(&file_path) {
-                Ok(content) => {
-                    let trimmed = content.trim();
-                    // Evaluate as a Lua expression so numeric/JSON literals convert correctly.
-                    match se.evaluate_expression(&sid, trimmed) {
-                        Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-                        Err(_) => {
-                            // Fallback: store the raw content as a string value.
-                            let _ = se.set_variable(
-                                &sid,
-                                "{{ var.id }}",
-                                sce_rust_runtime::ScriptValue::String(trimmed.to_string()),
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    // W3C SCXML 5.2.2: file read failure leaves variable unset; the
-                    // error.execution event is raised later when the variable is first
-                    // accessed (Lua nil → guard throws via safe_evaluate_guard).
-                    log::error!("Failed to read src file '{}' for variable '{{ var.id }}': {}", file_path, e);
-                }
-            }
-        }
-{% elif var.expr %}
-{% set is_function_expr = var.expr.strip().startswith('function') %}
-{% if is_function_expr %}
-        // W3C SCXML B.2: Function expression - use executeScript to preserve function type
-        if let Err(e) = se.execute_script(&sid, "{{ var.id }} = {{ var.expr | to_lua_script | escape_rust }}") {
-            log::error!("Failed to initialize function variable '{{ var.id }}': {}", e);
-        }
-{% else %}
-        // W3C SCXML 5.2/5.3: Initialize variable from expr
-        match se.evaluate_expression(&sid, "{{ var.expr | to_lua_expr | escape_rust }}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-            Err(e) => { log::error!("Failed to evaluate expr for '{{ var.id }}': {}", e); }
-        }
-{% endif %}
-{% elif var.content %}
-        // W3C SCXML B.2: Initialize with inline content
-        match se.evaluate_expression(&sid, "{{ var.content | to_lua_expr | escape_rust }}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-            Err(e) => { log::error!("Failed to evaluate content for '{{ var.id }}': {}", e); }
-        }
-{% elif var.type == 'runtime' %}
-        // W3C SCXML 5.2: Runtime variable (late binding, initialize to nil)
-        let _ = se.set_variable(&sid, "{{ var.id }}", sce_rust_runtime::ScriptValue::Null);
-{% endif %}
+{{ initialize_variable(var, 'global', false, machine_name, model) }}
 {% endfor %}
 
 {% if model.binding == 'early' %}
 {% for state_id, state in model.states.items() %}
 {% if state.datamodel %}
         // W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel variables
-{% for var in state.datamodel %}
-{% if var.expr %}
-{% set is_function_expr = var.expr.strip().startswith('function') %}
-{% if is_function_expr %}
-        if let Err(e) = se.execute_script(&sid, "{{ var.id }} = {{ var.expr | to_lua_script | escape_rust }}") {
-            log::error!("Failed to init function var '{{ var.id }}' in state {{ state_id }}: {}", e);
-        }
-{% else %}
-        match se.evaluate_expression(&sid, "{{ var.expr | to_lua_expr | escape_rust }}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-            Err(e) => { log::error!("Failed to init '{{ var.id }}' in state {{ state_id }}: {}", e); }
-        }
-{% endif %}
-{% elif var.content %}
-        match se.evaluate_expression(&sid, "{{ var.content | to_lua_expr | escape_rust }}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-            Err(e) => { log::error!("Failed to init '{{ var.id }}' in state {{ state_id }}: {}", e); }
-        }
-{% else %}
-        let _ = se.set_variable(&sid, "{{ var.id }}", sce_rust_runtime::ScriptValue::Null);
-{% endif %}
-{% endfor %}
+{{ initialize_state_datamodel(state, state_id, false, machine_name, model) }}
 {% endif %}
 {% endfor %}
 {% endif %}
@@ -169,113 +97,16 @@
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
 {% for var in model.variables %}
-{% if var.src %}
-        // W3C SCXML 5.2.2: Load variable from external file
-        {
-            let src_raw: &str = "{{ var.src }}";
-            let src_rel: &str = src_raw.strip_prefix("file:").unwrap_or(src_raw);
-            let full_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../{{ model.scxml_base_path }}/");
-            let file_path = format!("{}{}", full_path, src_rel);
-            match std::fs::read_to_string(&file_path) {
-                Ok(content) => {
-                    let trimmed = content.trim();
-                    match se.evaluate_expression(&sid, trimmed) {
-                        Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-                        Err(_) => {
-                            let _ = se.set_variable(
-                                &sid,
-                                "{{ var.id }}",
-                                sce_rust_runtime::ScriptValue::String(trimmed.to_string()),
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to read src file '{}' for variable '{{ var.id }}': {}", file_path, e);
-{% if 'error.execution' in model.events %}
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-                }
-            }
-        }
-{% elif var.expr %}
-{% set is_function_expr = var.expr.strip().startswith('function') %}
-{% if is_function_expr %}
-        // W3C SCXML B.2: Function expression
-        if let Err(e) = se.execute_script(&sid, "{{ var.id }} = {{ var.expr | to_lua_script | escape_rust }}") {
-            log::error!("Failed to initialize function variable '{{ var.id }}': {}", e);
-{% if 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-        }
-{% else %}
-        // W3C SCXML 5.2/5.3: Initialize variable from expr (test 277: raise error.execution on failure)
-        match se.evaluate_expression(&sid, "{{ var.expr | to_lua_expr | escape_rust }}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-            Err(e) => {
-                log::error!("Failed to evaluate expr for '{{ var.id }}': {}", e);
-{% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-            }
-        }
-{% endif %}
-{% elif var.content %}
-        // W3C SCXML B.2: Initialize with inline content
-        match se.evaluate_expression(&sid, "{{ var.content | to_lua_expr | escape_rust }}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-            Err(e) => {
-                log::error!("Failed to evaluate content for '{{ var.id }}': {}", e);
-{% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-            }
-        }
-{% elif var.type == 'runtime' %}
-        let _ = se.set_variable(&sid, "{{ var.id }}", sce_rust_runtime::ScriptValue::Null);
-{% endif %}
+{{ initialize_variable(var, 'global', true, machine_name, model) }}
 {% endfor %}
 
 {% if model.binding == 'early' %}
 {% for state_id, state in model.states.items() %}
 {% if state.datamodel %}
         // W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel variables
-{% for var in state.datamodel %}
-{% if var.expr %}
-{% set is_function_expr = var.expr.strip().startswith('function') %}
-{% if is_function_expr %}
-        if let Err(e) = se.execute_script(&sid, "{{ var.id }} = {{ var.expr | to_lua_script | escape_rust }}") {
-            log::error!("Failed to init function var '{{ var.id }}' in state {{ state_id }}: {}", e);
-{% if 'error.execution' in model.events %}
-            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-        }
-{% else %}
-        match se.evaluate_expression(&sid, "{{ var.expr | to_lua_expr | escape_rust }}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-            Err(e) => {
-                log::error!("Failed to init '{{ var.id }}' in state {{ state_id }}: {}", e);
-{% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-            }
-        }
-{% endif %}
-{% elif var.content %}
-        match se.evaluate_expression(&sid, "{{ var.content | to_lua_expr | escape_rust }}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "{{ var.id }}", val); }
-            Err(e) => {
-                log::error!("Failed to init '{{ var.id }}' in state {{ state_id }}: {}", e);
-{% if 'error.execution' in model.events %}
-                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
-{% endif %}
-            }
-        }
-{% else %}
-        let _ = se.set_variable(&sid, "{{ var.id }}", sce_rust_runtime::ScriptValue::Null);
-{% endif %}
-{% endfor %}
+{{ initialize_state_datamodel(state, state_id, true, machine_name, model) }}
 {% endif %}
 {% endfor %}
 {% endif %}

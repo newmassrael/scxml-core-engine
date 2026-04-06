@@ -141,6 +141,7 @@ impl Test307Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
 
 
 
@@ -165,6 +166,7 @@ impl Test307Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
 
 
 
@@ -414,13 +416,14 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::Foo));
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = sce_rust_runtime::ScriptEngineProvider::get();
-                    match se.evaluate_expression(&sid, "1") {
-                        Ok(val) => { let _ = se.set_variable(&sid, "Var1", val); }
-                        Err(e) => {
-                            log::error!("Late binding init failed for 'Var1': {}", e);
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::ErrorExecution));
-                        }
-                    }
+        // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (s1)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var1", "1") {
+            log::error!("s1: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test307Event::ErrorExecution));
+        }
+
+
                 }
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)

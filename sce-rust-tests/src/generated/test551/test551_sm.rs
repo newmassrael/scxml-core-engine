@@ -134,12 +134,18 @@ impl Test551Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
 
         // W3C SCXML 5.3: Early binding - Initialize state s1 datamodel variables
-        match se.evaluate_expression(&sid, "{1,2,3}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var1", val); }
-            Err(e) => { log::error!("Failed to init 'Var1' in state s1: {}", e); }
+        // W3C SCXML B.2: Inline content for 'Var1' (s1, eval with string fallback)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
+            se, &sid, "Var1",
+            "{1,2,3}",
+            "[1,2,3]") {
+            log::error!("Failed to init 'Var1' in s1: {}", e);
         }
+
+
 
 
 
@@ -163,15 +169,19 @@ impl Test551Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
 
         // W3C SCXML 5.3: Early binding - Initialize state s1 datamodel variables
-        match se.evaluate_expression(&sid, "{1,2,3}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var1", val); }
-            Err(e) => {
-                log::error!("Failed to init 'Var1' in state s1: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test551Event::ErrorExecution));
-            }
+        // W3C SCXML B.2: Inline content for 'Var1' (s1, eval with string fallback)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
+            se, &sid, "Var1",
+            "{1,2,3}",
+            "[1,2,3]") {
+            log::error!("Failed to init 'Var1' in s1: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test551Event::ErrorExecution));
         }
+
+
 
 
 

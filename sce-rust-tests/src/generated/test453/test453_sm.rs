@@ -135,10 +135,12 @@ impl Test453Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML B.2: Function expression - use executeScript to preserve function type
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML B.2: Function expression for 'var1' (global)
         if let Err(e) = se.execute_script(&sid, "var1 = function(invar)  return invar + 1\n end") {
-            log::error!("Failed to initialize function variable 'var1': {}", e);
+            log::error!("Failed to init function var 'var1' in global: {}", e);
         }
+
 
 
 
@@ -163,11 +165,13 @@ impl Test453Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML B.2: Function expression
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML B.2: Function expression for 'var1' (global)
         if let Err(e) = se.execute_script(&sid, "var1 = function(invar)  return invar + 1\n end") {
-            log::error!("Failed to initialize function variable 'var1': {}", e);
+            log::error!("Failed to init function var 'var1' in global: {}", e);
             engine.raise(sce_rust_runtime::EventWithMetadata::new(Test453Event::ErrorExecution));
         }
+
 
 
 

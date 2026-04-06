@@ -135,43 +135,24 @@ impl Test446Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML B.2: Initialize with inline content
-        match se.evaluate_expression(&sid, "{1, 2, 3}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "var1", val); }
-            Err(e) => { log::error!("Failed to evaluate content for 'var1': {}", e); }
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML B.2: Inline content for 'var1' (global, eval with string fallback)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
+            se, &sid, "var1",
+            "{1, 2, 3}",
+            "[1, 2, 3]") {
+            log::error!("Failed to init 'var1' in global: {}", e);
         }
-        // W3C SCXML 5.2.2: Load variable from external file (matches C++ DataModelInitHelper::initializeVariableFromSrc)
+
+        // W3C SCXML 5.2.2: Load variable 'var2' from src (global)
         {
-            // Strip "file:" prefix if present, then resolve relative to the SCXML file's directory.
-            let src_raw: &str = "file:test446.txt";
-            let src_rel: &str = src_raw.strip_prefix("file:").unwrap_or(src_raw);
-            // `CARGO_MANIFEST_DIR` is `sce-rust-tests`; SCXML lives under project root.
-            let full_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../resources/446/");
-            let file_path = format!("{}{}", full_path, src_rel);
-            match std::fs::read_to_string(&file_path) {
-                Ok(content) => {
-                    let trimmed = content.trim();
-                    // Evaluate as a Lua expression so numeric/JSON literals convert correctly.
-                    match se.evaluate_expression(&sid, trimmed) {
-                        Ok(val) => { let _ = se.set_variable(&sid, "var2", val); }
-                        Err(_) => {
-                            // Fallback: store the raw content as a string value.
-                            let _ = se.set_variable(
-                                &sid,
-                                "var2",
-                                sce_rust_runtime::ScriptValue::String(trimmed.to_string()),
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    // W3C SCXML 5.2.2: file read failure leaves variable unset; the
-                    // error.execution event is raised later when the variable is first
-                    // accessed (Lua nil → guard throws via safe_evaluate_guard).
-                    log::error!("Failed to read src file '{}' for variable 'var2': {}", file_path, e);
-                }
+            let base_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../resources/446/");
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_src(
+                se, &sid, "var2", "file:test446.txt", base_path) {
+                log::error!("Failed to init 'var2' from src in global: {}", e);
             }
         }
+
 
 
 
@@ -196,40 +177,26 @@ impl Test446Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML B.2: Initialize with inline content
-        match se.evaluate_expression(&sid, "{1, 2, 3}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "var1", val); }
-            Err(e) => {
-                log::error!("Failed to evaluate content for 'var1': {}", e);
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML B.2: Inline content for 'var1' (global, eval with string fallback)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
+            se, &sid, "var1",
+            "{1, 2, 3}",
+            "[1, 2, 3]") {
+            log::error!("Failed to init 'var1' in global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test446Event::ErrorExecution));
+        }
+
+        // W3C SCXML 5.2.2: Load variable 'var2' from src (global)
+        {
+            let base_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../resources/446/");
+            if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_src(
+                se, &sid, "var2", "file:test446.txt", base_path) {
+                log::error!("Failed to init 'var2' from src in global: {}", e);
                 engine.raise(sce_rust_runtime::EventWithMetadata::new(Test446Event::ErrorExecution));
             }
         }
-        // W3C SCXML 5.2.2: Load variable from external file
-        {
-            let src_raw: &str = "file:test446.txt";
-            let src_rel: &str = src_raw.strip_prefix("file:").unwrap_or(src_raw);
-            let full_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../resources/446/");
-            let file_path = format!("{}{}", full_path, src_rel);
-            match std::fs::read_to_string(&file_path) {
-                Ok(content) => {
-                    let trimmed = content.trim();
-                    match se.evaluate_expression(&sid, trimmed) {
-                        Ok(val) => { let _ = se.set_variable(&sid, "var2", val); }
-                        Err(_) => {
-                            let _ = se.set_variable(
-                                &sid,
-                                "var2",
-                                sce_rust_runtime::ScriptValue::String(trimmed.to_string()),
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to read src file '{}' for variable 'var2': {}", file_path, e);
-                    engine.raise(sce_rust_runtime::EventWithMetadata::new(Test446Event::ErrorExecution));
-                }
-            }
-        }
+
 
 
 

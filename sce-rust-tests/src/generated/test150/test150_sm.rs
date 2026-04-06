@@ -139,15 +139,21 @@ impl Test150Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2: Runtime variable (late binding, initialize to nil)
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.2: Runtime variable 'Var1' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var1", sce_rust_runtime::ScriptValue::Null);
-        // W3C SCXML 5.2: Runtime variable (late binding, initialize to nil)
+
+        // W3C SCXML 5.2: Runtime variable 'Var2' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var2", sce_rust_runtime::ScriptValue::Null);
-        // W3C SCXML B.2: Initialize with inline content
-        match se.evaluate_expression(&sid, "{1,2,3}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var3", val); }
-            Err(e) => { log::error!("Failed to evaluate content for 'Var3': {}", e); }
+
+        // W3C SCXML B.2: Inline content for 'Var3' (global, eval with string fallback)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
+            se, &sid, "Var3",
+            "{1,2,3}",
+            "[1,2,3]") {
+            log::error!("Failed to init 'Var3' in global: {}", e);
         }
+
 
 
 
@@ -172,16 +178,22 @@ impl Test150Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.2: Runtime variable 'Var1' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var1", sce_rust_runtime::ScriptValue::Null);
+
+        // W3C SCXML 5.2: Runtime variable 'Var2' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var2", sce_rust_runtime::ScriptValue::Null);
-        // W3C SCXML B.2: Initialize with inline content
-        match se.evaluate_expression(&sid, "{1,2,3}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var3", val); }
-            Err(e) => {
-                log::error!("Failed to evaluate content for 'Var3': {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test150Event::ErrorExecution));
-            }
+
+        // W3C SCXML B.2: Inline content for 'Var3' (global, eval with string fallback)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::eval_or_set_string(
+            se, &sid, "Var3",
+            "{1,2,3}",
+            "[1,2,3]") {
+            log::error!("Failed to init 'Var3' in global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test150Event::ErrorExecution));
         }
+
 
 
 

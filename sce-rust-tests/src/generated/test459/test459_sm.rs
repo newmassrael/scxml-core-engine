@@ -138,25 +138,31 @@ impl Test459Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2/5.3: Initialize variable from expr
-        match se.evaluate_expression(&sid, "0") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var1", val); }
-            Err(e) => { log::error!("Failed to evaluate expr for 'Var1': {}", e); }
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var1", "0") {
+            log::error!("global: {}", e);
         }
-        // W3C SCXML 5.2: Runtime variable (late binding, initialize to nil)
+
+        // W3C SCXML 5.2: Runtime variable 'Var2' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var2", sce_rust_runtime::ScriptValue::Null);
-        // W3C SCXML 5.2: Runtime variable (late binding, initialize to nil)
+
+        // W3C SCXML 5.2: Runtime variable 'Var3' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var3", sce_rust_runtime::ScriptValue::Null);
-        // W3C SCXML 5.2/5.3: Initialize variable from expr
-        match se.evaluate_expression(&sid, "{1,2,3}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var4", val); }
-            Err(e) => { log::error!("Failed to evaluate expr for 'Var4': {}", e); }
+
+        // W3C SCXML 5.2/5.3: Initialize 'Var4' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var4", "{1,2,3}") {
+            log::error!("global: {}", e);
         }
-        // W3C SCXML 5.2/5.3: Initialize variable from expr
-        match se.evaluate_expression(&sid, "1") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var5", val); }
-            Err(e) => { log::error!("Failed to evaluate expr for 'Var5': {}", e); }
+
+        // W3C SCXML 5.2/5.3: Initialize 'Var5' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var5", "1") {
+            log::error!("global: {}", e);
         }
+
 
 
 
@@ -181,32 +187,34 @@ impl Test459Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2/5.3: Initialize variable from expr (test 277: raise error.execution on failure)
-        match se.evaluate_expression(&sid, "0") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var1", val); }
-            Err(e) => {
-                log::error!("Failed to evaluate expr for 'Var1': {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test459Event::ErrorExecution));
-            }
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.2/5.3: Initialize 'Var1' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var1", "0") {
+            log::error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test459Event::ErrorExecution));
         }
+
+        // W3C SCXML 5.2: Runtime variable 'Var2' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var2", sce_rust_runtime::ScriptValue::Null);
+
+        // W3C SCXML 5.2: Runtime variable 'Var3' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var3", sce_rust_runtime::ScriptValue::Null);
-        // W3C SCXML 5.2/5.3: Initialize variable from expr (test 277: raise error.execution on failure)
-        match se.evaluate_expression(&sid, "{1,2,3}") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var4", val); }
-            Err(e) => {
-                log::error!("Failed to evaluate expr for 'Var4': {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test459Event::ErrorExecution));
-            }
+
+        // W3C SCXML 5.2/5.3: Initialize 'Var4' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var4", "{1,2,3}") {
+            log::error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test459Event::ErrorExecution));
         }
-        // W3C SCXML 5.2/5.3: Initialize variable from expr (test 277: raise error.execution on failure)
-        match se.evaluate_expression(&sid, "1") {
-            Ok(val) => { let _ = se.set_variable(&sid, "Var5", val); }
-            Err(e) => {
-                log::error!("Failed to evaluate expr for 'Var5': {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test459Event::ErrorExecution));
-            }
+
+        // W3C SCXML 5.2/5.3: Initialize 'Var5' from expr (global)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var5", "1") {
+            log::error!("global: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test459Event::ErrorExecution));
         }
+
 
 
 

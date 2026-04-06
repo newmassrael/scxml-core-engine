@@ -159,17 +159,24 @@ impl Test448Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
 
         // W3C SCXML 5.3: Early binding - Initialize state s01 datamodel variables
-        match se.evaluate_expression(&sid, "1") {
-            Ok(val) => { let _ = se.set_variable(&sid, "var1", val); }
-            Err(e) => { log::error!("Failed to init 'var1' in state s01: {}", e); }
+        // W3C SCXML 5.2/5.3: Initialize 'var1' from expr (s01)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "var1", "1") {
+            log::error!("s01: {}", e);
         }
+
+
         // W3C SCXML 5.3: Early binding - Initialize state s01p2 datamodel variables
-        match se.evaluate_expression(&sid, "1") {
-            Ok(val) => { let _ = se.set_variable(&sid, "var2", val); }
-            Err(e) => { log::error!("Failed to init 'var2' in state s01p2: {}", e); }
+        // W3C SCXML 5.2/5.3: Initialize 'var2' from expr (s01p2)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "var2", "1") {
+            log::error!("s01p2: {}", e);
         }
+
+
 
 
         // W3C SCXML 5.9.2: Register In() state query callback ONCE (1:1 with C++ StateMachine)
@@ -209,23 +216,26 @@ impl Test448Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
 
         // W3C SCXML 5.3: Early binding - Initialize state s01 datamodel variables
-        match se.evaluate_expression(&sid, "1") {
-            Ok(val) => { let _ = se.set_variable(&sid, "var1", val); }
-            Err(e) => {
-                log::error!("Failed to init 'var1' in state s01: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test448Event::ErrorExecution));
-            }
+        // W3C SCXML 5.2/5.3: Initialize 'var1' from expr (s01)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "var1", "1") {
+            log::error!("s01: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test448Event::ErrorExecution));
         }
+
+
         // W3C SCXML 5.3: Early binding - Initialize state s01p2 datamodel variables
-        match se.evaluate_expression(&sid, "1") {
-            Ok(val) => { let _ = se.set_variable(&sid, "var2", val); }
-            Err(e) => {
-                log::error!("Failed to init 'var2' in state s01p2: {}", e);
-                engine.raise(sce_rust_runtime::EventWithMetadata::new(Test448Event::ErrorExecution));
-            }
+        // W3C SCXML 5.2/5.3: Initialize 'var2' from expr (s01p2)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "var2", "1") {
+            log::error!("s01p2: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test448Event::ErrorExecution));
         }
+
+
 
 
         // W3C SCXML 5.9.2: Register In() state query callback

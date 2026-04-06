@@ -135,8 +135,10 @@ impl Test280Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
-        // W3C SCXML 5.2: Runtime variable (late binding, initialize to nil)
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (no error events)
+        // W3C SCXML 5.2: Runtime variable 'Var1' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var1", sce_rust_runtime::ScriptValue::Null);
+
 
 
 
@@ -161,7 +163,10 @@ impl Test280Policy {
             log::error!("Failed to setup system variables: {}", e);
         }
 
+        // W3C SCXML 5.2.2: Initialize global datamodel variables (with error events)
+        // W3C SCXML 5.2: Runtime variable 'Var1' (global, late binding, init to nil)
         let _ = se.set_variable(&sid, "Var1", sce_rust_runtime::ScriptValue::Null);
+
 
 
 
@@ -388,13 +393,14 @@ impl StatePolicy for Test280Policy {
                     self.ensure_script_engine();
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = sce_rust_runtime::ScriptEngineProvider::get();
-                    match se.evaluate_expression(&sid, "1") {
-                        Ok(val) => { let _ = se.set_variable(&sid, "Var2", val); }
-                        Err(e) => {
-                            log::error!("Late binding init failed for 'Var2': {}", e);
-                            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test280Event::ErrorExecution));
-                        }
-                    }
+        // W3C SCXML 5.2/5.3: Initialize 'Var2' from expr (s1)
+        if let Err(e) = sce_rust_runtime::helpers::datamodel_init::initialize_variable_from_expr(
+            se, &sid, "Var2", "1") {
+            log::error!("s1: {}", e);
+            engine.raise(sce_rust_runtime::EventWithMetadata::new(Test280Event::ErrorExecution));
+        }
+
+
                 }
                 // W3C SCXML 3.8: onentry block 1/1
                 // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
