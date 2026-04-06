@@ -412,6 +412,20 @@
         }
 {% endif %}
     }
+{% elif not action.targetexpr and action.target == '#_parent' %}
+    // W3C SCXML 6.2/6.4.5: Send to parent state machine via #_parent
+{% if action.event %}
+    if let Some(ref parent_queue) = self.parent_external_queue {
+        if let Ok(mut q) = parent_queue.lock() {
+            q.push(("{{ action.event }}".to_string(), event_data.to_string()));
+        }
+    } else {
+{% if 'error.communication' in model.events %}
+        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+            {{ machine_name }}Event::{{ 'error.communication' | to_event_variant }}));
+{% endif %}
+    }
+{% endif %}
 {% elif not action.targetexpr and action.target and action.target != '#_internal' %}
     // W3C SCXML 6.2: External send to target "{{ action.target }}"
 {% if action.event %}

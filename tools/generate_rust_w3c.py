@@ -127,7 +127,7 @@ def copy_if_changed(src_dir: Path, dst_dir: Path):
 
 def generate_sm(test_id: str, scxml_path: Path) -> tuple[str, bool]:
     """
-    Run Rust codegen for a single test.
+    Run Rust codegen for a single test AND its child SMs (invoke children).
     Uses a temp dir to avoid touching timestamps on unchanged files.
 
     Returns:
@@ -159,7 +159,71 @@ def generate_sm(test_id: str, scxml_path: Path) -> tuple[str, bool]:
         # Copy only changed files to preserve timestamps
         copy_if_changed(tmp_dir, output_dir)
 
+    # W3C SCXML 6.4: Generate child SMs for invoke elements
+    _generate_invoke_children(test_id, scxml_path)
+
     return 'generated', needs_script
+
+
+def _generate_invoke_children(test_id: str, parent_scxml: Path):
+    """
+    W3C SCXML 6.4: Detect and generate child state machines for <invoke> elements.
+
+    Scans parent SCXML model for static_invokes and generates each child SM
+    into the same test module directory (e.g., test252/test252_child0_sm.rs).
+    """
+    # Parse parent model to find invoke children
+    sys_path_backup = sys.path[:]
+    sys.path.insert(0, str(PROJECT_ROOT / 'tools' / 'codegen'))
+    try:
+        from scxml_parser import SCXMLParser
+        parser = SCXMLParser()
+        model = parser.parse_file(str(parent_scxml))
+    except Exception:
+        return
+    finally:
+        sys.path[:] = sys_path_backup
+
+    if not model.static_invokes:
+        return
+
+    parent_dir = parent_scxml.parent
+    output_dir = SM_OUTPUT_BASE / f'test{test_id}'
+
+    for invoke_info in model.static_invokes:
+        child_name = invoke_info.get('child_name', '')
+        child_src = invoke_info.get('src', '')
+        if not child_name or not child_src:
+            continue
+
+        # Strip file: prefix (W3C SCXML 6.4.3)
+        if child_src.startswith('file:'):
+            child_src = child_src[len('file:'):]
+
+        child_scxml = parent_dir / child_src
+        if not child_scxml.exists():
+            print(f"  Warning: child SCXML not found: {child_scxml}")
+            continue
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            result = subprocess.run(
+                [
+                    sys.executable, str(CODEGEN_SCRIPT),
+                    str(child_scxml),
+                    '-o', str(tmp_dir),
+                    '--language', 'rust',
+                ],
+                capture_output=True,
+                text=True,
+                env={**os.environ, 'SPDLOG_LEVEL': 'warn'},
+            )
+
+            if 'Generated:' not in result.stdout:
+                print(f"  Warning: child codegen failed for {child_name}")
+                continue
+
+            copy_if_changed(tmp_dir, output_dir)
 
 
 def detect_pass_state(test_id: str) -> str | None:
@@ -208,18 +272,38 @@ def detect_pass_state(test_id: str) -> str | None:
 def generate_test_module(test_id: str) -> bool:
     """
     Generate the per-test mod.rs that re-exports the generated SM.
+    Includes child SM modules for invoke support (W3C SCXML 6.4).
 
     Creates: sce-rust-tests/src/generated/testNNN/mod.rs
     """
-    mod_content = (
-        f"// GENERATED -- DO NOT EDIT (generate_rust_w3c.py)\n"
-        f"\n"
-        f"#[allow(dead_code, unused_variables, unused_imports, clippy::all)]\n"
-        f"mod test{test_id}_sm;\n"
-        f"pub use test{test_id}_sm::*;\n"
-    )
+    output_dir = SM_OUTPUT_BASE / f'test{test_id}'
 
-    mod_file = SM_OUTPUT_BASE / f'test{test_id}' / 'mod.rs'
+    # Discover child SM files (e.g., test252_child0_sm.rs)
+    child_modules = []
+    if output_dir.exists():
+        for f in sorted(output_dir.iterdir()):
+            if f.name.endswith('_sm.rs') and f.name != f'test{test_id}_sm.rs':
+                mod_name = f.stem  # e.g., "test252_child0_sm"
+                child_modules.append(mod_name)
+
+    lines = [
+        f"// GENERATED -- DO NOT EDIT (generate_rust_w3c.py)",
+        f"",
+        f"#[allow(dead_code, unused_variables, unused_imports, clippy::all)]",
+        f"mod test{test_id}_sm;",
+        f"pub use test{test_id}_sm::*;",
+    ]
+
+    # W3C SCXML 6.4: Child SM modules for invoke support
+    for child_mod in child_modules:
+        lines.append(f"")
+        lines.append(f"#[allow(dead_code, unused_variables, unused_imports, clippy::all)]")
+        lines.append(f"pub mod {child_mod};")
+
+    lines.append("")  # trailing newline
+
+    mod_content = "\n".join(lines)
+    mod_file = output_dir / 'mod.rs'
     return write_if_changed(mod_file, mod_content)
 
 

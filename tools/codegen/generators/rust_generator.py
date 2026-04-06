@@ -78,6 +78,8 @@ class RustCodeGenerator(BaseCodeGenerator):
         env.filters['to_rust_literal'] = self._to_rust_literal
         env.filters['escape_keyword'] = self._escape_rust_keyword
         env.filters['to_in_predicate_rust'] = self._to_in_predicate_rust
+        # W3C SCXML 6.4: Invoke child name -> Rust type name (same as PascalCase)
+        env.filters['to_machine_name'] = self._to_pascal_case
         # ECMAScript→Lua codegen-time transformation filters
         env.filters['to_lua_expr'] = self._to_lua_expr
         env.filters['to_lua_guard'] = self._to_lua_guard

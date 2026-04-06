@@ -61,7 +61,6 @@ pub enum {{ machine_name }}Event {
 // Policy struct
 // ======================================================================
 
-#[derive(Debug)]
 pub struct {{ machine_name }}Policy {
     // W3C SCXML 3.13: Last transition metadata
     last_transition_is_internal: bool,
@@ -120,15 +119,33 @@ pub struct {{ machine_name }}Policy {
 {% endif %}
 {% endfor %}
 {% endif %}
+    // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
+    pub session_id: Option<String>,
 {% if model.needs_script_engine %}
-    // W3C SCXML 5.10: Script engine session management
-    session_id: Option<String>,
     script_engine_initialized: bool,
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // W3C SCXML 5.9.2: Shared active state list for In() predicate callback
     in_predicate_states: Option<std::sync::Arc<std::sync::Mutex<Vec<String>>>>,
 {% endif %}
 {% endif %}
+{% if model.static_invokes or model.hybrid_invokes %}
+    // W3C SCXML 6.4: Pending invoke queue (deferred until macrostep end)
+    pending_invokes: Vec<sce_rust_runtime::invoke::PendingInvoke<{{ machine_name }}State>>,
+    // W3C SCXML 6.4: Active child sessions (invoke_id -> ChildSession)
+    active_invokes: std::collections::HashMap<String, sce_rust_runtime::invoke::ChildSession>,
+{% endif %}
+{% for invoke_info in model.static_invokes %}
+    // W3C SCXML 6.4: Static invoke child '{{ invoke_info.invoke_id }}' ({{ invoke_info.child_name }})
+    child_{{ invoke_info.invoke_id }}: Option<Box<sce_rust_runtime::Engine<super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy>>>,
+    pending_done_invoke_{{ invoke_info.invoke_id }}: bool,
+{% endfor %}
+    // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
+    // Always generated — any SM can be invoked as a child
+    pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
+    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
+    pub invoke_id: String,
+    // W3C SCXML 6.5: Child session ID for finalize origin matching
+    pub child_session_id: String,
 }
 
 impl {{ machine_name }}Policy {
@@ -183,18 +200,30 @@ impl {{ machine_name }}Policy {
 {% endif %}
 {% endfor %}
 {% endif %}
-{% if model.needs_script_engine %}
             session_id: None,
+{% if model.needs_script_engine %}
             script_engine_initialized: false,
 {% if model.has_parallel_states or model.uses_in_predicate %}
             in_predicate_states: None,
 {% endif %}
 {% endif %}
+{% if model.static_invokes or model.hybrid_invokes %}
+            pending_invokes: Vec::new(),
+            active_invokes: std::collections::HashMap::new(),
+{% endif %}
+{% for invoke_info in model.static_invokes %}
+            child_{{ invoke_info.invoke_id }}: None,
+            pending_done_invoke_{{ invoke_info.invoke_id }}: false,
+{% endfor %}
+            parent_external_queue: None,
+            invoke_id: String::new(),
+            child_session_id: String::new(),
         }
     }
 
 {% include 'utility_methods.rs.jinja2' %}
 {% include 'scriptengine_helpers.rs.jinja2' %}
+{% include 'invoke_methods.rs.jinja2' %}
 }
 
 impl Default for {{ machine_name }}Policy {
@@ -220,6 +249,16 @@ impl StatePolicy for {{ machine_name }}Policy {
 {% endif %}
 {% if model.needs_external_flag %}
     const HAS_EXTERNAL_EVENT_FLAG: bool = true;
+{% endif %}
+{% if model.static_invokes %}
+    const HAS_INVOKE_SUPPORT: bool = true;
+    const HAS_CHILD_TICK: bool = true;
+{% endif %}
+{% if model.static_invokes | selectattr('autoforward') | list %}
+    const HAS_AUTOFORWARD: bool = true;
+{% endif %}
+{% if model.static_invokes | selectattr('finalize_content') | list %}
+    const HAS_FINALIZE: bool = true;
 {% endif %}
 
     // ======================================================================
@@ -504,6 +543,18 @@ impl StatePolicy for {{ machine_name }}Policy {
     // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
     fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
         self.do_initialize_data_model(engine);
+    }
+{% endif %}
+
+{% if model.static_invokes %}
+    // W3C SCXML 6.4: Execute pending invokes at macrostep end
+    fn execute_pending_invokes(&mut self, engine: &mut Engine<Self>) {
+        self.do_execute_pending_invokes(engine);
+    }
+
+    // W3C SCXML 6.4: Tick child state machines
+    fn tick_children(&mut self, engine: &mut Engine<Self>) {
+        self.do_tick_children(engine);
     }
 {% endif %}
 }

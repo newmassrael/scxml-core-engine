@@ -33,6 +33,7 @@
 //! Phases 2-4 expand scheduler, HTTP send, invoke support, and the full
 //! parallel state processing machinery.
 
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::event::{EventMetadata, EventType, EventWithMetadata};
@@ -440,6 +441,22 @@ impl<P: StatePolicy> Engine<P> {
     /// W3C SCXML 3.3: Whether the current state is a top-level final state.
     pub fn is_in_final_state(&self) -> bool {
         P::is_final_state(self.current_state)
+    }
+
+    /// Access the inner policy (read-only).
+    ///
+    /// Used by parent engine to drain child's parent_external_queue.
+    pub fn policy(&self) -> &P {
+        &self.policy
+    }
+
+    /// W3C SCXML 6.4: Get shared handle to external queue for child→parent event passing.
+    ///
+    /// Returns an `Arc<Mutex<Vec<(event_name, event_data)>>>` that child state machines
+    /// can push events into via `#_parent` send targets. Parent drains this in `tick_children()`.
+    pub fn get_external_queue_handle(&self) -> Arc<Mutex<Vec<(String, String)>>> {
+        // Each call creates a new shared queue; the generated policy stores it.
+        Arc::new(Mutex::new(Vec::new()))
     }
 
     // ════════════════════════════════════════

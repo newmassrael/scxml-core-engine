@@ -346,4 +346,20 @@
         Self::get_state_name(state) == name
     }
 {% endif %}
+
+    // W3C SCXML 6.4.1: Set parameter in child's script engine before invoke initialization
+    // Matches C++ child->setParamInScriptEngine(name, expr)
+    pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        match se.evaluate_expression(&sid, expr) {
+            Ok(val) => { let _ = se.set_variable(&sid, name, val); }
+            Err(_) => {
+                // Fallback: set as string literal
+                let _ = se.set_variable(&sid, name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()));
+            }
+        }
+    }
 {% endif %}
