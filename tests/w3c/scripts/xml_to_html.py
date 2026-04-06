@@ -1,13 +1,24 @@
 #!/usr/bin/env python3
-"""Convert W3C SCXML Test Results XML to HTML"""
+"""Convert W3C SCXML Test Results XML to HTML with multi-backend support.
+
+Usage:
+    python3 xml_to_html.py results.xml [output.html]
+    python3 xml_to_html.py results.xml [output.html] [--backend-results backend_results.json]
+
+The optional --backend-results flag accepts a JSON file with results from
+Rust, Kotlin, and Python backends to include in the report.
+JSON format: {"rust": {"passed": N, "failed": N, "total": N}, ...}
+"""
+import json
 import xml.etree.ElementTree as ET
 import sys
 
-def xml_to_html(xml_path, html_path):
+
+def xml_to_html(xml_path, html_path, backend_results=None):
     tree = ET.parse(xml_path)
     root = tree.getroot()
 
-    # Extract summary
+    # Extract C++ summary
     total = int(root.get('tests', 0))
     failures = int(root.get('failures', 0))
     errors = int(root.get('errors', 0))
@@ -62,6 +73,12 @@ tr:last-child td{{border-bottom:0}}
 .type-label{{display:inline-block;padding:2px 7px;font-size:11px;font-weight:500;line-height:18px;border-radius:2em;min-width:140px;text-align:center;font-family:ui-monospace,SFMono-Regular,SF Mono,Menlo,Consolas,Liberation Mono,monospace}}
 .flash{{padding:16px;margin-bottom:16px;border:1px solid transparent;border-radius:6px}}
 .flash-error{{color:#cf222e;background-color:#ffebe9;border-color:#cf8f91}}
+.backend-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:16px}}
+.backend-card{{padding:12px 16px;border:1px solid #d0d7de;border-radius:6px;text-align:center}}
+.backend-card h4{{font-size:13px;color:#57606a;margin-bottom:4px;font-weight:600}}
+.backend-card .result{{font-size:24px;font-weight:700}}
+.backend-card .result.all-pass{{color:#1a7f37}}
+.backend-card .result.has-fail{{color:#cf222e}}
 </style>
 </head>
 <body>
@@ -78,19 +95,19 @@ W3C SCXML Compliance Test Results
 <div class="Box-body">
 <div class="summary-grid">
 <div class="counter total">
-<div class="counter-label">Total Tests</div>
+<div class="counter-label">C++ Total Tests</div>
 <div class="counter-value">{total}</div>
 </div>
 <div class="counter pass">
-<div class="counter-label">Passed</div>
+<div class="counter-label">C++ Passed</div>
 <div class="counter-value">{passed}</div>
 </div>
 <div class="counter fail">
-<div class="counter-label">Failed</div>
+<div class="counter-label">C++ Failed</div>
 <div class="counter-value">{failures}</div>
 </div>
 <div class="counter error">
-<div class="counter-label">Errors</div>
+<div class="counter-label">C++ Errors</div>
 <div class="counter-value">{errors}</div>
 </div>
 </div>
@@ -98,13 +115,47 @@ W3C SCXML Compliance Test Results
 <svg class="octicon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
 <path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path>
 </svg>
-Pass Rate: {pass_rate:.1f}%
-</div>
-</div>
+C++ Pass Rate: {pass_rate:.1f}%
 </div>
 '''
 
-    # Process each testsuite
+    # Multi-backend summary
+    if backend_results:
+        html += '<h4 style="margin-bottom:12px;color:#24292f">All Backend Results (202 W3C Tests Each)</h4>\n'
+        html += '<div class="backend-grid">\n'
+
+        # Extract C++ results: merge all testsuites, deduplicate by test name
+        # Each testsuite (Interpreter, AOT) runs the same tests — count unique names once.
+        backends = []
+        all_cpp_tests = set()
+        all_cpp_passed = set()
+        for testsuite in root.findall('testsuite'):
+            for tc in testsuite.findall('testcase'):
+                name = tc.get('name', '')
+                all_cpp_tests.add(name)
+                if tc.get('result', 'PASS') == 'PASS':
+                    all_cpp_passed.add(name)
+        backends.append(('C++', len(all_cpp_passed), len(all_cpp_tests)))
+
+        for name, key in [('Rust', 'rust'), ('Kotlin', 'kotlin'), ('Python', 'python')]:
+            if key in backend_results:
+                br = backend_results[key]
+                backends.append((name, br.get('passed', 0), br.get('total', 0)))
+
+        for name, bp, bt in backends:
+            if bt <= 0:
+                continue
+            css_class = 'all-pass' if bp == bt else 'has-fail'
+            html += f'''<div class="backend-card">
+<h4>{name}</h4>
+<div class="result {css_class}">{bp}/{bt}</div>
+</div>
+'''
+        html += '</div>\n'
+
+    html += '</div>\n</div>\n'
+
+    # Process each testsuite (C++ detailed results)
     for testsuite in root.findall('testsuite'):
         suite_name = testsuite.get('name', '')
         test_count = testsuite.get('tests', 0)
@@ -212,7 +263,16 @@ View
 
     print(f"HTML report generated: {html_path}")
 
+
 if __name__ == '__main__':
     xml_path = 'w3c_test_results.xml' if len(sys.argv) < 2 else sys.argv[1]
-    html_path = xml_path.replace('.xml', '.html')
-    xml_to_html(xml_path, html_path)
+    html_path = sys.argv[2] if len(sys.argv) > 2 else xml_path.replace('.xml', '.html')
+
+    backend_results = None
+    if '--backend-results' in sys.argv:
+        idx = sys.argv.index('--backend-results')
+        if idx + 1 < len(sys.argv):
+            with open(sys.argv[idx + 1]) as f:
+                backend_results = json.load(f)
+
+    xml_to_html(xml_path, html_path, backend_results)
