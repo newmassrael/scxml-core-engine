@@ -291,40 +291,20 @@ impl Test253Policy {
                 self.child_foo = Some(Box::new(child_engine));
 
                 // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
-                {
-                    let child_ref = self.child_foo.as_ref().unwrap();
-                    let parent_events: Vec<(String, String)> = {
-                        if let Some(ref queue) = child_ref.policy().parent_external_queue {
-                            let mut q = queue.lock().unwrap();
-                            q.drain(..).collect()
-                        } else { Vec::new() }
-                    };
-                    for (ev_name, ev_data) in parent_events {
-                        if let Some(event) = Self::get_event_from_name(&ev_name) {
-                            let mut meta = sce_rust_runtime::EventWithMetadata::new(event);
-                            meta.metadata.data = ev_data;
-                            meta.metadata.invoke_id = self.active_invokes
-                                .get("foo")
-                                .map_or_else(String::new, |cs| cs.invoke_id.clone());
-                            meta.metadata.origin = self.active_invokes
-                                .get("foo")
-                                .map_or_else(String::new, |cs| cs.session_id.clone());
-                            meta.metadata.origin_type = sce_rust_runtime::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string();
-                            engine.raise_external_with_meta(meta);
-                        }
-                    }
-                }
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &self.child_foo.as_ref().unwrap().policy().parent_external_queue,
+                    &self.active_invokes,
+                    "foo",
+                    engine,
+                );
 
                 // W3C SCXML 6.4: Check if child completed during initialize (test 236)
                 if self.child_foo.as_ref().map_or(false, |c| c.is_in_final_state()) {
                     self.pending_done_invoke_foo = true;
-                    let runtime_invoke_id = "foo".to_string();
-                    {
-                        let mut done_meta = sce_rust_runtime::EventWithMetadata::new(
-                            Test253Event::DoneInvoke);
-                        done_meta.metadata.invoke_id = runtime_invoke_id;
-                        engine.raise_external_with_meta(done_meta);
-                    }
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "foo",
+                        engine,
+                    );
                 }
                 continue;
             }
@@ -337,65 +317,30 @@ impl Test253Policy {
             // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
             if let Some(mut child) = self.child_foo.take() {
                 // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
-                {
-                    let parent_events: Vec<(String, String)> = {
-                        if let Some(ref queue) = child.policy().parent_external_queue {
-                            let mut q = queue.lock().unwrap();
-                            q.drain(..).collect()
-                        } else { Vec::new() }
-                    };
-                    for (ev_name, ev_data) in parent_events {
-                        if let Some(event) = Self::get_event_from_name(&ev_name) {
-                            let mut meta = sce_rust_runtime::EventWithMetadata::new(event);
-                            meta.metadata.data = ev_data;
-                            meta.metadata.invoke_id = self.active_invokes
-                                .get("foo")
-                                .map_or_else(String::new, |cs| cs.invoke_id.clone());
-                            meta.metadata.origin = self.active_invokes
-                                .get("foo")
-                                .map_or_else(String::new, |cs| cs.session_id.clone());
-                            meta.metadata.origin_type = sce_rust_runtime::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string();
-                            engine.raise_external_with_meta(meta);
-                        }
-                    }
-                }
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "foo",
+                    engine,
+                );
 
                 child.tick();
 
                 // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
-                {
-                    let parent_events: Vec<(String, String)> = {
-                        if let Some(ref queue) = child.policy().parent_external_queue {
-                            let mut q = queue.lock().unwrap();
-                            q.drain(..).collect()
-                        } else { Vec::new() }
-                    };
-                    for (ev_name, ev_data) in parent_events {
-                        if let Some(event) = Self::get_event_from_name(&ev_name) {
-                            let mut meta = sce_rust_runtime::EventWithMetadata::new(event);
-                            meta.metadata.data = ev_data;
-                            meta.metadata.invoke_id = self.active_invokes
-                                .get("foo")
-                                .map_or_else(String::new, |cs| cs.invoke_id.clone());
-                            meta.metadata.origin = self.active_invokes
-                                .get("foo")
-                                .map_or_else(String::new, |cs| cs.session_id.clone());
-                            meta.metadata.origin_type = sce_rust_runtime::helpers::scxml_constants::SCXML_EVENT_PROCESSOR_TYPE.to_string();
-                            engine.raise_external_with_meta(meta);
-                        }
-                    }
-                }
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "foo",
+                    engine,
+                );
 
                 // W3C SCXML 6.4: Check if child reached final state after tick
                 if child.is_in_final_state() && !self.pending_done_invoke_foo {
                     self.pending_done_invoke_foo = true;
-                    let runtime_invoke_id = "foo".to_string();
-                    {
-                        let mut done_meta = sce_rust_runtime::EventWithMetadata::new(
-                            Test253Event::DoneInvoke);
-                        done_meta.metadata.invoke_id = runtime_invoke_id;
-                        engine.raise_external_with_meta(done_meta);
-                    }
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "foo",
+                        engine,
+                    );
                 }
 
                 // Put child back

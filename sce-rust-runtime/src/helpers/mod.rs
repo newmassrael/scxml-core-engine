@@ -66,4 +66,5 @@ pub mod send;
 pub mod state_entry;
 pub mod string_utils;
 pub mod unique_id_generator;
+pub mod invoke_processing;
 pub mod url_encoding;
