@@ -22,6 +22,7 @@
 
 #include "combo_state_sm.h"
 
+#include <cstring>
 #include <memory>
 
 // ============================================
@@ -155,11 +156,24 @@ static BerserkCallbacks g_berserk_callbacks;
 static std::unique_ptr<ComboSM> g_combo_sm;
 
 // ============================================
+// DOOM gameplay state (combo only activates during real gameplay)
+// ============================================
+
+extern "C" {
+extern bool demoplayback;  // DOOM global: true during demo playback
+}
+
+static bool is_real_gameplay(void) {
+    const char *state = sce_get_game_state();
+    return state && strcmp(state, "LEVEL") == 0 && !demoplayback;
+}
+
+// ============================================
 // Cross-Module: Combo On Kill
 // ============================================
 
 void sce_sm_combo_on_kill(void) {
-    if (!g_combo_sm) return;
+    if (!g_combo_sm || !is_real_gameplay()) return;
 
     g_combo_sm->raiseExternal(ComboEvent::Kill);
     g_combo_sm->step();
@@ -246,7 +260,7 @@ int sce_berserk_get_intensity(void) { return g_berserk_intensity; }
 
 EMSCRIPTEN_KEEPALIVE
 void sce_process_tic(void) {
-    if (!g_combo_sm) return;
+    if (!g_combo_sm || !is_real_gameplay()) return;
 
     if (g_timer.isActive() && !g_timer.isPaused()) {
         if (g_timer.isExpired()) {
