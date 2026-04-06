@@ -539,27 +539,14 @@ class SCXMLParser:
 
                     # W3C SCXML 5.8: Content loaded successfully
 
-                except FileNotFoundError:
-                    # W3C SCXML 5.8: Document MUST be rejected if script cannot be loaded
-                    # FileLoadingHelper::loadExternalScript() error message equivalent
-                    raise ValueError(
-                        f"W3C SCXML 5.8: External script file not found: '{src}' "
-                        f"(resolved to {script_path}). Document is non-conformant and MUST be rejected."
-                    )
-                except PermissionError as e:
-                    # W3C SCXML 5.8: Document MUST be rejected if script cannot be loaded
-                    raise ValueError(
-                        f"W3C SCXML 5.8: Cannot read external script file: '{src}' "
-                        f"(resolved to {script_path}). Permission denied: {e}"
-                    )
-                except ValueError as e:
-                    # Security violation or other value error - propagate
-                    raise
-                except Exception as e:
-                    # Any other error loading script
-                    raise ValueError(
-                        f"W3C SCXML 5.8: Failed to load external script: '{src}'. Error: {e}"
-                    )
+                except (ValueError, FileNotFoundError, PermissionError, OSError) as e:
+                    # W3C SCXML 5.8: Document MUST be rejected if script cannot be loaded.
+                    # For AOT codegen, all script loading failures (including path validation)
+                    # result in document rejection. Runtime security enforcement is handled
+                    # separately by the C++ interpreter (FileLoadingHelper::loadExternalScript).
+                    self.model.document_rejected = True
+                    logging.info(f"W3C SCXML 5.8: Script src='{src}' cannot be loaded — document rejected ({e})")
+                    continue  # Skip adding to global_scripts
 
             self.model.global_scripts.append({
                 'type': 'script',

@@ -4,7 +4,7 @@
 Therefore  we fail if it runs at all. This test is valid only for datamodels that support scripting -->
 
 <scxml version="1.0" xmlns="http://www.w3.org/2005/07/scxml" initial="s0">
- <script/>
+ <script src="/nonexistent_w3c_test_script.js"/>
      
  <state id="s0">
    <transition target="fail"/>
