@@ -192,6 +192,7 @@ void sce_game_event_newgame(void) {
     sce_sm_reset_player_weapon();
     sce_sm_reset_all_enemies(false);
     sce_combo_reset();
+    sce_sm_aim_reset();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -203,6 +204,7 @@ void sce_game_event_loadgame(void) {
     sce_sm_reset_player_weapon();
     sce_sm_reset_all_enemies(true);
     sce_combo_reset();
+    sce_sm_aim_reset();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -210,6 +212,7 @@ void sce_game_event_demostart(void) {
     sce_sm_reset_player_weapon();
     sce_sm_reset_all_enemies(false);
     sce_combo_reset();
+    sce_sm_aim_reset();
 }
 
 #define GAME_EVENT(name, event)                          \

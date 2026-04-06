@@ -367,6 +367,14 @@ void SCE_AimAssistTick(void) {
         return;
     }
 
+    /* Validate SCXML state: only lock-on when in "locked" state.
+     * Prevents dangling pointer dereference after level change. */
+    const char *aim_state = sce_aim_get_state();
+    if (!aim_state || strcmp(aim_state, "locked") != 0) {
+        g_aim_target = NULL;
+        return;
+    }
+
     /* Check if target is still valid (alive and exists) */
     if (g_aim_target->health <= 0) {
         g_aim_target = NULL;

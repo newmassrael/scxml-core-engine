@@ -93,6 +93,14 @@ void sce_sm_aim_init(void) {
     g_aim_assist_enabled = false;
 }
 
+void sce_sm_aim_reset(void) {
+    // Recreate SM to return to disabled state (initialize doesn't reset currentState)
+    g_aim_sm = std::make_unique<AimSM>(g_aim_callbacks);
+    g_aim_sm->initialize();
+    g_aim_assist_enabled = false;
+    // onDisabled callback calls SCE_AimAssistClearTarget → g_aim_target = NULL
+}
+
 // ============================================
 // extern "C" API
 // ============================================

@@ -57,6 +57,9 @@ void sce_sm_reset_all_enemies(bool notify_dead);
 /** Notify combo system of a kill (called from enemy module) */
 void sce_sm_combo_on_kill(void);
 
+/** Reset aim assist to disabled state and clear lock-on target */
+void sce_sm_aim_reset(void);
+
 // ============================================
 // State Query Functions (used across modules)
 // ============================================
