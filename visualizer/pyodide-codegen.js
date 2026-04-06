@@ -3,6 +3,7 @@
  *
  * Runs Python codegen.py directly in browser using Pyodide (Python WebAssembly).
  * Zero code duplication - uses the same Python code as CLI.
+ * Supports C++, Kotlin, and Rust code generation.
  */
 
 // Configuration constants
@@ -13,12 +14,44 @@ const PYODIDE_CDN_URL = `https://cdn.jsdelivr.net/pyodide/${PYODIDE_VERSION}/ful
 const isGitHubPages = window.location.hostname.includes('github.io');
 const BASE_PATH = isGitHubPages ? '' : '../';
 
+// Language configuration
+const LANGUAGE_CONFIG = {
+    cpp: {
+        label: 'C++',
+        templateDir: '/templates',
+        manifestPath: 'tools/codegen/templates/manifest.json',
+        templateBase: 'tools/codegen/templates/',
+        outputPattern: '_sm.h',
+        downloadExt: '_sm.h',
+        subdirs: ['actions']
+    },
+    kotlin: {
+        label: 'Kotlin',
+        templateDir: '/templates/kotlin',
+        manifestPath: 'tools/codegen/templates/kotlin/manifest.json',
+        templateBase: 'tools/codegen/templates/kotlin/',
+        outputPattern: '.kt',
+        downloadExt: '.kt',
+        subdirs: ['actions']
+    },
+    rust: {
+        label: 'Rust',
+        templateDir: '/templates/rust',
+        manifestPath: 'tools/codegen/templates/rust/manifest.json',
+        templateBase: 'tools/codegen/templates/rust/',
+        outputPattern: '.rs',
+        downloadExt: '.rs',
+        subdirs: ['actions']
+    }
+};
+
 class PyodideCodegen {
     constructor() {
         this.pyodide = null;
         this.loading = false;
         this.loaded = false;
         this.loadError = null;
+        this._loadedLanguages = new Set();
     }
 
     /**
@@ -48,7 +81,7 @@ class PyodideCodegen {
             await this.pyodide.loadPackage(['jinja2', 'lxml', 'micropip']);
 
             // Load Python files
-            if (progressCallback) progressCallback('Loading codegen modules...', 60);
+            if (progressCallback) progressCallback('Loading codegen modules...', 50);
 
             // Fetch and load Python modules (top-level)
             const modules = [
@@ -59,7 +92,6 @@ class PyodideCodegen {
             ];
 
             for (const modulePath of modules) {
-                // Adapt path based on environment (local uses ../, GitHub Pages uses current dir)
                 const response = await fetch(`${BASE_PATH}${modulePath}`);
                 const code = await response.text();
                 const filename = modulePath.split('/').pop();
@@ -83,9 +115,9 @@ class PyodideCodegen {
                 this.pyodide.FS.writeFile(`/generators/${filename}`, code);
             }
 
-            // Load templates directory structure
-            if (progressCallback) progressCallback('Loading templates...', 80);
-            await this._loadTemplates();
+            // Load C++ templates by default (always needed for base)
+            if (progressCallback) progressCallback('Loading C++ templates...', 70);
+            await this._loadLanguageTemplates('cpp');
 
             // Initialize Python environment
             await this.pyodide.runPythonAsync(`
@@ -113,68 +145,121 @@ from scxml_parser import SCXMLParser
     }
 
     /**
-     * Load Jinja2 templates into Pyodide filesystem
+     * Load templates for a specific language
      */
-    async _loadTemplates() {
-        // Load template manifest (adapt path based on environment)
-        const manifestResponse = await fetch(`${BASE_PATH}tools/codegen/templates/manifest.json`);
-        if (!manifestResponse.ok) {
-            throw new Error(`Failed to load template manifest: ${manifestResponse.statusText}`);
-        }
+    async _loadLanguageTemplates(language) {
+        if (this._loadedLanguages.has(language)) return;
 
+        const config = LANGUAGE_CONFIG[language];
+        if (!config) throw new Error(`Unknown language: ${language}`);
+
+        // Load manifest
+        const manifestResponse = await fetch(`${BASE_PATH}${config.manifestPath}`);
+        if (!manifestResponse.ok) {
+            throw new Error(`Failed to load ${language} template manifest: ${manifestResponse.statusText}`);
+        }
         const manifest = await manifestResponse.json();
         const templates = manifest.templates;
 
         if (!templates || templates.length === 0) {
-            throw new Error('Template manifest is empty or invalid');
+            throw new Error(`${language} template manifest is empty or invalid`);
         }
 
         // Create template directories
-        this.pyodide.FS.mkdir('/templates');
-        this.pyodide.FS.mkdir('/templates/actions');
+        const templateDir = config.templateDir;
+        this._mkdirp(templateDir);
+        for (const subdir of config.subdirs) {
+            this._mkdirp(`${templateDir}/${subdir}`);
+        }
 
-        // Load each template (fail fast on errors)
+        // Load each template
         for (const template of templates) {
-            const response = await fetch(`${BASE_PATH}tools/codegen/templates/${template}`);
-
+            const response = await fetch(`${BASE_PATH}${config.templateBase}${template}`);
             if (!response.ok) {
                 throw new Error(`Failed to load critical template '${template}': ${response.statusText}`);
             }
-
             const content = await response.text();
-            this.pyodide.FS.writeFile(`/templates/${template}`, content);
+            this.pyodide.FS.writeFile(`${templateDir}/${template}`, content);
+        }
+
+        this._loadedLanguages.add(language);
+    }
+
+    /**
+     * Recursively create directories (mkdir -p equivalent)
+     */
+    _mkdirp(path) {
+        const parts = path.split('/').filter(Boolean);
+        let current = '';
+        for (const part of parts) {
+            current += '/' + part;
+            try {
+                this.pyodide.FS.mkdir(current);
+            } catch (e) {
+                // Directory already exists
+            }
         }
     }
 
     /**
-     * Generate C++ code from SCXML
+     * Load Jinja2 templates into Pyodide filesystem (legacy - C++ only)
+     */
+    async _loadTemplates() {
+        await this._loadLanguageTemplates('cpp');
+    }
+
+    /**
+     * Generate code from SCXML for the specified language
      *
      * @param {string} scxmlContent - SCXML file content
+     * @param {string} language - Target language ('cpp', 'kotlin', 'rust')
      * @param {string} filename - Original SCXML filename (optional)
-     * @returns {Promise<string>} Generated C++ code
+     * @returns {Promise<string>} Generated code
      */
-    async generate(scxmlContent, filename = 'input.scxml') {
+    async generate(scxmlContent, language = 'cpp', filename = 'input.scxml') {
         if (!this.loaded) {
             throw new Error('Pyodide not initialized. Call init() first.');
         }
+
+        const config = LANGUAGE_CONFIG[language];
+        if (!config) {
+            throw new Error(`Unsupported language: '${language}'. Supported: ${Object.keys(LANGUAGE_CONFIG).join(', ')}`);
+        }
+
+        // Ensure templates for this language are loaded
+        await this._loadLanguageTemplates(language);
 
         try {
             // Write SCXML to virtual filesystem
             this.pyodide.FS.writeFile('/input.scxml', scxmlContent);
 
+            // Clean output directory
+            await this.pyodide.runPythonAsync(`
+import os, shutil
+if os.path.exists('/output'):
+    shutil.rmtree('/output')
+os.makedirs('/output', exist_ok=True)
+            `);
+
+            const templateDir = config.templateDir;
+            const outputPattern = config.outputPattern;
+
             // Run Python codegen
             const result = await this.pyodide.runPythonAsync(`
 from generators import get_generator
 
-# Initialize C++ generator
-generator = get_generator('cpp', template_dir='/templates')
+# Initialize ${language} generator
+generator = get_generator('${language}', template_dir='${templateDir}')
 
 # Generate code (writes to /output/)
 generator.generate('/input.scxml', '/output', as_child=False)
 
 # Read generated file
 import os
-files = [f for f in os.listdir('/output') if f.endswith('_sm.h')]
+files = [f for f in os.listdir('/output') if f.endswith('${outputPattern}')]
+if not files:
+    # Try any file in output
+    files = [f for f in os.listdir('/output') if not f.startswith('.')]
 if not files:
     raise Exception('No output file generated')
 
@@ -190,7 +275,6 @@ code
             // Extract Python error details (with multiline support)
             let errorMessage = error.message;
             if (error.message.includes('PythonError')) {
-                // Extract actual Python error (multiline support with [\s\S])
                 const match = error.message.match(/PythonError: ([\s\S]+?)(?:\n\n|$)/);
                 if (match) {
                     errorMessage = match[1].trim();
@@ -234,5 +318,5 @@ const pyodideCodegen = new PyodideCodegen();
 
 // Export for use in codegen.html
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { PyodideCodegen, pyodideCodegen };
+    module.exports = { PyodideCodegen, pyodideCodegen, LANGUAGE_CONFIG };
 }

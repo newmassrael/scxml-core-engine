@@ -1,6 +1,6 @@
 # SCE (SCXML Core Engine)
 
-A high-performance W3C SCXML 1.0 implementation with C++ AOT code generator and Kotlin/JVM runtime. Supports embedded C++, Android (AAOS), and Spring Boot server applications.
+A high-performance W3C SCXML 1.0 implementation with C++ AOT code generator, Kotlin/JVM runtime, Rust AOT backend, and Python bindings. Supports embedded C++, Android (AAOS), Spring Boot server, Rust native, and Python applications.
 
 [![W3C Tests](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml/badge.svg)](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml)
 
@@ -62,6 +62,41 @@ my_machine<MyContext> sm(context);
 - No framework lock-in, no base class requirements
 - Your code remains completely independent
 
+### 🐍 Python Bindings
+
+Use SCE from Python with zero-copy pybind11 bindings wrapping the C++ interpreter:
+
+```python
+import sce
+
+# Context manager auto-starts and stops the engine
+with sce.Engine.from_file("traffic_light.scxml") as engine:
+    engine.send_event("timer")
+    print(engine.current_state)  # 'green'
+```
+
+**Key Features**:
+- **W3C SCXML 1.0 compliant**: 202/202 W3C tests passing (including HTTP)
+- **Context manager**: Automatic resource cleanup (`with` statement)
+- **External events**: `send_external_event()` for HTTP/BasicHTTPEventProcessor
+- **Thread-safe**: GIL properly managed for C++ multi-threaded operations
+- **Build**: `cmake -DBUILD_PYTHON_BINDINGS=ON` with scikit-build-core for wheels
+
+### 🦀 Rust AOT Backend
+
+Native Rust state machines generated from the same SCXML sources:
+
+```bash
+# Generate Rust code from SCXML
+python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --language rust
+```
+
+**Key Features**:
+- **W3C SCXML 1.0 compliant**: 202/202 W3C tests passing
+- **Lua 5.4 scripting**: Via mlua (vendored build, same as C++ default)
+- **Zero duplication**: json_builtins.lua shared with C++/Kotlin via `include_str!`
+- **Cargo workspace**: `sce-rust-runtime`, `sce-rust-lua`, `sce-rust-tests`
+
 ### ☕ Kotlin/JVM & Spring Boot Support
 
 Use SCE from Java/Kotlin applications with a single dependency:
@@ -116,6 +151,35 @@ cmake --build . -j$(nproc)
 
 **C++ Requirements**: CMake 3.14+, C++17 compiler (C++20 for full runtime)
 **Kotlin/JVM Requirements**: JDK 17+, Gradle 8.11+ (wrapper included)
+**Rust Requirements**: Rust 1.75+, Cargo
+**Python Requirements**: Python 3.9+, pybind11
+
+### Python Bindings
+
+```bash
+# Build Python bindings
+mkdir build_python && cd build_python
+cmake .. -DBUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release \
+         -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
+cmake --build . --target _sce
+
+# Use
+PYTHONPATH=build_python/sce-python:sce-python/python python3 -c "
+import sce
+engine = sce.Engine.from_file('traffic_light.scxml')
+engine.start()
+"
+```
+
+### Rust
+
+```bash
+# Generate Rust code from SCXML
+python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --language rust
+
+# Run W3C conformance tests
+cargo test --release -p sce-rust-tests
+```
 
 ### Kotlin/JVM & Spring Boot
 
@@ -596,7 +660,20 @@ sce/
 tools/codegen/           # Code generator (Python + Jinja2)
 ├── codegen.py
 ├── scxml_parser.py
-└── templates/           # C++/Kotlin generation templates
+├── generators/          # Language-specific generators (C++, Kotlin, Rust)
+└── templates/           # C++/Kotlin/Rust generation templates
+
+# Python Bindings (pybind11):
+sce-python/              # Python bindings module
+├── src/bindings.cpp     # pybind11 wrapper (PyEngine)
+├── python/sce/          # Python package (Engine, Statistics)
+├── tests/test_w3c.py    # W3C conformance tests (202/202)
+└── pyproject.toml       # scikit-build-core wheel config
+
+# Rust Backend (Cargo workspace):
+sce-rust-runtime/        # Core runtime (engine, event, policy, invoke)
+sce-rust-lua/            # Lua 5.4 script engine (mlua)
+sce-rust-tests/          # W3C conformance tests (202/202)
 
 # Kotlin/JVM Modules (Gradle):
 sce-kotlin-runtime/      # ScxmlScriptEngine interface (multiplatform)
@@ -616,7 +693,7 @@ tests/
 ### Code Generator
 
 **Input**: SCXML file
-**Output**: Self-contained C++ header or Kotlin class
+**Output**: Self-contained C++ header, Kotlin class, or Rust module
 
 **Generation Strategy**:
 - Analyze SCXML features (static vs dynamic)
@@ -624,6 +701,7 @@ tests/
 - Generate minimal code with zero dependencies on framework internals
 - C++: Function pointers or template callbacks
 - Kotlin: Generated state machine classes implementing StateMachineEngine interface
+- Rust: Generated trait implementations with mlua Lua 5.4 scripting
 
 ### AOT Engine Architecture
 
@@ -1104,6 +1182,28 @@ cd build
 - All W3C SCXML test categories passing ✅
 - Full specification compliance across all engine types
 - Automated test suite with CI/CD integration
+
+### Python Binding Tests
+
+```bash
+# Run all 202 W3C tests (including HTTP)
+SPDLOG_LEVEL=off PYTHONPATH=build_python/sce-python:sce-python/python \
+    python3 sce-python/tests/test_w3c.py
+
+# Skip HTTP tests (faster)
+SPDLOG_LEVEL=off PYTHONPATH=build_python/sce-python:sce-python/python \
+    python3 sce-python/tests/test_w3c.py --skip-http
+```
+
+### Rust Tests
+
+```bash
+# Run W3C conformance tests (202/202)
+cargo test --release -p sce-rust-tests
+
+# Run specific test
+cargo test --release -p sce-rust-tests test144
+```
 
 ### Kotlin/JVM Tests
 

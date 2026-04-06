@@ -414,6 +414,52 @@ BasicHTTP Event I/O Processor support for `<send type="BasicHTTPEventProcessor">
 
 **Factory**: `PlatformExecutionHelper::createPlatformExecutor()` selects at compile-time (`#ifdef __EMSCRIPTEN__`).
 
+### Python Bindings (pybind11)
+
+Python bindings wrap the C++ `ReadySCXMLEngine` interpreter via pybind11:
+
+```
+sce-python/
+├── src/bindings.cpp          PyEngine wrapper (GIL management, context manager)
+├── python/sce/__init__.py    Python package (Engine, Statistics exports)
+├── tests/test_w3c.py         W3C conformance tests (202/202, HTTP included)
+└── pyproject.toml            scikit-build-core wheel configuration
+```
+
+**Architecture**:
+- **PyEngine**: RAII wrapper around `ReadySCXMLEngine` with `__enter__`/`__exit__` context manager
+- **GIL Management**: `py::gil_scoped_release` for C++ multi-threaded operations (EventRaiser, EventScheduler)
+- **Thread Safety**: Requires `SCE_THREAD_SAFE=ON` for external event queue (`send_external_event()`)
+- **HTTP Support**: `W3CHttpTestServer` in Python for BasicHTTPEventProcessor tests (13 tests)
+- **Error Propagation**: C++ parser/factory errors → Python `ValueError` with error chain
+
+**API Surface**:
+- `Engine.from_file(path)` / `Engine.from_string(scxml)` — Factory methods
+- `start()` / `stop()` — Lifecycle management
+- `send_event(name, data?)` — Internal event queue
+- `send_external_event(name, data?)` — External event queue (W3C SCXML 5.10)
+- `current_state` / `active_states` / `running` / `statistics` — Properties
+
+**Build**: `cmake -DBUILD_PYTHON_BINDINGS=ON` (requires Python 3.9+, pybind11 v2.13.6 via FetchContent)
+
+### Rust AOT Backend
+
+Rust backend generates native Rust state machines from the same SCXML sources:
+
+```
+sce-rust-runtime/     Core engine (StaticExecutionEngine, event queue, policy traits)
+sce-rust-lua/         Lua 5.4 script engine (mlua vendored build)
+sce-rust-tests/       W3C conformance tests (202/202, linkme-based registration)
+Cargo.toml            Workspace (Rust 1.75+, edition 2021)
+```
+
+**Architecture**:
+- **Code Generator**: `tools/codegen/generators/rust_generator.py` + `templates/rust/*.rs.jinja2`
+- **Template Parity**: 1:1 port of C++ Jinja2 templates (state_machine, actions, invoke, etc.)
+- **Scripting**: Lua 5.4 via `mlua` crate (vendored, same as C++ default engine)
+- **JSON Builtins**: `include_str!("../../sce/include/scripting/json_builtins.lua")` — shared with C++/Kotlin
+- **Test Registration**: `linkme` crate for compile-time test registration (equivalent to C++ `AotTestRegistrar`)
+
 ### Kotlin/JVM & Android
 
 Kotlin/JVM modules provide the same W3C SCXML compliance (202/202) on JVM and Android:
@@ -440,9 +486,10 @@ sce-android-app         Android real-device benchmark (Compose UI)
 
 ## Key Principles
 
-1. **W3C SCXML Compliance is Non-Negotiable**: All W3C tests must pass on both engines
+1. **W3C SCXML Compliance is Non-Negotiable**: All 202 W3C tests must pass on all backends (C++, Rust, Kotlin, Python)
 2. **Always Generate Code**: Never refuse generation, always produce working implementation
 3. **Automatic Optimization**: Code generator decides AOT vs Interpreter internally per component
 4. **Lazy Initialization**: Pay only for features actually used in SCXML
 5. **Zero Duplication**: AOT and Interpreter share core W3C logic through Helper functions
 6. **You Don't Pay for What You Don't Use**: 4-tier library structure — link only what you need
+7. **Multi-Backend Parity**: Same SCXML sources, same codegen pipeline, same W3C compliance across C++/Rust/Kotlin/Python
