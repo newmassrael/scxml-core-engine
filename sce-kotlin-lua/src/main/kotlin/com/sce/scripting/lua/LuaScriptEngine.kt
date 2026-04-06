@@ -486,67 +486,10 @@ class LuaScriptEngine : ScxmlScriptEngine {
             end
         """.trimIndent())
 
-        // JSON support — C++ parity: sce/src/scripting/LuaEngine.cpp:630-727
-        LuaNative.doString(L, """
-            JSON = JSON or {}
-            function JSON.stringify(v)
-                if v == nil then return "null" end
-                local t = type(v)
-                if t == "boolean" then return tostring(v) end
-                if t == "number" then return tostring(v) end
-                if t == "string" then return '"' .. v:gsub('"', '\\"') .. '"' end
-                if t == "table" then
-                    local isArr = (#v > 0)
-                    if isArr then
-                        local parts = {}
-                        for i = 1, #v do parts[i] = JSON.stringify(v[i]) end
-                        return "[" .. table.concat(parts, ",") .. "]"
-                    else
-                        local parts = {}
-                        for k, val2 in pairs(v) do
-                            parts[#parts + 1] = '"' .. tostring(k) .. '":' .. JSON.stringify(val2)
-                        end
-                        return "{" .. table.concat(parts, ",") .. "}"
-                    end
-                end
-                return "null"
-            end
-            function JSON.parse(s)
-                if s == nil or s == "" then return nil end
-                local strs = {}
-                local buf = {}
-                local i = 1
-                while i <= #s do
-                    if s:sub(i, i) == '"' then
-                        local j = i + 1
-                        while j <= #s do
-                            if s:sub(j, j) == '\\' then j = j + 2
-                            elseif s:sub(j, j) == '"' then break
-                            else j = j + 1 end
-                        end
-                        strs[#strs+1] = s:sub(i+1, j-1)
-                        buf[#buf+1] = '\x01' .. #strs .. '\x01'
-                        i = j + 1
-                    else
-                        buf[#buf+1] = s:sub(i, i)
-                        i = i + 1
-                    end
-                end
-                local str = table.concat(buf)
-                str = str:gsub('%[', '{'):gsub('%]', '}')
-                str = str:gsub('\x01(%d+)\x01%s*:', function(idx)
-                    return '["' .. strs[tonumber(idx)] .. '"]=';
-                end)
-                str = str:gsub(':true', '=true'):gsub(':false', '=false'):gsub(':null', '=nil')
-                str = str:gsub('([=,{])%s*(%d)', '%1%2')
-                str = str:gsub('\x01(%d+)\x01', function(idx)
-                    return '"' .. strs[tonumber(idx)] .. '"'
-                end)
-                local fn = load("return " .. str, "json", "t", {})
-                if fn then return fn() end
-                return nil
-            end
-        """.trimIndent())
+        // W3C SCXML B.2: JSON.stringify / JSON.parse (Single Source of Truth)
+        // Shared with C++ LuaEngine (CMake header) and Rust sce-rust-lua (include_str!)
+        // via sce/include/scripting/json_builtins.lua — see ARCHITECTURE.md
+        LuaNative.doString(L, loadJsonBuiltins())
 
         // Object.keys (ECMAScript standard) — C++ parity
         LuaNative.doString(L, """
@@ -799,6 +742,16 @@ class LuaScriptEngine : ScxmlScriptEngine {
     }
 
     companion object {
+        // W3C SCXML B.2: Load canonical json_builtins.lua from resources (Single Source of Truth)
+        // Shared with C++ (CMake header) and Rust (include_str!) — see ARCHITECTURE.md
+        private val JSON_BUILTINS: String by lazy {
+            LuaScriptEngine::class.java.getResourceAsStream("/scripting/json_builtins.lua")
+                ?.bufferedReader()?.readText()
+                ?: error("json_builtins.lua not found in resources — check Gradle copyJsonBuiltins task")
+        }
+
+        private fun loadJsonBuiltins(): String = JSON_BUILTINS
+
         private val BUILTINS = setOf(
             "true", "false", "nil", "math", "string", "table", "type",
             "tostring", "tonumber", "pairs", "ipairs", "print",

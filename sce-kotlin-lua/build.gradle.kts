@@ -75,8 +75,15 @@ val buildNativeLib by tasks.registering(Exec::class) {
     }
 }
 
+// W3C SCXML B.2: Copy canonical json_builtins.lua to resources (Single Source of Truth)
+// Shared with C++ (CMake-generated header) and Rust (include_str!) — see ARCHITECTURE.md
+val copyJsonBuiltins by tasks.registering(Copy::class) {
+    from(rootProject.file("sce/include/scripting/json_builtins.lua"))
+    into(layout.buildDirectory.dir("resources/main/scripting"))
+}
+
 tasks.named("processResources") {
-    dependsOn(buildNativeLib)
+    dependsOn(buildNativeLib, copyJsonBuiltins)
 }
 
 // Add native lib directory to java.library.path for tests

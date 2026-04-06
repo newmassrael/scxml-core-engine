@@ -135,11 +135,14 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
   - `state_machine.jinja2` / `state_machine_inl.jinja2` — Main structure (header + inline implementation)
   - `actions/*.jinja2` — Individual action handlers (send, assign, if, foreach, cancel, etc.)
   - `entry_exit_actions.jinja2` — State entry/exit action generation
+  - `invoke_methods.jinja2` — W3C SCXML 6.4 invoke lifecycle (execute pending, tick children, autoforward, finalize)
   - `process_transition.jinja2` — Transition processing logic
   - `conflict_resolution.jinja2` — W3C D.2 optimal transition set
   - `scriptengine_helpers.jinja2` — Script engine lazy initialization
   - `utility_methods.jinja2` — Helper methods (getEventName, etc.)
-- **Flow**: SCXML → Parser → Model → Jinja2 Templates → C++ Header (.h + .inl)
+  - `rust/*.rs.jinja2` — Rust backend (1:1 port of C++ templates)
+  - `kotlin/*.kt.jinja2` — Kotlin backend (sealed interfaces + coroutine-based)
+- **Flow**: SCXML → Parser → Model → Jinja2 Templates → C++/Rust/Kotlin output
 
 **Key Properties**:
 - Always generates working C++ code — never refuses generation
@@ -262,10 +265,22 @@ W3C SCXML 3.11 history states implemented as hybrid: static structure with runti
 | `<invoke srcexpr="pathVar"/>` | Interpreter only | ~200KB |
 
 **Hybrid Invoke** (`contentExpr`):
-- AOT parent evaluates expression via JSEngine
+- AOT parent evaluates expression via JSEngine/LuaEngine
 - Creates Interpreter child at runtime via `StateMachine::createFromSCXMLString()`
 - ~50% memory reduction vs all-Interpreter (~100KB vs ~200KB)
 - `done.invoke` event routing via completion callback
+
+### Invoke Template Architecture (Cross-Backend)
+
+Invoke lifecycle methods are extracted into dedicated templates in C++ and Rust, while Kotlin uses a different pattern leveraging runtime lambda closures:
+
+| Aspect | C++ | Rust | Kotlin |
+|--------|-----|------|--------|
+| Template | `invoke_methods.jinja2` | `rust/invoke_methods.rs.jinja2` | Inline in `entry_exit_actions.kt.jinja2` |
+| Dispatch | Template-generated state switch | Template-generated match arms | Runtime `deferInvoke()` lambda closures |
+| Lifecycle methods | `executePendingInvokes()`, `tickChildren()`, `forwardToAutoforwardChildren()`, `executeFinalizeForChildEvent()` | `do_execute_pending_invokes()`, `do_tick_children()`, `do_forward_to_autoforward_children()`, `do_execute_finalize_for_child_event()` | `StateMachineEngine` base class (runtime) |
+
+**Why Kotlin differs**: Kotlin's first-class functions allow the invoke lifecycle to be handled at runtime via `deferInvoke(state, id) { ... }` closures. The `StateMachineEngine<S, E>` base class provides `executePendingInvokes()`, `cancelInvoke()`, `startInvoke()` etc. as runtime methods. This is intentionally different from C++/Rust where template-generated state-switch dispatch is required for compile-time type safety.
 
 ---
 
@@ -294,6 +309,18 @@ Bridges ECMAScript syntax in W3C SCXML `datamodel="ecmascript"` to Lua evaluatio
   - **Layer 1**: Transformer caches JS→Lua results
   - **Layer 2**: LuaSessionContext caches compiled Lua bytecode (registry refs)
   - **Layer 3**: Per-session direct expression→chunk ref mapping (skips Layer 1+2 on repeat)
+
+### JSON Builtins (Single Source of Truth)
+
+`sce/include/scripting/json_builtins.lua` — canonical `JSON.stringify()` / `JSON.parse()` implementation shared across all three backends:
+
+| Backend | Embedding Mechanism | When |
+|---------|-------------------|------|
+| C++ | CMake `EmbedLuaScript.cmake` → `json_builtins_lua.h` string literal | Compile-time |
+| Rust | `include_str!("../../sce/include/scripting/json_builtins.lua")` | Compile-time |
+| Kotlin | Gradle `copyJsonBuiltins` → classpath resource `/scripting/json_builtins.lua` | Runtime (lazy) |
+
+Do NOT duplicate JSON logic in backend-specific code. All three backends load the same file.
 
 ### LuaDOMBinding
 
