@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kotlin State Machine Library - W3C SCXML for Spring Boot and Android | SCE</title>
+    <meta name="description" content="Production-ready Kotlin state machine with W3C SCXML compliance. Spring Boot auto-configuration, Android AAOS support, three script engines (Rhino, Lua, QuickJS). AOT code generation for JVM and Android.">
+    <meta name="keywords" content="Kotlin state machine, Kotlin FSM, Android state machine, Spring Boot state machine, SCXML Kotlin, JVM state machine, Android AAOS, state machine library, Kotlin statechart">
+    <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/kotlin-state-machine.html">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Kotlin State Machine Library - Spring Boot and Android AAOS">
+    <meta property="og:description" content="Production-ready Kotlin state machine with W3C SCXML. Spring Boot auto-config, Android AAOS, three script engines. 202/202 W3C tests passing.">
+    <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/kotlin-state-machine.html">
+    <meta property="og:site_name" content="SCXML Core Engine">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Kotlin State Machine Library for Spring Boot and Android">
+    <meta name="twitter:description" content="W3C SCXML-compliant Kotlin state machine. Spring Boot auto-config, Android AAOS, 202/202 tests passing.">
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "Kotlin State Machine Library for Spring Boot and Android AAOS",
+        "description": "How to implement state machines in Kotlin using SCE with W3C SCXML compliance. Spring Boot auto-configuration and Android support.",
+        "url": "https://newmassrael.github.io/scxml-core-engine/kotlin-state-machine.html",
+        "author": { "@type": "Person", "name": "newmassrael" },
+        "publisher": { "@type": "Organization", "name": "SCXML Core Engine" },
+        "about": {
+            "@type": "SoftwareSourceCode",
+            "name": "SCE - SCXML Core Engine",
+            "codeRepository": "https://github.com/newmassrael/scxml-core-engine",
+            "programmingLanguage": "Kotlin"
+        }
+    }
+    </script>
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%230969da'/><text x='50' y='65' font-family='monospace' font-size='36' text-anchor='middle' fill='white'>SC</text></svg>">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.7; }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+
+        header { padding: 48px 0 32px; text-align: center; }
+        header nav { margin-bottom: 32px; font-size: 14px; color: #8b949e; }
+        header h1 { font-size: 36px; color: #f0f6fc; margin-bottom: 16px; }
+        header p.lead { font-size: 18px; color: #8b949e; max-width: 640px; margin: 0 auto; }
+
+        .cta { display: flex; gap: 12px; justify-content: center; margin: 32px 0; flex-wrap: wrap; }
+        .cta a {
+            display: inline-block; padding: 10px 24px; border-radius: 6px;
+            font-size: 14px; font-weight: 600;
+        }
+        .cta a.primary { background: #238636; color: #fff; }
+        .cta a.primary:hover { background: #2ea043; text-decoration: none; }
+        .cta a.secondary { border: 1px solid #30363d; color: #c9d1d9; }
+        .cta a.secondary:hover { background: #30363d; text-decoration: none; }
+
+        article { padding-bottom: 60px; }
+        article h2 { font-size: 24px; color: #f0f6fc; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        article h3 { font-size: 18px; color: #f0f6fc; margin: 32px 0 12px; }
+        article p { margin-bottom: 16px; color: #8b949e; }
+        article p strong { color: #c9d1d9; }
+        article ul, article ol { margin: 0 0 16px 24px; color: #8b949e; }
+        article li { margin-bottom: 8px; }
+
+        pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; overflow-x: auto; margin-bottom: 16px; }
+        code { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; color: #c9d1d9; }
+        p code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th, td { padding: 10px 16px; text-align: left; border: 1px solid #30363d; font-size: 14px; }
+        th { background: #161b22; color: #f0f6fc; font-weight: 600; }
+        td { color: #8b949e; }
+
+        footer { padding: 24px 0; border-top: 1px solid #21262d; text-align: center; color: #484f58; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav><a href="./">SCE Home</a> / Kotlin State Machine</nav>
+            <h1>Kotlin State Machine Library</h1>
+            <p class="lead">
+                W3C SCXML-compliant state machine engine for Kotlin/JVM.
+                Spring Boot auto-configuration, Android AAOS support,
+                and three pluggable script engines.
+            </p>
+            <div class="cta">
+                <a href="https://github.com/newmassrael/scxml-core-engine" class="primary">View on GitHub</a>
+                <a href="visualizer/codegen.html" class="secondary">Try Code Generator</a>
+            </div>
+        </header>
+
+        <article>
+            <h2>State Machines in the Kotlin Ecosystem</h2>
+
+            <p>
+                Kotlin developers building <strong>server applications with Spring Boot</strong>
+                or <strong>Android Automotive (AAOS) infotainment systems</strong> need state
+                machines that integrate cleanly with their existing frameworks. Most existing
+                solutions are either too simplistic (enum + when blocks), require manual
+                wiring (Spring Statemachine), or lack formal specification compliance.
+            </p>
+
+            <h3>Existing approaches compared</h3>
+
+            <table>
+                <tr>
+                    <th>Approach</th>
+                    <th>Pros</th>
+                    <th>Cons</th>
+                </tr>
+                <tr>
+                    <td>sealed class + when</td>
+                    <td>Pure Kotlin, type-safe</td>
+                    <td>Manual, no hierarchy, no parallel states, no standard</td>
+                </tr>
+                <tr>
+                    <td>Spring Statemachine</td>
+                    <td>Spring integration</td>
+                    <td>Complex configuration, no AOT, limited Android support</td>
+                </tr>
+                <tr>
+                    <td>Tinder StateMachine</td>
+                    <td>Kotlin DSL, lightweight</td>
+                    <td>No hierarchical states, no standard compliance</td>
+                </tr>
+                <tr>
+                    <td><strong>SCE</strong></td>
+                    <td><strong>W3C standard, AOT, Spring Boot + Android</strong></td>
+                    <td>SCXML definition required</td>
+                </tr>
+            </table>
+
+            <h2>Spring Boot Integration</h2>
+
+            <p>
+                SCE provides a <strong>Spring Boot starter</strong> with auto-configuration.
+                Add a single Gradle dependency and you get a fully configured SCXML script
+                engine as a Spring bean.
+            </p>
+
+<pre><code>// build.gradle.kts
+dependencies {
+    implementation("com.sce:sce-spring-boot-starter:1.0.0")
+}</code></pre>
+
+<pre><code>// Use in your Spring service
+@Service
+class WorkflowService(@Autowired val engine: ScxmlScriptEngine) {
+
+    fun processOrder(orderId: String) {
+        engine.createSession(orderId)
+        engine.evaluateCondition(orderId, "orderTotal > 100")
+        engine.executeScript(orderId, "applyDiscount(0.1)")
+        engine.destroySession(orderId)
+    }
+}</code></pre>
+
+            <p>
+                The starter automatically configures the engine based on available
+                dependencies, with <strong>Rhino</strong> as the default for server
+                environments (pure JVM, zero JNI, fastest server-side performance).
+            </p>
+
+            <h2>Three Pluggable Script Engines</h2>
+
+            <p>
+                SCE's Kotlin runtime supports three script engines, each optimized for
+                different deployment targets:
+            </p>
+
+            <table>
+                <tr>
+                    <th>Engine</th>
+                    <th>Type</th>
+                    <th>Best For</th>
+                    <th>Benchmark Result</th>
+                </tr>
+                <tr>
+                    <td><strong>Rhino</strong> (default)</td>
+                    <td>Pure JVM</td>
+                    <td>Server / Spring Boot</td>
+                    <td>Fastest on JVM (29/29 scenarios)</td>
+                </tr>
+                <tr>
+                    <td><strong>Lua 5.4</strong></td>
+                    <td>JNI native</td>
+                    <td>Android / AAOS</td>
+                    <td>Fastest on Android (20/29 scenarios)</td>
+                </tr>
+                <tr>
+                    <td><strong>QuickJS</strong></td>
+                    <td>JNI native</td>
+                    <td>Full ES6 compatibility</td>
+                    <td>Modern JavaScript features</td>
+                </tr>
+            </table>
+
+<pre><code>// Switch engine via Gradle property
+./gradlew test -Psce.script.engine=lua      // Lua 5.4
+./gradlew test -Psce.script.engine=rhino    // Rhino (default)
+./gradlew test -Psce.script.engine=quickjs  // QuickJS</code></pre>
+
+            <h2>Android Automotive OS (AAOS)</h2>
+
+            <p>
+                For <strong>Android Automotive</strong> infotainment systems where
+                deterministic state management is critical, SCE with the Lua engine
+                provides native-speed SCXML processing. The Lua 5.4 engine won
+                <strong>20 out of 29 benchmark scenarios</strong> on Android, making it
+                the best choice for resource-constrained automotive environments.
+            </p>
+
+            <p>
+                SCE's Kotlin modules are built with <strong>Kotlin Multiplatform</strong>
+                support, and the Android benchmark app uses <strong>Jetpack Compose</strong>
+                for the UI layer. The architecture follows standard Android patterns with
+                Gradle 8.11.1, Kotlin 2.1.20, and AGP 8.9.3.
+            </p>
+
+            <h2>AOT Code Generation for Kotlin</h2>
+
+            <p>
+                SCE generates Kotlin state machine classes from SCXML at build time,
+                just like the C++ backend. The generated code implements the
+                <code>StateMachineEngine</code> interface and integrates with SCE's
+                runtime via the same code generator (Python + Jinja2 templates).
+            </p>
+
+<pre><code># Generate Kotlin state machine from SCXML
+python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --lang kotlin</code></pre>
+
+            <p>
+                The code generator analyzes the SCXML features and automatically selects
+                the optimal engine: <strong>Pure Static</strong> for simple state machines,
+                <strong>Static Hybrid</strong> when ECMAScript expressions are present.
+            </p>
+
+            <h2>W3C SCXML Compliance</h2>
+
+            <p>
+                The Kotlin backend passes <strong>all 202 mandatory W3C SCXML conformance
+                tests</strong> across all three script engines. This covers compound states,
+                parallel states, history states, <code>&lt;invoke&gt;</code>, delayed events
+                (<code>&lt;send&gt;</code> with delay), and the full ECMAScript datamodel.
+            </p>
+
+<pre><code># Run W3C conformance tests
+./gradlew :sce-kotlin-tests:test
+
+# Run benchmarks
+./gradlew :sce-kotlin-benchmark:jmh --no-configuration-cache</code></pre>
+
+            <h2>Kotlin Module Structure</h2>
+
+            <table>
+                <tr>
+                    <th>Module</th>
+                    <th>Purpose</th>
+                </tr>
+                <tr>
+                    <td><code>sce-kotlin-runtime</code></td>
+                    <td>ScxmlScriptEngine interface (Kotlin Multiplatform)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-kotlin-rhino</code></td>
+                    <td>Rhino ECMAScript engine (pure JVM)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-kotlin-lua</code></td>
+                    <td>Lua 5.4 engine (JNI native, LuaRef registry pattern)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-kotlin-quickjs</code></td>
+                    <td>QuickJS engine (JNI native, ES6)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-spring-boot-starter</code></td>
+                    <td>Spring Boot auto-configuration</td>
+                </tr>
+                <tr>
+                    <td><code>sce-kotlin-tests</code></td>
+                    <td>W3C conformance tests (202/202)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-android-app</code></td>
+                    <td>Android benchmark app (Compose UI)</td>
+                </tr>
+            </table>
+
+            <h2>Getting Started</h2>
+
+<pre><code># Clone and build
+git clone --recursive https://github.com/newmassrael/scxml-core-engine.git
+cd scxml-core-engine
+
+# Build Kotlin modules
+./gradlew build
+
+# Publish to local Maven for use in your project
+./gradlew publishToMavenLocal
+
+# Then in your project's build.gradle.kts:
+# implementation("com.sce:sce-spring-boot-starter:1.0.0")</code></pre>
+
+            <div class="cta">
+                <a href="https://github.com/newmassrael/scxml-core-engine" class="primary">GitHub Repository</a>
+                <a href="visualizer/codegen.html" class="secondary">Try Online Code Generator</a>
+            </div>
+        </article>
+
+        <footer>
+            <p><a href="./">SCE Home</a> | <a href="cpp-state-machine.html">C++ State Machine</a> | <a href="rust-state-machine.html">Rust State Machine</a></p>
+        </footer>
+    </div>
+</body>
+</html>

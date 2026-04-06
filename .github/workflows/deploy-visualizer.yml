@@ -9,6 +9,7 @@ on:
       - 'tools/codegen/**'
       - 'tests/w3c/InteractiveTestRunner.cpp'
       - 'examples/doom_wasm/**'
+      - 'site/**'
       - '.github/workflows/deploy-visualizer.yml'
   workflow_dispatch:
 
@@ -70,40 +71,45 @@ jobs:
 
     - name: Prepare Deployment Directory
       run: |
-        mkdir -p gh-pages
+        mkdir -p gh-pages/visualizer
+
+        # Copy root site files (landing pages, sitemap, robots.txt)
+        echo "Copying root site files..."
+        cp site/*.html gh-pages/
+        cp site/sitemap.xml gh-pages/
+        cp site/robots.txt gh-pages/
 
         # Copy visualizer source files
         echo "Copying visualizer source files..."
-        cp -r visualizer/* gh-pages/
+        cp -r visualizer/* gh-pages/visualizer/
 
         # Copy WASM build outputs (overwrite placeholder files if present)
         echo "Copying WASM build outputs..."
-        cp build_wasm/tests/visualizer.wasm gh-pages/
-        cp build_wasm/tests/visualizer.js gh-pages/
+        cp build_wasm/tests/visualizer.wasm gh-pages/visualizer/
+        cp build_wasm/tests/visualizer.js gh-pages/visualizer/
 
         # Copy SCXML resources for visualizer
         echo "Copying SCXML test resources..."
-        cp -r resources gh-pages/
+        cp -r resources gh-pages/visualizer/
 
         # Copy Python codegen files for Pyodide
         echo "Copying Python codegen files for Pyodide..."
-        mkdir -p gh-pages/tools/codegen
-        cp -r tools/codegen/* gh-pages/tools/codegen/
+        mkdir -p gh-pages/visualizer/tools/codegen
+        cp -r tools/codegen/* gh-pages/visualizer/tools/codegen/
 
         # Copy DOOM WASM example
         echo "Copying DOOM WASM example..."
-        mkdir -p gh-pages/doom
-        cp examples/doom_wasm/build/index.html gh-pages/doom/
-        cp examples/doom_wasm/build/doom_sce.js gh-pages/doom/
-        cp examples/doom_wasm/build/doom_sce.wasm gh-pages/doom/
-        cp examples/doom_wasm/build/doom_sce.data gh-pages/doom/
+        mkdir -p gh-pages/visualizer/doom
+        cp examples/doom_wasm/build/index.html gh-pages/visualizer/doom/
+        cp examples/doom_wasm/build/doom_sce.js gh-pages/visualizer/doom/
+        cp examples/doom_wasm/build/doom_sce.wasm gh-pages/visualizer/doom/
+        cp examples/doom_wasm/build/doom_sce.data gh-pages/visualizer/doom/
         # Copy visualizer for DOOM (visualizer.html at root, JS files in visualizer/)
-        cp -r visualizer gh-pages/doom/
+        cp -r visualizer gh-pages/visualizer/doom/
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./gh-pages
-        destination_dir: visualizer
         keep_files: true

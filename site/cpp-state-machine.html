@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C++ State Machine Library - Zero-Overhead AOT Code Generation | SCE</title>
+    <meta name="description" content="Generate zero-overhead C++ state machines from W3C SCXML. Compile-time state/event enums, no virtual functions, 8-byte footprint. Supports embedded systems, Qt, GLib. Try the online code generator.">
+    <meta name="keywords" content="C++ state machine, C++ statechart, C++ finite state machine, C++ FSM library, state machine code generator, Boost Statechart alternative, embedded state machine, SCXML C++">
+    <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/cpp-state-machine.html">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="C++ State Machine Library - Zero-Overhead AOT Code Generation">
+    <meta property="og:description" content="Generate zero-overhead C++ state machines from W3C SCXML. 8-byte footprint, no virtual functions, compile-time enums. Try online.">
+    <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/cpp-state-machine.html">
+    <meta property="og:site_name" content="SCXML Core Engine">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="C++ State Machine Library - Zero-Overhead AOT Code Generation">
+    <meta name="twitter:description" content="Generate zero-overhead C++ state machines from W3C SCXML. 8-byte footprint, compile-time enums.">
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "C++ State Machine Library with Zero-Overhead AOT Code Generation",
+        "description": "How to implement state machines in C++ using SCE's AOT code generator. Compile-time enums, zero virtual functions, 8-byte footprint.",
+        "url": "https://newmassrael.github.io/scxml-core-engine/cpp-state-machine.html",
+        "author": { "@type": "Person", "name": "newmassrael" },
+        "publisher": { "@type": "Organization", "name": "SCXML Core Engine" },
+        "about": {
+            "@type": "SoftwareSourceCode",
+            "name": "SCE - SCXML Core Engine",
+            "codeRepository": "https://github.com/newmassrael/scxml-core-engine",
+            "programmingLanguage": "C++"
+        }
+    }
+    </script>
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%230969da'/><text x='50' y='65' font-family='monospace' font-size='36' text-anchor='middle' fill='white'>SC</text></svg>">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.7; }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+
+        header { padding: 48px 0 32px; text-align: center; }
+        header nav { margin-bottom: 32px; font-size: 14px; color: #8b949e; }
+        header h1 { font-size: 36px; color: #f0f6fc; margin-bottom: 16px; }
+        header p.lead { font-size: 18px; color: #8b949e; max-width: 640px; margin: 0 auto; }
+
+        .cta { display: flex; gap: 12px; justify-content: center; margin: 32px 0; flex-wrap: wrap; }
+        .cta a {
+            display: inline-block; padding: 10px 24px; border-radius: 6px;
+            font-size: 14px; font-weight: 600;
+        }
+        .cta a.primary { background: #238636; color: #fff; }
+        .cta a.primary:hover { background: #2ea043; text-decoration: none; }
+        .cta a.secondary { border: 1px solid #30363d; color: #c9d1d9; }
+        .cta a.secondary:hover { background: #30363d; text-decoration: none; }
+
+        article { padding-bottom: 60px; }
+        article h2 { font-size: 24px; color: #f0f6fc; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        article h3 { font-size: 18px; color: #f0f6fc; margin: 32px 0 12px; }
+        article p { margin-bottom: 16px; color: #8b949e; }
+        article p strong { color: #c9d1d9; }
+        article ul, article ol { margin: 0 0 16px 24px; color: #8b949e; }
+        article li { margin-bottom: 8px; }
+
+        pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; overflow-x: auto; margin-bottom: 16px; }
+        code { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; color: #c9d1d9; }
+        p code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th, td { padding: 10px 16px; text-align: left; border: 1px solid #30363d; font-size: 14px; }
+        th { background: #161b22; color: #f0f6fc; font-weight: 600; }
+        td { color: #8b949e; }
+
+        footer { padding: 24px 0; border-top: 1px solid #21262d; text-align: center; color: #484f58; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav><a href="./">SCE Home</a> / C++ State Machine</nav>
+            <h1>C++ State Machine Library</h1>
+            <p class="lead">
+                Generate zero-overhead state machines from W3C SCXML.
+                Compile-time enums, no virtual functions, 8-byte footprint.
+                From embedded microcontrollers to Qt and GLib applications.
+            </p>
+            <div class="cta">
+                <a href="visualizer/codegen.html" class="primary">Try Online Code Generator</a>
+                <a href="https://github.com/newmassrael/scxml-core-engine" class="secondary">View on GitHub</a>
+            </div>
+        </header>
+
+        <article>
+            <h2>The Problem with C++ State Machines</h2>
+
+            <p>
+                Implementing state machines in C++ typically involves a choice between
+                <strong>simplicity and correctness</strong>. Manual approaches using
+                switch-case statements start simple but become unmaintainable as states
+                and transitions grow. Framework-based solutions like Boost.Statechart or
+                Qt State Machine add runtime overhead and force your code into specific
+                class hierarchies.
+            </p>
+
+            <h3>Common approaches and their trade-offs</h3>
+
+            <table>
+                <tr>
+                    <th>Approach</th>
+                    <th>Pros</th>
+                    <th>Cons</th>
+                </tr>
+                <tr>
+                    <td>switch-case / enum</td>
+                    <td>Simple, no dependencies</td>
+                    <td>No hierarchy, hard to maintain, no formal verification</td>
+                </tr>
+                <tr>
+                    <td>Boost.Statechart</td>
+                    <td>Full UML statechart support</td>
+                    <td>Heavy template usage, slow compilation, virtual dispatch</td>
+                </tr>
+                <tr>
+                    <td>Boost.MSM</td>
+                    <td>Compile-time transitions</td>
+                    <td>Complex MPL syntax, long compile times, steep learning curve</td>
+                </tr>
+                <tr>
+                    <td>Qt State Machine</td>
+                    <td>Integrates with Qt event loop</td>
+                    <td>Requires Qt dependency, QObject overhead, runtime construction</td>
+                </tr>
+                <tr>
+                    <td><strong>SCE (AOT)</strong></td>
+                    <td><strong>Zero overhead, W3C standard, compile-time enums</strong></td>
+                    <td>Requires build-time code generation step</td>
+                </tr>
+            </table>
+
+            <h2>How SCE Works</h2>
+
+            <p>
+                SCE takes a different approach: you define your state machine in
+                <strong>W3C SCXML</strong> (an XML-based standard for statecharts), and
+                SCE's code generator produces a <strong>self-contained C++ header file</strong>
+                at build time. The generated code uses compile-time enums for states and events,
+                with no virtual functions, no RTTI, and no dynamic allocation.
+            </p>
+
+            <h3>Step 1: Define your state machine in SCXML</h3>
+
+<pre><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="TrafficLight" initial="red"&gt;
+  &lt;state id="red"&gt;
+    &lt;transition event="timer" target="green"/&gt;
+  &lt;/state&gt;
+  &lt;state id="green"&gt;
+    &lt;transition event="timer" target="yellow"/&gt;
+  &lt;/state&gt;
+  &lt;state id="yellow"&gt;
+    &lt;transition event="timer" target="red"/&gt;
+  &lt;/state&gt;
+&lt;/scxml&gt;</code></pre>
+
+            <h3>Step 2: Generate C++ code</h3>
+
+<pre><code># Command line
+python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/
+
+# Or with CMake (automatic)
+sce_add_state_machine(TARGET my_app SCXML_FILE traffic_light.scxml)</code></pre>
+
+            <h3>Step 3: Use the generated state machine</h3>
+
+<pre><code>#include "traffic_light_sm.h"
+#include "wrappers/AutoProcessStateMachine.h"
+
+int main() {
+    using namespace SCE::Generated::traffic_light;
+
+    SCE::Wrappers::AutoProcessStateMachine&lt;traffic_light&gt; light;
+    light.initialize();                    // Enters "red" state
+    light.processEvent(Event::Timer);      // red -> green
+    light.processEvent(Event::Timer);      // green -> yellow
+    light.processEvent(Event::Timer);      // yellow -> red
+}</code></pre>
+
+            <p>
+                The generated header contains <strong>enum classes for State and Event</strong>,
+                a compact transition table, and inline action handlers. No base class required,
+                no framework lock-in. The state machine object starts at
+                <strong>8 bytes of memory</strong>.
+            </p>
+
+            <h2>C++ Function Integration</h2>
+
+            <p>
+                SCE allows you to call your C++ functions directly from SCXML transitions
+                and actions using a <strong>Named Context</strong> pattern. Your business
+                logic code remains completely independent of the state machine framework.
+            </p>
+
+            <h3>SCXML with Named Context</h3>
+
+<pre><code>&lt;!-- Declare Named Context: bind "hardware" to your C++ type --&gt;
+&lt;scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="urn:sce:extensions" xmlns:cpp="urn:sce:cpp"
+       version="1.0" name="SmartLight" initial="off"&gt;
+  &lt;sce:context id="hardware" cpp:type="Hardware" cpp:include="hardware.h"/&gt;
+
+  &lt;state id="off"&gt;
+    &lt;onentry&gt;
+      &lt;script&gt;&lt;cpp&gt;hardware.powerOff()&lt;/cpp&gt;&lt;/script&gt;
+    &lt;/onentry&gt;
+    &lt;transition event="switch_on" cond="cpp:hardware.hasPower()" target="on"&gt;
+      &lt;script&gt;&lt;cpp&gt;hardware.powerOn()&lt;/cpp&gt;&lt;/script&gt;
+    &lt;/transition&gt;
+  &lt;/state&gt;
+
+  &lt;state id="on"&gt;
+    &lt;onentry&gt;
+      &lt;script&gt;&lt;cpp&gt;hardware.setBrightness(100)&lt;/cpp&gt;&lt;/script&gt;
+    &lt;/onentry&gt;
+    &lt;transition event="switch_off" target="off"/&gt;
+  &lt;/state&gt;
+&lt;/scxml&gt;</code></pre>
+
+            <h3>Your C++ code (no framework dependency)</h3>
+
+<pre><code>// hardware.h -- your business logic, completely independent
+struct Hardware {
+    bool hasPower() { return true; }
+    void powerOn()  { /* ... */ }
+    void powerOff() { /* ... */ }
+    void setBrightness(int level) { /* ... */ }
+};</code></pre>
+
+            <h3>Usage: Named Context is passed directly (no wrapper struct)</h3>
+
+<pre><code>#include "smart_light_sm.h"
+
+int main() {
+    using namespace SCE::Generated::smart_light;
+
+    // Named Context: pass your type directly as template parameter
+    Hardware hardware;
+    smart_light light(hardware);  // Dependency injection via constructor
+    light.initialize();
+
+    light.raiseExternal(Event::Switch_on);
+    light.step();  // off -> on (calls hardware.powerOn())
+
+    light.raiseExternal(Event::Switch_off);
+    light.step();  // on -> off (calls hardware.powerOff())
+}</code></pre>
+
+            <p>
+                The <code>&lt;sce:context&gt;</code> declaration generates a templated state
+                machine class. Your type is the template parameter -- <strong>no wrapper struct
+                needed</strong>. The generated code accesses your object via
+                <code>this-&gt;user_-&gt;hardware.powerOff()</code>, providing
+                <strong>zero-overhead direct calls</strong> with no virtual dispatch.
+            </p>
+
+            <h2>Platform Integration</h2>
+
+            <p>
+                SCE provides event dispatchers for the most common C++ application frameworks,
+                enabling asynchronous state machine event processing:
+            </p>
+
+            <table>
+                <tr>
+                    <th>Dispatcher</th>
+                    <th>Platform</th>
+                    <th>Timer Source</th>
+                </tr>
+                <tr>
+                    <td>StdThreadDispatcher</td>
+                    <td>Any C++11</td>
+                    <td>std::condition_variable</td>
+                </tr>
+                <tr>
+                    <td>QtDispatcher</td>
+                    <td>Qt5 / Qt6</td>
+                    <td>QTimer</td>
+                </tr>
+                <tr>
+                    <td>GLibDispatcher</td>
+                    <td>GTK / GNOME</td>
+                    <td>GSource</td>
+                </tr>
+            </table>
+
+<pre><code>#include "dispatchers/StdThreadDispatcher.h"
+#include "wrappers/AsyncStateMachine.h"
+
+auto dispatcher = StdThreadDispatcher::create();
+AsyncStateMachine&lt;traffic_light, Event&gt; sm(dispatcher);
+
+sm.initialize();
+dispatcher->start();
+
+// Post events from any thread (thread-safe)
+sm.postEvent(Event::Timer);
+
+dispatcher->stop();</code></pre>
+
+            <h2>Build System Integration</h2>
+
+            <p>
+                SCE integrates with CMake via three methods:
+            </p>
+
+            <ul>
+                <li><strong>find_package</strong> -- for production projects with SCE installed system-wide</li>
+                <li><strong>add_subdirectory</strong> -- for projects including SCE as a git submodule</li>
+                <li><strong>FetchContent</strong> -- for automatic dependency management</li>
+            </ul>
+
+<pre><code># FetchContent example (simplest)
+include(FetchContent)
+FetchContent_Declare(sce
+    GIT_REPOSITORY https://github.com/newmassrael/scxml-core-engine.git
+    GIT_TAG main)
+FetchContent_MakeAvailable(sce)
+
+add_executable(my_app main.cpp)
+sce_add_state_machine(TARGET my_app SCXML_FILE my_machine.scxml)
+target_link_libraries(my_app PRIVATE sce_runtime)</code></pre>
+
+            <h2>4-Tier Library Architecture</h2>
+
+            <p>
+                SCE's C++ library is split into four tiers so you can
+                <strong>link only what you need</strong>:
+            </p>
+
+            <table>
+                <tr>
+                    <th>Tier</th>
+                    <th>Dependencies</th>
+                    <th>Use Case</th>
+                </tr>
+                <tr>
+                    <td><code>sce_core</code></td>
+                    <td>Header-only, zero</td>
+                    <td>Pure static AOT (embedded, microcontrollers)</td>
+                </tr>
+                <tr>
+                    <td><code>sce_base</code></td>
+                    <td>+ logger</td>
+                    <td>AOT with logging</td>
+                </tr>
+                <tr>
+                    <td><code>sce_scripting</code></td>
+                    <td>+ Lua/QuickJS</td>
+                    <td>Static hybrid (ECMAScript expressions)</td>
+                </tr>
+                <tr>
+                    <td><code>sce_runtime</code></td>
+                    <td>+ XML parser</td>
+                    <td>Full interpreter (runtime SCXML loading)</td>
+                </tr>
+            </table>
+
+            <p>
+                For most embedded use cases, <code>sce_core</code> (header-only, zero
+                dependencies) is sufficient. The code generator automatically selects
+                the optimal tier based on the SCXML features used.
+            </p>
+
+            <h2>Performance</h2>
+
+            <ul>
+                <li><strong>8 bytes</strong> minimal state machine footprint</li>
+                <li><strong>&lt;1 us</strong> per state transition</li>
+                <li><strong>~90 ns</strong> async event enqueue latency</li>
+                <li><strong>&lt;1 ms</strong> timer drift for 100ms intervals</li>
+                <li><strong>Zero virtual functions</strong> in pure static mode</li>
+                <li><strong>C++17</strong> minimum (C++20 for full runtime features)</li>
+            </ul>
+
+            <h2>W3C SCXML Compliance</h2>
+
+            <p>
+                SCE passes <strong>all 202 mandatory W3C SCXML 1.0 conformance tests</strong>,
+                covering compound states, parallel states, history states, invoke, delayed events,
+                and ECMAScript datamodels. The code generator automatically detects which features
+                your SCXML uses and selects the optimal engine:
+            </p>
+
+            <ul>
+                <li><strong>Pure Static</strong> -- no ECMAScript, zero runtime overhead</li>
+                <li><strong>Static Hybrid</strong> -- ECMAScript present, minimal overhead via script engine</li>
+                <li><strong>Interpreter</strong> -- only when SCXML content is loaded at runtime</li>
+            </ul>
+
+            <div class="cta">
+                <a href="visualizer/codegen.html" class="primary">Try the Online Code Generator</a>
+                <a href="https://github.com/newmassrael/scxml-core-engine" class="secondary">GitHub Repository</a>
+            </div>
+        </article>
+
+        <footer>
+            <p><a href="./">SCE Home</a> | <a href="kotlin-state-machine.html">Kotlin State Machine</a> | <a href="rust-state-machine.html">Rust State Machine</a></p>
+        </footer>
+    </div>
+</body>
+</html>
