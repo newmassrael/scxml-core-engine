@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Python State Machine Library - W3C SCXML Bindings | SCE</title>
+    <meta name="description" content="Python bindings for W3C SCXML 1.0 state machine engine via pybind11. Full 202/202 W3C conformance, context manager API, HTTP event support. pip-installable Python state machine.">
+    <meta name="keywords" content="Python state machine, Python FSM, Python finite state machine, Python statechart, SCXML Python, pybind11 state machine, W3C SCXML Python, Python state machine library">
+    <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/python-state-machine.html">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Python State Machine Library - W3C SCXML Bindings">
+    <meta property="og:description" content="Python bindings for W3C SCXML 1.0 state machine engine. 202/202 W3C tests passing, pybind11, context manager API.">
+    <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/python-state-machine.html">
+    <meta property="og:site_name" content="SCXML Core Engine">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Python State Machine Library with W3C SCXML Bindings">
+    <meta name="twitter:description" content="Python bindings for W3C SCXML 1.0 state machine engine. 202/202 W3C tests passing, pybind11.">
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "Python State Machine Library with W3C SCXML Bindings",
+        "description": "How to use W3C SCXML 1.0 state machines in Python using SCE's pybind11 bindings with full conformance.",
+        "url": "https://newmassrael.github.io/scxml-core-engine/python-state-machine.html",
+        "author": { "@type": "Person", "name": "newmassrael" },
+        "publisher": { "@type": "Organization", "name": "SCXML Core Engine" },
+        "about": {
+            "@type": "SoftwareSourceCode",
+            "name": "SCE - SCXML Core Engine",
+            "codeRepository": "https://github.com/newmassrael/scxml-core-engine",
+            "programmingLanguage": "Python"
+        }
+    }
+    </script>
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%230969da'/><text x='50' y='65' font-family='monospace' font-size='36' text-anchor='middle' fill='white'>SC</text></svg>">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.7; }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+
+        header { padding: 48px 0 32px; text-align: center; }
+        header nav { margin-bottom: 32px; font-size: 14px; color: #8b949e; }
+        header h1 { font-size: 36px; color: #f0f6fc; margin-bottom: 16px; }
+        header p.lead { font-size: 18px; color: #8b949e; max-width: 640px; margin: 0 auto; }
+
+        .cta { display: flex; gap: 12px; justify-content: center; margin: 32px 0; flex-wrap: wrap; }
+        .cta a {
+            display: inline-block; padding: 10px 24px; border-radius: 6px;
+            font-size: 14px; font-weight: 600;
+        }
+        .cta a.primary { background: #238636; color: #fff; }
+        .cta a.primary:hover { background: #2ea043; text-decoration: none; }
+        .cta a.secondary { border: 1px solid #30363d; color: #c9d1d9; }
+        .cta a.secondary:hover { background: #30363d; text-decoration: none; }
+
+        article { padding-bottom: 60px; }
+        article h2 { font-size: 24px; color: #f0f6fc; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        article h3 { font-size: 18px; color: #f0f6fc; margin: 32px 0 12px; }
+        article p { margin-bottom: 16px; color: #8b949e; }
+        article p strong { color: #c9d1d9; }
+        article ul, article ol { margin: 0 0 16px 24px; color: #8b949e; }
+        article li { margin-bottom: 8px; }
+
+        pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; overflow-x: auto; margin-bottom: 16px; }
+        code { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; color: #c9d1d9; }
+        p code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th, td { padding: 10px 16px; text-align: left; border: 1px solid #30363d; font-size: 14px; }
+        th { background: #161b22; color: #f0f6fc; font-weight: 600; }
+        td { color: #8b949e; }
+
+        footer { padding: 24px 0; border-top: 1px solid #21262d; text-align: center; color: #484f58; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav><a href="./">SCE Home</a> / Python State Machine</nav>
+            <h1>Python State Machine Library</h1>
+            <p class="lead">
+                W3C SCXML 1.0 compliant state machine for Python via pybind11 bindings.
+                Full 202/202 W3C conformance tests passing including HTTP events.
+            </p>
+            <div class="cta">
+                <a href="https://github.com/newmassrael/scxml-core-engine" class="primary">View on GitHub</a>
+                <a href="visualizer/codegen.html" class="secondary">Try Code Generator</a>
+            </div>
+        </header>
+
+        <article>
+            <h2>State Machines in Python</h2>
+
+            <p>
+                Python is the most popular programming language (TIOBE #1, 2026), yet
+                most Python state machine libraries offer only flat FSMs without
+                hierarchical states, parallel regions, or standard compliance.
+                SCE brings the full power of <strong>W3C SCXML 1.0</strong> to Python
+                by wrapping the battle-tested C++ interpreter via <strong>pybind11</strong>.
+            </p>
+
+            <h3>Existing approaches compared</h3>
+
+            <table>
+                <tr>
+                    <th>Approach</th>
+                    <th>Pros</th>
+                    <th>Cons</th>
+                </tr>
+                <tr>
+                    <td>transitions</td>
+                    <td>Pure Python, simple API</td>
+                    <td>Flat states only, no parallel, no standard</td>
+                </tr>
+                <tr>
+                    <td>python-statemachine</td>
+                    <td>Declarative, Django integration</td>
+                    <td>No hierarchy, no history, no W3C compliance</td>
+                </tr>
+                <tr>
+                    <td>sismic</td>
+                    <td>YAML statecharts, hierarchical</td>
+                    <td>Pure Python (slow), no W3C SCXML support</td>
+                </tr>
+                <tr>
+                    <td><strong>SCE</strong></td>
+                    <td><strong>W3C standard, C++ speed, full hierarchy</strong></td>
+                    <td>Requires C++ build step for bindings</td>
+                </tr>
+            </table>
+
+            <h2>Quick Start</h2>
+
+            <h3>Step 1: Build the Python bindings</h3>
+
+<pre><code># Clone and build
+git clone --recursive https://github.com/newmassrael/scxml-core-engine.git
+cd scxml-core-engine
+
+mkdir build_python && cd build_python
+cmake .. -DBUILD_PYTHON_BINDINGS=ON -DCMAKE_BUILD_TYPE=Release \
+         -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF
+cmake --build . --target _sce</code></pre>
+
+            <h3>Step 2: Use with context manager</h3>
+
+<pre><code>import sce
+
+# Context manager automatically starts/stops the engine
+with sce.Engine.from_file("traffic_light.scxml") as engine:
+    print(engine.current_state)     # 'red'
+    engine.send_event("timer")
+    print(engine.current_state)     # 'green'
+    engine.send_event("timer")
+    print(engine.current_state)     # 'yellow'</code></pre>
+
+            <h3>Step 3: Or use explicit lifecycle</h3>
+
+<pre><code>import sce
+
+engine = sce.Engine.from_file("traffic_light.scxml")
+engine.start()
+
+engine.send_event("timer")
+print(engine.current_state)    # 'green'
+print(engine.active_states)    # ['green']
+print(engine.running)          # True
+
+engine.stop()</code></pre>
+
+            <h2>API Reference</h2>
+
+            <h3>Factory Methods</h3>
+
+            <table>
+                <tr>
+                    <th>Method</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>Engine.from_file(path)</code></td>
+                    <td>Create engine from an SCXML file. Raises <code>ValueError</code> on failure.</td>
+                </tr>
+                <tr>
+                    <td><code>Engine.from_string(content)</code></td>
+                    <td>Create engine from an SCXML string. Raises <code>ValueError</code> on failure.</td>
+                </tr>
+            </table>
+
+            <h3>Core Operations</h3>
+
+            <table>
+                <tr>
+                    <th>Method</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>start()</code></td>
+                    <td>Start the state machine. Returns <code>True</code> if started successfully.</td>
+                </tr>
+                <tr>
+                    <td><code>stop()</code></td>
+                    <td>Stop the state machine.</td>
+                </tr>
+                <tr>
+                    <td><code>send_event(name, data="")</code></td>
+                    <td>Send an event (internal queue). Returns <code>True</code> on success.</td>
+                </tr>
+                <tr>
+                    <td><code>send_external_event(name, data="")</code></td>
+                    <td>Send to external queue (W3C SCXML 5.10). For HTTP/BasicHTTPEventProcessor.</td>
+                </tr>
+                <tr>
+                    <td><code>is_in_state(state_id)</code></td>
+                    <td>Check if a specific state is active.</td>
+                </tr>
+                <tr>
+                    <td><code>set_variable(name, value)</code></td>
+                    <td>Set datamodel variable (bool, int, float, or str).</td>
+                </tr>
+                <tr>
+                    <td><code>get_variable(name)</code></td>
+                    <td>Get datamodel variable as string.</td>
+                </tr>
+            </table>
+
+            <h3>Properties</h3>
+
+            <table>
+                <tr>
+                    <th>Property</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>current_state</code></td>
+                    <td><code>str</code></td>
+                    <td>Current active state ID</td>
+                </tr>
+                <tr>
+                    <td><code>active_states</code></td>
+                    <td><code>list[str]</code></td>
+                    <td>All currently active state IDs (for parallel states)</td>
+                </tr>
+                <tr>
+                    <td><code>running</code></td>
+                    <td><code>bool</code></td>
+                    <td>Whether the engine is currently running</td>
+                </tr>
+                <tr>
+                    <td><code>last_error</code></td>
+                    <td><code>str</code></td>
+                    <td>Last error message</td>
+                </tr>
+                <tr>
+                    <td><code>statistics</code></td>
+                    <td><code>Statistics</code></td>
+                    <td>Execution statistics (events, transitions)</td>
+                </tr>
+            </table>
+
+            <h2>W3C SCXML Features</h2>
+
+            <p>
+                SCE's Python bindings pass <strong>all 202 mandatory W3C SCXML
+                conformance tests</strong>, including 13 HTTP event tests:
+            </p>
+
+            <table>
+                <tr>
+                    <th>Feature</th>
+                    <th>W3C Section</th>
+                    <th>Status</th>
+                </tr>
+                <tr>
+                    <td>Compound (hierarchical) states</td>
+                    <td>3.3</td>
+                    <td>Supported</td>
+                </tr>
+                <tr>
+                    <td>Parallel states</td>
+                    <td>3.4</td>
+                    <td>Supported</td>
+                </tr>
+                <tr>
+                    <td>History states (shallow + deep)</td>
+                    <td>3.10</td>
+                    <td>Supported</td>
+                </tr>
+                <tr>
+                    <td>ECMAScript datamodel</td>
+                    <td>B.2</td>
+                    <td>Supported</td>
+                </tr>
+                <tr>
+                    <td>Invoke (parent-child)</td>
+                    <td>6.4</td>
+                    <td>Supported</td>
+                </tr>
+                <tr>
+                    <td>Delayed send</td>
+                    <td>6.2</td>
+                    <td>Supported</td>
+                </tr>
+                <tr>
+                    <td>BasicHTTPEventProcessor</td>
+                    <td>C.2</td>
+                    <td>Supported</td>
+                </tr>
+            </table>
+
+            <h2>Architecture</h2>
+
+            <p>
+                The Python bindings are a thin wrapper over the C++ <code>ReadySCXMLEngine</code>
+                interpreter. No Python reimplementation -- the same C++ code that passes
+                all W3C tests runs under the hood.
+            </p>
+
+<pre><code>Python (sce package)
+  |
+  v
+pybind11 (PyEngine wrapper, GIL management)
+  |
+  v
+C++ ReadySCXMLEngine (Interpreter + EventScheduler + EventDispatcher)
+  |
+  v
+Lua 5.4 / QuickJS (ECMAScript evaluation)</code></pre>
+
+            <p>
+                <strong>GIL management</strong>: All C++ calls release the Python GIL
+                (<code>py::gil_scoped_release</code>) to prevent deadlocks with C++ worker
+                threads (EventRaiser, EventScheduler). This enables safe multi-threaded
+                operation with invoke and delayed send features.
+            </p>
+
+            <h3>Module structure</h3>
+
+            <table>
+                <tr>
+                    <th>Path</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code>sce-python/src/bindings.cpp</code></td>
+                    <td>pybind11 wrapper (PyEngine, PyStatistics)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-python/python/sce/__init__.py</code></td>
+                    <td>Python package (exports Engine, Statistics)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-python/tests/test_w3c.py</code></td>
+                    <td>W3C conformance test runner (202 tests)</td>
+                </tr>
+                <tr>
+                    <td><code>sce-python/pyproject.toml</code></td>
+                    <td>scikit-build-core wheel configuration</td>
+                </tr>
+                <tr>
+                    <td><code>sce-python/CMakeLists.txt</code></td>
+                    <td>pybind11 v2.13.6 (FetchContent)</td>
+                </tr>
+            </table>
+
+            <h2>Running W3C Tests</h2>
+
+<pre><code># Build Python bindings first (see Quick Start above)
+
+# Run all 202 W3C tests (including HTTP)
+SPDLOG_LEVEL=off PYTHONPATH=build_python/sce-python:sce-python/python \
+    python3 sce-python/tests/test_w3c.py
+
+# Skip HTTP tests for faster iteration
+SPDLOG_LEVEL=off PYTHONPATH=build_python/sce-python:sce-python/python \
+    python3 sce-python/tests/test_w3c.py --skip-http
+
+# Run specific test
+SPDLOG_LEVEL=off PYTHONPATH=build_python/sce-python:sce-python/python \
+    python3 sce-python/tests/test_w3c.py 144</code></pre>
+
+            <div class="cta">
+                <a href="https://github.com/newmassrael/scxml-core-engine" class="primary">GitHub Repository</a>
+                <a href="visualizer/codegen.html" class="secondary">Try Online Code Generator</a>
+            </div>
+        </article>
+
+        <footer>
+            <p><a href="./">SCE Home</a> | <a href="cpp-state-machine.html">C++ State Machine</a> | <a href="kotlin-state-machine.html">Kotlin State Machine</a> | <a href="rust-state-machine.html">Rust State Machine</a></p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "templates": [
+    "state_machine.rs.jinja2",
+    "process_transition.rs.jinja2",
+    "entry_exit_actions.rs.jinja2",
+    "invoke_methods.rs.jinja2",
+    "scriptengine_helpers.rs.jinja2",
+    "utility_methods.rs.jinja2",
+    "license_header.rs.jinja2",
+    "datamodel_macros.rs.jinja2",
+    "conflict_resolution.rs.jinja2",
+    "actions/assign.rs.jinja2",
+    "actions/cancel.rs.jinja2",
+    "actions/foreach.rs.jinja2",
+    "actions/if.rs.jinja2",
+    "actions/log.rs.jinja2",
+    "actions/raise.rs.jinja2",
+    "actions/script.rs.jinja2",
+    "actions/send.rs.jinja2"
+  ],
+  "version": "1.0",
+  "description": "Rust Jinja2 template manifest for SCXML code generator"
+}

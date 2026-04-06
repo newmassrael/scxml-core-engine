@@ -6,6 +6,7 @@
     "process_event.kt.jinja2",
     "entry_exit_actions.kt.jinja2",
     "transition_actions.kt.jinja2",
+    "scriptengine_helpers.kt.jinja2",
     "actions/assign.kt.jinja2",
     "actions/cancel.kt.jinja2",
     "actions/foreach.kt.jinja2",
@@ -13,7 +14,9 @@
     "actions/log.kt.jinja2",
     "actions/raise.kt.jinja2",
     "actions/script.kt.jinja2",
-    "actions/send.kt.jinja2"
+    "actions/send.kt.jinja2",
+    "actions/_render.kt.jinja2",
+    "actions/_http_send_body.kt.jinja2"
   ],
   "version": "1.0",
   "description": "Kotlin Jinja2 template manifest for SCXML code generator"

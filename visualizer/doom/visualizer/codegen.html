@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCXML Code Generator - Online | Generate C++ State Machines from W3C SCXML</title>
-    <meta name="description" content="Generate optimized C++ state machine code from W3C SCXML online. Browser-based code generator powered by Pyodide with full SCXML 1.0 support including datamodel, actions, and JSEngine.">
-    <meta name="keywords" content="SCXML code generator, state machine generator, C++ code generator, W3C SCXML, SCXML to C++, online code generator, statechart compiler">
+    <title>SCXML Code Generator - Online | Generate C++, Kotlin, Rust State Machines from W3C SCXML</title>
+    <meta name="description" content="Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML online. Browser-based code generator powered by Pyodide with full SCXML 1.0 support including datamodel, actions, and JSEngine.">
+    <meta name="keywords" content="SCXML code generator, state machine generator, C++ code generator, Kotlin code generator, Rust code generator, W3C SCXML, SCXML to C++, SCXML to Kotlin, SCXML to Rust, online code generator, statechart compiler">
     <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="SCXML Code Generator - Generate C++ State Machines Online">
-    <meta property="og:description" content="Generate optimized C++ state machine code from W3C SCXML directly in your browser. Powered by Pyodide with full SCXML 1.0 support.">
+    <meta property="og:title" content="SCXML Code Generator - Generate C++, Kotlin, Rust State Machines Online">
+    <meta property="og:description" content="Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML directly in your browser. Powered by Pyodide with full SCXML 1.0 support.">
     <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html">
     <meta property="og:site_name" content="SCXML Core Engine">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="SCXML Code Generator Online">
-    <meta name="twitter:description" content="Generate optimized C++ state machine code from W3C SCXML in your browser.">
+    <meta name="twitter:description" content="Generate C++, Kotlin, or Rust state machine code from W3C SCXML in your browser.">
 
     <!-- JSON-LD -->
     <script type="application/ld+json">
@@ -26,7 +26,7 @@
         "@context": "https://schema.org",
         "@type": "WebApplication",
         "name": "SCXML Code Generator",
-        "description": "Generate optimized C++ state machine code from W3C SCXML online",
+        "description": "Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML online",
         "url": "https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Any",
@@ -86,6 +86,15 @@
         button:hover:not(:disabled) { background: #0056b3; }
         button:disabled { background: #ccc; cursor: not-allowed; }
 
+        .lang-selector { display: flex; gap: 4px; }
+        .lang-btn {
+            padding: 8px 16px; background: #f0f0f0; color: #555; border: 2px solid #e0e0e0;
+            border-radius: 5px; cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;
+        }
+        .lang-btn:hover { border-color: #007bff; color: #007bff; }
+        .lang-btn.active { background: #007bff; color: white; border-color: #007bff; }
+        .lang-btn.active:hover { background: #0056b3; border-color: #0056b3; }
+
         .status { padding: 15px; background: white; border-radius: 8px; margin-bottom: 20px; display: none; }
         .status.show { display: block; }
         .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
@@ -100,7 +109,7 @@
     <div class="container">
         <header>
             <h1>SCXML Code Generator</h1>
-            <p>Generate W3C SCXML compliant C++ code using Python codegen in browser</p>
+            <p>Generate W3C SCXML compliant C++, Kotlin, or Rust code using Python codegen in browser</p>
             <div class="info">
                 <strong>Powered by Pyodide</strong> - Runs the same Python codegen as CLI with full W3C SCXML support (datamodel, actions, JSEngine, etc.)
             </div>
@@ -109,7 +118,12 @@
         <div class="status" id="status"></div>
 
         <div class="controls">
-            <button onclick="generateCode()" id="generateBtn" disabled>Generate C++ Code</button>
+            <div class="lang-selector">
+                <button class="lang-btn active" data-lang="cpp" onclick="selectLanguage('cpp')">C++</button>
+                <button class="lang-btn" data-lang="kotlin" onclick="selectLanguage('kotlin')">Kotlin</button>
+                <button class="lang-btn" data-lang="rust" onclick="selectLanguage('rust')">Rust</button>
+            </div>
+            <button onclick="generateCode()" id="generateBtn" disabled>Generate Code</button>
             <button onclick="downloadCode()" id="downloadBtn" disabled>Download Code</button>
             <button onclick="visualizeSCXML()" style="background: #28a745;">Visualize</button>
             <button onclick="clearAll()">Clear All</button>
@@ -152,6 +166,29 @@
     <script>
         let generatedCode = '';
         let exampleCode = '';
+        let currentLanguage = 'cpp';
+
+        // Read language from URL query parameter (e.g., ?lang=kotlin)
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            const lang = params.get('lang');
+            if (lang && LANGUAGE_CONFIG[lang]) {
+                currentLanguage = lang;
+            }
+        })();
+
+        function selectLanguage(lang) {
+            currentLanguage = lang;
+            document.querySelectorAll('.lang-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.lang === lang);
+            });
+            // Clear previous output when switching
+            document.getElementById('generatedContent').textContent = 'Ready to generate...';
+            document.getElementById('exampleContent').textContent = '';
+            document.getElementById('downloadBtn').disabled = true;
+            generatedCode = '';
+            exampleCode = '';
+        }
 
         function showStatus(message, type = 'loading', progress = null) {
             const status = document.getElementById('status');
@@ -203,17 +240,18 @@
             }
 
             btn.disabled = true;
-            showStatus('Generating C++ code using Python codegen...', 'loading');
+            const langLabel = LANGUAGE_CONFIG[currentLanguage].label;
+            showStatus(`Generating ${langLabel} code using Python codegen...`, 'loading');
 
             try {
-                // Generate using Pyodide
-                const code = await pyodideCodegen.generate(scxmlInput);
+                // Generate using Pyodide with selected language
+                const code = await pyodideCodegen.generate(scxmlInput, currentLanguage);
 
                 // Get state machine name for usage example
                 const smName = await pyodideCodegen.getStateMachineName(scxmlInput);
 
                 // Generate usage example
-                const example = generateUsageExample(smName, scxmlInput);
+                const example = generateUsageExample(smName, scxmlInput, currentLanguage);
 
                 generatedCode = code;
                 exampleCode = example;
@@ -222,7 +260,7 @@
                 document.getElementById('exampleContent').textContent = exampleCode;
                 document.getElementById('downloadBtn').disabled = false;
                 clearStatus();
-                showStatus('Code generated successfully with full W3C SCXML support!', 'success');
+                showStatus(`${langLabel} code generated successfully with full W3C SCXML support!`, 'success');
                 setTimeout(clearStatus, 3000);
             } catch (e) {
                 console.error('Generation error:', e);
@@ -232,7 +270,7 @@
             }
         }
 
-        function generateUsageExample(smName, scxmlContent) {
+        function generateUsageExample(smName, scxmlContent, language = 'cpp') {
             // Parse to extract events
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(scxmlContent, 'application/xml');
@@ -248,7 +286,21 @@
             });
             const events = Array.from(eventsSet).sort();
 
-            let example = `#include "${smName}_sm.h"
+            if (language === 'kotlin') {
+                return generateKotlinExample(smName, events);
+            } else if (language === 'rust') {
+                return generateRustExample(smName, events);
+            }
+            return generateCppExample(smName, events);
+        }
+
+        function generateCppExample(smName, events) {
+            const eventName = events.length > 0
+                ? events[0].split(/[_-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('_')
+                : 'MyEvent';
+            const firstEvent = events[0] || 'my_event';
+
+            return `#include "${smName}_sm.h"
 #include <iostream>
 
 int main() {
@@ -261,25 +313,69 @@ int main() {
     std::cout << "Initial state: " << sm.getStateName() << std::endl;
 
     // Process events
-`;
-
-            // Add first event example
-            if (events.length > 0) {
-                const firstEvent = events[0];
-                const eventName = firstEvent.split(/[_-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('_');
-                example += `
     std::cout << "\\nSending event: ${firstEvent}" << std::endl;
     sm.processEvent(SCE::Generated::${smName}::Event::${eventName});
-    std::cout << "Current state: " << sm.getStateName() << std::endl;`;
-            }
-
-            example += `
+    std::cout << "Current state: " << sm.getStateName() << std::endl;
 
     std::cout << "\\nState machine working correctly!" << std::endl;
     return 0;
 }
 `;
-            return example;
+        }
+
+        function generateKotlinExample(smName, events) {
+            const pascalName = smName.split(/[_-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+            const firstEvent = events.length > 0
+                ? events[0].split(/[_-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')
+                : 'MyEvent';
+
+            return `import com.sce.generated.${smName}.${pascalName}
+import com.sce.generated.${smName}.${pascalName}Event
+
+fun main() {
+    // Create state machine instance
+    val sm = ${pascalName}()
+
+    // Initialize state machine
+    sm.initialize()
+    println("Initial state: \${sm.currentStateName}")
+
+    // Process events
+    println("Sending event: ${firstEvent}")
+    sm.processEvent(${pascalName}Event.${firstEvent})
+    println("Current state: \${sm.currentStateName}")
+
+    println("State machine working correctly!")
+}
+`;
+        }
+
+        function generateRustExample(smName, events) {
+            const pascalName = smName.split(/[_-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('');
+            const firstEvent = events.length > 0
+                ? events[0].split(/[_-]/).map(p => p.charAt(0).toUpperCase() + p.slice(1)).join('')
+                : 'MyEvent';
+
+            return `use sce_rust_runtime::Engine;
+use generated::${smName}::{${pascalName}Policy, ${pascalName}Event};
+
+fn main() {
+    // Create state machine
+    let policy = ${pascalName}Policy::new();
+    let mut engine = Engine::new(policy);
+
+    // Initialize
+    engine.initialize();
+    println!("Initial state: {:?}", engine.get_current_state());
+
+    // Process events
+    println!("Sending event: ${firstEvent}");
+    engine.process_event(${pascalName}Event::${firstEvent});
+    println!("Current state: {:?}", engine.get_current_state());
+
+    println!("State machine working correctly!");
+}
+`;
         }
 
         function downloadCode() {
@@ -288,11 +384,13 @@ int main() {
                 return;
             }
 
+            const config = LANGUAGE_CONFIG[currentLanguage];
+            const ext = config ? config.downloadExt : '_sm.h';
             const blob = new Blob([generatedCode], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = 'generated_sm.h';
+            a.download = 'generated' + ext;
             a.click();
             URL.revokeObjectURL(url);
         }
@@ -334,6 +432,9 @@ int main() {
 
         // Initialize Pyodide on page load
         window.addEventListener('DOMContentLoaded', async () => {
+            // Apply language from URL parameter
+            selectLanguage(currentLanguage);
+
             showStatus('Initializing Python runtime (first visit only)...', 'loading', 0);
             setStatusText('Loading...');
 
@@ -344,13 +445,13 @@ int main() {
                 });
 
                 clearStatus();
-                setStatusText('✅ Ready');
+                setStatusText('Ready');
                 document.getElementById('generateBtn').disabled = false;
                 document.getElementById('generatedContent').textContent = 'Ready to generate with full W3C SCXML support...';
             } catch (error) {
                 console.error('Init error:', error);
                 showStatus('Failed to initialize: ' + error.message + '<br>Please refresh the page.', 'error');
-                setStatusText('❌ Init failed');
+                setStatusText('Init failed');
             }
         });
     </script>
