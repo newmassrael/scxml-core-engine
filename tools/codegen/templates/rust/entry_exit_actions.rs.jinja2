@@ -23,7 +23,7 @@
 {% if model.has_entry_actions %}
         match state {
 {% for state_id, state in model.states.items() | sort %}
-{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') or state.static_invokes %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {% if state.datamodel and model.binding == 'late' %}
                 // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
@@ -91,6 +91,7 @@
                         "{{ state_id }}", self as *const _ as usize);
 {% if invoke_info.idlocation %}
                     // W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
+                    // W3C SCXML: Full runtime ID stored (test 224 checks format)
                     self.ensure_script_engine();
                     {
                         let sid = self.session_id.as_ref().unwrap().clone();

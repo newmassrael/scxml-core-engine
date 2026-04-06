@@ -71,8 +71,13 @@
 {% else %}
             let ev_origintype: &str = "";
 {% endif %}
+{% if model.needs_event_invokeid %}
+            let ev_invokeid: &str = &self.pending_event_invokeid;
+{% else %}
+            let ev_invokeid: &str = "";
+{% endif %}
             self.set_current_event_in_script_engine(
-                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, "",
+                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
             );
         }
 {% endif %}

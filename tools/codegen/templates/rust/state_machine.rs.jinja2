@@ -103,6 +103,10 @@ pub struct {{ machine_name }}Policy {
     // W3C SCXML 5.10.1: Event origintype for _event.origintype binding
     pending_event_origintype: String,
 {% endif %}
+{% if model.needs_event_invokeid %}
+    // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
+    pending_event_invokeid: String,
+{% endif %}
 {% for history_id, history_info in model.history_states.items() %}
     // W3C SCXML 3.11: History state {{ history_id }} ({{ history_info.type }})
     history_{{ history_id }}: Option<Vec<{{ machine_name }}State>>,
@@ -181,6 +185,9 @@ impl {{ machine_name }}Policy {
 {% endif %}
 {% if model.needs_event_origintype %}
             pending_event_origintype: String::new(),
+{% endif %}
+{% if model.needs_event_invokeid %}
+            pending_event_invokeid: String::new(),
 {% endif %}
 {% for history_id in model.history_states %}
             history_{{ history_id }}: None,
@@ -504,6 +511,9 @@ impl StatePolicy for {{ machine_name }}Policy {
 {% if model.needs_event_origintype %}
         self.pending_event_origintype = metadata.origin_type.clone();
 {% endif %}
+{% if model.needs_event_invokeid %}
+        self.pending_event_invokeid = metadata.invoke_id.clone();
+{% endif %}
     }
 
     // W3C SCXML 5.10: Clear pending event metadata after transition processing
@@ -526,6 +536,9 @@ impl StatePolicy for {{ machine_name }}Policy {
 {% endif %}
 {% if model.needs_event_origintype %}
         self.pending_event_origintype.clear();
+{% endif %}
+{% if model.needs_event_invokeid %}
+        self.pending_event_invokeid.clear();
 {% endif %}
     }
 {% endif %}
@@ -555,6 +568,22 @@ impl StatePolicy for {{ machine_name }}Policy {
     // W3C SCXML 6.4: Tick child state machines
     fn tick_children(&mut self, engine: &mut Engine<Self>) {
         self.do_tick_children(engine);
+    }
+{% endif %}
+{% if model.static_invokes | selectattr('autoforward') | list %}
+    // W3C SCXML 6.4.6: Forward external events to autoforward children
+    fn forward_to_autoforward_children(&mut self, event_name: &str, engine: &mut Engine<Self>) {
+        self.do_forward_to_autoforward_children(event_name, engine);
+    }
+{% endif %}
+{% if model.static_invokes | selectattr('finalize_content') | list %}
+    // W3C SCXML 6.5: Execute finalize for child events
+    fn execute_finalize_for_child_event(
+        &mut self,
+        event: &sce_rust_runtime::EventWithMetadata<Self::Event>,
+        engine: &mut Engine<Self>,
+    ) {
+        self.do_execute_finalize_for_child_event(event, engine);
     }
 {% endif %}
 }

@@ -54,12 +54,20 @@ pub enum Test201Event {
 // Policy struct
 // ======================================================================
 
-#[derive(Debug)]
 pub struct Test201Policy {
     // W3C SCXML 3.13: Last transition metadata
     last_transition_is_internal: bool,
     last_transition_is_targetless: bool,
     last_transition_source_state: Test201State,
+    // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
+    pub session_id: Option<String>,
+    // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
+    // Always generated — any SM can be invoked as a child
+    pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
+    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
+    pub invoke_id: String,
+    // W3C SCXML 6.5: Child session ID for finalize origin matching
+    pub child_session_id: String,
 }
 
 impl Test201Policy {
@@ -68,6 +76,10 @@ impl Test201Policy {
             last_transition_is_internal: false,
             last_transition_is_targetless: false,
             last_transition_source_state: Test201State::S0,
+            session_id: None,
+            parent_external_queue: None,
+            invoke_id: String::new(),
+            child_session_id: String::new(),
         }
     }
 
@@ -90,6 +102,7 @@ impl StatePolicy for Test201Policy {
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = false;
+    const NEEDS_DATA_MODEL_INIT: bool = false;
 
     // ======================================================================
     // Static metadata methods (W3C SCXML document structure)
@@ -230,7 +243,8 @@ impl StatePolicy for Test201Policy {
     let event_data: &str = "";
 
 
-    // W3C SCXML C.2: BasicHTTP send to HTTP target "http://localhost:8080/test"
+
+    // W3C SCXML C.2: BasicHTTP send to HTTP target
     {
         let mut http_params = std::collections::HashMap::<String, Vec<String>>::new();
         engine.perform_http_send(
@@ -242,6 +256,7 @@ impl StatePolicy for Test201Policy {
         );
     }
 
+
     let _ = send_id;  // suppress unused warning when no send operation
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
 }
@@ -252,6 +267,7 @@ impl StatePolicy for Test201Policy {
     let event_data: &str = "";
 
 
+
     // W3C SCXML 6.2: Default send (no target = external event)
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new(Test201Event::Timeout);
@@ -260,6 +276,7 @@ impl StatePolicy for Test201Policy {
         meta.metadata.data = event_data.to_string();
         engine.raise_external_with_meta(meta);
     }
+
 
     let _ = send_id;  // suppress unused warning when no send operation
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
@@ -279,6 +296,7 @@ impl StatePolicy for Test201Policy {
         pre_transition_active: &[Self::State],
     ) {
     }
+
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     fn process_transition(
@@ -300,7 +318,9 @@ impl StatePolicy for Test201Policy {
     fn execute_transition_actions(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
         // W3C SCXML 3.13: No transition actions in this state machine
         let _ = engine;
-    }}
+    }
+
+}
 
 // ======================================================================
 // Helper impl block (try_transition_in_state, conflict resolution, etc.)

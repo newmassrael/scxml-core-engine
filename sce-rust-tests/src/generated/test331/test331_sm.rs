@@ -59,7 +59,6 @@ pub enum Test331Event {
 // Policy struct
 // ======================================================================
 
-#[derive(Debug)]
 pub struct Test331Policy {
     // W3C SCXML 3.13: Last transition metadata
     last_transition_is_internal: bool,
@@ -82,10 +81,19 @@ pub struct Test331Policy {
     pending_event_origin: String,
     // W3C SCXML 5.10.1: Event origintype for _event.origintype binding
     pending_event_origintype: String,
+    // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
+    pending_event_invokeid: String,
     // W3C SCXML 5.3: Datamodel variables
-    // W3C SCXML 5.10: Script engine session management
-    session_id: Option<String>,
+    // W3C SCXML 5.10: Session ID (script engine + invoke tracking)
+    pub session_id: Option<String>,
     script_engine_initialized: bool,
+    // W3C SCXML 6.4: Parent engine external queue for #_parent send routing
+    // Always generated — any SM can be invoked as a child
+    pub parent_external_queue: Option<std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>>,
+    // W3C SCXML 6.4.1: This child's invoke ID (for _event.invokeid in parent)
+    pub invoke_id: String,
+    // W3C SCXML 6.5: Child session ID for finalize origin matching
+    pub child_session_id: String,
 }
 
 impl Test331Policy {
@@ -103,8 +111,12 @@ impl Test331Policy {
             pending_event_sendid: String::new(),
             pending_event_origin: String::new(),
             pending_event_origintype: String::new(),
+            pending_event_invokeid: String::new(),
             session_id: None,
             script_engine_initialized: false,
+            parent_external_queue: None,
+            invoke_id: String::new(),
+            child_session_id: String::new(),
         }
     }
 
@@ -143,6 +155,31 @@ impl Test331Policy {
         self.script_engine_initialized = true;
     }
 
+    // W3C SCXML 5.2/5.3: Initialize datamodel and raise error.execution on failure
+    // Called from StatePolicy::initialize_data_model() trait override
+    fn do_initialize_data_model(&mut self, engine: &mut Engine<Self>) {
+        if self.script_engine_initialized {
+            return;
+        }
+        self.ensure_session_id();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        se.create_session(&sid);
+
+        // W3C SCXML 5.10: Setup system variables (_sessionid, _name, _ioprocessors)
+        let io_processors = vec!["scxml".to_string()];
+        if let Err(e) = se.setup_system_variables(&sid, "test331", &io_processors) {
+            log::error!("Failed to setup system variables: {}", e);
+        }
+
+        let _ = se.set_variable(&sid, "Var1", sce_rust_runtime::ScriptValue::Null);
+
+
+
+
+        self.script_engine_initialized = true;
+    }
+
     // W3C SCXML 5.9: Safe guard evaluation with error handling
     fn safe_evaluate_guard(&mut self, cond: &str, engine: &mut Engine<Self>) -> bool {
         self.ensure_script_engine();
@@ -168,6 +205,22 @@ impl Test331Policy {
         }
     }
 
+
+    // W3C SCXML 6.4.1: Set parameter in child's script engine before invoke initialization
+    // Matches C++ child->setParamInScriptEngine(name, expr)
+    pub fn set_param_in_script_engine(&mut self, name: &str, expr: &str) {
+        self.ensure_script_engine();
+        let sid = self.session_id.as_ref().unwrap().clone();
+        let se = sce_rust_runtime::ScriptEngineProvider::get();
+        match se.evaluate_expression(&sid, expr) {
+            Ok(val) => { let _ = se.set_variable(&sid, name, val); }
+            Err(_) => {
+                // Fallback: set as string literal
+                let _ = se.set_variable(&sid, name,
+                    sce_rust_runtime::ScriptValue::String(expr.to_string()));
+            }
+        }
+    }
 }
 
 impl Default for Test331Policy {
@@ -187,6 +240,7 @@ impl StatePolicy for Test331Policy {
     // W3C SCXML feature flags
     const HAS_PARALLEL_STATES: bool = false;
     const NEEDS_SCRIPT_ENGINE: bool = true;
+    const NEEDS_DATA_MODEL_INIT: bool = true;
     const HAS_EXTERNAL_EVENT_FLAG: bool = true;
 
     // ======================================================================
@@ -324,6 +378,7 @@ impl StatePolicy for Test331Policy {
         self.pending_event_sendid = metadata.send_id.clone();
         self.pending_event_origin = metadata.origin.clone();
         self.pending_event_origintype = metadata.origin_type.clone();
+        self.pending_event_invokeid = metadata.invoke_id.clone();
     }
 
     // W3C SCXML 5.10: Clear pending event metadata after transition processing
@@ -335,6 +390,7 @@ impl StatePolicy for Test331Policy {
         self.pending_event_sendid.clear();
         self.pending_event_origin.clear();
         self.pending_event_origintype.clear();
+        self.pending_event_invokeid.clear();
     }
 
     // ======================================================================
@@ -380,6 +436,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test331Event::Foo));
     let event_data: &str = "";
 
 
+
     // W3C SCXML 6.2: Default send (no target = external event)
     {
         let mut meta = sce_rust_runtime::EventWithMetadata::new(Test331Event::Foo);
@@ -388,6 +445,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test331Event::Foo));
         meta.metadata.data = event_data.to_string();
         engine.raise_external_with_meta(meta);
     }
+
 
     let _ = send_id;  // suppress unused warning when no send operation
     let _ = event_data;  // suppress unused warning in branches that skip dispatch
@@ -407,6 +465,7 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test331Event::Foo));
         pre_transition_active: &[Self::State],
     ) {
     }
+
 
     // W3C SCXML 3.13: Evaluate guards and take a matching transition
     fn process_transition(
@@ -437,8 +496,9 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test331Event::Foo));
             let ev_sendid: &str = &self.pending_event_sendid;
             let ev_origin: &str = &self.pending_event_origin;
             let ev_origintype: &str = &self.pending_event_origintype;
+            let ev_invokeid: &str = &self.pending_event_invokeid;
             self.set_current_event_in_script_engine(
-                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, "",
+                event_name, ev_data, event_type, ev_sendid, ev_origin, ev_origintype, ev_invokeid,
             );
         }
 
@@ -536,7 +596,14 @@ engine.raise(sce_rust_runtime::EventWithMetadata::new(Test331Event::Foo));
 
         // Reset flags after execution
         self.has_transition_actions = false;
-    }}
+    }
+    // W3C SCXML 5.2/5.3: Datamodel initialization with error.execution support
+    // Delegates to inherent impl method (matches C++ initializeDataModel pattern)
+    fn initialize_data_model(&mut self, engine: &mut Engine<Self>) {
+        self.do_initialize_data_model(engine);
+    }
+
+}
 
 // ======================================================================
 // Helper impl block (try_transition_in_state, conflict resolution, etc.)

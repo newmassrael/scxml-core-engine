@@ -426,6 +426,15 @@
 {% endif %}
     }
 {% endif %}
+{% elif not action.targetexpr and action.target and action.target.startswith('#_') and action.target != '#_internal' and action.target != '#_parent' and model.static_invokes is defined and model.static_invokes | selectattr('invoke_id', 'equalto', action.target[2:]) | list %}
+{# W3C SCXML 6.4: Send to child invoke via #_<invokeId> target #}
+{% set child_invoke_id = action.target[2:] %}
+    // W3C SCXML 6.4: Send to child invoke '{{ child_invoke_id }}' via #_{{ child_invoke_id }}
+{% if action.event %}
+    if let Some(ref mut child) = self.child_{{ child_invoke_id }} {
+        child.raise_external_by_name("{{ action.event }}", &event_data);
+    }
+{% endif %}
 {% elif not action.targetexpr and action.target and action.target != '#_internal' %}
     // W3C SCXML 6.2: External send to target "{{ action.target }}"
 {% if action.event %}
