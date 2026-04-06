@@ -18,6 +18,13 @@
 #include <string.h>
 #include <emscripten.h>
 
+/* Conditional debug logging (matches sce_sm_internal.h) */
+#ifdef SCE_DEBUG
+#define SCE_LOG(fmt, ...) printf(fmt, ##__VA_ARGS__)
+#else
+#define SCE_LOG(fmt, ...) ((void)0)
+#endif
+
 /* Forward declaration for P_MobjThinker */
 void P_MobjThinker(mobj_t *mobj);
 
@@ -93,6 +100,7 @@ boolean SCE_IsMonster(mobj_t *mobj) {
 
 void SCE_Init(void) {
     sce_init();
+    SCE_HUD_Init();
 }
 
 /* Game state events */
@@ -474,16 +482,16 @@ void SCE_BerserkHealPlayer(void) {
         if (player->mo) {
             player->mo->health = 100;
         }
-        printf("[BERSERK] Healed player to 100 HP!\n");
+        SCE_LOG("[BERSERK] Healed player to 100 HP!\n");
     }
 }
 
 void SCE_BerserkSetMultiplier(float mult) {
     g_berserk_multiplier = mult;
-    printf("[BERSERK] Damage multiplier set to %.2f\n", mult);
+    SCE_LOG("[BERSERK] Damage multiplier set to %.2f\n", mult);
 }
 
 void SCE_BerserkReset(void) {
     g_berserk_multiplier = 1.0f;
-    printf("[BERSERK] Reset! Damage multiplier back to 1.0\n");
+    SCE_LOG("[BERSERK] Reset! Damage multiplier back to 1.0\n");
 }

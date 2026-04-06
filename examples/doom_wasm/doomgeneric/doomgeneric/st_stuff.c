@@ -986,6 +986,20 @@ void ST_doPaletteStuff(void)
     else
 	palette = 0;
 
+    // SCE berserk override: apply red tint when combo berserk is active
+    {
+	int sce_pal = SCE_HUD_GetBerserkPalette();
+	if (sce_pal > 0) {
+	    int sce_palette = sce_pal;
+	    if (sce_palette >= NUMREDPALS)
+		sce_palette = NUMREDPALS - 1;
+	    sce_palette += STARTREDPALS;
+	    // Use whichever is stronger: damage/berserk or SCE berserk
+	    if (sce_palette > palette)
+		palette = sce_palette;
+	}
+    }
+
     // In Chex Quest, the player never sees red.  Instead, the
     // radiation suit palette is used to tint the screen green,
     // as though the player is being covered in goo by an

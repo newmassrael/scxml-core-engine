@@ -87,6 +87,9 @@ int sce_get_target_count_keydoor(void);
 /* Check if a secret has been discovered (0 = not found, 1 = found) */
 int sce_is_secret_discovered(int index);
 
+/* Combo Timer Query (Pull API for HUD) */
+void sce_combo_timer_get(double *out_remaining_ms, double *out_total_ms);
+
 /* Aim Assist State Machine */
 const char *sce_aim_get_state(void);
 void sce_aim_event_toggle(void);

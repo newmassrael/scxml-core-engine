@@ -145,6 +145,17 @@ void SCE_BerserkHealPlayer(void);         /* Heal player to 100 HP (called from 
 void SCE_BerserkSetMultiplier(float mult); /* Set damage multiplier (called from SCXML) */
 void SCE_BerserkReset(void);              /* Reset berserk effects (called from SCXML) */
 
+/**
+ * In-game HUD (combo counter, berserk overlay)
+ * Rendered directly to DOOM's framebuffer via SCE_HUD_Drawer()
+ */
+void SCE_HUD_Init(void);
+void SCE_HUD_Drawer(void);
+void SCE_HUD_SetCombo(int count, boolean active);
+void SCE_HUD_SetComboTimer(double remaining_ms, double total_ms);
+void SCE_HUD_SetBerserk(int intensity, boolean active);
+int SCE_HUD_GetBerserkPalette(void);
+
 #ifdef __cplusplus
 }
 #endif

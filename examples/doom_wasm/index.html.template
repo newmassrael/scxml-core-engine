@@ -72,80 +72,6 @@
             image-rendering: crisp-edges;
         }
 
-        /* Kill Combo Display */
-        #combo-display {
-            position: absolute;
-            top: 15%;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 28px;
-            font-weight: bold;
-            color: #ff6600;
-            text-shadow: 0 0 10px #ff0000, 2px 2px 0 #000;
-            letter-spacing: 2px;
-            pointer-events: none;
-            z-index: 90;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        #combo-display.combo-active {
-            opacity: 1;
-            animation: combo-pulse 0.3s ease-out;
-        }
-        #combo-display.berserk-active {
-            opacity: 1;
-            color: #ff0000;
-            font-size: 36px;
-            text-shadow: 0 0 20px #ff0000, 0 0 40px #ff0000, 2px 2px 0 #000;
-            animation: berserk-text-pulse 0.5s ease-in-out infinite;
-        }
-        @keyframes combo-pulse {
-            0% { transform: translateX(-50%) scale(1.3); }
-            100% { transform: translateX(-50%) scale(1); }
-        }
-        @keyframes berserk-text-pulse {
-            0%, 100% { transform: translateX(-50%) scale(1); }
-            50% { transform: translateX(-50%) scale(1.1); }
-        }
-
-        /* Berserk Red Screen Overlay */
-        #berserk-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(ellipse at center, transparent 20%, rgba(255, 0, 0, 0.3) 100%);
-            pointer-events: none;
-            z-index: 80;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        #berserk-overlay.active {
-            opacity: 1;
-        }
-        #berserk-overlay.intensity-low {
-            animation: berserk-pulse-slow 1s ease-in-out infinite;
-        }
-        #berserk-overlay.intensity-mid {
-            animation: berserk-pulse-mid 0.6s ease-in-out infinite;
-        }
-        #berserk-overlay.intensity-high {
-            animation: berserk-pulse-fast 0.3s ease-in-out infinite;
-        }
-        @keyframes berserk-pulse-slow {
-            0%, 100% { opacity: 0.8; }
-            50% { opacity: 1; }
-        }
-        @keyframes berserk-pulse-mid {
-            0%, 100% { opacity: 0.85; }
-            50% { opacity: 1; }
-        }
-        @keyframes berserk-pulse-fast {
-            0%, 100% { opacity: 0.9; filter: brightness(1); }
-            50% { opacity: 1; filter: brightness(1.1); }
-        }
-
         /* Mobile Start Overlay */
         #start-overlay {
             position: absolute;
@@ -806,10 +732,6 @@
         <div id="game-section">
             <div id="game-container">
                 <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1" width="640" height="400"></canvas>
-                <!-- Berserk Red Screen Overlay -->
-                <div id="berserk-overlay"></div>
-                <!-- Kill Combo Display -->
-                <div id="combo-display"></div>
                 <!-- Mobile Start Overlay -->
                 <div id="start-overlay">
                     <div class="start-content">
@@ -1857,77 +1779,23 @@
         let berserkIntensity = 0;
 
         // C++ callback: Called when berserk state changes
+        // In-game rendering handled by SCE_HUD_Drawer (C side)
         window.onSceBerserkUpdate = function(intensity, active) {
             console.log('[SCE:Berserk] Update: intensity=' + intensity + ', active=' + active);
             berserkActive = active;
             berserkIntensity = intensity;
-
-            // Update red screen overlay with intensity-based effects
-            const overlayEl = document.getElementById('berserk-overlay');
-            if (overlayEl) {
-                if (active && intensity > 0) {
-                    // Strong red intensity: 0.2 at x1, up to 0.8 at x10+
-                    const cappedIntensity = Math.min(intensity, 10);
-                    const redIntensity = 0.2 + (cappedIntensity / 10) * 0.6;
-                    // Smaller transparent center at high intensity
-                    const transparentSize = Math.max(5, 25 - cappedIntensity * 2);
-                    overlayEl.style.background = 'radial-gradient(ellipse at center, transparent ' + transparentSize + '%, rgba(255, 0, 0, ' + redIntensity + ') 100%)';
-
-                    // Intensity-based pulse speed
-                    let intensityClass = 'active ';
-                    if (cappedIntensity <= 3) {
-                        intensityClass += 'intensity-low';
-                    } else if (cappedIntensity <= 6) {
-                        intensityClass += 'intensity-mid';
-                    } else {
-                        intensityClass += 'intensity-high';
-                    }
-                    overlayEl.className = intensityClass;
-                } else {
-                    overlayEl.className = '';
-                    overlayEl.style.background = '';
-                }
-            }
-
-            // Update combo display text for berserk
-            const comboEl = document.getElementById('combo-display');
-            if (comboEl && active) {
-                comboEl.textContent = 'BERSERK! x' + intensity;
-                comboEl.className = 'berserk-active';
-            }
-
-            // Reset timer animation for berserk (10 second timeout)
-            if (active) {
-                comboTimerStart = Date.now();
-                const timerEl = document.getElementById('combo-timer');
-                if (timerEl) {
-                    timerEl.style.width = '100%';
-                    timerEl.style.background = '#ff0000';  // Red for berserk
-                }
-            }
         };
 
         // C++ callback: Called when kill combo state changes
+        // In-game rendering handled by SCE_HUD_Drawer (C side)
         window.onSceComboUpdate = function(count, active) {
-            // Update game overlay (only if not in berserk - berserk has its own display)
-            const comboEl = document.getElementById('combo-display');
-            if (comboEl && !berserkActive) {
-                if (active && count > 1) {
-                    comboEl.textContent = count + 'x COMBO!';
-                    comboEl.className = 'combo-active';
-                } else if (!active) {
-                    comboEl.textContent = '';
-                    comboEl.className = '';
-                }
-            }
-
-            // Update combo section panel
+            // Update combo section panel (debug UI)
             const countEl = document.getElementById('combo-count');
             if (countEl) {
                 countEl.textContent = count;
             }
 
-            // Set timer bar color based on mode (actual animation driven by onSceComboTimer)
+            // Update timer bar in panel
             const timerEl = document.getElementById('combo-timer');
             if (timerEl) {
                 if (active) {
@@ -1935,31 +1803,21 @@
                     timerEl.style.background = berserkActive ? '#ff0000' : '#ff6600';
                 } else {
                     timerEl.style.width = '0%';
-                    timerEl.style.background = '#ff6600';  // Reset to normal color
-                }
-            }
-
-            // Clear berserk overlay if combo ended
-            if (!active) {
-                const overlayEl = document.getElementById('berserk-overlay');
-                if (overlayEl) {
-                    overlayEl.className = '';
+                    timerEl.style.background = '#ff6600';
                 }
             }
         };
 
         // C++ callback: Called every game tic with remaining timer (synced with game logic)
+        // In-game rendering handled by SCE_HUD_Drawer (C side)
         window.onSceComboTimer = function(remainingMs, totalMs) {
             const timerEl = document.getElementById('combo-timer');
             if (timerEl) {
                 if (remainingMs < 0 || totalMs <= 0) {
-                    // Timer ended
                     timerEl.style.width = '0%';
                 } else {
-                    // Update timer bar from C++ game time (perfectly synced)
                     const percent = Math.max(0, (remainingMs / totalMs) * 100);
                     timerEl.style.width = percent + '%';
-                    // Color based on berserk state
                     timerEl.style.background = berserkActive ? '#ff0000' : '#ff6600';
                 }
             }

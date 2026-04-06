@@ -30,9 +30,18 @@ include(${SCE_ROOT}/cmake/SCECodegen.cmake)
 # ============================================
 # SCE Integration Sources
 # ============================================
-set(SCE_WRAPPER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/sce_wrapper.cpp")
-set(SCE_HOOKS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/sce_doom_hooks.c")
-set(SCE_SECRET_HINT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/sce_secret_hint.c")
+# Modular architecture: each sce_sm_*.cpp owns one state machine domain
+set(SCE_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_wrapper.cpp        # Init orchestrator
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_sm_core.cpp        # Game / Player / Weapon SMs
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_sm_enemy.cpp       # Enemy multi-instance SM
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_sm_combo.cpp       # Combo / Berserk SM + timer
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_sm_aim.cpp         # Aim Assist SM
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_sm_secret.cpp      # Secret Hint SM + BFS
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_doom_hooks.c       # DOOM C bridge
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_secret_hint.c      # BFS pathfinding
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sce_hud.c              # In-game HUD rendering
+)
 
 # ============================================
 # DOOM Sources (pre-patched doomgeneric included in repo)
@@ -208,9 +217,7 @@ set(DOOM_SOURCES
 # ============================================
 add_executable(doom_sce
     ${DOOM_SOURCES}
-    ${SCE_WRAPPER_SRC}
-    ${SCE_HOOKS_SRC}
-    ${SCE_SECRET_HINT_SRC}
+    ${SCE_SOURCES}
 )
 
 # Generate state machines from all SCXML files in scxml/ directory

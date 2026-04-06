@@ -41,6 +41,9 @@
 #include "dstrings.h"
 #include "sounds.h"
 
+// SCE in-game HUD
+#include "sce_hud.h"
+
 //
 // Locally used constants, shortcuts.
 //
@@ -387,6 +390,9 @@ void HU_Drawer(void)
     HUlib_drawIText(&w_chat);
     if (automapactive)
 	HUlib_drawTextLine(&w_title, false);
+
+    // SCE in-game HUD: combo counter, berserk overlay
+    SCE_HUD_Drawer();
 
 }
 
