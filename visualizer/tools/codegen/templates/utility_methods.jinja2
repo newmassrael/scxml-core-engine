@@ -52,53 +52,6 @@
         return std::nullopt;
     }
 
-{% if model.static_invokes %}
-    // W3C SCXML 6.5: Execute finalize for events from invoked children
-    // Finalize runs BEFORE the event is processed, with _event set to child's event
-    template<typename Engine>
-    void executeFinalizeForChildEvent(const typename Engine::EventWithMetadata& eventWithMeta, [[maybe_unused]] Engine& engine) {
-        
-        // W3C SCXML 6.5: Only execute finalize for events from child invokes
-        // origin field contains child's session ID
-        if (eventWithMeta.origin.empty()) {
-            return;  // Not from a child
-        }
-
-        // Find which invoke sent this event by matching child session ID
-        for (const auto& [invokeId, childSession] : activeInvokes_) {
-            if (childSession.sessionId == eventWithMeta.origin && !childSession.finalizeScript.empty()) {
-                AOT_DEBUG("AOT finalize: Executing finalize for invoke '{}' before processing event", invokeId);
-                
-{% if model.needs_script_engine %}
-                // W3C SCXML 6.5: Use FinalizeHelper (ARCHITECTURE.md Zero Duplication)
-                // Single Source of Truth for finalize execution shared with Interpreter
-                std::string eventName = this->getEventName(eventWithMeta.event);
-                
-                this->ensureScriptEngine();
-                auto& scriptEngine = getScriptEngine();
-                
-                ::SCE::FinalizeHelper::executeFinalizeWithEvent(
-                    scriptEngine,
-                    sessionId_.value(),
-                    childSession.finalizeScript,
-                    eventName,
-                    eventWithMeta.data,
-                    eventWithMeta.sendId,
-                    eventWithMeta.origin,
-                    eventWithMeta.originType,
-                    eventWithMeta.invokeId
-                );
-{% else %}
-                // Pure Static: finalize script should be empty (no ECMAScript expressions)
-                SCE_LOG_WARN("AOT finalize: Finalize script present but JSEngine not available for invoke '{}'", invokeId);
-{% endif %}
-                
-                return;  // Found and executed
-            }
-        }
-    }
-{% endif %}
-
 {% if model.has_parallel_states or model.uses_in_predicate %}
     // Helper: Convert State enum to string for In() predicate (W3C SCXML 5.9.2)
     [[nodiscard]] static constexpr const char* getStateName(State state) noexcept {

@@ -10,7 +10,7 @@
 {% if model.static_invokes or model.hybrid_invokes or model.needs_script_engine %}
 #include <memory>
 {% endif %}
-{% if model.static_invokes %}
+{% if model.static_invokes or model.hybrid_invokes %}
 #include <unordered_map>
 {% endif %}
 {% for ctx in model.context_objects %}
@@ -19,23 +19,22 @@
 {% endif %}
 {% endfor %}
 #include "static/StaticExecutionEngine.h"
-{% if model.static_invokes %}
+{% if model.static_invokes or model.hybrid_invokes %}
 
-// Child SCXML headers (static invokes)
+// W3C SCXML 6.4: Child state machine headers (all pure AOT)
 {% for invoke_info in model.static_invokes %}
 {% if invoke_info.child_name %}
 #include "{{ invoke_info.child_name }}_sm.h"
 {% endif %}
 {% endfor %}
+{% for invoke_info in model.hybrid_invokes %}
+{% if invoke_info.child_name %}
+#include "{{ invoke_info.child_name }}_sm.h"
 {% endif %}
-{% if model.static_invokes %}
-#include "core/InvokeHelper.h"
+{% endfor %}
 {% endif %}
-{% if model.hybrid_invokes %}
-// W3C SCXML 6.4: Hybrid invoke support (AOT parent + Interpreter child)
-#include "runtime/StateMachine.h"
+{% if model.static_invokes or model.hybrid_invokes %}
 #include "core/InvokeHelper.h"
-#include "common/FileLoadingHelper.h"
 {% endif %}
 {% if model.needs_send_helper %}
 #include "common/SendHelper.h"
@@ -142,7 +141,7 @@
 {{ _tpl_args.append('ParentStateMachine') or '' }}
 {{ _sm_tpl_args.append('ParentStateMachine') or '' }}
 {% endif %}
-{% if model.static_invokes %}
+{% if model.static_invokes or model.hybrid_invokes %}
 {{ _tpl_params.append('typename SelfType') or '' }}
 {{ _tpl_args.append('SelfType') or '' }}
 {# SelfType = fully qualified SM class (CRTP) #}
@@ -262,7 +261,7 @@ struct {{ model.name }}Policy {
     mutable ::SCE::PullScheduler<typename ParentStateMachine::Event> parentSendScheduler_;
     {% endif %}
 
-    {% if model.needs_script_engine or model.static_invokes %}
+    {% if model.needs_script_engine or model.static_invokes or model.hybrid_invokes %}
     // Session ID for JSEngine/Invoke (lazy-initialized)
     mutable ::std::optional<::std::string> sessionId_;
     {% endif %}
@@ -311,14 +310,17 @@ struct {{ model.name }}Policy {
     // W3C SCXML 6.2: Flag to mark next event as external (from send)
     mutable bool nextEventIsExternal_ = false;
     {% endif %}
-    {% if model.static_invokes %}
+    {% if model.static_invokes or model.hybrid_invokes %}
     // W3C SCXML 6.4: Self-pointer for child state machine creation (defer/cancel/execute pattern)
     mutable SelfType* self_ = nullptr;
-    
+
     // W3C SCXML 5.10: Current event metadata (originSessionId for finalize)
     mutable ::SCE::Core::EventMetadata currentEventMetadata_;
-    // W3C SCXML 6.4: Static invoke child state machines
+    // W3C SCXML 6.4: Invoke child state machines (static and hybrid, all pure AOT)
     {% for invoke_info in model.static_invokes %}
+    mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.invoke_id }}_;
+    {% endfor %}
+    {% for invoke_info in model.hybrid_invokes %}
     mutable std::shared_ptr<::SCE::Generated::{{ invoke_info.child_name }}::{{ invoke_info.child_name }}<SelfType>> child_{{ invoke_info.invoke_id }}_;
     {% endfor %}
 
@@ -326,18 +328,11 @@ struct {{ model.name }}Policy {
     {% for invoke_info in model.static_invokes %}
     mutable bool pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
     {% endfor %}
-    {% endif %}
-    {% if model.hybrid_invokes %}
-
-    // W3C SCXML 6.4: Hybrid invoke child state machines (Interpreter instances)
-    // ARCHITECTURE.md: Hybrid Strategy - AOT parent + Interpreter child
     {% for invoke_info in model.hybrid_invokes %}
-    mutable std::shared_ptr<::SCE::StateMachine> hybridChild_{{ invoke_info.invoke_id }}_;
+    mutable bool pendingDoneInvoke_{{ invoke_info.invoke_id }}_ = false;
     {% endfor %}
-    {% endif %}
-    {% if model.static_invokes %}
 
-    // W3C SCXML 6.4: Child session tracking (static invokes only)
+    // W3C SCXML 6.4: Child session tracking
     struct ChildSession {
         std::string sessionId;           // Child's session ID
         std::string invokeId;            // Invoke element ID
@@ -357,10 +352,8 @@ struct {{ model.name }}Policy {
         State state;           // State containing the invoke element
     };
 
-    {% if model.static_invokes %}
-    // Active child sessions indexed by invokeId (static invokes only)
+    // Active child sessions indexed by invokeId
     mutable std::unordered_map<std::string, ChildSession> activeInvokes_;
-    {% endif %}
     // W3C SCXML 6.4: Pending invokes (deferred until macrostep end)
     mutable std::vector<PendingInvoke> pendingInvokes_;
     {% endif %}
@@ -409,7 +402,7 @@ struct {{ model.name }}Policy {
         // W3C SCXML 6.4.5: Cancel all pending delayed sends to parent on child termination
         // SimpleScheduler destructor automatically cleans up pending events
         {% endif %}
-        {% if model.needs_script_engine or model.static_invokes %}
+        {% if model.needs_script_engine or model.static_invokes or model.hybrid_invokes %}
         if (sessionId_.has_value()) {
             auto& scriptEngine = getScriptEngine();
             scriptEngine.destroySession(sessionId_.value());
@@ -502,11 +495,11 @@ public:
         this->policy_.invokeId_ = invokeId;
         this->policy_.childSessionId_ = childSessionId;
         {% endif %}
-        {% if model.static_invokes %}
+        {% if model.static_invokes or model.hybrid_invokes %}
         this->policy_.self_ = this;
         {% endif %}
     }
-{% elif model.static_invokes %}
+{% elif model.static_invokes or model.hybrid_invokes %}
     {{ model.name }}() {
         this->policy_.self_ = this;
     }

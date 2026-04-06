@@ -49,7 +49,7 @@ if (::SCE::AssignHelper::isValidLocation("{{ action.location }}")) {
         }
     );
 
-    if (!success) [[unlikely]] {
+    if (!success) SCE_UNLIKELY {
         // Assignment failed, error.execution already raised by callback
         {% if action.content %}
         SCE_LOG_ERROR("AOT assign: Failed to assign {{ action.location }} = content");

@@ -15,6 +15,9 @@
 package com.sce.generated.{{ model.name | lower }}
 
 import com.sce.runtime.*
+{% if model.has_hybrid_invoke %}
+import com.sce.interpreter.ScxmlRuntimeInterpreter
+{% endif %}
 
 {% include 'states.kt.jinja2' %}
 
@@ -22,7 +25,17 @@ import com.sce.runtime.*
 
 // --- State Machine (W3C SCXML) ---
 
+{% if model.context_objects %}
+{% for ctx in model.context_objects %}
+{% if ctx.kt_type %}
+// Named Context: {{ ctx.id }} ({{ ctx.kt_type }})
+{% endif %}
+{% endfor %}
+{% endif %}
 class {{ machine_name }}StateMachine(
+{% for ctx in model.context_objects %}
+    val {{ ctx.id | to_camel_case }}: {{ ctx.kt_type if ctx.kt_type else 'Any' }},
+{% endfor %}
     scriptEngine: ScxmlScriptEngine? = null
 ) : StateMachineEngine<{{ machine_name }}State, {{ machine_name }}Event>(scriptEngine) {
 {% if model.variables %}
@@ -92,6 +105,27 @@ class {{ machine_name }}StateMachine(
         else -> true
     }
 
+{% if model.parallel_regions %}
+    // W3C SCXML 3.4: Check if state is a parallel state
+    override fun isParallelState(state: {{ machine_name }}State): Boolean = when (state) {
+{% for state_id in model.states | sort %}
+{% set state = model.states[state_id] %}
+{% if state.is_parallel %}
+        is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> true
+{% endif %}
+{% endfor %}
+        else -> false
+    }
+
+    // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
+    override fun getParallelRegions(state: {{ machine_name }}State): List<{{ machine_name }}State> = when (state) {
+{% for parallel_id, regions in model.parallel_regions.items() | sort %}
+        is {{ machine_name }}State.{{ parallel_id | to_state_class_name }} -> listOf({% for region in regions %}{{ machine_name }}State.{{ region | to_state_class_name }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% endfor %}
+        else -> emptyList()
+    }
+{% endif %}
+
     // W3C SCXML 3.13: Document order for exit ordering
     override fun documentOrderOf(state: {{ machine_name }}State): Int = when (state) {
 {% for state_id in model.states | sort %}
@@ -100,7 +134,7 @@ class {{ machine_name }}StateMachine(
         else -> 0
     }
 
-{% if model.has_invoke or model.has_parent_communication or model.needs_script_engine %}
+{% if model.has_invoke or model.has_parent_communication or model.needs_script_engine or model.needs_http_send %}
     // W3C SCXML 6.4: Resolve event name to Event object (cross-SM routing)
     override fun resolveEventByName(name: String): {{ machine_name }}Event? = when (name) {
 {% for event_name in leaf_events | sort %}

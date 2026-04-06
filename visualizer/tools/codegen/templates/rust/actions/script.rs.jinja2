@@ -1,0 +1,15 @@
+{# W3C SCXML 3.8.6: <script> - Inline script execution #}
+{% if action.content %}
+{
+    // W3C SCXML 3.8.6: <script>
+    self.ensure_script_engine();
+    let sid = self.session_id.as_ref().unwrap().clone();
+    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    if let Err(e) = se.execute_script(&sid, "{{ action.content | to_lua_script | escape_rust }}") {
+        log::error!("Script execution failed: {}", e);
+{% if 'error.execution' in model.events %}
+        engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+    }
+}
+{% endif %}

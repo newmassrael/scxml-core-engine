@@ -1,0 +1,398 @@
+{#
+    Invoke Methods Template (Rust Jinja2)
+
+    W3C SCXML 6.4: Invoke lifecycle — execute pending, tick children.
+    Included in the inherent impl block (NOT the trait impl).
+
+    Ports from C++ entry_exit_actions.jinja2 executePendingInvokes() and tickChildren().
+#}
+{% if model.static_invokes or model.hybrid_invokes %}
+    // W3C SCXML 6.4: Execute pending invokes at macrostep end
+    // 1:1 port of C++ executePendingInvokes() in entry_exit_actions.jinja2
+    fn do_execute_pending_invokes(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+        if self.pending_invokes.is_empty() {
+            return;
+        }
+
+        // W3C SCXML 6.4: Copy-and-clear to prevent iterator invalidation
+        let invokes_to_execute: Vec<_> = self.pending_invokes.drain(..).collect();
+
+        for pending in &invokes_to_execute {
+{% for state_id, state in model.states.items() | sort %}
+{% if state.static_invokes %}
+{% for invoke_info in state.static_invokes %}
+            if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
+{% if invoke_info.namelist %}
+                // W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
+                // 1:1 port of C++ NamelistHelper::evaluateNamelist — validate in parent scope
+{% if model.needs_script_engine %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let mut namelist_valid = true;
+{% for var_name in invoke_info.namelist.split() %}
+                    if !se.has_variable(&sid, "{{ var_name }}") {
+                        log::error!("Namelist validation failed: '{{ var_name }}' not declared in parent");
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        namelist_valid = false;
+                    }
+{% endfor %}
+                    if !namelist_valid {
+                        continue;  // W3C SCXML 6.4.1: Skip invoke on namelist error
+                    }
+                }
+{% endif %}
+{% endif %}
+
+                // W3C SCXML 6.5: Generate child session ID for finalize origin matching
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    &pending.invoke_id);
+
+                // W3C SCXML 6.4: Create child state machine
+                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new();
+                // W3C SCXML 6.4: Pass parent session info to child for #_parent routing
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = pending.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                // W3C SCXML 6.4: Ensure child session ID for invoke tracking
+                if child_policy.session_id.is_none() {
+                    static CHILD_SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                    let cid = CHILD_SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    child_policy.session_id = Some(format!("child_session_{}", cid));
+                }
+
+{% if invoke_info.namelist %}
+                // W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
+                // W3C SCXML 6.3.2: Only set if variable is declared in child's datamodel
+{% if invoke_info.child_needs_script_engine %}
+                {
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+{% if invoke_info.child_datamodel_vars is defined %}
+                    let child_vars: &[&str] = &[{% for cv in invoke_info.child_datamodel_vars %}"{{ cv }}"{{ ", " if not loop.last }}{% endfor %}];
+{% for var_name in invoke_info.namelist.split() %}
+                    if child_vars.contains(&"{{ var_name }}") {
+                        if let Ok(val) = se.evaluate_expression(&sid, "{{ var_name }}") {
+                            child_policy.set_param_in_script_engine("{{ var_name }}", &val.to_lua_literal());
+                        }
+                    }
+{% endfor %}
+{% else %}
+{% for var_name in invoke_info.namelist.split() %}
+                    if let Ok(val) = se.evaluate_expression(&sid, "{{ var_name }}") {
+                        child_policy.set_param_in_script_engine("{{ var_name }}", &val.to_lua_literal());
+                    }
+{% endfor %}
+{% endif %}
+                }
+{% endif %}
+{% endif %}
+
+{% if invoke_info.params %}
+                // W3C SCXML 6.4.1: Pass params to child datamodel before initialization
+{% if invoke_info.child_needs_script_engine %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+{% for param in invoke_info.params %}
+                    if let Ok(val) = se.evaluate_expression(&sid, "{{ param.expr | to_lua_expr | escape_rust }}") {
+                        child_policy.set_param_in_script_engine("{{ param.name }}", &val.to_lua_literal());
+                    }
+{% endfor %}
+                }
+{% endif %}
+{% endif %}
+
+                // W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+                self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+{% if invoke_info.idlocation %}
+                        // W3C SCXML 6.4.1: idlocation uses full runtime ID for _event.invokeid (test 338)
+                        invoke_id: pending.invoke_id.clone(),
+{% else %}
+                        // W3C SCXML 6.4: Element invoke_id for _event.invokeid (test 228)
+                        invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
+{% endif %}
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
+                        finalize_script: "{{ invoke_info.finalize_content | escape_rust }}".to_string(),
+                    },
+                );
+
+                let mut child_engine = sce_rust_runtime::Engine::new(child_policy);
+                // W3C SCXML 6.4: Set completion callback so child runs final state onexit (test 236)
+                child_engine.set_completion_callback(|| {});
+                child_engine.initialize();
+
+                // W3C SCXML 6.4: Store child BEFORE draining events so autoforward can find it
+                self.child_{{ invoke_info.invoke_id }} = Some(Box::new(child_engine));
+
+                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &self.child_{{ invoke_info.invoke_id }}.as_ref().unwrap().policy().parent_external_queue,
+                    &self.active_invokes,
+                    "{{ invoke_info.invoke_id }}",
+                    engine,
+                );
+
+                // W3C SCXML 6.4: Check if child completed during initialize (test 236)
+                if self.child_{{ invoke_info.invoke_id }}.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                    self.pending_done_invoke_{{ invoke_info.invoke_id }} = true;
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "{{ invoke_info.invoke_id }}",
+                        engine,
+                    );
+                }
+                continue;
+            }
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% for state_id, state in model.states.items() | sort %}
+{% if state.hybrid_invokes %}
+{% for invoke_info in state.hybrid_invokes %}
+            if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
+                // W3C SCXML 6.4: Hybrid invoke — evaluate expression at runtime, create pre-generated child
+{% if invoke_info.srcexpr %}
+                // W3C SCXML 6.4.3: Evaluate srcexpr at runtime
+                self.ensure_script_engine();
+                let sid = self.session_id.as_ref().unwrap().clone();
+                let se = sce_rust_runtime::ScriptEngineProvider::get();
+                match se.evaluate_expression(&sid, "{{ invoke_info.srcexpr | to_lua_expr | escape_rust }}") {
+                    Ok(sce_rust_runtime::ScriptValue::Null) | Err(_) => {
+                        log::error!("Hybrid invoke: srcexpr '{{ invoke_info.srcexpr }}' evaluation failed");
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        continue;
+                    }
+                    Ok(_path) => {
+                        log::debug!("Hybrid invoke: srcexpr evaluated to {:?}", _path);
+                    }
+                }
+{% elif invoke_info.contentexpr %}
+                // W3C SCXML 6.4.4: Evaluate contentexpr at runtime
+                self.ensure_script_engine();
+                let sid = self.session_id.as_ref().unwrap().clone();
+                let se = sce_rust_runtime::ScriptEngineProvider::get();
+                match se.evaluate_expression(&sid, "{{ invoke_info.contentexpr | to_lua_expr | escape_rust }}") {
+                    Ok(sce_rust_runtime::ScriptValue::Null) | Ok(sce_rust_runtime::ScriptValue::Int(_)) | Err(_) => {
+                        log::error!("Hybrid invoke: contentexpr '{{ invoke_info.contentexpr }}' evaluation failed");
+{% if 'error.execution' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            {{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        continue;
+                    }
+                    Ok(_content) => {
+                        log::debug!("Hybrid invoke: contentexpr evaluated to {:?}", _content);
+                    }
+                }
+{% endif %}
+
+                // W3C SCXML 6.5: Generate child session ID
+                let child_session_id = format!("{}.{}",
+                    self.session_id.as_deref().unwrap_or(""),
+                    &pending.invoke_id);
+
+                // W3C SCXML 6.4: Create pre-generated child (Rust AOT: child resolved at codegen time)
+                let mut child_policy = super::{{ invoke_info.child_name }}_sm::{{ invoke_info.child_name | to_machine_name }}Policy::new();
+                child_policy.parent_external_queue = Some(engine.get_external_queue_handle());
+                child_policy.invoke_id = pending.invoke_id.clone();
+                child_policy.child_session_id = child_session_id.clone();
+
+                if child_policy.session_id.is_none() {
+                    static HYBRID_SESSION_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                    let cid = HYBRID_SESSION_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    child_policy.session_id = Some(format!("hybrid_session_{}", cid));
+                }
+
+                // W3C SCXML 6.4.6: Track active invoke session
+                self.active_invokes.insert("{{ invoke_info.invoke_id }}".to_string(),
+                    sce_rust_runtime::invoke::ChildSession {
+                        session_id: child_session_id,
+                        invoke_id: "{{ invoke_info.invoke_id }}".to_string(),
+                        parent_session_id: self.session_id.clone().unwrap_or_default(),
+                        autoforward: {{ 'true' if invoke_info.autoforward else 'false' }},
+                        finalize_script: String::new(),
+                    },
+                );
+
+                let mut child_engine = sce_rust_runtime::Engine::new(child_policy);
+                child_engine.set_completion_callback(|| {});
+                child_engine.initialize();
+
+                self.child_{{ invoke_info.invoke_id }} = Some(Box::new(child_engine));
+
+                // W3C SCXML 6.4: Drain child-to-parent events raised during initialize
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &self.child_{{ invoke_info.invoke_id }}.as_ref().unwrap().policy().parent_external_queue,
+                    &self.active_invokes,
+                    "{{ invoke_info.invoke_id }}",
+                    engine,
+                );
+
+                // W3C SCXML 6.4: Check if child completed during initialize
+                if self.child_{{ invoke_info.invoke_id }}.as_ref().map_or(false, |c| c.is_in_final_state()) {
+                    self.pending_done_invoke_{{ invoke_info.invoke_id }} = true;
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "{{ invoke_info.invoke_id }}",
+                        engine,
+                    );
+                }
+                continue;
+            }
+{% endfor %}
+{% endif %}
+{% endfor %}
+        }
+    }
+
+    // W3C SCXML 6.4: Tick child state machines (propagate scheduler ticks)
+    fn do_tick_children(&mut self, engine: &mut sce_rust_runtime::Engine<Self>) {
+{% for invoke_info in model.static_invokes %}
+        if !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
+            // W3C SCXML 6.4: Take child out temporarily to avoid split-borrow
+            if let Some(mut child) = self.child_{{ invoke_info.invoke_id }}.take() {
+                // W3C SCXML 6.4: Drain parent events sent by child via #_parent BEFORE tick
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "{{ invoke_info.invoke_id }}",
+                    engine,
+                );
+
+                child.tick();
+
+                // W3C SCXML 6.4: Drain parent events sent by child AFTER tick
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "{{ invoke_info.invoke_id }}",
+                    engine,
+                );
+
+                // W3C SCXML 6.4: Check if child reached final state after tick
+                if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
+                    self.pending_done_invoke_{{ invoke_info.invoke_id }} = true;
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "{{ invoke_info.invoke_id }}",
+                        engine,
+                    );
+                }
+
+                // Put child back
+                self.child_{{ invoke_info.invoke_id }} = Some(child);
+            }
+        }
+{% endfor %}
+{% for invoke_info in model.hybrid_invokes %}
+        if !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
+            if let Some(mut child) = self.child_{{ invoke_info.invoke_id }}.take() {
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "{{ invoke_info.invoke_id }}",
+                    engine,
+                );
+                child.tick();
+                sce_rust_runtime::helpers::invoke_processing::drain_and_raise_child_events(
+                    &child.policy().parent_external_queue,
+                    &self.active_invokes,
+                    "{{ invoke_info.invoke_id }}",
+                    engine,
+                );
+                if child.is_in_final_state() && !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
+                    self.pending_done_invoke_{{ invoke_info.invoke_id }} = true;
+                    sce_rust_runtime::helpers::invoke_processing::raise_done_invoke(
+                        "{{ invoke_info.invoke_id }}",
+                        engine,
+                    );
+                }
+                self.child_{{ invoke_info.invoke_id }} = Some(child);
+            }
+        }
+{% endfor %}
+    }
+
+{% set autoforward_invokes = model.static_invokes | selectattr('autoforward') | list %}
+{% if autoforward_invokes %}
+    // W3C SCXML 6.4.6: Forward external events to children with autoforward=true
+    // 1:1 port of C++ forwardToAutoforwardChildren() in entry_exit_actions.jinja2
+    fn do_forward_to_autoforward_children(&mut self, event_name: &str, _engine: &mut sce_rust_runtime::Engine<Self>) {
+{% for invoke_info in autoforward_invokes %}
+        // Check if child {{ invoke_info.invoke_id }} has autoforward enabled and is active
+        {
+            let is_autoforward = self.active_invokes
+                .get("{{ invoke_info.invoke_id }}")
+                .map_or(false, |cs| cs.autoforward);
+            if is_autoforward {
+                if let Some(ref mut child) = self.child_{{ invoke_info.invoke_id }} {
+                    // W3C SCXML 6.4.6: Forward by event name string to child
+                    child.raise_external_by_name(event_name, "");
+                }
+            }
+        }
+{% endfor %}
+    }
+{% endif %}
+
+{% set finalize_invokes = model.static_invokes | selectattr('finalize_content') | list %}
+{% if finalize_invokes %}
+    // W3C SCXML 6.5: Execute finalize for events from invoked children
+    // 1:1 port of C++ executeFinalizeForChildEvent() in utility_methods.jinja2
+    fn do_execute_finalize_for_child_event(
+        &mut self,
+        event_with_meta: &sce_rust_runtime::EventWithMetadata<{{ machine_name }}Event>,
+        _engine: &mut sce_rust_runtime::Engine<Self>,
+    ) {
+        // W3C SCXML 6.5: Only execute finalize for events from child invokes
+        if event_with_meta.metadata.origin.is_empty() {
+            return;
+        }
+
+        // Find which invoke sent this event by matching child session ID
+        let origin = event_with_meta.metadata.origin.clone();
+        let mut finalize_script = String::new();
+        for (_invoke_id, child_session) in &self.active_invokes {
+            if child_session.session_id == origin && !child_session.finalize_script.is_empty() {
+                finalize_script = child_session.finalize_script.clone();
+                break;
+            }
+        }
+
+        if !finalize_script.is_empty() {
+{% if model.needs_script_engine %}
+            // W3C SCXML 6.5: Execute finalize with _event set to child's event
+            self.ensure_script_engine();
+            let sid = self.session_id.as_ref().unwrap().clone();
+            let se = sce_rust_runtime::ScriptEngineProvider::get();
+            // W3C SCXML 6.5: Set _event metadata before executing finalize
+            let event_name = Self::get_event_name(event_with_meta.event);
+            let _ = se.set_current_event(
+                &sid,
+                event_name,
+                &event_with_meta.metadata.data,
+                "external",
+                &event_with_meta.metadata.send_id,
+                &event_with_meta.metadata.origin,
+                &event_with_meta.metadata.origin_type,
+                &event_with_meta.metadata.invoke_id,
+            );
+            // Execute the finalize script
+            let _ = se.evaluate_expression(&sid, &finalize_script);
+{% endif %}
+        }
+    }
+{% endif %}
+
+{% endif %}

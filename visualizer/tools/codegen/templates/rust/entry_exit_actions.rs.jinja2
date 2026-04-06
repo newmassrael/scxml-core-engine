@@ -1,0 +1,403 @@
+{#
+    Entry/Exit Actions Template (Rust Jinja2)
+
+    W3C SCXML 3.7/3.8/3.9: Entry and exit action execution.
+
+    Generates:
+    - execute_entry_actions(&mut self, state, engine)
+    - execute_exit_actions(&mut self, state, engine, pre_transition_active)
+
+    Ports from C++ entry_exit_actions.jinja2.
+    Uses datamodel_macros.rs.jinja2 for Zero Duplication in late binding init.
+#}
+{% from 'datamodel_macros.rs.jinja2' import initialize_variable, initialize_state_datamodel %}
+
+    // W3C SCXML 3.7: Execute <onentry> actions for a state
+    fn execute_entry_actions(&mut self, state: Self::State, engine: &mut sce_rust_runtime::Engine<Self>) {
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
+        if !self.active_states.contains(&state) {
+            self.active_states.push(state);
+        } else {
+            return;  // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
+        }
+{% endif %}
+{% if model.has_entry_actions %}
+        match state {
+{% for state_id, state in model.states.items() | sort %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or (state.datamodel and model.binding == 'late') or state.static_invokes or state.hybrid_invokes %}
+            {{ machine_name }}State::{{ state_id | to_state_variant }} => {
+{% if state.datamodel and model.binding == 'late' %}
+                // W3C SCXML 5.9: Late binding - initialize datamodel on state entry
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+{{ initialize_state_datamodel(state, state_id, true, machine_name, model) }}
+                }
+{% endif %}
+{% for block in state.on_entry_blocks %}
+                // W3C SCXML 3.8: onentry block {{ loop.index }}/{{ state.on_entry_blocks | length }}
+                // Labeled block allows actions to break out on error (W3C 3.8: error stops block)
+                'action_block: {
+{% for action in block %}
+                {% with in_entry_exit=true %}{% include 'actions/' + action.type + '.rs.jinja2' %}{% endwith %}
+
+{% endfor %}
+                }
+{% endfor %}
+{% if state.initial_transition_actions %}
+                // W3C SCXML 3.3.2: Execute <initial> transition executable content
+                // Runs AFTER parent onentry and BEFORE child state entry
+                'initial_trans_block: {
+{% for action in state.initial_transition_actions %}
+                {% with in_entry_exit=true %}{% include 'actions/' + action.type + '.rs.jinja2' %}{% endwith %}
+
+{% endfor %}
+                }
+{% endif %}
+{% if state.initial_history_id %}
+                // W3C SCXML 3.11: Initial transition targets history state {{ state.initial_history_id }}
+                if self.history_{{ state.initial_history_id }}.as_ref().map_or(true, |h| h.is_empty()) {
+                    // No stored history, execute default transition actions
+{% for action in state.initial_history_default_actions %}
+                    {% include 'actions/' + action.type + '.rs.jinja2' %}
+
+{% endfor %}
+                }
+{% endif %}
+{% if state.static_invokes or state.hybrid_invokes %}
+                // W3C SCXML 6.4: Defer invoke execution until macrostep end
+{% for invoke_info in state.static_invokes %}
+                {
+                    let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
+                        "{{ state_id }}", self as *const _ as usize);
+{% if invoke_info.idlocation %}
+                    // W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
+                    // W3C SCXML: Full runtime ID stored (test 224 checks format)
+                    self.ensure_script_engine();
+                    {
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = sce_rust_runtime::ScriptEngineProvider::get();
+                        let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
+                            sce_rust_runtime::ScriptValue::String(generated_invoke_id.clone()));
+                    }
+{% endif %}
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                        },
+                    );
+                }
+{% endfor %}
+{% for invoke_info in state.hybrid_invokes %}
+                // W3C SCXML 6.4: Defer hybrid invoke '{{ invoke_info.invoke_id }}' (srcexpr/contentexpr evaluated at macrostep end)
+                {
+                    let generated_invoke_id = format!("{}.{}.{{ invoke_info.invoke_id }}",
+                        "{{ state_id }}", self as *const _ as usize);
+{% if invoke_info.idlocation %}
+                    self.ensure_script_engine();
+                    {
+                        let sid = self.session_id.as_ref().unwrap().clone();
+                        let se = sce_rust_runtime::ScriptEngineProvider::get();
+                        let _ = se.set_variable(&sid, "{{ invoke_info.idlocation }}",
+                            sce_rust_runtime::ScriptValue::String(generated_invoke_id.clone()));
+                    }
+{% endif %}
+                    sce_rust_runtime::invoke::defer_invoke(
+                        &mut self.pending_invokes,
+                        sce_rust_runtime::invoke::PendingInvoke {
+                            invoke_id: generated_invoke_id,
+                            state: {{ machine_name }}State::{{ state_id | to_state_variant }},
+                        },
+                    );
+                }
+{% endfor %}
+{% endif %}
+{% if state.is_final and state.donedata %}
+                // W3C SCXML 5.5: Evaluate donedata for final state
+                let mut done_event_data = String::new();
+                let mut done_data_ok = true;
+{% if state.donedata.params %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    let mut json_parts: Vec<String> = Vec::new();
+{% for param in state.donedata.params %}
+{% set param_expr = param.expr if param.expr else param.location %}
+{% if not param_expr %}
+                    // W3C SCXML 5.7: Empty location raises error.execution (structural error)
+                    log::error!("Donedata param '{{ param.name }}': empty location (structural error)");
+{% if 'error.execution' in model.events %}
+                    engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                    done_data_ok = false;
+{% else %}
+                    match se.evaluate_expression(&sid, "{{ param_expr | to_lua_expr | escape_rust }}") {
+                        Ok(val) => {
+                            let mut part = String::from("[\"{{ param.name }}\"] = ");
+                            part.push_str(&val.to_lua_literal());
+                            json_parts.push(part);
+                        }
+                        Err(e) => {
+                            log::error!("Donedata param '{{ param.name }}' eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        }
+                    }
+{% endif %}
+{% endfor %}
+                    if done_data_ok {
+                        done_event_data = String::from("{");
+                        done_event_data.push_str(&json_parts.join(", "));
+                        done_event_data.push('}');
+                    }
+                }
+{% elif state.donedata.contentexpr %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    match se.evaluate_expression(&sid, "{{ state.donedata.contentexpr | to_lua_expr | escape_rust }}") {
+                        Ok(val) => { done_event_data = val.to_lua_literal(); }
+                        Err(e) => {
+                            log::error!("Donedata content expr eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        }
+                    }
+                }
+{% elif state.donedata.content %}
+                {
+                    self.ensure_script_engine();
+                    let sid = self.session_id.as_ref().unwrap().clone();
+                    let se = sce_rust_runtime::ScriptEngineProvider::get();
+                    match se.evaluate_expression(&sid, "{{ state.donedata.content | to_lua_expr | escape_rust }}") {
+                        Ok(val) => { done_event_data = val.to_lua_literal(); }
+                        Err(e) => {
+                            log::error!("Donedata content eval failed: {}", e);
+{% if 'error.execution' in model.events %}
+                            engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ 'error.execution' | to_event_variant }}));
+{% endif %}
+                        }
+                    }
+                }
+{% endif %}
+{% endif %}
+{% if state.is_final and state.parent %}
+                // W3C SCXML 3.7: Generate done.state.{{ state.parent }} event
+{% if 'done.state.' + state.parent in model.events %}
+{% if state.donedata %}
+                // W3C SCXML 5.5: Carry evaluated donedata in done.state event
+                if done_data_ok {
+                    let mut done_meta = sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' + state.parent) | to_event_variant }});
+                    done_meta.metadata.data = done_event_data;
+                    engine.raise(done_meta);
+                }
+{% else %}
+                engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' + state.parent) | to_event_variant }}));
+{% endif %}
+{% endif %}
+{% if model.has_parallel_states and state.parent in model.states and model.states[state.parent].parent %}
+{% set grandparent_id = model.states[state.parent].parent %}
+{% if grandparent_id in model.states and model.states[grandparent_id].is_parallel %}
+                // W3C SCXML 3.4: Check if parallel grandparent {{ grandparent_id }} has all regions complete
+                {
+                    let parallel_state = {{ machine_name }}State::{{ grandparent_id | to_state_variant }};
+                    let regions = Self::get_parallel_regions(parallel_state);
+                    let all_complete = regions.iter().all(|&region| {
+                        // Check if any active descendant of this region is in a final state
+                        self.active_states.iter().any(|&s| {
+                            Self::is_final_state(s) && Self::is_descendant_of(s, region)
+                        })
+                    });
+                    if all_complete {
+{% if 'done.state.' + grandparent_id in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ ('done.state.' + grandparent_id) | to_event_variant }}));
+{% endif %}
+                    }
+                }
+{% endif %}
+{% endif %}
+{% endif %}
+            }
+{% endif %}
+{% endfor %}
+            _ => {}
+        }
+{% endif %}
+{% if model.has_parallel_states %}
+
+        // W3C SCXML 3.4: If entering parallel state, enter all child regions
+        if Self::is_parallel_state(state) {
+            let regions = Self::get_parallel_regions(state);
+            for &region in regions {
+                self.execute_entry_actions(region, engine);
+
+                // W3C SCXML 3.3: If region is compound, enter initial child
+                if Self::is_compound_state(region) {
+                    let initial_child = self.get_initial_or_history_child(region);
+                    if initial_child != region {
+                        self.execute_entry_actions(initial_child, engine);
+                    }
+                }
+            }
+        }
+{% endif %}
+
+{% if model.has_parallel_states %}
+        // W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
+        if Self::is_compound_state(state) && !Self::is_parallel_state(state) {
+            // W3C SCXML 3.6: Deep initial targets support
+            let initial_children = Self::get_initial_children(state);
+            if !initial_children.is_empty() {
+                // W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
+                for &target in &initial_children {
+                    // Build entry chain from state to target
+                    let mut chain = Vec::new();
+                    let mut current = target;
+                    while current != state {
+                        chain.push(current);
+                        match Self::get_parent(current) {
+                            Some(parent) => current = parent,
+                            None => break,
+                        }
+                    }
+                    chain.reverse();
+                    // Enter intermediate states (skip state itself, already entered)
+                    for &intermediate in &chain {
+                        self.execute_entry_actions(intermediate, engine);
+                    }
+                }
+            } else {
+                let initial_child = self.get_initial_or_history_child(state);
+                if initial_child != state {
+                    self.execute_entry_actions(initial_child, engine);
+                }
+            }
+        }
+{% endif %}
+    }
+
+    // W3C SCXML 3.8: Execute <onexit> actions for a state
+    fn execute_exit_actions(
+        &mut self,
+        state: Self::State,
+        engine: &mut sce_rust_runtime::Engine<Self>,
+        pre_transition_active: &[Self::State],
+    ) {
+{% if model.has_parallel_states %}
+        // W3C SCXML 3.4 + 3.13: Parallel state exit order
+        if Self::is_parallel_state(state) {
+            // W3C SCXML 3.4: Collect all active descendants of this parallel state
+            let mut descendants_to_exit: Vec<Self::State> = self.active_states.iter()
+                .filter(|&&s| s != state && Self::is_descendant_of(s, state))
+                .copied()
+                .collect();
+
+            // W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
+            descendants_to_exit.sort_by(|a, b| Self::get_document_order(*b).cmp(&Self::get_document_order(*a)));
+
+            // Exit each active descendant (deepest first)
+            for descendant in descendants_to_exit {
+                self.execute_exit_actions(descendant, engine, pre_transition_active);
+            }
+        }
+{% endif %}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 3.4/3.12.1: Remove state from active configuration
+        self.active_states.retain(|&s| s != state);
+{% endif %}
+{% if model.history_states %}
+        // W3C SCXML 3.11: Record history before exiting compound states
+{% for history_id, history_info in model.history_states.items() %}
+        if state == {{ machine_name }}State::{{ history_info.parent | to_state_variant }} {
+{% if history_info.type == 'deep' %}
+            // W3C SCXML 3.11: Deep history - record all active descendants
+            let filtered: Vec<Self::State> = pre_transition_active.iter()
+                .filter(|&&s| Self::is_descendant_of(s, {{ machine_name }}State::{{ history_info.parent | to_state_variant }})
+                    && !Self::is_compound_state(s) && !Self::is_parallel_state(s))
+                .copied()
+                .collect();
+{% else %}
+            // W3C SCXML 3.11: Shallow history - record direct children only
+            let filtered: Vec<Self::State> = pre_transition_active.iter()
+                .filter(|&&s| Self::get_parent(s) == Some({{ machine_name }}State::{{ history_info.parent | to_state_variant }}))
+                .copied()
+                .collect();
+{% endif %}
+            self.history_{{ history_id }} = Some(filtered);
+        }
+{% endfor %}
+{% endif %}
+{% set has_invoke_exits = [] %}
+{% for state_id, state in model.states.items() | sort %}
+{% if state.static_invokes or state.hybrid_invokes %}{% set _ = has_invoke_exits.append(state_id) %}{% endif %}
+{% endfor %}
+{% if has_invoke_exits %}
+        // W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
+        match state {
+{% for state_id, state in model.states.items() | sort %}
+{% if state.static_invokes or state.hybrid_invokes %}
+            {{ machine_name }}State::{{ state_id | to_state_variant }} => {
+                // W3C SCXML 6.4: Cancel pending invokes for exited state
+                sce_rust_runtime::invoke::cancel_invokes_for_state(
+                    &mut self.pending_invokes,
+                    {{ machine_name }}State::{{ state_id | to_state_variant }},
+                );
+{% for invoke_info in state.static_invokes %}
+                // W3C SCXML 6.4: Cleanup running static child '{{ invoke_info.invoke_id }}'
+                if self.child_{{ invoke_info.invoke_id }}.is_some() {
+                    if !self.pending_done_invoke_{{ invoke_info.invoke_id }} {
+{% if 'cancel.invoke' in model.events %}
+                        engine.raise(sce_rust_runtime::EventWithMetadata::new(
+                            {{ machine_name }}Event::{{ 'cancel.invoke' | to_event_variant }}));
+{% endif %}
+                    }
+                    self.child_{{ invoke_info.invoke_id }} = None;
+                }
+                self.active_invokes.remove("{{ invoke_info.invoke_id }}");
+                self.pending_done_invoke_{{ invoke_info.invoke_id }} = false;
+{% endfor %}
+{% for invoke_info in state.hybrid_invokes %}
+                // W3C SCXML 6.4: Cleanup running hybrid child '{{ invoke_info.invoke_id }}'
+                if self.child_{{ invoke_info.invoke_id }}.is_some() {
+                    self.child_{{ invoke_info.invoke_id }} = None;
+                }
+                self.active_invokes.remove("{{ invoke_info.invoke_id }}");
+                self.pending_done_invoke_{{ invoke_info.invoke_id }} = false;
+{% endfor %}
+            }
+{% endif %}
+{% endfor %}
+            _ => {}
+        }
+{% endif %}
+{% if model.has_exit_actions %}
+        match state {
+{% for state_id, state in model.states.items() | sort %}
+{% if state.on_exit_blocks %}
+            {{ machine_name }}State::{{ state_id | to_state_variant }} => {
+{% for block in state.on_exit_blocks %}
+                // W3C SCXML 3.9: onexit block {{ loop.index }}/{{ state.on_exit_blocks | length }}
+                // Labeled block allows actions to break out on error (W3C 3.9: error stops block)
+                'action_block: {
+{% for action in block %}
+                {% with in_entry_exit=true %}{% include 'actions/' + action.type + '.rs.jinja2' %}{% endwith %}
+
+{% endfor %}
+                }
+{% endfor %}
+            }
+{% endif %}
+{% endfor %}
+            _ => {}
+        }
+{% endif %}
+    }
+

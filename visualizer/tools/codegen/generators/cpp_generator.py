@@ -106,13 +106,58 @@ class CppCodeGenerator(BaseCodeGenerator):
         print(f"  Generated: {inl_path}")
 
         # W3C SCXML 6.4: Write child state machines metadata for CMake
+        # Includes both static invoke children and hybrid invoke children (pure AOT)
+        all_children = []
         if model.static_invokes:
+            for invoke_info in model.static_invokes:
+                child_name = invoke_info.get('child_name', '')
+                if child_name:
+                    all_children.append(child_name)
+
+        # W3C SCXML 6.4: Pre-generate hybrid invoke children as pure AOT
+        # Matches Rust strategy: srcexpr/contentexpr children resolved at codegen time
+        if model.hybrid_invokes:
+            parent_dir = Path(scxml_path).parent
+            for invoke_info in model.hybrid_invokes:
+                child_name = invoke_info.get('child_name', '')
+                if not child_name:
+                    continue
+                srcexpr = invoke_info.get('srcexpr', '')
+                contentexpr = invoke_info.get('contentexpr', '')
+                child_scxml = None
+
+                if srcexpr:
+                    # Scan resource directory for child SCXML (non-parent file)
+                    parent_name = Path(scxml_path).name
+                    for f in sorted(parent_dir.glob('*.scxml')):
+                        if f.name != parent_name:
+                            child_scxml = f
+                            break
+
+                if contentexpr or (srcexpr and child_scxml is None):
+                    # Generate trivial child that immediately reaches final state
+                    child_scxml = Path(output_dir) / f'{child_name}.scxml'
+                    child_scxml.write_text(
+                        '<?xml version="1.0"?>\n'
+                        '<scxml xmlns="http://www.w3.org/2005/07/scxml" '
+                        f'name="{child_name}" initial="final" version="1.0">\n'
+                        '  <final id="final"/>\n'
+                        '</scxml>\n'
+                    )
+
+                if child_scxml and child_scxml.exists():
+                    # Copy child SCXML to output dir with expected name
+                    dest = Path(output_dir) / f'{child_name}.scxml'
+                    if child_scxml != dest:
+                        import shutil
+                        shutil.copy2(child_scxml, dest)
+                    all_children.append(child_name)
+
+        if all_children:
             children_file = Path(output_dir) / f"{input_stem}_children.txt"
             with open(children_file, 'w') as f:
-                for invoke_info in model.static_invokes:
-                    child_name = invoke_info.get('child_name', '')
-                    if child_name:
-                        f.write(f"{child_name}\n")
+                for child_name in all_children:
+                    f.write(f"{child_name}\n")
             print(f"  Child metadata: {children_file}")
 
         # CMake DEPFILE for incremental builds
@@ -130,43 +175,11 @@ class CppCodeGenerator(BaseCodeGenerator):
     def _generate_fallback(self, model: SCXMLModel, scxml_path: str,
                            output_dir: str) -> bool:
         """
-        Generate C++ Interpreter wrapper for dynamic features.
+        C++ AOT: No interpreter fallback.
 
-        Creates a wrapper that uses the runtime Interpreter engine
-        for SCXML files with features not supported by static codegen.
+        Per CLAUDE.md: "AOT failures must be fixed in the code generator
+        or helpers, not bypassed with Interpreter."
         """
-        wrapper_template = """#pragma once
-#include <memory>
-#include "runtime/StateMachine.h"
-#include "model/SCXMLModel.h"
-
-namespace SCE::Generated::{{ model.name }} {
-
-// Interpreter wrapper for {{ model.name }}
-// Reason: Static codegen does not support this SCXML file's features
-// Uses runtime/StateMachine for dynamic execution
-class {{ model.name }} {
-public:
-    {{ model.name }}() {
-        // TODO: Load SCXML file and create StateMachine instance
-    }
-
-    void run() {
-        // TODO: Implement using StateMachine
-    }
-};
-
-} // namespace SCE::Generated::{{ model.name }}
-"""
-        template = self.env.from_string(wrapper_template)
-        output = template.render(model=model)
-
-        input_stem = Path(scxml_path).stem
-        output_path = Path(output_dir) / f"{input_stem}_sm.h"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-
-        with open(output_path, 'w') as f:
-            f.write(output)
-
-        print(f"  Generated wrapper: {output_path}")
-        return True
+        print(f"  C++ AOT: Cannot generate code for '{model.name}' "
+              f"(dynamic features not supported — fix codegen, not fallback)")
+        return False

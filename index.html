@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCE - SCXML Core Engine | W3C SCXML 1.0 State Machine for C++, Kotlin and Rust</title>
+    <meta name="description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin/JVM, and Rust. Zero-overhead embedded systems, Android AAOS, and Spring Boot support.">
+    <meta name="keywords" content="SCXML, state machine, W3C SCXML, C++ state machine, Kotlin state machine, AOT code generator, statechart, finite state machine, embedded systems, Android AAOS, Spring Boot, SCXML engine, state machine code generator">
+    <meta name="author" content="newmassrael">
+    <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="SCE - SCXML Core Engine">
+    <meta property="og:description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation. Supports C++, Kotlin/JVM, Rust. Try the online code generator and DOOM demo.">
+    <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/">
+    <meta property="og:site_name" content="SCXML Core Engine">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="SCE - SCXML Core Engine">
+    <meta name="twitter:description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin, and Rust.">
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "SoftwareSourceCode",
+        "name": "SCE - SCXML Core Engine",
+        "description": "High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin/JVM, and Rust",
+        "url": "https://github.com/newmassrael/scxml-core-engine",
+        "codeRepository": "https://github.com/newmassrael/scxml-core-engine",
+        "programmingLanguage": ["C++", "Kotlin", "Rust", "Python"],
+        "runtimePlatform": ["Linux", "Android", "QNX", "WebAssembly"],
+        "license": "https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE",
+        "operatingSystem": ["Linux", "Android", "QNX"],
+        "applicationCategory": "DeveloperApplication",
+        "author": {
+            "@type": "Person",
+            "name": "newmassrael",
+            "url": "https://github.com/newmassrael"
+        }
+    }
+    </script>
+
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%230969da'/><text x='50' y='65' font-family='monospace' font-size='36' text-anchor='middle' fill='white'>SC</text></svg>">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.6; }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .hero {
+            max-width: 960px; margin: 0 auto; padding: 80px 24px 40px;
+            text-align: center;
+        }
+        .hero h1 { font-size: 48px; color: #f0f6fc; margin-bottom: 16px; font-weight: 700; }
+        .hero h1 span { color: #58a6ff; }
+        .hero p.tagline { font-size: 20px; color: #8b949e; max-width: 640px; margin: 0 auto 32px; }
+
+        .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 40px; }
+        .badge {
+            display: inline-block; padding: 4px 12px; border-radius: 16px;
+            font-size: 13px; font-weight: 600; border: 1px solid #30363d;
+        }
+        .badge-cpp { background: #1a2332; color: #58a6ff; }
+        .badge-kotlin { background: #1f1a2e; color: #a371f7; }
+        .badge-rust { background: #2a1a1a; color: #f47067; }
+        .badge-w3c { background: #1a2e1a; color: #3fb950; }
+
+        .cards { max-width: 960px; margin: 0 auto; padding: 0 24px 60px; }
+        .cards h2 { color: #f0f6fc; font-size: 28px; margin-bottom: 24px; text-align: center; }
+        .cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+        .card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+            padding: 24px; transition: border-color 0.2s;
+        }
+        .card:hover { border-color: #58a6ff; }
+        .card h3 { color: #f0f6fc; font-size: 18px; margin-bottom: 8px; }
+        .card p { color: #8b949e; font-size: 14px; margin-bottom: 16px; }
+        .card a.btn {
+            display: inline-block; padding: 6px 16px; border-radius: 6px;
+            font-size: 13px; font-weight: 600; border: 1px solid #30363d;
+            color: #c9d1d9; transition: all 0.2s;
+        }
+        .card a.btn:hover { background: #30363d; text-decoration: none; }
+        .card a.btn-primary { background: #238636; border-color: #238636; color: #fff; }
+        .card a.btn-primary:hover { background: #2ea043; }
+
+        .about { max-width: 960px; margin: 0 auto; padding: 0 24px 60px; }
+        .about h2 { color: #f0f6fc; font-size: 28px; margin-bottom: 16px; text-align: center; }
+        .about p { color: #8b949e; font-size: 15px; max-width: 720px; margin: 0 auto 16px; }
+        .about p strong { color: #c9d1d9; }
+
+        .features { max-width: 960px; margin: 0 auto; padding: 0 24px 60px; }
+        .features h2 { color: #f0f6fc; font-size: 28px; margin-bottom: 24px; text-align: center; }
+        .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; }
+        .feature { text-align: center; }
+        .feature .num { font-size: 36px; font-weight: 700; color: #58a6ff; }
+        .feature .label { font-size: 14px; color: #8b949e; }
+
+        footer {
+            max-width: 960px; margin: 0 auto; padding: 24px;
+            border-top: 1px solid #21262d; text-align: center;
+            color: #484f58; font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <section class="hero">
+            <h1><span>SCE</span> - SCXML Core Engine</h1>
+            <p class="tagline">
+                High-performance W3C SCXML 1.0 state machine engine with AOT code generation.
+                From embedded C++ to Android and Spring Boot.
+            </p>
+            <div class="badges">
+                <span class="badge badge-w3c">W3C SCXML 1.0 Compliant</span>
+                <span class="badge badge-cpp">C++ AOT</span>
+                <span class="badge badge-kotlin">Kotlin/JVM</span>
+                <span class="badge badge-rust">Rust</span>
+            </div>
+        </section>
+
+        <section class="cards">
+            <h2>Tools & Demos</h2>
+            <div class="cards-grid">
+                <article class="card">
+                    <h3>Online Code Generator</h3>
+                    <p>Generate optimized C++ state machine code from SCXML directly in your browser. Powered by Pyodide.</p>
+                    <a href="visualizer/codegen.html" class="btn btn-primary">Try Code Generator</a>
+                </article>
+                <article class="card">
+                    <h3>DOOM + SCXML Demo</h3>
+                    <p>DOOM running in WebAssembly with real-time SCXML state machine visualization overlay.</p>
+                    <a href="visualizer/doom/" class="btn">Play DOOM Demo</a>
+                </article>
+                <article class="card">
+                    <h3>W3C Compliance Report</h3>
+                    <p>Full W3C SCXML 1.0 test suite results. 202/202 tests passing across multiple backends.</p>
+                    <a href="test-results/test-results.html" class="btn">View Test Results</a>
+                </article>
+                <article class="card">
+                    <h3>GitHub Repository</h3>
+                    <p>Source code, documentation, examples, and build instructions for all supported platforms.</p>
+                    <a href="https://github.com/newmassrael/scxml-core-engine" class="btn">View on GitHub</a>
+                </article>
+            </div>
+        </section>
+
+        <section class="about">
+            <h2>What is SCE?</h2>
+            <p>
+                SCE (SCXML Core Engine) is an open-source implementation of the
+                <strong>W3C SCXML 1.0 specification</strong> — the standard for
+                describing state machines and statecharts in XML. Unlike interpreter-based
+                engines, SCE uses <strong>Ahead-of-Time (AOT) code generation</strong>
+                to compile SCXML documents into native C++, Kotlin, or Rust code at build time,
+                eliminating all runtime parsing overhead.
+            </p>
+            <p>
+                This makes SCE suitable for <strong>resource-constrained embedded systems</strong>
+                where every byte matters, <strong>Android Automotive OS (AAOS)</strong> applications
+                that require deterministic state management, and <strong>Spring Boot microservices</strong>
+                that benefit from type-safe state machine integration. The generated state machines
+                start at just 8 bytes of memory and use zero virtual function calls, enabling
+                the compiler to fully inline state transitions.
+            </p>
+            <p>
+                SCE passes all 202 mandatory W3C SCXML conformance tests across its C++, Kotlin,
+                and Rust backends — supporting datamodels, parallel states, history states, invocations,
+                and delayed event delivery as specified by the W3C standard.
+            </p>
+        </section>
+
+        <section class="cards">
+            <h2>Language Guides</h2>
+            <div class="cards-grid">
+                <article class="card">
+                    <h3>C++ State Machine</h3>
+                    <p>Zero-overhead AOT code generation. Compile-time enums, no virtual functions, 8-byte footprint. Supports Qt, GLib, and embedded systems.</p>
+                    <a href="cpp-state-machine.html" class="btn btn-primary">C++ Guide</a>
+                </article>
+                <article class="card">
+                    <h3>Kotlin State Machine</h3>
+                    <p>Spring Boot auto-configuration and Android AAOS support. Three script engines: Rhino, Lua 5.4, QuickJS.</p>
+                    <a href="kotlin-state-machine.html" class="btn">Kotlin Guide</a>
+                </article>
+                <article class="card">
+                    <h3>Rust State Machine</h3>
+                    <p>Type-safe generated Rust code from W3C SCXML. Full 202/202 conformance with hierarchical and parallel states.</p>
+                    <a href="rust-state-machine.html" class="btn">Rust Guide</a>
+                </article>
+            </div>
+        </section>
+
+        <section class="features">
+            <h2>Why SCE?</h2>
+            <div class="feature-grid">
+                <div class="feature">
+                    <div class="num">8 bytes</div>
+                    <div class="label">Minimal state machine footprint</div>
+                </div>
+                <div class="feature">
+                    <div class="num">202/202</div>
+                    <div class="label">W3C SCXML tests passing</div>
+                </div>
+                <div class="feature">
+                    <div class="num">4</div>
+                    <div class="label">Backend languages (C++, Kotlin, Rust, WASM)</div>
+                </div>
+                <div class="feature">
+                    <div class="num">0</div>
+                    <div class="label">Runtime overhead (AOT compiled)</div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <p>SCE - SCXML Core Engine | <a href="https://github.com/newmassrael/scxml-core-engine">GitHub</a> | W3C SCXML 1.0</p>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://newmassrael.github.io/scxml-core-engine/sitemap.xml

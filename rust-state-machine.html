@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust State Machine Library - W3C SCXML Code Generation | SCE</title>
+    <meta name="description" content="Generate type-safe Rust state machines from W3C SCXML. Full 202/202 W3C conformance, AOT code generation, compile-time state and event enums. Zero-cost abstractions for Rust state machine development.">
+    <meta name="keywords" content="Rust state machine, Rust FSM, Rust finite state machine, Rust statechart, SCXML Rust, state machine code generator, Rust state machine library, type-safe state machine">
+    <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/rust-state-machine.html">
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Rust State Machine Library - W3C SCXML Code Generation">
+    <meta property="og:description" content="Generate type-safe Rust state machines from W3C SCXML. 202/202 W3C tests passing, AOT code generation, compile-time enums.">
+    <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/rust-state-machine.html">
+    <meta property="og:site_name" content="SCXML Core Engine">
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Rust State Machine Library with W3C SCXML Code Generation">
+    <meta name="twitter:description" content="Type-safe Rust state machines from W3C SCXML. 202/202 W3C tests passing, AOT code generation.">
+
+    <!-- JSON-LD -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "TechArticle",
+        "headline": "Rust State Machine Library with W3C SCXML Code Generation",
+        "description": "How to implement state machines in Rust using SCE's AOT code generator with full W3C SCXML 1.0 compliance.",
+        "url": "https://newmassrael.github.io/scxml-core-engine/rust-state-machine.html",
+        "author": { "@type": "Person", "name": "newmassrael" },
+        "publisher": { "@type": "Organization", "name": "SCXML Core Engine" },
+        "about": {
+            "@type": "SoftwareSourceCode",
+            "name": "SCE - SCXML Core Engine",
+            "codeRepository": "https://github.com/newmassrael/scxml-core-engine",
+            "programmingLanguage": "Rust"
+        }
+    }
+    </script>
+
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%230969da'/><text x='50' y='65' font-family='monospace' font-size='36' text-anchor='middle' fill='white'>SC</text></svg>">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; line-height: 1.7; }
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .container { max-width: 800px; margin: 0 auto; padding: 0 24px; }
+
+        header { padding: 48px 0 32px; text-align: center; }
+        header nav { margin-bottom: 32px; font-size: 14px; color: #8b949e; }
+        header h1 { font-size: 36px; color: #f0f6fc; margin-bottom: 16px; }
+        header p.lead { font-size: 18px; color: #8b949e; max-width: 640px; margin: 0 auto; }
+
+        .cta { display: flex; gap: 12px; justify-content: center; margin: 32px 0; flex-wrap: wrap; }
+        .cta a {
+            display: inline-block; padding: 10px 24px; border-radius: 6px;
+            font-size: 14px; font-weight: 600;
+        }
+        .cta a.primary { background: #238636; color: #fff; }
+        .cta a.primary:hover { background: #2ea043; text-decoration: none; }
+        .cta a.secondary { border: 1px solid #30363d; color: #c9d1d9; }
+        .cta a.secondary:hover { background: #30363d; text-decoration: none; }
+
+        article { padding-bottom: 60px; }
+        article h2 { font-size: 24px; color: #f0f6fc; margin: 48px 0 16px; padding-bottom: 8px; border-bottom: 1px solid #21262d; }
+        article h3 { font-size: 18px; color: #f0f6fc; margin: 32px 0 12px; }
+        article p { margin-bottom: 16px; color: #8b949e; }
+        article p strong { color: #c9d1d9; }
+        article ul, article ol { margin: 0 0 16px 24px; color: #8b949e; }
+        article li { margin-bottom: 8px; }
+
+        pre { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 16px; overflow-x: auto; margin-bottom: 16px; }
+        code { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 13px; color: #c9d1d9; }
+        p code { background: #161b22; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+
+        table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+        th, td { padding: 10px 16px; text-align: left; border: 1px solid #30363d; font-size: 14px; }
+        th { background: #161b22; color: #f0f6fc; font-weight: 600; }
+        td { color: #8b949e; }
+
+        footer { padding: 24px 0; border-top: 1px solid #21262d; text-align: center; color: #484f58; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <nav><a href="./">SCE Home</a> / Rust State Machine</nav>
+            <h1>Rust State Machine Library</h1>
+            <p class="lead">
+                Generate type-safe Rust state machines from W3C SCXML with
+                AOT code generation. Full 202/202 W3C conformance tests passing.
+            </p>
+            <div class="cta">
+                <a href="https://github.com/newmassrael/scxml-core-engine" class="primary">View on GitHub</a>
+                <a href="visualizer/codegen.html" class="secondary">Try Code Generator</a>
+            </div>
+        </header>
+
+        <article>
+            <h2>State Machines in Rust</h2>
+
+            <p>
+                Rust's type system makes it an excellent language for implementing
+                state machines. Enums with pattern matching provide compile-time
+                exhaustiveness checks, and the ownership model prevents invalid state
+                transitions at the type level. However, <strong>hand-writing complex
+                state machines</strong> with hierarchical states, parallel regions, and
+                history states is tedious and error-prone, even in Rust.
+            </p>
+
+            <h3>Existing approaches compared</h3>
+
+            <table>
+                <tr>
+                    <th>Approach</th>
+                    <th>Pros</th>
+                    <th>Cons</th>
+                </tr>
+                <tr>
+                    <td>enum + match</td>
+                    <td>Pure Rust, exhaustive checking</td>
+                    <td>Manual, no hierarchy, no parallel states</td>
+                </tr>
+                <tr>
+                    <td>rust-fsm</td>
+                    <td>Derive macro, compile-time</td>
+                    <td>Flat states only, no standard compliance</td>
+                </tr>
+                <tr>
+                    <td>statig</td>
+                    <td>Typestate pattern, zero-cost</td>
+                    <td>No hierarchical states, limited expressiveness</td>
+                </tr>
+                <tr>
+                    <td>sfsm</td>
+                    <td>Procedural macro</td>
+                    <td>Simple transitions only, no parallel or history</td>
+                </tr>
+                <tr>
+                    <td><strong>SCE</strong></td>
+                    <td><strong>W3C standard, full hierarchy, AOT generated</strong></td>
+                    <td>SCXML definition required, external code generation step</td>
+                </tr>
+            </table>
+
+            <p>
+                SCE takes a unique approach in the Rust ecosystem: instead of
+                a proc macro or DSL, you define state machines in <strong>W3C SCXML</strong>
+                (the international standard for statecharts), and SCE's code generator
+                produces idiomatic Rust code at build time. This gives you the full power
+                of the W3C specification -- hierarchical states, parallel regions, history,
+                invoke, delayed events -- with <strong>type-safe generated code</strong>.
+            </p>
+
+            <h2>How It Works</h2>
+
+            <h3>Step 1: Define your state machine in SCXML</h3>
+
+<pre><code>&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0"
+       name="traffic_light" initial="red"&gt;
+  &lt;state id="red"&gt;
+    &lt;transition event="timer" target="green"/&gt;
+  &lt;/state&gt;
+  &lt;state id="green"&gt;
+    &lt;transition event="timer" target="yellow"/&gt;
+  &lt;/state&gt;
+  &lt;state id="yellow"&gt;
+    &lt;transition event="timer" target="red"/&gt;
+  &lt;/state&gt;
+&lt;/scxml&gt;</code></pre>
+
+            <h3>Step 2: Generate Rust code</h3>
+
+<pre><code># Generate Rust state machine (-l rust or --lang rust)
+python3 tools/codegen/codegen.py traffic_light.scxml -o ./src/generated/ -l rust</code></pre>
+
+            <p>
+                The generator produces a Rust module containing a <strong>State enum</strong>,
+                an <strong>Event enum</strong>, and a <strong>Policy struct</strong> that
+                implements the <code>StatePolicy</code> trait. The <code>Engine&lt;P&gt;</code>
+                type from <code>sce-rust-runtime</code> drives execution.
+            </p>
+
+            <h3>Step 3: Use in your Rust code</h3>
+
+<pre><code>use sce_rust_runtime::Engine;
+use generated::traffic_light::{TrafficLightPolicy, TrafficLightEvent, TrafficLightState};
+
+fn main() {
+    // Create the policy (generated from SCXML) and engine
+    let policy = TrafficLightPolicy::new();
+    let mut engine = Engine::new(policy);
+
+    engine.initialize();                            // Enters "red" state
+    engine.process_event(TrafficLightEvent::Timer);  // red -> green
+    engine.process_event(TrafficLightEvent::Timer);  // green -> yellow
+    engine.process_event(TrafficLightEvent::Timer);  // yellow -> red
+
+    assert_eq!(engine.get_current_state(), TrafficLightState::Red);
+}</code></pre>
+
+            <p>
+                <code>process_event()</code> is a convenience method that combines
+                <code>raise_external()</code> + <code>step()</code>. For fine-grained control,
+                use them separately:
+            </p>
+
+<pre><code>// Low-level API: queue event, then process explicitly
+engine.raise_external(TrafficLightEvent::Timer, "", "");
+engine.step();</code></pre>
+
+            <h2>W3C SCXML Features in Rust</h2>
+
+            <p>
+                SCE's Rust backend passes <strong>all 202 mandatory W3C SCXML
+                conformance tests</strong>, supporting the full specification:
+            </p>
+
+            <table>
+                <tr>
+                    <th>Feature</th>
+                    <th>W3C Section</th>
+                    <th>Status</th>
+                </tr>
+                <tr>
+                    <td>Compound (hierarchical) states</td>
+                    <td>3.3</td>
+                    <td>202/202 passing</td>
+                </tr>
+                <tr>
+                    <td>Parallel states</td>
+                    <td>3.4</td>
+                    <td>202/202 passing</td>
+                </tr>
+                <tr>
+                    <td>History states (shallow + deep)</td>
+                    <td>3.10</td>
+                    <td>202/202 passing</td>
+                </tr>
+                <tr>
+                    <td>ECMAScript datamodel</td>
+                    <td>B.2</td>
+                    <td>202/202 passing</td>
+                </tr>
+                <tr>
+                    <td>Invoke (parent-child)</td>
+                    <td>6.4</td>
+                    <td>202/202 passing</td>
+                </tr>
+                <tr>
+                    <td>Delayed send</td>
+                    <td>6.2</td>
+                    <td>202/202 passing</td>
+                </tr>
+            </table>
+
+            <h2>Why SCXML for Rust?</h2>
+
+            <p>
+                Using W3C SCXML instead of a Rust-specific DSL provides several advantages
+                for Rust projects:
+            </p>
+
+            <ul>
+                <li>
+                    <strong>Cross-language portability</strong> -- the same SCXML file
+                    generates C++, Kotlin, and Rust code. Useful for projects with
+                    multi-language codebases or when migrating between languages.
+                </li>
+                <li>
+                    <strong>Visual tooling</strong> -- SCXML can be visualized, simulated,
+                    and validated with standard tools. SCE includes a
+                    <a href="visualizer/codegen.html">browser-based visualizer</a>.
+                </li>
+                <li>
+                    <strong>Formal specification</strong> -- W3C SCXML defines precise
+                    semantics for state entry/exit order, event priority, conflict resolution,
+                    and parallel state synchronization. No ambiguity.
+                </li>
+                <li>
+                    <strong>Full statechart expressiveness</strong> -- hierarchical states,
+                    parallel regions, history states, guarded transitions, and invoke are
+                    all part of the standard, not afterthought extensions.
+                </li>
+            </ul>
+
+            <h2>Comparison with Rust State Machine Crates</h2>
+
+            <table>
+                <tr>
+                    <th>Feature</th>
+                    <th>enum+match</th>
+                    <th>rust-fsm</th>
+                    <th>statig</th>
+                    <th>SCE</th>
+                </tr>
+                <tr>
+                    <td>Hierarchical states</td>
+                    <td>Manual</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td><strong>Yes</strong></td>
+                </tr>
+                <tr>
+                    <td>Parallel states</td>
+                    <td>Manual</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td><strong>Yes</strong></td>
+                </tr>
+                <tr>
+                    <td>History states</td>
+                    <td>Manual</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td><strong>Yes</strong></td>
+                </tr>
+                <tr>
+                    <td>Guarded transitions</td>
+                    <td>Manual</td>
+                    <td>No</td>
+                    <td>Yes</td>
+                    <td><strong>Yes</strong></td>
+                </tr>
+                <tr>
+                    <td>Delayed events</td>
+                    <td>Manual</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td><strong>Yes</strong></td>
+                </tr>
+                <tr>
+                    <td>Standard compliance</td>
+                    <td>None</td>
+                    <td>None</td>
+                    <td>None</td>
+                    <td><strong>W3C SCXML 1.0</strong></td>
+                </tr>
+                <tr>
+                    <td>Cross-language</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td><strong>C++, Kotlin, Rust</strong></td>
+                </tr>
+                <tr>
+                    <td>Visual tooling</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td>No</td>
+                    <td><strong>Browser visualizer</strong></td>
+                </tr>
+            </table>
+
+            <h2>Getting Started</h2>
+
+<pre><code># Clone the repository
+git clone --recursive https://github.com/newmassrael/scxml-core-engine.git
+cd scxml-core-engine
+
+# Generate Rust state machine from SCXML
+python3 tools/codegen/codegen.py your_machine.scxml -o ./src/generated/ -l rust
+
+# Run the Rust W3C test suite
+cargo test -p sce-rust-tests</code></pre>
+
+            <p>
+                The Rust runtime (<code>sce-rust-runtime/</code>) provides the
+                <code>Engine&lt;P&gt;</code> type and <code>StatePolicy</code> trait.
+                Test infrastructure is in <code>sce-rust-tests/</code>. The code generator
+                produces standalone Rust modules that depend only on the runtime crate.
+            </p>
+
+            <div class="cta">
+                <a href="https://github.com/newmassrael/scxml-core-engine" class="primary">GitHub Repository</a>
+                <a href="visualizer/codegen.html" class="secondary">Try Online Code Generator</a>
+            </div>
+        </article>
+
+        <footer>
+            <p><a href="./">SCE Home</a> | <a href="cpp-state-machine.html">C++ State Machine</a> | <a href="kotlin-state-machine.html">Kotlin State Machine</a></p>
+        </footer>
+    </div>
+</body>
+</html>

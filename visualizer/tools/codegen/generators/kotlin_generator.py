@@ -12,7 +12,7 @@ Design: See KOTLIN_CODEGEN_DESIGN.md for architecture decisions.
 
 import re
 from pathlib import Path
-from typing import Optional, Dict, List, Any
+from typing import Any, Dict, List, Optional
 
 from jinja2 import Environment
 
@@ -335,16 +335,8 @@ class KotlinCodeGenerator(BaseCodeGenerator):
         return to_event_ref
 
     # ──────────────────────────────────────────────
-    # State Hierarchy Helpers
+    # Kotlin-Specific Helpers
     # ──────────────────────────────────────────────
-
-    @staticmethod
-    def _collect_descendants(model: SCXMLModel, parent_id: str, result: List[str]):
-        """Collect all descendant state IDs of a parent state (recursive)."""
-        for state_id, state in model.states.items():
-            if state.parent == parent_id:
-                result.append(state_id)
-                KotlinCodeGenerator._collect_descendants(model, state_id, result)
 
     def _make_parallel_complete_check(self, model: SCXMLModel, machine_name: str):
         """
@@ -389,33 +381,25 @@ class KotlinCodeGenerator(BaseCodeGenerator):
         Uses Jinja2 templates from templates/kotlin/:
           - state_machine.kt.jinja2 (main orchestrator)
         """
-        # W3C SCXML 3.13: Resolve internal transition types
-        # An internal transition falls back to external if:
-        # - Target is NOT a proper descendant of the source state, OR
-        # - Source state is not compound (e.g., parallel or atomic)
-        for state_id, state in model.states.items():
-            is_compound = (not state.is_parallel and not state.is_final
-                           and any(s.parent == state_id for s in model.states.values()))
-            for trans in state.transitions:
-                if trans.type == 'internal' and trans.target:
-                    # Check if target is a proper descendant of source
-                    is_descendant = False
-                    current = trans.target
-                    while current and current in model.states:
-                        parent = model.states[current].parent
-                        if parent == state_id:
-                            is_descendant = True
-                            break
-                        current = parent
-                    if not is_descendant or not is_compound:
-                        trans.type = 'external'  # W3C fallback
-                    else:
-                        # Mark as true internal with target for template
-                        trans.is_true_internal = True
-                        trans.internal_source = state_id
+        # Shared model analysis (language-agnostic, from BaseCodeGenerator)
+        self._resolve_internal_transitions(model)
+        model.scxml_base_path = self._compute_scxml_base_path(scxml_path)
+        initial_entry_root = self._compute_initial_entry_root(model)
+        ancestor_chains = self._compute_ancestor_chains(model)
+        effective_transitions = self._compute_effective_transitions(model, ancestor_chains)
+        parent_map = self._compute_parent_map(model)
+        leaf_map = self._compute_leaf_map(model)
+        parallel_descendants = self._compute_parallel_descendants(model)
+        deep_initial_entries = self._compute_deep_initial_entries(model)
 
-        # Build event tree for sealed interface hierarchy
-        # Filter out synthetic events not meaningful in Kotlin
+        # Invoke entries: base computes language-agnostic data, add Kotlin class names
+        invoke_entries = self._compute_invoke_entries(model)
+        for entries in invoke_entries.values():
+            for entry in entries:
+                child_name = entry.get('child_name', '')
+                entry['child_class'] = self._to_pascal_case(child_name) if child_name else ''
+
+        # Kotlin-specific: Build event tree for sealed interface hierarchy
         kotlin_events = {e for e in model.events if e != 'Wildcard'}
         event_tree = self._build_event_tree(kotlin_events)
         leaf_events = self._collect_leaf_events(event_tree)
@@ -430,131 +414,9 @@ class KotlinCodeGenerator(BaseCodeGenerator):
             event_tree, f"{machine_name}Event"
         )
 
-        # W3C SCXML 3.2/3.4: Compute initial entry root for enterInitialConfiguration()
-        # Walk up from the resolved leaf initial state through parents to find
-        # the top-level ancestor. If there is a hierarchy (compound/parallel),
-        # the generated code enters from root to leaf via recursive onEntry.
-        initial_entry_root = model.initial
-        current = model.initial
-        while current in model.states:
-            parent = model.states[current].parent
-            if parent and parent in model.states:
-                initial_entry_root = parent
-                current = parent
-            else:
-                break
-
-        # W3C SCXML 3.13: Compute ancestor chains for transition routing
-        # Each state maps to an ordered list of ancestor state IDs (parent first).
-        # Used by processEvent to check ancestor transitions when self returns Ignored.
-        ancestor_chains: Dict[str, List[str]] = {}
-        for state_id, state in model.states.items():
-            chain: List[str] = []
-            current_id = state.parent
-            while current_id and current_id in model.states:
-                chain.append(current_id)
-                current_id = model.states[current_id].parent
-            ancestor_chains[state_id] = chain
-
-        # W3C SCXML 3.13: Compute effective transitions (self + ancestors)
-        # Used by executeTransitionActions to execute ancestor transition actions.
-        effective_transitions: Dict[str, list] = {}
-        for state_id, state in model.states.items():
-            transitions = list(state.transitions)
-            for anc_id in ancestor_chains[state_id]:
-                transitions.extend(model.states[anc_id].transitions)
-            effective_transitions[state_id] = transitions
-
-        # W3C SCXML 3.3: Build parent map for state hierarchy
-        # Used by generated parentOf() override for hierarchical exit
-        parent_map: Dict[str, str] = {}
-        for state_id, state in model.states.items():
-            if state.parent and state.parent in model.states:
-                parent_map[state_id] = state.parent
-
-        # W3C SCXML 3.3/3.4: Build leaf map for compound/parallel state resolution
-        # Maps non-leaf states to their initial leaf states
-        leaf_map: Dict[str, str] = {}
-        for state_id, state in model.states.items():
-            leaf = model.resolve_to_leaf(state_id)
-            if leaf != state_id:
-                leaf_map[state_id] = leaf
-
-        # W3C SCXML 3.4: Compute descendants for each parallel state
-        # Used by onExit to collect and exit active descendants
-        parallel_descendants: Dict[str, List[str]] = {}
-        for parallel_id, regions in model.parallel_regions.items():
-            descendants = []
-            self._collect_descendants(model, parallel_id, descendants)
-            parallel_descendants[parallel_id] = descendants
-
         # W3C SCXML 3.7.1: Register parallel completion check filter
         self.env.filters['to_parallel_complete_check'] = \
             self._make_parallel_complete_check(model, machine_name)
-
-        # W3C SCXML 3.6: Compute deep initial entry order for space-separated initials
-        # When a compound state has initial="target1 target2" (deep descendant targets),
-        # the codegen must enter ancestors along the path without triggering their
-        # default initial child entry, then enter the actual targets with full onEntry.
-        deep_initial_entries: Dict[str, List[Dict[str, Any]]] = {}
-        for state_id, state in model.states.items():
-            if len(state.initial_children) > 1:
-                target_set = set(state.initial_children)
-                # Collect all states on the path from each target back to parent
-                all_path_states = set()
-                for target_id in state.initial_children:
-                    current = target_id
-                    visited = set()
-                    while current != state_id and current in model.states:
-                        if current in visited:
-                            break  # Cycle detection
-                        visited.add(current)
-                        all_path_states.add(current)
-                        current = model.states[current].parent
-                # Sort by document order and mark targets
-                entry_order = []
-                for sid in sorted(all_path_states,
-                                  key=lambda s: model.states[s].document_order):
-                    entry_order.append({
-                        'id': sid,
-                        'is_target': sid in target_set,
-                    })
-                deep_initial_entries[state_id] = entry_order
-
-        # W3C SCXML 6.4: Compute invoke entries for each state
-        # Maps state_id -> list of invoke info dicts with child class names
-        invoke_entries: Dict[str, list] = {}
-        for state_id, state in model.states.items():
-            if state.static_invokes:
-                entries = []
-                for si in state.static_invokes:
-                    child_name = si.get('child_name', '')
-                    if child_name:
-                        child_class = self._to_pascal_case(child_name)
-                    else:
-                        child_class = ''
-                    invoke_id = si.get('invoke_id', '')
-                    # W3C SCXML 6.4: Use specific done.invoke.{id} if event exists,
-                    # otherwise use general done.invoke (prefix matching)
-                    specific_done = f"done.invoke.{invoke_id}" if invoke_id else ""
-                    if specific_done and specific_done in model.events:
-                        done_event = specific_done
-                    else:
-                        done_event = 'done.invoke'
-                    entries.append({
-                        'invoke_id': invoke_id,
-                        'child_class': child_class,
-                        'autoforward': si.get('autoforward', False),
-                        'done_event': done_event,
-                        'has_done_event': done_event in model.events or 'done.invoke' in model.events,
-                        'params': si.get('params', []),
-                        'namelist': si.get('namelist', ''),
-                        'idlocation': si.get('idlocation', ''),
-                        'finalize_content': si.get('finalize_content', ''),
-                        'state_id': state_id,
-                        'child_needs_script_engine': si.get('child_needs_script_engine', False),
-                    })
-                invoke_entries[state_id] = entries
 
         input_stem = Path(scxml_path).stem
 

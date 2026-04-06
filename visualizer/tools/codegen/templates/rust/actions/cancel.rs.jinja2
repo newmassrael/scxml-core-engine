@@ -1,0 +1,20 @@
+{# W3C SCXML 6.3: <cancel> - Cancel delayed send event #}
+{% if action.sendidexpr %}
+// W3C SCXML 6.3: <cancel sendidexpr="{{ action.sendidexpr | escape_rust }}">
+{
+    self.ensure_script_engine();
+    let sid = self.session_id.as_ref().unwrap().clone();
+    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    match se.evaluate_expression(&sid, "{{ action.sendidexpr | to_lua_expr | escape_rust }}") {
+        Ok(sce_rust_runtime::ScriptValue::String(send_id_val)) => {
+            engine.cancel_event(&send_id_val);
+        }
+        _ => {
+            log::error!("Cancel: failed to evaluate sendidexpr '{{ action.sendidexpr | escape_rust }}'");
+        }
+    }
+}
+{% elif action.sendid %}
+// W3C SCXML 6.3: <cancel sendid="{{ action.sendid }}">
+engine.cancel_event("{{ action.sendid }}");
+{% endif %}

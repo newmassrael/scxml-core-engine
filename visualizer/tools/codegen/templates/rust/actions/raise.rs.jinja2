@@ -1,0 +1,3 @@
+{# W3C SCXML 3.8.1: <raise> - Internal event generation #}
+// W3C SCXML 3.8.1: <raise event="{{ action.event }}">
+engine.raise(sce_rust_runtime::EventWithMetadata::new({{ machine_name }}Event::{{ action.event | to_event_variant }}));

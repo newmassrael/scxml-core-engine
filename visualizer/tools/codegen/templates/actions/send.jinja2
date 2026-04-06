@@ -276,7 +276,88 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
 
 {# W3C SCXML 6.4: Skip fallback queue routing for child invoke targets (already handled above) #}
 {% if action.target != '#_parent' and action.target != '#_child' and not (action.target.startswith('#_') and action.target not in ['#_parent', '#_internal', '#_child']) %}
-{% if action.eventexpr %}
+{% if action.send_type == 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor' and (action.targetexpr or (action.target and (action.target.startswith('http://') or action.target.startswith('https://')))) %}
+{# W3C SCXML C.2: BasicHTTP send — dispatch via performHttpSend() callback (Zero Duplication) #}
+{% if action.targetexpr %}
+// W3C SCXML C.2: Validate dynamic target is HTTP URL (error.communication if not)
+if (!::SCE::SendHelper::isHttpTarget(dynamicTarget)) {
+    engine.raise(typename Engine::EventWithMetadata(Event::Error_communication));
+    return;
+}
+{% endif %}
+{% set http_target_cpp = 'dynamicTarget' if action.targetexpr else '"' ~ action.target ~ '"' %}
+{% set http_needs_script = (action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0) or action.namelist or action.contentexpr %}
+{% if http_needs_script and (model.needs_script_engine or model.needs_event_origin) %}
+// W3C SCXML C.2: BasicHTTP send with script engine evaluation
+{
+    this->ensureScriptEngine();
+    auto& scriptEngine = getScriptEngine();
+    std::map<std::string, std::vector<std::string>> httpParams;
+{% for param in action.params %}
+{% if param.is_static_literal %}
+    httpParams["{{ param.name }}"].push_back("{{ param.static_value }}");
+{% else %}
+    {
+        auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
+        if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
+            httpParams["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
+        } else {
+            httpParams["{{ param.name }}"].push_back("");
+        }
+    }
+{% endif %}
+{% endfor %}
+{% if action.namelist %}
+    // W3C SCXML C.1: Evaluate namelist for HTTP params
+    std::map<std::string, std::vector<std::string>> namelistParams;
+    bool namelistOk = ::SCE::NamelistHelper::evaluateNamelist(
+        scriptEngine, sessionId_.value(), "{{ action.namelist }}",
+        namelistParams,
+        [&engine](const std::string& msg) {
+            SCE_LOG_ERROR("Namelist evaluation failed: {}", msg);
+            engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+        }
+    );
+    if (!namelistOk) return;
+    for (auto& [k, v] : namelistParams) {
+        for (auto& val : v) httpParams[k].push_back(std::move(val));
+    }
+{% endif %}
+{% if action.contentexpr %}
+    // W3C SCXML C.2: Dynamic content expression
+    std::string httpContent;
+    auto contentResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ action.contentexpr | escape_cpp }}").get();
+    if (::SCE::ScriptResultUtils::isSuccess(contentResult)) {
+        httpContent = ::SCE::ScriptResultUtils::resultToString(contentResult, &scriptEngine, sessionId_.value(), "{{ action.contentexpr | escape_cpp }}");
+    } else {
+        engine.raise(typename Engine::EventWithMetadata(Event::Error_execution));
+        return;
+    }
+{% else %}
+    std::string httpContent = "{{ action.content | escape_cpp }}";
+{% endif %}
+    engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", httpContent, httpParams, sendId);
+}
+{% elif action.params %}
+// W3C SCXML C.2: BasicHTTP send with static params
+{
+    std::map<std::string, std::vector<std::string>> httpParams;
+{% for param in action.params %}
+    httpParams["{{ param.name }}"].push_back("{{ param.static_value }}");
+{% endfor %}
+    engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", "", httpParams, sendId);
+}
+{% elif action.content %}
+// W3C SCXML C.2: BasicHTTP content send
+engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", "{{ action.content | escape_cpp }}", {}, sendId);
+{% elif action.event %}
+// W3C SCXML C.2: BasicHTTP event send
+engine.performHttpSend({{ http_target_cpp }}, "{{ action.event }}", "", {}, sendId);
+{% else %}
+// W3C SCXML C.2: BasicHTTP send with no event/content/params
+engine.performHttpSend({{ http_target_cpp }}, "", "", {}, sendId);
+{% endif %}
+{% elif action.eventexpr %}
 // W3C SCXML 6.2: Dynamic event evaluation (test172)
 {
 {% if model.needs_script_engine or model.needs_event_origin %}
@@ -306,49 +387,6 @@ if (::SCE::SendHelper::requiresTargetAttribute("{{ action.send_type }}")) {
     }
 {% endif %}
 }
-{% elif action.content and not action.event and not action.contentexpr %}
-// W3C SCXML C.2: BasicHTTP content-only send (test 520)
-// Event name is empty - content will be sent as HTTP POST body
-{% if model.needs_script_engine or model.needs_event_origin %}
-engine.raiseExternal(typename Engine::EventWithMetadata(Event::Empty, "{{ action.content | escape_cpp }}", sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", "{{ action.target }}"));
-{% else %}
-// W3C SCXML C.2: HTTP send requires EventWithMetadata with target/type
-engine.raiseExternal(typename Engine::EventWithMetadata(Event::Empty, "{{ action.content | escape_cpp }}", "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", "{{ action.target }}"));
-{% endif %}
-{% elif action.params and not action.event %}
-// W3C SCXML C.2: _scxmleventname parameter event name override (test 531)
-// When no event attribute, _scxmleventname param value becomes event name
-std::map<std::string, std::vector<std::string>> params;
-{% set needs_script_engine = action.params | selectattr('is_static_literal', 'equalto', False) | list | length > 0 %}
-{% if needs_script_engine %}
-// W3C SCXML C.2: Dynamic param expr requires JSEngine evaluation (Static Hybrid)
-this->ensureScriptEngine();
-auto& scriptEngine = getScriptEngine();
-{% endif %}
-{% for param in action.params %}
-{% if param.is_static_literal %}
-// W3C SCXML Appendix B.2: Static string literal (Pure Static optimization)
-params["{{ param.name }}"].push_back("{{ param.static_value }}");
-{% else %}
-// W3C SCXML C.2: Dynamic param expr evaluation
-{
-    auto paramResult = scriptEngine.evaluateExpression(sessionId_.value(), "{{ param.expr }}").get();
-    if (::SCE::ScriptResultUtils::isSuccess(paramResult)) {
-        params["{{ param.name }}"].push_back(::SCE::ScriptResultUtils::resultToString(paramResult));
-    } else {
-        SCE_LOG_ERROR("Failed to evaluate param expr: {{ param.expr }}");
-        params["{{ param.name }}"].push_back("");
-    }
-}
-{% endif %}
-{% endfor %}
-std::string eventData = ::SCE::EventDataHelper::buildJsonFromParams(params);
-// W3C SCXML C.2: HTTP send with param-based event data
-{% if needs_script_engine %}
-engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, sessionId_.value_or(""), sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", "{{ action.target }}"));
-{% else %}
-engine.raiseExternal(typename Engine::EventWithMetadata(Event::Test, eventData, "", sendId, "", {% if action.typeexpr %}dynamicType{% elif action.send_type %}"{{ action.send_type }}"{% else %}"http://www.w3.org/TR/scxml/#SCXMLEventProcessor"{% endif %}, "", "{{ action.target }}"));
-{% endif %}
 {% elif action.event %}
 {% if action.delay or action.delayexpr %}
 // W3C SCXML 6.2: Delayed send with event scheduling

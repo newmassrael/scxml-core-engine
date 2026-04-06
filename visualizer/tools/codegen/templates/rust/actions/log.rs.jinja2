@@ -1,0 +1,21 @@
+{# W3C SCXML 3.8.8: <log> - Logging action #}
+{% if action.expr and not model.needs_script_engine %}
+// W3C SCXML 3.8.8: <log>
+log::info!("{% if action.label %}{{ action.label | escape_rust }}: {% endif %}{}", {{ action.expr | to_rust_string_expr }});
+{% elif action.expr and model.needs_script_engine %}
+// W3C SCXML 3.8.8: <log> with script engine expression
+{
+    self.ensure_script_engine();
+    let sid = self.session_id.as_ref().unwrap().clone();
+    let se = sce_rust_runtime::ScriptEngineProvider::get();
+    match se.evaluate_expression(&sid, "{{ action.expr | to_lua_expr | escape_rust }}") {
+        Ok(val) => log::info!("{% if action.label %}{{ action.label | escape_rust }}: {% endif %}{:?}", val),
+        Err(e) => log::error!("Log expression eval failed: {}", e),
+    }
+}
+{% elif action.label %}
+// W3C SCXML 3.8.8: <log label="{{ action.label | escape_rust }}">
+log::info!("{{ action.label | escape_rust }}");
+{% else %}
+// W3C SCXML 3.8.8: <log> (no label or expr)
+{% endif %}

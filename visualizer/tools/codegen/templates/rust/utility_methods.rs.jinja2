@@ -1,0 +1,14 @@
+{#
+    Utility Methods Template (Rust Jinja2)
+
+    Generates helper methods on the Policy impl block:
+    - is_state_active() for In() predicate support
+    - get_state_name() for state name lookup (parallel states)
+#}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+
+    // W3C SCXML 5.9.2: Check if state is active (for In() predicate)
+    fn is_state_active(&self, state_id: &str) -> bool {
+        self.active_states.iter().any(|&s| Self::get_state_name(s) == state_id)
+    }
+{% endif %}
