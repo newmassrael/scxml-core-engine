@@ -107,7 +107,7 @@ pub struct {{ machine_name }}Policy {
     // W3C SCXML 5.10.1: Event invokeid for _event.invokeid binding
     pending_event_invokeid: String,
 {% endif %}
-{% for history_id, history_info in model.history_states.items() %}
+{% for history_id, history_info in model.history_states | dictsort %}
     // W3C SCXML 3.11: History state {{ history_id }} ({{ history_info.type }})
     history_{{ history_id }}: Option<Vec<{{ machine_name }}State>>,
 {% endfor %}
@@ -194,7 +194,7 @@ impl {{ machine_name }}Policy {
 {% if model.needs_event_invokeid %}
             pending_event_invokeid: String::new(),
 {% endif %}
-{% for history_id in model.history_states %}
+{% for history_id, _ in model.history_states | dictsort %}
             history_{{ history_id }}: None,
 {% endfor %}
 {% if model.variables %}
@@ -295,7 +295,7 @@ impl StatePolicy for {{ machine_name }}Policy {
 
     fn is_final_state(state: Self::State) -> bool {
         match state {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.is_final %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => true,
 {% endif %}
@@ -306,7 +306,7 @@ impl StatePolicy for {{ machine_name }}Policy {
 
     fn get_parent(state: Self::State) -> Option<Self::State> {
         match state {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.parent %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => Some({{ machine_name }}State::{{ state.parent | to_state_variant }}),
 {% endif %}
@@ -317,8 +317,8 @@ impl StatePolicy for {{ machine_name }}Policy {
 
     fn is_compound_state(state: Self::State) -> bool {
         match state {
-{% for state_id, state in model.states.items() | sort %}
-{% if state.initial or state.initial_children or (model.states.values() | selectattr('parent', 'equalto', state_id) | list | length > 0 and not state.is_parallel and not state.is_final) %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.initial or state.initial_children %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => true,
 {% endif %}
 {% endfor %}
@@ -329,7 +329,7 @@ impl StatePolicy for {{ machine_name }}Policy {
 {% if model.has_parallel_states %}
     fn is_parallel_state(state: Self::State) -> bool {
         match state {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.is_parallel %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => true,
 {% endif %}
@@ -340,7 +340,7 @@ impl StatePolicy for {{ machine_name }}Policy {
 
     fn get_parallel_regions(state: Self::State) -> &'static [Self::State] {
         match state {
-{% for parallel_id, regions in model.parallel_regions.items() %}
+{% for parallel_id, regions in model.parallel_regions | dictsort %}
             {{ machine_name }}State::{{ parallel_id | to_state_variant }} => &[
 {% for region in regions %}
                 {{ machine_name }}State::{{ region | to_state_variant }},
@@ -369,7 +369,7 @@ impl StatePolicy for {{ machine_name }}Policy {
 
     fn get_document_order(state: Self::State) -> u32 {
         match state {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {{ state.document_order }},
 {% endfor %}
         }
@@ -400,7 +400,7 @@ impl StatePolicy for {{ machine_name }}Policy {
 {% if model.has_parallel_states or model.uses_in_predicate %}
     fn get_state_name(state: Self::State) -> &'static str {
         match state {
-{% for state_id in model.states.keys() | sort %}
+{% for state_id in model.states | sort %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => "{{ state_id }}",
 {% endfor %}
         }
@@ -414,7 +414,7 @@ impl StatePolicy for {{ machine_name }}Policy {
     // W3C SCXML 3.6: Get initial children of a compound state
     fn get_initial_children(state: Self::State) -> Vec<Self::State> {
         match state {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.initial_children %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => vec![
 {% for child in state.initial_children %}
@@ -430,7 +430,7 @@ impl StatePolicy for {{ machine_name }}Policy {
     // W3C SCXML 3.11: Get initial or history-restored child
     fn get_initial_or_history_child(&self, state: Self::State) -> Self::State {
         match state {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.initial_history_id %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
                 // W3C SCXML 3.11: Check history for {{ state.initial_history_id }}
@@ -624,23 +624,12 @@ impl {{ machine_name }}Policy {
     ) -> bool {
 {% endif %}
         match check_state {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
 {# Separate event-triggered and eventless transitions #}
-{% set event_transitions = [] %}
-{% set event_transition_indices = [] %}
-{% set eventless_transitions = [] %}
-{% set eventless_transition_indices = [] %}
-{% for trans in state.transitions %}
-{% if trans.event %}
-{% set _ = event_transitions.append(trans) %}
-{% set _ = event_transition_indices.append(loop.index0) %}
-{% else %}
-{% set _ = eventless_transitions.append(trans) %}
-{% set _ = eventless_transition_indices.append(loop.index0) %}
-{% endif %}
-{% endfor %}
+{% set event_transitions = state.transitions | selectattr("event") | list %}
+{% set eventless_transitions = state.transitions | rejectattr("event") | list %}
 {% if event_transitions %}
                 // W3C SCXML 3.12: Event-triggered transitions (document order)
 {% for trans in event_transitions %}
@@ -672,7 +661,7 @@ impl {{ machine_name }}Policy {
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
 {% if model.has_transition_actions %}
-                        self.last_transition_index = {{ event_transition_indices[loop.index0] }};
+                        self.last_transition_index = {{ trans.transition_index }};
                         self.has_transition_actions = {{ 'true' if trans.actions else 'false' }};
 {% endif %}
                         self.last_transition_is_internal = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
@@ -686,7 +675,7 @@ impl {{ machine_name }}Policy {
                             let resolved_target = self.resolve_history_target_{{ trans.history_target }}();
                             collect.push(TransitionInfo {
                                 source: check_state, target: resolved_target,
-                                transition_index: {{ event_transition_indices[loop.index0] }},
+                                transition_index: {{ trans.transition_index }},
                                 has_actions: {{ 'true' if trans.actions else 'false' }},
                                 is_internal: {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }},
                                 is_targetless: false,
@@ -694,7 +683,7 @@ impl {{ machine_name }}Policy {
 {% else %}
                             collect.push(TransitionInfo {
                                 source: check_state, target: {{ machine_name }}State::{{ trans.target | to_state_variant }},
-                                transition_index: {{ event_transition_indices[loop.index0] }},
+                                transition_index: {{ trans.transition_index }},
                                 has_actions: {{ 'true' if trans.actions else 'false' }},
                                 is_internal: {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }},
                                 is_targetless: false,
@@ -703,7 +692,7 @@ impl {{ machine_name }}Policy {
 {% else %}
                             collect.push(TransitionInfo {
                                 source: check_state, target: check_state,
-                                transition_index: {{ event_transition_indices[loop.index0] }},
+                                transition_index: {{ trans.transition_index }},
                                 has_actions: {{ 'true' if trans.actions else 'false' }},
                                 is_internal: true, is_targetless: true,
                             });
@@ -734,40 +723,32 @@ impl {{ machine_name }}Policy {
 {% endif %}
 {% if eventless_transitions %}
 {# Determine if any eventless transition has a guard condition #}
-{% set has_any_guard = [] %}
-{% for transition in eventless_transitions %}
-{% if transition.cond %}
-{% set _ = has_any_guard.append(true) %}
-{% endif %}
-{% endfor %}
+{% set has_any_guard = eventless_transitions | selectattr("cond") | list %}
                 // W3C SCXML 3.13: Eventless transitions
                 if event == {{ machine_name }}Event::Null {
 {% if has_any_guard %}
 {# Guarded eventless transitions: use if/else if/else chain #}
-{% set first_guard = [true] %}
 {% for transition in eventless_transitions %}
 {% if transition.cond %}
 {% if transition.is_pure_in_predicate %}
-                    {% if not first_guard[0] %}} else {% endif %}if {{ transition.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
+                    {% if not loop.first %}} else {% endif %}if {{ transition.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }} {
 {% elif model.needs_script_engine %}
-                    {% if not first_guard[0] %}} else {% endif %}if self.safe_evaluate_guard("{{ transition.cond | to_lua_guard | escape_rust }}", engine) {
+                    {% if not loop.first %}} else {% endif %}if self.safe_evaluate_guard("{{ transition.cond | to_lua_guard | escape_rust }}", engine) {
 {% else %}
-                    {% if not first_guard[0] %}} else {% endif %}if {{ transition.cond }} {
+                    {% if not loop.first %}} else {% endif %}if {{ transition.cond }} {
 {% endif %}
-{% set _ = first_guard.__setitem__(0, false) %}
 {% else %}
 {# Unconditional fallback in a guarded chain = else branch #}
-{% if not first_guard[0] %}
+{% if not loop.first %}
                     } else {
 {% else %}
 {# First transition is unconditional but there are guards later - just execute directly #}
 {% endif %}
-{% set _ = first_guard.__setitem__(0, false) %}
 {% endif %}
                         // W3C SCXML 3.4: Track transition metadata
                         self.last_transition_source_state = check_state;
 {% if model.has_transition_actions %}
-                        self.last_transition_index = {{ eventless_transition_indices[loop.index0] }};
+                        self.last_transition_index = {{ transition.transition_index }};
                         self.has_transition_actions = {{ 'true' if transition.actions else 'false' }};
 {% endif %}
                         self.last_transition_is_internal = {{ 'true' if transition.type == 'internal' else 'false' }};
@@ -779,7 +760,7 @@ impl {{ machine_name }}Policy {
                             let resolved_target = self.resolve_history_target_{{ transition.history_target }}();
                             collect.push(TransitionInfo {
                                 source: check_state, target: resolved_target,
-                                transition_index: {{ eventless_transition_indices[loop.index0] }},
+                                transition_index: {{ transition.transition_index }},
                                 has_actions: {{ 'true' if transition.actions else 'false' }},
                                 is_internal: {{ 'true' if transition.type == 'internal' else 'false' }},
                                 is_targetless: false,
@@ -787,7 +768,7 @@ impl {{ machine_name }}Policy {
 {% else %}
                             collect.push(TransitionInfo {
                                 source: check_state, target: {{ machine_name }}State::{{ transition.target | to_state_variant }},
-                                transition_index: {{ eventless_transition_indices[loop.index0] }},
+                                transition_index: {{ transition.transition_index }},
                                 has_actions: {{ 'true' if transition.actions else 'false' }},
                                 is_internal: {{ 'true' if transition.type == 'internal' else 'false' }},
                                 is_targetless: false,
@@ -796,7 +777,7 @@ impl {{ machine_name }}Policy {
 {% else %}
                             collect.push(TransitionInfo {
                                 source: check_state, target: check_state,
-                                transition_index: {{ eventless_transition_indices[loop.index0] }},
+                                transition_index: {{ transition.transition_index }},
                                 has_actions: {{ 'true' if transition.actions else 'false' }},
                                 is_internal: true, is_targetless: true,
                             });
@@ -825,7 +806,7 @@ impl {{ machine_name }}Policy {
                     // Unconditional eventless transition
                     self.last_transition_source_state = check_state;
 {% if model.has_transition_actions %}
-                    self.last_transition_index = {{ eventless_transition_indices[0] }};
+                    self.last_transition_index = {{ transition.transition_index }};
                     self.has_transition_actions = {{ 'true' if transition.actions else 'false' }};
 {% endif %}
                     self.last_transition_is_internal = {{ 'true' if transition.type == 'internal' else 'false' }};
@@ -837,7 +818,7 @@ impl {{ machine_name }}Policy {
                         let resolved_target = self.resolve_history_target_{{ transition.history_target }}();
                         collect.push(TransitionInfo {
                             source: check_state, target: resolved_target,
-                            transition_index: {{ eventless_transition_indices[0] }},
+                            transition_index: {{ transition.transition_index }},
                             has_actions: {{ 'true' if transition.actions else 'false' }},
                             is_internal: {{ 'true' if transition.type == 'internal' else 'false' }},
                             is_targetless: false,
@@ -845,7 +826,7 @@ impl {{ machine_name }}Policy {
 {% else %}
                         collect.push(TransitionInfo {
                             source: check_state, target: {{ machine_name }}State::{{ transition.target | to_state_variant }},
-                            transition_index: {{ eventless_transition_indices[0] }},
+                            transition_index: {{ transition.transition_index }},
                             has_actions: {{ 'true' if transition.actions else 'false' }},
                             is_internal: {{ 'true' if transition.type == 'internal' else 'false' }},
                             is_targetless: false,
@@ -854,7 +835,7 @@ impl {{ machine_name }}Policy {
 {% else %}
                         collect.push(TransitionInfo {
                             source: check_state, target: check_state,
-                            transition_index: {{ eventless_transition_indices[0] }},
+                            transition_index: {{ transition.transition_index }},
                             has_actions: {{ 'true' if transition.actions else 'false' }},
                             is_internal: true, is_targetless: true,
                         });
@@ -888,7 +869,7 @@ impl {{ machine_name }}Policy {
         }
     }
 
-{% for history_id, history_info in model.history_states.items() %}
+{% for history_id, history_info in model.history_states | dictsort %}
     // W3C SCXML 3.11: Resolve history target for {{ history_id }}
     fn resolve_history_target_{{ history_id }}(&self) -> {{ machine_name }}State {
         if let Some(ref recorded) = self.history_{{ history_id }} {

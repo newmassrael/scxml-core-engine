@@ -390,16 +390,16 @@ class Test387StateMachine(
                 activeStateIds.remove("pass")
             }
             is Test387State.S0 -> {
+                // W3C SCXML 3.11: Record deep history for s0HistDeep
+                historyStore["s0HistDeep"] = preTransitionActiveStates.filter { stateId ->
+                    val st = resolveState(stateId) ?: return@filter false
+                    isDescendantOf(st, Test387State.S0) && isAtomicState(st)
+                }.toList()
                 // W3C SCXML 3.11: Record shallow history for s0HistShallow
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
                 historyStore["s0HistShallow"] = preTransitionActiveStates.filter { stateId ->
                     val st = resolveState(stateId) ?: return@filter false
                     parentOf(st)?.let { stateIdOf(it) } == "s0"
-                }.toList()
-                // W3C SCXML 3.11: Record deep history for s0HistDeep
-                historyStore["s0HistDeep"] = preTransitionActiveStates.filter { stateId ->
-                    val st = resolveState(stateId) ?: return@filter false
-                    isDescendantOf(st, Test387State.S0) && isAtomicState(st)
                 }.toList()
                 activeStateIds.remove("s0")
             }
@@ -422,16 +422,16 @@ class Test387StateMachine(
                 activeStateIds.remove("s022")
             }
             is Test387State.S1 -> {
+                // W3C SCXML 3.11: Record deep history for s1HistDeep
+                historyStore["s1HistDeep"] = preTransitionActiveStates.filter { stateId ->
+                    val st = resolveState(stateId) ?: return@filter false
+                    isDescendantOf(st, Test387State.S1) && isAtomicState(st)
+                }.toList()
                 // W3C SCXML 3.11: Record shallow history for s1HistShallow
                 // Uses preTransitionActiveStates (captured before exits, C++ pattern)
                 historyStore["s1HistShallow"] = preTransitionActiveStates.filter { stateId ->
                     val st = resolveState(stateId) ?: return@filter false
                     parentOf(st)?.let { stateIdOf(it) } == "s1"
-                }.toList()
-                // W3C SCXML 3.11: Record deep history for s1HistDeep
-                historyStore["s1HistDeep"] = preTransitionActiveStates.filter { stateId ->
-                    val st = resolveState(stateId) ?: return@filter false
-                    isDescendantOf(st, Test387State.S1) && isAtomicState(st)
                 }.toList()
                 activeStateIds.remove("s1")
             }

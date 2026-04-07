@@ -146,7 +146,7 @@
         // All datamodel variables are globally accessible regardless of state entry
         // ARCHITECTURE.md Zero Duplication: Uses datamodel_macros.jinja2 (DRY principle)
 {% import 'datamodel_macros.jinja2' as dm %}
-{% for state_id, state in model.states.items() %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.datamodel %}
         // State {{ state_id }} datamodel variables
 {{ dm.initialize_state_datamodel(state, state_id, "AOT initializeDataModel", base_path) }}

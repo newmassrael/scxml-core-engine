@@ -49,6 +49,7 @@ class Transition:
     actions: List[Dict] = field(default_factory=list)  # executable content
     needs_string_matching: bool = False  # True if event needs runtime string matching (wildcards, prefix)
     matching_enum_values: List[str] = field(default_factory=list)  # Precomputed enum values for direct comparison
+    transition_index: int = 0  # Original index within parent state's transition list (for minijinja compat)
 
 
 @dataclass
@@ -779,6 +780,10 @@ class SCXMLParser:
                         state.static_invokes.append(static_invoke)
                         self.model.static_invokes.append(static_invoke)
 
+            # Set transition_index for minijinja template compatibility
+            for i, trans in enumerate(state.transitions):
+                trans.transition_index = i
+
             self.model.states[state_id] = state
 
             # Recursively parse child states
@@ -870,6 +875,10 @@ class SCXMLParser:
                 block = self._parse_executable_content(exit_elem)
                 if block:
                     state.on_exit_blocks.append(block)
+
+            # Set transition_index for minijinja template compatibility
+            for i, trans in enumerate(state.transitions):
+                trans.transition_index = i
 
             self.model.states[parallel_id] = state
             self.model.has_parallel_states = True

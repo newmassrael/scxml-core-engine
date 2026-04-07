@@ -36,7 +36,7 @@
             }
         }
 {% elif var.expr %}
-{% set is_function_expr = var.expr.strip().startswith('function') %}
+{% set is_function_expr = (var.expr | trim) is startingwith('function') %}
 {% if is_function_expr %}
         // W3C SCXML B.2: Function expression for '{{ var.id }}' ({{ state_id }})
         if let Err(e) = se.execute_script(&sid, "{{ var.id }} = {{ var.expr | to_lua_script | escape_rust }}") {
@@ -56,7 +56,7 @@
         }
 {% endif %}
 {% elif var.content %}
-{% if var.content.strip().startswith('<') %}
+{% if (var.content | trim) is startingwith('<') %}
         // W3C SCXML B.2: XML inline content for '{{ var.id }}' ({{ state_id }})
         if let Err(e) = se.set_variable_as_dom(&sid, "{{ var.id }}", r#"{{ var.content }}"#) {
             log::error!("Failed to set DOM variable '{{ var.id }}' in {{ state_id }}: {}", e);

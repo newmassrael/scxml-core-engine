@@ -47,7 +47,7 @@
                     'foreach_body: {
 {% for body_action in action.actions %}
                         {% with action=body_action, in_foreach=true %}
-                        {% include 'actions/' + body_action.type + '.rs.jinja2' %}
+                        {% include 'actions/' ~ body_action.type ~ '.rs.jinja2' %}
                         {% endwith %}
 {% endfor %}
                     }

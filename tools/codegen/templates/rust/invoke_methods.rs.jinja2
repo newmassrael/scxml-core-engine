@@ -18,7 +18,7 @@
         let invokes_to_execute: Vec<_> = self.pending_invokes.drain(..).collect();
 
         for pending in &invokes_to_execute {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.static_invokes %}
 {% for invoke_info in state.static_invokes %}
             if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {
@@ -31,7 +31,7 @@
                     let sid = self.session_id.as_ref().unwrap().clone();
                     let se = sce_rust_runtime::ScriptEngineProvider::get();
                     let mut namelist_valid = true;
-{% for var_name in invoke_info.namelist.split() %}
+{% for var_name in invoke_info.namelist | split %}
                     if !se.has_variable(&sid, "{{ var_name }}") {
                         log::error!("Namelist validation failed: '{{ var_name }}' not declared in parent");
 {% if 'error.execution' in model.events %}
@@ -76,7 +76,7 @@
                     let se = sce_rust_runtime::ScriptEngineProvider::get();
 {% if invoke_info.child_datamodel_vars is defined %}
                     let child_vars: &[&str] = &[{% for cv in invoke_info.child_datamodel_vars %}"{{ cv }}"{{ ", " if not loop.last }}{% endfor %}];
-{% for var_name in invoke_info.namelist.split() %}
+{% for var_name in invoke_info.namelist | split %}
                     if child_vars.contains(&"{{ var_name }}") {
                         if let Ok(val) = se.evaluate_expression(&sid, "{{ var_name }}") {
                             child_policy.set_param_in_script_engine("{{ var_name }}", &val.to_lua_literal());
@@ -84,7 +84,7 @@
                     }
 {% endfor %}
 {% else %}
-{% for var_name in invoke_info.namelist.split() %}
+{% for var_name in invoke_info.namelist | split %}
                     if let Ok(val) = se.evaluate_expression(&sid, "{{ var_name }}") {
                         child_policy.set_param_in_script_engine("{{ var_name }}", &val.to_lua_literal());
                     }
@@ -156,7 +156,7 @@
 {% endfor %}
 {% endif %}
 {% endfor %}
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.hybrid_invokes %}
 {% for invoke_info in state.hybrid_invokes %}
             if pending.invoke_id.contains(".{{ invoke_info.invoke_id }}") {

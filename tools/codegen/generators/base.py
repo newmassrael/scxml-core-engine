@@ -93,6 +93,13 @@ class BaseCodeGenerator(ABC):
             lstrip_blocks=True
         )
 
+        # Register cross-engine compatibility tests (match minijinja built-ins)
+        self.env.tests['startingwith'] = lambda s, prefix: s.startswith(prefix) if isinstance(s, str) else False
+        self.env.tests['endingwith'] = lambda s, suffix: s.endswith(suffix) if isinstance(s, str) else False
+        # Register cross-engine compatibility filters (replace Python-specific string methods)
+        self.env.filters['split'] = lambda s: s.split() if isinstance(s, str) else []
+        self.env.filters['slice_from'] = lambda s, n: s[n:] if isinstance(s, str) and n < len(s) else ''
+
         # Let subclasses register language-specific filters
         self._register_filters(self.env)
 

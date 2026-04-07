@@ -32,7 +32,7 @@
                 AOT_DEBUG("Executing pending invoke: {} in state {}", pending.invokeId, static_cast<int>(pending.state));
 
                 // Switch on state to find which invoke to execute
-                {% for state_id, state in model.states.items() %}
+                {% for state_id, state in model.states | dictsort %}
                 {% if state.static_invokes %}
                 if (pending.state == State::{{ state_id | capitalize }}) {
                     {% for invoke_info in state.static_invokes %}
@@ -242,7 +242,7 @@
     // Child state machines need to run independently during parent's event loop
     template<typename Engine>
     void tickChildren([[maybe_unused]] Engine& engine) {
-        {% for state_id, state in model.states.items() %}
+        {% for state_id, state in model.states | dictsort %}
         {% if state.static_invokes %}
         {% for invoke_info in state.static_invokes %}
         if (child_{{ invoke_info.invoke_id }}_) {
@@ -265,7 +265,7 @@
     template<typename Engine>
     void forwardToAutoforwardChildren([[maybe_unused]] const std::string& eventName, [[maybe_unused]] Engine& engine) {
 
-        {% for state_id, state in model.states.items() %}
+        {% for state_id, state in model.states | dictsort %}
         {% if state.static_invokes %}
         {% for invoke_info in state.static_invokes %}
         // Check if child {{ invoke_info.invoke_id }} has autoforward enabled

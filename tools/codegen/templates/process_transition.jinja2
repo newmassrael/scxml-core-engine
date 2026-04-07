@@ -524,22 +524,11 @@ private:
                               [[maybe_unused]] State& currentState, [[maybe_unused]] bool& transitionTaken,
                               [[maybe_unused]] Engine& engine{{ ', [[maybe_unused]] ::std::vector<TransitionInfo>* collectMode = nullptr' if model.has_parallel_states else '' }}) {
         switch (checkState) {
-{% for state_id, state in model.states.items() %}
+{% for state_id, state in model.states | dictsort %}
         case State::{{ state_id | capitalize }}:
 {% if state.transitions %}
-{% set event_transitions = [] %}
-{% set event_transition_indices = [] %}
-{% set eventless_transitions = [] %}
-{% set eventless_transition_indices = [] %}
-{% for trans in state.transitions %}
-{% if trans.event %}
-{% set _ = event_transitions.append(trans) %}
-{% set _ = event_transition_indices.append(loop.index0) %}
-{% else %}
-{% set _ = eventless_transitions.append(trans) %}
-{% set _ = eventless_transition_indices.append(loop.index0) %}
-{% endif %}
-{% endfor %}
+{% set event_transitions = state.transitions | selectattr('event') | list %}
+{% set eventless_transitions = state.transitions | rejectattr('event') | list %}
 {% if event_transitions %}
 {# W3C SCXML 3.12: Process transitions in strict document order (no grouping) #}
 {# W3C SCXML 3.12.1: Prefix matching is applied during event comparison #}
@@ -588,14 +577,14 @@ private:
                     lastTransitionSourceState_ = checkState;
 {% if model.has_transition_actions %}
 // W3C SCXML 3.13: Store transition for deferred execution (use original index)
-                    lastTransitionIndex_ = {{ event_transition_indices[loop.index0] }};
+                    lastTransitionIndex_ = {{ trans.transition_index }};
                     hasTransitionActions_ = {{ 'true' if trans.actions else 'false' }};
 {% endif %}
 // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
 // W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
                     lastTransitionIsTargetless_ = {{ 'true' if not trans.target else 'false' }};
-{{ transition_execution_or_collection(trans, event_transition_indices[loop.index0]) }}
+{{ transition_execution_or_collection(trans, trans.transition_index) }}
                     return true;  // Transition found
                 }
 {% else %}
@@ -605,14 +594,14 @@ private:
                     lastTransitionSourceState_ = checkState;
 {% if model.has_transition_actions %}
 // W3C SCXML 3.13: Store transition for deferred execution (use original index)
-                    lastTransitionIndex_ = {{ event_transition_indices[loop.index0] }};
+                    lastTransitionIndex_ = {{ trans.transition_index }};
                     hasTransitionActions_ = {{ 'true' if trans.actions else 'false' }};
 {% endif %}
 // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if (trans.type == 'internal' or not trans.target) else 'false' }};
 // W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
                     lastTransitionIsTargetless_ = {{ 'true' if not trans.target else 'false' }};
-{{ transition_execution_or_collection(trans, event_transition_indices[loop.index0]) }}
+{{ transition_execution_or_collection(trans, trans.transition_index) }}
                     return true;  // Transition found
                 }
 {% endif %}
@@ -674,14 +663,14 @@ private:
                     lastTransitionSourceState_ = checkState;
 {% if model.has_transition_actions %}
 // W3C SCXML 3.13: Store transition for deferred execution (use original index)
-                    lastTransitionIndex_ = {{ eventless_transition_indices[loop.index0] }};
+                    lastTransitionIndex_ = {{ transition.transition_index }};
                     hasTransitionActions_ = {{ 'true' if transition.actions else 'false' }};
 {% endif %}
 // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if transition.type == 'internal' else 'false' }};
 // W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
                     lastTransitionIsTargetless_ = {{ 'true' if not transition.target else 'false' }};
-{{ transition_execution_or_collection(transition, eventless_transition_indices[loop.index0]) }}
+{{ transition_execution_or_collection(transition, transition.transition_index) }}
                     return true;  // Eventless transition found
 {% endfor %}
 {% if eventless_transitions[0].cond %}
@@ -700,14 +689,14 @@ private:
                     lastTransitionSourceState_ = checkState;
 {% if model.has_transition_actions %}
 // W3C SCXML 3.13: Store transition for deferred execution (use original index)
-                    lastTransitionIndex_ = {{ eventless_transition_indices[loop.index0] }};
+                    lastTransitionIndex_ = {{ transition.transition_index }};
                     hasTransitionActions_ = {{ 'true' if transition.actions else 'false' }};
 {% endif %}
 // W3C SCXML 3.13: Track internal transition type (ALWAYS needed by StaticExecutionEngine::handleHierarchicalTransition)
                     lastTransitionIsInternal_ = {{ 'true' if transition.type == 'internal' else 'false' }};
 // W3C SCXML 5.9.2: Track targetless transition (consumes event only, no exit/enter)
                     lastTransitionIsTargetless_ = {{ 'true' if not transition.target else 'false' }};
-{{ transition_execution_or_collection(transition, eventless_transition_indices[loop.index0]) }}
+{{ transition_execution_or_collection(transition, transition.transition_index) }}
                     return true;  // Unconditional eventless transition
 {% endfor %}
 {% endif %}
@@ -735,7 +724,7 @@ public:
 
         // Switch on source state, then transition index
         switch (lastTransitionSourceState_) {
-{% for state_id, state in model.states.items() %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
         case State::{{ state_id | capitalize }}:
             {

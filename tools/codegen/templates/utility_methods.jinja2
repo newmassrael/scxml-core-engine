@@ -56,7 +56,7 @@
     // Helper: Convert State enum to string for In() predicate (W3C SCXML 5.9.2)
     [[nodiscard]] static constexpr const char* getStateName(State state) noexcept {
         switch (state) {
-{% for state_id in model.states.keys() | sort %}
+{% for state_id in model.states | list | sort %}
             case State::{{ state_id | capitalize }}: return "{{ state_id }}";
 {% endfor %}
             default: return "";
