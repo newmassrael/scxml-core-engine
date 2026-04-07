@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+#
+# sce-build — SCXML code generator for sce-rust-runtime
+#
+# Build-time helper: parses SCXML files and generates Rust code
+# implementing `sce_rust_runtime::StatePolicy`. Drop into build.rs
+# to eliminate the Python codegen dependency.
+
+[package]
+name = "sce-build"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "SCXML code generator for sce-rust-runtime (build.rs helper)"
+
+[dependencies]
+# XML parsing — read-only DOM, zero-copy, fast
+roxmltree = "0.20"
+# Jinja2-compatible template engine (renders existing .jinja2 templates)
+minijinja = { version = "2", features = ["builtins"] }
+# Serialization for template context
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# ECMAScript→Lua regex transformations (Phase 3)
+regex = "1"
+# Python Jinja2 compatibility (dict.items(), str.strip(), etc.)
+minijinja-contrib = { version = "2", features = ["pycompat"] }
+# WASM bindings (optional)
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+default = []
+wasm = ["wasm-bindgen"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]

@@ -13,6 +13,7 @@ members = [
     "sce-rust-runtime",
     "sce-rust-lua",
     "sce-rust-tests",
+    "sce-build",
 ]
 
 [workspace.package]

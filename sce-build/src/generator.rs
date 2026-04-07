@@ -1,0 +1,351 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+//
+// Multi-language code generator — renders minijinja templates from SCXMLModel.
+// Supports Rust, C++, and Kotlin code generation.
+
+use crate::filters;
+use crate::model::SCXMLModel;
+use minijinja::Environment;
+use std::path::Path;
+
+/// Create a minijinja Environment with Python Jinja2 compatibility enabled.
+fn new_env<'a>() -> Environment<'a> {
+    let mut env = Environment::new();
+    env.set_trim_blocks(true);
+    env.set_lstrip_blocks(true);
+    // Python Jinja2 compatibility:
+    // 1. dict.items(), str.strip(), str.startswith(), etc.
+    env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
+    // 2. Undefined attributes return "" instead of error (matches Jinja2 default)
+    env.set_undefined_behavior(minijinja::UndefinedBehavior::Lenient);
+    env
+}
+
+/// Target language for code generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Language {
+    Rust,
+    Cpp,
+    Kotlin,
+}
+
+impl Language {
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "rust" => Some(Language::Rust),
+            "cpp" | "c++" => Some(Language::Cpp),
+            "kotlin" | "kt" => Some(Language::Kotlin),
+            _ => None,
+        }
+    }
+}
+
+/// Generated output — may contain multiple files (e.g., C++ .h + .inl).
+pub struct GeneratedOutput {
+    pub files: Vec<(String, String)>, // (filename, content)
+}
+
+/// License configuration matching Python license_config.py
+fn license_config() -> serde_json::Value {
+    serde_json::json!({
+        "project": {
+            "name": "SCE (SCXML Core Engine)",
+            "copyright_year": "2025",
+            "copyright_holder": "newmassrael"
+        },
+        "urls": {
+            "license_main": "https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE"
+        },
+        "generated_code_header": {
+            "copyright_holder": "[Author of input SCXML file]"
+        }
+    })
+}
+
+fn render_error(e: minijinja::Error) -> String {
+    use std::error::Error;
+    let mut msg = format!("Template render error: {e}");
+    let mut source: Option<&dyn Error> = e.source();
+    while let Some(cause) = source {
+        msg.push_str(&format!("\n  caused by: {cause}"));
+        source = cause.source();
+    }
+    if let Some(detail) = e.detail() {
+        msg.push_str(&format!("\n  detail: {detail}"));
+    }
+    msg
+}
+
+// ── Rust generator ───────────────────────────────────────────────
+
+/// Generate Rust code from an analyzed SCXMLModel (filesystem-based).
+pub fn generate(model: &SCXMLModel, template_dir: &Path) -> Result<String, String> {
+    let mut env = new_env();
+    load_templates(&mut env, template_dir)?;
+    filters::register_filters(&mut env);
+    render_rust(&env, model)
+}
+
+/// Generate Rust code using pre-loaded template strings (WASM-compatible).
+pub fn generate_with_templates(
+    model: &SCXMLModel,
+    templates: &[(&str, &str)],
+) -> Result<String, String> {
+    let mut env = new_env();
+    load_template_strings(&mut env, templates)?;
+    filters::register_filters(&mut env);
+    render_rust(&env, model)
+}
+
+fn render_rust(env: &Environment, model: &SCXMLModel) -> Result<String, String> {
+    let machine_name = filters::to_pascal_case(model.name.clone());
+    let tmpl = env
+        .get_template("state_machine.rs.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+    let ctx = minijinja::context! {
+        model => minijinja::Value::from_serialize(model),
+        machine_name => machine_name,
+        license_config => minijinja::Value::from_serialize(&license_config()),
+    };
+    tmpl.render(ctx).map_err(render_error)
+}
+
+// ── C++ generator ────────────────────────────────────────────────
+
+/// Generate C++ code from an analyzed SCXMLModel (filesystem-based).
+pub fn generate_cpp(
+    model: &SCXMLModel,
+    template_dir: &Path,
+    input_stem: &str,
+) -> Result<GeneratedOutput, String> {
+    let mut env = new_env();
+    load_templates(&mut env, template_dir)?;
+    filters::register_cpp_filters(&mut env);
+    render_cpp(&env, model, input_stem)
+}
+
+/// Generate C++ code using pre-loaded template strings (WASM-compatible).
+pub fn generate_cpp_with_templates(
+    model: &SCXMLModel,
+    templates: &[(&str, &str)],
+    input_stem: &str,
+) -> Result<GeneratedOutput, String> {
+    let mut env = new_env();
+    load_template_strings(&mut env, templates)?;
+    filters::register_cpp_filters(&mut env);
+    render_cpp(&env, model, input_stem)
+}
+
+fn render_cpp(
+    env: &Environment,
+    model: &SCXMLModel,
+    input_stem: &str,
+) -> Result<GeneratedOutput, String> {
+    let inl_filename = format!("{input_stem}_sm.inl");
+    let base_path = model.scxml_source_path.clone();
+
+    let header_tmpl = env
+        .get_template("state_machine.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+    let inl_tmpl = env
+        .get_template("state_machine_inl.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let model_val = minijinja::Value::from_serialize(model);
+    let license_val = minijinja::Value::from_serialize(&license_config());
+
+    let header_ctx = minijinja::context! {
+        model => &model_val,
+        base_path => &base_path,
+        license_config => &license_val,
+        inl_filename => &inl_filename,
+    };
+    let inl_ctx = minijinja::context! {
+        model => &model_val,
+        base_path => &base_path,
+        license_config => &license_val,
+    };
+
+    let header_code = header_tmpl.render(header_ctx).map_err(render_error)?;
+    let inl_code = inl_tmpl.render(inl_ctx).map_err(render_error)?;
+
+    Ok(GeneratedOutput {
+        files: vec![
+            (format!("{input_stem}_sm.h"), header_code),
+            (inl_filename, inl_code),
+        ],
+    })
+}
+
+// ── Kotlin generator ─────────────────────────────────────────────
+
+/// Generate Kotlin code from an analyzed SCXMLModel (filesystem-based).
+pub fn generate_kotlin(model: &SCXMLModel, template_dir: &Path) -> Result<String, String> {
+    let mut env = new_env();
+    load_templates(&mut env, template_dir)?;
+    filters::register_kotlin_filters(&mut env);
+    render_kotlin(&mut env, model)
+}
+
+/// Generate Kotlin code using pre-loaded template strings (WASM-compatible).
+pub fn generate_kotlin_with_templates(
+    model: &SCXMLModel,
+    templates: &[(&str, &str)],
+) -> Result<String, String> {
+    let mut env = new_env();
+    load_template_strings(&mut env, templates)?;
+    filters::register_kotlin_filters(&mut env);
+    render_kotlin(&mut env, model)
+}
+
+fn render_kotlin(env: &mut Environment, model: &SCXMLModel) -> Result<String, String> {
+    use crate::kotlin;
+
+    let machine_name = filters::to_pascal_case(model.name.clone());
+
+    // Kotlin-specific analysis
+    let ancestor_chains = kotlin::compute_ancestor_chains(model);
+    let effective_transitions = kotlin::compute_effective_transitions(model, &ancestor_chains);
+    let parent_map = kotlin::compute_parent_map(model);
+    let leaf_map = kotlin::compute_leaf_map(model);
+    let parallel_descendants = kotlin::compute_parallel_descendants(model);
+    let deep_initial_entries = kotlin::compute_deep_initial_entries(model);
+    let initial_entry_root = kotlin::compute_initial_entry_root(model);
+    let invoke_entries = kotlin::compute_invoke_entries(model);
+
+    // Event tree for sealed interface hierarchy
+    let kotlin_events: std::collections::BTreeSet<String> = model
+        .events
+        .iter()
+        .filter(|e| e.as_str() != "Wildcard")
+        .cloned()
+        .collect();
+    let event_tree = kotlin::build_event_tree(&kotlin_events);
+    let leaf_events = kotlin::collect_leaf_events(&event_tree, "");
+    let branch_events = kotlin::collect_branch_events(&event_tree, "");
+
+    // Register dynamic Kotlin filters
+    let branch_events_clone = branch_events.clone();
+    env.add_filter(
+        "to_event_ref",
+        move |name: String| -> String { kotlin::to_event_ref(&name, &branch_events_clone) },
+    );
+
+    let parallel_regions = model.parallel_regions.clone();
+    let states_for_check = model.states.clone();
+    let mn = machine_name.clone();
+    env.add_filter(
+        "to_parallel_complete_check",
+        move |parallel_id: String| -> String {
+            kotlin::to_parallel_complete_check(&parallel_id, &parallel_regions, &states_for_check, &mn)
+        },
+    );
+
+    // Pre-render event tree as Kotlin sealed interfaces
+    let event_members =
+        kotlin::render_event_tree(&event_tree, &format!("{machine_name}Event"), "    ");
+
+    let tmpl = env
+        .get_template("state_machine.kt.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        model => minijinja::Value::from_serialize(model),
+        machine_name => machine_name,
+        event_tree => minijinja::Value::from_serialize(&event_tree),
+        event_members => event_members,
+        leaf_events => minijinja::Value::from_serialize(&leaf_events),
+        license_config => minijinja::Value::from_serialize(&license_config()),
+        kotlin_default => minijinja::Value::from_object(KotlinDefaultFn),
+        initial_entry_root => initial_entry_root,
+        ancestor_chains => minijinja::Value::from_serialize(&ancestor_chains),
+        effective_transitions => minijinja::Value::from_serialize(&effective_transitions),
+        parent_map => minijinja::Value::from_serialize(&parent_map),
+        leaf_map => minijinja::Value::from_serialize(&leaf_map),
+        parallel_descendants => minijinja::Value::from_serialize(&parallel_descendants),
+        deep_initial_entries => minijinja::Value::from_serialize(&deep_initial_entries),
+        invoke_entries => minijinja::Value::from_serialize(&invoke_entries),
+    };
+
+    let mut output = tmpl.render(ctx).map_err(render_error)?;
+    // Post-process: close the class (matches Python behavior)
+    output = output.trim_end().to_string() + "\n}\n";
+    Ok(output)
+}
+
+/// kotlin_default callable from templates.
+#[derive(Debug)]
+struct KotlinDefaultFn;
+
+impl std::fmt::Display for KotlinDefaultFn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "<kotlin_default>")
+    }
+}
+
+impl minijinja::value::Object for KotlinDefaultFn {
+    fn call(
+        self: &std::sync::Arc<Self>,
+        _state: &minijinja::State,
+        args: &[minijinja::Value],
+    ) -> Result<minijinja::Value, minijinja::Error> {
+        if let Some(var) = args.first() {
+            let json: serde_json::Value =
+                serde_json::from_str(&var.to_string()).unwrap_or(serde_json::Value::Null);
+            Ok(minijinja::Value::from(
+                crate::kotlin::to_kotlin_default(&json),
+            ))
+        } else {
+            Ok(minijinja::Value::from("null"))
+        }
+    }
+}
+
+// ── Template loading helpers ─────────────────────────────────────
+
+/// Load templates from pre-loaded string pairs (WASM-compatible).
+fn load_template_strings(
+    env: &mut Environment<'_>,
+    templates: &[(&str, &str)],
+) -> Result<(), String> {
+    for (name, content) in templates {
+        env.add_template_owned(name.to_string(), content.to_string())
+            .map_err(|e| format!("Template parse error in {name}: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Recursively load all .jinja2 templates from a directory.
+fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), String> {
+    if !dir.exists() {
+        return Err(format!("Template directory not found: {}", dir.display()));
+    }
+    load_templates_recursive(env, dir, dir)
+}
+
+fn load_templates_recursive(
+    env: &mut Environment<'_>,
+    base_dir: &Path,
+    current_dir: &Path,
+) -> Result<(), String> {
+    let entries = std::fs::read_dir(current_dir)
+        .map_err(|e| format!("Cannot read {}: {e}", current_dir.display()))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Dir entry error: {e}"))?;
+        let path = entry.path();
+        if path.is_dir() {
+            load_templates_recursive(env, base_dir, &path)?;
+        } else if path.extension().and_then(|e| e.to_str()) == Some("jinja2") {
+            let rel = path
+                .strip_prefix(base_dir)
+                .map_err(|e| format!("Path error: {e}"))?;
+            let template_name = rel.to_string_lossy().replace('\\', "/");
+            let content = std::fs::read_to_string(&path)
+                .map_err(|e| format!("Cannot read template {}: {e}", path.display()))?;
+            env.add_template_owned(template_name, content)
+                .map_err(|e| format!("Template parse error in {}: {e}", path.display()))?;
+        }
+    }
+    Ok(())
+}
