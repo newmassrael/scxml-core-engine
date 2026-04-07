@@ -178,6 +178,11 @@ class BaseCodeGenerator(ABC):
             self._add_system_events(model)
             self._build_prefix_matching(model)
 
+            # W3C SCXML 3.13: Resolve internal transition types (shared enrichment)
+            self._resolve_internal_transitions(model)
+            # W3C SCXML 6.4: Resolve project-relative base path for portability
+            model.scxml_base_path = self._compute_scxml_base_path(scxml_path)
+
             print(f"Generating code for: {model.name}")
             print(f"  States: {len(model.states)}")
             print(f"  Events: {len(model.events)}")
@@ -436,13 +441,12 @@ class BaseCodeGenerator(ABC):
                 if not transition.event:
                     continue
 
-                # W3C SCXML 5.9.3: Wildcards and glob patterns need runtime matching (C++)
-                # but still compute prefix_matching_events for Kotlin codegen
+                # W3C SCXML 5.9.3: Wildcards and glob patterns need runtime matching
+                # Compute prefix_matching_events for enum-based event dispatch
                 if transition.event in ['*', '.*', '_*'] or '.*' in transition.event or ' ' in transition.event:
                     transition.needs_string_matching = True
                     model.needs_event_matching_helper = True
 
-                    # Compute prefix_matching_events for Kotlin templates
                     matching_events = set()
                     descriptors = transition.event.split()
                     for descriptor in descriptors:
