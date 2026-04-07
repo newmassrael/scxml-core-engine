@@ -16,8 +16,10 @@ fn new_env<'a>() -> Environment<'a> {
     // Python Jinja2 compatibility:
     // 1. dict.items(), str.strip(), str.startswith(), etc.
     env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
-    // 2. Undefined attributes return "" instead of error (matches Jinja2 default)
-    env.set_undefined_behavior(minijinja::UndefinedBehavior::Lenient);
+    // 2. Undefined attributes propagate as undefined (Chainable) instead of
+    //    silently becoming "" (Lenient). This catches template typos while still
+    //    allowing optional attribute chains like `model.foo.bar` to work.
+    env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
     env
 }
 
@@ -29,13 +31,15 @@ pub enum Language {
     Kotlin,
 }
 
-impl Language {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for Language {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "rust" => Some(Language::Rust),
-            "cpp" | "c++" => Some(Language::Cpp),
-            "kotlin" | "kt" => Some(Language::Kotlin),
-            _ => None,
+            "rust" => Ok(Language::Rust),
+            "cpp" | "c++" => Ok(Language::Cpp),
+            "kotlin" | "kt" => Ok(Language::Kotlin),
+            _ => Err(format!("Unknown language: {s}")),
         }
     }
 }
@@ -50,7 +54,7 @@ fn license_config() -> serde_json::Value {
     serde_json::json!({
         "project": {
             "name": "SCE (SCXML Core Engine)",
-            "copyright_year": "2025",
+            "copyright_year": "2025-2026",
             "copyright_holder": "newmassrael"
         },
         "urls": {
@@ -142,7 +146,11 @@ fn render_cpp(
     input_stem: &str,
 ) -> Result<GeneratedOutput, String> {
     let inl_filename = format!("{input_stem}_sm.inl");
-    let base_path = model.scxml_source_path.clone();
+    // W3C SCXML 5.3: base_path is the directory containing the SCXML file,
+    // used by DataModelInitHelper for resolving file: URIs in data src attributes.
+    // Python codegen uses Path(output_dir).name; we use scxml_base_path which is
+    // the parent directory of the SCXML file (set by analyzer::compute_scxml_base_path).
+    let base_path = model.scxml_base_path.clone();
 
     let header_tmpl = env
         .get_template("state_machine.jinja2")
@@ -184,7 +192,8 @@ pub fn generate_kotlin(model: &SCXMLModel, template_dir: &Path) -> Result<String
     let mut env = new_env();
     load_templates(&mut env, template_dir)?;
     filters::register_kotlin_filters(&mut env);
-    render_kotlin(&mut env, model)
+    register_kotlin_dynamic_filters(&mut env, model);
+    render_kotlin(&env, model)
 }
 
 /// Generate Kotlin code using pre-loaded template strings (WASM-compatible).
@@ -195,10 +204,40 @@ pub fn generate_kotlin_with_templates(
     let mut env = new_env();
     load_template_strings(&mut env, templates)?;
     filters::register_kotlin_filters(&mut env);
-    render_kotlin(&mut env, model)
+    register_kotlin_dynamic_filters(&mut env, model);
+    render_kotlin(&env, model)
 }
 
-fn render_kotlin(env: &mut Environment, model: &SCXMLModel) -> Result<String, String> {
+/// Register model-dependent Kotlin filters (event refs, parallel checks).
+fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
+    use crate::kotlin;
+
+    let kotlin_events: std::collections::BTreeSet<String> = model
+        .events
+        .iter()
+        .filter(|e| e.as_str() != "Wildcard")
+        .cloned()
+        .collect();
+    let event_tree = kotlin::build_event_tree(&kotlin_events);
+    let branch_events = kotlin::collect_branch_events(&event_tree, "");
+
+    let branch_events_clone = branch_events.clone();
+    env.add_filter(
+        "to_event_ref",
+        move |name: String| -> String { kotlin::to_event_ref(&name, &branch_events_clone) },
+    );
+
+    let parallel_regions = model.parallel_regions.clone();
+    let states_for_check = model.states.clone();
+    env.add_filter(
+        "to_parallel_complete_check",
+        move |parallel_id: String| -> String {
+            kotlin::to_parallel_complete_check(&parallel_id, &parallel_regions, &states_for_check)
+        },
+    );
+}
+
+fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, String> {
     use crate::kotlin;
 
     let machine_name = filters::to_pascal_case(model.name.clone());
@@ -222,24 +261,6 @@ fn render_kotlin(env: &mut Environment, model: &SCXMLModel) -> Result<String, St
         .collect();
     let event_tree = kotlin::build_event_tree(&kotlin_events);
     let leaf_events = kotlin::collect_leaf_events(&event_tree, "");
-    let branch_events = kotlin::collect_branch_events(&event_tree, "");
-
-    // Register dynamic Kotlin filters
-    let branch_events_clone = branch_events.clone();
-    env.add_filter(
-        "to_event_ref",
-        move |name: String| -> String { kotlin::to_event_ref(&name, &branch_events_clone) },
-    );
-
-    let parallel_regions = model.parallel_regions.clone();
-    let states_for_check = model.states.clone();
-    let mn = machine_name.clone();
-    env.add_filter(
-        "to_parallel_complete_check",
-        move |parallel_id: String| -> String {
-            kotlin::to_parallel_complete_check(&parallel_id, &parallel_regions, &states_for_check, &mn)
-        },
-    );
 
     // Pre-render event tree as Kotlin sealed interfaces
     let event_members =
@@ -267,10 +288,9 @@ fn render_kotlin(env: &mut Environment, model: &SCXMLModel) -> Result<String, St
         invoke_entries => minijinja::Value::from_serialize(&invoke_entries),
     };
 
-    let mut output = tmpl.render(ctx).map_err(render_error)?;
-    // Post-process: close the class (matches Python behavior)
-    output = output.trim_end().to_string() + "\n}\n";
-    Ok(output)
+    let output = tmpl.render(ctx).map_err(render_error)?;
+    // Template leaves class body open; we close it here (implicit contract with state_machine.kt.jinja2)
+    Ok(output.trim_end().to_string() + "\n}\n")
 }
 
 /// kotlin_default callable from templates.
@@ -290,11 +310,53 @@ impl minijinja::value::Object for KotlinDefaultFn {
         args: &[minijinja::Value],
     ) -> Result<minijinja::Value, minijinja::Error> {
         if let Some(var) = args.first() {
-            let json: serde_json::Value =
-                serde_json::from_str(&var.to_string()).unwrap_or(serde_json::Value::Null);
-            Ok(minijinja::Value::from(
-                crate::kotlin::to_kotlin_default(&json),
-            ))
+            let var_type = var
+                .get_attr("type")
+                .ok()
+                .and_then(|v| if v.is_undefined() { None } else { Some(v.to_string()) })
+                .unwrap_or_default();
+            let expr = var
+                .get_attr("expr")
+                .ok()
+                .and_then(|v| if v.is_undefined() { None } else { Some(v.to_string()) })
+                .unwrap_or_default();
+
+            let default = if expr.is_empty() {
+                // No expr: return type-based default
+                match var_type.as_str() {
+                    "int" => "0".to_string(),
+                    "string" => "\"\"".to_string(),
+                    "bool" => "false".to_string(),
+                    _ => "null".to_string(),
+                }
+            } else {
+                // Has expr: use the expression value
+                match var_type.as_str() {
+                    "int" => expr.clone(),
+                    "bool" => {
+                        if expr == "true" || expr == "false" {
+                            expr.clone()
+                        } else {
+                            "false".to_string()
+                        }
+                    }
+                    "string" => {
+                        if expr.starts_with('"') && expr.ends_with('"') {
+                            // Already double-quoted: escape $ for Kotlin string interpolation
+                            let inner = &expr[1..expr.len() - 1];
+                            format!("\"{}\"", inner.replace('$', "\\$"))
+                        } else if expr.starts_with('\'') && expr.ends_with('\'') {
+                            // Single-quoted: convert to double-quoted Kotlin string
+                            let inner = &expr[1..expr.len() - 1];
+                            format!("\"{}\"", inner.replace('$', "\\$"))
+                        } else {
+                            expr.clone()
+                        }
+                    }
+                    _ => "null".to_string(),
+                }
+            };
+            Ok(minijinja::Value::from(default))
         } else {
             Ok(minijinja::Value::from("null"))
         }

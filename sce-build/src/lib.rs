@@ -25,7 +25,50 @@ pub mod lua_transformer;
 #[cfg(feature = "wasm")]
 mod wasm;
 
+use model::SCXMLModel;
 use std::path::Path;
+
+/// Parse, analyze, and validate an SCXML file for static code generation.
+fn compile_model(scxml_path: &str) -> Result<SCXMLModel, String> {
+    let mut parser = parser::SCXMLParser::new();
+    let mut model = parser.parse_file(scxml_path)?;
+    analyzer::analyze(&mut model, scxml_path);
+    if !analyzer::can_generate_static(&model) {
+        return Err(format!(
+            "Cannot generate static code for '{}' (dynamic features not supported)",
+            model.name
+        ));
+    }
+    resolve_source_path(&mut model, scxml_path);
+    Ok(model)
+}
+
+/// Parse SCXML content string, analyze and validate (no filesystem).
+fn compile_model_from_string(scxml_content: &str, scxml_name: &str) -> Result<SCXMLModel, String> {
+    let mut parser = parser::SCXMLParser::new();
+    let mut model = parser.parse_string(scxml_content, scxml_name)?;
+    analyzer::analyze(&mut model, "");
+    if !analyzer::can_generate_static(&model) {
+        return Err(format!(
+            "Cannot generate static code for '{}' (dynamic features not supported)",
+            model.name
+        ));
+    }
+    Ok(model)
+}
+
+/// Resolve SCXML source path to project-relative path.
+pub fn resolve_source_path(model: &mut SCXMLModel, scxml_path: &str) {
+    if let Ok(abs) = std::fs::canonicalize(scxml_path) {
+        if let Ok(cwd) = std::env::current_dir() {
+            if let Ok(rel) = abs.strip_prefix(&cwd) {
+                model.scxml_source_path = rel.to_string_lossy().to_string();
+            } else {
+                model.scxml_source_path = abs.to_string_lossy().to_string();
+            }
+        }
+    }
+}
 
 /// Compile SCXML files to Rust source code in `OUT_DIR`.
 ///
@@ -56,32 +99,7 @@ pub fn compile_scxml(scxml_files: &[&str]) {
 ///
 /// This is the core API — parses SCXML, analyzes model, renders templates.
 pub fn compile_scxml_to_string(scxml_path: &str, template_dir: &Path) -> Result<String, String> {
-    let mut parser = parser::SCXMLParser::new();
-    let mut model = parser.parse_file(scxml_path)?;
-
-    // Run shared analysis pipeline
-    analyzer::analyze(&mut model, scxml_path);
-
-    // Check if static generation is possible
-    if !analyzer::can_generate_static(&model) {
-        return Err(format!(
-            "Cannot generate static code for '{}' (dynamic features not supported)",
-            model.name
-        ));
-    }
-
-    // Resolve project-relative source path
-    if let Ok(abs) = std::fs::canonicalize(scxml_path) {
-        // Try to make it relative to CWD
-        if let Ok(cwd) = std::env::current_dir() {
-            if let Ok(rel) = abs.strip_prefix(&cwd) {
-                model.scxml_source_path = rel.to_string_lossy().to_string();
-            } else {
-                model.scxml_source_path = abs.to_string_lossy().to_string();
-            }
-        }
-    }
-
+    let model = compile_model(scxml_path)?;
     generator::generate(&model, template_dir)
 }
 
@@ -93,17 +111,7 @@ pub fn compile_from_string(
     scxml_name: &str,
     templates: &[(&str, &str)],
 ) -> Result<String, String> {
-    let mut parser = parser::SCXMLParser::new();
-    let mut model = parser.parse_string(scxml_content, scxml_name)?;
-    analyzer::analyze(&mut model, "");
-
-    if !analyzer::can_generate_static(&model) {
-        return Err(format!(
-            "Cannot generate static code for '{}' (dynamic features not supported)",
-            model.name
-        ));
-    }
-
+    let model = compile_model_from_string(scxml_content, scxml_name)?;
     generator::generate_with_templates(&model, templates)
 }
 
@@ -114,16 +122,7 @@ pub fn compile_from_string_lang(
     templates: &[(&str, &str)],
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, String> {
-    let mut parser = parser::SCXMLParser::new();
-    let mut model = parser.parse_string(scxml_content, scxml_name)?;
-    analyzer::analyze(&mut model, "");
-
-    if !analyzer::can_generate_static(&model) {
-        return Err(format!(
-            "Cannot generate static code for '{}' (dynamic features not supported)",
-            model.name
-        ));
-    }
+    let model = compile_model_from_string(scxml_content, scxml_name)?;
 
     match language {
         generator::Language::Rust => {
@@ -150,26 +149,7 @@ pub fn compile_scxml_lang(
     template_dir: &Path,
     language: generator::Language,
 ) -> Result<generator::GeneratedOutput, String> {
-    let mut parser = parser::SCXMLParser::new();
-    let mut model = parser.parse_file(scxml_path)?;
-    analyzer::analyze(&mut model, scxml_path);
-
-    if !analyzer::can_generate_static(&model) {
-        return Err(format!(
-            "Cannot generate static code for '{}' (dynamic features not supported)",
-            model.name
-        ));
-    }
-
-    if let Ok(abs) = std::fs::canonicalize(scxml_path) {
-        if let Ok(cwd) = std::env::current_dir() {
-            if let Ok(rel) = abs.strip_prefix(&cwd) {
-                model.scxml_source_path = rel.to_string_lossy().to_string();
-            } else {
-                model.scxml_source_path = abs.to_string_lossy().to_string();
-            }
-        }
-    }
+    let model = compile_model(scxml_path)?;
 
     let input_stem = Path::new(scxml_path)
         .file_stem()
@@ -234,29 +214,7 @@ fn find_template_base() -> std::path::PathBuf {
 
 /// Locate the Rust Jinja2 template directory.
 ///
-/// Search order:
-/// 1. `SCE_TEMPLATE_DIR` environment variable
-/// 2. Relative to this crate's source: `../tools/codegen/templates/rust/`
-/// 3. Relative to CWD: `tools/codegen/templates/rust/`
+/// Delegates to `find_template_dir_for(Language::Rust)` for consistent behavior.
 pub fn find_template_dir() -> std::path::PathBuf {
-    if let Ok(dir) = std::env::var("SCE_TEMPLATE_DIR") {
-        return Path::new(&dir).to_path_buf();
-    }
-
-    // Relative to crate source (workspace root)
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let candidate = crate_dir.join("../tools/codegen/templates/rust");
-    if candidate.exists() {
-        return candidate;
-    }
-
-    // Relative to CWD
-    let candidate = Path::new("tools/codegen/templates/rust");
-    if candidate.exists() {
-        return candidate.to_path_buf();
-    }
-
-    panic!(
-        "Cannot find Rust Jinja2 templates. Set SCE_TEMPLATE_DIR or run from project root."
-    );
+    find_template_dir_for(generator::Language::Rust)
 }

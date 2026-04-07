@@ -30,10 +30,18 @@ regex = "1"
 minijinja-contrib = { version = "2", features = ["pycompat"] }
 # WASM bindings (optional)
 wasm-bindgen = { version = "0.2", optional = true }
+# CLI argument parsing (for sce-codegen binary)
+clap = { version = "4", features = ["derive"], optional = true }
 
 [features]
 default = []
 wasm = ["wasm-bindgen"]
+cli = ["clap"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "sce-codegen"
+path = "src/bin/sce_codegen.rs"
+required-features = ["cli"]

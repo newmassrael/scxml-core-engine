@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<scxml initial="sub0" version="1.0" datamodel="ecmascript"  name="machineName">  
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub0" version="1.0" datamodel="ecmascript" name="machineName">  
          <state id="sub0">
            <onentry>
              <send type="http://www.w3.org/TR/scxml/#SCXMLEventProcessor" target="#_parent" event="childToParent"/>
@@ -9,3 +9,4 @@
      </state>
      <final id="subFinal"/>
        </scxml>
+     

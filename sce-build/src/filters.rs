@@ -5,6 +5,31 @@
 
 use minijinja::Value;
 use regex::Regex;
+use std::sync::LazyLock;
+
+// ── Compiled regex patterns (compiled once, reused across calls) ──
+
+/// Splits on dot, underscore, or hyphen — used for PascalCase, camelCase, event variants.
+static RE_DELIMITERS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[._\-]").unwrap());
+
+/// Splits on underscore or hyphen only (no dot) — used for state variants, state/event class names.
+static RE_WORD_DELIMITERS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[_\-]").unwrap());
+
+/// Matches C++ `isStateActive("stateId")` calls for Rust transformation.
+static RE_IS_STATE_ACTIVE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"isStateActive\("([^"]+)"\)"#).unwrap());
+
+/// Matches one or more whitespace characters for normalization.
+static RE_WHITESPACE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").unwrap());
+
+/// Capitalize the first character of a string.
+pub fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+        None => String::new(),
+    }
+}
 
 /// Rust 2021 edition reserved keywords — must be escaped with `r#` prefix
 const RUST_KEYWORDS: &[&str] = &[
@@ -68,19 +93,9 @@ pub fn to_pascal_case(name: String) -> String {
     if name.is_empty() {
         return "Empty".to_string();
     }
-    let re = Regex::new(r"[._\-]").unwrap();
-    let parts: Vec<&str> = re.split(&name).collect();
-    parts
-        .iter()
-        .map(|p| {
-            if p.is_empty() {
-                String::new()
-            } else {
-                let mut chars = p.chars();
-                let first = chars.next().unwrap().to_uppercase().to_string();
-                first + chars.as_str()
-            }
-        })
+    RE_DELIMITERS
+        .split(&name)
+        .map(|p| if p.is_empty() { String::new() } else { capitalize_first(p) })
         .collect()
 }
 
@@ -119,49 +134,29 @@ fn to_rust_string_expr(expr: String) -> String {
 }
 
 /// Convert dot-separated SCXML event name to Rust enum variant PascalCase.
+/// Identical to to_pascal_case — both split on dot/underscore/hyphen delimiters.
 pub fn to_event_variant(name: String) -> String {
-    if name.is_empty() {
-        return "Empty".to_string();
-    }
-    let re = Regex::new(r"[._\-]").unwrap();
-    let parts: Vec<&str> = re.split(&name).collect();
-    parts
-        .iter()
-        .map(|p| {
-            if p.is_empty() {
-                String::new()
-            } else {
-                let mut chars = p.chars();
-                let first = chars.next().unwrap().to_uppercase().to_string();
-                first + chars.as_str()
-            }
-        })
-        .collect()
+    to_pascal_case(name)
 }
 
 /// Convert SCXML state ID to Rust enum variant PascalCase.
+/// State variants only split on _ and -, NOT on . (unlike event variants).
 pub fn to_state_variant(name: String) -> String {
     if name.is_empty() {
         return "Empty".to_string();
     }
-    // State variants only split on _ and -, NOT on . (unlike event variants)
-    let re = Regex::new(r"[_\-]").unwrap();
-    let parts: Vec<&str> = re.split(&name).collect();
-    parts
-        .iter()
-        .map(|p| {
-            if p.is_empty() {
-                String::new()
-            } else {
-                let mut chars = p.chars();
-                let first = chars.next().unwrap().to_uppercase().to_string();
-                first + chars.as_str()
-            }
-        })
+    RE_WORD_DELIMITERS
+        .split(&name)
+        .map(|p| if p.is_empty() { String::new() } else { capitalize_first(p) })
         .collect()
 }
 
 /// Render a value as a Rust literal expression.
+///
+/// NOTE: bool is checked before i64 intentionally. minijinja stores bools and
+/// integers as distinct types, so `i64::try_from(true)` fails. If a future
+/// minijinja version changes this behavior, the ordering here prevents `0`/`1`
+/// from being misinterpreted as `false`/`true`.
 fn to_rust_literal(value: Value) -> String {
     if value.is_none() || value.is_undefined() {
         return "None".to_string();
@@ -197,15 +192,14 @@ fn to_in_predicate_rust(cond_cpp: String) -> String {
         return String::new();
     }
     let result = cond_cpp.replace("this->", "");
-    let re = Regex::new(r#"isStateActive\("([^"]+)"\)"#).unwrap();
-    re.replace_all(&result, r#"self.is_state_active("$1")"#)
+    RE_IS_STATE_ACTIVE
+        .replace_all(&result, r#"self.is_state_active("$1")"#)
         .to_string()
 }
 
 /// W3C SCXML B.2: Normalize whitespace.
 fn normalize_ws(text: String) -> String {
-    let re = Regex::new(r"\s+").unwrap();
-    re.replace_all(text.trim(), " ").to_string()
+    RE_WHITESPACE.replace_all(text.trim(), " ").to_string()
 }
 
 // ── ECMAScript→Lua transformation filters ─────────────────────────
@@ -247,12 +241,9 @@ fn filter_split(s: String) -> Vec<Value> {
 }
 
 /// Return substring from index n (replaces Python `[n:]` slicing in templates).
+/// Uses char-based indexing to avoid panics on multi-byte UTF-8 boundaries.
 fn filter_slice_from(s: String, n: usize) -> String {
-    if n >= s.len() {
-        String::new()
-    } else {
-        s[n..].to_string()
-    }
+    s.chars().skip(n).collect()
 }
 
 // ── C++ filters ──────────────────────────────────────────────────
@@ -273,21 +264,13 @@ fn capitalize_state(name: String) -> String {
     match name.to_lowercase().as_str() {
         "pass" => "Pass".to_string(),
         "fail" => "Fail".to_string(),
-        _ => {
-            let mut chars = name.chars();
-            let first = chars.next().unwrap().to_uppercase().to_string();
-            first + chars.as_str()
-        }
+        _ => capitalize_first(&name),
     }
 }
 
-/// Escape C++ string literals.
+/// Escape C++ string literals (identical escaping rules to Rust).
 fn escape_cpp(text: String) -> String {
-    text.replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
-        .replace('\r', "\\r")
-        .replace('\t', "\\t")
+    escape_rust(text)
 }
 
 // ── Kotlin filters ───────────────────────────────────────────────
@@ -306,12 +289,11 @@ pub fn register_kotlin_filters(env: &mut minijinja::Environment) {
 }
 
 /// Convert identifier to camelCase for Kotlin property names.
-fn to_camel_case(name: String) -> String {
+pub fn to_camel_case(name: String) -> String {
     if name.is_empty() {
         return String::new();
     }
-    let re = Regex::new(r"[._\-]").unwrap();
-    let parts: Vec<&str> = re.split(&name).collect();
+    let parts: Vec<&str> = RE_DELIMITERS.split(&name).collect();
     let mut result = String::new();
     for (i, p) in parts.iter().enumerate() {
         if p.is_empty() {
@@ -320,10 +302,7 @@ fn to_camel_case(name: String) -> String {
         if i == 0 {
             result.push_str(p);
         } else {
-            let mut chars = p.chars();
-            let first = chars.next().unwrap().to_uppercase().to_string();
-            result.push_str(&first);
-            result.push_str(chars.as_str());
+            result.push_str(&capitalize_first(p));
         }
     }
     result
@@ -369,46 +348,19 @@ pub fn to_event_class_name(name: String) -> String {
     if name.is_empty() {
         return "Empty".to_string();
     }
-    let dot_parts: Vec<&str> = name.split('.').collect();
-    let result: Vec<String> = dot_parts
-        .iter()
+    name.split('.')
         .map(|dot_part| {
-            let re = Regex::new(r"[_\-]").unwrap();
-            let sub_parts: Vec<&str> = re.split(dot_part).collect();
-            sub_parts
-                .iter()
-                .map(|p| {
-                    if p.is_empty() {
-                        String::new()
-                    } else {
-                        let mut chars = p.chars();
-                        let first = chars.next().unwrap().to_uppercase().to_string();
-                        first + chars.as_str()
-                    }
-                })
+            RE_WORD_DELIMITERS
+                .split(dot_part)
+                .map(|p| if p.is_empty() { String::new() } else { capitalize_first(p) })
                 .collect::<String>()
         })
-        .collect();
-    result.join(".")
+        .collect::<Vec<_>>()
+        .join(".")
 }
 
 /// Convert SCXML state ID to Kotlin PascalCase class name.
+/// Identical to to_state_variant — both split on underscore/hyphen only.
 fn to_state_class_name(name: String) -> String {
-    if name.is_empty() {
-        return "Empty".to_string();
-    }
-    let re = Regex::new(r"[_\-]").unwrap();
-    let parts: Vec<&str> = re.split(&name).collect();
-    parts
-        .iter()
-        .map(|p| {
-            if p.is_empty() {
-                String::new()
-            } else {
-                let mut chars = p.chars();
-                let first = chars.next().unwrap().to_uppercase().to_string();
-                first + chars.as_str()
-            }
-        })
-        .collect()
+    to_state_variant(name)
 }

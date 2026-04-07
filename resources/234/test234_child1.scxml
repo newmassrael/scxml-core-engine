@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<scxml version="1.0" initial="sub0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" version="1.0" initial="sub0" datamodel="ecmascript">
          <state id="sub0">
            <onentry>
               <send event="timeout" delay="2s"/>
@@ -9,3 +9,4 @@
              </state>
               <final id="subFinal2"/>
               </scxml>
+        

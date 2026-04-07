@@ -7,7 +7,7 @@ build_python/
 build_wasm/
 build_tsan/
 build_release/
-bin/
+/bin/
 lib/
 out/
 cmake-build-*/
@@ -130,7 +130,7 @@ local.properties
 .cxx/
 .kotlin/
 
-# Kotlin generated W3C test code (regenerate via tools/generate_kotlin_w3c.py)
+# Kotlin generated W3C test code (regenerate via: sce-codegen generate-w3c --language kotlin)
 sce-kotlin-tests/src/main/kotlin/com/sce/generated/
 sce-kotlin-tests/src/test/kotlin/com/sce/w3c/Test[0-9]*.kt
 # Rust generated W3C test code (regenerate via tools/generate_rust_w3c.py)

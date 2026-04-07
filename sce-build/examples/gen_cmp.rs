@@ -4,7 +4,7 @@ fn main() {
         eprintln!("Usage: gen_cmp <scxml> <lang> <output_dir>");
         std::process::exit(2);
     }
-    let lang = sce_build::generator::Language::from_str(&args[2]).unwrap();
+    let lang: sce_build::generator::Language = args[2].parse().unwrap();
     let tdir = sce_build::find_template_dir_for(lang);
     let output = sce_build::compile_scxml_lang(&args[1], &tdir, lang).unwrap();
     for (filename, code) in &output.files {

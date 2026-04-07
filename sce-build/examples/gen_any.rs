@@ -8,7 +8,7 @@ fn main() {
     }
 
     let lang_str = if args.len() == 3 { &args[2] } else { "rust" };
-    let language = sce_build::generator::Language::from_str(lang_str).unwrap_or_else(|| {
+    let language: sce_build::generator::Language = lang_str.parse().unwrap_or_else(|_| {
         eprintln!("Unknown language: {lang_str}. Use: rust, cpp, kotlin");
         std::process::exit(2);
     });

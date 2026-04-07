@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<scxml initial="sub2" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub2" version="1.0" datamodel="ecmascript">
             <state id="sub2">
             	 <onentry>
                 <send target="#_parent" event="invokeS12"/>
@@ -9,3 +9,4 @@
               </state>
            <final id="subFinal2"/>
             </scxml>
+      

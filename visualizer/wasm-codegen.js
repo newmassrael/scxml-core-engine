@@ -87,12 +87,12 @@ class WasmCodegen {
      * @returns {string} State machine name
      */
     getStateMachineName(scxmlContent) {
-        if (!this.loaded) return 'StateMachine';
+        if (!this.loaded) return 'untitled';
 
         try {
             return this.module.get_machine_name(scxmlContent);
         } catch {
-            return 'StateMachine';
+            return 'untitled';
         }
     }
 }

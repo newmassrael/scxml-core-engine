@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<scxml initial="subFinal" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="subFinal" version="1.0" datamodel="ecmascript">
       <final id="subFinal">
            <onentry>
              <send target="#_parent" event="childToParent1"/> 
@@ -8,3 +8,4 @@
              </onentry> 
        </final>
          </scxml>
+    

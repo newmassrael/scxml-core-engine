@@ -118,8 +118,17 @@ pub struct Action {
     // send param static optimization
     #[serde(default)]
     pub is_static_literal: bool,
-    
+
     pub static_value: String,
+    // Named Context: native code actions
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub content_transformed: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub content_kt: String,
+    #[serde(default)]
+    pub is_cpp_function: bool,
+    #[serde(default)]
+    pub is_kt_function: bool,
 }
 
 /// W3C SCXML if/elseif branch
@@ -167,6 +176,39 @@ pub struct HistoryInfo {
     pub default_actions: Vec<Action>,
 }
 
+/// W3C SCXML 5.7: Done data for final states
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct DoneData {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub params: Vec<DoneDataParam>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub content: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub contentexpr: String,
+}
+
+/// W3C SCXML 5.7: Done data parameter
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct DoneDataParam {
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expr: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+}
+
+/// Named Context object declaration
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ContextObject {
+    pub id: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub cpp_type: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub cpp_include: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub kt_type: String,
+}
+
 /// W3C SCXML 6.4: Static invoke information
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct InvokeInfo {
@@ -180,6 +222,9 @@ pub struct InvokeInfo {
     pub idlocation: String,
     pub namelist: String,
     pub child_needs_script_engine: bool,
+    /// W3C SCXML 6.4: Use specific done.invoke.{id} event instead of generic done.invoke
+    #[serde(default)]
+    pub use_specific_event: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub child_datamodel_vars: Option<Vec<String>>,
     // Hybrid invoke fields
@@ -207,7 +252,7 @@ pub struct State {
     pub static_invokes: Vec<InvokeInfo>,
     pub hybrid_invokes: Vec<InvokeInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub donedata: Option<serde_json::Value>,
+    pub donedata: Option<DoneData>,
     pub document_order: u32,
     pub initial_transition_actions: Vec<Action>,
     pub initial_history_id: String,
@@ -270,7 +315,9 @@ pub struct SCXMLModel {
     pub parallel_regions: BTreeMap<String, Vec<String>>,
 
     // Named Context
-    pub context_objects: Vec<serde_json::Value>,
+    pub context_objects: Vec<ContextObject>,
+    #[serde(skip)]
+    pub context_object_ids: BTreeSet<String>,
     pub needs_nonstatic_method: bool,
 
     // Path info
@@ -300,11 +347,14 @@ pub struct SCXMLModel {
     pub needs_event_scheduler: Option<bool>,
 }
 
+/// Maximum recursion depth for resolving nested initial states to leaf states.
+pub(crate) const MAX_STATE_DEPTH: usize = 20;
+
 impl SCXMLModel {
     /// W3C SCXML 3.3/3.4: Resolve state ID to leaf by following initial attrs
     pub fn resolve_to_leaf(&self, state_id: &str) -> String {
         let mut current = state_id.to_string();
-        for _ in 0..20 {
+        for _ in 0..MAX_STATE_DEPTH {
             let state = match self.states.get(&current) {
                 Some(s) => s,
                 None => return current,
@@ -315,7 +365,8 @@ impl SCXMLModel {
                 let first_child = self
                     .states
                     .iter()
-                    .find(|(_, s)| s.parent.as_deref() == Some(&current));
+                    .filter(|(_, s)| s.parent.as_deref() == Some(&current))
+                    .min_by_key(|(_, s)| s.document_order);
                 match first_child {
                     Some((child_id, _)) => current = child_id.clone(),
                     None => break,

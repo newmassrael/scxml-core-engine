@@ -6,8 +6,7 @@
 use crate::model::*;
 use std::collections::BTreeMap;
 use std::path::Path;
-
-const SCXML_NS: &str = "http://www.w3.org/2005/07/scxml";
+use std::sync::LazyLock;
 
 pub struct SCXMLParser {
     document_order_counter: u32,
@@ -80,11 +79,17 @@ impl SCXMLParser {
         // Parse global scripts
         self.parse_global_scripts(&root, &mut model, base_dir);
 
+        // Parse Named Context declarations (must be before states for transforms)
+        self.parse_sce_contexts(&root, &mut model)?;
+
         // Parse states recursively
         self.parse_states(&root, None, &mut model);
 
         // Feature detection
         self.detect_features(&mut model);
+
+        // Named Context validation
+        self.validate_context_usage(&model)?;
 
         // Process static invokes
         self.process_static_invokes(&mut model, base_dir);
@@ -591,10 +596,18 @@ impl SCXMLParser {
         if let Some(stripped) = cond.strip_prefix("cpp:") {
             is_cpp_condition = true;
             cond_cpp = stripped.to_string();
-            cond_cpp_transformed = cond_cpp.clone();
+            cond_cpp_transformed = if !model.context_object_ids.is_empty() {
+                transform_cpp_code_with_named_contexts(&cond_cpp, &model.context_object_ids)
+            } else {
+                cond_cpp.clone()
+            };
         } else if let Some(stripped) = cond.strip_prefix("kt:") {
             is_kt_condition = true;
-            cond_kt = stripped.to_string();
+            cond_kt = if !model.context_object_ids.is_empty() {
+                transform_kt_code_with_named_contexts(&stripped.to_string(), &model.context_object_ids)
+            } else {
+                stripped.to_string()
+            };
         } else if !cond.is_empty() && is_pure_in_predicate(&cond) {
             is_pure_in = true;
             cond_cpp = convert_in_to_cpp(&cond);
@@ -638,72 +651,9 @@ impl SCXMLParser {
     ) -> Vec<Action> {
         let mut actions = Vec::new();
         for child in parent.children() {
-            if !child.is_element() {
-                continue;
+            if let Some(action) = self.parse_executable_content_single(&child, model) {
+                actions.push(action);
             }
-            let tag = local_name(&child);
-            let mut action = Action {
-                action_type: tag.clone(),
-                ..Default::default()
-            };
-
-            match tag.as_str() {
-                "raise" => {
-                    action.event = child.attribute("event").unwrap_or("").to_string();
-                    if !action.event.is_empty() {
-                        model.events.insert(action.event.clone());
-                    }
-                }
-                "send" => {
-                    self.parse_send_action(&child, &mut action, model);
-                }
-                "assign" => {
-                    action.location = child.attribute("location").unwrap_or("").to_string();
-                    action.expr = child.attribute("expr").unwrap_or("").to_string();
-                    if child.children().any(|c| c.is_element()) {
-                        // W3C SCXML 5.4: Serialize with c14n (canonical XML)
-                        // Matches Python: etree.tostring(child_elem, method='c14n')
-                        let mut xml = String::new();
-                        for c in child.children().filter(|c| c.is_element()) {
-                            let part = serialize_node_c14n(&c);
-                            // c14n: normalize whitespace for single-line expression
-                            let normalized: Vec<&str> = part.split_whitespace().collect();
-                            xml.push_str(&normalized.join(" "));
-                        }
-                        action.content = xml;
-                    }
-                    model.needs_script_engine = true;
-                }
-                "if" => {
-                    self.parse_if_action(&child, &mut action, model);
-                }
-                "foreach" => {
-                    action.array = child.attribute("array").unwrap_or("").to_string();
-                    action.item = child.attribute("item").unwrap_or("").to_string();
-                    action.index = child.attribute("index").unwrap_or("").to_string();
-                    action.actions = self.parse_executable_content(&child, model);
-                }
-                "log" => {
-                    action.label = child.attribute("label").unwrap_or("").to_string();
-                    action.expr = child.attribute("expr").unwrap_or("").to_string();
-                    if !action.expr.is_empty() {
-                        model.needs_script_engine = true;
-                    }
-                }
-                "script" => {
-                    action.content = child.text().unwrap_or("").to_string();
-                    model.needs_script_engine = true;
-                }
-                "cancel" => {
-                    action.sendid = child.attribute("sendid").unwrap_or("").to_string();
-                    action.sendidexpr = child.attribute("sendidexpr").unwrap_or("").to_string();
-                    if !action.sendidexpr.is_empty() {
-                        model.needs_script_engine = true;
-                    }
-                }
-                _ => continue,
-            }
-            actions.push(action);
         }
         actions
     }
@@ -910,15 +860,58 @@ impl SCXMLParser {
             "assign" => {
                 action.location = child.attribute("location").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
+                if child.children().any(|c| c.is_element()) {
+                    // W3C SCXML 5.4: Serialize with c14n (canonical XML)
+                    let mut xml = String::new();
+                    for c in child.children().filter(|c| c.is_element()) {
+                        let part = serialize_node_c14n(&c);
+                        let normalized: Vec<&str> = part.split_whitespace().collect();
+                        xml.push_str(&normalized.join(" "));
+                    }
+                    action.content = xml;
+                }
                 model.needs_script_engine = true;
             }
             "log" => {
                 action.label = child.attribute("label").unwrap_or("").to_string();
                 action.expr = child.attribute("expr").unwrap_or("").to_string();
+                if !action.expr.is_empty() {
+                    model.needs_script_engine = true;
+                }
             }
             "script" => {
-                action.content = child.text().unwrap_or("").to_string();
-                model.needs_script_engine = true;
+                // Check for <cpp> or <kt> native code child elements (same as parse_executable_content)
+                let mut found_native = false;
+                for sc in child.children().filter(|n| n.is_element()) {
+                    let sc_name = sc.tag_name().name();
+                    if sc_name == "cpp" || sc.tag_name().namespace() == Some("urn:sce:cpp") {
+                        let cpp_code = sc.text().unwrap_or("").to_string();
+                        action.is_cpp_function = true;
+                        action.content = cpp_code.clone();
+                        action.content_transformed = if !model.context_object_ids.is_empty() {
+                            transform_cpp_code_with_named_contexts(&cpp_code, &model.context_object_ids)
+                        } else {
+                            cpp_code
+                        };
+                        found_native = true;
+                        break;
+                    } else if sc_name == "kt" || sc.tag_name().namespace() == Some("urn:sce:kotlin") {
+                        let kt_code = sc.text().unwrap_or("").to_string();
+                        action.is_kt_function = true;
+                        action.content = kt_code.clone();
+                        action.content_kt = if !model.context_object_ids.is_empty() {
+                            transform_kt_code_with_named_contexts(&kt_code, &model.context_object_ids)
+                        } else {
+                            kt_code
+                        };
+                        found_native = true;
+                        break;
+                    }
+                }
+                if !found_native {
+                    action.content = child.text().unwrap_or("").to_string();
+                    model.needs_script_engine = true;
+                }
             }
             "cancel" => {
                 action.sendid = child.attribute("sendid").unwrap_or("").to_string();
@@ -928,6 +921,7 @@ impl SCXMLParser {
                 }
             }
             "foreach" => {
+                model.needs_script_engine = true;
                 action.array = child.attribute("array").unwrap_or("").to_string();
                 action.item = child.attribute("item").unwrap_or("").to_string();
                 action.index = child.attribute("index").unwrap_or("").to_string();
@@ -1048,41 +1042,32 @@ impl SCXMLParser {
         &mut self,
         elem: &roxmltree::Node,
         model: &mut SCXMLModel,
-    ) -> serde_json::Value {
-        let mut params = Vec::new();
-        let mut content = String::new();
-        let mut contentexpr = String::new();
+    ) -> DoneData {
+        let mut dd = DoneData::default();
 
         // W3C SCXML 5.7: Parse <param> elements
         for child in scxml_children(elem, "param") {
-            let name = child.attribute("name").unwrap_or("").to_string();
-            let expr = child.attribute("expr").map(|s| s.to_string());
-            let location = child.attribute("location").map(|s| s.to_string());
-            params.push(serde_json::json!({
-                "name": name,
-                "expr": expr,
-                "location": location,
-            }));
+            dd.params.push(DoneDataParam {
+                name: child.attribute("name").unwrap_or("").to_string(),
+                expr: child.attribute("expr").map(|s| s.to_string()),
+                location: child.attribute("location").map(|s| s.to_string()),
+            });
             // Donedata params require script engine
             model.needs_script_engine = true;
         }
 
         // W3C SCXML 5.5: Parse <content> element
         if let Some(content_elem) = scxml_child(elem, "content") {
-            contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
+            dd.contentexpr = content_elem.attribute("expr").unwrap_or("").to_string();
             if let Some(text) = content_elem.text() {
-                content = text.trim().to_string();
+                dd.content = text.trim().to_string();
             }
-            if !contentexpr.is_empty() || !content.is_empty() {
+            if !dd.contentexpr.is_empty() || !dd.content.is_empty() {
                 model.needs_script_engine = true;
             }
         }
 
-        serde_json::json!({
-            "params": params,
-            "content": content,
-            "contentexpr": contentexpr,
-        })
+        dd
     }
 
     // ── Feature detection ────────────────────────────────
@@ -1095,15 +1080,20 @@ impl SCXMLParser {
             if state.parent.is_some() {
                 model.has_hierarchy = true;
             }
+            // Note: needs_script_engine and uses_in_predicate are already set
+            // during parse_transition via check_expression_needs. No redundant re-check.
+            // W3C SCXML: detect _event.* usage in guard conditions (transitions + if/elseif)
             for trans in &state.transitions {
-                if !trans.cond.is_empty() && !trans.is_cpp_condition && !trans.is_kt_condition {
-                    let (needs_se, has_in) = check_expression_needs(&trans.cond);
-                    if needs_se {
-                        model.needs_script_engine = true;
-                    }
-                    if has_in {
-                        model.uses_in_predicate = true;
-                    }
+                if trans.cond.contains("_event.") {
+                    model.has_event_metadata = true;
+                }
+                if actions_contain_event_metadata(&trans.actions) {
+                    model.has_event_metadata = true;
+                }
+            }
+            for block in state.on_entry_blocks.iter().chain(state.on_exit_blocks.iter()) {
+                if actions_contain_event_metadata(block) {
+                    model.has_event_metadata = true;
                 }
             }
         }
@@ -1184,7 +1174,7 @@ impl SCXMLParser {
         }
 
         let history_defaults = model.history_default_targets.clone();
-        for (state_id, state) in model.states.iter_mut() {
+        for (_, state) in model.states.iter_mut() {
             // Resolve initial that points to history state
             if !state.initial.is_empty() {
                 if let Some(default_target) = history_defaults.get(&state.initial) {
@@ -1210,7 +1200,6 @@ impl SCXMLParser {
                     }
                 }
             }
-            let _ = state_id;
         }
     }
 
@@ -1302,19 +1291,38 @@ impl SCXMLParser {
         }
 
         // Only add specific done.invoke.{id} events if transitions reference them
-        for si in &model.static_invokes {
+        // and set use_specific_event flag on BOTH model-level AND state-level InvokeInfo
+        // (templates use state.static_invokes, not model.static_invokes)
+        for si in &mut model.static_invokes {
             if !si.invoke_id.is_empty() {
                 let specific = format!("done.invoke.{}", si.invoke_id);
-                if used_done_invoke_events.contains(&specific) {
+                si.use_specific_event = used_done_invoke_events.contains(&specific);
+                if si.use_specific_event {
                     model.events.insert(specific);
                 }
             }
         }
-        for hi in &model.hybrid_invokes {
+        for hi in &mut model.hybrid_invokes {
             if !hi.invoke_id.is_empty() {
                 let specific = format!("done.invoke.{}", hi.invoke_id);
-                if used_done_invoke_events.contains(&specific) {
+                hi.use_specific_event = used_done_invoke_events.contains(&specific);
+                if hi.use_specific_event {
                     model.events.insert(specific);
+                }
+            }
+        }
+        // Propagate use_specific_event to state-level static_invokes/hybrid_invokes
+        for state in model.states.values_mut() {
+            for si in &mut state.static_invokes {
+                if !si.invoke_id.is_empty() {
+                    let specific = format!("done.invoke.{}", si.invoke_id);
+                    si.use_specific_event = used_done_invoke_events.contains(&specific);
+                }
+            }
+            for hi in &mut state.hybrid_invokes {
+                if !hi.invoke_id.is_empty() {
+                    let specific = format!("done.invoke.{}", hi.invoke_id);
+                    hi.use_specific_event = used_done_invoke_events.contains(&specific);
                 }
             }
         }
@@ -1395,15 +1403,18 @@ impl SCXMLParser {
 
         // Build list of (invoke_index, state_invokes_index, has_inline, inline_text, src)
         // from state.invokes raw JSON to match Python's matching_static logic
-        let mut invoke_map: Vec<(usize, String, bool, String)> = Vec::new();
-        for (_state_id, state) in model.states.iter() {
+        let mut invoke_map: Vec<(u32, String, bool, String)> = Vec::new();
+        // Iterate states in document order (matching model.static_invokes insertion order)
+        let mut states_by_doc_order: Vec<&State> = model.states.values().collect();
+        states_by_doc_order.sort_by_key(|s| s.document_order);
+        for state in states_by_doc_order {
             for inv in &state.invokes {
                 let is_static = inv.get("is_static").and_then(|v| v.as_bool()).unwrap_or(false);
                 if is_static {
                     let has_inline = inv.get("has_inline_scxml").and_then(|v| v.as_bool()).unwrap_or(false);
                     let inline_text = json_str(inv, "inline_scxml_text");
                     let src = json_str(inv, "src");
-                    invoke_map.push((invoke_map.len(), src, has_inline, inline_text));
+                    invoke_map.push((state.document_order, src, has_inline, inline_text));
                 }
             }
         }
@@ -1413,7 +1424,7 @@ impl SCXMLParser {
             let (_, _, has_inline, ref inline_text) = if i < invoke_map.len() {
                 invoke_map[i].clone()
             } else {
-                (i, si.src.clone(), false, String::new())
+                (i as u32, si.src.clone(), false, String::new())
             };
 
             if has_inline && !inline_text.is_empty() {
@@ -1478,9 +1489,211 @@ impl SCXMLParser {
             }
         }
     }
+
+    // ── Named Context (sce:context) ─────────────────────────
+
+    /// Parse <sce:context> elements for Named Context declarations.
+    fn parse_sce_contexts(
+        &self,
+        root: &roxmltree::Node,
+        model: &mut SCXMLModel,
+    ) -> Result<(), String> {
+        for child in root.children().filter(|n| n.is_element()) {
+            let is_sce_context =
+                child.tag_name().namespace() == Some("urn:sce:extensions")
+                    && child.tag_name().name() == "context";
+            if !is_sce_context {
+                continue;
+            }
+            let ctx_id = child
+                .attribute("id")
+                .ok_or("<sce:context> element must have an 'id' attribute")?
+                .to_string();
+            if model.context_object_ids.contains(&ctx_id) {
+                return Err(format!("Duplicate <sce:context> declaration: '{ctx_id}'"));
+            }
+            let cpp_type = child
+                .attribute(("urn:sce:cpp", "type"))
+                .unwrap_or("")
+                .to_string();
+            let cpp_include = child
+                .attribute(("urn:sce:cpp", "include"))
+                .unwrap_or("")
+                .to_string();
+            let kt_type = child
+                .attribute(("urn:sce:kotlin", "type"))
+                .unwrap_or("")
+                .to_string();
+            model.context_objects.push(ContextObject {
+                id: ctx_id.clone(),
+                cpp_type,
+                cpp_include,
+                kt_type,
+            });
+            model.context_object_ids.insert(ctx_id);
+        }
+        Ok(())
+    }
+
+    /// Validate that cpp:/kt: code referencing objects has <sce:context> declarations.
+    fn validate_context_usage(&self, model: &SCXMLModel) -> Result<(), String> {
+        if !model.context_object_ids.is_empty() {
+            return Ok(());
+        }
+        static RE_OBJ: LazyLock<regex::Regex> = LazyLock::new(|| {
+            regex::Regex::new(r"\b([a-zA-Z_][a-zA-Z0-9_]*)\s*\.").unwrap()
+        });
+        let re_obj = &*RE_OBJ;
+        for state in model.states.values() {
+            for trans in &state.transitions {
+                if trans.is_cpp_condition && re_obj.is_match(&trans.cond_cpp) {
+                    return Err(format!(
+                        "cpp: condition '{}' references objects but no <sce:context> declarations found",
+                        trans.cond_cpp
+                    ));
+                }
+                if trans.is_kt_condition && re_obj.is_match(&trans.cond_kt) {
+                    return Err(format!(
+                        "kt: condition '{}' references objects but no <sce:context> declarations found",
+                        trans.cond_kt
+                    ));
+                }
+            }
+            // Check entry/exit blocks AND transition actions for native code references
+            let all_actions = state.on_entry_blocks.iter()
+                .chain(state.on_exit_blocks.iter())
+                .flat_map(|block| block.iter())
+                .chain(state.transitions.iter().flat_map(|t| t.actions.iter()));
+            for action in all_actions {
+                if action.is_cpp_function && re_obj.is_match(&action.content) {
+                    return Err(
+                        "<cpp> action references objects but no <sce:context> declarations found"
+                            .to_string(),
+                    );
+                }
+                if action.is_kt_function && re_obj.is_match(&action.content) {
+                    return Err(
+                        "<kt> action references objects but no <sce:context> declarations found"
+                            .to_string(),
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 // ── Helper functions ────────────────────────────────
+
+/// Recursively check if any if/elseif conditions within actions reference _event.*.
+fn actions_contain_event_metadata(actions: &[Action]) -> bool {
+    for action in actions {
+        if action.action_type == "if" {
+            if action.cond.contains("_event.") {
+                return true;
+            }
+            if actions_contain_event_metadata(&action.then_actions) {
+                return true;
+            }
+            for branch in &action.elseif_branches {
+                if branch.cond.contains("_event.") {
+                    return true;
+                }
+                if actions_contain_event_metadata(&branch.actions) {
+                    return true;
+                }
+            }
+            if actions_contain_event_metadata(&action.else_actions) {
+                return true;
+            }
+        } else if action.action_type == "foreach" {
+            if actions_contain_event_metadata(&action.actions) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+// ── Named Context transforms ────────────────────────
+
+/// Transform C++ code: replace declared context IDs with pointer dereference.
+/// e.g., "hardware.powerOff()" → "this->hardware_->powerOff()"
+fn transform_cpp_code_with_named_contexts(
+    code: &str,
+    declared_ids: &std::collections::BTreeSet<String>,
+) -> String {
+    let (code_with_placeholders, literals) = protect_context_strings(code);
+    let mut result = code_with_placeholders;
+    // Build single alternation regex for all context IDs (typically 2-3 IDs)
+    let alternatives: Vec<String> = declared_ids.iter().map(|id| regex::escape(id)).collect();
+    if !alternatives.is_empty() {
+        let pattern = regex::Regex::new(&format!(r"\b({})\s*\.", alternatives.join("|"))).unwrap();
+        result = pattern.replace_all(&result, |caps: &regex::Captures| {
+            format!("this->{}_->", &caps[1])
+        }).to_string();
+    }
+    restore_context_strings(&result, &literals)
+}
+
+/// Transform Kotlin code: replace declared context IDs with camelCase.
+/// e.g., "my_hardware.powerOff()" → "myHardware.powerOff()"
+fn transform_kt_code_with_named_contexts(
+    code: &str,
+    declared_ids: &std::collections::BTreeSet<String>,
+) -> String {
+    let (code_with_placeholders, literals) = protect_context_strings(code);
+    let mut result = code_with_placeholders;
+    // Build mapping of ids that need renaming, then single alternation regex
+    let renames: Vec<(String, String)> = declared_ids
+        .iter()
+        .map(|id| (id.clone(), id_to_camel_case(id)))
+        .filter(|(id, camel)| id != camel)
+        .collect();
+    if !renames.is_empty() {
+        let alternatives: Vec<String> = renames.iter().map(|(id, _)| regex::escape(id)).collect();
+        let pattern = regex::Regex::new(&format!(r"\b({})\b", alternatives.join("|"))).unwrap();
+        result = pattern.replace_all(&result, |caps: &regex::Captures| {
+            let matched = &caps[1];
+            renames.iter()
+                .find(|(id, _)| id == matched)
+                .map(|(_, camel)| camel.clone())
+                .unwrap_or_else(|| matched.to_string())
+        }).to_string();
+    }
+    restore_context_strings(&result, &literals)
+}
+
+/// Convert snake_case/kebab-case identifier to camelCase (delegates to filters::to_camel_case).
+fn id_to_camel_case(name: &str) -> String {
+    crate::filters::to_camel_case(name.to_string())
+}
+
+/// Protect string literals in Named Context code transforms.
+/// Distinct from lua_transformer::protect_string_literals which handles JS comments
+/// and uses \x01-delimited placeholders for ECMAScript-to-Lua conversion.
+fn protect_context_strings(code: &str) -> (String, Vec<String>) {
+    static RE_STRING: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#""(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'"#).unwrap()
+    });
+    let mut literals = Vec::new();
+    let result = RE_STRING.replace_all(code, |caps: &regex::Captures| {
+        let idx = literals.len();
+        literals.push(caps[0].to_string());
+        format!("__STRING_PLACEHOLDER_{idx}__")
+    });
+    (result.to_string(), literals)
+}
+
+/// Restore string literals from Named Context placeholders.
+fn restore_context_strings(code: &str, literals: &[String]) -> String {
+    let mut result = code.to_string();
+    for (i, literal) in literals.iter().enumerate() {
+        let placeholder = format!("__STRING_PLACEHOLDER_{i}__");
+        result = result.replace(&placeholder, literal);
+    }
+    result
+}
 
 /// W3C SCXML 6.5: Convert finalize actions to JavaScript code string.
 /// Supports: assign, script, log, if/elseif/else.
@@ -1504,7 +1717,7 @@ fn actions_to_javascript(actions: &[Action]) -> String {
             "log" => {
                 if !action.expr.is_empty() {
                     let log_msg = if !action.label.is_empty() {
-                        format!("\"{}\" + {}", action.label, action.expr)
+                        format!("\"{}: \" + {}", action.label, action.expr)
                     } else {
                         action.expr.clone()
                     };
@@ -1639,14 +1852,19 @@ fn json_str(val: &serde_json::Value, key: &str) -> String {
 
 /// W3C SCXML 5.9.2: Check if expression is pure In() predicate
 fn is_pure_in_predicate(cond: &str) -> bool {
+    static RE_IN_CALL: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"In\(['"][^'"]+['"]\)"#).unwrap()
+    });
+
     let trimmed = cond.trim();
     if trimmed.is_empty() {
         return false;
     }
+    if !trimmed.contains("In(") {
+        return false;
+    }
     // Check if expression consists only of In() calls, &&, ||, !, (, ), whitespace
-    let cleaned = regex::Regex::new(r#"In\(['"]\w+['"]\)"#)
-        .unwrap()
-        .replace_all(trimmed, "TRUE");
+    let cleaned = RE_IN_CALL.replace_all(trimmed, "TRUE");
     let cleaned = cleaned
         .replace("&&", " ")
         .replace("||", " ")
@@ -1656,18 +1874,21 @@ fn is_pure_in_predicate(cond: &str) -> bool {
     cleaned.split_whitespace().all(|w| w == "TRUE")
 }
 
+/// Shared regex for In() predicate with capture group
+static RE_IN_PREDICATE: LazyLock<regex::Regex> = LazyLock::new(|| {
+    regex::Regex::new(r#"In\(['"]([^'"]+)['"]\)"#).unwrap()
+});
+
 /// Convert In() predicate to C++ isStateActive calls
 fn convert_in_to_cpp(cond: &str) -> String {
-    regex::Regex::new(r#"In\(['"](\w+)['"]\)"#)
-        .unwrap()
-        .replace_all(cond, r#"isStateActive("$1")"#)
+    RE_IN_PREDICATE
+        .replace_all(cond, r#"this->isStateActive("$1")"#)
         .to_string()
 }
 
 /// Convert In() predicate to Kotlin isStateActive calls
 fn convert_in_to_kotlin(cond: &str) -> String {
-    regex::Regex::new(r#"In\(['"](\w+)['"]\)"#)
-        .unwrap()
+    RE_IN_PREDICATE
         .replace_all(cond, r#"isStateActive("$1")"#)
         .to_string()
 }
@@ -1697,8 +1918,10 @@ fn check_expression_needs(cond: &str) -> (bool, bool) {
         }
     }
     // W3C SCXML 5.9: System-reserved identifiers starting with underscore
-    let re_underscore = regex::Regex::new(r"\b_[a-zA-Z]\w*\b").unwrap();
-    if re_underscore.is_match(cond) {
+    static RE_UNDERSCORE: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"\b_[a-zA-Z]\w*\b").unwrap()
+    });
+    if RE_UNDERSCORE.is_match(cond) {
         return (true, false);
     }
     // ECMAScript comparison and logical operators
@@ -1712,14 +1935,7 @@ fn check_expression_needs(cond: &str) -> (bool, bool) {
     if cond.contains('\'') || cond.contains('"') {
         return (true, false);
     }
-    // Event metadata fields
-    let event_fields = ["_event.name", "_event.data", "_event.type", "_event.sendid",
-                        "_event.origin", "_event.origintype", "_event.invokeid"];
-    for f in &event_fields {
-        if cond.contains(f) {
-            return (true, false);
-        }
-    }
+    // Note: _event.* fields are already caught by "_event." in js_features above.
     // C++/Rust reserved keywords that would be invalid as conditions
     let reserved = ["return", "break", "continue", "goto", "switch", "case", "default",
                     "if", "else", "while", "do", "for", "class", "struct", "typedef",

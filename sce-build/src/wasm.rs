@@ -5,10 +5,24 @@
 
 use wasm_bindgen::prelude::*;
 
+// Template lists are hardcoded because include_str! requires compile-time string literals.
+// When adding new templates, update both the filesystem templates and this list.
+//
+// SYNC VERIFICATION — run from sce-build/ to detect missing templates:
+//   for lang in rust kotlin; do
+//     diff <(find ../tools/codegen/templates/$lang -name '*.jinja2' -printf '%P\n' | sort) \
+//          <(grep -oP '"[^"]+\.jinja2"' src/wasm.rs | tr -d '"' | grep -v '^state_machine\.' | \
+//            grep -v '^actions/' | sort) && echo "$lang: OK" || echo "$lang: MISMATCH"
+//   done
+// For C++ (templates at root level):
+//   diff <(find ../tools/codegen/templates -maxdepth 1 -name '*.jinja2' -printf '%P\n' | sort; \
+//          find ../tools/codegen/templates/actions -maxdepth 1 -name '*.jinja2' -printf 'actions/%P\n' | sort) \
+//        <(grep -oP '"[^"]+\.jinja2"' src/wasm.rs | tr -d '"' | grep -v '\.rs\.' | grep -v '\.kt\.' | sort)
+
 // ── Rust templates ──────────────────────────────────────────────
 
-fn rust_templates() -> Vec<(&'static str, &'static str)> {
-    vec![
+fn rust_templates() -> &'static [(&'static str, &'static str)] {
+    &[
         ("state_machine.rs.jinja2", include_str!("../../tools/codegen/templates/rust/state_machine.rs.jinja2")),
         ("process_transition.rs.jinja2", include_str!("../../tools/codegen/templates/rust/process_transition.rs.jinja2")),
         ("entry_exit_actions.rs.jinja2", include_str!("../../tools/codegen/templates/rust/entry_exit_actions.rs.jinja2")),
@@ -31,8 +45,8 @@ fn rust_templates() -> Vec<(&'static str, &'static str)> {
 
 // ── C++ templates ───────────────────────────────────────────────
 
-fn cpp_templates() -> Vec<(&'static str, &'static str)> {
-    vec![
+fn cpp_templates() -> &'static [(&'static str, &'static str)] {
+    &[
         ("state_machine.jinja2", include_str!("../../tools/codegen/templates/state_machine.jinja2")),
         ("state_machine_inl.jinja2", include_str!("../../tools/codegen/templates/state_machine_inl.jinja2")),
         ("process_transition.jinja2", include_str!("../../tools/codegen/templates/process_transition.jinja2")),
@@ -58,8 +72,8 @@ fn cpp_templates() -> Vec<(&'static str, &'static str)> {
 
 // ── Kotlin templates ────────────────────────────────────────────
 
-fn kotlin_templates() -> Vec<(&'static str, &'static str)> {
-    vec![
+fn kotlin_templates() -> &'static [(&'static str, &'static str)] {
+    &[
         ("state_machine.kt.jinja2", include_str!("../../tools/codegen/templates/kotlin/state_machine.kt.jinja2")),
         ("process_event.kt.jinja2", include_str!("../../tools/codegen/templates/kotlin/process_event.kt.jinja2")),
         ("entry_exit_actions.kt.jinja2", include_str!("../../tools/codegen/templates/kotlin/entry_exit_actions.kt.jinja2")),
@@ -81,7 +95,7 @@ fn kotlin_templates() -> Vec<(&'static str, &'static str)> {
 }
 
 /// Select embedded templates for a language.
-fn templates_for(lang: &str) -> Result<Vec<(&'static str, &'static str)>, JsValue> {
+fn templates_for(lang: &str) -> Result<&'static [(&'static str, &'static str)], JsValue> {
     match lang {
         "rust" => Ok(rust_templates()),
         "cpp" | "c++" => Ok(cpp_templates()),
@@ -101,8 +115,9 @@ pub fn compile_scxml_lang(
     language: &str,
 ) -> Result<String, JsValue> {
     let templates = templates_for(language)?;
-    let lang = crate::generator::Language::from_str(language)
-        .ok_or_else(|| JsValue::from_str(&format!("Unknown language: {language}")))?;
+    let lang = language
+        .parse::<crate::generator::Language>()
+        .map_err(|e| JsValue::from_str(&e))?;
 
     let output = crate::compile_from_string_lang(scxml_content, scxml_name, &templates, lang)
         .map_err(|e| JsValue::from_str(&e))?;
@@ -118,5 +133,5 @@ pub fn get_machine_name(scxml_content: &str) -> Result<String, JsValue> {
     let doc = roxmltree::Document::parse(scxml_content)
         .map_err(|e| JsValue::from_str(&format!("XML parse error: {e}")))?;
     let root = doc.root_element();
-    Ok(root.attribute("name").unwrap_or("StateMachine").to_string())
+    Ok(root.attribute("name").unwrap_or("untitled").to_string())
 }

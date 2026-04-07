@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<scxml initial="sub02" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
+<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub02" version="1.0" datamodel="ecmascript">
            <datamodel>
              <data id="Var1" expr="0"/>
                </datamodel>
@@ -9,9 +9,10 @@
                       <transition cond="Var1 == 1" target="subFinal2">
                      <send target="#_parent" event="success"/>
                      </transition>
-                  <transition  target="subFinal2">
+                  <transition target="subFinal2">
                  <send target="#_parent" event="failure"/>
                  </transition>
                </state>
          <final id="subFinal2"/>
           </scxml>
+        

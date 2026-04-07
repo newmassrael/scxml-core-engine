@@ -11,8 +11,12 @@
 //   - Invoke entries, effective transitions
 
 use crate::model::*;
-use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::sync::LazyLock;
+
+/// W3C SCXML 3.12.1: Delimiter pattern for Kotlin PascalCase conversion (underscore/hyphen).
+static RE_KT_DELIMITERS: LazyLock<regex::Regex> =
+    LazyLock::new(|| regex::Regex::new(r"[_\-]").unwrap());
 
 /// W3C SCXML 3.12.1: Build hierarchical event tree from flat dot-separated event names.
 ///
@@ -128,7 +132,6 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
         None => return String::new(),
     };
 
-    let re = Regex::new(r"[_\-]").unwrap();
     let mut lines: Vec<String> = Vec::new();
 
     let mut sorted_keys: Vec<&String> = obj.keys().filter(|k| k.as_str() != "_leaf").collect();
@@ -141,18 +144,9 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
         let class_name = if key.is_empty() {
             "Empty".to_string()
         } else {
-            let sub_parts: Vec<&str> = re.split(key).collect();
-            sub_parts
-                .iter()
-                .map(|p| {
-                    if p.is_empty() {
-                        String::new()
-                    } else {
-                        let mut chars = p.chars();
-                        let first = chars.next().unwrap().to_uppercase().to_string();
-                        first + chars.as_str()
-                    }
-                })
+            RE_KT_DELIMITERS
+                .split(key)
+                .map(|p| if p.is_empty() { String::new() } else { crate::filters::capitalize_first(p) })
                 .collect::<String>()
         };
 
@@ -193,49 +187,6 @@ pub fn render_event_tree(tree: &serde_json::Value, parent_type: &str, indent: &s
     }
 
     lines.join("\n")
-}
-
-/// W3C SCXML 5.2: Return Kotlin default value for a datamodel variable.
-///
-/// Maps SCXML variable types to Kotlin literal defaults:
-///   int    -> expr or "0"
-///   string -> expr (if quoted) or "\"\""
-///   bool   -> expr (if "true"/"false") or "false"
-///   other  -> "null"
-pub fn to_kotlin_default(var: &serde_json::Value) -> String {
-    let var_type = var
-        .get("type")
-        .and_then(|v| v.as_str())
-        .unwrap_or("runtime");
-    let expr = var
-        .get("expr")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-
-    match var_type {
-        "int" => {
-            if !expr.is_empty() {
-                expr.to_string()
-            } else {
-                "0".to_string()
-            }
-        }
-        "string" => {
-            if expr.starts_with('"') && expr.ends_with('"') {
-                expr.to_string()
-            } else {
-                "\"\"".to_string()
-            }
-        }
-        "bool" => {
-            if expr == "true" || expr == "false" {
-                expr.to_string()
-            } else {
-                "false".to_string()
-            }
-        }
-        _ => "null".to_string(),
-    }
 }
 
 /// Convert event name to Kotlin class reference, appending `.Self` for branch events.
@@ -332,12 +283,30 @@ pub fn compute_initial_entry_root(model: &SCXMLModel) -> String {
     initial_entry_root
 }
 
-/// Collect all descendant state IDs of a parent state (recursive helper).
-fn collect_descendants(model: &SCXMLModel, parent_id: &str, descendants: &mut Vec<String>) {
+/// Build a parent→children map for efficient descendant collection (O(n) total).
+fn build_children_map(model: &SCXMLModel) -> BTreeMap<&str, Vec<&str>> {
+    let mut children_map: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
     for (state_id, state) in &model.states {
-        if state.parent.as_deref() == Some(parent_id) {
-            descendants.push(state_id.clone());
-            collect_descendants(model, state_id, descendants);
+        if let Some(parent) = &state.parent {
+            children_map
+                .entry(parent.as_str())
+                .or_default()
+                .push(state_id.as_str());
+        }
+    }
+    children_map
+}
+
+/// Collect all descendant state IDs of a parent state using pre-built children map.
+fn collect_descendants_fast(
+    children_map: &BTreeMap<&str, Vec<&str>>,
+    parent_id: &str,
+    descendants: &mut Vec<String>,
+) {
+    if let Some(children) = children_map.get(parent_id) {
+        for &child_id in children {
+            descendants.push(child_id.to_string());
+            collect_descendants_fast(children_map, child_id, descendants);
         }
     }
 }
@@ -346,11 +315,12 @@ fn collect_descendants(model: &SCXMLModel, parent_id: &str, descendants: &mut Ve
 ///
 /// Used by onExit to collect and exit active descendants.
 pub fn compute_parallel_descendants(model: &SCXMLModel) -> BTreeMap<String, Vec<String>> {
+    let children_map = build_children_map(model);
     let mut parallel_descendants = BTreeMap::new();
 
     for parallel_id in model.parallel_regions.keys() {
         let mut descendants = Vec::new();
-        collect_descendants(model, parallel_id, &mut descendants);
+        collect_descendants_fast(&children_map, parallel_id, &mut descendants);
         parallel_descendants.insert(parallel_id.clone(), descendants);
     }
 
@@ -563,7 +533,6 @@ pub fn to_parallel_complete_check(
     parallel_id: &str,
     parallel_regions: &BTreeMap<String, Vec<String>>,
     states: &BTreeMap<String, State>,
-    _machine_name: &str,
 ) -> String {
     let regions = match parallel_regions.get(parallel_id) {
         Some(r) => r,

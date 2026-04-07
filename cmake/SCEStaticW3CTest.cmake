@@ -1,10 +1,31 @@
 # SCE Static W3C Test Code Generation
 # Generates C++ state machine code from W3C SCXML test suite
+#
+# Uses sce-codegen (Rust binary) for code generation, replacing Python scripts.
+# Falls back to Python if sce-codegen is not available.
 
 # Set CMake policy CMP0116 to NEW (Ninja DEPFILE transformation)
 # This suppresses warnings for add_custom_command DEPFILE usage
 if(POLICY CMP0116)
     cmake_policy(SET CMP0116 NEW)
+endif()
+
+# Find sce-codegen binary (built via: cargo build --bin sce-codegen --features cli --release -p sce-build)
+find_program(SCE_CODEGEN sce-codegen
+    PATHS "${CMAKE_SOURCE_DIR}/target/release" "${CMAKE_SOURCE_DIR}/target/debug"
+    NO_DEFAULT_PATH
+)
+if(NOT SCE_CODEGEN)
+    # Fallback: check system PATH
+    find_program(SCE_CODEGEN sce-codegen)
+endif()
+
+if(SCE_CODEGEN)
+    message(STATUS "SCE: Using native code generator: ${SCE_CODEGEN}")
+    set(SCE_USE_NATIVE_CODEGEN TRUE)
+else()
+    message(STATUS "SCE: sce-codegen not found, falling back to Python codegen")
+    set(SCE_USE_NATIVE_CODEGEN FALSE)
 endif()
 
 # sce_generate_aot_test_header: Generate AOT test header (TestXXX.h) from metadata.txt
@@ -47,13 +68,22 @@ function(sce_generate_aot_test_header TEST_NUM TEST_TYPE)
         return()
     endif()
 
-    # Extract description and specnum from metadata.txt using Python script
-    execute_process(
-        COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/read_test_metadata.py" "${METADATA_FILE}"
-        OUTPUT_VARIABLE TEST_DESCRIPTION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE READ_METADATA_RESULT
-    )
+    # Extract description from metadata.txt
+    if(SCE_USE_NATIVE_CODEGEN)
+        execute_process(
+            COMMAND "${SCE_CODEGEN}" read-metadata "${METADATA_FILE}"
+            OUTPUT_VARIABLE TEST_DESCRIPTION
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE READ_METADATA_RESULT
+        )
+    else()
+        execute_process(
+            COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/read_test_metadata.py" "${METADATA_FILE}"
+            OUTPUT_VARIABLE TEST_DESCRIPTION
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE READ_METADATA_RESULT
+        )
+    endif()
 
     if(NOT READ_METADATA_RESULT EQUAL 0)
         message(WARNING "Failed to read metadata for test ${TEST_NUM} - Skipping AOT header generation")
@@ -104,16 +134,19 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
     set(GENERATED_HEADER "${OUTPUT_DIR}/test${TEST_NUM}_sm.h")
     set(GENERATED_INL "${OUTPUT_DIR}/test${TEST_NUM}_sm.inl")
 
-    # Code generator Python scripts as base dependencies
-    # Template dependencies are tracked via DEPFILE for fine-grained incremental builds
-    set(CODEGEN_SCRIPTS
-        "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py"
-        "${CMAKE_SOURCE_DIR}/tools/codegen/scxml_parser.py"
-        "${CMAKE_SOURCE_DIR}/tools/codegen/license_config.py"
-        "${CMAKE_SOURCE_DIR}/tools/codegen/generators/__init__.py"
-        "${CMAKE_SOURCE_DIR}/tools/codegen/generators/base.py"
-        "${CMAKE_SOURCE_DIR}/tools/codegen/generators/cpp_generator.py"
-    )
+    # Code generator dependencies
+    if(SCE_USE_NATIVE_CODEGEN)
+        set(CODEGEN_SCRIPTS "${SCE_CODEGEN}")
+    else()
+        set(CODEGEN_SCRIPTS
+            "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py"
+            "${CMAKE_SOURCE_DIR}/tools/codegen/scxml_parser.py"
+            "${CMAKE_SOURCE_DIR}/tools/codegen/license_config.py"
+            "${CMAKE_SOURCE_DIR}/tools/codegen/generators/__init__.py"
+            "${CMAKE_SOURCE_DIR}/tools/codegen/generators/base.py"
+            "${CMAKE_SOURCE_DIR}/tools/codegen/generators/cpp_generator.py"
+        )
+    endif()
 
     # Check if main TXML file exists
     if(NOT EXISTS "${TXML_FILE}")
@@ -143,15 +176,27 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
 
         # Generate C++ code for sub SCXML (as invoked child)
         set(SUB_INL_FILE "${OUTPUT_DIR}/${SUB_TXML_NAME}_sm.inl")
-        add_custom_command(
-            OUTPUT "${SUB_HEADER_FILE}"
-            COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SUB_SCXML_FILE}" -o "${OUTPUT_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
-            DEPENDS "${SUB_SCXML_FILE}" ${CODEGEN_SCRIPTS}
-            DEPFILE "${SUB_HEADER_FILE}.d"
-            BYPRODUCTS "${SUB_INL_FILE}"
-            COMMENT "Generating C++ code: ${SUB_TXML_NAME}_sm.h + .inl"
-            VERBATIM
-        )
+        if(SCE_USE_NATIVE_CODEGEN)
+            add_custom_command(
+                OUTPUT "${SUB_HEADER_FILE}"
+                COMMAND "${SCE_CODEGEN}" generate "${SUB_SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
+                DEPENDS "${SUB_SCXML_FILE}" ${CODEGEN_SCRIPTS}
+                DEPFILE "${SUB_HEADER_FILE}.d"
+                BYPRODUCTS "${SUB_INL_FILE}"
+                COMMENT "Generating C++ code: ${SUB_TXML_NAME}_sm.h + .inl"
+                VERBATIM
+            )
+        else()
+            add_custom_command(
+                OUTPUT "${SUB_HEADER_FILE}"
+                COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SUB_SCXML_FILE}" -o "${OUTPUT_DIR}" --as-child --write-deps "${SUB_HEADER_FILE}.d"
+                DEPENDS "${SUB_SCXML_FILE}" ${CODEGEN_SCRIPTS}
+                DEPFILE "${SUB_HEADER_FILE}.d"
+                BYPRODUCTS "${SUB_INL_FILE}"
+                COMMENT "Generating C++ code: ${SUB_TXML_NAME}_sm.h + .inl"
+                VERBATIM
+            )
+        endif()
 
         # Add sub SCXML to dependencies and headers
         list(APPEND SUB_SCXML_DEPENDENCIES "${SUB_SCXML_FILE}")
@@ -191,27 +236,31 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
             )
         endif()
     else()
-        # Check if .txt file exists (only some tests have external data files)
+        # TXML -> SCXML conversion + name attribute fix
         set(RESOURCE_TXT "${RESOURCE_DIR}/test${TEST_NUM}.txt")
+        if(SCE_USE_NATIVE_CODEGEN)
+            set(FIX_NAME_CMD "${SCE_CODEGEN}" fix-scxml-name "${SCXML_FILE}" "test${TEST_NUM}")
+        else()
+            set(FIX_NAME_CMD python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}")
+        endif()
+
         if(EXISTS "${RESOURCE_TXT}")
-            # Convert TXML to SCXML + copy .txt file
             add_custom_command(
                 OUTPUT "${SCXML_FILE}"
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
                 COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
-                COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}"
+                COMMAND ${FIX_NAME_CMD}
                 COMMAND ${CMAKE_COMMAND} -E copy_if_different "${RESOURCE_TXT}" "${OUTPUT_DIR}/test${TEST_NUM}.txt"
                 DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
                 COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
                 VERBATIM
             )
         else()
-            # Convert TXML to SCXML only (no .txt file)
             add_custom_command(
                 OUTPUT "${SCXML_FILE}"
                 COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
                 COMMAND txml-converter "${TXML_FILE}" "${SCXML_FILE}"
-                COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/fix_scxml_name.py" "${SCXML_FILE}" "test${TEST_NUM}"
+                COMMAND ${FIX_NAME_CMD}
                 DEPENDS txml-converter "${TXML_FILE}" ${SUB_SCXML_DEPENDENCIES}
                 COMMENT "Converting TXML to SCXML: test${TEST_NUM}.txml"
                 VERBATIM
@@ -221,40 +270,69 @@ function(sce_generate_static_w3c_test TEST_NUM OUTPUT_DIR)
 
     # Step 2: SCXML -> C++ code generation (parent + inline children)
     # W3C SCXML 6.2/6.4: Parent header must depend on child headers (template detection)
-    # Uses Python helper script to generate parent and process inline content children
-    # ARCHITECTURE.MD: CMake portability - Use CMake scripting instead of bash
     set(CHILDREN_METADATA "${OUTPUT_DIR}/test${TEST_NUM}_children.txt")
     set(PROCESS_CHILDREN_SCRIPT "${OUTPUT_DIR}/process_children_${TEST_NUM}.cmake")
 
     # Generate CMake script to process inline children
-    file(WRITE "${PROCESS_CHILDREN_SCRIPT}" "
-        if(EXISTS \"${CHILDREN_METADATA}\")
-            file(STRINGS \"${CHILDREN_METADATA}\" CHILDREN)
-            foreach(child \${CHILDREN})
-                if(child)
-                    execute_process(
-                        COMMAND python3 \"${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py\"
-                                \"${OUTPUT_DIR}/\${child}.scxml\" -o \"${OUTPUT_DIR}\" --as-child
-                        RESULT_VARIABLE result
-                    )
-                    if(NOT result EQUAL 0)
-                        message(WARNING \"Failed to generate child: \${child}\")
+    if(SCE_USE_NATIVE_CODEGEN)
+        file(WRITE "${PROCESS_CHILDREN_SCRIPT}" "
+            if(EXISTS \"${CHILDREN_METADATA}\")
+                file(STRINGS \"${CHILDREN_METADATA}\" CHILDREN)
+                foreach(child \${CHILDREN})
+                    if(child)
+                        execute_process(
+                            COMMAND \"${SCE_CODEGEN}\" generate
+                                    \"${OUTPUT_DIR}/\${child}.scxml\" -l cpp -o \"${OUTPUT_DIR}\" --as-child
+                            RESULT_VARIABLE result
+                        )
+                        if(NOT result EQUAL 0)
+                            message(WARNING \"Failed to generate child: \${child}\")
+                        endif()
                     endif()
-                endif()
-            endforeach()
-        endif()
-    ")
+                endforeach()
+            endif()
+        ")
 
-    add_custom_command(
-        OUTPUT "${GENERATED_HEADER}"
-        COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SCXML_FILE}" -o "${OUTPUT_DIR}" --write-deps "${GENERATED_HEADER}.d"
-        COMMAND ${CMAKE_COMMAND} -P "${PROCESS_CHILDREN_SCRIPT}"
-        DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} ${CODEGEN_SCRIPTS}
-        DEPFILE "${GENERATED_HEADER}.d"
-        BYPRODUCTS "${GENERATED_INL}"
-        COMMENT "Generating C++ code: test${TEST_NUM}_sm.h + .inl"
-        VERBATIM
-    )
+        add_custom_command(
+            OUTPUT "${GENERATED_HEADER}"
+            COMMAND "${SCE_CODEGEN}" generate "${SCXML_FILE}" -l cpp -o "${OUTPUT_DIR}" --write-deps "${GENERATED_HEADER}.d"
+            COMMAND ${CMAKE_COMMAND} -P "${PROCESS_CHILDREN_SCRIPT}"
+            DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} ${CODEGEN_SCRIPTS}
+            DEPFILE "${GENERATED_HEADER}.d"
+            BYPRODUCTS "${GENERATED_INL}"
+            COMMENT "Generating C++ code: test${TEST_NUM}_sm.h + .inl"
+            VERBATIM
+        )
+    else()
+        file(WRITE "${PROCESS_CHILDREN_SCRIPT}" "
+            if(EXISTS \"${CHILDREN_METADATA}\")
+                file(STRINGS \"${CHILDREN_METADATA}\" CHILDREN)
+                foreach(child \${CHILDREN})
+                    if(child)
+                        execute_process(
+                            COMMAND python3 \"${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py\"
+                                    \"${OUTPUT_DIR}/\${child}.scxml\" -o \"${OUTPUT_DIR}\" --as-child
+                            RESULT_VARIABLE result
+                        )
+                        if(NOT result EQUAL 0)
+                            message(WARNING \"Failed to generate child: \${child}\")
+                        endif()
+                    endif()
+                endforeach()
+            endif()
+        ")
+
+        add_custom_command(
+            OUTPUT "${GENERATED_HEADER}"
+            COMMAND python3 "${CMAKE_SOURCE_DIR}/tools/codegen/codegen.py" "${SCXML_FILE}" -o "${OUTPUT_DIR}" --write-deps "${GENERATED_HEADER}.d"
+            COMMAND ${CMAKE_COMMAND} -P "${PROCESS_CHILDREN_SCRIPT}"
+            DEPENDS "${SCXML_FILE}" ${SUB_HEADER_DEPENDENCIES} ${CODEGEN_SCRIPTS}
+            DEPFILE "${GENERATED_HEADER}.d"
+            BYPRODUCTS "${GENERATED_INL}"
+            COMMENT "Generating C++ code: test${TEST_NUM}_sm.h + .inl"
+            VERBATIM
+        )
+    endif()
 
     # Add to parent scope variable (update both local and parent scopes)
     list(APPEND GENERATED_W3C_HEADERS "${GENERATED_HEADER}")

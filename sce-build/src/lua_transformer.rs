@@ -24,6 +24,29 @@ fn is_word_char(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
 
+/// Push the UTF-8 character starting at `bytes[pos]` to `output`.
+/// Returns the number of bytes consumed (1 for ASCII, 2-4 for multi-byte).
+/// Prevents Non-ASCII corruption from `byte as char` casting.
+fn push_utf8_char(output: &mut String, bytes: &[u8], pos: usize) -> usize {
+    let b = bytes[pos];
+    if b < 0x80 {
+        output.push(b as char);
+        return 1;
+    }
+    let width = match b {
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => 1,
+    };
+    let end = (pos + width).min(bytes.len());
+    match std::str::from_utf8(&bytes[pos..end]) {
+        Ok(s) => output.push_str(s),
+        Err(_) => output.push(char::REPLACEMENT_CHARACTER),
+    }
+    end - pos
+}
+
 /// Find keyword with word boundaries (`\bword\b`). Returns `None` if not found.
 fn find_word(s: &[u8], word: &[u8], start: usize) -> Option<usize> {
     let wlen = word.len();
@@ -100,8 +123,7 @@ fn replace_word_at_top_level(s: &str, word: &str, replacement: &str) -> String {
             result.push_str(replacement);
             i += wlen;
         } else {
-            result.push(c as char);
-            i += 1;
+            i += push_utf8_char(&mut result, sb, i);
         }
     }
     result
@@ -175,6 +197,7 @@ fn find_matching_close(s: &[u8], open_pos: usize, open_ch: u8, close_ch: u8) -> 
     } else if s.is_empty() {
         0
     } else {
+        // Unmatched brackets: return last index (matches Python reference)
         s.len() - 1
     }
 }
@@ -279,21 +302,20 @@ fn protect_string_literals(input: &str) -> (String, Vec<String>) {
         if c == b'\'' || c == b'"' {
             let quote = c;
             let mut literal = String::new();
-            literal.push(c as char);
+            literal.push(c as char); // quote char is ASCII
             i += 1;
             while i < length {
                 if b[i] == b'\\' && i + 1 < length {
-                    literal.push(b[i] as char);
-                    literal.push(b[i + 1] as char);
-                    i += 2;
+                    literal.push('\\');
+                    i += 1;
+                    i += push_utf8_char(&mut literal, b, i);
                     continue;
                 }
                 if b[i] == quote {
-                    literal.push(b[i] as char);
+                    literal.push(b[i] as char); // closing quote is ASCII
                     break;
                 }
-                literal.push(b[i] as char);
-                i += 1;
+                i += push_utf8_char(&mut literal, b, i);
             }
 
             let idx = literals.len();
@@ -303,7 +325,7 @@ fn protect_string_literals(input: &str) -> (String, Vec<String>) {
             output.push_str(&idx.to_string());
             output.push('\x01');
         } else {
-            output.push(c as char);
+            i += push_utf8_char(&mut output, b, i) - 1; // -1: outer loop does i += 1
         }
         i += 1;
     }
@@ -573,8 +595,7 @@ fn transform_increment_decrement(input: &str) -> String {
             }
         }
 
-        result.push(b[i] as char);
-        i += 1;
+        i += push_utf8_char(&mut result, b, i);
     }
 
     result
@@ -721,8 +742,7 @@ fn transform_operators(input: &str) -> String {
                 temp.push_str("~=");
                 i += 2;
             } else {
-                temp.push(rb[i] as char);
-                i += 1;
+                i += push_utf8_char(&mut temp, &rb, i);
             }
         }
         result = temp;
@@ -745,10 +765,10 @@ fn transform_operators(input: &str) -> String {
                 } else {
                     temp.push_str("not ");
                 }
+                i += 1;
             } else {
-                temp.push(rb[i] as char);
+                i += push_utf8_char(&mut temp, &rb, i);
             }
-            i += 1;
         }
         result = temp;
     }
@@ -794,8 +814,7 @@ fn transform_array_literals(input: &str) -> String {
                 i += 1;
             }
         } else {
-            result.push(b[i] as char);
-            i += 1;
+            i += push_utf8_char(&mut result, b, i);
         }
     }
 
@@ -833,16 +852,15 @@ fn transform_array_indexing(input: &str) -> String {
                     result.push_str(&format!("[{}]", idx + 1));
                     i = end + 1;
                 } else {
-                    result.push(b[i] as char);
+                    result.push('[');
                     i += 1;
                 }
             } else {
-                result.push(b[i] as char);
+                result.push('[');
                 i += 1;
             }
         } else {
-            result.push(b[i] as char);
-            i += 1;
+            i += push_utf8_char(&mut result, b, i);
         }
     }
 
@@ -938,8 +956,7 @@ fn transform_array_methods(input: &str) -> String {
             }
         }
 
-        result.push(b[i] as char);
-        i += 1;
+        i += push_utf8_char(&mut result, b, i);
     }
 
     result
@@ -1039,22 +1056,32 @@ fn transform_function_syntax(input: &str) -> String {
                 output.push('}');
             }
         } else {
-            output.push(b[i] as char);
+            let n = push_utf8_char(&mut output, b, i);
+            i += n;
+            continue; // skip the i += 1 below
         }
         i += 1;
     }
 
-    // Transform this.prop -> self.prop
-    let mut result = output;
-    let saved_bytes = result.clone().into_bytes();
+    // Transform this.prop -> self.prop (only when followed by '.')
+    let ob = output.as_bytes();
+    let mut result = String::with_capacity(output.len());
+    let mut last = 0;
     let mut pos = 0;
-    while let Some(p) = find_word(&saved_bytes, b"this", pos) {
-        if p + 4 < saved_bytes.len() && saved_bytes[p + 4] == b'.' {
-            result.replace_range(p..p + 4, "self");
+    loop {
+        match find_word(ob, b"this", pos) {
+            None => break,
+            Some(p) => {
+                if p + 4 < ob.len() && ob[p + 4] == b'.' {
+                    result.push_str(&output[last..p]);
+                    result.push_str("self");
+                    last = p + 4;
+                }
+                pos = p + 4;
+            }
         }
-        pos = p + 4;
     }
-
+    result.push_str(&output[last..]);
     result
 }
 
@@ -1100,6 +1127,8 @@ fn transform_new_expression(input: &str) -> String {
     result
 }
 
+/// W3C SCXML test subset: single-level ternary only. Nested ternaries not supported
+/// (matches Python/C++ reference implementation limitation).
 fn transform_ternary_operator(input: &str) -> String {
     let q_pos = match input.find('?') {
         Some(p) => p,
@@ -1140,8 +1169,10 @@ fn transform_object_literals(input: &str) -> String {
     let mut brace_depth: i32 = 0;
     let mut ternary_count: i32 = 0;
     let mut ternary_stack: Vec<i32> = Vec::new();
+    let mut i = 0;
 
-    for (i, &c) in b.iter().enumerate() {
+    while i < b.len() {
+        let c = b[i];
         if c == b'{' {
             brace_depth += 1;
             ternary_stack.push(ternary_count);
@@ -1196,8 +1227,10 @@ fn transform_object_literals(input: &str) -> String {
                 }
             }
         } else {
-            result.push(c as char);
+            i += push_utf8_char(&mut result, b, i);
+            continue;
         }
+        i += 1;
     }
 
     result
@@ -1653,8 +1686,15 @@ fn transform_bare_expressions(input: &str) -> String {
             }
         }
 
-        if !is_statement && trimmed.contains('(') {
-            is_statement = true;
+        // Detect function calls: identifier immediately followed by '(' (e.g., foo(...))
+        // Excludes bare parenthesized arithmetic like x + (y * z)
+        if !is_statement {
+            for (k, &c) in tb.iter().enumerate() {
+                if c == b'(' && k > 0 && is_word_char(tb[k - 1]) {
+                    is_statement = true;
+                    break;
+                }
+            }
         }
 
         if !is_statement {
@@ -1702,7 +1742,7 @@ fn needs_truthiness_wrapping(expr: &str) -> bool {
         return false;
     }
 
-    if trimmed.len() >= 4 && &trimmed[..4] == "not " {
+    if trimmed.starts_with("not ") {
         return false;
     }
 
