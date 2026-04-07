@@ -8,6 +8,26 @@
     ensure_script_engine() and do_initialize_data_model().
 #}
 {% from 'datamodel_macros.rs.jinja2' import initialize_variable, initialize_state_datamodel %}
+{# W3C SCXML 5.9.2: In() predicate callback registration (shared between ensure_script_engine and do_initialize_data_model) #}
+{% macro register_in_predicate_callback() -%}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+        // W3C SCXML 5.9.2: Register In() state query callback
+        {
+            let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+            self.in_predicate_states = Some(shared_states.clone());
+            se.set_state_query_callback(
+                &sid,
+                Some(Box::new(move |state_id: &str| -> bool {
+                    if let Ok(states) = shared_states.lock() {
+                        states.iter().any(|s| s == state_id)
+                    } else {
+                        false
+                    }
+                })),
+            );
+        }
+{% endif -%}
+{% endmacro %}
 {% if model.needs_script_engine %}
     // W3C SCXML 5.10: Ensure session ID is initialized
     // Uses atomic counter (1:1 with C++ UniqueIdGenerator::generateSessionId)
@@ -58,25 +78,7 @@
 {% endfor %}
 {% endif %}
 
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 5.9.2: Register In() state query callback ONCE (1:1 with C++ StateMachine)
-        // Uses Arc<Mutex<Vec>> so process_transition can update the active state list.
-        {
-            let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-            self.in_predicate_states = Some(shared_states.clone());
-            se.set_state_query_callback(
-                &sid,
-                Some(Box::new(move |state_id: &str| -> bool {
-                    if let Ok(states) = shared_states.lock() {
-                        states.iter().any(|s| s == state_id)
-                    } else {
-                        false
-                    }
-                })),
-            );
-        }
-{% endif %}
-
+{{ register_in_predicate_callback() }}
         self.script_engine_initialized = true;
     }
 
@@ -123,24 +125,7 @@
 {% endfor %}
 {% endif %}
 
-{% if model.has_parallel_states or model.uses_in_predicate %}
-        // W3C SCXML 5.9.2: Register In() state query callback
-        {
-            let shared_states = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-            self.in_predicate_states = Some(shared_states.clone());
-            se.set_state_query_callback(
-                &sid,
-                Some(Box::new(move |state_id: &str| -> bool {
-                    if let Ok(states) = shared_states.lock() {
-                        states.iter().any(|s| s == state_id)
-                    } else {
-                        false
-                    }
-                })),
-            );
-        }
-{% endif %}
-
+{{ register_in_predicate_callback() }}
         self.script_engine_initialized = true;
     }
 

@@ -67,19 +67,8 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% set ns_self.has_event_trans = true %}
 {% endif %}
 {% endfor %}
-{# Collect ancestor IDs that have event-based transitions #}
-{% set ns_anc = namespace(ids=[]) %}
-{% for anc_id in ancestors %}
-{% set ns_anc_event = namespace(has=false) %}
-{% for trans in model.states[anc_id].transitions %}
-{% if trans.event %}
-{% set ns_anc_event.has = true %}
-{% endif %}
-{% endfor %}
-{% if ns_anc_event.has %}
-{% set ns_anc.ids = ns_anc.ids + [anc_id] %}
-{% endif %}
-{% endfor %}
+{# Ancestor IDs with event-based transitions (pre-computed in Python) #}
+{% set ns_anc = namespace(ids=ancestors_with_event_transitions[state_id]) %}
 {% if ns_self.has_event_trans and ns_anc.ids | length > 0 %}
         is {{ machine_name }}State.{{ state_id | to_state_class_name }} -> {
             val result = process{{ state_id | to_state_class_name }}(event)
@@ -151,20 +140,8 @@ TransitionResult.External({{ target_expr }}, {{ machine_name }}State.{{ state_id
 {% set ns_null_self.has = true %}
 {% endif %}
 {% endfor %}
-{# Check ancestor eventless transitions #}
-{% set ancestors = ancestor_chains[state_id] %}
-{% set ns_null_anc = namespace(ids=[]) %}
-{% for anc_id in ancestors %}
-{% set ns_anc_null = namespace(has=false) %}
-{% for trans in model.states[anc_id].transitions %}
-{% if not trans.event and trans.target %}
-{% set ns_anc_null.has = true %}
-{% endif %}
-{% endfor %}
-{% if ns_anc_null.has %}
-{% set ns_null_anc.ids = ns_null_anc.ids + [anc_id] %}
-{% endif %}
-{% endfor %}
+{# Ancestor IDs with eventless transitions (pre-computed in Python) #}
+{% set ns_null_anc = namespace(ids=ancestors_with_null_transitions[state_id]) %}
 {# Collect all null sources: self first, then ancestors #}
 {% set ns_null_sources = namespace(ids=[]) %}
 {% if ns_null_self.has %}
