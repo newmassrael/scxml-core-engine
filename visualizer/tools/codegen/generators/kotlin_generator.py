@@ -399,6 +399,24 @@ class KotlinCodeGenerator(BaseCodeGenerator):
                 child_name = entry.get('child_name', '')
                 entry['child_class'] = self._to_pascal_case(child_name) if child_name else ''
 
+        # W3C SCXML 3.13: Pre-compute ancestor transition maps for processEvent routing
+        # Eliminates inline ancestor scanning in process_event.kt.jinja2
+        ancestors_with_event_transitions = {}
+        ancestors_with_null_transitions = {}
+        for state_id in model.states:
+            event_ancs = []
+            null_ancs = []
+            for anc_id in ancestor_chains.get(state_id, []):
+                anc_state = model.states[anc_id]
+                has_event = any(t.event for t in anc_state.transitions)
+                has_null = any(not t.event and t.target for t in anc_state.transitions)
+                if has_event:
+                    event_ancs.append(anc_id)
+                if has_null:
+                    null_ancs.append(anc_id)
+            ancestors_with_event_transitions[state_id] = event_ancs
+            ancestors_with_null_transitions[state_id] = null_ancs
+
         # Kotlin-specific: Build event tree for sealed interface hierarchy
         kotlin_events = {e for e in model.events if e != 'Wildcard'}
         event_tree = self._build_event_tree(kotlin_events)
@@ -440,6 +458,8 @@ class KotlinCodeGenerator(BaseCodeGenerator):
             parallel_descendants=parallel_descendants,
             deep_initial_entries=deep_initial_entries,
             invoke_entries=invoke_entries,
+            ancestors_with_event_transitions=ancestors_with_event_transitions,
+            ancestors_with_null_transitions=ancestors_with_null_transitions,
         )
 
         # Post-process: close the class and normalize whitespace
@@ -467,15 +487,3 @@ class KotlinCodeGenerator(BaseCodeGenerator):
         deps.append(str(Path(__file__).resolve()))
         return deps
 
-    def _generate_fallback(self, model: SCXMLModel, scxml_path: str,
-                           output_dir: str) -> bool:
-        """
-        Kotlin Phase 1: No interpreter fallback available.
-
-        SCXML files requiring dynamic features cannot be generated for Kotlin yet.
-        Returns False to indicate generation is not supported.
-        """
-        print(f"  Kotlin Phase 1: Cannot generate code for '{model.name}' "
-              f"(dynamic features not supported)")
-        print(f"  Reason: Script engine required but Kotlin Phase 1 is pure static only")
-        return False

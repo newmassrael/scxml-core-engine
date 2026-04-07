@@ -130,14 +130,13 @@ class BaseCodeGenerator(ABC):
             True if generation succeeded
         """
 
-    @abstractmethod
     def _generate_fallback(self, model: SCXMLModel, scxml_path: str,
                            output_dir: str) -> bool:
         """
-        Generate fallback output when static generation is not possible.
+        Default fallback: static generation not possible.
 
-        For C++: generates Interpreter wrapper.
-        For other languages: may return False (unsupported).
+        Per CLAUDE.md: AOT failures must be fixed in codegen, not bypassed.
+        Subclasses may override if language-specific fallback is needed.
 
         Args:
             model: SCXMLModel that cannot be statically generated
@@ -147,6 +146,10 @@ class BaseCodeGenerator(ABC):
         Returns:
             True if fallback generation succeeded, False if not supported
         """
+        lang = self.LANGUAGE or 'Unknown'
+        print(f"  {lang} AOT: Cannot generate code for '{model.name}' "
+              f"(dynamic features not supported — fix codegen, not fallback)")
+        return False
 
     def generate(self, scxml_path: str, output_dir: str,
                  as_child: bool = False, depfile_path: str = None) -> bool:

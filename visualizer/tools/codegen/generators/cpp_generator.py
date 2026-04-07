@@ -67,6 +67,34 @@ class CppCodeGenerator(BaseCodeGenerator):
 
         Uses Jinja2 templates: state_machine.jinja2, state_machine_inl.jinja2
         """
+        # Shared model analysis (language-agnostic, from BaseCodeGenerator)
+        self._resolve_internal_transitions(model)
+        model.scxml_base_path = self._compute_scxml_base_path(scxml_path)
+        initial_entry_root = self._compute_initial_entry_root(model)
+        ancestor_chains = self._compute_ancestor_chains(model)
+        effective_transitions = self._compute_effective_transitions(model, ancestor_chains)
+        parent_map = self._compute_parent_map(model)
+        leaf_map = self._compute_leaf_map(model)
+        parallel_descendants = self._compute_parallel_descendants(model)
+        deep_initial_entries = self._compute_deep_initial_entries(model)
+        invoke_entries = self._compute_invoke_entries(model)
+        for entries in invoke_entries.values():
+            for entry in entries:
+                child_name = entry.get('child_name', '')
+                entry['child_class'] = self._capitalize_state(child_name) if child_name else ''
+
+        # Pre-computed context shared by header and inl templates
+        shared_context = dict(
+            initial_entry_root=initial_entry_root,
+            ancestor_chains=ancestor_chains,
+            effective_transitions=effective_transitions,
+            parent_map=parent_map,
+            leaf_map=leaf_map,
+            parallel_descendants=parallel_descendants,
+            deep_initial_entries=deep_initial_entries,
+            invoke_entries=invoke_entries,
+        )
+
         # Load C++ templates
         header_template = self.env.get_template('state_machine.jinja2')
         inl_template = self.env.get_template('state_machine_inl.jinja2')
@@ -83,12 +111,13 @@ class CppCodeGenerator(BaseCodeGenerator):
         # Render header (.h) with centralized license configuration
         header_output = header_template.render(
             model=model, base_path=base_path, license_config=LICENSE_CONFIG,
-            inl_filename=inl_filename
+            inl_filename=inl_filename, **shared_context
         )
 
         # Render implementation (.inl)
         inl_output = inl_template.render(
-            model=model, base_path=base_path, license_config=LICENSE_CONFIG
+            model=model, base_path=base_path, license_config=LICENSE_CONFIG,
+            **shared_context
         )
 
         # Write output files
@@ -172,14 +201,3 @@ class CppCodeGenerator(BaseCodeGenerator):
         deps.append(str(Path(__file__).resolve()))
         return deps
 
-    def _generate_fallback(self, model: SCXMLModel, scxml_path: str,
-                           output_dir: str) -> bool:
-        """
-        C++ AOT: No interpreter fallback.
-
-        Per CLAUDE.md: "AOT failures must be fixed in the code generator
-        or helpers, not bypassed with Interpreter."
-        """
-        print(f"  C++ AOT: Cannot generate code for '{model.name}' "
-              f"(dynamic features not supported — fix codegen, not fallback)")
-        return False

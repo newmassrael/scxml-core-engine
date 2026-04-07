@@ -1,0 +1,338 @@
+{
+  "description": "Cross-implementation test vectors for EcmaScriptToLuaTransformer",
+  "note": "Generated from Python implementation. C++ and Kotlin must produce identical output.",
+  "expressions": [
+    {
+      "input": "a && b",
+      "context": "General",
+      "expected": "a  and  b"
+    },
+    {
+      "input": "a || b",
+      "context": "General",
+      "expected": "a  or  b"
+    },
+    {
+      "input": "a === b",
+      "context": "General",
+      "expected": "a == b"
+    },
+    {
+      "input": "a !== b",
+      "context": "General",
+      "expected": "a ~= b"
+    },
+    {
+      "input": "a != b",
+      "context": "General",
+      "expected": "a ~= b"
+    },
+    {
+      "input": "!a",
+      "context": "General",
+      "expected": "not a"
+    },
+    {
+      "input": "a && b",
+      "context": "Guard",
+      "expected": "_scxml_truthy(a  and  b)"
+    },
+    {
+      "input": "a || b",
+      "context": "Guard",
+      "expected": "_scxml_truthy(a  or  b)"
+    },
+    {
+      "input": "x > 5",
+      "context": "Guard",
+      "expected": "x > 5"
+    },
+    {
+      "input": "Var1",
+      "context": "Guard",
+      "expected": "_scxml_truthy(Var1)"
+    },
+    {
+      "input": "null",
+      "context": "General",
+      "expected": "nil"
+    },
+    {
+      "input": "undefined",
+      "context": "General",
+      "expected": "nil"
+    },
+    {
+      "input": "x == null",
+      "context": "General",
+      "expected": "x == nil"
+    },
+    {
+      "input": "typeof x === 'undefined'",
+      "context": "General",
+      "expected": "x == nil"
+    },
+    {
+      "input": "typeof x !== 'undefined'",
+      "context": "General",
+      "expected": "x ~= nil"
+    },
+    {
+      "input": "typeof x === 'object'",
+      "context": "General",
+      "expected": "type(x) == 'table'"
+    },
+    {
+      "input": "typeof x === 'number'",
+      "context": "General",
+      "expected": "type(x) == 'number'"
+    },
+    {
+      "input": "typeof x",
+      "context": "General",
+      "expected": "_typeof(x)"
+    },
+    {
+      "input": "[1,2,3]",
+      "context": "General",
+      "expected": "{1,2,3}"
+    },
+    {
+      "input": "[]",
+      "context": "General",
+      "expected": "{}"
+    },
+    {
+      "input": "arr.length",
+      "context": "General",
+      "expected": "#arr"
+    },
+    {
+      "input": "arr.indexOf(x)",
+      "context": "General",
+      "expected": "_indexOf(arr, x)"
+    },
+    {
+      "input": "arr.concat(other)",
+      "context": "General",
+      "expected": "_concat(arr, other)"
+    },
+    {
+      "input": "arr.push(42)",
+      "context": "General",
+      "expected": "table.insert(arr, 42)"
+    },
+    {
+      "input": "arr.join(\",\")",
+      "context": "General",
+      "expected": "table.concat(arr, \",\")"
+    },
+    {
+      "input": "arr[0]",
+      "context": "General",
+      "expected": "arr[1]"
+    },
+    {
+      "input": "arr[5]",
+      "context": "General",
+      "expected": "arr[6]"
+    },
+    {
+      "input": "x instanceof Array",
+      "context": "General",
+      "expected": "_isArray(x)"
+    },
+    {
+      "input": "a ? b : c",
+      "context": "General",
+      "expected": "(a and b or c)"
+    },
+    {
+      "input": "Math.sqrt(x)",
+      "context": "General",
+      "expected": "math.sqrt(x)"
+    },
+    {
+      "input": "Math.abs(y)",
+      "context": "General",
+      "expected": "math.abs(y)"
+    },
+    {
+      "input": "Math.floor(z)",
+      "context": "General",
+      "expected": "math.floor(z)"
+    },
+    {
+      "input": "Math.pow(a, b)",
+      "context": "General",
+      "expected": "(a)^(b)"
+    },
+    {
+      "input": "Math.PI",
+      "context": "General",
+      "expected": "math.pi"
+    },
+    {
+      "input": "Math.E",
+      "context": "General",
+      "expected": "math.exp(1)"
+    },
+    {
+      "input": "Math.max(a, b)",
+      "context": "General",
+      "expected": "math.max(a, b)"
+    },
+    {
+      "input": "Math.random()",
+      "context": "General",
+      "expected": "math.random()"
+    },
+    {
+      "input": "x += 1",
+      "context": "General",
+      "expected": "x = x + (1)"
+    },
+    {
+      "input": "x -= 2",
+      "context": "General",
+      "expected": "x = x - (2)"
+    },
+    {
+      "input": "x++",
+      "context": "General",
+      "expected": "(function() local _t = x x = x + 1 return _t end)()"
+    },
+    {
+      "input": "++x",
+      "context": "General",
+      "expected": "(function() x = x + 1 return x end)()"
+    },
+    {
+      "input": "x--",
+      "context": "General",
+      "expected": "(function() local _t = x x = x - 1 return _t end)()"
+    },
+    {
+      "input": "var x = 5",
+      "context": "General",
+      "expected": "x = 5"
+    },
+    {
+      "input": "let y = 10",
+      "context": "General",
+      "expected": "y = 10"
+    },
+    {
+      "input": "{key: value}",
+      "context": "General",
+      "expected": "{key = value}"
+    },
+    {
+      "input": "new Object()",
+      "context": "General",
+      "expected": "Object()"
+    },
+    {
+      "input": "doc.getElementsByTagName(\"item\")",
+      "context": "General",
+      "expected": "doc:getElementsByTagName(\"item\")"
+    },
+    {
+      "input": "node.getAttribute(\"name\")",
+      "context": "General",
+      "expected": "node:getAttribute(\"name\")"
+    },
+    {
+      "input": "In(\"s1\")",
+      "context": "Guard",
+      "expected": "In(\"s1\")"
+    },
+    {
+      "input": "true",
+      "context": "Guard",
+      "expected": "true"
+    },
+    {
+      "input": "false",
+      "context": "Guard",
+      "expected": "false"
+    },
+    {
+      "input": "Var1 == 1",
+      "context": "Guard",
+      "expected": "Var1 == 1"
+    },
+    {
+      "input": "_event.data",
+      "context": "General",
+      "expected": "_event.data"
+    },
+    {
+      "input": "_event.name",
+      "context": "General",
+      "expected": "_event.name"
+    },
+    {
+      "input": "(1 | 2)",
+      "context": "General",
+      "expected": "(1 | 2)"
+    },
+    {
+      "input": "x === null",
+      "context": "General",
+      "expected": "x == nil"
+    },
+    {
+      "input": "x !== null",
+      "context": "General",
+      "expected": "x ~= nil"
+    },
+    {
+      "input": "\"hello\" + \" world\"",
+      "context": "General",
+      "expected": "\"hello\" + \" world\""
+    },
+    {
+      "input": "a ? b : c ? d : e",
+      "context": "General",
+      "expected": "(a and b or c ? d : e)"
+    },
+    {
+      "input": "_event.data.someField",
+      "context": "General",
+      "expected": "_event.data.someField"
+    },
+    {
+      "input": "Var1 === 1 && Var2 === 2",
+      "context": "Guard",
+      "expected": "Var1 == 1  and  Var2 == 2"
+    },
+    {
+      "input": "!Var1",
+      "context": "Guard",
+      "expected": "not Var1"
+    }
+  ],
+  "scripts": [
+    {
+      "input": "var x = 1;",
+      "expected": "x = 1"
+    },
+    {
+      "input": "var x = 1;\nvar y = 2;",
+      "expected": "x = 1\n\ny = 2"
+    },
+    {
+      "input": "x = x + 1;",
+      "expected": "x = x + 1"
+    },
+    {
+      "input": "if (x > 0) { y = 1; }",
+      "expected": "if x > 0 then\ny = 1\n\nend"
+    },
+    {
+      "input": "for (var i in obj) { sum += obj[i]; }",
+      "expected": "for i, _ in pairs(obj) do\nsum = sum + (obj[i])\n\nend"
+    }
+  ]
+}
