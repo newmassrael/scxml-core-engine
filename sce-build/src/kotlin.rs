@@ -1,18 +1,26 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 //
-// Kotlin-specific analysis helpers — ports kotlin_generator.py and base.py
-// shared analysis methods for Kotlin code generation.
+// Kotlin-specific analysis helpers — ports kotlin_generator.py.
 //
-// These functions compute derived data structures from the parsed SCXML model
-// that the Kotlin template rendering pipeline needs:
-//   - Event tree (sealed interface hierarchy)
-//   - Ancestor chains, parent map, leaf map
-//   - Parallel descendants, deep initial entries
-//   - Invoke entries, effective transitions
+// Contains only Kotlin-specific logic:
+//   - Event tree (sealed interface hierarchy for sealed interfaces)
+//   - Branch event detection (.Self suffix)
+//   - Event tree rendering
+//   - Ancestor transition pre-computation (processEvent optimization)
+//   - Invoke entries, effective transitions, deep initial entries (serde_json output)
+//
+// Generic analysis (ancestor chains, parent map, leaf map, initial entry root,
+// parallel descendants) lives in analyzer.rs.
 
 use crate::model::*;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::LazyLock;
+
+// Re-export shared analysis from analyzer for backward compatibility
+pub use crate::analyzer::{
+    compute_ancestor_chains, compute_initial_entry_root, compute_leaf_map,
+    compute_parallel_descendants, compute_parent_map,
+};
 
 /// W3C SCXML 3.12.1: Delimiter pattern for Kotlin PascalCase conversion (underscore/hyphen).
 static RE_KT_DELIMITERS: LazyLock<regex::Regex> =
@@ -202,131 +210,6 @@ pub fn to_event_ref(event_name: &str, branch_events: &HashSet<String>) -> String
     }
 }
 
-/// W3C SCXML 3.13: Compute ancestor chains for transition routing.
-///
-/// Each state maps to an ordered list of ancestor state IDs (parent first).
-/// Used by processEvent to check ancestor transitions when self returns Ignored.
-pub fn compute_ancestor_chains(model: &SCXMLModel) -> BTreeMap<String, Vec<String>> {
-    let mut ancestor_chains = BTreeMap::new();
-
-    for (state_id, state) in &model.states {
-        let mut chain = Vec::new();
-        let mut current_id = state.parent.clone();
-        while let Some(ref cid) = current_id {
-            if !model.states.contains_key(cid) {
-                break;
-            }
-            chain.push(cid.clone());
-            current_id = model.states[cid].parent.clone();
-        }
-        ancestor_chains.insert(state_id.clone(), chain);
-    }
-
-    ancestor_chains
-}
-
-/// W3C SCXML 3.3: Build parent map for state hierarchy.
-///
-/// Maps state_id to parent_id for states with a parent that exists in the model.
-pub fn compute_parent_map(model: &SCXMLModel) -> BTreeMap<String, String> {
-    let mut parent_map = BTreeMap::new();
-
-    for (state_id, state) in &model.states {
-        if let Some(ref parent) = state.parent {
-            if model.states.contains_key(parent) {
-                parent_map.insert(state_id.clone(), parent.clone());
-            }
-        }
-    }
-
-    parent_map
-}
-
-/// W3C SCXML 3.3/3.4: Build leaf map for compound/parallel state resolution.
-///
-/// Maps non-leaf states to their initial leaf states by following `initial` attributes.
-pub fn compute_leaf_map(model: &SCXMLModel) -> BTreeMap<String, String> {
-    let mut leaf_map = BTreeMap::new();
-
-    for state_id in model.states.keys() {
-        let leaf = model.resolve_to_leaf(state_id);
-        if leaf != *state_id {
-            leaf_map.insert(state_id.clone(), leaf);
-        }
-    }
-
-    leaf_map
-}
-
-/// W3C SCXML 3.2/3.4: Compute initial entry root.
-///
-/// Walks up from the resolved leaf initial state to find the top-level
-/// ancestor. Used by enterInitialConfiguration() in generated code.
-pub fn compute_initial_entry_root(model: &SCXMLModel) -> String {
-    let mut initial_entry_root = model.initial.clone();
-    let mut current = model.initial.clone();
-
-    while model.states.contains_key(&current) {
-        let parent = &model.states[&current].parent;
-        if let Some(ref pid) = parent {
-            if model.states.contains_key(pid) {
-                initial_entry_root = pid.clone();
-                current = pid.clone();
-            } else {
-                break;
-            }
-        } else {
-            break;
-        }
-    }
-
-    initial_entry_root
-}
-
-/// Build a parent→children map for efficient descendant collection (O(n) total).
-fn build_children_map(model: &SCXMLModel) -> BTreeMap<&str, Vec<&str>> {
-    let mut children_map: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    for (state_id, state) in &model.states {
-        if let Some(parent) = &state.parent {
-            children_map
-                .entry(parent.as_str())
-                .or_default()
-                .push(state_id.as_str());
-        }
-    }
-    children_map
-}
-
-/// Collect all descendant state IDs of a parent state using pre-built children map.
-fn collect_descendants_fast(
-    children_map: &BTreeMap<&str, Vec<&str>>,
-    parent_id: &str,
-    descendants: &mut Vec<String>,
-) {
-    if let Some(children) = children_map.get(parent_id) {
-        for &child_id in children {
-            descendants.push(child_id.to_string());
-            collect_descendants_fast(children_map, child_id, descendants);
-        }
-    }
-}
-
-/// W3C SCXML 3.4: Compute descendants for each parallel state.
-///
-/// Used by onExit to collect and exit active descendants.
-pub fn compute_parallel_descendants(model: &SCXMLModel) -> BTreeMap<String, Vec<String>> {
-    let children_map = build_children_map(model);
-    let mut parallel_descendants = BTreeMap::new();
-
-    for parallel_id in model.parallel_regions.keys() {
-        let mut descendants = Vec::new();
-        collect_descendants_fast(&children_map, parallel_id, &mut descendants);
-        parallel_descendants.insert(parallel_id.clone(), descendants);
-    }
-
-    parallel_descendants
-}
-
 /// W3C SCXML 3.6: Compute deep initial entry order for space-separated initials.
 ///
 /// When a compound state has `initial="target1 target2"` (deep descendant targets),
@@ -485,6 +368,48 @@ pub fn compute_invoke_entries(model: &SCXMLModel) -> BTreeMap<String, Vec<serde_
     }
 
     invoke_entries
+}
+
+/// W3C SCXML 3.13: Pre-compute ancestor transition maps for processEvent routing.
+///
+/// Eliminates inline ancestor scanning in process_event.kt.jinja2.
+/// Returns two maps: ancestors with event-based transitions, and ancestors with
+/// eventless (null) transitions.
+pub fn compute_ancestors_with_transitions(
+    model: &SCXMLModel,
+    ancestor_chains: &BTreeMap<String, Vec<String>>,
+) -> (
+    BTreeMap<String, Vec<String>>,
+    BTreeMap<String, Vec<String>>,
+) {
+    let mut event_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut null_map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    for (state_id, chain) in ancestor_chains {
+        let mut event_ancs = Vec::new();
+        let mut null_ancs = Vec::new();
+
+        for anc_id in chain {
+            if let Some(anc_state) = model.states.get(anc_id) {
+                let has_event = anc_state.transitions.iter().any(|t| !t.event.is_empty());
+                let has_null = anc_state
+                    .transitions
+                    .iter()
+                    .any(|t| t.event.is_empty() && !t.target.is_empty());
+                if has_event {
+                    event_ancs.push(anc_id.clone());
+                }
+                if has_null {
+                    null_ancs.push(anc_id.clone());
+                }
+            }
+        }
+
+        event_map.insert(state_id.clone(), event_ancs);
+        null_map.insert(state_id.clone(), null_ancs);
+    }
+
+    (event_map, null_map)
 }
 
 /// W3C SCXML 3.13: Compute effective transitions (self + ancestors).

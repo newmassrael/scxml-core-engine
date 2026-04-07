@@ -313,28 +313,8 @@ class RustCodeGenerator(BaseCodeGenerator):
         """
         Generate a single Rust file (.rs) from the analyzed SCXML model.
 
-        Phase 1: renders a placeholder stub. Phase 2 expands to the full
-        state_machine.rs.jinja2 template (1:1 port of C++ state_machine.jinja2
-        + state_machine_inl.jinja2).
+        Rust templates access model fields directly (no pre-computed context needed).
         """
-        # Shared model analysis (language-agnostic, from BaseCodeGenerator)
-        self._resolve_internal_transitions(model)
-        model.scxml_base_path = self._compute_scxml_base_path(scxml_path)
-        initial_entry_root = self._compute_initial_entry_root(model)
-        ancestor_chains = self._compute_ancestor_chains(model)
-        effective_transitions = self._compute_effective_transitions(model, ancestor_chains)
-        parent_map = self._compute_parent_map(model)
-        leaf_map = self._compute_leaf_map(model)
-        parallel_descendants = self._compute_parallel_descendants(model)
-        deep_initial_entries = self._compute_deep_initial_entries(model)
-
-        # W3C SCXML 6.4: Invoke entries with Rust-specific type names
-        invoke_entries = self._compute_invoke_entries(model)
-        for entries in invoke_entries.values():
-            for entry in entries:
-                child_name = entry.get('child_name', '')
-                entry['child_class'] = self._to_pascal_case(child_name) if child_name else ''
-
         machine_name = self._to_pascal_case(model.name)
         input_stem = Path(scxml_path).stem
 
@@ -350,14 +330,6 @@ class RustCodeGenerator(BaseCodeGenerator):
             model=model,
             machine_name=machine_name,
             license_config=LICENSE_CONFIG,
-            initial_entry_root=initial_entry_root,
-            ancestor_chains=ancestor_chains,
-            effective_transitions=effective_transitions,
-            parent_map=parent_map,
-            leaf_map=leaf_map,
-            parallel_descendants=parallel_descendants,
-            deep_initial_entries=deep_initial_entries,
-            invoke_entries=invoke_entries,
         )
 
         # Write output

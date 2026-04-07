@@ -238,18 +238,22 @@ fn register_kotlin_dynamic_filters(env: &mut Environment, model: &SCXMLModel) {
 }
 
 fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, String> {
-    use crate::kotlin;
+    use crate::{analyzer, kotlin};
 
     let machine_name = filters::to_pascal_case(model.name.clone());
 
-    // Kotlin-specific analysis
-    let ancestor_chains = kotlin::compute_ancestor_chains(model);
+    // Shared analysis (language-agnostic, from analyzer)
+    let ancestor_chains = analyzer::compute_ancestor_chains(model);
+    let parent_map = analyzer::compute_parent_map(model);
+    let leaf_map = analyzer::compute_leaf_map(model);
+    let parallel_descendants = analyzer::compute_parallel_descendants(model);
+    let initial_entry_root = analyzer::compute_initial_entry_root(model);
+
+    // Kotlin-specific analysis (serde_json output for template rendering)
     let effective_transitions = kotlin::compute_effective_transitions(model, &ancestor_chains);
-    let parent_map = kotlin::compute_parent_map(model);
-    let leaf_map = kotlin::compute_leaf_map(model);
-    let parallel_descendants = kotlin::compute_parallel_descendants(model);
+    let (ancestors_with_event_transitions, ancestors_with_null_transitions) =
+        kotlin::compute_ancestors_with_transitions(model, &ancestor_chains);
     let deep_initial_entries = kotlin::compute_deep_initial_entries(model);
-    let initial_entry_root = kotlin::compute_initial_entry_root(model);
     let invoke_entries = kotlin::compute_invoke_entries(model);
 
     // Event tree for sealed interface hierarchy
@@ -286,6 +290,8 @@ fn render_kotlin(env: &Environment, model: &SCXMLModel) -> Result<String, String
         parallel_descendants => minijinja::Value::from_serialize(&parallel_descendants),
         deep_initial_entries => minijinja::Value::from_serialize(&deep_initial_entries),
         invoke_entries => minijinja::Value::from_serialize(&invoke_entries),
+        ancestors_with_event_transitions => minijinja::Value::from_serialize(&ancestors_with_event_transitions),
+        ancestors_with_null_transitions => minijinja::Value::from_serialize(&ancestors_with_null_transitions),
     };
 
     let output = tmpl.render(ctx).map_err(render_error)?;

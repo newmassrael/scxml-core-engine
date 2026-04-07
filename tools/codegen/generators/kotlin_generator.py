@@ -380,10 +380,11 @@ class KotlinCodeGenerator(BaseCodeGenerator):
 
         Uses Jinja2 templates from templates/kotlin/:
           - state_machine.kt.jinja2 (main orchestrator)
+
+        Kotlin templates require pre-computed analysis (ancestor chains, invoke
+        entries, etc.) unlike C++/Rust which access model fields directly.
         """
-        # Shared model analysis (language-agnostic, from BaseCodeGenerator)
-        self._resolve_internal_transitions(model)
-        model.scxml_base_path = self._compute_scxml_base_path(scxml_path)
+        # Kotlin-specific computed analysis
         initial_entry_root = self._compute_initial_entry_root(model)
         ancestor_chains = self._compute_ancestor_chains(model)
         effective_transitions = self._compute_effective_transitions(model, ancestor_chains)

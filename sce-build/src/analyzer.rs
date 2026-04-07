@@ -453,3 +453,126 @@ pub fn can_generate_static(model: &SCXMLModel) -> bool {
         model.states.contains_key(&model.initial)
     }
 }
+
+// ── Shared computed analysis (language-agnostic) ─────────────────
+//
+// These functions compute derived data structures from the parsed SCXML model.
+// Used by language generators that need pre-computed context (e.g., Kotlin).
+// C++/Rust templates access model fields directly and do not need these.
+
+use std::collections::BTreeMap;
+
+/// W3C SCXML 3.13: Compute ancestor chains for transition routing.
+///
+/// Each state maps to an ordered list of ancestor state IDs (parent first).
+pub fn compute_ancestor_chains(model: &SCXMLModel) -> BTreeMap<String, Vec<String>> {
+    let mut ancestor_chains = BTreeMap::new();
+
+    for (state_id, state) in &model.states {
+        let mut chain = Vec::new();
+        let mut current_id = state.parent.clone();
+        while let Some(ref cid) = current_id {
+            if !model.states.contains_key(cid) {
+                break;
+            }
+            chain.push(cid.clone());
+            current_id = model.states[cid].parent.clone();
+        }
+        ancestor_chains.insert(state_id.clone(), chain);
+    }
+
+    ancestor_chains
+}
+
+/// W3C SCXML 3.3: Build parent map for state hierarchy.
+pub fn compute_parent_map(model: &SCXMLModel) -> BTreeMap<String, String> {
+    let mut parent_map = BTreeMap::new();
+
+    for (state_id, state) in &model.states {
+        if let Some(ref parent) = state.parent {
+            if model.states.contains_key(parent) {
+                parent_map.insert(state_id.clone(), parent.clone());
+            }
+        }
+    }
+
+    parent_map
+}
+
+/// W3C SCXML 3.3/3.4: Build leaf map for compound/parallel state resolution.
+pub fn compute_leaf_map(model: &SCXMLModel) -> BTreeMap<String, String> {
+    let mut leaf_map = BTreeMap::new();
+
+    for state_id in model.states.keys() {
+        let leaf = model.resolve_to_leaf(state_id);
+        if leaf != *state_id {
+            leaf_map.insert(state_id.clone(), leaf);
+        }
+    }
+
+    leaf_map
+}
+
+/// W3C SCXML 3.2/3.4: Compute initial entry root.
+pub fn compute_initial_entry_root(model: &SCXMLModel) -> String {
+    let mut initial_entry_root = model.initial.clone();
+    let mut current = model.initial.clone();
+
+    while model.states.contains_key(&current) {
+        let parent = &model.states[&current].parent;
+        if let Some(ref pid) = parent {
+            if model.states.contains_key(pid) {
+                initial_entry_root = pid.clone();
+                current = pid.clone();
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    initial_entry_root
+}
+
+/// Build a parent->children map for efficient descendant collection.
+fn build_children_map(model: &SCXMLModel) -> BTreeMap<&str, Vec<&str>> {
+    let mut children_map: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+    for (state_id, state) in &model.states {
+        if let Some(parent) = &state.parent {
+            children_map
+                .entry(parent.as_str())
+                .or_default()
+                .push(state_id.as_str());
+        }
+    }
+    children_map
+}
+
+/// Collect all descendant state IDs using pre-built children map.
+fn collect_descendants_fast(
+    children_map: &BTreeMap<&str, Vec<&str>>,
+    parent_id: &str,
+    descendants: &mut Vec<String>,
+) {
+    if let Some(children) = children_map.get(parent_id) {
+        for &child_id in children {
+            descendants.push(child_id.to_string());
+            collect_descendants_fast(children_map, child_id, descendants);
+        }
+    }
+}
+
+/// W3C SCXML 3.4: Compute descendants for each parallel state.
+pub fn compute_parallel_descendants(model: &SCXMLModel) -> BTreeMap<String, Vec<String>> {
+    let children_map = build_children_map(model);
+    let mut parallel_descendants = BTreeMap::new();
+
+    for parallel_id in model.parallel_regions.keys() {
+        let mut descendants = Vec::new();
+        collect_descendants_fast(&children_map, parallel_id, &mut descendants);
+        parallel_descendants.insert(parallel_id.clone(), descendants);
+    }
+
+    parallel_descendants
+}
