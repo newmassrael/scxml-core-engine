@@ -65,7 +65,7 @@
 {% if model.states.values() | selectattr('datamodel') | list %}
 {% if model.binding == 'early' %}
         // W3C SCXML 5.3: Early binding — initialize state-level datamodel variables at startup
-{% for state_id, state in model.states.items() %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.datamodel %}
 {% for dm_var in state.datamodel %}
 {% if dm_var.expr %}

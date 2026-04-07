@@ -41,7 +41,7 @@
 {% endfor %}
 
 {% if model.binding == 'early' %}
-{% for state_id, state in model.states.items() %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.datamodel %}
         // W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel variables
 {{ initialize_state_datamodel(state, state_id, false, machine_name, model) }}
@@ -103,7 +103,7 @@
 {% endfor %}
 
 {% if model.binding == 'early' %}
-{% for state_id, state in model.states.items() %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.datamodel %}
         // W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel variables
 {{ initialize_state_datamodel(state, state_id, true, machine_name, model) }}

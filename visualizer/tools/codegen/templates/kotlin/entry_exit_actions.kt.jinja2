@@ -353,7 +353,7 @@
                     onExit(desc)
                 }
 {% endif %}
-{% for history_id, history_info in model.history_states.items() %}
+{% for history_id, history_info in model.history_states | dictsort %}
 {% if history_info.parent == state_id %}
 {% if history_info.type == 'shallow' %}
                 // W3C SCXML 3.11: Record shallow history for {{ history_id }}

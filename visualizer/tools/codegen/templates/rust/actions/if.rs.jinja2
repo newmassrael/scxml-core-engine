@@ -10,14 +10,14 @@ if {{ action.cond }} {
 {% endif %}
 {% for then_action in action.then_actions %}
     {% with action=then_action %}
-    {% include 'actions/' + then_action.type + '.rs.jinja2' %}
+    {% include 'actions/' ~ then_action.type ~ '.rs.jinja2' %}
     {% endwith %}
 {% endfor %}
 {% for elseif in action.elseif_branches %}
 } else if {% if elseif.is_pure_in_predicate %}{{ elseif.cond_cpp | replace('this->', '') | replace('isStateActive', 'self.is_state_active') }}{% elif model.needs_script_engine %}self.safe_evaluate_guard("{{ elseif.cond | to_lua_guard | escape_rust }}", engine){% else %}{{ elseif.cond }}{% endif %} {
 {% for elseif_action in elseif.actions %}
     {% with action=elseif_action %}
-    {% include 'actions/' + elseif_action.type + '.rs.jinja2' %}
+    {% include 'actions/' ~ elseif_action.type ~ '.rs.jinja2' %}
     {% endwith %}
 {% endfor %}
 {% endfor %}
@@ -25,7 +25,7 @@ if {{ action.cond }} {
 } else {
 {% for else_action in action.else_actions %}
     {% with action=else_action %}
-    {% include 'actions/' + else_action.type + '.rs.jinja2' %}
+    {% include 'actions/' ~ else_action.type ~ '.rs.jinja2' %}
     {% endwith %}
 {% endfor %}
 {% endif %}

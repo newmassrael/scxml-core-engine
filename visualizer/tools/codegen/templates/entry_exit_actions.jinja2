@@ -69,7 +69,7 @@
 {% endif %}
 {% if model.has_entry_actions %}
         switch (state) {
-{% for state_id, state in model.states.items() %}
+{% for state_id, state in model.states | dictsort %}
             case State::{{ state_id | capitalize }}:
 {% if state.datamodel or state.on_entry_blocks or state.static_invokes or state.hybrid_invokes or (state.is_final and state.donedata) or (state.is_final and state.parent) %}
                 {
@@ -330,7 +330,7 @@
         if (isCompoundState(state) && !isParallelState(state)) {
             // W3C SCXML 3.6: Check if state has multiple or deep initial targets
             switch (state) {
-                {% for state_id, state in model.states.items() %}
+                {% for state_id, state in model.states | dictsort %}
                 {% if state.initial_children and state.initial_children|length > 0 %}
                 case State::{{ state_id | capitalize }}:
                     AOT_DEBUG("AOT executeEntryActions: State {} has initial children, delegating to StateEntryHelper",
@@ -412,7 +412,7 @@
         // Use pre-transition active states (captured before processTransition modified currentState_)
         const std::vector<State>& activeStates = activeStatesBeforeTransition;
         
-        {% for history_id, history_info in model.history_states.items() %}
+        {% for history_id, history_info in model.history_states | dictsort %}
         if (state == State::{{ history_info.parent | capitalize }}) {
             // W3C SCXML 3.11: Filter states using HistoryHelper (shared with Interpreter)
             auto filteredStates = ::SCE::Core::HistoryHelper::recordHistory(
@@ -430,7 +430,7 @@
         {% endif %}
 {% if model.has_exit_actions %}
         switch (state) {
-{% for state_id, state in model.states.items() %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.on_exit_blocks or state.static_invokes or state.hybrid_invokes %}
             case State::{{ state_id | capitalize }}:
                 AOT_DEBUG("AOT executeExitActions: Processing exit actions for state {} ({{ state_id }})", static_cast<int>(state));

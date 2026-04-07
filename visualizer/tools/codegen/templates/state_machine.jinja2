@@ -125,44 +125,37 @@
 {# Contexts with cpp_type use concrete types (no template param needed).    #}
 {# Contexts without cpp_type use template parameters (duck typing).         #}
 {# _tpl_params/_tpl_args only contain template parameters, NOT concrete.    #}
-{% set _tpl_params = [] %}
-{% set _tpl_args = [] %}
-{% set _sm_tpl_args = [] %}
+{# C++ template parameter lists — built with namespace() for cross-engine compat #}
+{% set _ns = namespace(tpl_params=[], tpl_args=[], sm_tpl_args=[], sm_tpl_params=[]) %}
 {% for ctx in model.context_objects %}
 {% if not ctx.cpp_type %}
-{# Template parameter: duck typing #}
-{{ _tpl_params.append('typename ' + ctx.id | capitalize + 'T') or '' }}
-{{ _tpl_args.append(ctx.id | capitalize + 'T') or '' }}
-{{ _sm_tpl_args.append(ctx.id | capitalize + 'T') or '' }}
+{% set _ns.tpl_params = _ns.tpl_params + ['typename ' + ctx.id | capitalize + 'T'] %}
+{% set _ns.tpl_args = _ns.tpl_args + [ctx.id | capitalize + 'T'] %}
+{% set _ns.sm_tpl_args = _ns.sm_tpl_args + [ctx.id | capitalize + 'T'] %}
+{% set _ns.sm_tpl_params = _ns.sm_tpl_params + ['typename ' + ctx.id | capitalize + 'T'] %}
 {% endif %}
 {% endfor %}
 {% if model.has_parent_communication %}
-{{ _tpl_params.append('typename ParentStateMachine') or '' }}
-{{ _tpl_args.append('ParentStateMachine') or '' }}
-{{ _sm_tpl_args.append('ParentStateMachine') or '' }}
+{% set _ns.tpl_params = _ns.tpl_params + ['typename ParentStateMachine'] %}
+{% set _ns.tpl_args = _ns.tpl_args + ['ParentStateMachine'] %}
+{% set _ns.sm_tpl_args = _ns.sm_tpl_args + ['ParentStateMachine'] %}
+{% set _ns.sm_tpl_params = _ns.sm_tpl_params + ['typename ParentStateMachine'] %}
 {% endif %}
 {% if model.static_invokes or model.hybrid_invokes %}
-{{ _tpl_params.append('typename SelfType') or '' }}
-{{ _tpl_args.append('SelfType') or '' }}
+{% set _ns.tpl_params = _ns.tpl_params + ['typename SelfType'] %}
+{% set _ns.tpl_args = _ns.tpl_args + ['SelfType'] %}
 {# SelfType = fully qualified SM class (CRTP) #}
-{% if _sm_tpl_args %}
-{{ _sm_tpl_args.append(model.name + '<' + _sm_tpl_args | join(', ') + '>') or '' }}
+{% if _ns.sm_tpl_args %}
+{% set _ns.sm_tpl_args = _ns.sm_tpl_args + [model.name + '<' + _ns.sm_tpl_args | join(', ') + '>'] %}
 {% else %}
-{{ _sm_tpl_args.append(model.name) or '' }}
+{% set _ns.sm_tpl_args = _ns.sm_tpl_args + [model.name] %}
 {% endif %}
 {% endif %}
-{# _has_tpl: whether any template parameters exist #}
+{% set _tpl_params = _ns.tpl_params %}
+{% set _tpl_args = _ns.tpl_args %}
+{% set _sm_tpl_args = _ns.sm_tpl_args %}
+{% set _sm_tpl_params = _ns.sm_tpl_params %}
 {% set _has_tpl = _tpl_params | length > 0 %}
-{# _sm_tpl_params: SM class uses same params as Policy, minus SelfType #}
-{% set _sm_tpl_params = [] %}
-{% for ctx in model.context_objects %}
-{% if not ctx.cpp_type %}
-{{ _sm_tpl_params.append('typename ' + ctx.id | capitalize + 'T') or '' }}
-{% endif %}
-{% endfor %}
-{% if model.has_parent_communication %}
-{{ _sm_tpl_params.append('typename ParentStateMachine') or '' }}
-{% endif %}
 {% set _has_sm_tpl = _sm_tpl_params | length > 0 %}
 
 namespace SCE::Generated::{{ model.name }} {
@@ -361,7 +354,7 @@ struct {{ model.name }}Policy {
     {# Policy-level eventScheduler_ removed - use engine.scheduleEvent() and engine.tick() #}
     {% if model.history_states %}
     // W3C SCXML 3.11: Runtime history tracking variables (matches Interpreter HistoryEntry)
-    {% for history_id, history_info in model.history_states.items() %}
+    {% for history_id, history_info in model.history_states | dictsort %}
     mutable ::std::optional<::std::vector<State>> history_{{ history_id }};  // {{ history_info.type }} history for {{ history_info.parent }}
     {% endfor %}
     {% endif %}
@@ -423,7 +416,7 @@ struct {{ model.name }}Policy {
 
     [[nodiscard]] static constexpr bool isFinalState(State state) noexcept {
         switch (state) {
-            {% for state_id, state in model.states.items() %}
+            {% for state_id, state in model.states | dictsort %}
             {% if state.is_final %}
             case State::{{ state_id | capitalize }}:
                 return true;
@@ -437,7 +430,7 @@ struct {{ model.name }}Policy {
     // W3C SCXML 3.3: Parent state mapping (for HierarchicalStateHelper)
     [[nodiscard]] static constexpr std::optional<State> getParent(State state) noexcept {
         switch (state) {
-            {% for state_id, state in model.states.items() %}
+            {% for state_id, state in model.states | dictsort %}
             {% if state.parent %}
             case State::{{ state_id | capitalize }}:
                 return State::{{ state.parent | capitalize }};
@@ -451,7 +444,7 @@ struct {{ model.name }}Policy {
     // W3C SCXML 3.3: Check if state is compound (has initial child)
     [[nodiscard]] static constexpr bool isCompoundState(State state) noexcept {
         switch (state) {
-            {% for state_id, state in model.states.items() %}
+            {% for state_id, state in model.states | dictsort %}
             {% if state.initial %}
             case State::{{ state_id | capitalize }}:
                 return true;

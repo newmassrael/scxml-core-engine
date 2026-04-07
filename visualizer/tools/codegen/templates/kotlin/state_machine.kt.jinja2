@@ -61,7 +61,7 @@ class {{ machine_name }}StateMachine(
 {% if parent_map %}
     // W3C SCXML 3.3: State hierarchy parent mapping
     override fun parentOf(state: {{ machine_name }}State): {{ machine_name }}State? = when (state) {
-{% for child_id, parent_id in parent_map.items() | sort %}
+{% for child_id, parent_id in parent_map | dictsort %}
         is {{ machine_name }}State.{{ child_id | to_state_class_name }} -> {{ machine_name }}State.{{ parent_id | to_state_class_name }}
 {% endfor %}
         else -> null
@@ -71,7 +71,7 @@ class {{ machine_name }}StateMachine(
 {% if leaf_map %}
     // W3C SCXML 3.3/3.4: Resolve compound/parallel state to initial leaf state
     override fun resolveLeafState(state: {{ machine_name }}State): {{ machine_name }}State = when (state) {
-{% for compound_id, leaf_id in leaf_map.items() | sort %}
+{% for compound_id, leaf_id in leaf_map | dictsort %}
         is {{ machine_name }}State.{{ compound_id | to_state_class_name }} -> {{ machine_name }}State.{{ leaf_id | to_state_class_name }}
 {% endfor %}
         else -> state
@@ -119,7 +119,7 @@ class {{ machine_name }}StateMachine(
 
     // W3C SCXML 3.4: Get child regions of a parallel state (C++ getParallelRegions pattern)
     override fun getParallelRegions(state: {{ machine_name }}State): List<{{ machine_name }}State> = when (state) {
-{% for parallel_id, regions in model.parallel_regions.items() | sort %}
+{% for parallel_id, regions in model.parallel_regions | dictsort %}
         is {{ machine_name }}State.{{ parallel_id | to_state_class_name }} -> listOf({% for region in regions %}{{ machine_name }}State.{{ region | to_state_class_name }}{% if not loop.last %}, {% endif %}{% endfor %})
 {% endfor %}
         else -> emptyList()

@@ -202,15 +202,9 @@
 
         // Switch on source state, then transition index
         match self.last_transition_source_state {
-{% for state_id, state in model.states.items() | sort %}
+{% for state_id, state in model.states | dictsort %}
 {% if state.transitions %}
-{% set has_any_actions = [] %}
-{% for trans in state.transitions %}
-{% if trans.actions %}
-{% set _ = has_any_actions.append(true) %}
-{% endif %}
-{% endfor %}
-{% if has_any_actions %}
+{% if state.transitions | selectattr("actions") | list %}
             {{ machine_name }}State::{{ state_id | to_state_variant }} => {
                 match self.last_transition_index {
 {% for trans in state.transitions %}
@@ -218,7 +212,7 @@
                     {{ loop.index0 }} => {
                         // W3C SCXML 3.13: Transition {{ loop.index0 }} actions
 {% for action in trans.actions %}
-                        {% include 'actions/' + action.type + '.rs.jinja2' %}
+                        {% include 'actions/' ~ action.type ~ '.rs.jinja2' %}
 
 {% endfor %}
                     }

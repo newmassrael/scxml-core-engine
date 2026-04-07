@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SCXML Code Generator - Online | Generate C++, Kotlin, Rust State Machines from W3C SCXML</title>
-    <meta name="description" content="Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML online. Browser-based code generator powered by Pyodide with full SCXML 1.0 support including datamodel, actions, and JSEngine.">
+    <meta name="description" content="Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML online. Browser-based code generator powered by native WebAssembly with full SCXML 1.0 support including datamodel, actions, and JSEngine.">
     <meta name="keywords" content="SCXML code generator, state machine generator, C++ code generator, Kotlin code generator, Rust code generator, W3C SCXML, SCXML to C++, SCXML to Kotlin, SCXML to Rust, online code generator, statechart compiler">
     <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="SCXML Code Generator - Generate C++, Kotlin, Rust State Machines Online">
-    <meta property="og:description" content="Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML directly in your browser. Powered by Pyodide with full SCXML 1.0 support.">
+    <meta property="og:description" content="Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML directly in your browser. Powered by native WebAssembly — instant code generation, no server required.">
     <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html">
     <meta property="og:site_name" content="SCXML Core Engine">
 
@@ -109,9 +109,9 @@
     <div class="container">
         <header>
             <h1>SCXML Code Generator</h1>
-            <p>Generate W3C SCXML compliant C++, Kotlin, or Rust code using Python codegen in browser</p>
+            <p>Generate W3C SCXML compliant C++, Kotlin, or Rust code directly in the browser</p>
             <div class="info">
-                <strong>Powered by Pyodide</strong> - Runs the same Python codegen as CLI with full W3C SCXML support (datamodel, actions, JSEngine, etc.)
+                <strong>Native WebAssembly</strong> — All languages generated instantly via Rust WASM. No Python runtime, no server required.
             </div>
         </header>
 
@@ -153,20 +153,24 @@
                     <button class="tab active" onclick="switchTab('generated')">Generated Code</button>
                     <button class="tab" onclick="switchTab('example')">Usage Example</button>
                 </div>
-                <pre id="generatedContent" class="tab-content active">Initializing Python runtime...</pre>
+                <pre id="generatedContent" class="tab-content active">Loading WASM codegen...</pre>
                 <pre id="exampleContent" class="tab-content"></pre>
             </div>
         </div>
     </div>
 
-    <!-- Pyodide (version: v0.25.0, managed in pyodide-codegen.js) -->
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
-    <script src="pyodide-codegen.js"></script>
+    <script src="wasm-codegen.js"></script>
 
     <script>
         let generatedCode = '';
         let exampleCode = '';
         let currentLanguage = 'cpp';
+
+        const LANGUAGE_CONFIG = {
+            cpp: { label: 'C++', downloadExt: '_sm.h' },
+            kotlin: { label: 'Kotlin', downloadExt: 'Sm.kt' },
+            rust: { label: 'Rust', downloadExt: '_sm.rs' }
+        };
 
         // Read language from URL query parameter (e.g., ?lang=kotlin)
         (function() {
@@ -182,7 +186,6 @@
             document.querySelectorAll('.lang-btn').forEach(btn => {
                 btn.classList.toggle('active', btn.dataset.lang === lang);
             });
-            // Clear previous output when switching
             document.getElementById('generatedContent').textContent = 'Ready to generate...';
             document.getElementById('exampleContent').textContent = '';
             document.getElementById('downloadBtn').disabled = true;
@@ -193,18 +196,15 @@
         function showStatus(message, type = 'loading', progress = null) {
             const status = document.getElementById('status');
             let html = message;
-
             if (progress !== null) {
                 html += '<div class="progress-bar"><div class="progress-fill" style="width:' + progress + '%"></div></div>';
             }
-
             status.innerHTML = html;
             status.className = 'status show ' + type;
         }
 
         function clearStatus() {
-            const status = document.getElementById('status');
-            status.className = 'status';
+            document.getElementById('status').className = 'status';
         }
 
         function setStatusText(text) {
@@ -212,22 +212,10 @@
         }
 
         function switchTab(tab) {
-            // Update tab buttons
-            document.querySelectorAll('.tab').forEach(btn => {
-                btn.classList.remove('active');
-            });
+            document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
             event.target.classList.add('active');
-
-            // Update tab content
-            document.querySelectorAll('.tab-content').forEach(content => {
-                content.classList.remove('active');
-            });
-
-            if (tab === 'generated') {
-                document.getElementById('generatedContent').classList.add('active');
-            } else {
-                document.getElementById('exampleContent').classList.add('active');
-            }
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(tab === 'generated' ? 'generatedContent' : 'exampleContent').classList.add('active');
         }
 
         async function generateCode() {
@@ -241,26 +229,19 @@
 
             btn.disabled = true;
             const langLabel = LANGUAGE_CONFIG[currentLanguage].label;
-            showStatus(`Generating ${langLabel} code using Python codegen...`, 'loading');
 
             try {
-                // Generate using Pyodide with selected language
-                const code = await pyodideCodegen.generate(scxmlInput, currentLanguage);
+                showStatus(`Generating ${langLabel} code...`, 'loading');
+                const result = wasmCodegen.generate(scxmlInput, currentLanguage);
+                const smName = wasmCodegen.getStateMachineName(scxmlInput);
 
-                // Get state machine name for usage example
-                const smName = await pyodideCodegen.getStateMachineName(scxmlInput);
-
-                // Generate usage example
-                const example = generateUsageExample(smName, scxmlInput, currentLanguage);
-
-                generatedCode = code;
-                exampleCode = example;
+                generatedCode = result.primaryCode;
+                exampleCode = generateUsageExample(smName, scxmlInput, currentLanguage);
 
                 document.getElementById('generatedContent').textContent = generatedCode;
                 document.getElementById('exampleContent').textContent = exampleCode;
                 document.getElementById('downloadBtn').disabled = false;
-                clearStatus();
-                showStatus(`${langLabel} code generated successfully with full W3C SCXML support!`, 'success');
+                showStatus(`${langLabel} code generated successfully!`, 'success');
                 setTimeout(clearStatus, 3000);
             } catch (e) {
                 console.error('Generation error:', e);
@@ -271,26 +252,19 @@
         }
 
         function generateUsageExample(smName, scxmlContent, language = 'cpp') {
-            // Parse to extract events
             const parser = new DOMParser();
             const xmlDoc = parser.parseFromString(scxmlContent, 'application/xml');
-
             const eventsSet = new Set();
-            const states = Array.from(xmlDoc.getElementsByTagName('state'));
-            states.forEach(state => {
-                const transitions = state.getElementsByTagName('transition');
-                Array.from(transitions).forEach(trans => {
+            Array.from(xmlDoc.getElementsByTagName('state')).forEach(state => {
+                Array.from(state.getElementsByTagName('transition')).forEach(trans => {
                     const event = trans.getAttribute('event');
                     if (event) eventsSet.add(event);
                 });
             });
             const events = Array.from(eventsSet).sort();
 
-            if (language === 'kotlin') {
-                return generateKotlinExample(smName, events);
-            } else if (language === 'rust') {
-                return generateRustExample(smName, events);
-            }
+            if (language === 'kotlin') return generateKotlinExample(smName, events);
+            if (language === 'rust') return generateRustExample(smName, events);
             return generateCppExample(smName, events);
         }
 
@@ -383,9 +357,7 @@ fn main() {
                 showStatus('No code to download', 'error');
                 return;
             }
-
-            const config = LANGUAGE_CONFIG[currentLanguage];
-            const ext = config ? config.downloadExt : '_sm.h';
+            const ext = LANGUAGE_CONFIG[currentLanguage].downloadExt;
             const blob = new Blob([generatedCode], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -403,43 +375,32 @@ fn main() {
             generatedCode = '';
             exampleCode = '';
             clearStatus();
-
-            // Reset to generated code tab
             document.querySelectorAll('.tab').forEach(btn => btn.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
             document.querySelectorAll('.tab')[0].classList.add('active');
             document.getElementById('generatedContent').classList.add('active');
         }
 
         function visualizeSCXML() {
             const scxml = document.getElementById('scxmlInput').value.trim();
-
             if (!scxml) {
                 showStatus('Please enter SCXML content first', 'error');
                 return;
             }
-
-            // Base64 encode SCXML (UTF-8 safe)
             const base64 = btoa(unescape(encodeURIComponent(scxml)));
-
-            // Open visualizer in new tab
-            const visualizerUrl = `visualizer.html#scxml=${encodeURIComponent(base64)}`;
-            window.open(visualizerUrl, '_blank');
-
+            window.open(`visualizer.html#scxml=${encodeURIComponent(base64)}`, '_blank');
             showStatus('Opening visualizer in new tab...', 'success');
             setTimeout(clearStatus, 2000);
         }
 
-        // Initialize Pyodide on page load
+        // Initialize WASM on page load
         window.addEventListener('DOMContentLoaded', async () => {
-            // Apply language from URL parameter
             selectLanguage(currentLanguage);
-
-            showStatus('Initializing Python runtime (first visit only)...', 'loading', 0);
+            showStatus('Loading WASM codegen...', 'loading', 10);
             setStatusText('Loading...');
 
             try {
-                await pyodideCodegen.init((message, progress) => {
+                await wasmCodegen.init((message, progress) => {
                     showStatus(message, 'loading', progress);
                     setStatusText(message);
                 });
@@ -447,10 +408,11 @@ fn main() {
                 clearStatus();
                 setStatusText('Ready');
                 document.getElementById('generateBtn').disabled = false;
-                document.getElementById('generatedContent').textContent = 'Ready to generate with full W3C SCXML support...';
+                document.getElementById('generatedContent').textContent =
+                    'Ready to generate C++, Kotlin, or Rust code from SCXML.';
             } catch (error) {
-                console.error('Init error:', error);
-                showStatus('Failed to initialize: ' + error.message + '<br>Please refresh the page.', 'error');
+                console.error('WASM init error:', error);
+                showStatus('Failed to initialize WASM codegen: ' + error.message + '<br>Please refresh the page.', 'error');
                 setStatusText('Init failed');
             }
         });
