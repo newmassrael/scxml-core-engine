@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: condition kind — multi-input threshold check -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="condition" name="temperature_warning">
+  <datamodel>
+    <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+    <data id="oilTemp" sce:type="float64" sce:direction="in"/>
+    <data id="maxTemp" sce:type="float64" sce:direction="in"/>
+    <data id="result" sce:type="bool" sce:direction="out"
+          expr="coolantTemp &gt; maxTemp || oilTemp &gt; maxTemp"/>
+  </datamodel>
+</scxml>

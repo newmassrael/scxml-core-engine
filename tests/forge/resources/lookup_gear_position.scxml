@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: lookup kind — gear position mapping -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="gear_position_lookup">
+  <datamodel>
+    <data id="gearRaw" sce:type="uint8" sce:direction="in"/>
+    <data id="gear" sce:type="string" sce:direction="out"/>
+    <data id="mapping" sce:default="NEUTRAL">
+      <sce:entry key="0" value="PARK"/>
+      <sce:entry key="1" value="REVERSE"/>
+      <sce:entry key="2" value="NEUTRAL"/>
+      <sce:entry key="3" value="DRIVE"/>
+      <sce:entry key="4" value="SPORT"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -7,6 +7,8 @@
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::forge::model::InlineKind;
+
 /// W3C SCXML 3.3: Transition element
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct Transition {
@@ -319,6 +321,10 @@ pub struct SCXMLModel {
     #[serde(skip)]
     pub context_object_ids: BTreeSet<String>,
     pub needs_nonstatic_method: bool,
+
+    // SCE Forge: Inline kind declarations from <data sce:kind="..."> elements.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub inline_kinds: Vec<InlineKind>,
 
     // Path info
     #[serde(skip_serializing_if = "String::is_empty")]

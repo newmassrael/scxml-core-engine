@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: inline kinds within a statechart -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       name="inline_mixed_test" initial="idle">
+  <datamodel>
+    <data id="rpm" expr="0"/>
+    <data id="rpmStatus" sce:kind="lookup" sce:input="raw" sce:default="OFF">
+      <sce:entry key="0" value="OFF"/>
+      <sce:entry key="1" value="RUNNING"/>
+    </data>
+    <data id="isReady" sce:kind="condition"
+          expr="speed === 0 &amp;&amp; engineOff === true"/>
+    <data id="toFahrenheit" sce:kind="transform" sce:type="float64"
+          expr="celsius * 1.8 + 32"/>
+  </datamodel>
+  <state id="idle">
+    <transition event="go" target="active"/>
+  </state>
+  <state id="active">
+    <transition event="stop" target="idle"/>
+  </state>
+</scxml>

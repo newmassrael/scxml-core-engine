@@ -36,55 +36,6 @@ pub fn parse_forge(content: &str, name: &str) -> Result<Option<ForgeDocument>, S
     parse_forge_from_node(&root, name, kind).map(Some)
 }
 
-/// Parse inline kind declarations from <data> elements within a statechart.
-/// Returns the list of inline kinds found.
-pub fn parse_inline_kinds(content: &str) -> Result<Vec<InlineKind>, String> {
-    let doc = roxmltree::Document::parse(content)
-        .map_err(|e| format!("XML parse error: {e}"))?;
-    let root = doc.root_element();
-
-    let datamodel = match find_child(&root, "datamodel") {
-        Some(dm) => dm,
-        None => return Ok(Vec::new()),
-    };
-
-    let mut inline_kinds = Vec::new();
-
-    for data in datamodel.children().filter(|n| n.is_element() && n.tag_name().name() == "data") {
-        let kind_attr = match sce_attr(&data, "kind") {
-            Some(k) => k,
-            None => continue,
-        };
-
-        let kind = ForgeKind::from_attr(&kind_attr)
-            .ok_or_else(|| format!("Unknown inline sce:kind: '{kind_attr}'"))?;
-
-        if !kind.is_inline_eligible() {
-            return Err(format!(
-                "Kind '{kind}' cannot be used inline — it requires runtime state. \
-                 Use a standalone SCXML file instead."
-            ));
-        }
-
-        let id = data
-            .attribute("id")
-            .ok_or("Inline kind <data> must have an 'id' attribute")?
-            .to_string();
-
-        let inline_data = match kind {
-            ForgeKind::Lookup => parse_inline_lookup(&data)?,
-            ForgeKind::Condition => parse_inline_condition(&data)?,
-            ForgeKind::Codec => parse_inline_codec(&data)?,
-            ForgeKind::Transform => parse_inline_transform(&data)?,
-            _ => unreachable!("is_inline_eligible already checked"),
-        };
-
-        inline_kinds.push(InlineKind { id, data: inline_data });
-    }
-
-    Ok(inline_kinds)
-}
-
 // ── Internal: kind detection from parsed node ──────────────────
 
 fn detect_kind_from_node(root: &roxmltree::Node) -> Result<Option<ForgeKind>, String> {
@@ -299,7 +250,8 @@ fn parse_codec(root: &roxmltree::Node, name: &str) -> Result<CodecModel, String>
 }
 
 /// Unified codec field parser — works for both `<data>` and `<sce:field>` elements.
-fn parse_codec_field_from_node(node: &roxmltree::Node) -> Result<CodecField, String> {
+/// Public: also called from SCXMLParser::try_parse_inline_kind() for single-pass extraction.
+pub fn parse_codec_field_from_node(node: &roxmltree::Node) -> Result<CodecField, String> {
     let id = node
         .attribute("id")
         .ok_or("Codec field must have an 'id' attribute")?
@@ -343,81 +295,6 @@ fn parse_codec_field_from_node(node: &roxmltree::Node) -> Result<CodecField, Str
         endian,
         max_size,
         length_field,
-    })
-}
-
-// ── Inline kind parsing ────────────────────────────────────────
-
-fn parse_inline_lookup(data: &roxmltree::Node) -> Result<InlineKindData, String> {
-    let input_id = sce_attr(data, "input").unwrap_or_default();
-    let default_value = sce_attr(data, "default").unwrap_or_default();
-
-    let entries = parse_sce_entries(data)?;
-    if entries.is_empty() {
-        return Err("Inline lookup requires at least one <sce:entry>".to_string());
-    }
-
-    let final_default = if default_value.is_empty() {
-        entries[0].value.clone()
-    } else {
-        default_value
-    };
-
-    Ok(InlineKindData::Lookup {
-        input_id,
-        entries,
-        default_value: final_default,
-    })
-}
-
-fn parse_inline_condition(data: &roxmltree::Node) -> Result<InlineKindData, String> {
-    let expr = data
-        .attribute("expr")
-        .ok_or("Inline condition must have an 'expr' attribute")?
-        .to_string();
-
-    Ok(InlineKindData::Condition { expr })
-}
-
-fn parse_inline_codec(data: &roxmltree::Node) -> Result<InlineKindData, String> {
-    let default_endian = sce_attr(data, "default-endian")
-        .and_then(|s| Endian::from_attr(&s))
-        .unwrap_or(Endian::Big);
-
-    let mut fields = Vec::new();
-    for child in data.children().filter(|n| n.is_element()) {
-        if child.tag_name().name() == "field" && child.tag_name().namespace() == Some(SCE_NAMESPACE) {
-            fields.push(parse_codec_field_from_node(&child)?);
-        }
-    }
-
-    if fields.is_empty() {
-        return Err("Inline codec requires at least one <sce:field>".to_string());
-    }
-
-    Ok(InlineKindData::Codec {
-        fields,
-        default_endian,
-    })
-}
-
-fn parse_inline_transform(data: &roxmltree::Node) -> Result<InlineKindData, String> {
-    let expr = data
-        .attribute("expr")
-        .ok_or("Inline transform must have an 'expr' attribute")?
-        .to_string();
-
-    let type_str = sce_attr(data, "type")
-        .ok_or("Inline transform must have an 'sce:type' attribute")?;
-    let output_type = SceType::from_attr(&type_str)
-        .ok_or_else(|| format!("Unknown sce:type '{type_str}' on inline transform"))?;
-
-    let inputs = Vec::new(); // Resolved during codegen from parent statechart context
-
-    Ok(InlineKindData::Transform {
-        inputs,
-        expr,
-        output_type,
     })
 }
 

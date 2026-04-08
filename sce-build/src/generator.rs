@@ -154,6 +154,13 @@ fn render_cpp(
     // the parent directory of the SCXML file (set by analyzer::compute_scxml_base_path).
     let base_path = model.scxml_base_path.clone();
 
+    // SCE Forge: render inline kind declarations as C++ code fragment.
+    let inline_kind_code = if !model.inline_kinds.is_empty() {
+        crate::forge::generator::render_inline_kinds_cpp(&model.inline_kinds)?
+    } else {
+        String::new()
+    };
+
     let header_tmpl = env
         .get_template("state_machine.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
@@ -169,6 +176,7 @@ fn render_cpp(
         base_path => &base_path,
         license_config => &license_val,
         inl_filename => &inl_filename,
+        inline_kind_code => &inline_kind_code,
     };
     let inl_ctx = minijinja::context! {
         model => &model_val,

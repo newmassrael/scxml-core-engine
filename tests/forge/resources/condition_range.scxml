@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: condition kind — range check with logical operators -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="condition" name="rpm_in_range">
+  <datamodel>
+    <data id="rpm" sce:type="uint32" sce:direction="in"/>
+    <data id="minRpm" sce:type="uint32" sce:direction="in"/>
+    <data id="maxRpm" sce:type="uint32" sce:direction="in"/>
+    <data id="result" sce:type="bool" sce:direction="out"
+          expr="rpm &gt;= minRpm &amp;&amp; rpm &lt;= maxRpm"/>
+  </datamodel>
+</scxml>

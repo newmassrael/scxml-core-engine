@@ -67,10 +67,17 @@
 #include "common/DoneDataHelper.h"
 {% endif %}
 #include "common/InPredicateHelper.h"
+{% if inline_kind_code %}
+#include <optional>
+#include <vector>
+#include <cstring>
+{% endif %}
 {% if model.needs_script_engine %}
 #include "common/DataModelInitHelper.h"
 #include "common/EventTypeHelper.h"
+{% if not inline_kind_code %}
 #include <optional>
+{% endif %}
 #include "common/Logger.h"
 #include "scripting/ScriptEngineProvider.h"
 #include "scripting/ScriptResultUtils.h"
@@ -238,6 +245,11 @@ struct {{ model.name }}Policy {
     {% endif %}
     {% endfor %}
     {% endif %}
+{% if inline_kind_code %}
+
+    // ── SCE Forge: Inline kind member functions ──────────────
+{{ inline_kind_code }}
+{% endif %}
     {% if model.has_parent_communication %}
 
     // W3C SCXML 6.2: Parent state machine pointer for #_parent support

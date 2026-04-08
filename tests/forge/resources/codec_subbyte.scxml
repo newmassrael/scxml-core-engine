@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec kind — sub-byte bit field extraction -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="big" name="can_flags">
+  <datamodel>
+    <data id="priority" sce:type="uint8" sce:byte="0" sce:bit-offset="5" sce:bit-size="3"/>
+    <data id="channel" sce:type="uint8" sce:byte="0" sce:bit-offset="2" sce:bit-size="3"/>
+    <data id="direction" sce:type="uint8" sce:byte="0" sce:bit-offset="0" sce:bit-size="2"/>
+  </datamodel>
+</scxml>

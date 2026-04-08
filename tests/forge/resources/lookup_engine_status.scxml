@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: lookup kind — engine status mapping -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="engine_status_lookup">
+  <datamodel>
+    <data id="engSta" sce:type="uint8" sce:direction="in"/>
+    <data id="status" sce:type="string" sce:direction="out"/>
+    <data id="mapping" sce:default="STOP">
+      <sce:entry key="0x00" value="STOP"/>
+      <sce:entry key="0x01" value="STOP"/>
+      <sce:entry key="0x02" value="STOP"/>
+      <sce:entry key="0x03" value="RUNNING"/>
+      <sce:entry key="0x07" value="FAULT"/>
+    </data>
+  </datamodel>
+</scxml>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: condition kind — programming session guard -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="condition" name="can_enter_programming">
+  <datamodel>
+    <data id="engineStop" sce:type="bool" sce:direction="in"/>
+    <data id="ignition" sce:type="bool" sce:direction="in"/>
+    <data id="result" sce:type="bool" sce:direction="out"
+          expr="engineStop === true &amp;&amp; ignition === true"/>
+  </datamodel>
+</scxml>

@@ -371,6 +371,190 @@ fn encode_single_field(field: &CodecField, default_endian: Endian, exprs: &mut V
     }
 }
 
+// ── Inline kind rendering (policy struct member functions) ─────
+//
+// Inline kinds live inside the policy struct — they access datamodel
+// member variables directly via `this->`. This is distinct from standalone
+// kinds, which are namespace-scoped free functions with explicit parameters.
+
+/// Render all inline kinds as C++ policy struct member code.
+/// Output is indented for embedding inside a struct body.
+pub fn render_inline_kinds_cpp(
+    kinds: &[InlineKind],
+) -> Result<String, String> {
+    let mut fragments = Vec::new();
+    for kind in kinds {
+        let code = render_single_inline_kind_member(kind)?;
+        fragments.push(code);
+    }
+    Ok(fragments.join("\n"))
+}
+
+/// Render a single inline kind as a policy struct member.
+fn render_single_inline_kind_member(kind: &InlineKind) -> Result<String, String> {
+    match &kind.data {
+        InlineKindData::Transform { inputs: _, expr, output_type } => {
+            render_inline_transform_member(&kind.id, expr, output_type)
+        }
+        InlineKindData::Lookup { input_id, entries, default_value } => {
+            render_inline_lookup_member(&kind.id, input_id, entries, default_value)
+        }
+        InlineKindData::Condition { expr } => {
+            render_inline_condition_member(&kind.id, expr)
+        }
+        InlineKindData::Codec { fields, default_endian } => {
+            render_inline_codec_member(&kind.id, fields, *default_endian)
+        }
+    }
+}
+
+/// Inline transform: const member function returning computed value from member variables.
+fn render_inline_transform_member(
+    id: &str,
+    raw_expr: &str,
+    output_type: &SceType,
+) -> Result<String, String> {
+    let expr_cpp = expr::transpile(raw_expr, ExprTarget::Cpp)?;
+    let func_name = format!("compute{}", filters::to_pascal_case(id.to_string()));
+    let ret_type = cpp_type(output_type);
+
+    Ok(format!(
+        "    // SCE Forge: Inline transform '{id}'\n\
+         \x20   [[nodiscard]] {ret_type} {func_name}() const {{\n\
+         \x20       return {expr_cpp};\n\
+         \x20   }}"
+    ))
+}
+
+/// Inline lookup: nested enum + const member function with switch.
+fn render_inline_lookup_member(
+    id: &str,
+    input_id: &str,
+    entries: &[LookupEntry],
+    default_value: &str,
+) -> Result<String, String> {
+    let enum_name = filters::to_pascal_case(id.to_string());
+    let func_name = format!("lookup{}", filters::to_pascal_case(id.to_string()));
+
+    // Collect unique values preserving order
+    let mut seen = std::collections::BTreeSet::new();
+    let mut unique_values = Vec::new();
+    for entry in entries {
+        if seen.insert(entry.value.clone()) {
+            unique_values.push(entry.value.clone());
+        }
+    }
+
+    // Group entries by value
+    let mut map: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for entry in entries {
+        map.entry(entry.value.clone())
+            .or_default()
+            .push(entry.key.clone());
+    }
+
+    let mut code = String::new();
+    code.push_str(&format!(
+        "    // SCE Forge: Inline lookup '{id}'\n\
+         \x20   enum class {enum_name} {{ {} }};\n\n",
+        unique_values.join(", ")
+    ));
+
+    // Static lookup function (takes explicit parameter — lookup input is external)
+    code.push_str(&format!(
+        "    static {enum_name} {func_name}(uint32_t {input_id}) {{\n\
+         \x20       switch ({input_id}) {{\n"
+    ));
+
+    for (value, keys) in &map {
+        for key in keys {
+            code.push_str(&format!("        case {key}:\n"));
+        }
+        code.push_str(&format!("            return {enum_name}::{value};\n"));
+    }
+
+    code.push_str(&format!(
+        "        default: return {enum_name}::{default_value};\n\
+         \x20       }}\n\
+         \x20   }}"
+    ));
+
+    Ok(code)
+}
+
+/// Inline condition: const member function returning bool from member variables.
+fn render_inline_condition_member(
+    id: &str,
+    raw_expr: &str,
+) -> Result<String, String> {
+    let expr_cpp = expr::transpile(raw_expr, ExprTarget::Cpp)?;
+    let func_name = filters::to_camel_case(id.to_string());
+
+    Ok(format!(
+        "    // SCE Forge: Inline condition '{id}'\n\
+         \x20   [[nodiscard]] bool {func_name}() const {{\n\
+         \x20       return {expr_cpp};\n\
+         \x20   }}"
+    ))
+}
+
+/// Inline codec: nested struct with static decode/encode methods.
+fn render_inline_codec_member(
+    id: &str,
+    codec_fields: &[CodecField],
+    default_endian: Endian,
+) -> Result<String, String> {
+    let struct_name = filters::to_pascal_case(id.to_string());
+
+    // Compute min frame bytes
+    let mut min_bytes = 0u32;
+    for f in codec_fields {
+        if let Some(bits) = f.fixed_bits() {
+            let end = f.byte_offset + (bits + 7) / 8;
+            min_bytes = min_bytes.max(end);
+        }
+    }
+
+    let mut code = String::new();
+    code.push_str(&format!("    // SCE Forge: Inline codec '{id}'\n"));
+    code.push_str(&format!("    struct {struct_name} {{\n"));
+
+    // Field declarations
+    for f in codec_fields {
+        code.push_str(&format!(
+            "        {} {};\n",
+            cpp_type(&f.sce_type),
+            f.id
+        ));
+    }
+
+    // decode
+    code.push_str(&format!(
+        "\n        static std::optional<{struct_name}> decode(const uint8_t* raw, size_t len) {{\n\
+         \x20           if (len < {min_bytes}) return std::nullopt;\n\
+         \x20           return {struct_name}{{\n"
+    ));
+    for f in codec_fields {
+        let decode = generate_decode_expr(f, default_endian);
+        code.push_str(&format!("                .{} = {},\n", f.id, decode));
+    }
+    code.push_str("            };\n        }\n");
+
+    // encode
+    let encode_exprs = generate_encode_exprs(codec_fields, default_endian);
+    code.push_str("\n        std::vector<uint8_t> encode() const {\n            return {\n");
+    for (i, expr_str) in encode_exprs.iter().enumerate() {
+        let comma = if i < encode_exprs.len() - 1 { "," } else { "" };
+        code.push_str(&format!("                {expr_str}{comma}\n"));
+    }
+    code.push_str("            };\n        }\n");
+
+    code.push_str("    };");
+
+    Ok(code)
+}
+
 // ── Naming helpers (delegating to filters where possible) ──────
 
 fn to_upper_snake(s: &str) -> String {

@@ -170,6 +170,8 @@ impl SCXMLParser {
     }
 
     fn parse_datamodel(&mut self, root: &roxmltree::Node, model: &mut SCXMLModel) {
+        use crate::forge::model::SCE_NAMESPACE;
+
         for child in root.children() {
             if !child.is_element() || local_name(&child) != "datamodel" {
                 continue;
@@ -178,6 +180,23 @@ impl SCXMLParser {
                 if !data.is_element() || local_name(&data) != "data" {
                     continue;
                 }
+
+                // SCE Forge: detect inline kind on <data sce:kind="..."> — classify
+                // as InlineKind instead of Variable (single XML parse, no re-parsing).
+                if let Some(kind_attr) = data.attribute((SCE_NAMESPACE, "kind")) {
+                    match Self::try_parse_inline_kind(&data, kind_attr) {
+                        Ok(Some(inline)) => {
+                            model.inline_kinds.push(inline);
+                            continue;
+                        }
+                        Ok(None) => {} // Unknown/non-inline kind — fall through to variable
+                        Err(e) => {
+                            eprintln!("SCE Forge parse warning: {e}");
+                            continue; // Skip malformed inline kind
+                        }
+                    }
+                }
+
                 let var_id = data.attribute("id").unwrap_or("").to_string();
                 let expr = data.attribute("expr").unwrap_or("").to_string();
                 let src = data.attribute("src").unwrap_or("").to_string();
@@ -207,6 +226,119 @@ impl SCXMLParser {
                 model.needs_script_engine = true;
             }
         }
+    }
+
+    /// SCE Forge: attempt to parse a <data sce:kind="..."> element as an inline kind.
+    /// Returns `Ok(Some(kind))` on success, `Ok(None)` for unknown/non-inline kinds
+    /// (fall through to variable), `Err` for recognized inline kinds with invalid content.
+    fn try_parse_inline_kind(
+        data: &roxmltree::Node,
+        kind_attr: &str,
+    ) -> Result<Option<crate::forge::model::InlineKind>, String> {
+        use crate::forge::model::*;
+
+        let kind = match ForgeKind::from_attr(kind_attr) {
+            Some(k) => k,
+            None => return Ok(None), // Unknown kind — treat as regular variable
+        };
+        if !kind.is_inline_eligible() {
+            return Ok(None); // Stateful kind — cannot be inline, treat as variable
+        }
+
+        let id = data
+            .attribute("id")
+            .ok_or_else(|| format!("Inline {kind} kind <data> must have an 'id' attribute"))?
+            .to_string();
+
+        let sce_attr = |local: &str| -> Option<String> {
+            data.attribute((SCE_NAMESPACE, local)).map(|s| s.to_string())
+        };
+
+        let inline_data = match kind {
+            ForgeKind::Lookup => {
+                let input_id = sce_attr("input").unwrap_or_default();
+                let default_value = sce_attr("default").unwrap_or_default();
+
+                let mut entries = Vec::new();
+                for child in data.children().filter(|n| n.is_element()) {
+                    if child.tag_name().name() == "entry"
+                        && child.tag_name().namespace() == Some(SCE_NAMESPACE)
+                    {
+                        let key = child.attribute("key")
+                            .ok_or_else(|| format!("Inline lookup '{id}': <sce:entry> must have 'key'"))?
+                            .to_string();
+                        let value = child.attribute("value")
+                            .ok_or_else(|| format!("Inline lookup '{id}': <sce:entry> must have 'value'"))?
+                            .to_string();
+                        entries.push(LookupEntry { key, value });
+                    }
+                }
+                if entries.is_empty() {
+                    return Err(format!("Inline lookup '{id}' requires at least one <sce:entry>"));
+                }
+
+                let final_default = if default_value.is_empty() {
+                    entries[0].value.clone()
+                } else {
+                    default_value
+                };
+
+                InlineKindData::Lookup {
+                    input_id,
+                    entries,
+                    default_value: final_default,
+                }
+            }
+            ForgeKind::Condition => {
+                let expr = data.attribute("expr")
+                    .ok_or_else(|| format!("Inline condition '{id}' must have an 'expr' attribute"))?
+                    .to_string();
+                InlineKindData::Condition { expr }
+            }
+            ForgeKind::Codec => {
+                let default_endian = sce_attr("default-endian")
+                    .and_then(|s| Endian::from_attr(&s))
+                    .unwrap_or(Endian::Big);
+
+                let mut fields = Vec::new();
+                for child in data.children().filter(|n| n.is_element()) {
+                    if child.tag_name().name() == "field"
+                        && child.tag_name().namespace() == Some(SCE_NAMESPACE)
+                    {
+                        fields.push(crate::forge::parser::parse_codec_field_from_node(&child)?);
+                    }
+                }
+                if fields.is_empty() {
+                    return Err(format!("Inline codec '{id}' requires at least one <sce:field>"));
+                }
+
+                InlineKindData::Codec {
+                    fields,
+                    default_endian,
+                }
+            }
+            ForgeKind::Transform => {
+                let expr = data.attribute("expr")
+                    .ok_or_else(|| format!("Inline transform '{id}' must have an 'expr' attribute"))?
+                    .to_string();
+                let type_str = sce_attr("type")
+                    .ok_or_else(|| format!("Inline transform '{id}' must have an 'sce:type' attribute"))?;
+                let output_type = SceType::from_attr(&type_str)
+                    .ok_or_else(|| format!("Inline transform '{id}': unknown sce:type '{type_str}'"))?;
+
+                InlineKindData::Transform {
+                    inputs: Vec::new(),
+                    expr,
+                    output_type,
+                }
+            }
+            _ => return Ok(None),
+        };
+
+        Ok(Some(InlineKind {
+            id,
+            data: inline_data,
+        }))
     }
 
     fn parse_global_scripts(

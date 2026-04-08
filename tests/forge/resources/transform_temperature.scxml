@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: transform kind — sensor raw to physical value -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="temperature_conversion">
+  <datamodel>
+    <data id="raw" sce:type="uint16" sce:direction="in"/>
+    <data id="temperature" sce:type="float64" sce:direction="out"
+          expr="raw * 0.1 - 40.0" sce:unit="celsius"/>
+  </datamodel>
+</scxml>

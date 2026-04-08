@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: transform kind — multiple outputs from shared inputs -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="unit_converter">
+  <datamodel>
+    <data id="celsius" sce:type="float64" sce:direction="in"/>
+    <data id="fahrenheit" sce:type="float64" sce:direction="out"
+          expr="celsius * 9 / 5 + 32"/>
+    <data id="kelvin" sce:type="float64" sce:direction="out"
+          expr="celsius + 273.15"/>
+  </datamodel>
+</scxml>

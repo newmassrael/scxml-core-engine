@@ -30,6 +30,7 @@ use model::SCXMLModel;
 use std::path::Path;
 
 /// Parse, analyze, and validate an SCXML file for static code generation.
+/// SCE Forge inline kinds are extracted during parsing (single XML pass).
 fn compile_model(scxml_path: &str) -> Result<SCXMLModel, String> {
     let mut parser = parser::SCXMLParser::new();
     let mut model = parser.parse_file(scxml_path)?;
@@ -45,6 +46,7 @@ fn compile_model(scxml_path: &str) -> Result<SCXMLModel, String> {
 }
 
 /// Parse SCXML content string, analyze and validate (no filesystem).
+/// SCE Forge inline kinds are extracted during parsing (single XML pass).
 fn compile_model_from_string(scxml_content: &str, scxml_name: &str) -> Result<SCXMLModel, String> {
     let mut parser = parser::SCXMLParser::new();
     let mut model = parser.parse_string(scxml_content, scxml_name)?;

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: transform kind — bitwise extraction -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="transform" name="nibble_extract">
+  <datamodel>
+    <data id="byte" sce:type="uint8" sce:direction="in"/>
+    <data id="highNibble" sce:type="uint8" sce:direction="out"
+          expr="(byte &gt;&gt; 4) &amp; 0x0F"/>
+    <data id="lowNibble" sce:type="uint8" sce:direction="out"
+          expr="byte &amp; 0x0F"/>
+  </datamodel>
+</scxml>

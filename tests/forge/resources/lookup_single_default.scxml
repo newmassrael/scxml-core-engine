@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: lookup kind — implicit default (first entry) -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="signal_quality_lookup">
+  <datamodel>
+    <data id="level" sce:type="uint8" sce:direction="in"/>
+    <data id="quality" sce:type="string" sce:direction="out"/>
+    <data id="mapping">
+      <sce:entry key="0" value="NONE"/>
+      <sce:entry key="1" value="LOW"/>
+      <sce:entry key="2" value="MEDIUM"/>
+      <sce:entry key="3" value="HIGH"/>
+    </data>
+  </datamodel>
+</scxml>

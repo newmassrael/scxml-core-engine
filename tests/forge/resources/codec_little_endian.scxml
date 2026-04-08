@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: codec kind — little-endian multi-field -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="codec" sce:default-endian="little" name="sensor_packet">
+  <datamodel>
+    <data id="sensorId" sce:type="uint8" sce:byte="0" sce:bit-size="8"/>
+    <data id="value" sce:type="uint16" sce:byte="1" sce:bit-size="16"/>
+    <data id="status" sce:type="uint8" sce:byte="3" sce:bit-size="8"/>
+  </datamodel>
+</scxml>
