@@ -1,4 +1,4 @@
-// GENERATED -- DO NOT EDIT (generate_rust_w3c.py)
+// GENERATED -- DO NOT EDIT (sce-codegen)
 use std::time::Duration;
 
 #[test]
@@ -6,10 +6,9 @@ fn test_518() {
     let _ = sce_rust_lua::register();
     let policy = sce_rust_tests::generated::test518::Test518Policy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
-    engine.enable_http_loopback();
     engine.initialize();
     let completed = engine.run_until_completion(
-        Duration::from_secs(3),
+        Duration::from_secs(5),
         Duration::from_millis(10),
     );
     assert!(completed, "Test 518 timed out");

@@ -300,9 +300,12 @@ class Test298StateMachine(
                     // W3C SCXML 5.5: Evaluate <param> elements (C++ DoneDataHelper::evaluateParams pattern)
                     val doneParams = mutableMapOf<String, Any?>()
                     var doneParamStructuralError = false
-                    // W3C SCXML 5.7: Empty location — structural error (C++ DoneDataHelper returns false)
-                    raiseInternal(Test298Event.Error.Execution, EventMetadata.platform())
-                    doneParamStructuralError = true
+                    try {
+                        doneParams["Var3"] = engineDD.evaluateExpr(sidDD, "")
+                    } catch (_: Exception) {
+                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
+                        raiseInternal(Test298Event.Error.Execution, EventMetadata.platform())
+                    }
                     // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
                     if (doneParamStructuralError) return@run
                     if (doneParams.isNotEmpty()) {

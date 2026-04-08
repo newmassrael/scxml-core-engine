@@ -1,4 +1,4 @@
-// GENERATED -- DO NOT EDIT (generate_rust_w3c.py)
+// GENERATED -- DO NOT EDIT (sce-codegen)
 use std::time::Duration;
 
 #[test]

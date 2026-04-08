@@ -52,7 +52,7 @@ enum Commands {
     },
     /// Batch generate W3C test state machines and test classes
     GenerateW3c {
-        /// Target language (kotlin, cpp, go)
+        /// Target language (rust, cpp, kotlin, go)
         #[arg(short, long)]
         language: String,
         /// Path to tests/CMakeLists.txt (test registry)
@@ -134,9 +134,7 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
     analyzer::analyze(&mut model, scxml_path);
 
     // W3C SCXML 5.8: Document rejected at parse time (e.g., unloadable external script)
-    // This is correct spec behavior — generate a rejection stub so AOT test reports PASS.
-    // The stub defines SCE_DOCUMENT_REJECTED and a minimal namespace/class that
-    // RejectedDocumentTest (base class) uses to auto-pass the test.
+    // Generate a language-appropriate rejection stub so AOT test reports PASS.
     if model.document_rejected {
         let input_stem = Path::new(scxml_path)
             .file_stem()
@@ -144,21 +142,52 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
             .unwrap_or("unknown");
         let out = Path::new(output_dir);
         let pascal = crate::filters::to_pascal_case(input_stem.to_string());
-        let header = format!(
-            "// W3C SCXML 5.8: Document rejected — processor correctly refused non-conformant document\n\
-             #pragma once\n\
-             #define SCE_DOCUMENT_REJECTED 1\n\
-             namespace SCE::Generated::{name} {{\n\
-             struct {pascal} {{\n\
-             }};\n\
-             }}  // namespace SCE::Generated::{name}\n",
-            name = input_stem, pascal = pascal
-        );
-        let inl = "// W3C SCXML 5.8: Document rejected — no executable content generated\n";
-        std::fs::write(out.join(format!("{input_stem}_sm.h")), &header)
-            .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
-        std::fs::write(out.join(format!("{input_stem}_sm.inl")), inl)
-            .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+
+        match lang {
+            Language::Cpp => {
+                let header = format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     #pragma once\n\
+                     #define SCE_DOCUMENT_REJECTED 1\n\
+                     namespace SCE::Generated::{name} {{\n\
+                     struct {pascal} {{\n\
+                     }};\n\
+                     }}  // namespace SCE::Generated::{name}\n",
+                    name = input_stem, pascal = pascal
+                );
+                let inl = "// W3C SCXML 5.8: Document rejected\n";
+                fs::write(out.join(format!("{input_stem}_sm.h")), &header)
+                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+                fs::write(out.join(format!("{input_stem}_sm.inl")), inl)
+                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+            }
+            Language::Rust => {
+                let stub = format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     // This state machine was rejected at parse time.\n"
+                );
+                fs::write(out.join(format!("{input_stem}_sm.rs")), &stub)
+                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+            }
+            Language::Kotlin => {
+                let stub = format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     package com.sce.generated.{name}\n",
+                    name = input_stem
+                );
+                fs::write(out.join(format!("{input_stem}Sm.kt")), &stub)
+                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+            }
+            Language::Go => {
+                let stub = format!(
+                    "// W3C SCXML 5.8: Document rejected\n\
+                     package {name}\n",
+                    name = input_stem
+                );
+                fs::write(out.join(format!("{input_stem}_sm.go")), &stub)
+                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+            }
+        }
         println!("Document rejected (W3C SCXML 5.8): {}", model.name);
         println!("Needs ScriptEngine: false");
         return;
@@ -232,20 +261,17 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
 
     println!("  Needs ScriptEngine: {}", model.needs_script_engine);
 
-    // Write children metadata and generate hybrid child SCXML stubs (C++ pipeline)
-    if lang == Language::Cpp {
-        let children = collect_children_names(&model);
-        if !children.is_empty() {
-            let children_file = out_path.join(format!("{input_stem}_children.txt"));
-            fs::write(&children_file, children.join("\n") + "\n").unwrap_or_else(|e| {
-                eprintln!("Cannot write children file: {e}");
-                std::process::exit(1);
-            });
-        }
-        // W3C SCXML 6.4: Generate SCXML stubs for hybrid invoke children (srcexpr/contentexpr)
-        // Matches Python cpp_generator.py behavior: scan resource dir or create trivial stub
-        generate_hybrid_child_scxmls(&model, Path::new(scxml_path), out_path);
+    // W3C SCXML 6.4: Generate children metadata + hybrid SCXML stubs for all languages.
+    // C++ uses _children.txt for CMake post-processing; all languages need hybrid stubs.
+    let children = collect_invoke_child_names(&model);
+    if lang == Language::Cpp && !children.is_empty() {
+        let children_file = out_path.join(format!("{input_stem}_children.txt"));
+        fs::write(&children_file, children.join("\n") + "\n").unwrap_or_else(|e| {
+            eprintln!("Cannot write children file: {e}");
+            std::process::exit(1);
+        });
     }
+    generate_hybrid_child_scxmls(&model, Path::new(scxml_path), out_path);
 
     // Write DEPFILE for CMake incremental builds
     if let Some(depfile) = depfile_path {
@@ -254,7 +280,7 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
 }
 
 /// Collect child SCXML names from model's static/hybrid invokes.
-fn collect_children_names(model: &SCXMLModel) -> Vec<String> {
+fn collect_invoke_child_names(model: &SCXMLModel) -> Vec<String> {
     let mut children = Vec::new();
     for invoke in &model.static_invokes {
         if !invoke.child_name.is_empty() {
@@ -289,7 +315,6 @@ fn generate_hybrid_child_scxmls(model: &SCXMLModel, scxml_path: &Path, output_di
         }
 
         let srcexpr = invoke.srcexpr.as_deref().unwrap_or("");
-        let _contentexpr = invoke.contentexpr.as_deref().unwrap_or("");
 
         let mut found_child = false;
         if !srcexpr.is_empty() {
@@ -414,7 +439,7 @@ struct TestMetadata {
 
 fn cmd_generate_w3c(language: &str, registry: Option<&str>, resources: Option<&str>, single_test: Option<&str>, clean: bool, list: bool) {
     let lang: Language = language.parse().unwrap_or_else(|_| {
-        eprintln!("Unknown language: {language}. Use kotlin, cpp, or go.");
+        eprintln!("Unknown language: {language}. Use cpp, rust, kotlin, or go.");
         std::process::exit(1);
     });
 
@@ -427,15 +452,14 @@ fn cmd_generate_w3c(language: &str, registry: Option<&str>, resources: Option<&s
         .map(PathBuf::from)
         .unwrap_or_else(|| project_root.join("tests/CMakeLists.txt"));
 
-    match lang {
-        Language::Kotlin => generate_w3c_kotlin(&project_root, &resources_dir, &cmake_file, single_test, clean, list),
-        Language::Cpp => generate_w3c_cpp(&project_root, &resources_dir, &cmake_file, single_test, clean, list),
-        Language::Go => generate_w3c_go(&project_root, &resources_dir, &cmake_file, single_test, clean, list),
-        Language::Rust => {
-            eprintln!("Rust W3C generation not yet supported via generate-w3c. Use sce-rust-tests build.rs instead.");
-            std::process::exit(1);
-        }
-    }
+    let backend: Box<dyn W3cBackend> = match lang {
+        Language::Rust => Box::new(RustBackend::new(&project_root)),
+        Language::Go => Box::new(GoBackend::new(&project_root)),
+        Language::Kotlin => Box::new(KotlinBackend::new(&project_root)),
+        Language::Cpp => Box::new(CppBackend::new(&project_root)),
+    };
+
+    generate_w3c_unified(backend.as_ref(), &resources_dir, &cmake_file, single_test, clean, list);
 }
 
 fn find_project_root() -> PathBuf {
@@ -516,321 +540,6 @@ fn to_pascal_case(name: &str) -> String {
     filters::to_pascal_case(name.to_string())
 }
 
-// ── Kotlin W3C Generation ───────────────────────────────────────
-
-fn generate_w3c_kotlin(
-    project_root: &Path,
-    resources_dir: &Path,
-    cmake_file: &Path,
-    single_test: Option<&str>,
-    clean: bool,
-    list: bool,
-) {
-    let tests_module = project_root.join("sce-kotlin-tests");
-    let sm_output_base = tests_module.join("src/main/kotlin/com/sce/generated");
-    let test_output_dir = tests_module.join("src/test/kotlin/com/sce/w3c");
-    let template_dir = sce_build::find_template_dir_for(Language::Kotlin);
-
-    if clean {
-        if sm_output_base.exists() {
-            fs::remove_dir_all(&sm_output_base).ok();
-            println!("Cleaned: {}", sm_output_base.display());
-        }
-        for entry in fs::read_dir(&test_output_dir).into_iter().flatten() {
-            if let Ok(entry) = entry {
-                let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with("Test") && name.ends_with(".kt") {
-                    fs::remove_file(entry.path()).ok();
-                }
-            }
-        }
-        println!("Cleaned test classes in: {}", test_output_dir.display());
-        return;
-    }
-
-    let cmake_tests = parse_cmake_tests(cmake_file);
-    println!("C++ test registry: {} tests", cmake_tests.len());
-
-    if list {
-        for (tid, info) in &cmake_tests {
-            let scxml = find_scxml(resources_dir, tid);
-            let status = if scxml.is_some() { "OK" } else { "MISSING" };
-            let comment_trunc: String = info.comment.chars().take(70).collect();
-            println!("  {tid:6} [{:9}] {status} -- {comment_trunc}", info.type_str());
-        }
-        return;
-    }
-
-    let test_ids: Vec<String> = if let Some(tid) = single_test {
-        vec![tid.to_string()]
-    } else {
-        let mut ids: Vec<String> = cmake_tests.keys().cloned().collect();
-        ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
-        ids
-    };
-
-    let mut generated_static = Vec::new();
-    let mut generated_script = Vec::new();
-    let mut skipped = Vec::new();
-    let mut failed = Vec::new();
-
-    for test_id in &test_ids {
-        let scxml_path = match find_scxml(resources_dir, test_id) {
-            Some(p) => p,
-            None => {
-                skipped.push((test_id.clone(), "SCXML not found".to_string()));
-                continue;
-            }
-        };
-
-        // Generate parent SM
-        let (model, generated_ok) = match generate_kotlin_sm(test_id, &scxml_path, &sm_output_base, &template_dir) {
-            Ok(result) => result,
-            Err(e) => {
-                failed.push((test_id.clone(), format!("codegen failed: {e}")));
-                continue;
-            }
-        };
-
-        let needs_script = model.needs_script_engine;
-
-        if !generated_ok {
-            failed.push((test_id.clone(), "codegen failed".to_string()));
-            continue;
-        }
-
-        // Generate child SMs
-        generate_kotlin_child_sms(test_id, &scxml_path, &sm_output_base, &template_dir);
-
-        // Detect pass state from model
-        let pass_state = detect_pass_state(&model);
-        if pass_state.is_none() {
-            failed.push((test_id.clone(), "pass state not detected".to_string()));
-            continue;
-        }
-
-        // Check HTTP send from model
-        let metadata = read_metadata(resources_dir, test_id);
-        let test_type = cmake_tests.get(test_id.as_str()).map(|i| i.test_type.as_str()).unwrap_or("SIMPLE");
-        let uses_http = model_uses_http_send(&model);
-
-        // Generate test class
-        let test_written = generate_kotlin_test_class(
-            test_id,
-            &metadata,
-            test_type,
-            needs_script,
-            &pass_state.unwrap(),
-            uses_http,
-            &test_output_dir,
-        );
-
-        if test_written {
-            if needs_script {
-                generated_script.push(test_id.clone());
-            } else {
-                generated_static.push(test_id.clone());
-            }
-        } else {
-            failed.push((test_id.clone(), "test class generation failed".to_string()));
-        }
-    }
-
-    // Clean stale files (full generation mode only)
-    let mut stale_removed = 0;
-    if single_test.is_none() {
-        let valid_ids: BTreeSet<String> = generated_static.iter().chain(generated_script.iter()).cloned().collect();
-        if !valid_ids.is_empty() {
-            stale_removed = clean_stale_kotlin(&sm_output_base, &test_output_dir, &valid_ids);
-        }
-    }
-
-    // Summary
-    let total_generated = generated_static.len() + generated_script.len();
-    println!("\n{}", "=".repeat(60));
-    println!("Kotlin W3C Test Generation Summary");
-    println!("{}", "=".repeat(60));
-    println!("  Generated (pure static):    {}", generated_static.len());
-    println!("  Generated (script engine):  {}", generated_script.len());
-    println!("  Generated (total):          {total_generated}");
-    println!("  Skipped (other):            {}", skipped.len());
-    println!("  Failed:                     {}", failed.len());
-    println!("  Stale removed:              {stale_removed}");
-    println!("  Total:                      {}", test_ids.len());
-
-    if !skipped.is_empty() {
-        println!("\nSkipped (other):");
-        for (tid, reason) in &skipped {
-            println!("  {tid}: {reason}");
-        }
-    }
-
-    if !failed.is_empty() {
-        println!("\nFailed tests:");
-        for (tid, reason) in &failed {
-            println!("  {tid}: {reason}");
-        }
-    }
-
-    if total_generated > 0 {
-        println!("\nGenerated SM classes: {}", sm_output_base.display());
-        println!("Generated test classes: {}", test_output_dir.display());
-        println!("\nGenerated test IDs (static): {}", generated_static.join(" "));
-        if !generated_script.is_empty() {
-            println!("Generated test IDs (script): {}", generated_script.join(" "));
-        }
-    }
-
-    if !failed.is_empty() {
-        std::process::exit(1);
-    }
-}
-
-/// Generate Kotlin state machine for a single test.
-/// Returns (model, success) so caller can inspect model flags.
-fn generate_kotlin_sm(
-    test_id: &str,
-    scxml_path: &Path,
-    sm_output_base: &Path,
-    template_dir: &Path,
-) -> Result<(SCXMLModel, bool), String> {
-    let output_dir = sm_output_base.join(format!("test{test_id}"));
-
-    let mut parser = SCXMLParser::new();
-    let mut model = parser.parse_file(scxml_path.to_str().unwrap_or(""))?;
-    analyzer::analyze(&mut model, scxml_path.to_str().unwrap_or(""));
-
-    if !analyzer::can_generate_static(&model) {
-        return Ok((model, false));
-    }
-
-    resolve_source_path(&mut model, scxml_path);
-
-    let code = sce_build::generator::generate_kotlin(&model, template_dir)?;
-
-    let input_stem = scxml_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("unknown");
-
-    fs::create_dir_all(&output_dir).map_err(|e| format!("Cannot create dir: {e}"))?;
-
-    let sm_file = output_dir.join(format!("{input_stem}Sm.kt"));
-    write_if_changed(&sm_file, &code);
-
-    Ok((model, true))
-}
-
-/// Generate child state machines for static invoke tests.
-fn generate_kotlin_child_sms(
-    test_id: &str,
-    scxml_path: &Path,
-    sm_output_base: &Path,
-    template_dir: &Path,
-) {
-    let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
-    let parent_stem = scxml_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    let parent_package = format!("test{test_id}");
-    let output_dir = sm_output_base.join(&parent_package);
-    let num_prefix = extract_num_prefix(test_id);
-
-    // Read parent SM to check which child classes are referenced
-    let parent_sm_file = output_dir.join(format!("{parent_stem}Sm.kt"));
-    let parent_sm_content = fs::read_to_string(&parent_sm_file).unwrap_or_default();
-
-    // Find child SCXML files
-    let entries = fs::read_dir(resource_dir).into_iter().flatten();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("scxml") {
-            continue;
-        }
-        let child_name = match path.file_stem().and_then(|s| s.to_str()) {
-            Some(n) => n.to_string(),
-            None => continue,
-        };
-
-        // Skip parent itself
-        if child_name == parent_stem {
-            continue;
-        }
-
-        // Match: test191_child0, test226sub1, etc.
-        if !child_name.starts_with(&format!("test{num_prefix}_"))
-            && !child_name.starts_with(&format!("test{num_prefix}sub"))
-        {
-            continue;
-        }
-
-        // Skip if parent SM doesn't reference this child class (hybrid invoke)
-        let child_class = to_pascal_case(&child_name);
-        if !parent_sm_content.contains(&format!("{child_class}StateMachine")) {
-            continue;
-        }
-
-        // Generate child SM
-        let mut parser = SCXMLParser::new();
-        let child_path_str = path.to_str().unwrap_or("");
-        let child_result = parser.parse_file(child_path_str);
-
-        match child_result {
-            Ok(mut child_model) => {
-                analyzer::analyze(&mut child_model, child_path_str);
-
-                if !analyzer::can_generate_static(&child_model) {
-                    generate_kotlin_child_stub(&child_name, &parent_package, &child_class, &output_dir);
-                    continue;
-                }
-
-                resolve_source_path(&mut child_model, &path);
-
-                match sce_build::generator::generate_kotlin(&child_model, template_dir) {
-                    Ok(code) => {
-                        let child_sm_file = output_dir.join(format!("{child_name}Sm.kt"));
-                        // Fix package: child SM must be in same package as parent
-                        let child_package = child_name.to_lowercase();
-                        let fixed_code = code.replace(
-                            &format!("package com.sce.generated.{child_package}"),
-                            &format!("package com.sce.generated.{parent_package}"),
-                        );
-                        write_if_changed(&child_sm_file, &fixed_code);
-                    }
-                    Err(_) => {
-                        generate_kotlin_child_stub(&child_name, &parent_package, &child_class, &output_dir);
-                    }
-                }
-            }
-            Err(_) => {
-                generate_kotlin_child_stub(&child_name, &parent_package, &child_class, &output_dir);
-            }
-        }
-    }
-}
-
-/// Generate a no-op stub for a child SM that failed codegen.
-fn generate_kotlin_child_stub(child_name: &str, parent_package: &str, child_class: &str, output_dir: &Path) {
-    let stub = format!(
-        "// GENERATED STUB -- child codegen failed (no-op)\n\
-         package com.sce.generated.{parent_package}\n\n\
-         import com.sce.runtime.*\n\n\
-         sealed interface {child_class}State : State {{\n\
-         \x20   data object Initial : {child_class}State\n\
-         }}\n\
-         sealed interface {child_class}Event : Event\n\n\
-         class {child_class}StateMachine(\n\
-         \x20   scriptEngine: ScxmlScriptEngine? = null\n\
-         ) : StateMachineEngine<{child_class}State, {child_class}Event>(scriptEngine) {{\n\
-         \x20   override val initialState = {child_class}State.Initial\n\
-         \x20   override fun processEvent(state: {child_class}State, event: {child_class}Event) = TransitionResult.Ignored as TransitionResult<{child_class}State>\n\
-         \x20   override fun onEntry(state: {child_class}State) {{}}\n\
-         \x20   override fun onExit(state: {child_class}State) {{}}\n\
-         \x20   override fun executeTransitionActions(source: {child_class}State, event: {child_class}Event?) {{}}\n\
-         }}\n"
-    );
-    let child_sm_file = output_dir.join(format!("{child_name}Sm.kt"));
-    write_if_changed(&child_sm_file, &stub);
-}
-
 /// Detect pass state from analyzed model.
 fn detect_pass_state(model: &SCXMLModel) -> Option<String> {
     let final_states: Vec<&str> = model
@@ -900,341 +609,228 @@ fn action_uses_http_send(actions: &[sce_build::model::Action]) -> bool {
     false
 }
 
-/// Generate Kotlin JUnit5 test class for a W3C test.
-fn generate_kotlin_test_class(
-    test_id: &str,
-    metadata: &TestMetadata,
-    test_type: &str,
-    needs_script_engine: bool,
-    pass_state: &str,
-    uses_http: bool,
-    test_output_dir: &Path,
-) -> bool {
-    let sm_class = format!("Test{}", to_pascal_case(test_id));
-    let sm_package = format!("test{test_id}");
+// ── W3cBackend Trait ───────────────────────────────────────────
 
-    // W3C SCXML C.2: HTTP tests use W3CHttpTestBase only when SM actually uses performHttpSend()
-    let is_http = test_type == "HTTP" && uses_http;
-    let base_class = if is_http { "W3CHttpTestBase" } else { "W3CTestBase" };
+/// Trait abstracting language-specific W3C test generation behavior.
+/// Each backend implements language-specific SM generation, test file creation,
+/// child processing, and cleanup logic.
+trait W3cBackend {
+    /// Human-readable language name for summary output.
+    fn language_name(&self) -> &str;
 
-    // W3C SCXML 6.2: SCHEDULED tests need longer timeout
-    let timeout_override = if test_type == "SCHEDULED" {
-        "    override val timeoutMs: Long = 5000L\n"
-    } else {
-        ""
-    };
+    /// Base directory for generated state machine code.
+    fn sm_output_base(&self) -> &Path;
 
-    let create_sm = if needs_script_engine {
-        format!("    override fun createStateMachine() = {sm_class}StateMachine(createEngine())\n")
-    } else {
-        format!("    override fun createStateMachine() = {sm_class}StateMachine()\n")
-    };
+    /// Directory for generated test files (may differ from sm_output_base).
+    fn test_output_dir(&self) -> &Path;
 
-    let content = format!(
-        "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
-         package com.sce.w3c\n\
-         \n\
-         import com.sce.generated.{sm_package}.{sm_class}Event\n\
-         import com.sce.generated.{sm_package}.{sm_class}State\n\
-         import com.sce.generated.{sm_package}.{sm_class}StateMachine\n\
-         import org.junit.jupiter.api.DisplayName\n\
-         \n\
-         // W3C SCXML {specnum}: {description}\n\
-         @DisplayName(\"Test {test_id} -- W3C SCXML {specnum}\")\n\
-         class {sm_class} : {base_class}<{sm_class}State, {sm_class}Event>() {{\n\
-         {create_sm}\
-         \x20   override val expectedPassState: {sm_class}State = {sm_class}State.{pass_state}\n\
-         {timeout_override}\
-         }}\n",
-        specnum = metadata.specnum,
-        description = metadata.description,
-    );
+    /// Generate SM code. Returns Vec of (filename, code) pairs.
+    /// C++ returns .h + .inl, others return one file.
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String>;
 
-    fs::create_dir_all(test_output_dir).ok();
-    let test_file = test_output_dir.join(format!("{sm_class}.kt"));
-    write_if_changed(&test_file, &content);
-    true
+    /// Hook after writing parent SM (e.g. Rust writes mod.rs).
+    fn post_write_parent(&self, _test_id: &str, _test_mod_dir: &Path, _input_stem: &str) {}
+
+    /// Process a successfully generated child SM: fix package, register module, etc.
+    fn process_child(&self, test_id: &str, child_name: &str, code: String, test_mod_dir: &Path);
+
+    /// Handle a child that failed codegen (Kotlin generates stubs, others skip).
+    fn process_child_failure(&self, _test_id: &str, _child_name: &str, _test_mod_dir: &Path) {}
+
+    /// Generate test file content. Default returns empty (C++ uses CMake-managed test headers).
+    fn generate_test_file(
+        &self,
+        _test_id: &str,
+        _input_stem: &str,
+        _machine_name: &str,
+        _pass_state: &str,
+        _needs_script: bool,
+        _uses_http: bool,
+        _test_type: &str,
+        _metadata: &TestMetadata,
+    ) -> String { String::new() }
+
+    /// Test filename (relative to test_output_dir or test_mod_dir).
+    /// Default returns empty (backends that generate test files must override).
+    fn test_filename(&self, _test_id: &str, _input_stem: &str) -> String { String::new() }
+
+    /// Test file lives in test_mod_dir (Go) vs test_output_dir (Rust, Kotlin).
+    fn test_in_sm_dir(&self) -> bool { false }
+
+    /// Whether this backend writes SM files into per-test subdirectories (testNNN/).
+    /// C++ writes to a flat output directory; others use subdirectories.
+    fn uses_per_test_subdirs(&self) -> bool { true }
+
+    /// Whether this backend generates test files alongside SM code.
+    /// C++ test headers are managed by CMake, not by sce-codegen.
+    fn generates_test_files(&self) -> bool { true }
+
+    /// Called after main loop to write module indices (Rust writes root mod.rs).
+    fn finalize(&self, _generated_ids: &[String]) {}
+
+    /// Clean all generated files.
+    fn clean(&self);
+
+    /// Clean stale generated files for tests no longer in registry.
+    /// Returns number of stale entries removed. Default is no-op.
+    fn clean_stale(&self, _valid_ids: &BTreeSet<String>) -> usize { 0 }
+
+    /// Child name matching for the standard naming convention.
+    /// Default checks: test{num_prefix}_, test{num_prefix}sub, test{test_id}_
+    fn child_name_matches(&self, child_name: &str, test_id: &str, num_prefix: &str) -> bool {
+        child_name.starts_with(&format!("test{num_prefix}_"))
+            || child_name.starts_with(&format!("test{num_prefix}sub"))
+            || child_name.starts_with(&format!("test{test_id}_"))
+    }
+
+    /// Check if parent code references this child. Default checks Policy, State, StateMachine.
+    fn parent_references_child(&self, parent_code: &str, child_machine: &str) -> bool {
+        parent_code.contains(&format!("{child_machine}Policy"))
+            || parent_code.contains(&format!("{child_machine}State"))
+            || parent_code.contains(&format!("{child_machine}StateMachine"))
+    }
 }
 
-/// Clean stale generated files for tests no longer in registry.
-fn clean_stale_kotlin(sm_output_base: &Path, test_output_dir: &Path, valid_ids: &BTreeSet<String>) -> usize {
-    let mut removed = 0;
+// ── Shared Utilities for W3C Generation ────────────────────────
 
-    // Clean stale SM directories
-    if sm_output_base.exists() {
-        for entry in fs::read_dir(sm_output_base).into_iter().flatten().flatten() {
-            if !entry.path().is_dir() {
-                continue;
-            }
-            let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with("test") {
-                continue;
-            }
-            let dir_test_id = &name[4..]; // strip "test" prefix
-            if !valid_ids.contains(dir_test_id) {
-                fs::remove_dir_all(entry.path()).ok();
-                println!("  Removed stale SM dir: {name}");
-                removed += 1;
-            }
-        }
-    }
-
-    // Clean stale test classes
-    if test_output_dir.exists() {
-        let valid_lower: BTreeSet<String> = valid_ids.iter().map(|s| s.to_lowercase()).collect();
-        for entry in fs::read_dir(test_output_dir).into_iter().flatten().flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if !name.starts_with("Test") || !name.ends_with(".kt") {
-                continue;
-            }
-            if name == "W3CTestBase.kt" || name == "W3CHttpTestBase.kt" {
-                continue;
-            }
-            let stem = &name[..name.len() - 3]; // strip ".kt"
-            let file_test_id = &stem[4..]; // strip "Test"
-            if !valid_ids.contains(file_test_id) && !valid_lower.contains(&file_test_id.to_lowercase()) {
-                fs::remove_file(entry.path()).ok();
-                println!("  Removed stale test: {name}");
-                removed += 1;
-            }
-        }
-    }
-
-    removed
-}
-
-// ── C++ W3C Generation ──────────────────────────────────────────
-
-fn generate_w3c_cpp(
-    project_root: &Path,
-    resources_dir: &Path,
-    cmake_file: &Path,
-    single_test: Option<&str>,
-    clean: bool,
-    list: bool,
-) {
-    let output_dir = project_root.join("build/tests/w3c_static_generated");
-    let cmake_tests = parse_cmake_tests(cmake_file);
-    let template_dir = sce_build::find_template_dir_for(Language::Cpp);
-
-    if clean {
-        if output_dir.exists() {
-            fs::remove_dir_all(&output_dir).ok();
-            println!("Cleaned: {}", output_dir.display());
-        }
-        return;
-    }
-
-    if list {
-        println!("C++ test registry: {} tests", cmake_tests.len());
-        for (tid, info) in &cmake_tests {
-            let scxml = find_scxml(resources_dir, tid);
-            let status = if scxml.is_some() { "OK" } else { "MISSING" };
-            println!("  {tid:6} [{:9}] {status} -- {}", info.type_str(), info.comment);
-        }
-        return;
-    }
-
-    fs::create_dir_all(&output_dir).unwrap_or_else(|e| {
-        eprintln!("Cannot create output directory: {e}");
-        std::process::exit(1);
-    });
-
-    let test_ids: Vec<String> = if let Some(tid) = single_test {
-        vec![tid.to_string()]
-    } else {
-        cmake_tests.keys().cloned().collect()
-    };
-
-    let mut generated = 0;
-    let mut failed = 0;
-
-    for test_id in &test_ids {
-        let scxml_path = match find_scxml(resources_dir, test_id) {
-            Some(p) => p,
-            None => {
-                eprintln!("  SCXML not found for test {test_id}");
-                failed += 1;
-                continue;
-            }
-        };
-
-        let mut parser = SCXMLParser::new();
-        let scxml_str = scxml_path.to_str().unwrap_or("");
-        match parser.parse_file(scxml_str) {
-            Ok(mut model) => {
-                analyzer::analyze(&mut model, scxml_str);
-                if !analyzer::can_generate_static(&model) {
-                    eprintln!("  Cannot generate static code for test {test_id}");
-                    failed += 1;
-                    continue;
-                }
-
-                resolve_source_path(&mut model, &scxml_path);
-
-                let input_stem = scxml_path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
-                match sce_build::generator::generate_cpp(&model, &template_dir, input_stem) {
-                    Ok(output) => {
-                        for (filename, code) in &output.files {
-                            let file_path = output_dir.join(filename);
-                            write_if_changed(&file_path, code);
-                            println!("  Generated: {filename}");
-                        }
-                        generated += 1;
-                    }
-                    Err(e) => {
-                        eprintln!("  C++ codegen failed for test {test_id}: {e}");
-                        failed += 1;
-                    }
+/// Collect child SCXML files from both resource dir AND output dir (for hybrid stubs).
+/// Returns deduplicated, sorted paths.
+fn collect_child_scxml_entries(resource_dir: &Path, output_dir: &Path) -> Vec<PathBuf> {
+    let mut seen = BTreeSet::new();
+    let mut entries = Vec::new();
+    for dir in [resource_dir, output_dir] {
+        for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("scxml") {
+                let name = path.file_name().unwrap().to_string_lossy().to_string();
+                if seen.insert(name) {
+                    entries.push(path);
                 }
             }
-            Err(e) => {
-                eprintln!("  Parse error for test {test_id}: {e}");
-                failed += 1;
-            }
         }
     }
-
-    println!("\nC++ W3C Generation: {generated} generated, {failed} failed");
-    if failed > 0 {
-        std::process::exit(1);
-    }
+    entries.sort();
+    entries
 }
 
-// ── Go child SM generation ────────────────────────────────────
-
-/// Generate child state machines for Go invoke tests.
-/// Port of generate_kotlin_child_sms() adapted for Go package conventions.
-fn generate_go_child_sms(
+/// Unified child SM generation for all backends.
+/// Handles: child discovery (resource + output dir), filtering by naming convention,
+/// parent code reference check (direct or hybrid), parse + analyze + generate,
+/// and backend-specific post-processing.
+fn generate_child_sms(
+    backend: &dyn W3cBackend,
     test_id: &str,
     scxml_path: &Path,
-    test_dir: &Path,
-    template_dir: &Path,
+    test_mod_dir: &Path,
     parent_code: &str,
 ) {
     let resource_dir = scxml_path.parent().unwrap_or(Path::new("."));
     let parent_stem = scxml_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-    let parent_package = format!("test{test_id}");
     let num_prefix = extract_num_prefix(test_id);
 
-    // Find child SCXML files in the resource directory
-    let entries = match fs::read_dir(resource_dir) {
-        Ok(e) => e,
-        Err(_) => return,
-    };
+    // Track used hybrid names to handle multiple hybrid children (hybrid0, hybrid1, etc.)
+    let mut used_hybrid_names = BTreeSet::new();
 
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("scxml") {
-            continue;
-        }
+    for path in collect_child_scxml_entries(resource_dir, test_mod_dir) {
         let child_name = match path.file_stem().and_then(|s| s.to_str()) {
             Some(n) => n.to_string(),
             None => continue,
         };
 
-        // Skip parent itself
         if child_name == parent_stem {
             continue;
         }
 
-        // Match: test191_child0, test226sub1, test338_machineName, etc.
-        if !child_name.starts_with(&format!("test{num_prefix}_"))
-            && !child_name.starts_with(&format!("test{num_prefix}sub"))
-            && !child_name.starts_with(&format!("test{test_id}_"))
-        {
+        if !backend.child_name_matches(&child_name, test_id, &num_prefix) {
             continue;
         }
 
-        // Check if parent SM references this child's type directly
+        // Determine effective name: direct reference or hybrid name mapping.
+        // Direct: parent code contains "{ChildMachine}Policy" or "{ChildMachine}StateMachine"
+        // Hybrid: parent code contains "Hybrid" and we find the next unused testNNN_hybridM name
         let child_machine = to_pascal_case(&child_name);
-        let is_directly_referenced = parent_code.contains(&format!("{child_machine}Policy"))
-            || parent_code.contains(&format!("{child_machine}State"));
-
-        // Also check if this is a hybrid invoke child (named as testNNN_hybridM)
-        // For hybrid invokes, the SCXML name might not match — we need to find the right mapping
-        // by checking if any hybrid invoke references this file via srcexpr
-        let is_hybrid_child = !is_directly_referenced && parent_code.contains("Hybrid");
-
-        if !is_directly_referenced && !is_hybrid_child {
-            continue;
-        }
-
-        // For hybrid children, rename to match the expected hybrid name
-        let (effective_child_name, effective_child_machine) = if is_directly_referenced {
-            (child_name.clone(), child_machine.clone())
+        let effective_name = if backend.parent_references_child(parent_code, &child_machine) {
+            child_name.clone()
         } else {
-            // Find the hybrid index by checking which hybrid type is referenced
-            let mut found = None;
-            for i in 0..10 {
-                let hybrid_name = format!("test{num_prefix}_hybrid{i}");
-                let hybrid_machine = to_pascal_case(&hybrid_name);
-                if parent_code.contains(&format!("{hybrid_machine}Policy")) {
-                    found = Some((hybrid_name, hybrid_machine));
-                    break;
+            match find_next_hybrid_name(parent_code, &num_prefix, &used_hybrid_names) {
+                Some(name) => {
+                    used_hybrid_names.insert(name.clone());
+                    name
                 }
-            }
-            match found {
-                Some(f) => f,
                 None => continue,
             }
         };
 
-        // Parse and generate child SM
+        // Parse + analyze + generate child SM
         let mut parser = SCXMLParser::new();
-        let child_path_str = path.to_str().unwrap_or("");
-        match parser.parse_file(child_path_str) {
+        let child_str = path.to_str().unwrap_or("");
+        match parser.parse_file(child_str) {
             Ok(mut child_model) => {
-                analyzer::analyze(&mut child_model, child_path_str);
-                resolve_source_path(&mut child_model, &path);
+                analyzer::analyze(&mut child_model, child_str);
 
-                // Override the model name for hybrid children so types match parent expectations
-                if effective_child_name != child_name {
-                    child_model.name = effective_child_name.clone();
+                if !analyzer::can_generate_static(&child_model) {
+                    backend.process_child_failure(test_id, &effective_name, test_mod_dir);
+                    continue;
                 }
 
-                match sce_build::generator::generate_go(&child_model, template_dir) {
-                    Ok(code) => {
-                        // Fix package name to match parent's package
-                        let child_pkg = sce_build::filters::to_snake_case(child_model.name.clone());
-                        let fixed_code = code.replace(
-                            &format!("package {child_pkg}"),
-                            &format!("package {parent_package}"),
-                        );
-                        let child_file = test_dir.join(format!("{effective_child_name}_sm.go"));
-                        write_if_changed(&child_file, &fixed_code);
+                resolve_source_path(&mut child_model, &path);
+
+                // Override model name for hybrid children so generated types match parent
+                if effective_name != child_name {
+                    child_model.name = effective_name.clone();
+                }
+
+                match backend.generate_sm(&child_model, &effective_name) {
+                    Ok(files) => {
+                        // Child SM always produces a single file; use the code from the first entry
+                        if let Some((_, code)) = files.into_iter().next() {
+                            backend.process_child(test_id, &effective_name, code, test_mod_dir);
+                        }
                     }
-                    Err(e) => {
-                        eprintln!("  Go child codegen failed for {child_name}: {e}");
+                    Err(_) => {
+                        backend.process_child_failure(test_id, &effective_name, test_mod_dir);
                     }
                 }
             }
-            Err(e) => {
-                eprintln!("  Go child parse error for {child_name}: {e}");
+            Err(_) => {
+                backend.process_child_failure(test_id, &effective_name, test_mod_dir);
             }
         }
     }
 }
 
-// ── Go W3C Generation ──────────────────────────────────────────
+/// Find the next unused hybrid invoke name (e.g. "test191_hybrid0") referenced by parent code.
+/// Scans for testNNN_hybrid0..testNNN_hybrid9, skipping names already in `used`.
+fn find_next_hybrid_name(parent_code: &str, num_prefix: &str, used: &BTreeSet<String>) -> Option<String> {
+    if !parent_code.contains("Hybrid") {
+        return None;
+    }
+    for i in 0..10 {
+        let hybrid_name = format!("test{num_prefix}_hybrid{i}");
+        if used.contains(&hybrid_name) {
+            continue;
+        }
+        let hybrid_machine = to_pascal_case(&hybrid_name);
+        if parent_code.contains(&format!("{hybrid_machine}Policy"))
+            || parent_code.contains(&format!("{hybrid_machine}StateMachine"))
+        {
+            return Some(hybrid_name);
+        }
+    }
+    None
+}
 
-fn generate_w3c_go(
-    project_root: &Path,
+/// The single unified W3C test generation loop shared by all backends.
+fn generate_w3c_unified(
+    backend: &dyn W3cBackend,
     resources_dir: &Path,
     cmake_file: &Path,
     single_test: Option<&str>,
     clean: bool,
     list: bool,
 ) {
-    let tests_module = project_root.join("sce-go-tests");
-    let generated_dir = tests_module.join("generated");
-    let template_dir = sce_build::find_template_dir_for(Language::Go);
-
     if clean {
-        if generated_dir.exists() {
-            fs::remove_dir_all(&generated_dir).ok();
-            println!("Cleaned: {}", generated_dir.display());
-        }
+        backend.clean();
         return;
     }
 
@@ -1279,7 +875,7 @@ fn generate_w3c_go(
             Ok(mut model) => {
                 analyzer::analyze(&mut model, scxml_str);
 
-                // W3C SCXML 5.8: document_rejected models have initial→pass already
+                // W3C SCXML 5.8: document_rejected models have initial->pass already
                 // redirected by the parser, so they CAN be generated. Only skip
                 // truly dynamic models.
                 if !analyzer::can_generate_static(&model) && !model.document_rejected {
@@ -1291,42 +887,76 @@ fn generate_w3c_go(
 
                 let input_stem = scxml_path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
 
-                match sce_build::generator::generate_go(&model, &template_dir) {
-                    Ok(code) => {
-                        let test_dir = generated_dir.join(format!("test{test_id}"));
-                        fs::create_dir_all(&test_dir).unwrap_or_else(|e| {
+                match backend.generate_sm(&model, input_stem) {
+                    Ok(files) => {
+                        // Determine write directory: per-test subdir or flat output dir
+                        let test_mod_dir = if backend.uses_per_test_subdirs() {
+                            backend.sm_output_base().join(format!("test{test_id}"))
+                        } else {
+                            backend.sm_output_base().to_path_buf()
+                        };
+                        fs::create_dir_all(&test_mod_dir).unwrap_or_else(|e| {
                             eprintln!("Cannot create dir: {e}");
                             std::process::exit(1);
                         });
 
-                        let sm_file = test_dir.join(format!("{input_stem}_sm.go"));
-                        write_if_changed(&sm_file, &code);
+                        // Collect parent code for child reference checking
+                        let parent_code: String = files.iter().map(|(_, c)| c.as_str()).collect::<Vec<_>>().join("\n");
 
-                        // W3C SCXML 6.4: Generate child state machines for invoke tests
-                        generate_go_child_sms(test_id, &scxml_path, &test_dir, &template_dir, &code);
+                        // Write SM files
+                        for (filename, code) in &files {
+                            let file_path = test_mod_dir.join(filename);
+                            write_if_changed(&file_path, code);
+                        }
 
-                        // Detect pass state and generate test file
-                        let pass_state = detect_pass_state(&model);
-                        if let Some(ref pass) = pass_state {
-                            let metadata = read_metadata(resources_dir, test_id);
-                            let test_type = cmake_tests.get(test_id.as_str()).map(|i| i.test_type.as_str()).unwrap_or("SIMPLE");
-                            let uses_http = model_uses_http_send(&model);
-                            let needs_script = model.needs_script_engine;
-                            let machine = to_pascal_case(input_stem);
+                        // Post-write hook (e.g. Rust writes initial mod.rs)
+                        backend.post_write_parent(test_id, &test_mod_dir, input_stem);
 
-                            let test_code = generate_go_test_file(
-                                test_id, input_stem, &machine, pass, needs_script, uses_http, test_type, &metadata,
-                            );
-                            let test_file = test_dir.join(format!("{input_stem}_test.go"));
-                            write_if_changed(&test_file, &test_code);
+                        // W3C SCXML 6.4: Generate hybrid SCXML stubs + child state machines
+                        // (only for backends that use per-test subdirs; C++ handles children via CMake)
+                        if backend.uses_per_test_subdirs() {
+                            generate_hybrid_child_scxmls(&model, &scxml_path, &test_mod_dir);
+                            generate_child_sms(backend, test_id, &scxml_path, &test_mod_dir, &parent_code);
+                        }
 
-                            if needs_script {
+                        // Detect pass state and generate test file (if backend supports it)
+                        if backend.generates_test_files() {
+                            let pass_state = detect_pass_state(&model);
+                            if let Some(ref pass) = pass_state {
+                                let machine = to_pascal_case(input_stem);
+                                let metadata = read_metadata(resources_dir, test_id);
+                                let test_type = cmake_tests.get(test_id.as_str()).map(|i| i.test_type.as_str()).unwrap_or("SIMPLE");
+                                let uses_http = model_uses_http_send(&model);
+                                let needs_script = model.needs_script_engine;
+
+                                let test_code = backend.generate_test_file(
+                                    test_id, input_stem, &machine, pass, needs_script, uses_http, test_type, &metadata,
+                                );
+                                let test_filename = backend.test_filename(test_id, input_stem);
+                                let test_file_dir = if backend.test_in_sm_dir() {
+                                    &test_mod_dir
+                                } else {
+                                    backend.test_output_dir()
+                                };
+                                let test_file = test_file_dir.join(&test_filename);
+                                fs::create_dir_all(test_file_dir).ok();
+                                write_if_changed(&test_file, &test_code);
+
+                                if needs_script {
+                                    generated_script.push(test_id.clone());
+                                } else {
+                                    generated_static.push(test_id.clone());
+                                }
+                            } else {
+                                failed.push((test_id.clone(), "pass state not detected".to_string()));
+                            }
+                        } else {
+                            // Backend doesn't generate test files (C++); count as generated
+                            if model.needs_script_engine {
                                 generated_script.push(test_id.clone());
                             } else {
                                 generated_static.push(test_id.clone());
                             }
-                        } else {
-                            failed.push((test_id.clone(), "pass state not detected".to_string()));
                         }
                     }
                     Err(e) => {
@@ -1340,16 +970,35 @@ fn generate_w3c_go(
         }
     }
 
+    // Clean stale files (backends that override clean_stale, e.g. Kotlin)
+    let mut stale_removed = 0;
+    if single_test.is_none() {
+        let valid_ids: BTreeSet<String> = generated_static.iter().chain(generated_script.iter()).cloned().collect();
+        if !valid_ids.is_empty() {
+            stale_removed = backend.clean_stale(&valid_ids);
+        }
+    }
+
+    // Finalize (Rust writes root mod.rs)
+    if single_test.is_none() {
+        let mut all_ids: Vec<String> = generated_static.iter().chain(generated_script.iter()).cloned().collect();
+        all_ids.sort_by(|a, b| a.len().cmp(&b.len()).then_with(|| a.cmp(b)));
+        backend.finalize(&all_ids);
+    }
+
     // Summary
     let total_generated = generated_static.len() + generated_script.len();
     println!("\n{}", "=".repeat(60));
-    println!("Go W3C Test Generation Summary");
+    println!("{} W3C Test Generation Summary", backend.language_name());
     println!("{}", "=".repeat(60));
     println!("  Generated (pure static):    {}", generated_static.len());
     println!("  Generated (script engine):  {}", generated_script.len());
     println!("  Generated (total):          {total_generated}");
     println!("  Skipped:                    {}", skipped.len());
     println!("  Failed:                     {}", failed.len());
+    if stale_removed > 0 {
+        println!("  Stale removed:              {stale_removed}");
+    }
     println!("  Total:                      {}", test_ids.len());
 
     if !skipped.is_empty() {
@@ -1367,7 +1016,14 @@ fn generate_w3c_go(
     }
 
     if total_generated > 0 {
-        println!("\nGenerated files: {}", generated_dir.display());
+        println!("\nGenerated SM classes: {}", backend.sm_output_base().display());
+        if !backend.test_in_sm_dir() {
+            println!("Generated test classes: {}", backend.test_output_dir().display());
+        }
+        println!("\nGenerated test IDs (static): {}", generated_static.join(" "));
+        if !generated_script.is_empty() {
+            println!("Generated test IDs (script): {}", generated_script.join(" "));
+        }
     }
 
     if !failed.is_empty() {
@@ -1375,65 +1031,484 @@ fn generate_w3c_go(
     }
 }
 
-/// Generate Go test file for a W3C test.
-fn generate_go_test_file(
-    test_id: &str,
-    _input_stem: &str,
-    machine_name: &str,
-    pass_state: &str,
-    needs_script: bool,
-    uses_http: bool,
-    test_type: &str,
-    metadata: &TestMetadata,
-) -> String {
-    let is_http = test_type == "HTTP" && uses_http;
-    let timeout = if test_type == "SCHEDULED" { "5 * time.Second" } else { "3 * time.Second" };
+// ── RustBackend ────────────────────────────────────────────────
 
-    let engine_setup = if needs_script {
+struct RustBackend {
+    sm_base: PathBuf,
+    test_dir: PathBuf,
+    tmpl_dir: PathBuf,
+}
+
+impl RustBackend {
+    fn new(project_root: &Path) -> Self {
+        let tests_crate = project_root.join("sce-rust-tests");
+        Self {
+            sm_base: tests_crate.join("src/generated"),
+            test_dir: tests_crate.join("tests"),
+            tmpl_dir: sce_build::find_template_dir_for(Language::Rust),
+        }
+    }
+}
+
+impl W3cBackend for RustBackend {
+    fn language_name(&self) -> &str { "Rust" }
+    fn sm_output_base(&self) -> &Path { &self.sm_base }
+    fn test_output_dir(&self) -> &Path { &self.test_dir }
+
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
+        let code = sce_build::generator::generate(model, &self.tmpl_dir)?;
+        Ok(vec![(format!("{input_stem}_sm.rs"), code)])
+    }
+
+    fn post_write_parent(&self, _test_id: &str, test_mod_dir: &Path, input_stem: &str) {
+        let mod_content = format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\n\
+             #[allow(dead_code, unused_variables, unused_imports, clippy::all)]\n\
+             mod {input_stem}_sm;\n\
+             pub use {input_stem}_sm::*;\n"
+        );
+        write_if_changed(&test_mod_dir.join("mod.rs"), &mod_content);
+    }
+
+    fn process_child(&self, _test_id: &str, child_name: &str, code: String, test_mod_dir: &Path) {
+        let child_sm_file = test_mod_dir.join(format!("{child_name}_sm.rs"));
+        write_if_changed(&child_sm_file, &code);
+
+        // Add child module to the test's mod.rs
+        let mod_file = test_mod_dir.join("mod.rs");
+        if let Ok(existing) = fs::read_to_string(&mod_file) {
+            if !existing.contains(&format!("mod {child_name}_sm;")) {
+                let addition = format!(
+                    "#[allow(dead_code, unused_variables, unused_imports, clippy::all)]\n\
+                     mod {child_name}_sm;\n\
+                     pub use {child_name}_sm::*;\n"
+                );
+                write_if_changed(&mod_file, &format!("{existing}{addition}"));
+            }
+        }
+    }
+
+    fn generate_test_file(
+        &self,
+        test_id: &str,
+        _input_stem: &str,
+        machine_name: &str,
+        pass_state: &str,
+        needs_script: bool,
+        _uses_http: bool,
+        test_type: &str,
+        _metadata: &TestMetadata,
+    ) -> String {
+        let timeout_secs = if test_type == "SCHEDULED" || test_type == "HTTP" { 5 } else { 3 };
+        let lua_register = if needs_script {
+            "    let _ = sce_rust_lua::register();\n"
+        } else {
+            ""
+        };
+        let pass_variant = to_pascal_case(pass_state);
+
         format!(
-            "\tpolicy := New{machine_name}Policy()\n\
-             \tpolicy.SessionID = sce.GenerateSessionID()\n\
-             \tscegotest.RegisterLuaEngine()\n\
-             \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             use std::time::Duration;\n\
+             \n\
+             #[test]\n\
+             fn test_{test_id}() {{\n\
+             {lua_register}\
+             \x20   let policy = sce_rust_tests::generated::test{test_id}::{machine_name}Policy::new();\n\
+             \x20   let mut engine = sce_rust_runtime::Engine::new(policy);\n\
+             \x20   engine.initialize();\n\
+             \x20   let completed = engine.run_until_completion(\n\
+             \x20       Duration::from_secs({timeout_secs}),\n\
+             \x20       Duration::from_millis(10),\n\
+             \x20   );\n\
+             \x20   assert!(completed, \"Test {test_id} timed out\");\n\
+             \x20   assert_eq!(\n\
+             \x20       engine.get_current_state(),\n\
+             \x20       sce_rust_tests::generated::test{test_id}::{machine_name}State::{pass_variant},\n\
+             \x20       \"Test {test_id} reached wrong final state\"\n\
+             \x20   );\n\
+             }}\n"
         )
-    } else {
+    }
+
+    fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
+        format!("test_{test_id}.rs")
+    }
+
+    fn finalize(&self, generated_ids: &[String]) {
+        if generated_ids.is_empty() {
+            return;
+        }
+        let mut mod_lines = vec![
+            "// GENERATED -- DO NOT EDIT (sce-codegen)".to_string(),
+            format!("//! Generated W3C SCXML conformance test state machines ({} tests).\n", generated_ids.len()),
+        ];
+        for id in generated_ids {
+            mod_lines.push(format!("pub mod test{id};"));
+        }
+        mod_lines.push(String::new());
+        write_if_changed(&self.sm_base.join("mod.rs"), &mod_lines.join("\n"));
+    }
+
+    fn clean(&self) {
+        // Remove generated dirs but not handcrafted files
+        for entry in fs::read_dir(&self.sm_base).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() && path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.starts_with("test")) {
+                fs::remove_dir_all(&path).ok();
+            }
+        }
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("test_") && name.ends_with(".rs") {
+                    fs::remove_file(&path).ok();
+                }
+            }
+        }
+        println!("Cleaned Rust generated files");
+    }
+}
+
+// ── GoBackend ──────────────────────────────────────────────────
+
+struct GoBackend {
+    sm_base: PathBuf,
+    tmpl_dir: PathBuf,
+}
+
+impl GoBackend {
+    fn new(project_root: &Path) -> Self {
+        let tests_module = project_root.join("sce-go-tests");
+        Self {
+            sm_base: tests_module.join("generated"),
+            tmpl_dir: sce_build::find_template_dir_for(Language::Go),
+        }
+    }
+}
+
+impl W3cBackend for GoBackend {
+    fn language_name(&self) -> &str { "Go" }
+    fn sm_output_base(&self) -> &Path { &self.sm_base }
+    fn test_output_dir(&self) -> &Path { &self.sm_base } // Go tests live in sm dir
+
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
+        let code = sce_build::generator::generate_go(model, &self.tmpl_dir)?;
+        Ok(vec![(format!("{input_stem}_sm.go"), code)])
+    }
+
+    fn process_child(&self, test_id: &str, child_name: &str, code: String, test_mod_dir: &Path) {
+        let parent_package = format!("test{test_id}");
+        let child_pkg = sce_build::filters::to_snake_case(child_name.to_string());
+        let fixed_code = code.replace(
+            &format!("package {child_pkg}"),
+            &format!("package {parent_package}"),
+        );
+        let child_file = test_mod_dir.join(format!("{child_name}_sm.go"));
+        write_if_changed(&child_file, &fixed_code);
+    }
+
+    fn generate_test_file(
+        &self,
+        test_id: &str,
+        _input_stem: &str,
+        machine_name: &str,
+        pass_state: &str,
+        needs_script: bool,
+        uses_http: bool,
+        test_type: &str,
+        metadata: &TestMetadata,
+    ) -> String {
+        let is_http = test_type == "HTTP" && uses_http;
+        let timeout = if test_type == "SCHEDULED" { "5 * time.Second" } else { "3 * time.Second" };
+
+        let engine_setup = if needs_script {
+            format!(
+                "\tpolicy := New{machine_name}Policy()\n\
+                 \tpolicy.SessionID = sce.GenerateSessionID()\n\
+                 \tscegotest.RegisterLuaEngine()\n\
+                 \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
+            )
+        } else {
+            format!(
+                "\tpolicy := New{machine_name}Policy()\n\
+                 \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
+            )
+        };
+
+        let http_setup = if is_http {
+            "\n\tengine.EnableHTTPLoopback()\n"
+        } else {
+            ""
+        };
+
         format!(
-            "\tpolicy := New{machine_name}Policy()\n\
-             \tengine := sce.NewEngine[{machine_name}State, {machine_name}Event](&policy)"
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             // W3C SCXML {specnum}: {description}\n\
+             package test{test_id}\n\
+             \n\
+             import (\n\
+             \t\"testing\"\n\
+             \t\"time\"\n\
+             \n\
+             \tsce \"github.com/newmassrael/sce-go-runtime\"\n\
+             \tscegotest \"github.com/newmassrael/sce-go-tests/harness\"\n\
+             )\n\
+             \n\
+             func TestW3C{test_id}(t *testing.T) {{\n\
+             {engine_setup}{http_setup}\n\
+             \tengine.Initialize()\n\
+             \tcompleted := engine.RunUntilCompletion({timeout}, 10*time.Millisecond)\n\
+             \tif !completed {{\n\
+             \t\tt.Fatalf(\"Test {test_id} timed out\")\n\
+             \t}}\n\
+             \tscegotest.AssertFinalState(t, engine.GetCurrentState(), {machine_name}State{pass_state}, \"{test_id}\")\n\
+             }}\n",
+            specnum = metadata.specnum,
+            description = metadata.description,
         )
-    };
+    }
 
-    let http_setup = if is_http {
-        "\n\tengine.EnableHTTPLoopback()\n"
-    } else {
-        ""
-    };
+    fn test_filename(&self, _test_id: &str, input_stem: &str) -> String {
+        format!("{input_stem}_test.go")
+    }
 
-    format!(
-        "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
-         // W3C SCXML {specnum}: {description}\n\
-         package test{test_id}\n\
-         \n\
-         import (\n\
-         \t\"testing\"\n\
-         \t\"time\"\n\
-         \n\
-         \tsce \"github.com/newmassrael/sce-go-runtime\"\n\
-         \tscegotest \"github.com/newmassrael/sce-go-tests/harness\"\n\
-         )\n\
-         \n\
-         func TestW3C{test_id}(t *testing.T) {{\n\
-         {engine_setup}{http_setup}\n\
-         \tengine.Initialize()\n\
-         \tcompleted := engine.RunUntilCompletion({timeout}, 10*time.Millisecond)\n\
-         \tif !completed {{\n\
-         \t\tt.Fatalf(\"Test {test_id} timed out\")\n\
-         \t}}\n\
-         \tscegotest.AssertFinalState(t, engine.GetCurrentState(), {machine_name}State{pass_state}, \"{test_id}\")\n\
-         }}\n",
-        specnum = metadata.specnum,
-        description = metadata.description,
-    )
+    fn test_in_sm_dir(&self) -> bool { true }
+
+    fn clean(&self) {
+        if self.sm_base.exists() {
+            fs::remove_dir_all(&self.sm_base).ok();
+            println!("Cleaned: {}", self.sm_base.display());
+        }
+    }
+}
+
+// ── KotlinBackend ──────────────────────────────────────────────
+
+struct KotlinBackend {
+    sm_base: PathBuf,
+    test_dir: PathBuf,
+    tmpl_dir: PathBuf,
+}
+
+impl KotlinBackend {
+    fn new(project_root: &Path) -> Self {
+        let tests_module = project_root.join("sce-kotlin-tests");
+        Self {
+            sm_base: tests_module.join("src/main/kotlin/com/sce/generated"),
+            test_dir: tests_module.join("src/test/kotlin/com/sce/w3c"),
+            tmpl_dir: sce_build::find_template_dir_for(Language::Kotlin),
+        }
+    }
+}
+
+impl W3cBackend for KotlinBackend {
+    fn language_name(&self) -> &str { "Kotlin" }
+    fn sm_output_base(&self) -> &Path { &self.sm_base }
+    fn test_output_dir(&self) -> &Path { &self.test_dir }
+
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
+        let code = sce_build::generator::generate_kotlin(model, &self.tmpl_dir)?;
+        Ok(vec![(format!("{input_stem}Sm.kt"), code)])
+    }
+
+    fn child_name_matches(&self, child_name: &str, _test_id: &str, num_prefix: &str) -> bool {
+        // Kotlin uses only num_prefix patterns (no test{test_id}_ pattern)
+        child_name.starts_with(&format!("test{num_prefix}_"))
+            || child_name.starts_with(&format!("test{num_prefix}sub"))
+    }
+
+    fn parent_references_child(&self, parent_code: &str, child_machine: &str) -> bool {
+        // Kotlin checks StateMachine only
+        parent_code.contains(&format!("{child_machine}StateMachine"))
+    }
+
+    fn process_child(&self, test_id: &str, child_name: &str, code: String, test_mod_dir: &Path) {
+        let parent_package = format!("test{test_id}");
+        let child_package = child_name.to_lowercase();
+        let fixed_code = code.replace(
+            &format!("package com.sce.generated.{child_package}"),
+            &format!("package com.sce.generated.{parent_package}"),
+        );
+        let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
+        write_if_changed(&child_sm_file, &fixed_code);
+    }
+
+    fn process_child_failure(&self, test_id: &str, child_name: &str, test_mod_dir: &Path) {
+        let parent_package = format!("test{test_id}");
+        let child_class = to_pascal_case(child_name);
+        let stub = format!(
+            "// GENERATED STUB -- child codegen failed (no-op)\n\
+             package com.sce.generated.{parent_package}\n\n\
+             import com.sce.runtime.*\n\n\
+             sealed interface {child_class}State : State {{\n\
+             \x20   data object Initial : {child_class}State\n\
+             }}\n\
+             sealed interface {child_class}Event : Event\n\n\
+             class {child_class}StateMachine(\n\
+             \x20   scriptEngine: ScxmlScriptEngine? = null\n\
+             ) : StateMachineEngine<{child_class}State, {child_class}Event>(scriptEngine) {{\n\
+             \x20   override val initialState = {child_class}State.Initial\n\
+             \x20   override fun processEvent(state: {child_class}State, event: {child_class}Event) = TransitionResult.Ignored as TransitionResult<{child_class}State>\n\
+             \x20   override fun onEntry(state: {child_class}State) {{}}\n\
+             \x20   override fun onExit(state: {child_class}State) {{}}\n\
+             \x20   override fun executeTransitionActions(source: {child_class}State, event: {child_class}Event?) {{}}\n\
+             }}\n"
+        );
+        let child_sm_file = test_mod_dir.join(format!("{child_name}Sm.kt"));
+        write_if_changed(&child_sm_file, &stub);
+    }
+
+    fn generate_test_file(
+        &self,
+        test_id: &str,
+        _input_stem: &str,
+        _machine_name: &str,
+        pass_state: &str,
+        needs_script: bool,
+        uses_http: bool,
+        test_type: &str,
+        metadata: &TestMetadata,
+    ) -> String {
+        let sm_class = format!("Test{}", to_pascal_case(test_id));
+        let sm_package = format!("test{test_id}");
+
+        // W3C SCXML C.2: HTTP tests use W3CHttpTestBase only when SM actually uses performHttpSend()
+        let is_http = test_type == "HTTP" && uses_http;
+        let base_class = if is_http { "W3CHttpTestBase" } else { "W3CTestBase" };
+
+        // W3C SCXML 6.2: SCHEDULED tests need longer timeout
+        let timeout_override = if test_type == "SCHEDULED" {
+            "    override val timeoutMs: Long = 5000L\n"
+        } else {
+            ""
+        };
+
+        let create_sm = if needs_script {
+            format!("    override fun createStateMachine() = {sm_class}StateMachine(createEngine())\n")
+        } else {
+            format!("    override fun createStateMachine() = {sm_class}StateMachine()\n")
+        };
+
+        format!(
+            "// GENERATED -- DO NOT EDIT (sce-codegen)\n\
+             package com.sce.w3c\n\
+             \n\
+             import com.sce.generated.{sm_package}.{sm_class}Event\n\
+             import com.sce.generated.{sm_package}.{sm_class}State\n\
+             import com.sce.generated.{sm_package}.{sm_class}StateMachine\n\
+             import org.junit.jupiter.api.DisplayName\n\
+             \n\
+             // W3C SCXML {specnum}: {description}\n\
+             @DisplayName(\"Test {test_id} -- W3C SCXML {specnum}\")\n\
+             class {sm_class} : {base_class}<{sm_class}State, {sm_class}Event>() {{\n\
+             {create_sm}\
+             \x20   override val expectedPassState: {sm_class}State = {sm_class}State.{pass_state}\n\
+             {timeout_override}\
+             }}\n",
+            specnum = metadata.specnum,
+            description = metadata.description,
+        )
+    }
+
+    fn test_filename(&self, test_id: &str, _input_stem: &str) -> String {
+        format!("Test{}.kt", to_pascal_case(test_id))
+    }
+
+    fn clean(&self) {
+        if self.sm_base.exists() {
+            fs::remove_dir_all(&self.sm_base).ok();
+            println!("Cleaned: {}", self.sm_base.display());
+        }
+        for entry in fs::read_dir(&self.test_dir).into_iter().flatten() {
+            if let Ok(entry) = entry {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("Test") && name.ends_with(".kt") {
+                    fs::remove_file(entry.path()).ok();
+                }
+            }
+        }
+        println!("Cleaned test classes in: {}", self.test_dir.display());
+    }
+
+    fn clean_stale(&self, valid_ids: &BTreeSet<String>) -> usize {
+        let mut removed = 0;
+
+        // Clean stale SM directories
+        if self.sm_base.exists() {
+            for entry in fs::read_dir(&self.sm_base).into_iter().flatten().flatten() {
+                if !entry.path().is_dir() { continue; }
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("test") { continue; }
+                let dir_test_id = &name[4..];
+                if !valid_ids.contains(dir_test_id) {
+                    fs::remove_dir_all(entry.path()).ok();
+                    println!("  Removed stale SM dir: {name}");
+                    removed += 1;
+                }
+            }
+        }
+
+        // Clean stale test classes
+        if self.test_dir.exists() {
+            let valid_lower: BTreeSet<String> = valid_ids.iter().map(|s| s.to_lowercase()).collect();
+            for entry in fs::read_dir(&self.test_dir).into_iter().flatten().flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("Test") || !name.ends_with(".kt") { continue; }
+                if name == "W3CTestBase.kt" || name == "W3CHttpTestBase.kt" { continue; }
+                let stem = &name[..name.len() - 3];
+                let file_test_id = &stem[4..];
+                if !valid_ids.contains(file_test_id) && !valid_lower.contains(&file_test_id.to_lowercase()) {
+                    fs::remove_file(entry.path()).ok();
+                    println!("  Removed stale test: {name}");
+                    removed += 1;
+                }
+            }
+        }
+
+        removed
+    }
+}
+
+// ── CppBackend ─────────────────────────────────────────────────
+
+struct CppBackend {
+    output_dir: PathBuf,
+    tmpl_dir: PathBuf,
+}
+
+impl CppBackend {
+    fn new(project_root: &Path) -> Self {
+        Self {
+            output_dir: project_root.join("build/tests/w3c_static_generated"),
+            tmpl_dir: sce_build::find_template_dir_for(Language::Cpp),
+        }
+    }
+}
+
+impl W3cBackend for CppBackend {
+    fn language_name(&self) -> &str { "C++" }
+    fn sm_output_base(&self) -> &Path { &self.output_dir }
+    fn test_output_dir(&self) -> &Path { &self.output_dir }
+
+    fn generate_sm(&self, model: &SCXMLModel, input_stem: &str) -> Result<Vec<(String, String)>, String> {
+        let output = sce_build::generator::generate_cpp(model, &self.tmpl_dir, input_stem)?;
+        Ok(output.files)
+    }
+
+    fn uses_per_test_subdirs(&self) -> bool { false }
+    fn generates_test_files(&self) -> bool { false }
+
+    fn process_child(&self, _test_id: &str, _child_name: &str, _code: String, _test_mod_dir: &Path) {
+        // C++ children are handled by CMake via _children.txt, not the W3C generator
+    }
+
+    fn clean(&self) {
+        if self.output_dir.exists() {
+            fs::remove_dir_all(&self.output_dir).ok();
+            println!("Cleaned: {}", self.output_dir.display());
+        }
+    }
 }
 
 // ── Subcommand: fix-scxml-name ──────────────────────────────────

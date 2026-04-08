@@ -1,8 +1,8 @@
-// GENERATED -- DO NOT EDIT (generate_rust_w3c.py)
+// GENERATED -- DO NOT EDIT (sce-codegen)
 
 #[allow(dead_code, unused_variables, unused_imports, clippy::all)]
 mod test191_sm;
 pub use test191_sm::*;
-
 #[allow(dead_code, unused_variables, unused_imports, clippy::all)]
-pub mod test191_child0_sm;
+mod test191_child0_sm;
+pub use test191_child0_sm::*;

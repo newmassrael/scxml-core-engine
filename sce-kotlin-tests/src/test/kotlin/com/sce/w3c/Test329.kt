@@ -1,4 +1,4 @@
-// GENERATED — DO NOT EDIT (generate_kotlin_w3c.py)
+// GENERATED -- DO NOT EDIT (sce-codegen)
 package com.sce.w3c
 
 import com.sce.generated.test329.Test329Event

@@ -1,10 +1,5 @@
-// GENERATED -- DO NOT EDIT (generate_rust_w3c.py)
-//! Generated W3C SCXML conformance test state machines.
-//!
-//! This module is populated by `python3 tools/generate_rust_w3c.py` from the
-//! W3C test corpus under `resources/*.scxml`.
-//!
-//! Contains 202 generated test modules.
+// GENERATED -- DO NOT EDIT (sce-codegen)
+//! Generated W3C SCXML conformance test state machines (202 tests).
 
 pub mod test144;
 pub mod test147;

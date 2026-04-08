@@ -305,10 +305,9 @@ class Test343StateMachine(
                     val doneParams = mutableMapOf<String, Any?>()
                     var doneParamStructuralError = false
                     try {
-                        val locVal = engineDD.evaluateExpr(sidDD, "foo")
-                        doneParams["someParam"] = locVal
+                        doneParams["someParam"] = engineDD.evaluateExpr(sidDD, "")
                     } catch (_: Exception) {
-                        // W3C SCXML 5.7: Runtime location error — raise error.execution but continue
+                        // W3C SCXML 5.7: Runtime param error — raise error.execution but continue
                         raiseInternal(Test343Event.Error.Execution, EventMetadata.platform())
                     }
                     // C++ DoneDataHelper pattern: if (!success) break — skip done.state on structural error only
