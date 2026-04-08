@@ -1,0 +1,21 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="transform")
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <string>
+
+namespace SCE::Generated::{{ namespace }} {
+{% for func in functions %}
+
+inline {{ func.ret_type }} {{ func.name }}({{ func.params }}) {
+    return {{ func.expr }};
+}
+{% endfor %}
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

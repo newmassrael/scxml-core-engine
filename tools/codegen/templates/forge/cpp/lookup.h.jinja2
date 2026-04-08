@@ -1,0 +1,28 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+
+namespace SCE::Generated::{{ namespace }} {
+
+enum class {{ enum_name }} { {{ unique_values | join(", ") }} };
+
+inline {{ enum_name }} {{ func_name }}({{ input_type }} {{ input_id }}) {
+    switch ({{ input_id }}) {
+{% for group in entries_by_value %}
+{% for key in group.keys %}
+        case {{ key }}:
+{% endfor %}
+            return {{ enum_name }}::{{ group.value }};
+{% endfor %}
+        default: return {{ enum_name }}::{{ default_value }};
+    }
+}
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

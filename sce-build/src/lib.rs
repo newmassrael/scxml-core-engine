@@ -22,6 +22,7 @@ pub mod filters;
 pub mod generator;
 pub mod kotlin;
 pub mod lua_transformer;
+pub mod forge;
 #[cfg(feature = "wasm")]
 mod wasm;
 
@@ -199,6 +200,37 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
     } else {
         base.join(subdir)
     }
+}
+
+/// Compile a forge (non-statechart) SCXML from already-read content.
+///
+/// Uses single-parse path: detects kind and parses model in one XML parse.
+/// Phase 1 supports C++ only.
+pub fn compile_forge_from_string(
+    content: &str,
+    name: &str,
+    language: generator::Language,
+) -> Result<generator::GeneratedOutput, String> {
+    let doc = forge::parser::parse_forge(content, name)?
+        .ok_or("Not a forge document (statechart or no sce:kind)")?;
+
+    let template_base = find_template_base();
+
+    match language {
+        generator::Language::Cpp => forge::generator::generate_cpp(&doc, &template_base),
+        _ => Err(format!(
+            "Forge codegen for {:?} is planned for Phase 2",
+            language
+        )),
+    }
+}
+
+/// Detect if an SCXML file uses a non-statechart `sce:kind`.
+pub fn is_forge_document(content: &str) -> bool {
+    forge::parser::detect_kind(content)
+        .ok()
+        .flatten()
+        .map_or(false, |k| k != forge::model::ForgeKind::Statechart)
 }
 
 /// Locate the base template directory (contains rust/, kotlin/, actions/).

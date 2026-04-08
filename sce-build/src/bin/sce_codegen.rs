@@ -116,6 +116,50 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
         std::process::exit(1);
     });
 
+    // SCE Forge: detect non-statechart kind and route to forge pipeline.
+    // Read the file once; the same content is reused for both detection and compilation.
+    let scxml_content = fs::read_to_string(scxml_path).unwrap_or_else(|e| {
+        eprintln!("Cannot read {scxml_path}: {e}");
+        std::process::exit(1);
+    });
+
+    if sce_build::is_forge_document(&scxml_content) {
+        let input_stem = Path::new(scxml_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
+
+        match sce_build::compile_forge_from_string(&scxml_content, input_stem, lang) {
+            Ok(output) => {
+                let out = Path::new(output_dir);
+                for (filename, code) in &output.files {
+                    let path = out.join(filename);
+                    fs::write(&path, code).unwrap_or_else(|e| {
+                        eprintln!("Write error: {e}");
+                        std::process::exit(1);
+                    });
+                    println!("Generated: {}", path.display());
+                }
+                if let Some(dep_path) = depfile_path {
+                    let out = Path::new(output_dir);
+                    let targets: Vec<String> = output
+                        .files
+                        .iter()
+                        .map(|(f, _)| out.join(f).display().to_string())
+                        .collect();
+                    let dep_content = format!("{}: {}\n", targets.join(" "), scxml_path);
+                    let _ = fs::write(dep_path, dep_content);
+                }
+                println!("Needs ScriptEngine: false");
+                return;
+            }
+            Err(e) => {
+                eprintln!("Forge codegen error: {e}");
+                std::process::exit(1);
+            }
+        }
+    }
+
     let template_dir = sce_build::find_template_dir_for(lang);
 
     let mut parser = SCXMLParser::new();

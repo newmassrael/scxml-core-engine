@@ -1,0 +1,40 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <vector>
+
+namespace SCE::Generated::{{ namespace }} {
+
+struct {{ struct_name }} {
+{% for field in fields %}
+    {{ field.cpp_type }} {{ field.id }};
+{% endfor %}
+
+    static std::optional<{{ struct_name }}> decode(const uint8_t* raw, size_t len) {
+        if (len < {{ min_bytes }}) return std::nullopt;
+        return {{ struct_name }}{
+{% for field in fields %}
+            .{{ field.id }} = {{ field.decode_expr }},
+{% endfor %}
+        };
+    }
+
+    std::vector<uint8_t> encode() const {
+        return {
+{% for expr in encode_exprs %}
+            {{ expr }}{{ "," if not loop.last else "" }}
+{% endfor %}
+        };
+    }
+};
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

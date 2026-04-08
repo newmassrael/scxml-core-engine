@@ -9,7 +9,7 @@ use minijinja::Environment;
 use std::path::Path;
 
 /// Create a minijinja Environment with Python Jinja2 compatibility enabled.
-fn new_env<'a>() -> Environment<'a> {
+pub(crate) fn new_env<'a>() -> Environment<'a> {
     let mut env = Environment::new();
     env.set_trim_blocks(true);
     env.set_lstrip_blocks(true);
@@ -68,7 +68,7 @@ fn license_config() -> serde_json::Value {
     })
 }
 
-fn render_error(e: minijinja::Error) -> String {
+pub(crate) fn render_error(e: minijinja::Error) -> String {
     use std::error::Error;
     let mut msg = format!("Template render error: {e}");
     let mut source: Option<&dyn Error> = e.source();
@@ -420,7 +420,7 @@ fn load_template_strings(
 }
 
 /// Recursively load all .jinja2 templates from a directory.
-fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), String> {
+pub(crate) fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), String> {
     if !dir.exists() {
         return Err(format!("Template directory not found: {}", dir.display()));
     }
