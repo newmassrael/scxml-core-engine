@@ -550,6 +550,25 @@ jobs:
           libboost-dev \
           python3-dev
 
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
     - name: Cache CMake Build
       uses: actions/cache@v4
       with:
@@ -684,8 +703,8 @@ jobs:
         echo "" >> $GITHUB_STEP_SUMMARY
 
         if [ -f go_test_output.log ]; then
-          passed=$(grep -c "^--- PASS:" go_test_output.log || echo "0")
-          failed=$(grep -c "^--- FAIL:" go_test_output.log || echo "0")
+          passed=$(grep -c "^--- PASS:" go_test_output.log || true)
+          failed=$(grep -c "^--- FAIL:" go_test_output.log || true)
           total=$((passed + failed))
           if [ "$total" -gt 0 ] 2>/dev/null; then
             echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
