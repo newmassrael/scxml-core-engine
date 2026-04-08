@@ -376,11 +376,26 @@ jobs:
     - name: Generate Rust W3C Tests
       run: ./target/release/sce-codegen generate-w3c -l rust
 
+    - name: Start W3C HTTP Test Server
+      run: |
+        node tests/w3c/standalone_http_server.js 8080 /test &
+        echo $! > /tmp/http_server.pid
+        sleep 1
+        echo "W3C HTTP test server started (PID: $(cat /tmp/http_server.pid))"
+
     - name: Run W3C Tests
       run: |
         echo "=== Rust W3C SCXML Conformance Tests ==="
-        cargo test --release -p sce-rust-tests 2>&1 | tee rust_test_output.log
+        cargo test --release --no-fail-fast -p sce-rust-tests 2>&1 | tee rust_test_output.log
         echo "Exit code: $?"
+
+    - name: Stop W3C HTTP Test Server
+      if: always()
+      run: |
+        if [ -f /tmp/http_server.pid ]; then
+          kill $(cat /tmp/http_server.pid) 2>/dev/null || true
+          rm -f /tmp/http_server.pid
+        fi
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v4
@@ -681,12 +696,27 @@ jobs:
           sce-go-lua/go.sum
           sce-go-tests/go.sum
 
+    - name: Start W3C HTTP Test Server
+      run: |
+        node tests/w3c/standalone_http_server.js 8080 /test &
+        echo $! > /tmp/http_server.pid
+        sleep 1
+        echo "W3C HTTP test server started (PID: $(cat /tmp/http_server.pid))"
+
     - name: Run W3C Tests
       run: |
         echo "=== Go W3C SCXML Conformance Tests ==="
         cd sce-go-tests
         go test ./... -v -count=1 2>&1 | tee ../go_test_output.log
         echo "Exit code: $?"
+
+    - name: Stop W3C HTTP Test Server
+      if: always()
+      run: |
+        if [ -f /tmp/http_server.pid ]; then
+          kill $(cat /tmp/http_server.pid) 2>/dev/null || true
+          rm -f /tmp/http_server.pid
+        fi
 
     - name: Upload Test Log
       uses: actions/upload-artifact@v4

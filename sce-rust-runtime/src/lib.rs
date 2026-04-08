@@ -77,6 +77,6 @@ pub mod scripting;
 // Public re-exports — the primary API surface
 pub use engine::Engine;
 pub use event::{EventMetadata, EventType, EventWithMetadata};
-pub use http::HttpSendRequest;
+pub use http::{HttpSendRequest, HttpSendResponse};
 pub use policy::StatePolicy;
 pub use scripting::{IScriptEngine, ScriptEngineProvider, ScriptError, ScriptResult, ScriptValue};

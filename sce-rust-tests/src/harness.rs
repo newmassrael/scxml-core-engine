@@ -122,6 +122,91 @@ pub fn registered_test_count() -> usize {
     AOT_TESTS.len()
 }
 
+/// W3C SCXML C.2: Configure an engine for real HTTP tests against the shared
+/// W3C test server (`standalone_http_server.js` on localhost:8080/test).
+///
+/// The callback sends a real HTTP POST via `reqwest`, parses the JSON response,
+/// and returns `HttpSendResponse` so the engine injects the echoed event.
+pub fn setup_http_test<P: StatePolicy>(engine: &mut Engine<P>) {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .expect("failed to create HTTP client");
+
+    engine.set_http_send_callback(move |request| {
+        // W3C SCXML C.2: Build form-encoded POST body
+        let mut body_parts = Vec::new();
+        if !request.event_name.is_empty() {
+            body_parts.push(format!(
+                "_scxmleventname={}",
+                urlencoding(&request.event_name)
+            ));
+        }
+        for (key, values) in &request.params {
+            if key == "_scxmleventname" && !request.event_name.is_empty() {
+                continue;
+            }
+            for value in values {
+                body_parts.push(format!("{}={}", urlencoding(key), urlencoding(value)));
+            }
+        }
+
+        let (body, content_type) = if !body_parts.is_empty() {
+            (body_parts.join("&"), "application/x-www-form-urlencoded")
+        } else if !request.content.is_empty() {
+            (request.content.clone(), "text/plain")
+        } else {
+            (String::new(), "application/x-www-form-urlencoded")
+        };
+
+        // W3C SCXML C.2: Send real HTTP POST to shared test server
+        let response = client
+            .post(&request.target)
+            .header("Content-Type", content_type)
+            .body(body)
+            .send()
+            .ok()?;
+        let text = response.text().ok()?;
+
+        // W3C SCXML C.2: Parse JSON response for event name and data
+        let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+        let event_name = json.get("event")?.as_str()?.to_string();
+        let event_data = json
+            .get("data")
+            .map(|d| {
+                if d.is_string() {
+                    d.as_str().unwrap_or("").to_string()
+                } else {
+                    d.to_string()
+                }
+            })
+            .unwrap_or_default();
+
+        Some(sce_rust_runtime::HttpSendResponse {
+            event_name,
+            event_data,
+        })
+    });
+}
+
+/// Minimal URL encoding for W3C SCXML C.2 form parameters.
+fn urlencoding(s: &str) -> String {
+    let mut encoded = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(b as char);
+            }
+            b' ' => encoded.push('+'),
+            _ => {
+                encoded.push('%');
+                encoded.push_str(&format!("{:02X}", b));
+            }
+        }
+    }
+    encoded
+}
+
 /// Run every registered AOT test sequentially. Returns `(passed, failed, timed_out)`.
 ///
 /// Phase 1: `AOT_TESTS` is empty, so this returns `(0, 0, 0)`. Phase 2+ populates it.

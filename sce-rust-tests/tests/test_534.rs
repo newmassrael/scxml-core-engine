@@ -6,6 +6,7 @@ fn test_534() {
     let _ = sce_rust_lua::register();
     let policy = sce_rust_tests::generated::test534::Test534Policy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
+    sce_rust_tests::harness::setup_http_test(&mut engine);
     engine.initialize();
     let completed = engine.run_until_completion(
         Duration::from_secs(5),

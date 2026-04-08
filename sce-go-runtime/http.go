@@ -25,3 +25,15 @@ type HttpSendRequest struct {
 	// SendID is the send ID for correlation and cancellation (W3C SCXML 6.2.5).
 	SendID string
 }
+
+// HttpSendResponse is the W3C SCXML C.2 HTTP send response returned by the
+// on_http_send callback. When non-nil, the engine injects the response event
+// into the external queue, enabling real HTTP round-trips against the shared
+// W3C HTTP test server (standalone_http_server.js).
+type HttpSendResponse struct {
+	// EventName extracted from the HTTP response (e.g., "event1", "HTTP.POST").
+	EventName string
+
+	// EventData from the response (W3C SCXML 5.10.3: _event.data).
+	EventData string
+}

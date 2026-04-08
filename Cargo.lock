@@ -1278,6 +1278,7 @@ dependencies = [
  "reqwest",
  "sce-rust-lua",
  "sce-rust-runtime",
+ "serde_json",
 ]
 
 [[package]]

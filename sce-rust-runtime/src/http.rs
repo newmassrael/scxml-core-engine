@@ -31,3 +31,16 @@ pub struct HttpSendRequest {
     /// Send ID for correlation and cancellation (W3C SCXML 6.2.5).
     pub send_id: String,
 }
+
+/// W3C SCXML C.2: HTTP send response returned by the `on_http_send` callback.
+///
+/// When the callback returns `Some(HttpSendResponse)`, the engine injects the
+/// response event into the external queue. This enables real HTTP round-trips
+/// against the shared W3C HTTP test server (`standalone_http_server.js`).
+#[derive(Debug, Clone, Default)]
+pub struct HttpSendResponse {
+    /// Event name extracted from the HTTP response (e.g., `event1`, `HTTP.POST`).
+    pub event_name: String,
+    /// Event data from the response (W3C SCXML 5.10.3: `_event.data`).
+    pub event_data: String,
+}

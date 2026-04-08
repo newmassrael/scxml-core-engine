@@ -4,12 +4,8 @@
 package sce
 
 import (
-	"fmt"
 	"log"
-	"math"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -44,13 +40,11 @@ type Engine[S comparable, E comparable] struct {
 	completionCallback func()
 
 	// onHTTPSend is the W3C SCXML C.2 HTTP send dispatch callback.
-	onHTTPSend func(HttpSendRequest)
+	// Returns *HttpSendResponse when real HTTP is used; nil for fire-and-forget.
+	onHTTPSend func(HttpSendRequest) *HttpSendResponse
 
 	// scheduler is the W3C SCXML 6.2 delayed event scheduler.
 	scheduler *PullScheduler[E]
-
-	// httpLoopback enables W3C SCXML C.2 HTTP loopback mode for conformance tests.
-	httpLoopback bool
 }
 
 // NewEngine constructs a new engine with the given policy instance.
@@ -68,7 +62,6 @@ func NewEngine[S comparable, E comparable](policy StatePolicy[S, E]) *Engine[S, 
 		externalQueue: NewEventQueueManager[EventWithMetadata[E]](),
 		isRunning:     false,
 		scheduler:     NewPullScheduler[E](),
-		httpLoopback:  false,
 	}
 }
 
@@ -363,140 +356,40 @@ func (e *Engine[S, E]) SetCompletionCallback(callback func()) {
 }
 
 // SetHTTPSendCallback registers an HTTP send dispatcher callback (W3C SCXML C.2).
-func (e *Engine[S, E]) SetHTTPSendCallback(callback func(HttpSendRequest)) {
-	e.onHTTPSend = callback
-}
-
-// EnableHTTPLoopback enables HTTP loopback mode for W3C conformance tests
-// (W3C SCXML C.2).
 //
-// When enabled, PerformHTTPSend simulates the W3C HTTP test server: parses the
-// request, extracts the event name from _scxmleventname param, and enqueues the
-// response event back into this engine's external queue.
-func (e *Engine[S, E]) EnableHTTPLoopback() {
-	e.httpLoopback = true
+// The callback returns *HttpSendResponse when real HTTP is used. The engine
+// injects the response event into the external queue. Return nil for
+// fire-and-forget sends.
+func (e *Engine[S, E]) SetHTTPSendCallback(callback func(HttpSendRequest) *HttpSendResponse) {
+	e.onHTTPSend = callback
 }
 
 // PerformHTTPSend dispatches a BasicHTTP send through the registered callback
 // (W3C SCXML C.2).
 //
-// If HTTP loopback is enabled, also simulates the W3C HTTP test server by
-// injecting the response event back into the external queue.
+// The callback is the sole dispatch mechanism. If it returns non-nil
+// HttpSendResponse, the engine injects the response event into the external
+// queue. The engine has no knowledge of HTTP transport — callers supply the
+// implementation via SetHTTPSendCallback.
 func (e *Engine[S, E]) PerformHTTPSend(target, eventName, content string, params map[string][]string, sendID string) {
-	if e.httpLoopback {
-		// Clone before callback consumes values (both paths need them)
-		evName := eventName
-		ct := content
-		pr := make(map[string][]string, len(params))
-		for k, v := range params {
-			pr[k] = append([]string(nil), v...)
-		}
-		if e.onHTTPSend != nil {
-			e.onHTTPSend(HttpSendRequest{
-				Target:    target,
-				EventName: eventName,
-				Content:   content,
-				Params:    params,
-				SendID:    sendID,
-			})
-		}
-		e.httpLoopbackInject(evName, ct, pr)
-	} else if e.onHTTPSend != nil {
-		e.onHTTPSend(HttpSendRequest{
-			Target:    target,
-			EventName: eventName,
-			Content:   content,
-			Params:    params,
-			SendID:    sendID,
-		})
+	if e.onHTTPSend == nil {
+		return
 	}
-}
-
-// httpLoopbackInject simulates W3CHttpTestServer loopback (W3C SCXML C.2).
-//
-// Mirrors the Rust http_loopback_inject logic:
-//  1. Check _scxmleventname param -> use as event name
-//  2. Fall back to eventName from the send request
-//  3. Default to HTTP.POST if neither is set
-//  4. Build event data from all params as a Lua table literal
-//  5. Enqueue as external event
-func (e *Engine[S, E]) httpLoopbackInject(eventName, content string, params map[string][]string) {
-	// W3C SCXML C.2: Determine response event name
-	// Priority: _scxmleventname param > event attribute > "HTTP.POST"
-	responseEventName := "HTTP.POST"
-	if vals, ok := params["_scxmleventname"]; ok && len(vals) > 0 && vals[0] != "" {
-		responseEventName = vals[0]
-	} else if eventName != "" {
-		responseEventName = eventName
-	}
-
-	// W3C SCXML C.2: Build event data as Lua table from POST params
-	data := e.buildHTTPLoopbackData(eventName, content, params)
-
-	// Resolve event name to enum and enqueue
-	if evt, ok := e.policy.GetEventFromName(responseEventName); ok {
-		meta := NewEventWithMetadata(evt)
-		meta.Metadata = ExternalMetadata("", "")
-		meta.Metadata.Data = data
-		e.externalQueue.Raise(meta)
-	}
-}
-
-// buildHTTPLoopbackData builds Lua table literal for HTTP loopback event data.
-//
-// Mirrors W3CHttpTestServer: all form params become table entries.
-func (e *Engine[S, E]) buildHTTPLoopbackData(eventName, content string, params map[string][]string) string {
-	// If no params and no event_name, data is the content body
-	if len(params) == 0 && eventName == "" {
-		return content
-	}
-
-	// W3C SCXML C.2: When params map is empty but content is a Lua table literal
-	// (from codegen <param> evaluation), merge _scxmleventname into the table.
-	if len(params) == 0 && content != "" {
-		if eventName == "" {
-			return content
-		}
-		// Inject _scxmleventname into existing Lua table literal
-		if strings.HasPrefix(content, "{") && strings.HasSuffix(content, "}") {
-			inner := strings.TrimSpace(content[1 : len(content)-1])
-			scxmlEntry := fmt.Sprintf("[\"_scxmleventname\"]=\"%s\"", eventName)
-			if inner != "" {
-				return "{" + inner + "," + scxmlEntry + "}"
-			}
-			return "{" + scxmlEntry + "}"
-		}
-		// Content is plain text, wrap in table with _scxmleventname
-		return fmt.Sprintf("{[\"_scxmleventname\"]=\"%s\"}", eventName)
-	}
-
-	var parts []string
-
-	// Include _scxmleventname from event attribute (W3C SCXML C.2: test 534)
-	if eventName != "" {
-		if _, alreadyInParams := params["_scxmleventname"]; !alreadyInParams {
-			parts = append(parts, fmt.Sprintf("[\"_scxmleventname\"]=\"%s\"", eventName))
+	resp := e.onHTTPSend(HttpSendRequest{
+		Target:    target,
+		EventName: eventName,
+		Content:   content,
+		Params:    params,
+		SendID:    sendID,
+	})
+	if resp != nil {
+		if evt, ok := e.policy.GetEventFromName(resp.EventName); ok {
+			meta := NewEventWithMetadata(evt)
+			meta.Metadata = ExternalMetadata("", "")
+			meta.Metadata.Data = resp.EventData
+			e.externalQueue.Raise(meta)
 		}
 	}
-
-	// Include all params (W3C SCXML C.2: numeric values stay numeric)
-	for key, values := range params {
-		if len(values) > 0 {
-			first := values[0]
-			if i, err := strconv.ParseInt(first, 10, 64); err == nil {
-				parts = append(parts, fmt.Sprintf("[\"%s\"]=%d", key, i))
-			} else if f, err := strconv.ParseFloat(first, 64); err == nil && !math.IsInf(f, 0) && !math.IsNaN(f) {
-				parts = append(parts, fmt.Sprintf("[\"%s\"]=%g", key, f))
-			} else {
-				parts = append(parts, fmt.Sprintf("[\"%s\"]=\"%s\"", key, first))
-			}
-		}
-	}
-
-	if len(parts) == 0 {
-		return content
-	}
-	return "{" + strings.Join(parts, ",") + "}"
 }
 
 // RunUntilCompletion runs the state machine to completion or timeout

@@ -16,15 +16,14 @@ default = ["script-engine-lua"]
 # Forward script engine selection to runtime
 script-engine-lua = ["sce-rust-runtime/script-engine-lua", "dep:sce-rust-lua"]
 script-engine-quickjs = ["sce-rust-runtime/script-engine-quickjs"]
-# HTTP tests (requires real HTTP client)
-http-test = ["dep:reqwest"]
 
 [dependencies]
 sce-rust-runtime = { path = "../sce-rust-runtime", default-features = false }
 sce-rust-lua = { path = "../sce-rust-lua", optional = true }
 linkme = { workspace = true }
 log = { workspace = true }
-reqwest = { version = "0.12", features = ["blocking"], optional = true }
+reqwest = { version = "0.12", features = ["blocking"] }
+serde_json = "1"
 
 [dev-dependencies]
 env_logger = "0.11"

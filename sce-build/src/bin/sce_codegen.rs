@@ -1139,13 +1139,19 @@ impl W3cBackend for RustBackend {
         machine_name: &str,
         pass_state: &str,
         needs_script: bool,
-        _uses_http: bool,
+        uses_http: bool,
         test_type: &str,
         _metadata: &TestMetadata,
     ) -> String {
         let timeout_secs = if test_type == "SCHEDULED" || test_type == "HTTP" { 5 } else { 3 };
         let lua_register = if needs_script {
             "    let _ = sce_rust_lua::register();\n"
+        } else {
+            ""
+        };
+        let is_http = test_type == "HTTP" && uses_http;
+        let http_setup = if is_http {
+            "    sce_rust_tests::harness::setup_http_test(&mut engine);\n"
         } else {
             ""
         };
@@ -1160,6 +1166,7 @@ impl W3cBackend for RustBackend {
              {lua_register}\
              \x20   let policy = sce_rust_tests::generated::test{test_id}::{machine_name}Policy::new();\n\
              \x20   let mut engine = sce_rust_runtime::Engine::new(policy);\n\
+             {http_setup}\
              \x20   engine.initialize();\n\
              \x20   let completed = engine.run_until_completion(\n\
              \x20       Duration::from_secs({timeout_secs}),\n\
@@ -1281,7 +1288,7 @@ impl W3cBackend for GoBackend {
         };
 
         let http_setup = if is_http {
-            "\n\tengine.EnableHTTPLoopback()\n"
+            "\n\tscegotest.SetupHTTPTest(engine)\n"
         } else {
             ""
         };

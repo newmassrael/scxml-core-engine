@@ -5,6 +5,7 @@ use std::time::Duration;
 fn test_532() {
     let policy = sce_rust_tests::generated::test532::Test532Policy::new();
     let mut engine = sce_rust_runtime::Engine::new(policy);
+    sce_rust_tests::harness::setup_http_test(&mut engine);
     engine.initialize();
     let completed = engine.run_until_completion(
         Duration::from_secs(5),
