@@ -187,9 +187,7 @@ find_package(PkgConfig REQUIRED)
 # Modular Architecture - Add subdirectories
 add_subdirectory(sce)                 # Unified SCE library with integrated parsing
 
-# Tools - code generation and TXML conversion
-add_subdirectory(tools/codegen)       # Code generation tool
-
+# Tools - TXML conversion (code generation is handled by sce-codegen Rust binary)
 # TXML converter (Native builds only - requires filesystem operations)
 if(NOT EMSCRIPTEN)
     add_subdirectory(tools/txml_converter)  # TXML to SCXML converter tool
@@ -336,56 +334,26 @@ install(DIRECTORY sce/include/
     FILES_MATCHING PATTERN "*.h"
 )
 
-# Install Python code generator
-install(PROGRAMS tools/codegen/codegen.py
-    DESTINATION ${SCE_INSTALL_CODEGENDIR}
-    RENAME scxml-codegen
-)
-
-install(FILES tools/codegen/scxml_parser.py
-              tools/codegen/license_config.py
-    DESTINATION ${SCE_INSTALL_CODEGENDIR}
-)
-
-install(FILES tools/codegen/generators/__init__.py
-              tools/codegen/generators/base.py
-              tools/codegen/generators/cpp_generator.py
-    DESTINATION ${SCE_INSTALL_CODEGENDIR}/generators
-)
-
+# Install Jinja2 templates (used by sce-codegen at runtime via SCE_TEMPLATE_DIR)
 install(DIRECTORY tools/codegen/templates
     DESTINATION ${SCE_INSTALL_CODEGENDIR}
     FILES_MATCHING PATTERN "*.jinja2"
 )
 
-# Create symlink in bin for backward compatibility (avoids duplicate files)
-# Symlink: ${CMAKE_INSTALL_BINDIR}/scxml-codegen -> ../share/sce/codegen/scxml-codegen
-install(CODE "
-    set(_bin_dir \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}\")
-    set(_codegen_rel \"../share/sce/codegen/scxml-codegen\")
-    set(_symlink \"\${_bin_dir}/scxml-codegen\")
-
-    file(MAKE_DIRECTORY \"\${_bin_dir}\")
-
-    if(EXISTS \"\${_symlink}\")
-        file(REMOVE \"\${_symlink}\")
-    endif()
-
-    execute_process(
-        COMMAND \${CMAKE_COMMAND} -E create_symlink \"\${_codegen_rel}\" \"\${_symlink}\"
-        RESULT_VARIABLE _result
+# Install sce-codegen binary if it was built before cmake configure.
+# Build order: cargo build --bin sce-codegen --features cli --release -p sce-build
+# Then: cmake -B build && cmake --install build
+find_program(_SCE_CODEGEN_BIN sce-codegen
+    PATHS "${CMAKE_SOURCE_DIR}/target/release" "${CMAKE_SOURCE_DIR}/target/debug"
+    NO_DEFAULT_PATH
+)
+if(_SCE_CODEGEN_BIN)
+    install(PROGRAMS "${_SCE_CODEGEN_BIN}"
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
-
-    if(_result EQUAL 0)
-        message(STATUS \"Created symlink: \${_symlink} -> \${_codegen_rel}\")
-    else()
-        message(WARNING \"Failed to create symlink, copying file instead\")
-        file(COPY_FILE
-            \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${SCE_INSTALL_CODEGENDIR}/scxml-codegen\"
-            \"\${_symlink}\"
-        )
-    endif()
-")
+else()
+    message(STATUS "SCE: sce-codegen not found in target/ -- skipping binary install")
+endif()
 
 # =============================================================================
 # Package Configuration for find_package(SCE)

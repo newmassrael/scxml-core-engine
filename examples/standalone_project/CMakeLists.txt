@@ -49,7 +49,7 @@ add_executable(traffic_light main.cpp)
 # Generate State Machine from SCXML
 # =============================================================================
 # sce_add_state_machine() automatically:
-#   1. Runs Python codegen to generate C++ header
+#   1. Runs sce-codegen to generate C++ header
 #   2. Adds generated file to target
 #   3. Sets up include directories
 #   4. Tracks dependencies (regenerates on SCXML change)

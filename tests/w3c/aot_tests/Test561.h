@@ -36,7 +36,7 @@ namespace SCE::W3C::AotTests {
  * - Guard condition with complex ECMAScript expressions (W3C SCXML 5.9)
  *
  * Infrastructure:
- * - Code generator serializes <content> child XML elements (scxml_parser.py:696-703)
+ * - Code generator serializes <content> child XML elements
  * - Matches <data> element XML parsing behavior for consistency
  * - Enables full W3C SCXML B.2 ECMAScript datamodel compliance
  */

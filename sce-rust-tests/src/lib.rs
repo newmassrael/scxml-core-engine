@@ -8,7 +8,7 @@
 //!   function, `linkme`-based registrar) modeled on the C++
 //!   `SimpleAotTest<Derived, Num>` pattern documented in `CLAUDE.md`.
 //! - [`generated`]: per-test generated state machines produced by
-//!   `python3 tools/generate_rust_w3c.py`. Phase 1 is empty.
+//!   `sce-codegen generate -l rust` (via `build.rs`).
 //!
 //! ## Running
 //!

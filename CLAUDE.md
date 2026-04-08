@@ -10,7 +10,8 @@
 ## Code Modification Rules
 
 ### Code Generator
-- **Tool**: `tools/codegen/codegen.py` (Python + Jinja2)
+- **Tool**: `sce-codegen` (Rust binary from `sce-build` crate, minijinja templates)
+- **Build**: `cargo build --bin sce-codegen --features cli --release -p sce-build`
 - **Templates**: `tools/codegen/templates/` — always modify templates, never generate code directly
 - Test changes by regenerating affected test files
 - Follow existing template patterns for consistency
@@ -30,7 +31,7 @@ mkdir -p /tmp/test_verify
 build/tools/txml_converter/txml-converter resources/XXX/testXXX.txml /tmp/test_verify/testXXX.scxml
 
 # Try static code generation
-env SPDLOG_LEVEL=warn python3 tools/codegen/codegen.py /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/
+sce-codegen generate /tmp/test_verify/testXXX.scxml -o /tmp/test_verify/ -l cpp
 
 # Check output:
 #   "Generated: ...testXXX_sm.h" → static generation OK

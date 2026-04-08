@@ -28,7 +28,7 @@ namespace SCE {
  * @brief Helper functions for W3C SCXML external file loading
  *
  * Single Source of Truth for file loading logic shared between:
- * - Python code generator (scxml_parser.py - build-time)
+ * - Code generator: sce-codegen (build-time)
  * - Interpreter engine (DataModelParser.cpp - runtime)
  * - StateMachine (StateMachine.cpp - runtime)
  *
@@ -61,7 +61,7 @@ public:
      * @brief Load file content from disk
      *
      * Single Source of Truth for file loading logic.
-     * Used by both Interpreter (runtime) and Python codegen (build-time).
+     * Used by both Interpreter (runtime) and sce-codegen (build-time).
      *
      * W3C SCXML 5.2.2: Content from external file via src attribute.
      *
@@ -207,10 +207,10 @@ public:
      * @brief Load external script with security validation
      *
      * Single Source of Truth for W3C SCXML 5.8 external script loading.
-     * Used by both Python code generator and Interpreter engine.
+     * Used by both sce-codegen and Interpreter engine.
      *
      * ARCHITECTURE.md Zero Duplication: Shared logic between:
-     * - Python code generator (scxml_parser.py:_parse_global_scripts)
+     * - Code generator: sce-codegen (build-time)
      * - Interpreter engine (ActionParser.cpp:parseActionNode)
      *
      * W3C SCXML 5.8: External scripts resolved relative to SCXML file location.

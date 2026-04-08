@@ -125,12 +125,15 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 
 ---
 
-## Code Generator: Python + Jinja2
+## Code Generator: sce-codegen (Rust + minijinja)
 
-**Tool**: `tools/codegen/codegen.py` — Python-based code generator with Jinja2 templates.
+**Tool**: `sce-codegen` — Rust binary from `sce-build` crate (replaces legacy Python codegen).
+**Build**: `cargo build --bin sce-codegen --features cli --release -p sce-build`
 
 **Architecture**:
-- **Parser**: `scxml_parser.py` — Parses SCXML files into intermediate model
+- **Parser**: `sce-build/src/lib.rs` — Parses SCXML files via roxmltree into intermediate model
+- **Generator**: `sce-build/src/generator.rs` — Multi-language code generation engine
+- **Filters**: `sce-build/src/filters.rs` — minijinja filters for all languages
 - **Templates**: `tools/codegen/templates/`
   - `state_machine.jinja2` / `state_machine_inl.jinja2` — Main structure (header + inline implementation)
   - `actions/*.jinja2` — Individual action handlers (send, assign, if, foreach, cancel, etc.)
@@ -157,17 +160,17 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
 - Maintains static state machine structure (enums, switch statements)
 - Lazy JSEngine initialization (RAII pattern)
 
-**Automatic Child→Parent Event Collection** (`scxml_parser.py`):
+**Automatic Child→Parent Event Collection**:
 - W3C SCXML 6.2: Scans child state machines for `<send target="#_parent" event="xxx"/>`
 - Auto-adds events to parent Event enum for compile-time type safety
-- Implementation: `_collect_child_to_parent_events()` method in SCXMLParser
+- Implementation: child event collection in `sce-build/src/lib.rs`
 
 ### Code Generation Strategy
 
 ```
 SCXML File
     ↓
-Feature Detection (scxml_parser.py)
+Feature Detection (sce-build parser)
     ↓
 Generate Hybrid C++ Code (always succeeds)
     ↓
@@ -456,7 +459,7 @@ Cargo.toml            Workspace (Rust 1.75+, edition 2021)
 ```
 
 **Architecture**:
-- **Code Generator**: `tools/codegen/generators/rust_generator.py` + `templates/rust/*.rs.jinja2`
+- **Code Generator**: `sce-codegen generate -l rust` + `templates/rust/*.rs.jinja2`
 - **Template Parity**: 1:1 port of C++ Jinja2 templates (state_machine, actions, invoke, etc.)
 - **Scripting**: Lua 5.4 via `mlua` crate (vendored, same as C++ default engine)
 - **JSON Builtins**: `include_str!("../../sce/include/scripting/json_builtins.lua")` — shared with C++/Kotlin
@@ -482,7 +485,7 @@ sce-android-app         Android real-device benchmark (Compose UI)
 - **Android/AAOS** (default: Lua 5.4): Native C via JNI outperforms Rhino on ART (3-8x faster for guard evaluation)
 - **C++** (default: Lua 5.4): `SCE_SCRIPT_ENGINE=lua` in CMake
 
-**Kotlin code generator**: `tools/codegen/generators/kotlin_generator.py` — generates sealed interface hierarchies + coroutine-based state machines from the same SCXML sources.
+**Kotlin code generator**: `sce-codegen generate -l kotlin` — generates sealed interface hierarchies + coroutine-based state machines from the same SCXML sources.
 
 ### Go Backend
 

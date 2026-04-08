@@ -649,7 +649,7 @@ add_dependencies(txml_converter_tests sce_runtime)
 # 9. W3C SCXML Compliance Tests (SOLID Architecture) - Native builds only
 # ============================================================================
 # WASM builds: W3C tests require txml-converter (Native-only tool) for
-# TXML → SCXML conversion and Python code generation.
+# TXML → SCXML conversion and sce-codegen for C++ code generation.
 
 if(NOT EMSCRIPTEN)
 # This section defines W3C SCXML conformance tests that run on both:
@@ -1192,7 +1192,7 @@ add_dependencies(comprehensive_interactive_test sce_runtime)
 
 
 # ============================================================================
-# Note: C++ StaticCodeGenerator replaced by Python + Jinja2 (codegen.py)
+# Note: Code generation handled by sce-codegen (Rust binary from sce-build crate)
 # Integration tests run via StaticCodegenIntegrationTest (in integration_tests)
 # ============================================================================
 

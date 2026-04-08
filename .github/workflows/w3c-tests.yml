@@ -68,10 +68,24 @@ jobs:
         echo "::add-matcher::.github/problem-matchers/gcc.json"
         echo "::add-matcher::.github/problem-matchers/cmake.json"
 
-    - name: Install Python Dependencies
-      run: |
-        python3 -m pip install --upgrade pip
-        pip install -r tools/codegen/requirements.txt
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
 
     - name: Setup Emscripten (emsdk)
       run: |
@@ -356,6 +370,12 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-cargo-
 
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
+    - name: Generate Rust W3C Tests
+      run: ./target/release/sce-codegen generate-w3c -l rust
+
     - name: Run W3C Tests
       run: |
         echo "=== Rust W3C SCXML Conformance Tests ==="
@@ -412,6 +432,25 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
 
     - name: Setup JDK 17
       uses: actions/setup-java@v4
@@ -511,11 +550,6 @@ jobs:
           libboost-dev \
           python3-dev
 
-    - name: Install Python Dependencies
-      run: |
-        python3 -m pip install --upgrade pip
-        pip install -r tools/codegen/requirements.txt
-
     - name: Cache CMake Build
       uses: actions/cache@v4
       with:
@@ -596,6 +630,28 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
+    - name: Generate Go W3C Tests
+      run: ./target/release/sce-codegen generate-w3c -l go
 
     - name: Setup Go
       uses: actions/setup-go@v5

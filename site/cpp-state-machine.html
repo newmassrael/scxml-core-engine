@@ -176,7 +176,7 @@
             <h3>Step 2: Generate C++ code</h3>
 
 <pre><code># Command line
-python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/
+sce-codegen generate traffic_light.scxml -o ./generated/ -l cpp
 
 # Or with CMake (automatic)
 sce_add_state_machine(TARGET my_app SCXML_FILE traffic_light.scxml)</code></pre>

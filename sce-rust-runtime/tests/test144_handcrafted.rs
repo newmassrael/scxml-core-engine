@@ -4,7 +4,7 @@
 // Phase 1 Acceptance Gate #2: hand-translation of W3C SCXML test144.
 //
 // Source of truth: build/tests/w3c_static_generated/test144_sm.h + test144_sm.inl
-// (C++ output of `python3 tools/codegen/codegen.py resources/144/test144.txml -l cpp`).
+// (C++ output of `sce-codegen generate resources/144/test144.txml -o . -l cpp`).
 //
 // This test exists to prove that `StatePolicy` + `Engine<P>` can represent
 // real generated state machine output before Phase 2 begins porting the

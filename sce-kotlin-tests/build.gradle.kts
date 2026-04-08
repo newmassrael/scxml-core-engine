@@ -20,30 +20,38 @@ dependencies {
 // ---------------------------------------------------------------------------
 // SCXML Code Generation (CMake parity)
 //
-// Calls tools/generate_kotlin_w3c.py to generate:
+// Uses sce-codegen (Rust binary) to generate:
 //   - src/main/kotlin/com/sce/generated/testXXX/  (state machine code)
 //   - src/test/kotlin/com/sce/w3c/TestXXX.kt      (JUnit5 test classes)
 //
-// Incremental: only runs when SCXML files, templates, or codegen scripts change.
-// Generated files are kept in git so builds work without Python3.
+// Build sce-codegen: cargo build --bin sce-codegen --features cli --release -p sce-build
+// Incremental: only runs when SCXML files, templates, or test registry change.
+// Generated files are kept in git so builds work without sce-codegen.
 // ---------------------------------------------------------------------------
+
+val sceCodegen: String? by lazy {
+    // Search order: target/release, target/debug, system PATH
+    listOf("target/release/sce-codegen", "target/debug/sce-codegen").firstOrNull {
+        rootProject.file(it).exists()
+    }?.let { rootProject.file(it).absolutePath }
+        ?: System.getenv("PATH")?.split(File.pathSeparator)
+            ?.map { File(it, "sce-codegen") }
+            ?.firstOrNull { it.exists() }?.absolutePath
+}
 
 val generateScxml by tasks.registering(Exec::class) {
     group = "code generation"
     description = "Generate Kotlin state machines and test classes from W3C SCXML tests"
 
     workingDir = rootProject.projectDir
-    commandLine("python3", "tools/generate_kotlin_w3c.py")
+    commandLine(sceCodegen ?: "sce-codegen", "generate-w3c", "-l", "kotlin")
 
     // Inputs: SCXML sources + codegen infrastructure + test registry
     inputs.dir(rootProject.file("resources"))
         .withPropertyName("scxmlResources")
         .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.dir(rootProject.file("tools/codegen"))
-        .withPropertyName("codegenScripts")
-        .withPathSensitivity(PathSensitivity.RELATIVE)
-    inputs.file(rootProject.file("tools/generate_kotlin_w3c.py"))
-        .withPropertyName("generatorScript")
+    inputs.dir(rootProject.file("tools/codegen/templates"))
+        .withPropertyName("codegenTemplates")
         .withPathSensitivity(PathSensitivity.RELATIVE)
     inputs.file(rootProject.file("tests/CMakeLists.txt"))
         .withPropertyName("testRegistry")
@@ -55,15 +63,12 @@ val generateScxml by tasks.registering(Exec::class) {
     outputs.dir("src/test/kotlin/com/sce/w3c")
         .withPropertyName("generatedTests")
 
-    // Skip if Python3 is not available (use existing generated files)
+    // Skip if sce-codegen is not available (use existing generated files)
     isIgnoreExitValue = false
     onlyIf {
-        val python3 = File("/usr/bin/python3").exists()
-                || File("/usr/local/bin/python3").exists()
-                || System.getenv("PATH")?.split(File.pathSeparator)
-                    ?.any { File(it, "python3").exists() } == true
-        if (!python3) logger.warn("SCE: python3 not found, using existing generated files")
-        python3
+        val found = sceCodegen != null
+        if (!found) logger.warn("SCE: sce-codegen not found, using existing generated files")
+        found
     }
 }
 

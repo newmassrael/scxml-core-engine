@@ -1102,7 +1102,7 @@ Kinds marked "requires runtime headers" are header-only in that they have no `.c
 
 ### 6.2 Template Structure
 
-New kind templates are added to `sce-build` (Rust + minijinja), which has replaced the Python+Jinja2 codegen pipeline. The legacy `tools/codegen/templates/` directory is maintained for existing statechart generation but new kinds are not added there.
+New kind templates are added to `sce-build` (Rust + minijinja), which is the single source of truth for code generation. Templates in `tools/codegen/templates/` are shared with the `sce-build` binary.
 
 ```
 sce-build/templates/

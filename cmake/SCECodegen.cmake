@@ -5,27 +5,33 @@
 #   1. In-tree: When SCE is included as subdirectory (add_subdirectory)
 #   2. Installed: When SCE is found via find_package(SCE)
 #
+# Uses sce-codegen (Rust binary) for code generation.
+# Build: cargo build --bin sce-codegen --features cli --release -p sce-build
+#
 # Usage:
 #   sce_add_state_machine(TARGET my_app SCXML_FILE state.scxml)
 #   sce_add_state_machines_from_dir(TARGET my_app SCXML_DIR scxml/)
 
-# Determine codegen script location
-# Priority: 1) SCE_CODEGEN_SCRIPT (set by installed package)
-#           2) In-tree development path
-if(NOT DEFINED SCE_CODEGEN_SCRIPT)
-    # In-tree development: script is relative to this cmake file
+# Find sce-codegen binary
+# Priority: 1) SCE_CODEGEN (already set by parent CMake / installed package)
+#           2) In-tree cargo build output (release, then debug)
+#           3) System PATH
+if(NOT SCE_CODEGEN)
     get_filename_component(_SCE_CMAKE_ROOT "${CMAKE_CURRENT_LIST_DIR}" DIRECTORY)
-    set(SCE_CODEGEN_SCRIPT "${_SCE_CMAKE_ROOT}/tools/codegen/codegen.py")
-
-    if(NOT EXISTS "${SCE_CODEGEN_SCRIPT}")
-        message(FATAL_ERROR "SCE: codegen.py not found at ${SCE_CODEGEN_SCRIPT}")
+    find_program(SCE_CODEGEN sce-codegen
+        PATHS "${_SCE_CMAKE_ROOT}/target/release" "${_SCE_CMAKE_ROOT}/target/debug"
+        NO_DEFAULT_PATH
+    )
+    if(NOT SCE_CODEGEN)
+        find_program(SCE_CODEGEN sce-codegen)
     endif()
 endif()
 
-# Find Python3 if not already found
-if(NOT Python3_EXECUTABLE)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+if(NOT SCE_CODEGEN)
+    message(FATAL_ERROR "SCE: sce-codegen not found. Build it with: cargo build --bin sce-codegen --features cli --release -p sce-build")
 endif()
+
+message(STATUS "SCE: Using code generator: ${SCE_CODEGEN}")
 
 #[=============================================================================[
 sce_add_state_machine(TARGET target SCXML_FILE file.scxml [OUTPUT_DIR dir] [LANGUAGE lang])
@@ -37,7 +43,7 @@ Arguments:
   SCXML_FILE  - Path to SCXML file (required)
   OUTPUT_DIR  - Output directory for generated files (optional, defaults to
                 ${CMAKE_CURRENT_BINARY_DIR}/generated)
-  LANGUAGE    - Target language: cpp (default) or kotlin
+  LANGUAGE    - Target language: cpp (default), rust, kotlin, or go
 
 Example:
   add_executable(my_app main.cpp)
@@ -91,28 +97,22 @@ function(sce_add_state_machine)
     # Create output directory
     file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
 
-    # Code generator Python scripts as dependencies
-    get_filename_component(_SCE_CODEGEN_DIR "${SCE_CODEGEN_SCRIPT}" DIRECTORY)
-    set(_SCE_CODEGEN_SCRIPTS
-        "${SCE_CODEGEN_SCRIPT}"
-        "${_SCE_CODEGEN_DIR}/scxml_parser.py"
-        "${_SCE_CODEGEN_DIR}/license_config.py"
-        "${_SCE_CODEGEN_DIR}/generators/__init__.py"
-        "${_SCE_CODEGEN_DIR}/generators/base.py"
-        "${_SCE_CODEGEN_DIR}/generators/cpp_generator.py"
-        "${_SCE_CODEGEN_DIR}/generators/kotlin_generator.py"
-    )
+    # Build codegen command with optional template dir (installed package scenario)
+    set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
+        "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
+        -l "${SCE_LANGUAGE}"
+        --write-deps "${_SCE_DEPFILE}")
+    if(SCE_TEMPLATE_DIR)
+        set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
+    endif()
 
     # Add custom command to generate state machine code
     # Uses DEPFILE for fine-grained template dependency tracking
     set(_SCE_DEPFILE "${GENERATED_OUTPUT}.d")
     add_custom_command(
         OUTPUT "${GENERATED_OUTPUT}"
-        COMMAND "${Python3_EXECUTABLE}" "${SCE_CODEGEN_SCRIPT}"
-                "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
-                --language "${SCE_LANGUAGE}"
-                --write-deps "${_SCE_DEPFILE}"
-        DEPENDS "${SCXML_ABS_PATH}" ${_SCE_CODEGEN_SCRIPTS}
+        COMMAND ${_SCE_CODEGEN_CMD}
+        DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN}"
         DEPFILE "${_SCE_DEPFILE}"
         COMMENT "SCE: Generating ${SCXML_NAME} (${SCE_LANGUAGE}) from SCXML"
         VERBATIM
@@ -242,26 +242,21 @@ function(sce_create_state_machine_library)
     # Create output directory
     file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
 
-    # Code generator Python scripts as dependencies
-    get_filename_component(_SCE_CODEGEN_DIR "${SCE_CODEGEN_SCRIPT}" DIRECTORY)
-    set(_SCE_CODEGEN_SCRIPTS
-        "${SCE_CODEGEN_SCRIPT}"
-        "${_SCE_CODEGEN_DIR}/scxml_parser.py"
-        "${_SCE_CODEGEN_DIR}/license_config.py"
-        "${_SCE_CODEGEN_DIR}/generators/__init__.py"
-        "${_SCE_CODEGEN_DIR}/generators/base.py"
-        "${_SCE_CODEGEN_DIR}/generators/cpp_generator.py"
-    )
+    # Build codegen command with optional template dir (installed package scenario)
+    set(_SCE_DEPFILE "${GENERATED_HEADER}.d")
+    set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
+        "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
+        --write-deps "${_SCE_DEPFILE}")
+    if(SCE_TEMPLATE_DIR)
+        set(_SCE_CODEGEN_CMD ${CMAKE_COMMAND} -E env "SCE_TEMPLATE_DIR=${SCE_TEMPLATE_DIR}" ${_SCE_CODEGEN_CMD})
+    endif()
 
     # Add custom command to generate state machine header
     # Uses DEPFILE for fine-grained template dependency tracking
-    set(_SCE_DEPFILE "${GENERATED_HEADER}.d")
     add_custom_command(
         OUTPUT "${GENERATED_HEADER}"
-        COMMAND "${Python3_EXECUTABLE}" "${SCE_CODEGEN_SCRIPT}"
-                "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
-                --write-deps "${_SCE_DEPFILE}"
-        DEPENDS "${SCXML_ABS_PATH}" ${_SCE_CODEGEN_SCRIPTS}
+        COMMAND ${_SCE_CODEGEN_CMD}
+        DEPENDS "${SCXML_ABS_PATH}" "${SCE_CODEGEN}"
         DEPFILE "${_SCE_DEPFILE}"
         COMMENT "SCE: Generating ${SCXML_NAME}_sm.h library"
         VERBATIM

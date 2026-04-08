@@ -58,10 +58,6 @@ jobs:
         emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -G Ninja
         cmake --build . --target visualizer -j$(nproc)
 
-    - name: Install Python Dependencies for Code Generator
-      run: |
-        pip install lxml jinja2
-
     - name: Build DOOM WASM Example
       run: |
         source emsdk/emsdk_env.sh
@@ -91,11 +87,6 @@ jobs:
         # Copy SCXML resources for visualizer
         echo "Copying SCXML test resources..."
         cp -r resources gh-pages/visualizer/
-
-        # Copy Python codegen files for Pyodide
-        echo "Copying Python codegen files for Pyodide..."
-        mkdir -p gh-pages/visualizer/tools/codegen
-        cp -r tools/codegen/* gh-pages/visualizer/tools/codegen/
 
         # Copy DOOM WASM example
         echo "Copying DOOM WASM example..."

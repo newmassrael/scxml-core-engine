@@ -24,7 +24,7 @@ add_executable(light_example main.cpp)
 # =============================================================================
 # Use SCE CMake function to automatically generate state machine code.
 # This will:
-#   1. Run Python codegen to generate SimpleLight_sm.h from simple_light.scxml
+#   1. Run sce-codegen to generate SimpleLight_sm.h from simple_light.scxml
 #   2. Add generated file to target sources
 #   3. Set up dependency tracking (regenerates when SCXML changes)
 #   4. Add generated directory to include paths

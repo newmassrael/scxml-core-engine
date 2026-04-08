@@ -176,7 +176,7 @@
             <h3>Step 2: Generate Rust code</h3>
 
 <pre><code># Generate Rust state machine (-l rust or --lang rust)
-python3 tools/codegen/codegen.py traffic_light.scxml -o ./src/generated/ -l rust</code></pre>
+sce-codegen generate traffic_light.scxml -o ./src/generated/ -l rust</code></pre>
 
             <p>
                 The generator produces a Rust module containing a <strong>State enum</strong>,
@@ -363,7 +363,7 @@ git clone --recursive https://github.com/newmassrael/scxml-core-engine.git
 cd scxml-core-engine
 
 # Generate Rust state machine from SCXML
-python3 tools/codegen/codegen.py your_machine.scxml -o ./src/generated/ -l rust
+sce-codegen generate your_machine.scxml -o ./src/generated/ -l rust
 
 # Run the Rust W3C test suite
 cargo test -p sce-rust-tests</code></pre>

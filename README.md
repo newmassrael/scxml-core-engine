@@ -88,7 +88,7 @@ Native Rust state machines generated from the same SCXML sources:
 
 ```bash
 # Generate Rust code from SCXML
-python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --language rust
+sce-codegen generate traffic_light.scxml -o ./generated/ -l rust
 ```
 
 **Key Features**:
@@ -191,7 +191,7 @@ engine.start()
 
 ```bash
 # Generate Rust code from SCXML
-python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --language rust
+sce-codegen generate traffic_light.scxml -o ./generated/ -l rust
 
 # Run W3C conformance tests
 cargo test --release -p sce-rust-tests
@@ -309,7 +309,7 @@ target_link_libraries(my_app PRIVATE sce_runtime)
 Manual code generation:
 
 ```bash
-python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/
+sce-codegen generate traffic_light.scxml -o ./generated/ -l cpp
 ```
 
 See [Usage Example](#usage-example) below for complete standalone workflow.
@@ -593,7 +593,7 @@ Each example includes a detailed README with building instructions and usage pat
 ### 2. Generate C++ Code
 
 ```bash
-python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/
+sce-codegen generate traffic_light.scxml -o ./generated/ -l cpp
 ```
 
 **Note**: With CMake integration, this step is automatic - see [Method 1](#method-1-cmake-integration-recommended).
@@ -683,11 +683,12 @@ sce/
 #   sce_scripting → + QuickJS/Lua engines (static hybrid AOT)
 #   sce_runtime   → + Parser, StateMachine (full interpreter)
 
-tools/codegen/           # Code generator (Python + Jinja2)
-├── codegen.py
-├── scxml_parser.py
-├── generators/          # Language-specific generators (C++, Kotlin, Rust)
-└── templates/           # C++/Kotlin/Rust/Go generation templates
+sce-build/               # Code generator (Rust + minijinja)
+├── src/bin/sce_codegen.rs  # CLI binary (generate, generate-w3c, fix-scxml-name)
+├── src/lib.rs              # Library API (SCXML parser + model)
+├── src/generator.rs        # Multi-language code generation engine
+└── src/filters.rs          # minijinja filters for all languages
+tools/codegen/templates/ # Shared Jinja2 templates (C++/Kotlin/Rust/Go)
 
 # Python Bindings (pybind11):
 sce-python/              # Python bindings module
@@ -1293,7 +1294,7 @@ SCE uses a **Dual License** model:
 All code generated from your SCXML files is **MIT licensed** and owned by you.
 
 ```bash
-python3 tools/codegen/codegen.py your_machine.scxml -o output/
+sce-codegen generate your_machine.scxml -o output/ -l cpp
 # Generated: your_machine_sm.h (MIT License, unrestricted use)
 ```
 

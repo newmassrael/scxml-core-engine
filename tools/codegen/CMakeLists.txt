@@ -1,4 +1,2 @@
-# SCE Code Generation Tool
-# Python-based code generator (codegen.py) is the production code generator
-
-# Python-based code generator (codegen.py) is installed via main CMakeLists.txt
+# Jinja2 templates shared between sce-codegen (Rust binary) and WASM build.
+# Code generation: cargo build --bin sce-codegen --features cli --release -p sce-build
