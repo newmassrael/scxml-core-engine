@@ -13,7 +13,7 @@ W3C SCXML is a state machine language. The scxml-core-engine generates multi-lan
 - Threshold monitoring with hysteresis
 - Periodic task scheduling
 
-Today, these patterns are hand-coded per language. There is no single source of truth, no codegen, and no way to guarantee identical behavior across C++/Kotlin/Python/Rust.
+Today, these patterns are hand-coded per language. There is no single source of truth, no codegen, and no way to guarantee identical behavior across C++/Kotlin/Go/Python/Rust.
 
 ### Solution
 
@@ -46,7 +46,7 @@ Value SCE Forge adds:
 
 - **Single source of truth** — one SCXML generates all target languages
 - **Beyond state machines** — 10 additional kinds covering common embedded/automotive patterns
-- **Multi-language codegen** — deterministic, identical logic across C++/Kotlin/Python/Rust
+- **Multi-language codegen** — deterministic, identical logic across C++/Kotlin/Go/Python/Rust
 - **W3C compatible** — Extended SCXML is valid W3C SCXML with `sce:` namespace extensions
 - **Human-readable** — every kind is editable, diffable, version-controllable
 
@@ -73,7 +73,7 @@ Value SCE Forge adds:
 |  |  Document kinds:                                          |  |
 |  |    statechart | transform | lookup | condition            |  |
 |  |    procedure  | codec | validator | filter                |  |
-|  |    interpolation | scheduler | observer                   |  |
+|  |    interpolation | timer | observer                      |  |
 |  |  Inline kinds (within statechart):                        |  |
 |  |    condition | lookup | codec | transform                 |  |
 |  +-----------------------------+-----------------------------+  |
@@ -102,7 +102,7 @@ Value SCE Forge adds:
 SCE Forge extends the existing codegen pipeline within sce-build:
 
 ```
-scxml-core-engine  (existing — SCXML → C++/Kotlin/Python/Rust)
+scxml-core-engine  (existing — SCXML → C++/Kotlin/Go/Python/Rust)
    |
 sce-build          (existing — Rust codegen CLI)
    |
@@ -147,7 +147,7 @@ Declared on the `<scxml>` root element. The entire file is a single kind. Produc
 <scxml sce:kind="validator">     <!-- Range/plausibility/integrity check -->
 <scxml sce:kind="filter">        <!-- Signal filtering (moving avg, debounce) -->
 <scxml sce:kind="interpolation"> <!-- 1D/2D table interpolation -->
-<scxml sce:kind="scheduler">     <!-- Periodic/delayed task timing -->
+<scxml sce:kind="timer">         <!-- Periodic/delayed task timing -->
 <scxml sce:kind="observer">      <!-- Threshold monitoring with hysteresis -->
 ```
 
@@ -163,7 +163,7 @@ Declared on `<data>` elements inside a `sce:kind="statechart"` document. Generat
 <data id="temperature" sce:kind="transform" .../>
 
 <!-- NOT inline-eligible (stateful or runtime-dependent): -->
-<!-- procedure, filter, validator, scheduler, observer → must be standalone files -->
+<!-- procedure, filter, validator, timer, observer → must be standalone files -->
 ```
 
 #### Codegen Discovery Order
@@ -211,23 +211,44 @@ All kind templates use this canonical mapping. It is defined once; templates ref
 
 In standard W3C SCXML, `expr` attributes are evaluated at runtime by a datamodel processor. In Extended SCXML for SCE Forge, **`expr` is an AOT codegen input, not a runtime evaluation target**. The codegen parses `expr` and generates equivalent target-language code.
 
-#### Grammar
+#### Grammar: ECMAScript Expression Subset
 
-Expressions use an **ECMAScript subset** (consistent with W3C SCXML's normative datamodel):
+W3C SCXML's normative datamodel is ECMAScript (ECMA-262). SCE Forge reuses the same grammar — expressions in `expr` attributes follow **ECMAScript expression syntax** as defined in ECMA-262. The codegen parses these expressions and transpiles them to equivalent target-language code.
 
-| Category | Syntax | Examples |
-|----------|--------|---------|
-| Arithmetic | `+`, `-`, `*`, `/`, `%` | `raw * 0.1 - 40.0` |
-| Comparison | `===`, `!==`, `<`, `>`, `<=`, `>=` | `rpm > 8000` |
-| Logical | `&&`, `\|\|`, `!` | `engineStop && ignOn` |
-| String literal | `'...'` | `engineStatus === 'STOP'` |
-| Method call | `id.method(args)` | `securityResponse.decode(_event.data)` |
-| Field access | `id.field` | `writeResult.result` |
-| Function call | `func(args)` | `computeKey(seed)` |
+**Supported** — any ECMAScript expression that has a direct, stateless mapping to all target languages (C++/Kotlin/Python/Rust/Go):
 
-**Note**: `===` (strict equality) is used per ECMAScript convention. Codegen maps it to language-appropriate equality (`==` in C++/Kotlin/Python/Rust). `==` (loose equality) is not permitted in Extended SCXML to avoid ambiguity.
+| ECMA-262 Production | Syntax | Examples |
+|---------------------|--------|---------|
+| ArithmeticExpression | `+`, `-`, `*`, `/`, `%` | `raw * 0.1 - 40.0` |
+| ComparisonExpression | `===`, `!==`, `<`, `>`, `<=`, `>=` | `rpm > 8000` |
+| LogicalExpression | `&&`, `\|\|`, `!` | `engineStop && ignOn` |
+| BitwiseExpression | `&`, `\|`, `^`, `~` | `raw & 0x0F` |
+| ShiftExpression | `<<`, `>>`, `>>>` | `(raw[1] >> 4) & 0x0F` |
+| ConditionalExpression | `? :` | `status === 'OK' ? 1 : 0` |
+| MemberExpression | `.field`, `[index]` | `writeResult.result`, `data[0]` |
+| CallExpression | `func(args)`, `obj.method(args)` | `computeKey(seed)` |
+| Literal | number, string, boolean, null | `0x03`, `'STOP'`, `true` |
+| GroupingExpression | `(expr)` | `(a + b) * c` |
+| UnaryExpression | `-`, `+`, `!`, `~` | `-offset`, `!valid` |
 
-Expressions that cannot be parsed by the codegen cause a **build-time error**.
+**Not supported** — ECMAScript constructs that require runtime semantics and cannot be statically transpiled:
+
+| Rejected Construct | Reason |
+|-------------------|--------|
+| `new`, `delete`, `typeof`, `instanceof` | Object system / runtime type info |
+| Arrow functions, closures `() => {}` | Capture semantics not transpilable |
+| `this`, prototype chain | Runtime object model |
+| `eval`, `Function()` | Dynamic code execution |
+| `async`/`await`, generators, `yield` | Concurrency model |
+| Regular expression literals `/pattern/` | Engine-specific implementation |
+| Template literals `` `${x}` `` | Runtime string interpolation |
+| Destructuring `{a, b} = obj` | Runtime pattern matching |
+| Spread/rest `...args` | Runtime collection operations |
+| Optional chaining `?.`, nullish coalescing `??` | Runtime null semantics |
+
+Rejected constructs cause a **build-time error** with the specific unsupported syntax highlighted.
+
+**Equality convention**: `===` (strict equality) is used per ECMAScript convention. Codegen maps it to language-appropriate equality (`==` in C++/Kotlin/Go/Python/Rust). `==` (loose equality) is not permitted in Extended SCXML to avoid type coercion ambiguity.
 
 #### Kind Reference Resolution
 
@@ -267,7 +288,31 @@ std::vector<uint8_t> computeKey(const std::vector<uint8_t>& seed) {
 
 ### 3.5 Namespace URI
 
-The namespace URI `http://sce.dev/ext` is a placeholder for development. A permanent URI will be assigned if the extension is proposed as a formal standard. Implementations must match on the URI string, not resolve it as a URL.
+The namespace URI `http://sce.dev/ext` is the unified SCE extension namespace, shared with SCE Mesh. Both SCE Forge (kind system) and SCE Mesh (distributed runtime) use the same `sce:` prefix and URI. A permanent URI will be assigned if the extension is proposed as a formal standard. Implementations must match on the URI string, not resolve it as a URL.
+
+### 3.6 Extension Attribute Classification
+
+The `sce:` namespace contains attributes from two distinct subsystems. Each attribute has a clear owner that determines when and how it is processed:
+
+| Attribute | Owner | Processing Time | Purpose |
+|-----------|-------|----------------|---------|
+| `sce:kind` | SCE Forge | Build-time (codegen) | Selects generation template |
+| `sce:type`, `sce:direction` | SCE Forge | Build-time (codegen) | Type mapping, I/O direction |
+| `sce:byte`, `sce:bit-offset`, `sce:bit-size` | SCE Forge | Build-time (codegen) | Codec field layout |
+| `sce:service`, `sce:subfunc`, `sce:addr`, `sce:payload` | SCE Forge | Build-time (codegen) | Procedure `<send>` hints |
+| `sce:unit`, `sce:default-endian` | SCE Forge | Build-time (codegen) | Documentation, endianness |
+| `sce:qos` | SCE Mesh | Runtime (transport) | Delivery guarantee |
+| `sce:deadline` | SCE Mesh | Runtime (transport) | Maximum delivery latency |
+| `sce:priority` | SCE Mesh | Runtime (transport) | Scheduling priority |
+
+**Rule**: A single `<send>` element may carry attributes from both owners. SCE Forge processes its attributes at build time to generate the send logic. SCE Mesh processes its attributes at runtime to select transport QoS. Neither subsystem reads the other's attributes.
+
+```xml
+<!-- Both Forge and Mesh attributes on the same <send> -->
+<send sce:service="SecurityAccess" sce:subfunc="0x01"
+      sce:qos="reliable" sce:deadline="5ms"/>
+<!--   ^^^^^^^ Forge (codegen)  ^^^^^^^ Mesh (runtime) -->
+```
 
 ---
 
@@ -740,12 +785,14 @@ struct InjectionMap {
 };
 ```
 
-### 4.10 scheduler
+### 4.10 timer
 
 Periodic, delayed, and timeout task timing.
 
+> **Naming note**: This kind is named `timer`, not `scheduler`, to avoid collision with SCE Mesh's `IScheduler` interface. `IScheduler` controls *how and when state machines process events* (tick-based vs event-driven execution model). The `timer` kind generates *periodic/delayed task timing logic* — a different abstraction level.
+
 ```xml
-<scxml sce:kind="scheduler">
+<scxml sce:kind="timer">
   <sce:tasks>
     <sce:periodic id="testerPresent" interval="2000ms"
                   sce:event="TesterPresent"/>
@@ -1047,7 +1094,7 @@ class DiagSession : public sce::StateMachine {
 | interpolation | None (internal table) | Yes (constexpr data) | No |
 | validator | None (internal prev state) | Yes (class with state) | No |
 | procedure | DiagClient, Service types | Yes (requires runtime headers) | Yes |
-| scheduler | Timer | Yes (requires runtime headers) | Yes |
+| timer | Timer | Yes (requires runtime headers) | Yes |
 | observer | EventBus | Yes (requires runtime headers) | Yes |
 | statechart | EventQueue, ActionHandler | Yes (requires runtime headers) | Yes (existing) |
 
@@ -1069,7 +1116,7 @@ sce-build/templates/
     validator.h.jinja2        (new)
     filter.h.jinja2           (new)
     interpolation.h.jinja2    (new)
-    scheduler.h.jinja2        (new)
+    timer.h.jinja2            (new)
     observer.h.jinja2         (new)
   kotlin/
     ...
@@ -1098,7 +1145,7 @@ SCXML input
   ├─ kind == "validator"     → validator template
   ├─ kind == "filter"        → filter template
   ├─ kind == "interpolation" → interpolation template
-  ├─ kind == "scheduler"     → scheduler template
+  ├─ kind == "timer"         → timer template
   └─ kind == "observer"      → observer template
 
 ```
@@ -1117,7 +1164,7 @@ Error handling varies by kind — this is intentional, as each kind has a differ
 | filter | No error — always produces output | Partial window returns partial average |
 | interpolation | Depends on `sce:out-of-bounds` | `clamp`: no error, `error`: optional return |
 | procedure | Result enum (success/failure) | Communicated via `<donedata>` on `<final>` |
-| scheduler | No error — timer management | Invalid timing is a codegen-time error, not runtime |
+| timer | No error — timer management | Invalid timing is a codegen-time error, not runtime |
 | observer | No error — threshold evaluation | Always produces (possibly empty) event list |
 
 ---
@@ -1148,18 +1195,21 @@ Sequential logic support and multi-language code generation.
 
 Embedded/automotive signal processing patterns.
 
-- Codegen templates for: `filter`, `interpolation`, `scheduler`, `observer`
+- Codegen templates for: `filter`, `interpolation`, `timer`, `observer`
 - sce_runtime extensions (Timer, EventBus interfaces)
 - Platform-specific runtime implementations (POSIX, FreeRTOS)
 
 **Phase 3 exit criteria**: All 11 kinds generate compilable code for all 4 target languages. Kind conformance test suite passes for all kinds.
 
-### Phase 4: Ecosystem (Directional)
+### Phase 4: SCE Mesh Integration + Ecosystem
 
-Tooling and workflow integration.
+Integration with SCE Mesh distributed runtime and tooling.
 
+- **codec → ISerializer bridge**: Forge `codec` kinds generate encode/decode structs. SCE Mesh's `ISerializer` wraps these generated structs to provide event serialization for transport. When a `codec` kind exists for an event payload type, the build tool generates an `ISerializer` adapter instead of requiring a separate `events.yaml` declaration. This makes the codec SCXML the single source of truth for both local parsing and remote serialization.
+- **procedure → remote invoke**: Forge `procedure` kinds generate `sce::StateMachine`-compatible classes. SCE Mesh's remote `<invoke>` (Section 9) executes these across device boundaries unchanged. No additional codegen required — the procedure class is the same whether invoked locally or remotely.
+- **observer → EventRouter**: Forge `observer` kinds generate threshold events. SCE Mesh's `EventRouter` routes these events to remote state machines via the configured `ITransport`. The observer kind remains transport-agnostic; routing is determined by `deploy.yaml`.
 - VS Code extension for Extended SCXML editing with kind-aware autocomplete
-- SCE Mesh integration (Extended SCXML kinds usable in distributed state machines)
+- Unified XSD schema covering both Forge and Mesh `sce:` attributes
 
 ---
 
@@ -1176,7 +1226,7 @@ Tooling and workflow integration.
 | validator | Minimal (prev value) | No | Document | Medium | Phase 2 |
 | filter | Internal (buffer) | No | Document | Medium | Phase 3 |
 | interpolation | None | No | Document | Medium | Phase 3 |
-| scheduler | Internal (timers) | Yes | Document | Medium | Phase 3 |
+| timer | Internal (timers) | Yes | Document | Medium | Phase 3 |
 | observer | Internal (flags) | Yes | Document | Medium | Phase 3 |
 
 ---
@@ -1193,7 +1243,7 @@ Tooling and workflow integration.
 
 ### Overall Success Definition
 
-**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Python/Rust code. All languages produce identical behavior from the same SCXML source.**
+**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Go/Python/Rust code. All languages produce identical behavior from the same SCXML source.**
 
 The measure is: **one SCXML source generates correct, compilable code for all target languages**, with behavior equivalence verified by kind conformance tests.
 

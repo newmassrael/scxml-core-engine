@@ -114,6 +114,21 @@ sce_mesh_plugins  (NEW — protocol implementations)
 
 `sce_mesh` depends on `sce_core` (for AOT) and optionally on `sce_runtime` (for interpreter mode). It does not modify existing tiers.
 
+### Relationship to SCE Forge
+
+SCE Mesh and SCE Forge are orthogonal extensions that compose naturally:
+
+```
+SCE Forge  = extends WHAT scxml-core-engine can generate (kinds: codec, transform, procedure, ...)
+SCE Mesh   = extends WHERE generated code can execute (transports: SOME/IP, Zenoh, SHM, ...)
+```
+
+Key integration points:
+- **Forge `codec` kind → Mesh `ISerializer`**: Codec-generated encode/decode structs are wrapped as transport serializers (see Section 7.5)
+- **Forge `procedure` kind → Mesh remote `<invoke>`**: Procedure state machine classes work unchanged with Mesh's remote invoke protocol (see Section 9)
+- **Forge `observer` kind → Mesh `EventRouter`**: Observer-generated threshold events are routed via configured transports
+- **Shared `sce:` namespace**: Both use `http://sce.dev/ext` with build-time vs runtime attribute ownership (see Section 5)
+
 **CMake integration** follows the existing feature flag pattern (`SCE_ENABLE_QUICKJS`, `SCE_ENABLE_LUA`):
 
 ```cmake
@@ -442,7 +457,7 @@ Events arriving before READY are buffered (configurable timeout).
 SCXML extension namespace `sce:` for transport-level quality-of-service:
 
 ```xml
-<scxml xmlns:sce="http://sce-mesh/1.0">
+<scxml xmlns:sce="http://sce.dev/ext">
 
   <!-- Hard real-time, must deliver, 1ms deadline -->
   <send event="brake.activate" target="#brake_ecu"
@@ -474,6 +489,18 @@ Transport-level hints that map naturally to existing protocol QoS mechanisms:
 | `sce:priority` | `critical`, `high`, `normal`, `low` | Scheduling priority |
 
 These are the only QoS attributes in the initial specification. They are simple transport hints — the runtime maps them to protocol-native QoS (e.g., `sce:qos="reliable"` -> SOME/IP reliable method call, Zenoh reliable publication).
+
+### Shared `sce:` Namespace with SCE Forge
+
+SCE Mesh and SCE Forge share the unified `sce:` extension namespace (`http://sce.dev/ext`). A single `<send>` element may carry attributes from both subsystems:
+
+```xml
+<send sce:service="SecurityAccess" sce:subfunc="0x01"
+      sce:qos="reliable" sce:deadline="5ms"/>
+<!--   ^^^^^^^ Forge (codegen)  ^^^^^^^ Mesh (runtime) -->
+```
+
+**Ownership rule**: SCE Forge attributes (`sce:kind`, `sce:type`, `sce:service`, `sce:subfunc`, `sce:addr`, `sce:payload`, `sce:byte`, `sce:bit-*`, `sce:direction`, `sce:unit`, `sce:default-endian`) are processed at **build time** by the codegen. SCE Mesh attributes (`sce:qos`, `sce:deadline`, `sce:priority`) are processed at **runtime** by the transport layer. Neither subsystem reads the other's attributes. See SCE_FORGE.md Section 3.6 for the full attribute classification table.
 
 ### Future Direction: Distributed Transaction Patterns
 
@@ -683,10 +710,35 @@ The build tool generates transport-appropriate serialization via the `ISerialize
 
 #### Type Information Source
 
-W3C SCXML is typeless — `<param name="brake_force" expr="brakeForce"/>` carries no type information. The build tool requires an external type source to generate serialization code:
+W3C SCXML is typeless — `<param name="brake_force" expr="brakeForce"/>` carries no type information. The build tool requires an external type source to generate serialization code. Three sources are supported, in priority order:
 
-- **Buffer-based transports**: Types are declared in an **event schema file** (`events.yaml`) alongside `deploy.yaml`. This is the minimal approach for Phase 2.
-- **Signal-based transports (CAN, LIN)**: Types, scaling, offsets, and bit layouts are imported from standard automotive database files (`.dbc`, `.arxml`, AUTOSAR system description). This is Phase 3 scope.
+1. **SCE Forge `codec` kind** (preferred when available): If an event payload has a corresponding `sce:kind="codec"` SCXML file, the build tool generates an `ISerializer` adapter that wraps the codec's `encode()`/`decode()` methods. The codec SCXML becomes the single source of truth for both local byte parsing and remote event serialization. No `events.yaml` entry is needed for codec-backed payloads.
+2. **Buffer-based transports**: Types are declared in an **event schema file** (`events.yaml`) alongside `deploy.yaml`. This is the fallback for payloads without a codec kind definition.
+3. **Signal-based transports (CAN, LIN)**: Types, scaling, offsets, and bit layouts are imported from standard automotive database files (`.dbc`, `.arxml`, AUTOSAR system description). This is Phase 3 scope.
+
+```
+Type resolution priority:
+  1. SCE Forge codec kind (sce:kind="codec")  → generated struct with encode/decode
+  2. events.yaml                                → explicit type declarations
+  3. .dbc / .arxml                              → automotive signal database
+```
+
+**SCE Forge codec integration**: When the build tool detects that a `<send>` event payload matches a Forge codec kind (by matching the codec's `<data id>` against the event's `<param>` structure), it generates an `ISerializer` adapter:
+
+```cpp
+// [generated] adapter wrapping Forge-generated codec
+template<>
+struct EventSerializer<events::MotorCutPower> {
+    static void serialize(const MotorCutPower& event, sce::Buffer& buf) {
+        buf.write(MotorCutPowerCodec::encode(event));  // Forge-generated encode
+    }
+    static MotorCutPower deserialize(sce::BufferView buf) {
+        return MotorCutPowerCodec::decode(buf.data(), buf.size());  // Forge-generated decode
+    }
+};
+```
+
+This eliminates type duplication between `events.yaml` and codec SCXML files. When both exist for the same event, the codec kind takes precedence and the build tool emits a warning about the redundant `events.yaml` entry.
 
 **Data model type mismatch**: `events.yaml` declares static types (e.g., `float32`), but SCXML data models (particularly Lua) are dynamically typed. A Lua variable `brakeForce` could be integer or float at runtime. The mismatch strategy will be defined in Phase 2 implementation. Likely approach: runtime type coercion at the serialization boundary with build-time warnings when `events.yaml` types cannot be statically verified against the data model.
 
@@ -1083,7 +1135,8 @@ First cross-process communication using shared memory.
 
 - `SharedMemTransport` implementation
 - `SharedMemRegistry` for cross-process discovery
-- Event serialization framework
+- Event serialization framework (`ISerializer` interface + `BufferSerializer`)
+- **SCE Forge codec integration**: `ISerializer` adapter generation for Forge `codec` kinds (see Section 7.5). This is parallel-safe with Forge Phase 1 which delivers `codec` kind codegen.
 - Verification: two processes on same machine communicating via SCXML
 
 ### Phase 3: Vehicle Network (Directional — refined after Phase 2)
@@ -1096,6 +1149,7 @@ Automotive transport plugins with static discovery.
 - Static discovery mode (build-time routing tables)
 - `deploy.yaml` schema and build tool integration
 - QoS annotation support (`sce:deadline`, `sce:priority`)
+- **SCE Forge procedure integration**: Forge `procedure` kinds (Forge Phase 2) generate `sce::StateMachine`-compatible classes. Mesh remote `<invoke>` executes these across device boundaries. No additional Mesh-side work required beyond the Phase 2 remote invoke protocol.
 
 ### Phase 4: Game Scale (Directional — refined after Phase 3)
 
