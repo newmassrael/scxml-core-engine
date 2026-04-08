@@ -1,0 +1,296 @@
+{#
+    Script Engine Helpers Template (Go Jinja2)
+
+    W3C SCXML 5.2/5.10: Script engine session lifecycle, system variables,
+    datamodel initialization, guard evaluation, event metadata binding.
+#}
+{% if model.needs_script_engine %}
+
+// ensureScriptEngine lazily initializes the script engine session.
+func (p *{{ machine_name }}Policy) ensureScriptEngine() {
+	if p.scriptEngineInitialized {
+		return
+	}
+	engine := sce.GetScriptEngine()
+	if engine == nil {
+		return
+	}
+	sessionID := p.SessionID
+	if sessionID == "" {
+		sessionID = sce.GenerateSessionID()
+		p.SessionID = sessionID
+	}
+	if !engine.HasSession(sessionID) {
+		_ = engine.CreateSession(sessionID)
+	}
+	_ = engine.SetupSystemVariables(sessionID)
+{% if model.has_parallel_states or model.uses_in_predicate %}
+	// W3C SCXML 5.9.2: Register In() predicate callback
+	engine.SetStateQueryCallback(sessionID, func(stateID string) bool {
+		return p.IsStateActive(stateID)
+	})
+{% endif %}
+{% for var in model.variables %}
+{% if var.type == 'int' %}
+	_ = engine.SetVariable(sessionID, "{{ var.id }}", p.{{ var.id | to_camel_case | escape_go_keyword }})
+{% elif var.type == 'string' %}
+	_ = engine.SetVariable(sessionID, "{{ var.id }}", p.{{ var.id | to_camel_case | escape_go_keyword }})
+{% elif var.type == 'bool' %}
+	_ = engine.SetVariable(sessionID, "{{ var.id }}", p.{{ var.id | to_camel_case | escape_go_keyword }})
+{% endif %}
+{% endfor %}
+	p.scriptEngineInitialized = true
+}
+
+// InitializeDataModel sets up datamodel via script engine (W3C SCXML 5.3).
+func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+	p.ensureScriptEngine()
+	engine := sce.GetScriptEngine()
+	if engine == nil {
+		return
+	}
+	sessionID := p.SessionID
+
+	// W3C SCXML 5.3: Initialize _sessionid
+	_ = engine.SetVariable(sessionID, "_sessionid", sessionID)
+
+	// W3C SCXML 5.3: Initialize _name
+	_ = engine.SetVariable(sessionID, "_name", "{{ model.name }}")
+
+	// W3C SCXML 5.2.2: Initialize global datamodel variables
+{% for var in model.variables %}
+{% if var.src %}
+{% set src_file = var.src | replace("file:", "") %}
+	// W3C SCXML 5.2.2: Load {{ var.id }} from src="{{ var.src }}"
+	{
+		basePath := filepath.Join("..", "..", "..", "{{ model.scxml_base_path }}")
+		if srcData, err := sce.LoadFileContent(filepath.Join(basePath, "{{ src_file }}")); err == nil {
+			sce.InitializeVariableFromContent(engine, sessionID, "{{ var.id }}", srcData)
+		}
+	}
+{% elif var.expr %}
+{% set is_function_expr = (var.expr | trim) is startingwith('function') %}
+{% if is_function_expr %}
+	// W3C SCXML B.2: Function expression for {{ var.id }}
+	if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_script }}`); err != nil {
+{% if 'error.execution' in model.events %}
+		eng.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+	}
+{% else %}
+	// W3C SCXML 5.2/5.3: Initialize {{ var.id }} from expr="{{ var.expr }}"
+	{
+		result, err := engine.EvaluateExpression(sessionID, `{{ var.expr | to_lua_expr }}`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
+		} else {
+{% if 'error.execution' in model.events %}
+			eng.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+			_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
+		}
+	}
+{% endif %}
+{% elif var.content %}
+{% if (var.content | trim) is startingwith('<') %}
+	// W3C SCXML B.2: XML inline content for {{ var.id }}
+	_ = engine.SetVariableAsDOM(sessionID, "{{ var.id }}", `{{ var.content }}`)
+{% else %}
+	// W3C SCXML B.2: Inline content for {{ var.id }} (eval with string fallback)
+	{
+		result, err := engine.EvaluateExpression(sessionID, `{{ var.content | to_lua_expr }}`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
+		} else {
+			_ = engine.SetVariable(sessionID, "{{ var.id }}", `{{ var.content | normalize_ws }}`)
+		}
+	}
+{% endif %}
+{% elif var.type == 'runtime' %}
+	// W3C SCXML 5.2: Runtime variable {{ var.id }} (init to nil)
+	_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
+{% endif %}
+{% endfor %}
+
+{% if model.binding == 'early' %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.datamodel %}
+	// W3C SCXML 5.3: Early binding - Initialize state {{ state_id }} datamodel
+{% for var in state.datamodel %}
+{% if var.expr %}
+{% set is_function_expr = (var.expr | trim) is startingwith('function') %}
+{% if is_function_expr %}
+	if err := engine.ExecuteScript(sessionID, `{{ var.id }} = {{ var.expr | to_lua_script }}`); err != nil {
+{% if 'error.execution' in model.events %}
+		eng.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+	}
+{% else %}
+	{
+		result, err := engine.EvaluateExpression(sessionID, `{{ var.expr | to_lua_expr }}`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
+		} else {
+{% if 'error.execution' in model.events %}
+			eng.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+			_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
+		}
+	}
+{% endif %}
+{% elif var.content %}
+{% if (var.content | trim) is startingwith('<') %}
+	_ = engine.SetVariable(sessionID, "{{ var.id }}", `{{ var.content }}`)
+{% else %}
+	{
+		result, err := engine.EvaluateExpression(sessionID, `{{ var.content | to_lua_expr }}`)
+		if err == nil {
+			_ = engine.SetVariable(sessionID, "{{ var.id }}", result)
+		} else {
+			_ = engine.SetVariable(sessionID, "{{ var.id }}", `{{ var.content | normalize_ws }}`)
+		}
+	}
+{% endif %}
+{% else %}
+	_ = engine.SetVariable(sessionID, "{{ var.id }}", nil)
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if model.global_scripts %}
+	// W3C SCXML 5.8: Execute global scripts at document load time
+{% for script in model.global_scripts %}
+	if err := engine.ExecuteScript(sessionID, `{{ script.content | to_lua_script }}`); err != nil {
+{% if 'error.execution' in model.events %}
+		eng.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+	}
+{% endfor %}
+{% endif %}
+
+	// W3C SCXML 6.4.1: Apply deferred params from parent invoke (override defaults, skip undeclared)
+	if len(p.pendingParams) > 0 {
+		for paramName, paramExpr := range p.pendingParams {
+			if engine.HasVariable(sessionID, paramName) {
+				if val, err := engine.EvaluateExpression(sessionID, paramExpr); err == nil {
+					_ = engine.SetVariable(sessionID, paramName, val)
+				} else {
+					_ = engine.SetVariable(sessionID, paramName, paramExpr)
+				}
+			}
+		}
+		p.pendingParams = nil
+	}
+}
+
+// evaluateGuard evaluates a guard condition via script engine.
+// W3C SCXML 4.3.2: If a condition expression cannot be evaluated, the processor
+// MUST treat it as false and MUST raise error.execution.
+func (p *{{ machine_name }}Policy) evaluateGuard(guard string, eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) bool {
+	engine := sce.GetScriptEngine()
+	if engine == nil {
+		return false
+	}
+	p.ensureScriptEngine()
+	result, err := engine.EvaluateExpression(p.SessionID, guard)
+	if err != nil {
+{% if 'error.execution' in model.events %}
+		eng.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+		return false
+	}
+	return sce.ScriptToBool(result)
+}
+
+// executeScript executes a script block via script engine.
+func (p *{{ machine_name }}Policy) executeScript(script string) error {
+	engine := sce.GetScriptEngine()
+	if engine == nil {
+		return fmt.Errorf("no script engine")
+	}
+	p.ensureScriptEngine()
+	return engine.ExecuteScript(p.SessionID, script)
+}
+
+// setCurrentEvent binds _event system variable (W3C SCXML 5.10).
+func (p *{{ machine_name }}Policy) setCurrentEvent(name string) {
+	engine := sce.GetScriptEngine()
+	if engine == nil {
+		return
+	}
+	p.ensureScriptEngine()
+{% if model.needs_event_data %}
+	data := p.pendingEventData
+{% else %}
+	data := ""
+{% endif %}
+{% if model.needs_event_type %}
+	eventType := p.pendingEventType
+{% else %}
+	eventType := ""
+{% endif %}
+{% if model.needs_event_sendid %}
+	sendID := p.pendingEventSendid
+{% else %}
+	sendID := ""
+{% endif %}
+{% if model.needs_event_origin %}
+	origin := p.pendingEventOrigin
+{% else %}
+	origin := ""
+{% endif %}
+{% if model.needs_event_origintype %}
+	originType := p.pendingEventOrigintype
+{% else %}
+	originType := ""
+{% endif %}
+{% if model.needs_event_invokeid %}
+	invokeID := p.pendingEventInvokeid
+{% else %}
+	invokeID := ""
+{% endif %}
+	_ = engine.SetCurrentEvent(p.SessionID, name, data, eventType, sendID, origin, originType, invokeID)
+}
+
+// assignVariable assigns a value to a datamodel variable via script engine.
+func (p *{{ machine_name }}Policy) assignVariable(location, expr string) error {
+	engine := sce.GetScriptEngine()
+	if engine == nil {
+		return fmt.Errorf("no script engine")
+	}
+	p.ensureScriptEngine()
+	script := location + " = " + expr
+	return engine.ExecuteScript(p.SessionID, script)
+}
+
+// getVariable reads a datamodel variable from the script engine.
+func (p *{{ machine_name }}Policy) getVariable(name string) interface{} {
+	engine := sce.GetScriptEngine()
+	if engine == nil {
+		return nil
+	}
+	p.ensureScriptEngine()
+	result, err := engine.GetVariable(p.SessionID, name)
+	if err != nil {
+		return nil
+	}
+	return result
+}
+
+// SetParamInScriptEngine stores a parameter for deferred application after datamodel init (W3C SCXML 6.4.1).
+// Params are applied at the end of InitializeDataModel, overriding defaults only for declared vars.
+func (p *{{ machine_name }}Policy) SetParamInScriptEngine(name, expr string) {
+	if p.pendingParams == nil {
+		p.pendingParams = make(map[string]string)
+	}
+	p.pendingParams[name] = expr
+}
+{% else %}
+// No script engine needed for this state machine.
+func (p *{{ machine_name }}Policy) InitializeDataModel(eng *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {}
+
+// SetParamInScriptEngine is a no-op for state machines without script engine.
+func (p *{{ machine_name }}Policy) SetParamInScriptEngine(name, expr string) {}
+{% endif %}

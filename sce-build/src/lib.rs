@@ -140,6 +140,12 @@ pub fn compile_from_string_lang(
                 files: vec![(format!("{scxml_name}Sm.kt"), code)],
             })
         }
+        generator::Language::Go => {
+            let code = generator::generate_go_with_templates(&model, templates)?;
+            Ok(generator::GeneratedOutput {
+                files: vec![(format!("{scxml_name}_sm.go"), code)],
+            })
+        }
     }
 }
 
@@ -170,6 +176,12 @@ pub fn compile_scxml_lang(
                 files: vec![(format!("{input_stem}Sm.kt"), code)],
             })
         }
+        generator::Language::Go => {
+            let code = generator::generate_go(&model, template_dir)?;
+            Ok(generator::GeneratedOutput {
+                files: vec![(format!("{input_stem}_sm.go"), code)],
+            })
+        }
     }
 }
 
@@ -179,6 +191,7 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
         generator::Language::Rust => "rust",
         generator::Language::Cpp => "",       // C++ templates at root
         generator::Language::Kotlin => "kotlin",
+        generator::Language::Go => "go",
     };
     let base = find_template_base();
     if subdir.is_empty() {

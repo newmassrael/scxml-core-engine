@@ -1,0 +1,337 @@
+{#
+    Process Transition Template (Go Jinja2)
+
+    W3C SCXML 3.12/3.13: Transition processing.
+    Generates ProcessTransition() and ExecuteTransitionActions().
+
+    Key rules:
+    - Eventless transitions (no event attr) only fire for NullEvent
+    - Wildcard transitions (event="*") match any non-null event
+    - Event-triggered transitions use direct enum comparison or prefix matching
+    - Eventless transitions do NOT bubble to parent states
+#}
+
+// ProcessTransition evaluates guards and takes a matching transition (W3C SCXML 3.13).
+// Returns true if a transition was taken.
+func (p *{{ machine_name }}Policy) ProcessTransition(currentState *{{ machine_name }}State, event {{ machine_name }}Event, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) bool {
+{% if model.needs_script_engine %}
+	// W3C SCXML 5.10: Bind _event system variable for guard evaluation
+	if event != {{ machine_name }}EventNull {
+		p.setCurrentEvent(p.GetEventName(event))
+	}
+{% endif %}
+
+{% if model.has_parallel_states %}
+	// W3C SCXML 3.4 + 3.12 + Appendix D: Parallel state transition handling
+	if event == {{ machine_name }}EventNull {
+		// W3C SCXML Appendix D: Eventless transitions - collect from all active states
+		var enabledTransitions []transitionInfo
+		statesToCheck := make([]{{ machine_name }}State, len(p.activeStates))
+		copy(statesToCheck, p.activeStates)
+
+		// Sort by document order for consistent processing
+		sort.Slice(statesToCheck, func(i, j int) bool {
+			return p.GetDocumentOrder(statesToCheck[i]) < p.GetDocumentOrder(statesToCheck[j])
+		})
+
+		for _, activeState := range statesToCheck {
+			// W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
+			if trans := p.tryCollectTransition(activeState, event, engine); trans != nil {
+				enabledTransitions = append(enabledTransitions, *trans)
+			}
+		}
+
+		// W3C SCXML Appendix D.2: Remove conflicting transitions
+		if len(enabledTransitions) > 0 {
+			enabledTransitions = p.selectOptimalTransitions(enabledTransitions)
+		}
+
+		// W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
+		if len(enabledTransitions) > 0 {
+			p.executeMicrostep(enabledTransitions, currentState, engine)
+			return true
+		}
+	} else {
+		// W3C SCXML Appendix D: External events - collect from active leaf states
+		var enabledTransitions []transitionInfo
+
+		for _, activeState := range p.activeStates {
+			isNonAtomic := p.IsCompoundState(activeState) || p.IsParallelState(activeState)
+
+			// W3C SCXML 3.13: Check if this is a done.state event
+			eventName := p.GetEventName(event)
+			isDoneStateEvent := event != {{ machine_name }}EventNull && strings.HasPrefix(eventName, "done.state.")
+
+			// Skip non-atomic states UNLESS processing done.state event
+			if isNonAtomic && !isDoneStateEvent {
+				continue
+			}
+
+			// W3C SCXML 3.12: Hierarchical event bubbling
+			checkState := activeState
+			for {
+				if trans := p.tryCollectTransition(checkState, event, engine); trans != nil {
+					enabledTransitions = append(enabledTransitions, *trans)
+					break
+				}
+				parent, hasParent := p.GetParent(checkState)
+				if !hasParent {
+					break
+				}
+				checkState = parent
+			}
+		}
+
+		// W3C SCXML 3.13: Deduplicate transitions from multiple descendants
+		seen := make(map[[2]int]bool)
+		var deduped []transitionInfo
+		for _, t := range enabledTransitions {
+			key := [2]int{int(t.source), t.transitionIndex}
+			if !seen[key] {
+				seen[key] = true
+				deduped = append(deduped, t)
+			}
+		}
+		enabledTransitions = deduped
+
+		// W3C SCXML Appendix D.2: Remove conflicting transitions
+		if len(enabledTransitions) > 0 {
+			enabledTransitions = p.selectOptimalTransitions(enabledTransitions)
+		}
+
+		// W3C SCXML Appendix D Steps 2-5: Execute as atomic microstep
+		if len(enabledTransitions) > 0 {
+			p.executeMicrostep(enabledTransitions, currentState, engine)
+			return true
+		}
+	}
+{% else %}
+	// W3C SCXML 3.12: Try transitions in current state first
+	if p.tryTransitionInState(*currentState, event, currentState, engine) {
+		return true
+	}
+
+{% if model.has_hierarchy %}
+	// W3C SCXML 3.13: Eventless transitions do NOT bubble to parent states
+	if event == {{ machine_name }}EventNull {
+		return false
+	}
+
+	// W3C SCXML 3.12: Hierarchical event bubbling — walk up to parent
+	checkState := *currentState
+	for {
+		parent, hasParent := p.GetParent(checkState)
+		if !hasParent {
+			break
+		}
+		if p.tryTransitionInState(parent, event, currentState, engine) {
+			return true
+		}
+		checkState = parent
+	}
+{% endif %}
+{% endif %}
+
+	return false
+}
+
+{% if model.has_parallel_states %}
+// tryCollectTransition checks if a state has a matching transition and returns it as transitionInfo.
+func (p *{{ machine_name }}Policy) tryCollectTransition(checkState {{ machine_name }}State, event {{ machine_name }}Event, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) *transitionInfo {
+	switch checkState {
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions %}
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:
+{% for trans in state.transitions %}
+{% if not trans.event %}
+		// Eventless transition {{ loop.index0 }}
+		if event == {{ machine_name }}EventNull {
+{% if trans.cond %}
+{% if trans.is_pure_in_predicate %}
+			if {{ trans.cond_cpp | to_in_predicate_go }} {
+{% elif model.needs_script_engine %}
+			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
+{% else %}
+			if {{ trans.cond }} {
+{% endif %}
+{% endif %}
+			return &transitionInfo{
+				source:          {{ machine_name }}State{{ state_id | to_state_variant }},
+{% if trans.history_target is defined and trans.history_target %}
+				target:          p.resolveHistoryTarget{{ trans.history_target | to_pascal_case }}(),
+{% else %}
+				target:          {{ machine_name }}State{{ (trans.target if trans.target else state_id) | to_state_variant }},
+{% endif %}
+				transitionIndex: {{ trans.transition_index | default(loop.index0) }},
+				hasActions:      {{ 'true' if trans.actions else 'false' }},
+				isInternal:      {{ 'true' if trans.transition_type == 'internal' else 'false' }},
+				isTargetless:    {{ 'true' if not trans.target else 'false' }},
+			}
+{% if trans.cond %}
+			}
+{% endif %}
+		}
+{% else %}
+{% if trans.needs_string_matching %}
+		// W3C SCXML 5.9.3: Runtime event descriptor matching for "{{ trans.event }}"
+		if event != {{ machine_name }}EventNull && sce.MatchesEventDescriptor(p.GetEventName(event), "{{ trans.event }}") {
+{% elif trans.matching_enum_values | length == 1 %}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == {{ machine_name }}Event{{ trans.matching_enum_values[0] | to_event_variant }} {
+{% elif trans.matching_enum_values | length > 1 %}
+		// W3C SCXML 5.9.3: Precomputed prefix match for "{{ trans.event }}"
+		if {% for ev in trans.matching_enum_values %}event == {{ machine_name }}Event{{ ev | to_event_variant }}{{ " || " if not loop.last }}{% endfor %} {
+{% else %}
+		// W3C SCXML 5.9.3: Event "{{ trans.event }}" has no matching enum values
+		if false {
+{% endif %}
+{% if trans.cond %}
+{% if trans.is_pure_in_predicate %}
+			if {{ trans.cond_cpp | to_in_predicate_go }} {
+{% elif model.needs_script_engine %}
+			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
+{% else %}
+			if {{ trans.cond }} {
+{% endif %}
+{% endif %}
+			return &transitionInfo{
+				source:          {{ machine_name }}State{{ state_id | to_state_variant }},
+{% if trans.history_target is defined and trans.history_target %}
+				target:          p.resolveHistoryTarget{{ trans.history_target | to_pascal_case }}(),
+{% else %}
+				target:          {{ machine_name }}State{{ (trans.target if trans.target else state_id) | to_state_variant }},
+{% endif %}
+				transitionIndex: {{ trans.transition_index | default(loop.index0) }},
+				hasActions:      {{ 'true' if trans.actions else 'false' }},
+				isInternal:      {{ 'true' if trans.transition_type == 'internal' else 'false' }},
+				isTargetless:    {{ 'true' if not trans.target else 'false' }},
+			}
+{% if trans.cond %}
+			}
+{% endif %}
+		}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+	}
+	return nil
+}
+{% endif %}
+
+// tryTransitionInState checks transitions for a single state.
+func (p *{{ machine_name }}Policy) tryTransitionInState(checkState {{ machine_name }}State, event {{ machine_name }}Event, currentState *{{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) bool {
+	switch checkState {
+{% for state_id, state in model.states | dictsort %}
+{% if state.transitions %}
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:
+{% for trans in state.transitions %}
+{% if not trans.event %}
+		// Eventless transition {{ loop.index0 }}
+		if event == {{ machine_name }}EventNull {
+{% if trans.cond %}
+{% if trans.is_pure_in_predicate %}
+			if {{ trans.cond_cpp | to_in_predicate_go }} {
+{% elif model.needs_script_engine %}
+			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
+{% else %}
+			if {{ trans.cond }} {
+{% endif %}
+{% endif %}
+{% if trans.target %}
+{% if trans.history_target is defined and trans.history_target %}
+			// W3C SCXML 3.11: History transition — resolve at runtime
+			*currentState = p.resolveHistoryTarget{{ trans.history_target | to_pascal_case }}()
+{% else %}
+			*currentState = {{ machine_name }}State{{ trans.target | to_state_variant }}
+{% endif %}
+{% endif %}
+			p.lastTransitionIsInternal = {{ 'true' if trans.transition_type == 'internal' else 'false' }}
+			p.lastTransitionIsTargetless = {{ 'true' if not trans.target else 'false' }}
+			p.lastTransitionSourceState = {{ machine_name }}State{{ state_id | to_state_variant }}
+{% if model.has_transition_actions %}
+			p.lastTransitionIndex = {{ trans.transition_index | default(loop.index0) }}
+			p.hasTransitionActions = {{ 'true' if trans.actions else 'false' }}
+{% endif %}
+			return true
+{% if trans.cond %}
+			}
+{% endif %}
+		}
+{% else %}
+{% if trans.needs_string_matching %}
+		// W3C SCXML 5.9.3: Runtime event descriptor matching for "{{ trans.event }}"
+		if event != {{ machine_name }}EventNull && sce.MatchesEventDescriptor(p.GetEventName(event), "{{ trans.event }}") {
+{% elif trans.matching_enum_values | length == 1 %}
+		// W3C SCXML 5.9.3: Direct enum comparison
+		if event == {{ machine_name }}Event{{ trans.matching_enum_values[0] | to_event_variant }} {
+{% elif trans.matching_enum_values | length > 1 %}
+		// W3C SCXML 5.9.3: Precomputed prefix match for "{{ trans.event }}"
+		if {% for ev in trans.matching_enum_values %}event == {{ machine_name }}Event{{ ev | to_event_variant }}{{ " || " if not loop.last }}{% endfor %} {
+{% else %}
+		// W3C SCXML 5.9.3: Event "{{ trans.event }}" has no matching enum values
+		if false {
+{% endif %}
+{% if trans.cond %}
+{% if trans.is_pure_in_predicate %}
+			if {{ trans.cond_cpp | to_in_predicate_go }} {
+{% elif model.needs_script_engine %}
+			if p.evaluateGuard(`{{ trans.cond | to_lua_guard }}`, engine) {
+{% else %}
+			if {{ trans.cond }} {
+{% endif %}
+{% endif %}
+{% if trans.target %}
+{% if trans.history_target is defined and trans.history_target %}
+			// W3C SCXML 3.11: History transition — resolve at runtime
+			*currentState = p.resolveHistoryTarget{{ trans.history_target | to_pascal_case }}()
+{% else %}
+			*currentState = {{ machine_name }}State{{ trans.target | to_state_variant }}
+{% endif %}
+{% endif %}
+			p.lastTransitionIsInternal = {{ 'true' if trans.transition_type == 'internal' else 'false' }}
+			p.lastTransitionIsTargetless = {{ 'true' if not trans.target else 'false' }}
+			p.lastTransitionSourceState = {{ machine_name }}State{{ state_id | to_state_variant }}
+{% if model.has_transition_actions %}
+			p.lastTransitionIndex = {{ trans.transition_index | default(loop.index0) }}
+			p.hasTransitionActions = {{ 'true' if trans.actions else 'false' }}
+{% endif %}
+			return true
+{% if trans.cond %}
+			}
+{% endif %}
+		}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+	}
+	return false
+}
+
+// ExecuteTransitionActions executes actions for the last taken transition (W3C SCXML 3.13).
+func (p *{{ machine_name }}Policy) ExecuteTransitionActions(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+{% if model.has_transition_actions %}
+{% if model.needs_script_engine %}
+	p.ensureScriptEngine()
+{% endif %}
+	if !p.hasTransitionActions {
+		return
+	}
+	source := p.lastTransitionSourceState
+	idx := p.lastTransitionIndex
+{% for state_id, state in model.states | dictsort %}
+{% for trans in state.transitions %}
+{% if trans.actions %}
+	if source == {{ machine_name }}State{{ state_id | to_state_variant }} && idx == {{ trans.transition_index | default(loop.index0) }} {
+{% for action in trans.actions %}
+		{% include 'actions/' ~ action.type ~ '.go.jinja2' %}
+
+{% endfor %}
+		return
+	}
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endif %}
+}

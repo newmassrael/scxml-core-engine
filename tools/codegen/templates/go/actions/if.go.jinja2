@@ -1,0 +1,33 @@
+{# W3C SCXML 5.9.2: Conditional execution (if/elseif/else) #}
+{% if action.is_pure_in_predicate %}
+	if {{ action.cond_cpp | to_in_predicate_go }} {
+{% elif model.needs_script_engine %}
+	if p.evaluateGuard(`{{ action.cond | to_lua_guard }}`, engine) {
+{% else %}
+	if {{ action.cond }} {
+{% endif %}
+{% for then_action in action.then_actions %}
+		{% with action=then_action %}{% include 'actions/' ~ then_action.type ~ '.go.jinja2' %}{% endwith %}
+
+{% endfor %}
+{% for elseif in action.elseif_branches %}
+{% if elseif.is_pure_in_predicate %}
+	} else if {{ elseif.cond_cpp | to_in_predicate_go }} {
+{% elif model.needs_script_engine %}
+	} else if p.evaluateGuard(`{{ elseif.cond | to_lua_guard }}`, engine) {
+{% else %}
+	} else if {{ elseif.cond }} {
+{% endif %}
+{% for elseif_action in elseif.actions %}
+		{% with action=elseif_action %}{% include 'actions/' ~ elseif_action.type ~ '.go.jinja2' %}{% endwith %}
+
+{% endfor %}
+{% endfor %}
+{% if action.else_actions %}
+	} else {
+{% for else_action in action.else_actions %}
+		{% with action=else_action %}{% include 'actions/' ~ else_action.type ~ '.go.jinja2' %}{% endwith %}
+
+{% endfor %}
+{% endif %}
+	}

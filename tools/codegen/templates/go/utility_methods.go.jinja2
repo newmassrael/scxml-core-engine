@@ -1,0 +1,18 @@
+{#
+    Utility Methods Template (Go Jinja2)
+
+    Generates helper methods on the Policy:
+    - IsStateActive() for In() predicate support
+#}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+
+// IsStateActive checks if a state is active by name (W3C SCXML 5.9.2: In() predicate).
+func (p *{{ machine_name }}Policy) IsStateActive(stateID string) bool {
+	for _, s := range p.activeStates {
+		if p.GetStateName(s) == stateID {
+			return true
+		}
+	}
+	return false
+}
+{% endif %}

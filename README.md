@@ -1,6 +1,6 @@
 # SCE (SCXML Core Engine)
 
-A high-performance W3C SCXML 1.0 implementation with C++ AOT code generator, Kotlin/JVM runtime, Rust AOT backend, and Python bindings. Supports embedded C++, Android (AAOS), Spring Boot server, Rust native, and Python applications.
+A high-performance W3C SCXML 1.0 implementation with C++ AOT code generator, Kotlin/JVM runtime, Rust AOT backend, Go AOT backend, and Python bindings. Supports embedded C++, Android (AAOS), Spring Boot server, Rust native, Go native, and Python applications.
 
 [![W3C Tests](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml/badge.svg)](https://github.com/newmassrael/scxml-core-engine/actions/workflows/w3c-tests.yml)
 
@@ -97,6 +97,21 @@ python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --language 
 - **Zero duplication**: json_builtins.lua shared with C++/Kotlin via `include_str!`
 - **Cargo workspace**: `sce-rust-runtime`, `sce-rust-lua`, `sce-rust-tests`
 
+### 🐹 Go AOT Backend
+
+Native Go state machines with Go 1.22+ generics:
+
+```bash
+# Generate Go code from SCXML
+sce-codegen generate --scxml traffic_light.scxml --language go --output-dir ./generated/
+```
+
+**Key Features**:
+- **W3C SCXML 1.0 compliant**: 202/202 W3C tests passing
+- **Generics**: `Engine[S comparable, E comparable]` with `StatePolicy[S, E]` interface
+- **Pure Go Lua**: Shopify/go-lua (no CGo, no C compiler required)
+- **Go modules**: `sce-go-runtime`, `sce-go-lua`, `sce-go-tests`
+
 ### ☕ Kotlin/JVM & Spring Boot Support
 
 Use SCE from Java/Kotlin applications with a single dependency:
@@ -152,6 +167,7 @@ cmake --build . -j$(nproc)
 **C++ Requirements**: CMake 3.14+, C++17 compiler (C++20 for full runtime)
 **Kotlin/JVM Requirements**: JDK 17+, Gradle 8.11+ (wrapper included)
 **Rust Requirements**: Rust 1.75+, Cargo
+**Go Requirements**: Go 1.22+
 **Python Requirements**: Python 3.9+, pybind11
 
 ### Python Bindings
@@ -179,6 +195,16 @@ python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --language 
 
 # Run W3C conformance tests
 cargo test --release -p sce-rust-tests
+```
+
+### Go
+
+```bash
+# Generate Go code from SCXML
+sce-codegen generate --scxml traffic_light.scxml --language go --output-dir ./generated/
+
+# Run W3C conformance tests
+cd sce-go-tests && go test ./...
 ```
 
 ### Kotlin/JVM & Spring Boot
@@ -661,7 +687,7 @@ tools/codegen/           # Code generator (Python + Jinja2)
 ├── codegen.py
 ├── scxml_parser.py
 ├── generators/          # Language-specific generators (C++, Kotlin, Rust)
-└── templates/           # C++/Kotlin/Rust generation templates
+└── templates/           # C++/Kotlin/Rust/Go generation templates
 
 # Python Bindings (pybind11):
 sce-python/              # Python bindings module

@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCXML Code Generator - Online | Generate C++, Kotlin, Rust State Machines from W3C SCXML</title>
-    <meta name="description" content="Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML online. Browser-based code generator powered by native WebAssembly with full SCXML 1.0 support including datamodel, actions, and JSEngine.">
-    <meta name="keywords" content="SCXML code generator, state machine generator, C++ code generator, Kotlin code generator, Rust code generator, W3C SCXML, SCXML to C++, SCXML to Kotlin, SCXML to Rust, online code generator, statechart compiler">
+    <title>SCXML Code Generator - Online | Generate C++, Kotlin, Rust, Go State Machines from W3C SCXML</title>
+    <meta name="description" content="Generate optimized C++, Kotlin, Rust, or Go state machine code from W3C SCXML online. Browser-based code generator powered by native WebAssembly with full SCXML 1.0 support including datamodel, actions, and JSEngine.">
+    <meta name="keywords" content="SCXML code generator, state machine generator, C++ code generator, Kotlin code generator, Rust code generator, Go code generator, W3C SCXML, SCXML to C++, SCXML to Kotlin, SCXML to Rust, SCXML to Go, online code generator, statechart compiler">
     <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
-    <meta property="og:title" content="SCXML Code Generator - Generate C++, Kotlin, Rust State Machines Online">
-    <meta property="og:description" content="Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML directly in your browser. Powered by native WebAssembly — instant code generation, no server required.">
+    <meta property="og:title" content="SCXML Code Generator - Generate C++, Kotlin, Rust, Go State Machines Online">
+    <meta property="og:description" content="Generate optimized C++, Kotlin, Rust, or Go state machine code from W3C SCXML directly in your browser. Powered by native WebAssembly — instant code generation, no server required.">
     <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html">
     <meta property="og:site_name" content="SCXML Core Engine">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="SCXML Code Generator Online">
-    <meta name="twitter:description" content="Generate C++, Kotlin, or Rust state machine code from W3C SCXML in your browser.">
+    <meta name="twitter:description" content="Generate C++, Kotlin, Rust, or Go state machine code from W3C SCXML in your browser.">
 
     <!-- JSON-LD -->
     <script type="application/ld+json">
@@ -26,7 +26,7 @@
         "@context": "https://schema.org",
         "@type": "WebApplication",
         "name": "SCXML Code Generator",
-        "description": "Generate optimized C++, Kotlin, or Rust state machine code from W3C SCXML online",
+        "description": "Generate optimized C++, Kotlin, Rust, or Go state machine code from W3C SCXML online",
         "url": "https://newmassrael.github.io/scxml-core-engine/visualizer/codegen.html",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "Any",
@@ -109,7 +109,7 @@
     <div class="container">
         <header>
             <h1>SCXML Code Generator</h1>
-            <p>Generate W3C SCXML compliant C++, Kotlin, or Rust code directly in the browser</p>
+            <p>Generate W3C SCXML compliant C++, Kotlin, Rust, or Go code directly in the browser</p>
             <div class="info">
                 <strong>Native WebAssembly</strong> — All languages generated instantly via Rust WASM. No Python runtime, no server required.
             </div>
@@ -122,6 +122,7 @@
                 <button class="lang-btn active" data-lang="cpp" onclick="selectLanguage('cpp')">C++</button>
                 <button class="lang-btn" data-lang="kotlin" onclick="selectLanguage('kotlin')">Kotlin</button>
                 <button class="lang-btn" data-lang="rust" onclick="selectLanguage('rust')">Rust</button>
+                <button class="lang-btn" data-lang="go" onclick="selectLanguage('go')">Go</button>
             </div>
             <button onclick="generateCode()" id="generateBtn" disabled>Generate Code</button>
             <button onclick="downloadCode()" id="downloadBtn" disabled>Download Code</button>
@@ -169,7 +170,8 @@
         const LANGUAGE_CONFIG = {
             cpp: { label: 'C++', downloadExt: '_sm.h' },
             kotlin: { label: 'Kotlin', downloadExt: 'Sm.kt' },
-            rust: { label: 'Rust', downloadExt: '_sm.rs' }
+            rust: { label: 'Rust', downloadExt: '_sm.rs' },
+            go: { label: 'Go', downloadExt: '_sm.go' }
         };
 
         // Read language from URL query parameter (e.g., ?lang=kotlin)
@@ -409,7 +411,7 @@ fn main() {
                 setStatusText('Ready');
                 document.getElementById('generateBtn').disabled = false;
                 document.getElementById('generatedContent').textContent =
-                    'Ready to generate C++, Kotlin, or Rust code from SCXML.';
+                    'Ready to generate C++, Kotlin, Rust, or Go code from SCXML.';
             } catch (error) {
                 console.error('WASM init error:', error);
                 showStatus('Failed to initialize WASM codegen: ' + error.message + '<br>Please refresh the page.', 'error');

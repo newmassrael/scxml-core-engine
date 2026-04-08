@@ -25,6 +25,12 @@
         <priority>0.9</priority>
     </url>
     <url>
+        <loc>https://newmassrael.github.io/scxml-core-engine/go-state-machine.html</loc>
+        <lastmod>2026-04-08</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.9</priority>
+    </url>
+    <url>
         <loc>https://newmassrael.github.io/scxml-core-engine/python-state-machine.html</loc>
         <lastmod>2026-04-07</lastmod>
         <changefreq>monthly</changefreq>

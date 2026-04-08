@@ -1,0 +1,351 @@
+{#
+    Entry/Exit Actions Template (Go Jinja2)
+
+    W3C SCXML 3.8/3.9: Entry and exit action execution.
+    Renders onEntry/onExit action blocks per state.
+
+    NOTE: Uses dynamic {% include %} like the Rust templates to avoid
+    minijinja macro+include limitation. Action field is `action.type`
+    (serde rename from `action_type`).
+#}
+
+// ExecuteEntryActions executes onentry actions for a state (W3C SCXML 3.8).
+func (p *{{ machine_name }}Policy) ExecuteEntryActions(state {{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+{% if model.needs_script_engine %}
+	p.ensureScriptEngine()
+{% endif %}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+	// W3C SCXML 3.4/3.12.1: Add state to active configuration for parallel states and In() predicate
+	for _, s := range p.activeStates {
+		if s == state {
+			return // W3C SCXML 3.8: Skip onentry actions for duplicate state entry
+		}
+	}
+	p.activeStates = append(p.activeStates, state)
+{% endif %}
+	switch state {
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_entry_blocks or state.initial_transition_actions or state.initial_history_id or (state.is_final and state.parent) or state.static_invokes or state.hybrid_invokes %}
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:
+{% for block in state.on_entry_blocks %}
+		// W3C SCXML 3.8: onentry block {{ loop.index0 }} (break on error stops subsequent actions)
+		for actionBlock{{ loop.index0 }} := 0; actionBlock{{ loop.index0 }} < 1; actionBlock{{ loop.index0 }}++ {
+			_ = actionBlock{{ loop.index0 }}
+{% for action in block %}
+			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
+
+{% endfor %}
+		}
+{% endfor %}
+{% if state.initial_transition_actions %}
+		// W3C SCXML 3.3.2: Execute <initial> transition executable content
+		for initialBlock := 0; initialBlock < 1; initialBlock++ {
+			_ = initialBlock
+{% for action in state.initial_transition_actions %}
+			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
+
+{% endfor %}
+		}
+{% endif %}
+{% if state.initial_history_id %}
+		// W3C SCXML 3.11: Initial transition targets history state {{ state.initial_history_id }}
+		if p.history{{ state.initial_history_id | to_pascal_case }} == nil || len(p.history{{ state.initial_history_id | to_pascal_case }}) == 0 {
+			// No stored history, execute default transition actions
+{% for action in state.initial_history_default_actions %}
+			{% include 'actions/' ~ action.type ~ '.go.jinja2' %}
+
+{% endfor %}
+		}
+{% endif %}
+{% if state.is_final and state.donedata %}
+		// W3C SCXML 5.5: Evaluate donedata for final state
+		doneEventData := ""
+		doneDataOk := true
+{% if state.donedata.params %}
+		{
+			p.ensureScriptEngine()
+			se := sce.GetScriptEngine()
+			if se != nil {
+				var jsonParts []string
+{% for param in state.donedata.params %}
+{% set param_expr = param.expr if param.expr else param.location %}
+{% if not param_expr %}
+				// W3C SCXML 5.7: Empty location raises error.execution (structural error)
+{% if 'error.execution' in model.events %}
+				engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+				doneDataOk = false
+{% else %}
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ param_expr | to_lua_expr | escape_go }}`); err == nil {
+					jsonParts = append(jsonParts, `["{{ param.name }}"] = ` + sce.ToLuaLiteral(val))
+				} else {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+				}
+{% endif %}
+{% endfor %}
+				if doneDataOk {
+					doneEventData = "{" + strings.Join(jsonParts, ", ") + "}"
+				}
+			}
+		}
+{% elif state.donedata.contentexpr %}
+		{
+			p.ensureScriptEngine()
+			se := sce.GetScriptEngine()
+			if se != nil {
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.contentexpr | to_lua_expr | escape_go }}`); err == nil {
+					doneEventData = sce.ToLuaLiteral(val)
+				} else {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+				}
+			}
+		}
+{% elif state.donedata.content %}
+		{
+			p.ensureScriptEngine()
+			se := sce.GetScriptEngine()
+			if se != nil {
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ state.donedata.content | to_lua_expr | escape_go }}`); err == nil {
+					doneEventData = sce.ToLuaLiteral(val)
+				} else {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+				}
+			}
+		}
+{% endif %}
+		_ = doneEventData
+		_ = doneDataOk
+{% endif %}
+{% if state.is_final and state.parent %}
+{% set done_event = ("done.state." ~ state.parent) | to_event_variant %}
+{% if state.donedata %}
+		// W3C SCXML 5.5: Carry evaluated donedata in done.state.{{ state.parent }} event
+		if doneDataOk {
+			doneMeta := sce.NewEventWithMetadata({{ machine_name }}Event{{ done_event }})
+			doneMeta.Metadata.Data = doneEventData
+			engine.Raise(doneMeta)
+		}
+{% else %}
+		// W3C SCXML 3.7: Final state reached — raise done.state.{{ state.parent }}
+		engine.Raise(sce.NewEventWithMetadata({{ machine_name }}Event{{ done_event }}))
+{% endif %}
+{% if model.has_parallel_states and state.parent in model.states and model.states[state.parent].parent %}
+{% set grandparent_id = model.states[state.parent].parent %}
+{% if grandparent_id in model.states and model.states[grandparent_id].is_parallel %}
+		// W3C SCXML 3.4: Check if parallel grandparent {{ grandparent_id }} has all regions complete
+		{
+			regions := p.GetParallelRegions({{ machine_name }}State{{ grandparent_id | to_state_variant }})
+			allComplete := true
+			for _, region := range regions {
+				regionDone := false
+				for _, s := range p.activeStates {
+					if p.IsFinalState(s) && p.IsDescendantOf(s, region) {
+						regionDone = true
+						break
+					}
+				}
+				if !regionDone {
+					allComplete = false
+					break
+				}
+			}
+			if allComplete {
+{% if 'done.state.' ~ grandparent_id in model.events %}
+				engine.Raise(sce.NewEventWithMetadata({{ machine_name }}Event{{ ('done.state.' ~ grandparent_id) | to_event_variant }}))
+{% endif %}
+			}
+		}
+{% endif %}
+{% endif %}
+{% endif %}
+{% endif %}
+{% if state.static_invokes or state.hybrid_invokes %}
+		// W3C SCXML 6.4: Defer invoke execution until macrostep end
+{% for invoke_info in state.static_invokes %}
+		{
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
+{% if invoke_info.idlocation %}
+			// W3C SCXML 6.4.1: Store generated invokeId in datamodel via idlocation
+			p.ensureScriptEngine()
+			se := sce.GetScriptEngine()
+			if se != nil {
+				_ = se.SetVariable(p.SessionID, "{{ invoke_info.idlocation }}", generatedInvokeID)
+			}
+{% endif %}
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
+				InvokeID: generatedInvokeID,
+				State:    {{ machine_name }}State{{ state_id | to_state_variant }},
+			})
+		}
+{% endfor %}
+{% for invoke_info in state.hybrid_invokes %}
+		{
+			generatedInvokeID := fmt.Sprintf("%s.%d.{{ invoke_info.invoke_id }}", "{{ state_id }}", sce.NextInvokeCounter())
+{% if invoke_info.idlocation %}
+			p.ensureScriptEngine()
+			se := sce.GetScriptEngine()
+			if se != nil {
+				_ = se.SetVariable(p.SessionID, "{{ invoke_info.idlocation }}", generatedInvokeID)
+			}
+{% endif %}
+			sce.DeferInvoke(&p.pendingInvokes, sce.PendingInvoke[{{ machine_name }}State]{
+				InvokeID: generatedInvokeID,
+				State:    {{ machine_name }}State{{ state_id | to_state_variant }},
+			})
+		}
+{% endfor %}
+{% endif %}
+{% endfor %}
+	default:
+		// No entry actions
+	}
+{% if model.has_parallel_states %}
+
+	// W3C SCXML 3.4: If entering parallel state, enter all child regions
+	if p.IsParallelState(state) {
+		regions := p.GetParallelRegions(state)
+		for _, region := range regions {
+			p.ExecuteEntryActions(region, engine)
+
+			// W3C SCXML 3.3: If region is compound, enter initial child
+			if p.IsCompoundState(region) {
+				initialChild := p.GetInitialOrHistoryChild(region)
+				if initialChild != region {
+					p.ExecuteEntryActions(initialChild, engine)
+				}
+			}
+		}
+	}
+
+	// W3C SCXML 3.3: If entering compound state (non-parallel), enter initial child
+	if p.IsCompoundState(state) && !p.IsParallelState(state) {
+		initialChildren := p.GetInitialChildren(state)
+		if len(initialChildren) > 0 {
+			// W3C SCXML 3.6: Enter through hierarchy to reach initial target(s)
+			for _, target := range initialChildren {
+				var chain []{{ machine_name }}State
+				current := target
+				for current != state {
+					chain = append([]{{ machine_name }}State{current}, chain...)
+					parent, hasParent := p.GetParent(current)
+					if !hasParent {
+						break
+					}
+					current = parent
+				}
+				for _, intermediate := range chain {
+					p.ExecuteEntryActions(intermediate, engine)
+				}
+			}
+		} else {
+			initialChild := p.GetInitialOrHistoryChild(state)
+			if initialChild != state {
+				p.ExecuteEntryActions(initialChild, engine)
+			}
+		}
+	}
+{% endif %}
+}
+
+// ExecuteExitActions executes onexit actions for a state (W3C SCXML 3.9).
+func (p *{{ machine_name }}Policy) ExecuteExitActions(state {{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event], preTransitionActive []{{ machine_name }}State) {
+{% if model.needs_script_engine %}
+	p.ensureScriptEngine()
+{% endif %}
+{% if model.has_parallel_states %}
+	// W3C SCXML 3.4 + 3.13: Parallel state exit order — exit all active descendants first
+	if p.IsParallelState(state) {
+		var descendantsToExit []{{ machine_name }}State
+		for _, s := range p.activeStates {
+			if s != state && p.IsDescendantOf(s, state) {
+				descendantsToExit = append(descendantsToExit, s)
+			}
+		}
+		// W3C SCXML 3.13: Sort descendants by reverse document order (deepest first)
+		sort.Slice(descendantsToExit, func(i, j int) bool {
+			return p.GetDocumentOrder(descendantsToExit[i]) > p.GetDocumentOrder(descendantsToExit[j])
+		})
+		for _, descendant := range descendantsToExit {
+			p.ExecuteExitActions(descendant, engine, preTransitionActive)
+		}
+	}
+{% endif %}
+{% if model.has_parallel_states or model.uses_in_predicate %}
+	// W3C SCXML 3.4/3.12.1: Remove state from active configuration
+	p.activeStates = func() []{{ machine_name }}State {
+		var result []{{ machine_name }}State
+		for _, s := range p.activeStates {
+			if s != state {
+				result = append(result, s)
+			}
+		}
+		return result
+	}()
+{% endif %}
+{% set has_invoke_exits = model.static_invokes or model.hybrid_invokes %}
+{% if has_invoke_exits %}
+	// W3C SCXML 6.4: Cancel pending invokes and cleanup active children on state exit
+	switch state {
+{% for state_id, state in model.states | dictsort %}
+{% if state.static_invokes or state.hybrid_invokes %}
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:
+		sce.CancelInvokesForState(&p.pendingInvokes, {{ machine_name }}State{{ state_id | to_state_variant }})
+{% for invoke_info in state.static_invokes %}
+		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
+		}
+		delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
+		p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = false
+{% endfor %}
+{% for invoke_info in state.hybrid_invokes %}
+		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+			p.child{{ invoke_info.invoke_id | to_pascal_case }} = nil
+		}
+		delete(p.activeInvokes, "{{ invoke_info.invoke_id }}")
+		p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = false
+{% endfor %}
+{% endif %}
+{% endfor %}
+	default:
+	}
+{% endif %}
+	switch state {
+{% for state_id, state in model.states | dictsort %}
+{% if state.on_exit_blocks %}
+	case {{ machine_name }}State{{ state_id | to_state_variant }}:
+{% for block in state.on_exit_blocks %}
+		// W3C SCXML 3.9: onexit block {{ loop.index0 }}
+		for exitBlock{{ loop.index0 }} := 0; exitBlock{{ loop.index0 }} < 1; exitBlock{{ loop.index0 }}++ {
+			_ = exitBlock{{ loop.index0 }}
+{% for action in block %}
+			{% with in_entry_exit=true %}{% include 'actions/' ~ action.type ~ '.go.jinja2' %}{% endwith %}
+
+{% endfor %}
+		}
+{% endfor %}
+{% endif %}
+{% endfor %}
+	default:
+		// No exit actions
+	}
+{% if model.history_states %}
+	// W3C SCXML 3.11: Record history before exiting compound states
+{% for history_id, history_info in model.history_states | dictsort %}
+	if state == {{ machine_name }}State{{ history_info.parent | to_state_variant }} {
+{% if history_info.type == 'deep' %}
+		// W3C SCXML 3.11: Deep history — record all active leaf descendants
+		p.history{{ history_id | to_pascal_case }} = sce.FilterDeepHistory(preTransitionActive, {{ machine_name }}State{{ history_info.parent | to_state_variant }}, func(s {{ machine_name }}State) ({{ machine_name }}State, bool) { return p.GetParent(s) }, func(s {{ machine_name }}State) bool { return p.IsCompoundState(s) || p.IsParallelState(s) })
+{% else %}
+		// W3C SCXML 3.11: Shallow history — record direct children only
+		p.history{{ history_id | to_pascal_case }} = sce.FilterShallowHistory(preTransitionActive, {{ machine_name }}State{{ history_info.parent | to_state_variant }}, func(s {{ machine_name }}State) ({{ machine_name }}State, bool) { return p.GetParent(s) })
+{% endif %}
+	}
+{% endfor %}
+{% endif %}
+}

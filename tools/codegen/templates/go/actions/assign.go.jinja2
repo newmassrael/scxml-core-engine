@@ -1,0 +1,36 @@
+{# W3C SCXML 5.3/5.4: Variable assignment #}
+{% if model.needs_script_engine %}
+{% set loc = action.location | default("") %}
+{# W3C SCXML B.2: System variables are read-only (1:1 with Rust/C++ AssignHelper::isValidLocation) #}
+{% if not loc or loc in ('_sessionid', '_event', '_name', '_ioprocessors') %}
+	// W3C SCXML 5.3/B.2: Invalid or read-only location "{{ loc }}"
+{% if 'error.execution' in model.events %}
+	engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+	break
+{% endif %}
+{% else %}
+{% if action.content %}
+	// W3C SCXML 5.3: <assign location="{{ loc }}"> (inline content)
+	if err := p.assignVariable(`{{ loc }}`, `'{{ action.content | escape_go }}'`); err != nil {
+{% if 'error.execution' in model.events %}
+		engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+		break
+{% endif %}
+	}
+{% elif action.expr %}
+	// W3C SCXML 5.3: <assign location="{{ loc }}" expr="{{ action.expr | escape_go }}">
+	if err := p.assignVariable(`{{ loc }}`, `{{ action.expr | to_lua_expr }}`); err != nil {
+{% if 'error.execution' in model.events %}
+		engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+		break
+{% endif %}
+	}
+{% endif %}
+{% endif %}
+{% endif %}

@@ -1,0 +1,4 @@
+{# W3C SCXML 3.8.1: Raise internal event #}
+{% if action.event %}
+	engine.Raise(sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }}))
+{% endif %}

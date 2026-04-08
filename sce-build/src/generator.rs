@@ -29,6 +29,7 @@ pub enum Language {
     Rust,
     Cpp,
     Kotlin,
+    Go,
 }
 
 impl std::str::FromStr for Language {
@@ -39,6 +40,7 @@ impl std::str::FromStr for Language {
             "rust" => Ok(Language::Rust),
             "cpp" | "c++" => Ok(Language::Cpp),
             "kotlin" | "kt" => Ok(Language::Kotlin),
+            "go" | "golang" => Ok(Language::Go),
             _ => Err(format!("Unknown language: {s}")),
         }
     }
@@ -367,6 +369,40 @@ impl minijinja::value::Object for KotlinDefaultFn {
             Ok(minijinja::Value::from("null"))
         }
     }
+}
+
+// ── Go generator ────────────────────────────────────────────────
+
+/// Generate Go code from an analyzed SCXMLModel (filesystem-based).
+pub fn generate_go(model: &SCXMLModel, template_dir: &Path) -> Result<String, String> {
+    let mut env = new_env();
+    load_templates(&mut env, template_dir)?;
+    filters::register_go_filters(&mut env);
+    render_go(&env, model)
+}
+
+/// Generate Go code using pre-loaded template strings (WASM-compatible).
+pub fn generate_go_with_templates(
+    model: &SCXMLModel,
+    templates: &[(&str, &str)],
+) -> Result<String, String> {
+    let mut env = new_env();
+    load_template_strings(&mut env, templates)?;
+    filters::register_go_filters(&mut env);
+    render_go(&env, model)
+}
+
+fn render_go(env: &Environment, model: &SCXMLModel) -> Result<String, String> {
+    let machine_name = filters::to_pascal_case(model.name.clone());
+    let tmpl = env
+        .get_template("state_machine.go.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+    let ctx = minijinja::context! {
+        model => minijinja::Value::from_serialize(model),
+        machine_name => machine_name,
+        license_config => minijinja::Value::from_serialize(&license_config()),
+    };
+    tmpl.render(ctx).map_err(render_error)
 }
 
 // ── Template loading helpers ─────────────────────────────────────

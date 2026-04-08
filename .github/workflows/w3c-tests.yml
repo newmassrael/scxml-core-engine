@@ -587,12 +587,78 @@ jobs:
         if-no-files-found: ignore
 
   # ============================================================
+  # Go AOT — 202 tests
+  # ============================================================
+  test-go:
+    name: Go W3C Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+        cache-dependency-path: |
+          sce-go-runtime/go.sum
+          sce-go-lua/go.sum
+          sce-go-tests/go.sum
+
+    - name: Run W3C Tests
+      run: |
+        echo "=== Go W3C SCXML Conformance Tests ==="
+        cd sce-go-tests
+        go test ./... -v -count=1 2>&1 | tee ../go_test_output.log
+        echo "Exit code: $?"
+
+    - name: Upload Test Log
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: w3c-test-output-go
+        path: go_test_output.log
+        retention-days: 30
+
+    - name: Generate Test Summary
+      if: always()
+      run: |
+        echo "## W3C SCXML Test Results (Go)" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ -f go_test_output.log ]; then
+          passed=$(grep -c "^--- PASS:" go_test_output.log || echo "0")
+          failed=$(grep -c "^--- FAIL:" go_test_output.log || echo "0")
+          total=$((passed + failed))
+          if [ "$total" -gt 0 ] 2>/dev/null; then
+            echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Passed | $passed |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed | ${failed:-0} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Total | $total |" >> $GITHUB_STEP_SUMMARY
+            echo "{\"passed\":$passed,\"failed\":${failed:-0},\"total\":$total}" > go_results.json
+          else
+            echo "Could not parse test results" >> $GITHUB_STEP_SUMMARY
+          fi
+        fi
+
+    - name: Upload Results JSON
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: backend-results-go
+        path: go_results.json
+        retention-days: 7
+        if-no-files-found: ignore
+
+  # ============================================================
   # Unified HTML Report + GitHub Pages Deploy
   # ============================================================
   report:
     name: Unified Report
     runs-on: ubuntu-latest
-    needs: [test-cpp, test-rust, test-kotlin, test-python]
+    needs: [test-cpp, test-rust, test-kotlin, test-python, test-go]
     if: always()
     permissions:
       contents: write
@@ -611,7 +677,7 @@ jobs:
         # Combine Rust/Kotlin/Python JSON results into one file
         echo '{' > backend_results.json
         first=true
-        for backend in rust kotlin python; do
+        for backend in rust kotlin python go; do
           json_file="artifacts/backend-results-${backend}/${backend}_results.json"
           if [ -f "$json_file" ]; then
             if [ "$first" = true ]; then first=false; else echo ',' >> backend_results.json; fi

@@ -1,0 +1,320 @@
+{# W3C SCXML 6.2: Send event (internal, external, delayed, HTTP) #}
+{% set send_id = action.id if action.id else action.auto_send_id %}
+{% if send_id %}
+	// W3C SCXML 6.2: send id="{{ send_id }}"
+{% endif %}
+{% if action.idlocation and model.needs_script_engine %}
+	{
+		sendIDStr := "{{ send_id | escape_go }}"
+		p.assignVariable(`{{ action.idlocation }}`, `"` + sendIDStr + `"`)
+{% endif %}
+{# ── Build event data from <param>, namelist, or <content> ── #}
+{% set has_params = action.params and action.params | length > 0 %}
+{% set has_namelist = action.namelist and action.namelist | trim %}
+{% if has_params %}
+{% set has_dynamic_params = action.params | rejectattr("is_static_literal") | list | length > 0 %}
+{% else %}
+{% set has_dynamic_params = false %}
+{% endif %}
+{% if has_dynamic_params or has_namelist %}
+	// W3C SCXML 6.2: Evaluate <param>/namelist expressions at send time
+	{
+{% if has_namelist %}
+		sendAborted := false
+{% endif %}
+		p.ensureScriptEngine()
+		se := sce.GetScriptEngine()
+		parts := make([]string, 0)
+{% if has_params %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+		parts = append(parts, fmt.Sprintf("[%q]=%q", "{{ param.name }}", "{{ param.static_value | escape_go }}"))
+{% elif param.expr %}
+		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); paramErr == nil {
+			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ param.name }}", sce.ToLuaLiteral(paramVal)))
+		} else {
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+		}
+{% elif param.location %}
+		if paramVal, paramErr := se.EvaluateExpression(p.SessionID, `{{ param.location }}`); paramErr == nil {
+			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ param.name }}", sce.ToLuaLiteral(paramVal)))
+		} else {
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+		}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if has_namelist %}
+{% for name in action.namelist | split %}
+		// W3C SCXML B.2: Check variable existence before evaluation
+		if !se.HasVariable(p.SessionID, "{{ name }}") {
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+			sendAborted = true
+		} else if nlVal, nlErr := se.EvaluateExpression(p.SessionID, `{{ name }}`); nlErr == nil {
+			parts = append(parts, fmt.Sprintf("[%q]=%s", "{{ name }}", sce.ToLuaLiteral(nlVal)))
+		} else {
+{% if 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+			sendAborted = true
+		}
+{% endfor %}
+{% endif %}
+{% if has_namelist %}
+		eventDataStr := ""
+		if !sendAborted {
+			eventDataStr = "{" + strings.Join(parts, ",") + "}"
+		}
+{% else %}
+		eventDataStr := "{" + strings.Join(parts, ",") + "}"
+{% endif %}
+		_ = eventDataStr
+{% elif has_params %}
+	{
+		// W3C SCXML B.2: All params are static literals
+		eventDataStr := "{ {% for param in action.params %}[\"{{ param.name | escape_go }}\"]=\"{{ param.static_value | escape_go }}\"{% if not loop.last %},{% endif %}{% endfor %} }"
+		_ = eventDataStr
+{% elif action.content %}
+	{
+		eventDataStr := "{{ action.content | escape_go }}"
+		_ = eventDataStr
+{% else %}
+	{
+		eventDataStr := ""
+		_ = eventDataStr
+{% endif %}
+{% if has_namelist %}
+		if !sendAborted {
+{% endif %}
+{# ── Unsupported send type check ── #}
+{% if action.send_type and action.send_type not in ['', 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor', 'http://www.w3.org/TR/scxml/#BasicHTTPEventProcessor'] %}
+	// W3C SCXML 6.2: Unsupported send type "{{ action.send_type }}" raises error.execution
+{% if 'error.execution' in model.events %}
+	{
+		errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }})
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+	}
+{% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+	break
+{% endif %}
+{% elif action.target and action.target is startingwith('!') %}
+	// W3C SCXML 6.2: Invalid target "{{ action.target }}" raises error.execution
+{% if 'error.execution' in model.events %}
+	{
+		errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }})
+		errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+		engine.Raise(errEvt)
+	}
+{% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+	break
+{% endif %}
+{% elif action.send_type and 'BasicHTTPEventProcessor' in action.send_type %}
+	// W3C SCXML C.2: BasicHTTP send
+	{
+{% if action.targetexpr and model.needs_script_engine %}
+		httpTargetVal, httpTargetErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`)
+		httpTarget := ""
+		if httpTargetErr == nil && httpTargetVal != nil {
+			httpTarget = fmt.Sprintf("%v", httpTargetVal)
+		}
+{% elif action.target %}
+		httpTarget := "{{ action.target | escape_go }}"
+{% else %}
+		httpTarget := ""
+{% endif %}
+{% if action.eventexpr and model.needs_script_engine %}
+		httpEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+		httpEvtName := fmt.Sprintf("%v", httpEvtVal)
+{% elif action.event %}
+		httpEvtName := "{{ action.event | escape_go }}"
+{% else %}
+		httpEvtName := ""
+{% endif %}
+		// W3C SCXML C.2: Validate target before HTTP send
+		if httpTarget == "" {
+{% if 'error.communication' in model.events %}
+			{
+				errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.communication' | to_event_variant }})
+				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+				engine.Raise(errEvt)
+			}
+{% elif 'error.execution' in model.events %}
+			{
+				errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }})
+				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+				engine.Raise(errEvt)
+			}
+{% endif %}
+		} else {
+{% if has_params or has_namelist %}
+			// W3C SCXML C.2: Build HTTP params map from <param>/namelist elements
+			httpParams := make(map[string][]string)
+{% if has_params %}
+{% for param in action.params %}
+{% if param.is_static_literal %}
+			httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], "{{ param.static_value | escape_go }}")
+{% elif param.expr and model.needs_script_engine %}
+			if httpParamVal, httpParamErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr }}`); httpParamErr == nil {
+				trimmed := strings.Trim(sce.ToLuaLiteral(httpParamVal), "'\"")
+				httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], trimmed)
+			}
+{% elif param.location and model.needs_script_engine %}
+			if httpParamVal, httpParamErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ param.location }}`); httpParamErr == nil {
+				trimmed := strings.Trim(sce.ToLuaLiteral(httpParamVal), "'\"")
+				httpParams["{{ param.name }}"] = append(httpParams["{{ param.name }}"], trimmed)
+			}
+{% endif %}
+{% endfor %}
+{% endif %}
+{% if has_namelist %}
+{% for name in action.namelist | split %}
+			if httpNlVal, httpNlErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ name }}`); httpNlErr == nil {
+				trimmed := strings.Trim(sce.ToLuaLiteral(httpNlVal), "'\"")
+				httpParams["{{ name }}"] = append(httpParams["{{ name }}"], trimmed)
+			}
+{% endfor %}
+{% endif %}
+			engine.PerformHTTPSend(httpTarget, httpEvtName, "", httpParams, "{{ send_id | default('') | escape_go }}")
+{% else %}
+			engine.PerformHTTPSend(httpTarget, httpEvtName, eventDataStr, nil, "{{ send_id | default('') | escape_go }}")
+{% endif %}
+		}
+	}
+{% elif action.target == '#_internal' %}
+	// W3C SCXML 6.2: Internal send (target="#_internal")
+{% if action.event %}
+	{
+		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
+		meta.Metadata.Data = eventDataStr
+		engine.Raise(meta)
+	}
+{% endif %}
+{% elif action.delay or action.delayexpr %}
+	// W3C SCXML 6.2: Delayed send
+	{
+{% if action.delayexpr and model.needs_script_engine %}
+		delayVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.delayexpr | to_lua_expr }}`)
+		delayDur := sce.ParseDelay(fmt.Sprintf("%v", delayVal))
+{% elif action.delay %}
+		delayDur := sce.ParseDelay("{{ action.delay }}")
+{% else %}
+		delayDur := time.Duration(0)
+{% endif %}
+{% if action.eventexpr and model.needs_script_engine %}
+		delayEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+		delayEvtName := fmt.Sprintf("%v", delayEvtVal)
+{% elif action.event %}
+		delayEvtName := "{{ action.event | escape_go }}"
+{% else %}
+		delayEvtName := ""
+{% endif %}
+		if delayEvt, delayOk := p.GetEventFromName(delayEvtName); delayOk {
+			engine.ScheduleEvent(delayEvt, delayDur, "{{ send_id | default('') | escape_go }}", eventDataStr)
+		}
+	}
+{% elif action.target == '#_parent' %}
+	// W3C SCXML 6.2: Send to parent
+{% if action.event %}
+	if p.ParentExternalQueue != nil {
+		p.ParentExternalQueue <- sce.ParentEvent{Name: "{{ action.event | escape_go }}", Data: eventDataStr}
+	}
+{% endif %}
+{% elif action.target and action.target is startingwith('#_') and action.target != '#_parent' and action.target != '#_internal' %}
+{% set invoke_target_id = action.target | slice_from(2) %}
+	// W3C SCXML 6.4: Send to invoked child "{{ invoke_target_id }}"
+{% set ns_found = namespace(v=false) %}
+{% for invoke_info in model.static_invokes %}
+{% if invoke_info.invoke_id == invoke_target_id %}
+{% set ns_found.v = true %}
+	if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+{% if action.event %}
+		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName("{{ action.event | escape_go }}", eventDataStr)
+{% elif action.eventexpr and model.needs_script_engine %}
+		{
+			childEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+			p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName(fmt.Sprintf("%v", childEvtVal), eventDataStr)
+		}
+{% endif %}
+	}
+{% endif %}
+{% endfor %}
+{% for invoke_info in model.hybrid_invokes %}
+{% if invoke_info.invoke_id == invoke_target_id %}
+{% set ns_found.v = true %}
+	if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+{% if action.event %}
+		p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName("{{ action.event | escape_go }}", eventDataStr)
+{% endif %}
+	}
+{% endif %}
+{% endfor %}
+{% else %}
+	// W3C SCXML 6.2: External send
+{% if action.targetexpr and model.needs_script_engine %}
+	{
+		// W3C SCXML 6.2: Evaluate targetexpr at runtime
+		sendTargetVal, sendTargetErr := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.targetexpr | to_lua_expr }}`)
+		if sendTargetErr != nil || sendTargetVal == nil || fmt.Sprintf("%v", sendTargetVal) == "<nil>" {
+			// W3C SCXML 6.2.4: If target is not valid, raise error.communication
+{% if 'error.communication' in model.events %}
+			{
+				errEvt := sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.communication' | to_event_variant }})
+				errEvt.Metadata.SendID = "{{ send_id | default('') | escape_go }}"
+				engine.Raise(errEvt)
+			}
+{% elif 'error.execution' in model.events %}
+			engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+		} else {
+{% if action.eventexpr and model.needs_script_engine %}
+			sendEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+			sendEvtName := fmt.Sprintf("%v", sendEvtVal)
+{% elif action.event %}
+			sendEvtName := "{{ action.event | escape_go }}"
+{% else %}
+			sendEvtName := ""
+{% endif %}
+			if sendEvt, sendOk := p.GetEventFromName(sendEvtName); sendOk {
+				meta := sce.NewEventWithMetadata(sendEvt)
+				meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
+				meta.Metadata.Data = eventDataStr
+				engine.RaiseExternalWithMeta(meta)
+			}
+		}
+	}
+{% elif action.eventexpr and model.needs_script_engine %}
+	{
+		sendEvtVal, _ := sce.GetScriptEngine().EvaluateExpression(p.SessionID, `{{ action.eventexpr | to_lua_expr }}`)
+		sendEvtName := fmt.Sprintf("%v", sendEvtVal)
+		if sendEvt, sendOk := p.GetEventFromName(sendEvtName); sendOk {
+			meta := sce.NewEventWithMetadata(sendEvt)
+			meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
+			meta.Metadata.Data = eventDataStr
+			engine.RaiseExternalWithMeta(meta)
+		}
+	}
+{% elif action.event %}
+	{
+		meta := sce.NewEventWithMetadata({{ machine_name }}Event{{ action.event | to_event_variant }})
+		meta.Metadata = sce.ExternalMetadata("{{ send_id | default('') | escape_go }}", "")
+		meta.Metadata.Data = eventDataStr
+		engine.RaiseExternalWithMeta(meta)
+	}
+{% endif %}
+{% endif %}
+{% if has_namelist %}
+		}
+{% endif %}
+	}
+{% if action.idlocation and model.needs_script_engine %}
+	}
+{% endif %}

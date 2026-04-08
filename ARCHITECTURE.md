@@ -142,7 +142,8 @@ sce_runtime       (STATIC, full interpreter — umbrella target)
   - `utility_methods.jinja2` — Helper methods (getEventName, etc.)
   - `rust/*.rs.jinja2` — Rust backend (1:1 port of C++ templates)
   - `kotlin/*.kt.jinja2` — Kotlin backend (sealed interfaces + coroutine-based)
-- **Flow**: SCXML → Parser → Model → Jinja2 Templates → C++/Rust/Kotlin output
+  - `go/*.go.jinja2` — Go backend (generics + iota const patterns)
+- **Flow**: SCXML → Parser → Model → Jinja2 Templates → C++/Rust/Kotlin/Go output
 
 **Key Properties**:
 - Always generates working C++ code — never refuses generation
@@ -272,10 +273,10 @@ W3C SCXML 3.11 history states implemented as hybrid: static structure with runti
 
 ### Invoke Template Architecture (Cross-Backend)
 
-Invoke lifecycle methods are extracted into dedicated templates in C++ and Rust, while Kotlin uses a different pattern leveraging runtime lambda closures:
+Invoke lifecycle methods are extracted into dedicated templates in C++, Rust, and Go, while Kotlin uses a different pattern leveraging runtime lambda closures:
 
-| Aspect | C++ | Rust | Kotlin |
-|--------|-----|------|--------|
+| Aspect | C++ | Rust | Kotlin | Go |
+|--------|-----|------|--------|-----|
 | Template | `invoke_methods.jinja2` | `rust/invoke_methods.rs.jinja2` | Inline in `entry_exit_actions.kt.jinja2` |
 | Dispatch | Template-generated state switch | Template-generated match arms | Runtime `deferInvoke()` lambda closures |
 | Lifecycle methods | `executePendingInvokes()`, `tickChildren()`, `forwardToAutoforwardChildren()`, `executeFinalizeForChildEvent()` | `do_execute_pending_invokes()`, `do_tick_children()`, `do_forward_to_autoforward_children()`, `do_execute_finalize_for_child_event()` | `StateMachineEngine` base class (runtime) |
@@ -319,8 +320,9 @@ Bridges ECMAScript syntax in W3C SCXML `datamodel="ecmascript"` to Lua evaluatio
 | C++ | CMake `EmbedLuaScript.cmake` → `json_builtins_lua.h` string literal | Compile-time |
 | Rust | `include_str!("../../sce/include/scripting/json_builtins.lua")` | Compile-time |
 | Kotlin | Gradle `copyJsonBuiltins` → classpath resource `/scripting/json_builtins.lua` | Runtime (lazy) |
+| Go | `//go:embed json_builtins.lua` in `sce-go-lua/` | Compile-time |
 
-Do NOT duplicate JSON logic in backend-specific code. All three backends load the same file.
+Do NOT duplicate JSON logic in backend-specific code. All five backends load the same file.
 
 ### LuaDOMBinding
 
@@ -482,14 +484,31 @@ sce-android-app         Android real-device benchmark (Compose UI)
 
 **Kotlin code generator**: `tools/codegen/generators/kotlin_generator.py` — generates sealed interface hierarchies + coroutine-based state machines from the same SCXML sources.
 
+### Go Backend
+
+Go backend generates native Go state machines with Go 1.22+ generics:
+
+```
+sce-go-runtime      StatePolicy[S,E] interface, Engine[S,E] generic execution engine
+sce-go-lua          Lua script engine via Shopify/go-lua (pure Go, no CGo)
+sce-go-tests        W3C conformance (202/202)
+```
+
+- **Templates**: `tools/codegen/templates/go/*.go.jinja2` — 1:1 port of Rust templates
+- **Generics**: `Engine[S comparable, E comparable]` with `StatePolicy[S, E]` interface
+- **State/Event**: `type State int` + `const ( StateXxx State = iota )` pattern
+- **Scripting**: Lua via Shopify/go-lua (pure Go, no C compiler required)
+- **JSON Builtins**: `//go:embed json_builtins.lua` — shared with C++/Rust/Kotlin
+- **Test Generation**: `sce-codegen generate-w3c -l go` generates test files per W3C test
+
 ---
 
 ## Key Principles
 
-1. **W3C SCXML Compliance is Non-Negotiable**: All 202 W3C tests must pass on all backends (C++, Rust, Kotlin, Python)
+1. **W3C SCXML Compliance is Non-Negotiable**: All 202 W3C tests must pass on all backends (C++, Rust, Kotlin, Go, Python)
 2. **Always Generate Code**: Never refuse generation, always produce working implementation
 3. **Automatic Optimization**: Code generator decides AOT vs Interpreter internally per component
 4. **Lazy Initialization**: Pay only for features actually used in SCXML
 5. **Zero Duplication**: AOT and Interpreter share core W3C logic through Helper functions
 6. **You Don't Pay for What You Don't Use**: 4-tier library structure — link only what you need
-7. **Multi-Backend Parity**: Same SCXML sources, same codegen pipeline, same W3C compliance across C++/Rust/Kotlin/Python
+7. **Multi-Backend Parity**: Same SCXML sources, same codegen pipeline, same W3C compliance across C++/Rust/Kotlin/Go/Python

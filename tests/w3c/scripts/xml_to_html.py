@@ -6,7 +6,7 @@ Usage:
     python3 xml_to_html.py results.xml [output.html] [--backend-results backend_results.json]
 
 The optional --backend-results flag accepts a JSON file with results from
-Rust, Kotlin, and Python backends to include in the report.
+Rust, Kotlin, Python, and Go backends to include in the report.
 JSON format: {"rust": {"passed": N, "failed": N, "total": N}, ...}
 """
 import json
@@ -137,7 +137,7 @@ C++ Pass Rate: {pass_rate:.1f}%
                     all_cpp_passed.add(name)
         backends.append(('C++', len(all_cpp_passed), len(all_cpp_tests)))
 
-        for name, key in [('Rust', 'rust'), ('Kotlin', 'kotlin'), ('Python', 'python')]:
+        for name, key in [('Rust', 'rust'), ('Kotlin', 'kotlin'), ('Python', 'python'), ('Go', 'go')]:
             if key in backend_results:
                 br = backend_results[key]
                 backends.append((name, br.get('passed', 0), br.get('total', 0)))

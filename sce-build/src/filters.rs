@@ -246,6 +246,115 @@ fn filter_slice_from(s: String, n: usize) -> String {
     s.chars().skip(n).collect()
 }
 
+// ── Go filters ──────────────────────────────────────────────────
+
+/// Go reserved keywords — must be escaped with `_` suffix
+const GO_KEYWORDS: &[&str] = &[
+    "break", "case", "chan", "const", "continue", "default", "defer", "else",
+    "fallthrough", "for", "func", "go", "goto", "if", "import", "interface",
+    "map", "package", "range", "return", "select", "struct", "switch", "type",
+    "var",
+];
+
+/// Register all Go-specific filters on the minijinja environment.
+pub fn register_go_filters(env: &mut minijinja::Environment) {
+    env.add_filter("to_pascal_case", to_pascal_case);
+    env.add_filter("to_camel_case", to_camel_case);
+    env.add_filter("to_snake_case", to_snake_case);
+    env.add_filter("to_go_type", to_go_type);
+    env.add_filter("escape_go", escape_go);
+    env.add_filter("to_go_string_expr", to_go_string_expr);
+    env.add_filter("to_event_variant", to_event_variant);
+    env.add_filter("to_state_variant", to_state_variant);
+    env.add_filter("to_go_literal", to_go_literal);
+    env.add_filter("escape_go_keyword", escape_go_keyword);
+    env.add_filter("to_in_predicate_go", to_in_predicate_go);
+    env.add_filter("normalize_ws", normalize_ws);
+    env.add_filter("to_machine_name", to_pascal_case);
+    // ECMAScript→Lua transformation filters (shared with Rust)
+    env.add_filter("to_lua_expr", to_lua_expr);
+    env.add_filter("to_lua_guard", to_lua_guard);
+    env.add_filter("to_lua_script", to_lua_script);
+    // Cross-engine compatibility filters
+    env.add_filter("split", filter_split);
+    env.add_filter("slice_from", filter_slice_from);
+}
+
+/// Map SCXML variable type to Go type.
+fn to_go_type(var_type: String) -> String {
+    match var_type.as_str() {
+        "int" => "int64".to_string(),
+        "string" => "string".to_string(),
+        "bool" => "bool".to_string(),
+        _ => "sce.ScriptValue".to_string(),
+    }
+}
+
+/// Escape characters for Go string literals.
+fn escape_go(text: String) -> String {
+    text.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
+/// Convert SCXML string expression to Go string expression.
+fn to_go_string_expr(expr: String) -> String {
+    if expr.is_empty() {
+        return "\"\"".to_string();
+    }
+    let stripped = expr.trim();
+    if stripped.len() >= 2 && stripped.starts_with('\'') && stripped.ends_with('\'') {
+        let inner = &stripped[1..stripped.len() - 1];
+        let inner = inner.replace('\\', "\\\\").replace('"', "\\\"");
+        format!("\"{inner}\"")
+    } else {
+        expr
+    }
+}
+
+/// Render a value as a Go literal expression.
+fn to_go_literal(value: Value) -> String {
+    if value.is_none() || value.is_undefined() {
+        return "nil".to_string();
+    }
+    if let Ok(b) = bool::try_from(value.clone()) {
+        return if b { "true" } else { "false" }.to_string();
+    }
+    if let Ok(i) = i64::try_from(value.clone()) {
+        return i.to_string();
+    }
+    if let Ok(f) = f64::try_from(value.clone()) {
+        return format!("{f}");
+    }
+    if let Some(s) = value.as_str() {
+        let escaped = escape_go(s.to_string());
+        return format!("\"{escaped}\"");
+    }
+    "nil".to_string()
+}
+
+/// Suffix Go keywords with `_` to make them valid identifiers.
+fn escape_go_keyword(name: String) -> String {
+    if GO_KEYWORDS.contains(&name.as_str()) {
+        format!("{name}_")
+    } else {
+        name
+    }
+}
+
+/// Transform C++ In() predicate code to Go.
+fn to_in_predicate_go(cond_cpp: String) -> String {
+    if cond_cpp.is_empty() {
+        return String::new();
+    }
+    let result = cond_cpp.replace("this->", "");
+    RE_IS_STATE_ACTIVE
+        .replace_all(&result, r#"p.IsStateActive("$1")"#)
+        .to_string()
+}
+
 // ── C++ filters ──────────────────────────────────────────────────
 
 /// Register all C++-specific filters on the minijinja environment.

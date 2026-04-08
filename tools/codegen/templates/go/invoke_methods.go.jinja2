@@ -1,0 +1,313 @@
+{#
+    Invoke Methods Template (Go Jinja2)
+
+    W3C SCXML 6.4: Invoke lifecycle — execute pending invokes,
+    tick children, autoforward, finalize.
+
+    Port of Rust invoke_methods.rs.jinja2.
+#}
+{% if model.static_invokes or model.hybrid_invokes %}
+
+// ExecutePendingInvokes starts deferred child state machines (W3C SCXML 6.4).
+// Port of Rust do_execute_pending_invokes().
+func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+	if len(p.pendingInvokes) == 0 {
+		return
+	}
+
+	// W3C SCXML 6.4: Copy-and-clear to prevent iterator invalidation
+	invokesToExecute := make([]sce.PendingInvoke[{{ machine_name }}State], len(p.pendingInvokes))
+	copy(invokesToExecute, p.pendingInvokes)
+	p.pendingInvokes = p.pendingInvokes[:0]
+
+	for _, pending := range invokesToExecute {
+{% for state_id, state in model.states | dictsort %}
+{% if state.static_invokes %}
+{% for invoke_info in state.static_invokes %}
+		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+{% if invoke_info.namelist %}
+			// W3C SCXML 6.4.1: Validate namelist variables in PARENT before creating child
+{% if model.needs_script_engine %}
+			{
+				p.ensureScriptEngine()
+				se := sce.GetScriptEngine()
+				namelistValid := true
+{% for var_name in invoke_info.namelist | split %}
+				if !se.HasVariable(p.SessionID, "{{ var_name }}") {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+					namelistValid = false
+				}
+{% endfor %}
+				if !namelistValid {
+					continue
+				}
+			}
+{% endif %}
+{% endif %}
+
+			// W3C SCXML 6.5: Generate child session ID for finalize origin matching
+			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
+
+			// W3C SCXML 6.4: Create child state machine
+			childPolicy := New{{ invoke_info.child_name | to_machine_name }}Policy()
+			parentQueue := make(chan sce.ParentEvent, 100)
+			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.InvokeID = pending.InvokeID
+			childPolicy.ChildSessionID = childSessionID
+			childPolicy.SessionID = sce.GenerateSessionID()
+
+{% if invoke_info.namelist %}
+			// W3C SCXML 6.4.1: Pass validated namelist values to child datamodel
+{% if invoke_info.child_needs_script_engine %}
+			{
+				se := sce.GetScriptEngine()
+{% for var_name in invoke_info.namelist | split %}
+				if val, err := se.EvaluateExpression(p.SessionID, "{{ var_name }}"); err == nil {
+					childPolicy.SetParamInScriptEngine("{{ var_name }}", sce.ToLuaLiteral(val))
+				}
+{% endfor %}
+			}
+{% endif %}
+{% endif %}
+
+{% if invoke_info.params %}
+			// W3C SCXML 6.4.1: Pass params to child datamodel before initialization
+{% if invoke_info.child_needs_script_engine %}
+			{
+				p.ensureScriptEngine()
+				se := sce.GetScriptEngine()
+{% for param in invoke_info.params %}
+				if val, err := se.EvaluateExpression(p.SessionID, `{{ param.expr | to_lua_expr | escape_go }}`); err == nil {
+					childPolicy.SetParamInScriptEngine("{{ param.name }}", sce.ToLuaLiteral(val))
+				}
+{% endfor %}
+			}
+{% endif %}
+{% endif %}
+
+			// W3C SCXML 6.4.6: Track active invoke session BEFORE initialize
+			p.activeInvokes["{{ invoke_info.invoke_id }}"] = &sce.ChildSession{
+				SessionID:       childSessionID,
+{% if invoke_info.idlocation %}
+				InvokeID:        pending.InvokeID,
+{% else %}
+				InvokeID:        "{{ invoke_info.invoke_id }}",
+{% endif %}
+				ParentSessionID: p.SessionID,
+				Autoforward:     {{ 'true' if invoke_info.autoforward else 'false' }},
+				FinalizeScript:  `{{ invoke_info.finalize_content | escape_go }}`,
+			}
+
+			childEngine := sce.NewEngine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event](&childPolicy)
+			childEngine.SetCompletionCallback(func() {})
+			childEngine.Initialize()
+
+			// W3C SCXML 6.4: Store child and create wrapper
+			wrapper := &childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}{engine: childEngine, policy: &childPolicy}
+			p.child{{ invoke_info.invoke_id | to_pascal_case }} = wrapper
+
+			// W3C SCXML 6.4: Drain child-to-parent events raised during initialize
+			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+
+			// W3C SCXML 6.4: Check if child completed during initialize
+			if wrapper.IsInFinalState() {
+				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", engine)
+			}
+			continue
+		}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% for state_id, state in model.states | dictsort %}
+{% if state.hybrid_invokes %}
+{% for invoke_info in state.hybrid_invokes %}
+		if strings.Contains(pending.InvokeID, ".{{ invoke_info.invoke_id }}") {
+{% if invoke_info.srcexpr %}
+			// W3C SCXML 6.4.3: Evaluate srcexpr at runtime
+			p.ensureScriptEngine()
+			{
+				se := sce.GetScriptEngine()
+				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.srcexpr | to_lua_expr | escape_go }}`); err != nil {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+					continue
+				}
+			}
+{% elif invoke_info.contentexpr %}
+			// W3C SCXML 6.4.4: Evaluate contentexpr at runtime
+			p.ensureScriptEngine()
+			{
+				se := sce.GetScriptEngine()
+				if _, err := se.EvaluateExpression(p.SessionID, `{{ invoke_info.contentexpr | to_lua_expr | escape_go }}`); err != nil {
+{% if 'error.execution' in model.events %}
+					engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+					continue
+				}
+			}
+{% endif %}
+
+			// W3C SCXML 6.5: Generate child session ID
+			childSessionID := fmt.Sprintf("%s.%s", p.SessionID, pending.InvokeID)
+
+			childPolicy := New{{ invoke_info.child_name | to_machine_name }}Policy()
+			parentQueue := make(chan sce.ParentEvent, 100)
+			childPolicy.ParentExternalQueue = parentQueue
+			childPolicy.InvokeID = pending.InvokeID
+			childPolicy.ChildSessionID = childSessionID
+			childPolicy.SessionID = sce.GenerateSessionID()
+
+			p.activeInvokes["{{ invoke_info.invoke_id }}"] = &sce.ChildSession{
+				SessionID:       childSessionID,
+				InvokeID:        "{{ invoke_info.invoke_id }}",
+				ParentSessionID: p.SessionID,
+				Autoforward:     {{ 'true' if invoke_info.autoforward else 'false' }},
+				FinalizeScript:  "",
+			}
+
+			childEngine := sce.NewEngine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event](&childPolicy)
+			childEngine.SetCompletionCallback(func() {})
+			childEngine.Initialize()
+
+			wrapper := &childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}{engine: childEngine, policy: &childPolicy}
+			p.child{{ invoke_info.invoke_id | to_pascal_case }} = wrapper
+
+			sce.DrainAndRaiseChildEvents(wrapper, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+
+			if wrapper.IsInFinalState() {
+				p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+				sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", engine)
+			}
+			continue
+		}
+{% endfor %}
+{% endif %}
+{% endfor %}
+	}
+}
+
+// TickChildren ticks child state machines (W3C SCXML 6.4).
+// Port of Rust do_tick_children().
+func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+{% for invoke_info in model.static_invokes %}
+	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+		child.Tick()
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} {
+			p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", engine)
+		}
+	}
+{% endfor %}
+{% for invoke_info in model.hybrid_invokes %}
+	if !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} && p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+		child := p.child{{ invoke_info.invoke_id | to_pascal_case }}
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+		child.Tick()
+		sce.DrainAndRaiseChildEvents(child, p.activeInvokes, "{{ invoke_info.invoke_id }}", engine)
+		if child.IsInFinalState() && !p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} {
+			p.pendingDoneInvoke{{ invoke_info.invoke_id | to_pascal_case }} = true
+			sce.RaiseDoneInvoke("{{ invoke_info.invoke_id }}", engine)
+		}
+	}
+{% endfor %}
+}
+
+{% set autoforward_invokes = model.static_invokes | selectattr('autoforward') | list %}
+{% if autoforward_invokes %}
+// ForwardToAutoforwardChildren forwards external events to children with autoforward=true (W3C SCXML 6.4.6).
+func (p *{{ machine_name }}Policy) ForwardToAutoforwardChildren(eventName string, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+	if sce.IsPlatformEvent(eventName) {
+		return
+	}
+{% for invoke_info in autoforward_invokes %}
+	if cs, ok := p.activeInvokes["{{ invoke_info.invoke_id }}"]; ok && cs.Autoforward {
+		if p.child{{ invoke_info.invoke_id | to_pascal_case }} != nil {
+			p.child{{ invoke_info.invoke_id | to_pascal_case }}.RaiseExternalByName(eventName, "")
+		}
+	}
+{% endfor %}
+}
+{% endif %}
+
+{% set finalize_invokes = model.static_invokes | selectattr('finalize_content') | list %}
+{% if finalize_invokes %}
+// ExecuteFinalizeForChildEvent executes finalize for events from invoked children (W3C SCXML 6.5).
+func (p *{{ machine_name }}Policy) ExecuteFinalizeForChildEvent(eventWithMeta *sce.EventWithMetadata[{{ machine_name }}Event], engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+	if eventWithMeta.Metadata.Origin == "" {
+		return
+	}
+
+	origin := eventWithMeta.Metadata.Origin
+	var finalizeScript string
+	for _, childSession := range p.activeInvokes {
+		if childSession.SessionID == origin && childSession.FinalizeScript != "" {
+			finalizeScript = childSession.FinalizeScript
+			break
+		}
+	}
+
+	if finalizeScript != "" {
+{% if model.needs_script_engine %}
+		p.ensureScriptEngine()
+		se := sce.GetScriptEngine()
+		if se != nil {
+			eventName := p.GetEventName(eventWithMeta.Event)
+			_ = se.SetCurrentEvent(
+				p.SessionID,
+				eventName,
+				eventWithMeta.Metadata.Data,
+				"external",
+				eventWithMeta.Metadata.SendID,
+				eventWithMeta.Metadata.Origin,
+				eventWithMeta.Metadata.OriginType,
+				eventWithMeta.Metadata.InvokeID,
+			)
+			_ = se.ExecuteScript(p.SessionID, finalizeScript)
+		}
+{% endif %}
+	}
+}
+{% endif %}
+
+// ── Child engine wrappers (implement sce.ChildEngine interface) ──
+
+{% for invoke_info in model.static_invokes %}
+type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
+	engine *sce.Engine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event]
+	policy *{{ invoke_info.child_name | to_machine_name }}Policy
+}
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+{% endfor %}
+{% for invoke_info in model.hybrid_invokes %}
+type childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }} struct {
+	engine *sce.Engine[{{ invoke_info.child_name | to_machine_name }}State, {{ invoke_info.child_name | to_machine_name }}Event]
+	policy *{{ invoke_info.child_name | to_machine_name }}Policy
+}
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Initialize() { w.engine.Initialize() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) Tick() { w.engine.Tick() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) IsInFinalState() bool { return w.engine.IsInFinalState() }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) RaiseExternalByName(name, data string) { w.engine.RaiseExternalByName(name, data) }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) SetCompletionCallback(cb func()) { w.engine.SetCompletionCallback(cb) }
+func (w *childEngineWrapper{{ invoke_info.invoke_id | to_pascal_case }}) GetParentEventQueue() chan sce.ParentEvent { return w.policy.ParentExternalQueue }
+{% endfor %}
+
+{% else %}
+
+// ExecutePendingInvokes is a no-op (no invokes in this SM).
+func (p *{{ machine_name }}Policy) ExecutePendingInvokes(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {}
+
+// TickChildren is a no-op (no invokes in this SM).
+func (p *{{ machine_name }}Policy) TickChildren(engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {}
+{% endif %}

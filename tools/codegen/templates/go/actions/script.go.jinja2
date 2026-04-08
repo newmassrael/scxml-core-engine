@@ -1,0 +1,12 @@
+{# W3C SCXML 3.8.6: Script execution #}
+{% if model.needs_script_engine and action.content %}
+	// W3C SCXML 3.8.6: <script>
+	if err := p.executeScript(`{{ action.content | to_lua_script }}`); err != nil {
+{% if 'error.execution' in model.events %}
+		engine.Raise(sce.NewPlatformEvent({{ machine_name }}Event{{ 'error.execution' | to_event_variant }}))
+{% endif %}
+{% if in_entry_exit is defined and in_entry_exit %}
+		break
+{% endif %}
+	}
+{% endif %}

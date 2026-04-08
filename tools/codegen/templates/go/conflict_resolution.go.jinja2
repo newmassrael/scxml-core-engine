@@ -1,0 +1,322 @@
+{#
+    Conflict Resolution Template (Go Jinja2)
+
+    W3C SCXML Appendix D.2: Optimal transition set computation for parallel states.
+    Only generated when model.has_parallel_states is true.
+
+    Port of Rust conflict_resolution.rs.jinja2.
+#}
+{% if model.has_parallel_states %}
+
+// transitionInfo describes a transition for conflict resolution (W3C SCXML Appendix D).
+type transitionInfo struct {
+	source          {{ machine_name }}State
+	target          {{ machine_name }}State
+	transitionIndex int
+	hasActions      bool
+	isInternal      bool
+	isTargetless    bool
+}
+
+// selectOptimalTransitions resolves conflicts between parallel transitions (W3C SCXML Appendix D.2).
+// Port of Rust remove_conflicting_transitions().
+func (p *{{ machine_name }}Policy) selectOptimalTransitions(transitions []transitionInfo) []transitionInfo {
+	if len(transitions) <= 1 {
+		return transitions
+	}
+	var filtered []transitionInfo
+
+	for _, t1 := range transitions {
+		dominated := false
+		var toRemove []int
+
+		for idx, t2 := range filtered {
+			// W3C SCXML Appendix D.2: Check if exit sets intersect
+			t1Exits := p.computeExitSetForConflict(t1)
+			t2Exits := p.computeExitSetForConflict(t2)
+
+			hasConflict := false
+			for _, s1 := range t1Exits {
+				for _, s2 := range t2Exits {
+					if s1 == s2 {
+						hasConflict = true
+						break
+					}
+				}
+				if hasConflict {
+					break
+				}
+			}
+
+			// W3C SCXML Appendix D.2: Target/source conflict
+			if !hasConflict && (t1.target == t2.source || t2.target == t1.source) {
+				hasConflict = true
+			}
+
+			// W3C SCXML 3.13: Parallel exit conflict — only applies when
+			// BOTH transitions have targets (targetless transitions have empty exit sets
+			// and never conflict per W3C SCXML Appendix D.2 computeExitSet).
+			if !hasConflict && !t1.isTargetless && !t2.isTargetless {
+				if !(t2.isInternal && t2.source == t2.target) {
+					for _, exitState := range t1Exits {
+						if p.IsParallelState(exitState) && p.IsDescendantOf(t2.source, exitState) {
+							hasConflict = true
+							break
+						}
+					}
+				}
+				if !hasConflict && !(t1.isInternal && t1.source == t1.target) {
+					for _, exitState := range t2Exits {
+						if p.IsParallelState(exitState) && p.IsDescendantOf(t1.source, exitState) {
+							hasConflict = true
+							break
+						}
+					}
+				}
+			}
+
+			if hasConflict {
+				// W3C SCXML Appendix D.2: Preemption rules
+				if t1.target == t2.source {
+					toRemove = append(toRemove, idx)
+				} else if t2.target == t1.source {
+					dominated = true
+					break
+				} else if p.IsDescendantOf(t1.source, t2.source) {
+					toRemove = append(toRemove, idx)
+				} else {
+					dominated = true
+					break
+				}
+			}
+		}
+
+		if !dominated {
+			// Remove preempted transitions in reverse order
+			for i := len(toRemove) - 1; i >= 0; i-- {
+				idx := toRemove[i]
+				filtered = append(filtered[:idx], filtered[idx+1:]...)
+			}
+			filtered = append(filtered, t1)
+		}
+	}
+
+	return filtered
+}
+
+// computeExitSetForConflict computes exit set for conflict detection (W3C SCXML Appendix D.2).
+// Returns states from source up to (but not including) LCA(source, target).
+func (p *{{ machine_name }}Policy) computeExitSetForConflict(t transitionInfo) []{{ machine_name }}State {
+	if t.isTargetless {
+		return nil
+	}
+
+	// W3C SCXML 3.13: Internal transition to a compound descendant — source stays active.
+	if t.isInternal &&
+		p.IsCompoundState(t.source) && !p.IsParallelState(t.source) &&
+		p.IsDescendantOf(t.target, t.source) && t.target != t.source {
+		return nil
+	}
+
+	// W3C SCXML 3.12: Find LCA of source and target by walking up from source
+	var lca *{{ machine_name }}State
+	current := t.source
+	for {
+		parent, hasParent := p.GetParent(current)
+		if !hasParent {
+			break
+		}
+		if p.IsDescendantOf(t.target, parent) || t.target == parent {
+			lca = &parent
+			break
+		}
+		current = parent
+	}
+
+	// W3C SCXML Appendix D.2: Collect states from source up to (excluding) LCA
+	var exitSet []{{ machine_name }}State
+	current = t.source
+	for {
+		exitSet = append(exitSet, current)
+		parent, hasParent := p.GetParent(current)
+		if !hasParent {
+			break
+		}
+		if lca != nil && parent == *lca {
+			break
+		}
+		current = parent
+	}
+	return exitSet
+}
+
+// executeMicrostep performs a complete microstep for the given transitions
+// (W3C SCXML Appendix D.2 Steps 1-5: compute exit set, exit, actions, enter).
+func (p *{{ machine_name }}Policy) executeMicrostep(transitions []transitionInfo, currentState *{{ machine_name }}State, engine *sce.Engine[{{ machine_name }}State, {{ machine_name }}Event]) {
+	if len(transitions) == 0 {
+		return
+	}
+
+	// W3C SCXML Appendix D.2 Step 1-2: Compute states to exit
+	var statesToExit []{{ machine_name }}State
+	for _, trans := range transitions {
+		if trans.isTargetless {
+			continue
+		}
+		// W3C SCXML 3.13: Compute transition domain
+		isInternalToDescendant := trans.isInternal &&
+			p.IsCompoundState(trans.source) && !p.IsParallelState(trans.source) &&
+			p.IsDescendantOf(trans.target, trans.source) && trans.target != trans.source
+
+		var domain *{{ machine_name }}State
+		if isInternalToDescendant {
+			d := trans.source
+			domain = &d
+		} else {
+			anc, hasAnc := p.GetParent(trans.source)
+			for hasAnc {
+				if p.IsDescendantOf(trans.target, anc) || trans.target == anc {
+					domain = &anc
+					break
+				}
+				anc, hasAnc = p.GetParent(anc)
+			}
+		}
+
+		for _, activeState := range p.activeStates {
+			shouldExit := false
+			if domain != nil {
+				d := *domain
+				if !trans.isInternal && d == trans.source {
+					shouldExit = activeState == d || p.IsDescendantOf(activeState, d)
+				} else {
+					shouldExit = p.IsDescendantOf(activeState, d)
+				}
+			} else {
+				shouldExit = activeState == trans.source ||
+					p.IsDescendantOf(trans.source, activeState) ||
+					p.IsDescendantOf(activeState, trans.source)
+			}
+			if shouldExit {
+				found := false
+				for _, s := range statesToExit {
+					if s == activeState {
+						found = true
+						break
+					}
+				}
+				if !found {
+					statesToExit = append(statesToExit, activeState)
+				}
+			}
+		}
+	}
+
+	// Sort by reverse document order (deepest first)
+	sort.Slice(statesToExit, func(i, j int) bool {
+		return p.GetDocumentOrder(statesToExit[i]) > p.GetDocumentOrder(statesToExit[j])
+	})
+
+	// Snapshot active states for history recording
+	activeSnapshot := make([]{{ machine_name }}State, len(p.activeStates))
+	copy(activeSnapshot, p.activeStates)
+
+	// W3C SCXML Appendix D.2 Step 2: Exit states
+	for _, state := range statesToExit {
+		p.ExecuteExitActions(state, engine, activeSnapshot)
+	}
+
+	// W3C SCXML Appendix D.2 Step 3: Execute transition content
+	// Sort transitions by source document order
+	sortedTransitions := make([]transitionInfo, len(transitions))
+	copy(sortedTransitions, transitions)
+	sort.Slice(sortedTransitions, func(i, j int) bool {
+		return p.GetDocumentOrder(sortedTransitions[i].source) < p.GetDocumentOrder(sortedTransitions[j].source)
+	})
+
+	for _, trans := range sortedTransitions {
+		if trans.hasActions {
+			p.lastTransitionSourceState = trans.source
+{% if model.has_transition_actions %}
+			p.lastTransitionIndex = trans.transitionIndex
+			p.hasTransitionActions = true
+{% endif %}
+			p.ExecuteTransitionActions(engine)
+{% if model.has_transition_actions %}
+			p.hasTransitionActions = false
+{% endif %}
+		}
+	}
+
+	// W3C SCXML Appendix D.2 Step 4-5: Enter target states
+	sort.Slice(sortedTransitions, func(i, j int) bool {
+		return p.GetDocumentOrder(sortedTransitions[i].target) < p.GetDocumentOrder(sortedTransitions[j].target)
+	})
+
+	for _, trans := range sortedTransitions {
+		if trans.isTargetless {
+			continue
+		}
+
+		target := trans.target
+		*currentState = target
+
+		// W3C SCXML 3.13: Build hierarchical entry chain from root to target
+		var entryChain []{{ machine_name }}State
+		{
+			current := target
+			for {
+				entryChain = append([]{{ machine_name }}State{current}, entryChain...)
+				parent, hasParent := p.GetParent(current)
+				if !hasParent {
+					break
+				}
+				current = parent
+			}
+		}
+
+		for _, state := range entryChain {
+			alreadyActive := false
+			for _, as := range p.activeStates {
+				if as == state {
+					alreadyActive = true
+					break
+				}
+			}
+			if alreadyActive {
+				// W3C SCXML 3.13: Already active - handle parallel region re-entry
+				if p.IsParallelState(state) {
+					regions := p.GetParallelRegions(state)
+					for _, region := range regions {
+						regionActive := false
+						for _, as := range p.activeStates {
+							if as == region {
+								regionActive = true
+								break
+							}
+						}
+						if !regionActive {
+							p.ExecuteEntryActions(region, engine)
+							if p.IsCompoundState(region) {
+								initialChild := p.GetInitialOrHistoryChild(region)
+								if initialChild != region {
+									p.ExecuteEntryActions(initialChild, engine)
+								}
+							}
+						}
+					}
+				}
+				continue
+			}
+			p.ExecuteEntryActions(state, engine)
+		}
+
+		// W3C SCXML 3.4: For parallel states, maintain currentState at parallel level
+		if parent, hasParent := p.GetParent(target); hasParent {
+			if p.IsParallelState(parent) {
+				*currentState = parent
+			}
+		}
+	}
+}
+{% endif %}
