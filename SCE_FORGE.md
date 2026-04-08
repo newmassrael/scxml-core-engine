@@ -1,0 +1,1200 @@
+# SCE Forge: Extended SCXML Kind System for Multi-Pattern Code Generation
+
+## 1. Vision
+
+### Problem
+
+W3C SCXML is a state machine language. The scxml-core-engine generates multi-language code from SCXML statecharts. But real-world systems require more than state machines:
+
+- Value conversion formulas (sensor raw → physical value)
+- Byte-level encode/decode (CAN frames, UDS messages)
+- Lookup tables, interpolation maps, signal filters
+- Sequential procedures with retry logic
+- Threshold monitoring with hysteresis
+- Periodic task scheduling
+
+Today, these patterns are hand-coded per language. There is no single source of truth, no codegen, and no way to guarantee identical behavior across C++/Kotlin/Python/Rust.
+
+### Solution
+
+SCE Forge extends SCXML with a **kind system** — the `sce:kind` attribute on the `<scxml>` root element declares what pattern the document represents. The codegen reads this attribute and selects the appropriate generation template.
+
+```
+Author writes:               SCE Forge generates:
+  SCXML with sce:kind          C++ header
+                               Kotlin file
+                               Python module
+                               Rust module
+                               All from one source of truth
+```
+
+### Core Principle
+
+**One SCXML, all languages.** Extended SCXML is the single source of truth for any codegen-able pattern — not just state machines. The kind system makes SCXML a **universal intermediate representation** for multi-language code generation.
+
+### Positioning
+
+SCE Forge does not change what SCXML is. It extends what SCXML can represent.
+
+```
+W3C SCXML         = state machines only
+SCE Forge          = state machines + transforms + codecs + procedures + ...
+scxml-core-engine  = codegen for all of the above
+```
+
+Value SCE Forge adds:
+
+- **Single source of truth** — one SCXML generates all target languages
+- **Beyond state machines** — 10 additional kinds covering common embedded/automotive patterns
+- **Multi-language codegen** — deterministic, identical logic across C++/Kotlin/Python/Rust
+- **W3C compatible** — Extended SCXML is valid W3C SCXML with `sce:` namespace extensions
+- **Human-readable** — every kind is editable, diffable, version-controllable
+
+---
+
+## 2. Architecture
+
+### Layer Diagram
+
+```
++----------------------------------------------------------------+
+|                  Extended SCXML (input)                          |
+|       hand-authored, tool-generated, or any other source        |
++================================================================+
+|                                                                 |
+|  +----------------------------------------------------------+  |
+|  |            sce:kind System                                |  |
+|  |                                                           |  |
+|  |  +------------+  +----------+  +----------------------+  |  |
+|  |  | Statechart |  | Data     |  | sce: extension       |  |  |
+|  |  | (W3C std)  |  | Model    |  | namespace            |  |  |
+|  |  +------------+  +----------+  +----------------------+  |  |
+|  |                                                           |  |
+|  |  Document kinds:                                          |  |
+|  |    statechart | transform | lookup | condition            |  |
+|  |    procedure  | codec | validator | filter                |  |
+|  |    interpolation | scheduler | observer                   |  |
+|  |  Inline kinds (within statechart):                        |  |
+|  |    condition | lookup | codec | transform                 |  |
+|  +-----------------------------+-----------------------------+  |
+|                                |                                |
+|  +-----------------------------v-----------------------------+  |
+|  |              sce-build (codegen)                           |  |
+|  |                                                            |  |
+|  |  +--------+  +--------+  +--------+  +--------+          |  |
+|  |  |  C++   |  | Kotlin |  | Python |  |  Rust  |          |  |
+|  |  +--------+  +--------+  +--------+  +--------+          |  |
+|  +------------------------------------------------------------+  |
+|                                                                 |
++-----------------------------------------------------------------+
+```
+
+### Dependency Rule
+
+- Extended SCXML is valid W3C SCXML + custom `sce:` namespace extensions
+- Standard SCXML parsers can read the files (ignoring `sce:` attributes)
+- Codegen reads `sce:kind` to select the appropriate generation template
+- Target code depends only on sce_runtime interfaces
+- How SCXML files are authored (manually, by tools, etc.) is outside this specification
+
+### Relationship to Existing SCE Architecture
+
+SCE Forge extends the existing codegen pipeline within sce-build:
+
+```
+scxml-core-engine  (existing — SCXML → C++/Kotlin/Python/Rust)
+   |
+sce-build          (existing — Rust codegen CLI)
+   |
+sce-build + kinds  (NEW — kind-specific templates alongside statechart)
+```
+
+No new binary or project is introduced. `sce-build` gains new templates for each `sce:kind`. The existing statechart codegen is unchanged.
+
+---
+
+## 3. Extended SCXML: The `sce:` Namespace
+
+### 3.1 W3C Compliance
+
+W3C SCXML Section 3.1 explicitly allows elements and attributes from foreign namespaces. The `sce:` extension namespace is a standard XML extension mechanism — not a spec violation.
+
+```xml
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="statechart"
+       initial="defaultSession">
+  <!-- Standard W3C SCXML content -->
+  <!-- sce: attributes are ignored by standard parsers -->
+</scxml>
+```
+
+### 3.2 The `sce:kind` Attribute
+
+`sce:kind` operates at two levels: **document-level** (on `<scxml>` root) and **inline** (on `<data>` elements within a statechart). The distinction drives codegen architecture.
+
+#### Document-Level Kind
+
+Declared on the `<scxml>` root element. The entire file is a single kind. Produces an independent codegen unit.
+
+```xml
+<scxml sce:kind="statechart">    <!-- State machine (default, existing) -->
+<scxml sce:kind="transform">     <!-- Mathematical formula / conversion -->
+<scxml sce:kind="lookup">        <!-- Discrete value mapping -->
+<scxml sce:kind="condition">     <!-- Boolean decision (also usable inline) -->
+<scxml sce:kind="procedure">     <!-- Sequential procedure with branching -->
+<scxml sce:kind="codec">         <!-- Byte-level encode/decode -->
+<scxml sce:kind="validator">     <!-- Range/plausibility/integrity check -->
+<scxml sce:kind="filter">        <!-- Signal filtering (moving avg, debounce) -->
+<scxml sce:kind="interpolation"> <!-- 1D/2D table interpolation -->
+<scxml sce:kind="scheduler">     <!-- Periodic/delayed task timing -->
+<scxml sce:kind="observer">      <!-- Threshold monitoring with hysteresis -->
+```
+
+#### Inline Kind
+
+Declared on `<data>` elements inside a `sce:kind="statechart"` document. Generates helper functions/types co-located with the statechart code. **Only stateless kinds** may be inlined — kinds with runtime dependencies or persistent state must be standalone files.
+
+```xml
+<!-- Inline-eligible (stateless): -->
+<data id="engineStatus" sce:kind="lookup" .../>
+<data id="canProgram" sce:kind="condition" .../>
+<data id="response" sce:kind="codec" .../>
+<data id="temperature" sce:kind="transform" .../>
+
+<!-- NOT inline-eligible (stateful or runtime-dependent): -->
+<!-- procedure, filter, validator, scheduler, observer → must be standalone files -->
+```
+
+#### Codegen Discovery Order
+
+```
+1. Read <scxml sce:kind="...">  → select document-level template
+2. If kind == "statechart":
+   a. Scan <data sce:kind="..."> elements → generate inline helpers
+   b. Scan <invoke> elements → resolve references to standalone kind files
+   c. Generate statechart class that uses inline helpers and standalone references
+3. If kind != "statechart":
+   a. Generate standalone codegen unit (function, struct, or class)
+```
+
+### 3.3 Common Extension Attributes
+
+```xml
+sce:type="uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64 | float32 | float64 | bool | string | bytes"
+sce:direction="in | out | internal"
+sce:unit="celsius | rpm | ms | percent | ..."   <!-- documentation only, no codegen effect -->
+sce:default-endian="big | little | native"  <!-- document-level default, big if omitted -->
+```
+
+#### Cross-Language Type Mapping
+
+All kind templates use this canonical mapping. It is defined once; templates reference it, never define their own.
+
+| sce:type | C++ | Kotlin | Python | Rust |
+|----------|-----|--------|--------|------|
+| `uint8` | `uint8_t` | `UByte` | `int` | `u8` |
+| `uint16` | `uint16_t` | `UShort` | `int` | `u16` |
+| `uint32` | `uint32_t` | `UInt` | `int` | `u32` |
+| `uint64` | `uint64_t` | `ULong` | `int` | `u64` |
+| `int8` | `int8_t` | `Byte` | `int` | `i8` |
+| `int16` | `int16_t` | `Short` | `int` | `i16` |
+| `int32` | `int32_t` | `Int` | `int` | `i32` |
+| `int64` | `int64_t` | `Long` | `int` | `i64` |
+| `float32` | `float` | `Float` | `float` | `f32` |
+| `float64` | `double` | `Double` | `float` | `f64` |
+| `bool` | `bool` | `Boolean` | `bool` | `bool` |
+| `string` | `std::string` | `String` | `str` | `String` |
+| `bytes` | `std::vector<uint8_t>` | `ByteArray` | `bytes` | `Vec<u8>` |
+
+### 3.4 Expression Language
+
+In standard W3C SCXML, `expr` attributes are evaluated at runtime by a datamodel processor. In Extended SCXML for SCE Forge, **`expr` is an AOT codegen input, not a runtime evaluation target**. The codegen parses `expr` and generates equivalent target-language code.
+
+#### Grammar
+
+Expressions use an **ECMAScript subset** (consistent with W3C SCXML's normative datamodel):
+
+| Category | Syntax | Examples |
+|----------|--------|---------|
+| Arithmetic | `+`, `-`, `*`, `/`, `%` | `raw * 0.1 - 40.0` |
+| Comparison | `===`, `!==`, `<`, `>`, `<=`, `>=` | `rpm > 8000` |
+| Logical | `&&`, `\|\|`, `!` | `engineStop && ignOn` |
+| String literal | `'...'` | `engineStatus === 'STOP'` |
+| Method call | `id.method(args)` | `securityResponse.decode(_event.data)` |
+| Field access | `id.field` | `writeResult.result` |
+| Function call | `func(args)` | `computeKey(seed)` |
+
+**Note**: `===` (strict equality) is used per ECMAScript convention. Codegen maps it to language-appropriate equality (`==` in C++/Kotlin/Python/Rust). `==` (loose equality) is not permitted in Extended SCXML to avoid ambiguity.
+
+Expressions that cannot be parsed by the codegen cause a **build-time error**.
+
+#### Kind Reference Resolution
+
+Method calls on `<data>` ids are resolved by matching the id against inline kind declarations:
+
+```xml
+<!-- SCXML source -->
+<data id="securityResponse" sce:kind="codec">...</data>
+<assign location="writeResult" expr="securityResponse.decode(_event.data)"/>
+
+<!-- Codegen resolves "securityResponse" as inline codec,
+     generates a call to the codec's decode method -->
+```
+
+```cpp
+// Generated C++
+auto writeResult = SecurityResponse::decode(event.data(), event.dataLen());
+```
+
+#### External Function References
+
+Function calls that do not match any `<data>` id (e.g., `computeKey(seed)`) are treated as **user-provided functions**. Codegen generates a forward declaration; the user supplies the implementation.
+
+```cpp
+// Generated: forward declaration
+extern std::vector<uint8_t> computeKey(const std::vector<uint8_t>& seed);
+
+// User provides: implementation
+std::vector<uint8_t> computeKey(const std::vector<uint8_t>& seed) {
+    // application-specific key derivation
+}
+```
+
+#### AOT-Only Constraint
+
+**Extended SCXML kinds (`sce:kind` != "statechart") are AOT-only** — they are not supported by the Interpreter engine. Only the standard statechart kind runs on both Interpreter and AOT
+
+### 3.5 Namespace URI
+
+The namespace URI `http://sce.dev/ext` is a placeholder for development. A permanent URI will be assigned if the extension is proposed as a formal standard. Implementations must match on the URI string, not resolve it as a URL.
+
+---
+
+## 4. Kind Specifications
+
+### 4.1 statechart (Existing)
+
+The existing W3C SCXML statechart. No changes to current codegen.
+
+```xml
+<scxml sce:kind="statechart" initial="defaultSession">
+  <!-- datamodel omitted for brevity; engineStop and ignOn are <data> elements of type bool -->
+  <state id="defaultSession">
+    <transition event="SID_0x10_0x02"
+                cond="engineStop &amp;&amp; ignOn"
+                target="programmingSession"/>
+    <transition event="SID_0x10_0x03"
+                target="extendedSession"/>
+  </state>
+  <state id="programmingSession">...</state>
+  <state id="extendedSession">...</state>
+</scxml>
+```
+
+**Codegen**: Existing state machine class generation (unchanged).
+
+### 4.2 transform
+
+Pure mathematical formula. No state. Input → computation → output.
+
+```xml
+<scxml sce:kind="transform">
+  <datamodel>
+    <data id="raw" sce:type="uint16" sce:direction="in"/>
+    <data id="temperature" sce:type="float64" sce:direction="out"
+          expr="raw * 0.1 - 40.0" sce:unit="celsius"/>
+  </datamodel>
+</scxml>
+```
+
+**Codegen** (C++):
+```cpp
+inline double computeTemperature(uint16_t raw) {
+    return raw * 0.1 - 40.0;
+}
+```
+
+**Codegen** (Rust):
+```rust
+pub fn compute_temperature(raw: u16) -> f64 {
+    raw as f64 * 0.1 - 40.0
+}
+```
+
+### 4.3 lookup
+
+Discrete value mapping. Enumerated input → enumerated output. A `sce:default` attribute specifies the fallback when input matches no entry. If omitted, the first entry's value is used.
+
+```xml
+<scxml sce:kind="lookup">
+  <datamodel>
+    <data id="engSta" sce:type="uint8" sce:direction="in"/>
+    <data id="status" sce:type="string" sce:direction="out"/>
+    <data id="mapping" sce:default="STOP">
+      <sce:entry key="0x00" value="STOP"/>
+      <sce:entry key="0x01" value="STOP"/>
+      <sce:entry key="0x02" value="STOP"/>
+      <sce:entry key="0x03" value="RUNNING"/>
+      <sce:entry key="0x07" value="FAULT"/>
+    </data>
+  </datamodel>
+</scxml>
+```
+
+**Codegen** (C++):
+```cpp
+enum class EngineStatus { STOP, RUNNING, FAULT };
+
+inline EngineStatus lookupEngineStatus(uint8_t engSta) {
+    switch (engSta) {
+        case 0x00: case 0x01: case 0x02: return EngineStatus::STOP;
+        case 0x03: return EngineStatus::RUNNING;
+        case 0x07: return EngineStatus::FAULT;
+        default:   return EngineStatus::STOP;
+    }
+}
+```
+
+**Codegen** (Kotlin):
+```kotlin
+enum class EngineStatus { STOP, RUNNING, FAULT }
+
+fun lookupEngineStatus(engSta: UByte): EngineStatus = when (engSta.toInt()) {
+    0x00, 0x01, 0x02 -> EngineStatus.STOP
+    0x03 -> EngineStatus.RUNNING
+    0x07 -> EngineStatus.FAULT
+    else -> EngineStatus.STOP
+}
+```
+
+**Codegen** (Rust):
+```rust
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum EngineStatus { Stop, Running, Fault }
+
+pub fn lookup_engine_status(eng_sta: u8) -> EngineStatus {
+    match eng_sta {
+        0x00..=0x02 => EngineStatus::Stop,
+        0x03 => EngineStatus::Running,
+        0x07 => EngineStatus::Fault,
+        _ => EngineStatus::Stop,
+    }
+}
+```
+
+Language mapping conventions: C++ uses PascalCase enums + camelCase functions, Kotlin uses PascalCase enums + camelCase functions, Rust uses PascalCase enums + snake_case functions. These conventions are consistent across all kinds.
+
+### 4.4 condition
+
+Named boolean guard expression, reusable across multiple transitions. Supports both **standalone** (shared across statecharts) and **inline** (within a single statechart) usage. For simple single-use guards, inline is preferred; for guards shared by multiple statecharts, standalone avoids duplication.
+
+**Standalone** (shared across statecharts):
+```xml
+<scxml sce:kind="condition">
+  <datamodel>
+    <data id="engineStatus" sce:type="string" sce:direction="in"/>
+    <data id="ignition" sce:type="bool" sce:direction="in"/>
+    <data id="canEnterProgramming" sce:type="bool" sce:direction="out"
+          expr="engineStatus === 'STOP' &amp;&amp; ignition === true"/>
+  </datamodel>
+</scxml>
+```
+
+**Inline** (within a statechart's `<datamodel>`):
+```xml
+<data id="canEnterProgramming" sce:kind="condition"
+      expr="engineStatus === 'STOP' &amp;&amp; ignition === true"/>
+
+<!-- Referenced in multiple transitions -->
+<transition cond="canEnterProgramming" target="programmingSession"/>
+<transition cond="canEnterProgramming &amp;&amp; securityUnlocked" target="flashMode"/>
+```
+
+**Codegen** (C++):
+```cpp
+inline bool canEnterProgramming(const std::string& engineStatus, bool ignition) {
+    return engineStatus == "STOP" && ignition;
+}
+```
+
+### 4.5 procedure
+
+**Domain attributes**: `sce:service` and `sce:subfunc` on `<send>` are codegen hints — sce-build maps them to method calls on the runtime's `DiagClient` interface (e.g., `client.send(ecuAddr, SecurityAccess{0x01})`). They are opaque strings to the SCXML parser; their interpretation is defined by the codegen template.
+
+**Note**: procedure uses `<state>` elements internally but is semantically **run-to-completion** — it always reaches a `<final>` state and holds no persistent state across invocations. This distinguishes it from statechart, which is long-lived and driven by external events.
+
+Sequential procedure with branching, retry, and error handling.
+
+```xml
+<scxml sce:kind="procedure" initial="sendTesterPresent">
+  <datamodel>
+    <data id="ecuAddr" sce:type="uint32" sce:direction="in"/>
+    <data id="seed" sce:type="bytes" sce:direction="internal"/>
+    <data id="maxRetries" expr="3" sce:type="int32"/>
+    <data id="retryCount" expr="0" sce:type="int32"/>
+  </datamodel>
+
+  <state id="sendTesterPresent">
+    <onentry>
+      <send sce:service="TesterPresent" sce:addr="ecuAddr"/>
+    </onentry>
+    <transition event="ok" target="requestSeed"/>
+    <transition event="fail" target="error"/>
+  </state>
+
+  <state id="requestSeed">
+    <onentry>
+      <send sce:service="SecurityAccess" sce:subfunc="0x01"/>
+    </onentry>
+    <transition event="ok" target="sendKey">
+      <assign location="seed" expr="_event.data.payload"/>
+    </transition>
+    <transition event="fail" target="retry"/>
+  </state>
+
+  <state id="sendKey">
+    <onentry>
+      <send sce:service="SecurityAccess" sce:subfunc="0x02"
+            sce:payload="computeKey(seed)"/>
+    </onentry>
+    <transition event="ok" target="done"/>
+    <transition event="fail" target="retry"/>
+  </state>
+
+  <state id="retry">
+    <transition cond="retryCount &lt; maxRetries" target="requestSeed">
+      <assign location="retryCount" expr="retryCount + 1"/>
+    </transition>
+    <transition cond="retryCount &gt;= maxRetries" target="error"/>
+  </state>
+
+  <final id="done">
+    <donedata><param name="result" expr="'success'"/></donedata>
+  </final>
+  <final id="error">
+    <donedata><param name="result" expr="'failure'"/></donedata>
+  </final>
+</scxml>
+```
+
+**Codegen**: procedure produces **two outputs** to support both `<invoke>` and direct invocation:
+
+**Primary output** — state machine class (compatible with W3C `<invoke>`):
+```cpp
+// securityAccess_sm.h — invocable as child state machine
+class SecurityAccessSM : public sce::StateMachine {
+    uint32_t ecuAddr_;
+    std::vector<uint8_t> seed_;
+    int retryCount_ = 0;
+    static constexpr int MAX_RETRIES = 3;
+
+    void onEvent(const Event& e) override {
+        switch (state_) {
+        case State::SendTesterPresent:
+            // ... state machine transitions matching SCXML ...
+        }
+    }
+public:
+    enum class FinalResult { SUCCESS, FAILURE };
+    // Result accessible after reaching <final>
+};
+```
+
+**Convenience wrapper** — synchronous run-to-completion function:
+```cpp
+// securityAccess.h — for direct invocation without <invoke>
+inline SecurityAccessSM::FinalResult
+executeSecurityAccess(DiagClient& client, uint32_t ecuAddr) {
+    SecurityAccessSM sm{ecuAddr};
+    return sm.runToCompletion(client);  // blocks until <final> reached
+}
+```
+
+The state machine class is the canonical output. The wrapper is a thin convenience layer. When invoked via `<invoke type="scxml">`, the runtime uses the state machine class directly.
+
+`runToCompletion()` is a method on `sce::ProcedureStateMachine`, a subclass of `sce::StateMachine` added to sce_runtime in Phase 2. It creates an internal event loop, drives the state machine until a `<final>` state is reached, and returns the result. This is a **blocking call** intended for test harnesses, CLI tools, and non-real-time contexts. In RTOS/embedded environments, use `<invoke>` instead — the procedure runs as an async child state machine with no blocking.
+
+`sce::ProcedureStateMachine` inherits from `sce::StateMachine` and adds only `runToCompletion()`. It does not modify the event processing model — the same instance works with both `<invoke>` (async) and `runToCompletion()` (sync).
+
+### 4.6 codec
+
+Byte-level encode/decode. Bit position, size, endianness.
+
+**Endianness**: default is `big` (automotive CAN/UDS convention). Override per-field with `sce:endian="little"` or per-document with `sce:default-endian="little"` on the `<scxml>` root.
+
+**`sce:bit-size` values**: a fixed integer (`8`, `16`, `24`, `32`, `64`) or one of:
+
+| Value | Meaning | Required attributes |
+|-------|---------|-------------------|
+| `tail` | Remaining bytes from `sce:byte` to end of frame | `sce:max-size` (codegen buffer limit) |
+| `length-ref` | Size determined by another field's value | `sce:length-field="<field-id>"` |
+
+`tail` example:
+```xml
+<sce:field id="payload" sce:byte="2" sce:bit-size="tail" sce:max-size="255"/>
+<!-- bytes 2 through end of frame, max 255 bytes -->
+```
+
+`length-ref` example:
+```xml
+<sce:field id="dataLen" sce:byte="1" sce:bit-size="8"/>
+<sce:field id="data" sce:byte="2" sce:bit-size="length-ref"
+           sce:length-field="dataLen" sce:max-size="255"/>
+<!-- data length is determined by the value of dataLen field (in bytes) -->
+```
+
+`length-ref` rules:
+- Referenced field must be declared **before** the variable-length field in the same codec
+- Length value is interpreted as **byte count**
+- `sce:max-size` is still required for codegen buffer allocation
+
+Codegen generates bounds checking for all variable-length fields: frame length is validated against `sce:byte` offset + `sce:max-size` before access. Decode returns an error/empty result for truncated frames.
+
+```xml
+<scxml sce:kind="codec" sce:default-endian="big">
+  <datamodel>
+    <data id="raw" sce:type="bytes" sce:direction="in" sce:length="8"/>
+    <data id="serviceId" sce:type="uint8" sce:direction="out"
+          sce:byte="0" sce:bit-offset="0" sce:bit-size="8"/>
+    <data id="dtcSeverity" sce:type="uint8" sce:direction="out"
+          sce:byte="1" sce:bit-offset="4" sce:bit-size="4"/>
+    <data id="dtcStatus" sce:type="uint8" sce:direction="out"
+          sce:byte="1" sce:bit-offset="0" sce:bit-size="4"/>
+    <data id="dtcCode" sce:type="uint32" sce:direction="out"
+          sce:byte="2" sce:bit-size="24"/>  <!-- inherits big from document default -->
+  </datamodel>
+</scxml>
+```
+
+**Codegen** (C++):
+```cpp
+struct DtcResponse {
+    uint8_t  serviceId;
+    uint8_t  dtcSeverity;
+    uint8_t  dtcStatus;
+    uint32_t dtcCode;
+
+    // decode: returns nullopt on truncated frame
+    static std::optional<DtcResponse> decode(const uint8_t* raw, size_t len) {
+        if (len < 5) return std::nullopt;
+        return DtcResponse{
+            .serviceId   = raw[0],
+            .dtcSeverity = (raw[1] >> 4) & 0x0F,
+            .dtcStatus   = raw[1] & 0x0F,
+            .dtcCode     = (raw[2] << 16) | (raw[3] << 8) | raw[4]
+        };
+    }
+
+    // encode: returns serialized bytes (value semantics, consistent with composition usage)
+    std::vector<uint8_t> encode() const {
+        return {
+            serviceId,
+            static_cast<uint8_t>((dtcSeverity << 4) | (dtcStatus & 0x0F)),
+            static_cast<uint8_t>((dtcCode >> 16) & 0xFF),
+            static_cast<uint8_t>((dtcCode >> 8) & 0xFF),
+            static_cast<uint8_t>(dtcCode & 0xFF)
+        };
+    }
+};
+```
+
+### 4.7 validator
+
+Range check, rate-of-change detection, plausibility verification. Validator has minimal internal state (previous values for rate-of-change).
+
+```xml
+<scxml sce:kind="validator">
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="engineState" sce:type="string" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"/>
+  </datamodel>
+
+  <sce:rules>
+    <sce:range id="rpm" min="0" max="8000"/>
+    <sce:rate-of-change id="rpm" max-delta="500" sce:sample-interval="100ms"/>
+    <sce:plausibility expr="rpm === 0 || engineState !== 'STOP'"/>
+  </sce:rules>
+</scxml>
+```
+
+`sce:sample-interval` documents the expected call frequency. The generated code uses `max-delta` as a fixed threshold per call — it does not perform automatic time-based scaling. Callers are responsible for invoking `validate()` at the declared interval.
+
+**Codegen** (C++):
+```cpp
+struct RpmValidator {
+    uint16_t prevRpm_ = 0;
+
+    ValidationResult validate(uint16_t rpm, const std::string& engineState) {
+        if (rpm > 8000)
+            return {false, "range_exceeded"};
+        uint16_t delta = (rpm > prevRpm_) ? (rpm - prevRpm_) : (prevRpm_ - rpm);
+        if (delta > 500)
+            return {false, "rate_of_change_exceeded"};
+        if (!(rpm == 0 || engineState != "STOP"))
+            return {false, "plausibility_failed"};
+        prevRpm_ = rpm;
+        return {true, ""};
+    }
+};
+```
+
+### 4.8 filter
+
+Signal filtering — moving average, low-pass, debounce.
+
+```xml
+<scxml sce:kind="filter">
+  <datamodel>
+    <data id="rawTemp" sce:type="float64" sce:direction="in"/>
+    <data id="filtered" sce:type="float64" sce:direction="out"/>
+  </datamodel>
+  <sce:filter type="moving-average" window="5"/>
+</scxml>
+```
+
+**Codegen** (C++):
+```cpp
+struct TempFilter {
+    std::array<double, 5> buffer_{};
+    size_t index_ = 0;
+    bool filled_ = false;
+
+    double update(double rawTemp) {
+        buffer_[index_] = rawTemp;
+        index_ = (index_ + 1) % 5;
+        if (index_ == 0) filled_ = true;
+        size_t count = filled_ ? 5 : index_;
+        double sum = 0;
+        for (size_t i = 0; i < count; i++) sum += buffer_[i];
+        return sum / count;
+    }
+
+    void reset() {
+        buffer_ = {};
+        index_ = 0;
+        filled_ = false;
+    }
+};
+```
+
+### 4.9 interpolation
+
+1D/2D table interpolation with axis definitions.
+
+**1D example** (single axis, flat value list):
+```xml
+<scxml sce:kind="interpolation">
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="torqueLimit" sce:type="float64" sce:direction="out"/>
+  </datamodel>
+
+  <sce:table type="1d" method="linear" sce:out-of-bounds="clamp">
+    <sce:axis id="rpm" points="800 1200 2000 3000 4000 6000"/>
+    <sce:values>120.0 145.0 200.0 230.0 210.0 180.0</sce:values>
+  </sce:table>
+</scxml>
+```
+
+**2D example** (two axes, row-major values):
+```xml
+<scxml sce:kind="interpolation">
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="load" sce:type="uint8" sce:direction="in"/>
+    <data id="injectionTime" sce:type="float64" sce:direction="out"/>
+  </datamodel>
+
+  <!-- sce:out-of-bounds: "clamp" (default) | "extrapolate" | "error" -->
+  <!-- Values are row-major: first axis = rows, second axis = columns -->
+  <sce:table type="2d" method="bilinear" sce:out-of-bounds="clamp">
+    <sce:axis id="rpm"  points="800 1200 2000 3000 4000 6000"/>
+    <sce:axis id="load" points="10 25 50 75 100"/>
+    <sce:values>
+      2.1 3.0 4.5 5.8 7.0
+      2.5 3.5 5.0 6.5 8.0
+      3.0 4.2 6.0 7.8 9.5
+      3.5 5.0 7.0 9.0 11.0
+      3.8 5.5 7.5 9.5 12.0
+      4.0 5.8 8.0 10.0 12.5
+    </sce:values>
+  </sce:table>
+</scxml>
+```
+
+**Codegen** (C++):
+```cpp
+struct InjectionMap {
+    static constexpr double AXIS_RPM[] = {800, 1200, 2000, 3000, 4000, 6000};
+    static constexpr double AXIS_LOAD[] = {10, 25, 50, 75, 100};
+    static constexpr double VALUES[6][5] = { /* ... */ };
+
+    static double lookup(uint16_t rpm, uint8_t load) {
+        return bilinearInterpolate(AXIS_RPM, 6, AXIS_LOAD, 5, VALUES, rpm, load);
+    }
+
+    // bilinearInterpolate is generated inline by codegen (no runtime dependency)
+    static double bilinearInterpolate(/* ... */) { /* ... */ }
+};
+```
+
+### 4.10 scheduler
+
+Periodic, delayed, and timeout task timing.
+
+```xml
+<scxml sce:kind="scheduler">
+  <sce:tasks>
+    <sce:periodic id="testerPresent" interval="2000ms"
+                  sce:event="TesterPresent"/>
+    <sce:timeout id="responseTimeout" duration="5000ms"
+                 sce:on-timeout="handleTimeout"/>
+    <sce:delayed id="retryDelay" delay="10000ms"
+                 sce:event="retrySecurityAccess"/>
+  </sce:tasks>
+</scxml>
+```
+
+Actions are expressed as `sce:event` attributes on custom elements, avoiding W3C `<send>` in non-standard positions. Codegen generates the corresponding event emission code.
+
+**Codegen** (C++):
+```cpp
+struct DiagScheduler {
+    Timer testerPresentTimer_{2000ms, [this]{ sendTesterPresent(); }};
+    Timer responseTimeout_{5000ms, [this]{ handleTimeout(); }};
+
+    void start() { testerPresentTimer_.startPeriodic(); }
+    void waitResponse() { responseTimeout_.startOneShot(); }
+    void onResponse() { responseTimeout_.cancel(); }
+};
+```
+
+### 4.11 observer
+
+Threshold monitoring with hysteresis.
+
+```xml
+<scxml sce:kind="observer">
+  <datamodel>
+    <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+  </datamodel>
+
+  <sce:monitors>
+    <sce:threshold id="warning"
+                   enter="coolantTemp &gt; 110.0"
+                   leave="coolantTemp &lt; 100.0"
+                   on-enter="emitWarning"
+                   on-leave="clearWarning"/>
+    <sce:threshold id="critical"
+                   enter="coolantTemp &gt; 120.0"
+                   leave="coolantTemp &lt; 105.0"
+                   on-enter="emergencyShutdown"/>
+  </sce:monitors>
+</scxml>
+```
+
+**Codegen** (C++):
+```cpp
+struct CoolantMonitor {
+    bool warningActive_ = false;
+    bool criticalActive_ = false;
+
+    Events update(double coolantTemp) {
+        Events events;
+        if (!warningActive_ && coolantTemp > 110.0) {
+            warningActive_ = true;
+            events.push(Event::WARNING);
+        } else if (warningActive_ && coolantTemp < 100.0) {
+            warningActive_ = false;
+            events.push(Event::WARNING_CLEARED);
+        }
+        if (!criticalActive_ && coolantTemp > 120.0) {
+            criticalActive_ = true;
+            events.push(Event::EMERGENCY_SHUTDOWN);
+        } else if (criticalActive_ && coolantTemp < 105.0) {
+            criticalActive_ = false;
+        }
+        return events;
+    }
+};
+```
+
+---
+
+## 5. Kind Composition
+
+Kinds are not isolated. In real specifications, state machines reference lookups, procedures invoke codecs, and guards depend on conditions. The composition model uses SCXML's existing `<datamodel>` and `<cond>` mechanisms.
+
+### 5.1 Composition Rules
+
+```
+statechart ──→ references all other kinds (guard, action, onentry)
+    ├──→ lookup     (inline: guard references lookup result)
+    ├──→ condition  (inline: guard uses named condition)
+    ├──→ codec      (inline: onentry encodes, transition decodes)
+    ├──→ transform  (inline: guard/action uses computed value)
+    ├──→ procedure  (standalone: invoked via W3C <invoke>)
+    ├──→ validator  (standalone: called in guard)
+    ├──→ observer   (standalone: events feed into statechart)
+    └──→ filter     (standalone: filtered values used in guards)
+
+Other compositions:
+    procedure ──→ codec (encode request, decode response)
+    observer  ──→ filter (monitor filtered values)
+    validator ──→ transform (validate after conversion)
+```
+
+### 5.2 Procedure Invocation via W3C `<invoke>`
+
+Procedures are invoked using the standard W3C `<invoke>` element, not a custom `sce:invoke`. This preserves W3C compatibility and reuses the existing invoke codegen infrastructure. The procedure SCXML is a standalone file; `<invoke>` runs it asynchronously as a child state machine.
+
+```xml
+<!-- Standard W3C invoke — procedure runs as child, reports done.invoke when finished -->
+<state id="unlocking">
+  <invoke type="scxml" src="securityAccess.scxml" id="securityProc">
+    <param name="ecuAddr" expr="ecuAddr"/>
+    <finalize>
+      <assign location="unlockResult" expr="_event.data.result"/>
+    </finalize>
+  </invoke>
+  <transition event="done.invoke.securityProc"
+              cond="unlockResult === 'success'"
+              target="securityUnlocked"/>
+  <transition event="done.invoke.securityProc"
+              cond="unlockResult === 'failure'"
+              target="securityLocked"/>
+</state>
+```
+
+The procedure SCXML reaches a `<final>` state with `<donedata>` containing the result, which generates the standard W3C `done.invoke` event with the result accessible via `_event.data`.
+
+### 5.3 Composition Example
+
+A diagnostic session manager that combines statechart (document-level), lookup + condition + codec (inline), and procedure (standalone via invoke):
+
+```xml
+<scxml xmlns:sce="http://sce.dev/ext"
+       sce:kind="statechart" initial="defaultSession">
+
+  <datamodel>
+    <!-- Inline lookup: signal → engine status -->
+    <data id="engineStatus" sce:kind="lookup" sce:input="ENG_EngSta"
+          sce:default="STOP">
+      <sce:entry key="0x00" value="STOP"/>
+      <sce:entry key="0x03" value="RUNNING"/>
+      <sce:entry key="0x07" value="FAULT"/>
+    </data>
+
+    <!-- Inline condition: named composite guard -->
+    <data id="canEnterProgramming" sce:kind="condition"
+          expr="engineStatus === 'STOP' &amp;&amp; ignition === true"/>
+
+    <!-- Inline codec: response parser -->
+    <data id="securityResponse" sce:kind="codec">
+      <sce:field id="result" sce:byte="0" sce:bit-size="8"/>
+      <sce:field id="seed" sce:byte="1" sce:bit-size="32" sce:endian="big"/>
+    </data>
+
+    <!-- Inline codec: write request encoder -->
+    <data id="writeDataRequest" sce:kind="codec">
+      <sce:field id="did" sce:byte="0" sce:bit-size="16" sce:endian="big"/>
+      <sce:field id="payload" sce:byte="2" sce:bit-size="tail" sce:max-size="255"/>
+    </data>
+
+    <data id="writeData" sce:type="bytes" sce:direction="in"/>
+  </datamodel>
+
+  <!-- Statechart uses inline kinds in guards and actions -->
+  <state id="defaultSession">
+    <transition event="SID_0x10_0x02"
+                cond="canEnterProgramming"
+                target="programmingSession"/>
+  </state>
+
+  <state id="extendedSession" initial="securityLocked">
+    <state id="securityLocked">
+      <transition event="requestUnlock" target="unlocking"/>
+    </state>
+
+    <!-- Procedure invoked via standard W3C <invoke> -->
+    <state id="unlocking">
+      <invoke type="scxml" src="securityAccess.scxml" id="securityProc">
+        <param name="ecuAddr" expr="ecuAddr"/>
+        <finalize>
+          <assign location="unlockResult" expr="_event.data.result"/>
+        </finalize>
+      </invoke>
+      <transition event="done.invoke.securityProc"
+                  cond="unlockResult === 'success'"
+                  target="securityUnlocked"/>
+      <transition event="done.invoke.securityProc"
+                  cond="unlockResult === 'failure'"
+                  target="securityLocked"/>
+    </state>
+
+    <state id="securityUnlocked">
+      <transition event="SID_0x2E"
+                  cond="engineStatus === 'STOP' &amp;&amp; ignition"
+                  target="writing"/>
+    </state>
+
+    <state id="writing">
+      <onentry>
+        <send event="SID_0x2E">
+          <param name="payload" expr="writeDataRequest.encode(0xF190, writeData)"/>
+        </send>
+      </onentry>
+      <transition event="response">
+        <!-- expr uses data id directly; codegen maps to generated type -->
+        <assign location="writeResult"
+                expr="securityResponse.decode(_event.data)"/>
+      </transition>
+      <transition cond="writeResult.result === 0x00" target="writeSuccess"/>
+      <transition cond="writeResult.result !== 0x00" target="writeFailed"/>
+    </state>
+  </state>
+</scxml>
+```
+
+### 5.4 Resolution Rules
+
+**Shared references**: When two statecharts reference the same standalone lookup, the lookup is generated once as an independent header. Both statecharts `#include` it. No duplication.
+
+**Name isolation**: Standalone kinds generate code in a namespace derived from their filename (`SCE::Generated::<filename>`). Inline kinds generate code in the parent statechart's namespace. No collision possible.
+
+**Circular composition**: Prohibited at the static reference level. Build-time analysis detects cycles and reports an error. Note: event-based communication is not a cycle — observer emits events that a statechart receives via its event queue. This is asynchronous decoupling, not a reference cycle.
+
+### 5.5 Generated Code (Composition)
+
+The codegen produces inline helpers from inline kinds and references standalone kinds. The statechart orchestrates both.
+
+```cpp
+namespace SCE::Generated::DiagSession {
+
+// From inline lookup kind
+enum class EngineStatus { STOP, RUNNING, FAULT };
+inline EngineStatus lookupEngineStatus(uint8_t engSta) { /* ... */ }
+
+// From inline codec kind
+struct SecurityResponse {
+    uint8_t result;
+    uint32_t seed;
+    static SecurityResponse decode(const uint8_t* raw) { /* ... */ }
+};
+
+// From inline condition kind
+inline bool canEnterProgramming(EngineStatus es, bool ign) {
+    return es == EngineStatus::STOP && ign;
+}
+
+// Standalone procedure is in its own header:
+// #include "securityAccess_sm.h" (generated from securityAccess.scxml)
+
+// From statechart kind — orchestrates all above
+class DiagSession : public sce::StateMachine {
+    EngineStatus engineStatus_ = EngineStatus::STOP;
+    bool ignition_ = false;
+
+    void onEvent(const Event& e) override {
+        switch (state_) {
+        case State::DefaultSession:
+            if (e.id == SID_0x10_0x02 &&
+                canEnterProgramming(engineStatus_, ignition_))
+                transition(State::ProgrammingSession);
+            break;
+        case State::Unlocking:
+            // W3C <invoke> — procedure runs as child state machine
+            // done.invoke event arrives when procedure reaches <final>
+            if (e.name == "done.invoke.securityProc") {
+                auto result = e.data<std::string>("result");
+                transition(result == "success"
+                    ? State::SecurityUnlocked : State::SecurityLocked);
+            }
+            break;
+        case State::Writing: {
+            auto resp = SecurityResponse::decode(e.data());
+            transition(resp.result == 0x00
+                ? State::WriteSuccess : State::WriteFailed);
+            break;
+        }
+        }
+    }
+
+    void updateInputs(uint8_t engSta, bool ign) {
+        engineStatus_ = lookupEngineStatus(engSta);
+        ignition_ = ign;
+    }
+};
+
+}
+```
+
+---
+
+## 6. Code Generation Architecture
+
+### 6.1 Self-Contained vs Runtime-Dependent
+
+| Kind | Dependencies | C++ Header-Only | Needs sce_runtime |
+|------|-------------|-----------------|-------------------|
+| transform | None | Yes (pure inline) | No |
+| lookup | None | Yes (pure inline) | No |
+| condition | None | Yes (pure inline) | No |
+| codec | None | Yes (pure inline) | No |
+| filter | None (internal buffer) | Yes (class with state) | No |
+| interpolation | None (internal table) | Yes (constexpr data) | No |
+| validator | None (internal prev state) | Yes (class with state) | No |
+| procedure | DiagClient, Service types | Yes (requires runtime headers) | Yes |
+| scheduler | Timer | Yes (requires runtime headers) | Yes |
+| observer | EventBus | Yes (requires runtime headers) | Yes |
+| statechart | EventQueue, ActionHandler | Yes (requires runtime headers) | Yes (existing) |
+
+Kinds marked "requires runtime headers" are header-only in that they have no `.cpp` files, but they `#include` sce_runtime interface headers (`sce/DiagClient.h`, `sce/Timer.h`, etc.) and require linking against a platform-specific runtime implementation.
+
+### 6.2 Template Structure
+
+New kind templates are added to `sce-build` (Rust + minijinja), which has replaced the Python+Jinja2 codegen pipeline. The legacy `tools/codegen/templates/` directory is maintained for existing statechart generation but new kinds are not added there.
+
+```
+sce-build/templates/
+  cpp/
+    statechart.h.jinja2      (existing, ported from Python codegen)
+    transform.h.jinja2        (new)
+    lookup.h.jinja2           (new)
+    condition.h.jinja2        (new)
+    procedure.h.jinja2        (new)
+    codec.h.jinja2            (new)
+    validator.h.jinja2        (new)
+    filter.h.jinja2           (new)
+    interpolation.h.jinja2    (new)
+    scheduler.h.jinja2        (new)
+    observer.h.jinja2         (new)
+  kotlin/
+    ...
+  python/
+    ...
+  rust/
+    ...
+```
+
+### 6.3 Codegen Dispatch
+
+```
+SCXML input
+  │
+  ├─ Parse XML (existing parser)
+  ├─ Read sce:kind attribute (absent → default "statechart")
+  │
+  ├─ kind == "statechart"    → existing codegen pipeline (unchanged)
+  │   └─ Scan <data sce:kind="..."> → generate inline helpers
+  │
+  ├─ kind == "transform"     → transform template
+  ├─ kind == "lookup"        → lookup template
+  ├─ kind == "condition"     → condition template (standalone bool function)
+  ├─ kind == "procedure"     → procedure template (SM class + convenience wrapper)
+  ├─ kind == "codec"         → codec template
+  ├─ kind == "validator"     → validator template
+  ├─ kind == "filter"        → filter template
+  ├─ kind == "interpolation" → interpolation template
+  ├─ kind == "scheduler"     → scheduler template
+  └─ kind == "observer"      → observer template
+
+```
+
+### 6.4 Error Model
+
+Error handling varies by kind — this is intentional, as each kind has a different failure domain:
+
+| Kind | Error Model | Rationale |
+|------|-------------|-----------|
+| transform | No error — pure computation | Division by zero etc. is caller's input validation responsibility |
+| lookup | Default value on miss | `sce:default` attribute; no key match is expected, not exceptional |
+| condition | No error — pure boolean | Always returns true or false |
+| codec | `std::optional` / nullable return | Truncated frames are common in automotive; caller must check |
+| validator | Result struct with reason | Validation is expected to fail; reason is part of the value |
+| filter | No error — always produces output | Partial window returns partial average |
+| interpolation | Depends on `sce:out-of-bounds` | `clamp`: no error, `error`: optional return |
+| procedure | Result enum (success/failure) | Communicated via `<donedata>` on `<final>` |
+| scheduler | No error — timer management | Invalid timing is a codegen-time error, not runtime |
+| observer | No error — threshold evaluation | Always produces (possibly empty) event list |
+
+---
+
+## 7. Roadmap
+
+### Phase 1: Foundation
+
+Core kind support and codegen templates for the most common patterns.
+
+- `sce:kind` attribute parsing in sce-build
+- Document-level codegen templates for: `transform`, `lookup`, `condition`, `codec`
+- Inline kind support in statechart template: `condition`, `lookup`, `codec`, `transform`
+- Schema validation (XSD) for Extended SCXML
+- C++ codegen output only (header-only generation)
+- Architecture decision for cross-file kind references (Phase 2 dependency: how sce-build resolves `<invoke src="other.scxml">` and standalone kind imports — build manifest, CMake integration, or sce-build dependency scanner)
+
+### Phase 2: Procedural + Multi-Language
+
+Sequential logic support and multi-language code generation.
+
+- Codegen templates for: `procedure`, `validator`
+- `sce::ProcedureStateMachine` base class in sce_runtime
+- Cross-file kind composition: standalone kinds referencing other standalone kinds (e.g., procedure → codec, validator → transform). Phase 1 inline kinds are within a single statechart; Phase 2 enables references across separate SCXML files.
+- Kotlin, Python, Rust codegen templates for all Phase 1 kinds
+
+### Phase 3: Signal Processing + Advanced Kinds
+
+Embedded/automotive signal processing patterns.
+
+- Codegen templates for: `filter`, `interpolation`, `scheduler`, `observer`
+- sce_runtime extensions (Timer, EventBus interfaces)
+- Platform-specific runtime implementations (POSIX, FreeRTOS)
+
+**Phase 3 exit criteria**: All 11 kinds generate compilable code for all 4 target languages. Kind conformance test suite passes for all kinds.
+
+### Phase 4: Ecosystem (Directional)
+
+Tooling and workflow integration.
+
+- VS Code extension for Extended SCXML editing with kind-aware autocomplete
+- SCE Mesh integration (Extended SCXML kinds usable in distributed state machines)
+
+---
+
+## 8. Kind Summary
+
+| Kind | State | Runtime Dep | Scope | Complexity | Priority |
+|------|-------|-------------|-------|------------|----------|
+| statechart | Persistent (N states) | Yes | Document | Existing | Existing |
+| transform | None | No | Document or Inline | Low | Phase 1 |
+| lookup | None | No | Document or Inline | Low | Phase 1 |
+| condition | None | No | Document or Inline | Low | Phase 1 |
+| codec | None | No | Document or Inline | Medium | Phase 1 |
+| procedure | Transient (run-to-completion) | Yes | Document | Medium | Phase 2 |
+| validator | Minimal (prev value) | No | Document | Medium | Phase 2 |
+| filter | Internal (buffer) | No | Document | Medium | Phase 3 |
+| interpolation | None | No | Document | Medium | Phase 3 |
+| scheduler | Internal (timers) | Yes | Document | Medium | Phase 3 |
+| observer | Internal (flags) | Yes | Document | Medium | Phase 3 |
+
+---
+
+## 9. Success Criteria
+
+### Phase 1 Exit Criteria
+
+- [ ] `sce:kind` attribute parsed and dispatched by sce-build
+- [ ] Codegen templates for `transform`, `lookup`, `codec` produce compilable C++ output
+- [ ] Inline `condition` kind generates named guard functions within statechart
+- [ ] XSD schema validates Extended SCXML documents
+- [ ] Kind conformance test suite: reference SCXML + expected codegen output per kind (minimum 3 test cases per kind)
+
+### Overall Success Definition
+
+**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Python/Rust code. All languages produce identical behavior from the same SCXML source.**
+
+The measure is: **one SCXML source generates correct, compilable code for all target languages**, with behavior equivalence verified by kind conformance tests.
+
+**Cross-language equivalence verification**: each conformance test provides a reference SCXML, a set of input values, and expected output values. The generated code for each language is compiled, executed with the same inputs, and outputs are compared against the golden expected values. All languages must produce identical results.
