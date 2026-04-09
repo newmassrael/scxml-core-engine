@@ -1,0 +1,75 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.{{ package }}
+
+data class ValidationResult(val valid: Boolean, val reason: String)
+
+class {{ struct_name }} {
+{% for pv in prev_vars %}
+    private var {{ pv.name }}: {{ pv.type }} = {{ pv.default }}
+{% endfor %}
+
+    fun validate({{ params }}): ValidationResult {
+{% for rule in range_rules %}
+{% if rule.needs_conv %}
+{% if rule.has_min and rule.has_max %}
+        if ({{ rule.id }}.{{ rule.conv }}() < {{ rule.min }} || {{ rule.id }}.{{ rule.conv }}() > {{ rule.max }})
+            return ValidationResult(false, "{{ rule.id }}_out_of_range")
+{% elif rule.has_min %}
+        if ({{ rule.id }}.{{ rule.conv }}() < {{ rule.min }})
+            return ValidationResult(false, "{{ rule.id }}_out_of_range")
+{% elif rule.has_max %}
+        if ({{ rule.id }}.{{ rule.conv }}() > {{ rule.max }})
+            return ValidationResult(false, "{{ rule.id }}_out_of_range")
+{% endif %}
+{% else %}
+{% if rule.has_min and rule.has_max %}
+        if ({{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }})
+            return ValidationResult(false, "{{ rule.id }}_out_of_range")
+{% elif rule.has_min %}
+        if ({{ rule.id }} < {{ rule.min }})
+            return ValidationResult(false, "{{ rule.id }}_out_of_range")
+{% elif rule.has_max %}
+        if ({{ rule.id }} > {{ rule.max }})
+            return ValidationResult(false, "{{ rule.id }}_out_of_range")
+{% endif %}
+{% endif %}
+{% endfor %}
+{% for rule in roc_rules %}
+{% if rule.is_float %}
+        run {
+            val delta = kotlin.math.abs({{ rule.id }} - {{ rule.prev_name }})
+            if (delta > {{ rule.max_delta }})
+                return ValidationResult(false, "{{ rule.id }}_rate_of_change_exceeded")
+        }
+{% elif rule.is_signed %}
+        run {
+            val delta = kotlin.math.abs({{ rule.id }}.toLong() - {{ rule.prev_name }}.toLong())
+            if (delta > {{ rule.max_delta }})
+                return ValidationResult(false, "{{ rule.id }}_rate_of_change_exceeded")
+        }
+{% elif rule.needs_conv %}
+        run {
+            val delta = if ({{ rule.id }}.{{ rule.conv }}() > {{ rule.prev_name }}.{{ rule.conv }}()) {{ rule.id }}.{{ rule.conv }}() - {{ rule.prev_name }}.{{ rule.conv }}() else {{ rule.prev_name }}.{{ rule.conv }}() - {{ rule.id }}.{{ rule.conv }}()
+            if (delta > {{ rule.max_delta }})
+                return ValidationResult(false, "{{ rule.id }}_rate_of_change_exceeded")
+        }
+{% else %}
+        run {
+            val delta = if ({{ rule.id }} > {{ rule.prev_name }}) {{ rule.id }} - {{ rule.prev_name }} else {{ rule.prev_name }} - {{ rule.id }}
+            if (delta > {{ rule.max_delta }})
+                return ValidationResult(false, "{{ rule.id }}_rate_of_change_exceeded")
+        }
+{% endif %}
+{% endfor %}
+{% if plausibility_expr %}
+        if (!({{ plausibility_expr }}))
+            return ValidationResult(false, "plausibility_failed")
+{% endif %}
+{% for pv in prev_vars %}
+        {{ pv.name }} = {{ pv.id }}
+{% endfor %}
+        return ValidationResult(true, "")
+    }
+}

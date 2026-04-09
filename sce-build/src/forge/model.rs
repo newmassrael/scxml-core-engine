@@ -72,11 +72,16 @@ impl ForgeKind {
         )
     }
 
-    /// Whether this kind is supported in Phase 1.
-    pub fn is_phase1(&self) -> bool {
+    /// Whether this kind is currently implemented and supported.
+    pub fn is_supported(&self) -> bool {
         matches!(
             self,
-            Self::Statechart | Self::Transform | Self::Lookup | Self::Condition | Self::Codec
+            Self::Statechart
+                | Self::Transform
+                | Self::Lookup
+                | Self::Condition
+                | Self::Codec
+                | Self::Validator
         )
     }
 }
@@ -139,6 +144,21 @@ impl SceType {
             "bytes" => Some(Self::Bytes),
             _ => None,
         }
+    }
+
+    /// Unsigned integer types (uint8..uint64).
+    pub fn is_unsigned(&self) -> bool {
+        matches!(self, Self::Uint8 | Self::Uint16 | Self::Uint32 | Self::Uint64)
+    }
+
+    /// Signed integer types (int8..int64).
+    pub fn is_signed(&self) -> bool {
+        matches!(self, Self::Int8 | Self::Int16 | Self::Int32 | Self::Int64)
+    }
+
+    /// Floating-point types (float32, float64).
+    pub fn is_float(&self) -> bool {
+        matches!(self, Self::Float32 | Self::Float64)
     }
 }
 
@@ -246,6 +266,42 @@ pub struct ConditionModel {
     pub inputs: Vec<ForgeField>,
     /// ECMAScript expression that evaluates to boolean.
     pub expr: String,
+}
+
+// ── Validator kind ─────────────────────────────────────────
+
+/// Validator: range/rate-of-change/plausibility checks.
+/// Has internal state (previous values for rate-of-change detection).
+#[derive(Debug, Clone, Serialize)]
+pub struct ValidatorModel {
+    pub name: String,
+    pub inputs: Vec<ForgeField>,
+    pub rules: ValidatorRules,
+}
+
+/// Validation rules container.
+#[derive(Debug, Clone, Serialize)]
+pub struct ValidatorRules {
+    pub ranges: Vec<RangeRule>,
+    pub rate_of_changes: Vec<RateOfChangeRule>,
+    pub plausibility: Option<String>,
+}
+
+/// Range check: field value must be within [min, max].
+#[derive(Debug, Clone, Serialize)]
+pub struct RangeRule {
+    pub id: String,
+    pub min: Option<String>,
+    pub max: Option<String>,
+}
+
+/// Rate-of-change check: delta between successive calls must not exceed max_delta.
+/// sample_interval_ms is informational (documents expected call frequency).
+#[derive(Debug, Clone, Serialize)]
+pub struct RateOfChangeRule {
+    pub id: String,
+    pub max_delta: String,
+    pub sample_interval_ms: u32,
 }
 
 // ── Codec kind ─────────────────────────────────────────────────
@@ -410,6 +466,8 @@ pub enum ForgeDocument {
     Condition(ConditionModel),
     #[serde(rename = "codec")]
     Codec(CodecModel),
+    #[serde(rename = "validator")]
+    Validator(ValidatorModel),
 }
 
 impl ForgeDocument {
@@ -419,6 +477,7 @@ impl ForgeDocument {
             Self::Lookup(m) => &m.name,
             Self::Condition(m) => &m.name,
             Self::Codec(m) => &m.name,
+            Self::Validator(m) => &m.name,
         }
     }
 
@@ -428,6 +487,7 @@ impl ForgeDocument {
             Self::Lookup(_) => ForgeKind::Lookup,
             Self::Condition(_) => ForgeKind::Condition,
             Self::Codec(_) => ForgeKind::Codec,
+            Self::Validator(_) => ForgeKind::Validator,
         }
     }
 }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="validator"
+       name="temperature_validator">
+  <datamodel>
+    <data id="temperature" sce:type="float64" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"/>
+  </datamodel>
+
+  <sce:rules>
+    <sce:range id="temperature" min="-40.0" max="150.0"/>
+  </sce:rules>
+</scxml>

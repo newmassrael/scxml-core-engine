@@ -1,0 +1,79 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+{% set needs_math = roc_rules | selectattr("is_float") | list | length > 0 or roc_rules | selectattr("is_signed") | list | length > 0 %}
+{% if needs_math %}
+
+import "math"
+{% endif %}
+
+// ValidationResult holds the outcome of a validation check.
+type ValidationResult struct {
+	Valid  bool
+	Reason string
+}
+
+// {{ struct_name }} performs range, rate-of-change, and plausibility validation.
+type {{ struct_name }} struct {
+{% for pv in prev_vars %}
+	{{ pv.name }} {{ pv.type }}
+{% endfor %}
+}
+
+// Validate checks all validation rules and returns the result.
+func (v *{{ struct_name }}) Validate({{ params }}) ValidationResult {
+{% for rule in range_rules %}
+{% if rule.has_min and rule.has_max %}
+	if {{ rule.id }} < {{ rule.min }} || {{ rule.id }} > {{ rule.max }} {
+		return ValidationResult{Valid: false, Reason: "{{ rule.id }}_out_of_range"}
+	}
+{% elif rule.has_min %}
+	if {{ rule.id }} < {{ rule.min }} {
+		return ValidationResult{Valid: false, Reason: "{{ rule.id }}_out_of_range"}
+	}
+{% elif rule.has_max %}
+	if {{ rule.id }} > {{ rule.max }} {
+		return ValidationResult{Valid: false, Reason: "{{ rule.id }}_out_of_range"}
+	}
+{% endif %}
+{% endfor %}
+{% for rule in roc_rules %}
+{% if rule.is_float %}
+	if math.Abs(float64({{ rule.id }})-float64(v.{{ rule.prev_name }})) > {{ rule.max_delta }} {
+		return ValidationResult{Valid: false, Reason: "{{ rule.id }}_rate_of_change_exceeded"}
+	}
+{% elif rule.is_signed %}
+	{
+		delta := int64({{ rule.id }}) - int64(v.{{ rule.prev_name }})
+		if delta < 0 {
+			delta = -delta
+		}
+		if delta > {{ rule.max_delta }} {
+			return ValidationResult{Valid: false, Reason: "{{ rule.id }}_rate_of_change_exceeded"}
+		}
+	}
+{% else %}
+	{
+		var delta {{ rule.type }}
+		if {{ rule.id }} > v.{{ rule.prev_name }} {
+			delta = {{ rule.id }} - v.{{ rule.prev_name }}
+		} else {
+			delta = v.{{ rule.prev_name }} - {{ rule.id }}
+		}
+		if delta > {{ rule.max_delta }} {
+			return ValidationResult{Valid: false, Reason: "{{ rule.id }}_rate_of_change_exceeded"}
+		}
+	}
+{% endif %}
+{% endfor %}
+{% if plausibility_expr %}
+	if !({{ plausibility_expr }}) {
+		return ValidationResult{Valid: false, Reason: "plausibility_failed"}
+	}
+{% endif %}
+{% for pv in prev_vars %}
+	v.{{ pv.name }} = {{ pv.id }}
+{% endfor %}
+	return ValidationResult{Valid: true, Reason: ""}
+}

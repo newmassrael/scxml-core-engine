@@ -231,6 +231,7 @@ pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<Generate
         ForgeDocument::Lookup(m) => render_lookup_cpp(&env, m)?,
         ForgeDocument::Condition(m) => render_condition_cpp(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_cpp(&env, m)?,
+        ForgeDocument::Validator(m) => render_validator_cpp(&env, m)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -549,6 +550,134 @@ fn encode_single_field(field: &CodecField, default_endian: Endian, exprs: &mut V
     }
 }
 
+// ── Validator: resolved model (rule-field association, computed once) ──
+
+/// Range rule with its associated input field resolved.
+struct ResolvedRange {
+    id: String,
+    sce_type: SceType,
+    min: Option<String>,
+    max: Option<String>,
+}
+
+/// Rate-of-change rule with its associated input field resolved.
+struct ResolvedRoc {
+    id: String,
+    sce_type: SceType,
+    max_delta: String,
+}
+
+/// Validator model with rule-to-field associations pre-resolved.
+/// Eliminates repeated `inputs.iter().find()` across 5 language renderers.
+struct ResolvedValidator {
+    inputs: Vec<ForgeField>,
+    ranges: Vec<ResolvedRange>,
+    rocs: Vec<ResolvedRoc>,
+    plausibility: Option<String>,
+}
+
+fn resolve_validator(m: &ValidatorModel) -> ResolvedValidator {
+    let ranges = m
+        .rules
+        .ranges
+        .iter()
+        .map(|r| {
+            let field = m.inputs.iter().find(|f| f.id == r.id).unwrap();
+            ResolvedRange {
+                id: r.id.clone(),
+                sce_type: field.sce_type.clone(),
+                min: r.min.clone(),
+                max: r.max.clone(),
+            }
+        })
+        .collect();
+
+    let rocs = m
+        .rules
+        .rate_of_changes
+        .iter()
+        .map(|roc| {
+            let field = m.inputs.iter().find(|f| f.id == roc.id).unwrap();
+            ResolvedRoc {
+                id: roc.id.clone(),
+                sce_type: field.sce_type.clone(),
+                max_delta: roc.max_delta.clone(),
+            }
+        })
+        .collect();
+
+    ResolvedValidator {
+        inputs: m.inputs.clone(),
+        ranges,
+        rocs,
+        plausibility: m.rules.plausibility.clone(),
+    }
+}
+
+// ── Validator rendering ───────────────────────────────────────
+
+fn render_validator_cpp(
+    env: &minijinja::Environment,
+    m: &ValidatorModel,
+) -> Result<String, String> {
+    let rv = resolve_validator(m);
+    let ns = filters::to_pascal_case(m.name.clone());
+    let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let params = rv.inputs.iter()
+        .map(|inp| format!("{} {}", cpp_param_type(&inp.sce_type), inp.id))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| serde_json::json!({
+            "type": cpp_type(&roc.sce_type),
+            "name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
+            "id": roc.id,
+        }))
+        .collect();
+
+    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
+        .map(|r| serde_json::json!({
+            "id": r.id,
+            "min": r.min, "max": r.max,
+            "has_min": r.min.is_some(), "has_max": r.max.is_some(),
+        }))
+        .collect();
+
+    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| serde_json::json!({
+            "id": roc.id,
+            "max_delta": roc.max_delta,
+            "prev_name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
+            "type": cpp_type(&roc.sce_type),
+            "is_float": roc.sce_type.is_float(),
+            "is_unsigned": roc.sce_type.is_unsigned(),
+        }))
+        .collect();
+
+    let plausibility_expr = match &rv.plausibility {
+        Some(e) => Some(expr::transpile(e, ExprTarget::Cpp)?),
+        None => None,
+    };
+
+    let tmpl = env
+        .get_template("validator.h.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        guard => guard, namespace => ns, struct_name => struct_name,
+        params => params,
+        prev_vars => minijinja::Value::from_serialize(&prev_vars),
+        range_rules => minijinja::Value::from_serialize(&range_rules),
+        roc_rules => minijinja::Value::from_serialize(&roc_rules),
+        plausibility_expr => plausibility_expr,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Kotlin code generation ────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -564,6 +693,7 @@ pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<Gener
         ForgeDocument::Lookup(m) => render_lookup_kotlin(&env, m)?,
         ForgeDocument::Condition(m) => render_condition_kotlin(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_kotlin(&env, m)?,
+        ForgeDocument::Validator(m) => render_validator_kotlin(&env, m)?,
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -908,6 +1038,111 @@ fn encode_single_field_kotlin(
     }
 }
 
+// ── Kotlin: Validator ────────────────────────────────────────
+
+fn render_validator_kotlin(
+    env: &minijinja::Environment,
+    m: &ValidatorModel,
+) -> Result<String, String> {
+    let rv = resolve_validator(m);
+    let package = filters::to_snake_case(m.name.clone());
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let params = rv.inputs.iter()
+        .map(|inp| format!("{}: {}", inp.id, kotlin_type(&inp.sce_type)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| {
+            let kt_ty = kotlin_type(&roc.sce_type);
+            serde_json::json!({
+                "type": kt_ty,
+                "name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
+                "id": roc.id,
+                "default": kotlin_default_value(kt_ty),
+            })
+        })
+        .collect();
+
+    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
+        .map(|r| {
+            let conv = kotlin_unsigned_conversion(&r.sce_type).unwrap_or("");
+            serde_json::json!({
+                "id": r.id,
+                "min": r.min, "max": r.max,
+                "has_min": r.min.is_some(), "has_max": r.max.is_some(),
+                "conv": conv, "needs_conv": !conv.is_empty(),
+            })
+        })
+        .collect();
+
+    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| {
+            let conv = kotlin_unsigned_conversion(&roc.sce_type).unwrap_or("");
+            serde_json::json!({
+                "id": roc.id,
+                "max_delta": roc.max_delta,
+                "prev_name": format!("prev{}", filters::to_pascal_case(roc.id.clone())),
+                "conv": conv, "needs_conv": !conv.is_empty(),
+                "is_float": roc.sce_type.is_float(),
+                "is_signed": roc.sce_type.is_signed(),
+            })
+        })
+        .collect();
+
+    let plausibility_expr = match &rv.plausibility {
+        Some(e) => {
+            let mut expr_kt = expr::transpile(e, ExprTarget::Kotlin)?;
+            let has_unsigned = rv.inputs.iter().any(|f| f.sce_type.is_unsigned());
+            if has_unsigned && kotlin_condition_needs_conversion(&expr_kt) {
+                let conversions: Vec<(String, String)> = rv.inputs.iter()
+                    .filter_map(|f| {
+                        kotlin_unsigned_conversion(&f.sce_type)
+                            .map(|c| (f.id.clone(), c.to_string()))
+                    })
+                    .collect();
+                expr_kt = kotlin_wrap_expr(&expr_kt, &conversions);
+            }
+            Some(expr_kt)
+        }
+        None => None,
+    };
+
+    let tmpl = env
+        .get_template("validator.kt.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package, struct_name => struct_name,
+        params => params,
+        prev_vars => minijinja::Value::from_serialize(&prev_vars),
+        range_rules => minijinja::Value::from_serialize(&range_rules),
+        roc_rules => minijinja::Value::from_serialize(&roc_rules),
+        plausibility_expr => plausibility_expr,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+/// Default value for Kotlin types.
+fn kotlin_default_value(kt_type: &str) -> &'static str {
+    match kt_type {
+        "UByte" => "0u.toUByte()",
+        "UShort" => "0u.toUShort()",
+        "UInt" => "0u",
+        "ULong" => "0uL",
+        "Byte" => "0",
+        "Short" => "0",
+        "Int" => "0",
+        "Long" => "0L",
+        "Float" => "0.0f",
+        "Double" => "0.0",
+        "Boolean" => "false",
+        _ => "0",
+    }
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Rust code generation ──────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -923,6 +1158,7 @@ pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<Generat
         ForgeDocument::Lookup(m) => render_lookup_rust(&env, m)?,
         ForgeDocument::Condition(m) => render_condition_rust(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_rust(&env, m)?,
+        ForgeDocument::Validator(m) => render_validator_rust(&env, m)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -1288,6 +1524,81 @@ fn encode_single_field_rust(
     }
 }
 
+// ── Rust: Validator ──────────────────────────────────────────
+
+fn render_validator_rust(
+    env: &minijinja::Environment,
+    m: &ValidatorModel,
+) -> Result<String, String> {
+    let rv = resolve_validator(m);
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let renames: Vec<(String, String)> = rv.inputs.iter()
+        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
+        .collect();
+
+    let params = rv.inputs.iter()
+        .map(|f| format!("{}: {}", filters::to_snake_case(f.id.clone()), rust_param_type(&f.sce_type)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| {
+            let snake = filters::to_snake_case(roc.id.clone());
+            serde_json::json!({
+                "type": rust_type(&roc.sce_type),
+                "name": format!("prev_{snake}"),
+                "id": snake,
+            })
+        })
+        .collect();
+
+    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
+        .map(|r| serde_json::json!({
+            "id": filters::to_snake_case(r.id.clone()),
+            "min": r.min, "max": r.max,
+            "has_min": r.min.is_some(), "has_max": r.max.is_some(),
+        }))
+        .collect();
+
+    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| {
+            let snake = filters::to_snake_case(roc.id.clone());
+            serde_json::json!({
+                "id": snake,
+                "max_delta": roc.max_delta,
+                "prev_name": format!("prev_{snake}"),
+                "is_unsigned": roc.sce_type.is_unsigned(),
+                "is_float": roc.sce_type.is_float(),
+            })
+        })
+        .collect();
+
+    let plausibility_expr = match &rv.plausibility {
+        Some(e) => {
+            let mut expr_rs = expr::transpile(e, ExprTarget::Rust)?;
+            expr_rs = rust_rename_vars(&expr_rs, &renames);
+            Some(expr_rs)
+        }
+        None => None,
+    };
+
+    let tmpl = env
+        .get_template("validator.rs.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        struct_name => struct_name,
+        params => params,
+        prev_vars => minijinja::Value::from_serialize(&prev_vars),
+        range_rules => minijinja::Value::from_serialize(&range_rules),
+        roc_rules => minijinja::Value::from_serialize(&roc_rules),
+        plausibility_expr => plausibility_expr,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Go code generation ───────────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -1338,6 +1649,7 @@ pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<Generated
         ForgeDocument::Lookup(m) => render_lookup_go(&env, m)?,
         ForgeDocument::Condition(m) => render_condition_go(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_go(&env, m)?,
+        ForgeDocument::Validator(m) => render_validator_go(&env, m)?,
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -1716,6 +2028,90 @@ fn go_float_cast_needed(inputs: &[ForgeField], output_type: &SceType) -> Option<
         .find_map(|inp| go_float_cast(&inp.sce_type, output_type))
 }
 
+// ── Go: Validator ────────────────────────────────────────────
+
+fn render_validator_go(
+    env: &minijinja::Environment,
+    m: &ValidatorModel,
+) -> Result<String, String> {
+    let rv = resolve_validator(m);
+    let package = filters::to_snake_case(m.name.clone());
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let go_renames: Vec<(String, String)> = rv.inputs.iter()
+        .map(|f| (f.id.clone(), go_escape_builtin(&f.id)))
+        .collect();
+
+    let params = rv.inputs.iter()
+        .map(|f| format!("{} {}", go_escape_builtin(&f.id), go_type(&f.sce_type)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| {
+            let safe = go_escape_builtin(&roc.id);
+            serde_json::json!({
+                "type": go_type(&roc.sce_type),
+                "name": format!("prev{}", filters::to_pascal_case(safe.clone())),
+                "id": safe,
+            })
+        })
+        .collect();
+
+    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
+        .map(|r| serde_json::json!({
+            "id": go_escape_builtin(&r.id),
+            "min": r.min, "max": r.max,
+            "has_min": r.min.is_some(), "has_max": r.max.is_some(),
+        }))
+        .collect();
+
+    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| {
+            let safe = go_escape_builtin(&roc.id);
+            serde_json::json!({
+                "id": safe,
+                "max_delta": roc.max_delta,
+                "prev_name": format!("prev{}", filters::to_pascal_case(safe.clone())),
+                "type": go_type(&roc.sce_type),
+                "is_float": roc.sce_type.is_float(),
+                "is_signed": roc.sce_type.is_signed(),
+            })
+        })
+        .collect();
+
+    let plausibility_expr = match &rv.plausibility {
+        Some(e) => {
+            let mut expr_go = expr::transpile(e, ExprTarget::Go)?;
+            for (from, to) in &go_renames {
+                if from != to {
+                    let re =
+                        regex::Regex::new(&format!(r"\b{}\b", regex::escape(from))).unwrap();
+                    expr_go = re.replace_all(&expr_go, to.as_str()).to_string();
+                }
+            }
+            Some(expr_go)
+        }
+        None => None,
+    };
+
+    let tmpl = env
+        .get_template("validator.go.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package,
+        struct_name => struct_name,
+        params => params,
+        prev_vars => minijinja::Value::from_serialize(&prev_vars),
+        range_rules => minijinja::Value::from_serialize(&range_rules),
+        roc_rules => minijinja::Value::from_serialize(&roc_rules),
+        plausibility_expr => plausibility_expr,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
 // ══════════════════════════════════════════════════════════════
 // ── Python code generation ───────────────────────────────────
 // ══════════════════════════════════════════════════════════════
@@ -1749,6 +2145,7 @@ pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<Gener
         ForgeDocument::Lookup(m) => render_lookup_python(&env, m)?,
         ForgeDocument::Condition(m) => render_condition_python(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_python(&env, m)?,
+        ForgeDocument::Validator(m) => render_validator_python(&env, m)?,
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -2088,6 +2485,79 @@ fn encode_single_field_python(
         }
         _ => exprs.push(format!("# encode {}", field.id)),
     }
+}
+
+// ── Python: Validator ────────────────────────────────────────
+
+fn render_validator_python(
+    env: &minijinja::Environment,
+    m: &ValidatorModel,
+) -> Result<String, String> {
+    let rv = resolve_validator(m);
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let renames: Vec<(String, String)> = rv.inputs.iter()
+        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
+        .collect();
+
+    let params = rv.inputs.iter()
+        .map(|f| format!("{}: {}", filters::to_snake_case(f.id.clone()), python_type(&f.sce_type)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let prev_vars: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| {
+            let snake = filters::to_snake_case(roc.id.clone());
+            serde_json::json!({
+                "name": format!("prev_{snake}"),
+                "id": snake,
+                "is_float": roc.sce_type.is_float(),
+            })
+        })
+        .collect();
+
+    let range_rules: Vec<serde_json::Value> = rv.ranges.iter()
+        .map(|r| serde_json::json!({
+            "id": filters::to_snake_case(r.id.clone()),
+            "min": r.min, "max": r.max,
+            "has_min": r.min.is_some(), "has_max": r.max.is_some(),
+        }))
+        .collect();
+
+    let roc_rules: Vec<serde_json::Value> = rv.rocs.iter()
+        .map(|roc| {
+            let snake = filters::to_snake_case(roc.id.clone());
+            serde_json::json!({
+                "id": snake,
+                "max_delta": roc.max_delta,
+                "prev_name": format!("prev_{snake}"),
+            })
+        })
+        .collect();
+
+    let plausibility_expr = match &rv.plausibility {
+        Some(e) => {
+            let mut expr_py = expr::transpile(e, ExprTarget::Python)?;
+            expr_py = rust_rename_vars(&expr_py, &renames);
+            Some(expr_py)
+        }
+        None => None,
+    };
+
+    let tmpl = env
+        .get_template("validator.py.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        struct_name => struct_name,
+        params => params,
+        prev_vars => minijinja::Value::from_serialize(&prev_vars),
+        range_rules => minijinja::Value::from_serialize(&range_rules),
+        roc_rules => minijinja::Value::from_serialize(&roc_rules),
+        plausibility_expr => plausibility_expr,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
 }
 
 // ── Inline kind rendering (policy struct member functions) ─────

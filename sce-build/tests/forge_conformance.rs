@@ -496,6 +496,116 @@ fn forge_python_codec_subbyte() {
     assert_standalone_forge_python("codec_subbyte", "codec_subbyte.py");
 }
 
+// ── Validator conformance (C++) ──────────────────────────────
+
+#[test]
+fn forge_validator_rpm_check() {
+    assert_standalone_forge("validator_rpm_check", "validator_rpm_check.h");
+}
+
+#[test]
+fn forge_validator_range_only() {
+    assert_standalone_forge("validator_range_only", "validator_range_only.h");
+}
+
+#[test]
+fn forge_validator_signed_roc() {
+    assert_standalone_forge("validator_signed_roc", "validator_signed_roc.h");
+}
+
+#[test]
+fn forge_validator_plausibility_only() {
+    assert_standalone_forge("validator_plausibility_only", "validator_plausibility_only.h");
+}
+
+// ── Validator conformance (Kotlin) ──────────────────────────
+
+#[test]
+fn forge_kotlin_validator_rpm_check() {
+    assert_standalone_forge_kotlin("validator_rpm_check", "ValidatorRpmCheck.kt");
+}
+
+#[test]
+fn forge_kotlin_validator_range_only() {
+    assert_standalone_forge_kotlin("validator_range_only", "ValidatorRangeOnly.kt");
+}
+
+#[test]
+fn forge_kotlin_validator_signed_roc() {
+    assert_standalone_forge_kotlin("validator_signed_roc", "ValidatorSignedRoc.kt");
+}
+
+#[test]
+fn forge_kotlin_validator_plausibility_only() {
+    assert_standalone_forge_kotlin("validator_plausibility_only", "ValidatorPlausibilityOnly.kt");
+}
+
+// ── Validator conformance (Rust) ────────────────────────────
+
+#[test]
+fn forge_rust_validator_rpm_check() {
+    assert_standalone_forge_rust("validator_rpm_check", "validator_rpm_check.rs");
+}
+
+#[test]
+fn forge_rust_validator_range_only() {
+    assert_standalone_forge_rust("validator_range_only", "validator_range_only.rs");
+}
+
+#[test]
+fn forge_rust_validator_signed_roc() {
+    assert_standalone_forge_rust("validator_signed_roc", "validator_signed_roc.rs");
+}
+
+#[test]
+fn forge_rust_validator_plausibility_only() {
+    assert_standalone_forge_rust("validator_plausibility_only", "validator_plausibility_only.rs");
+}
+
+// ── Validator conformance (Go) ──────────────────────────────
+
+#[test]
+fn forge_go_validator_rpm_check() {
+    assert_standalone_forge_go("validator_rpm_check", "validator_rpm_check.go");
+}
+
+#[test]
+fn forge_go_validator_range_only() {
+    assert_standalone_forge_go("validator_range_only", "validator_range_only.go");
+}
+
+#[test]
+fn forge_go_validator_signed_roc() {
+    assert_standalone_forge_go("validator_signed_roc", "validator_signed_roc.go");
+}
+
+#[test]
+fn forge_go_validator_plausibility_only() {
+    assert_standalone_forge_go("validator_plausibility_only", "validator_plausibility_only.go");
+}
+
+// ── Validator conformance (Python) ──────────────────────────
+
+#[test]
+fn forge_python_validator_rpm_check() {
+    assert_standalone_forge_python("validator_rpm_check", "validator_rpm_check.py");
+}
+
+#[test]
+fn forge_python_validator_range_only() {
+    assert_standalone_forge_python("validator_range_only", "validator_range_only.py");
+}
+
+#[test]
+fn forge_python_validator_signed_roc() {
+    assert_standalone_forge_python("validator_signed_roc", "validator_signed_roc.py");
+}
+
+#[test]
+fn forge_python_validator_plausibility_only() {
+    assert_standalone_forge_python("validator_plausibility_only", "validator_plausibility_only.py");
+}
+
 // ── Inline kind conformance ──────────────────────────────────
 
 #[test]
@@ -523,6 +633,10 @@ fn forge_generate_golden() {
         "codec_simple_frame",
         "codec_little_endian",
         "codec_subbyte",
+        "validator_rpm_check",
+        "validator_range_only",
+        "validator_signed_roc",
+        "validator_plausibility_only",
     ];
 
     for name in &test_cases {

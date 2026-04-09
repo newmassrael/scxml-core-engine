@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="validator"
+       name="signed_roc_validator">
+  <datamodel>
+    <data id="speed" sce:type="int32" sce:direction="in"/>
+    <data id="altitude" sce:type="float64" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"/>
+  </datamodel>
+
+  <sce:rules>
+    <sce:range id="speed" min="-100" max="500"/>
+    <sce:range id="altitude" max="50000.0"/>
+    <sce:rate-of-change id="speed" max-delta="50" sce:sample-interval="200ms"/>
+    <sce:rate-of-change id="altitude" max-delta="100.0" sce:sample-interval="1s"/>
+  </sce:rules>
+</scxml>

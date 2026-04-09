@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="validator"
+       name="rpm_validator">
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="engineState" sce:type="string" sce:direction="in"/>
+    <data id="valid" sce:type="bool" sce:direction="out"/>
+  </datamodel>
+
+  <sce:rules>
+    <sce:range id="rpm" min="0" max="8000"/>
+    <sce:rate-of-change id="rpm" max-delta="500" sce:sample-interval="100ms"/>
+    <sce:plausibility expr="rpm === 0 || engineState !== 'STOP'"/>
+  </sce:rules>
+</scxml>

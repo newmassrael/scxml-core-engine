@@ -1,0 +1,51 @@
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="validator")
+# Do not edit — regenerate from the source SCXML file.
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ValidationResult:
+    valid: bool
+    reason: str
+
+
+class {{ struct_name }}:
+    def __init__(self) -> None:
+{% for pv in prev_vars %}
+{% if pv.is_float %}
+        self.{{ pv.name }} = 0.0
+{% else %}
+        self.{{ pv.name }} = 0
+{% endif %}
+{% endfor %}
+{% if not prev_vars %}
+        pass
+{% endif %}
+
+    def validate(self, {{ params }}) -> ValidationResult:
+{% for rule in range_rules %}
+{% if rule.has_min and rule.has_max %}
+        if {{ rule.id }} < {{ rule.min }} or {{ rule.id }} > {{ rule.max }}:
+            return ValidationResult(False, "{{ rule.id }}_out_of_range")
+{% elif rule.has_min %}
+        if {{ rule.id }} < {{ rule.min }}:
+            return ValidationResult(False, "{{ rule.id }}_out_of_range")
+{% elif rule.has_max %}
+        if {{ rule.id }} > {{ rule.max }}:
+            return ValidationResult(False, "{{ rule.id }}_out_of_range")
+{% endif %}
+{% endfor %}
+{% for rule in roc_rules %}
+        delta = abs({{ rule.id }} - self.{{ rule.prev_name }})
+        if delta > {{ rule.max_delta }}:
+            return ValidationResult(False, "{{ rule.id }}_rate_of_change_exceeded")
+{% endfor %}
+{% if plausibility_expr %}
+        if not ({{ plausibility_expr }}):
+            return ValidationResult(False, "plausibility_failed")
+{% endif %}
+{% for pv in prev_vars %}
+        self.{{ pv.name }} = {{ pv.id }}
+{% endfor %}
+        return ValidationResult(True, "")
