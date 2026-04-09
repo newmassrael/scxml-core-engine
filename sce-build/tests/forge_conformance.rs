@@ -630,6 +630,34 @@ fn forge_procedure_security_access() {
     assert_standalone_forge("procedure_security_access", "procedure_security_access.h");
 }
 
+// ── Procedure Level 2 conformance (Kotlin, event-driven) ────
+
+#[test]
+fn forge_kotlin_procedure_security_access() {
+    assert_standalone_forge_kotlin("procedure_security_access", "ProcedureSecurityAccess.kt");
+}
+
+// ── Procedure Level 2 conformance (Rust, event-driven) ──────
+
+#[test]
+fn forge_rust_procedure_security_access() {
+    assert_standalone_forge_rust("procedure_security_access", "procedure_security_access.rs");
+}
+
+// ── Procedure Level 2 conformance (Go, event-driven) ────────
+
+#[test]
+fn forge_go_procedure_security_access() {
+    assert_standalone_forge_go("procedure_security_access", "procedure_security_access.go");
+}
+
+// ── Procedure Level 2 conformance (Python, event-driven) ────
+
+#[test]
+fn forge_python_procedure_security_access() {
+    assert_standalone_forge_python("procedure_security_access", "procedure_security_access.py");
+}
+
 // ── Procedure conformance (Kotlin) ──────────────────────────
 
 #[test]

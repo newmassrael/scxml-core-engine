@@ -68,6 +68,7 @@
 
 pub mod engine;
 pub mod event;
+pub mod forge;
 pub mod helpers;
 pub mod http;
 pub mod invoke;

@@ -701,7 +701,13 @@ pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<Gener
         ForgeDocument::Condition(m) => render_condition_kotlin(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_kotlin(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_kotlin(&env, m)?,
-        ForgeDocument::Procedure(m) => render_procedure_kotlin(&env, m)?,
+        ForgeDocument::Procedure(m) => {
+            if m.is_event_driven {
+                render_procedure_l2_kotlin(&env, m)?
+            } else {
+                render_procedure_kotlin(&env, m)?
+            }
+        }
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -1167,7 +1173,13 @@ pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<Generat
         ForgeDocument::Condition(m) => render_condition_rust(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_rust(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_rust(&env, m)?,
-        ForgeDocument::Procedure(m) => render_procedure_rust(&env, m)?,
+        ForgeDocument::Procedure(m) => {
+            if m.is_event_driven {
+                render_procedure_l2_rust(&env, m)?
+            } else {
+                render_procedure_rust(&env, m)?
+            }
+        }
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -1659,7 +1671,13 @@ pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<Generated
         ForgeDocument::Condition(m) => render_condition_go(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_go(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_go(&env, m)?,
-        ForgeDocument::Procedure(m) => render_procedure_go(&env, m)?,
+        ForgeDocument::Procedure(m) => {
+            if m.is_event_driven {
+                render_procedure_l2_go(&env, m)?
+            } else {
+                render_procedure_go(&env, m)?
+            }
+        }
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -2156,7 +2174,13 @@ pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<Gener
         ForgeDocument::Condition(m) => render_condition_python(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_python(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_python(&env, m)?,
-        ForgeDocument::Procedure(m) => render_procedure_python(&env, m)?,
+        ForgeDocument::Procedure(m) => {
+            if m.is_event_driven {
+                render_procedure_l2_python(&env, m)?
+            } else {
+                render_procedure_python(&env, m)?
+            }
+        }
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -3424,6 +3448,818 @@ fn render_procedure_python(
         initial_index => rp.initial_index,
         non_final_states => minijinja::Value::from_serialize(&non_final_states),
         final_check => final_check,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Procedure Level 2: shared helpers ───────────────────────────
+
+/// Common L2 procedure data shared across all language renderers.
+struct L2Common {
+    state_enum: Vec<serde_json::Value>,
+    event_enum: Vec<serde_json::Value>,
+    event_name_map: std::collections::BTreeMap<String, String>,
+    initial_state: String,
+    final_states: Vec<serde_json::Value>,
+    payload_exprs: Vec<String>,
+    has_external_deps: bool,
+}
+
+/// Build language-independent L2 procedure data (state/event enums, final states).
+fn build_l2_common(m: &ProcedureModel) -> L2Common {
+    let state_enum: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "index": i,
+            })
+        })
+        .collect();
+
+    let mut event_raw_to_pascal: std::collections::BTreeMap<String, String> =
+        std::collections::BTreeMap::new();
+    event_raw_to_pascal.insert("ok".to_string(), "Ok".to_string());
+    event_raw_to_pascal.insert("fail".to_string(), "Fail".to_string());
+    for s in &m.states {
+        for tr in &s.transitions {
+            if let Some(ev) = &tr.event {
+                event_raw_to_pascal
+                    .entry(ev.clone())
+                    .or_insert_with(|| filters::to_pascal_case(ev.clone()));
+            }
+        }
+    }
+
+    let mut seen_pascal: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let event_enum: Vec<serde_json::Value> = event_raw_to_pascal
+        .iter()
+        .filter(|(_, pascal)| seen_pascal.insert((*pascal).clone()))
+        .enumerate()
+        .map(|(i, (raw, pascal))| {
+            serde_json::json!({
+                "name": pascal,
+                "index": i + 1,
+                "event_name": raw,
+            })
+        })
+        .collect();
+
+    let initial_state = filters::to_pascal_case(m.initial.clone());
+
+    let final_states: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .filter(|s| s.is_final)
+        .map(|s| {
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "id": s.id,
+            })
+        })
+        .collect();
+
+    let payload_exprs: Vec<String> = m
+        .states
+        .iter()
+        .flat_map(|s| s.on_entry_sends.iter())
+        .filter_map(|send| send.payload.clone())
+        .collect();
+    let has_external_deps = !payload_exprs.is_empty();
+
+    L2Common {
+        state_enum,
+        event_enum,
+        event_name_map: event_raw_to_pascal,
+        initial_state,
+        final_states,
+        payload_exprs,
+        has_external_deps,
+    }
+}
+
+/// Build non-final state transition data for L2 templates.
+/// `cond_transform` allows Kotlin to apply unsigned conversion to guard expressions.
+fn build_l2_non_final_states(
+    m: &ProcedureModel,
+    target: ExprTarget,
+    rename_map: &std::collections::HashMap<&str, &str>,
+    event_name_map: &std::collections::BTreeMap<String, String>,
+    cond_transform: Option<&dyn Fn(&str) -> String>,
+) -> Vec<serde_json::Value> {
+    m.states
+        .iter()
+        .filter(|s| !s.is_final)
+        .map(|s| {
+            let transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .enumerate()
+                .map(|(idx, tr)| {
+                    let event_enum_name = tr.event.as_ref().map(|ev| {
+                        event_name_map
+                            .get(ev)
+                            .cloned()
+                            .unwrap_or_else(|| filters::to_pascal_case(ev.clone()))
+                    });
+                    let cond_transpiled = tr.cond.as_ref().map(|c| {
+                        let base = transpile_l2_expr(c, target, rename_map);
+                        match cond_transform {
+                            Some(f) => f(&base),
+                            None => base,
+                        }
+                    });
+                    serde_json::json!({
+                        "index": idx,
+                        "has_event": tr.event.is_some(),
+                        "event_name": tr.event.as_deref().unwrap_or(""),
+                        "event_enum": event_enum_name.unwrap_or_default(),
+                        "has_cond": tr.cond.is_some(),
+                        "cond": cond_transpiled.unwrap_or_default(),
+                        "target_name": filters::to_pascal_case(tr.target.clone()),
+                        "has_assigns": !tr.assigns.is_empty(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "transitions": transitions,
+            })
+        })
+        .collect()
+}
+
+/// Build states with onentry sends for L2 templates.
+/// `payload_rename_map` allows Rust to borrow non-Copy types in payload expressions.
+fn build_l2_states_with_entry(
+    m: &ProcedureModel,
+    target: ExprTarget,
+    rename_map: &std::collections::HashMap<&str, &str>,
+    payload_rename_map: Option<&std::collections::HashMap<&str, &str>>,
+) -> Vec<serde_json::Value> {
+    let payload_map = payload_rename_map.unwrap_or(rename_map);
+    m.states
+        .iter()
+        .filter(|s| !s.on_entry_sends.is_empty())
+        .map(|s| {
+            let sends: Vec<serde_json::Value> = s
+                .on_entry_sends
+                .iter()
+                .map(|send| {
+                    let addr_expr = send
+                        .addr
+                        .as_ref()
+                        .map(|a| transpile_l2_expr(a, target, rename_map));
+                    let payload_expr = send
+                        .payload
+                        .as_ref()
+                        .map(|p| transpile_l2_expr(p, target, payload_map));
+                    serde_json::json!({
+                        "service": send.service,
+                        "subfunc": send.subfunc,
+                        "has_addr": send.addr.is_some(),
+                        "addr_expr": addr_expr.unwrap_or_default(),
+                        "payload": send.payload.is_some(),
+                        "payload_expr": payload_expr.unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "sends": sends,
+            })
+        })
+        .collect()
+}
+
+/// Build final states with donedata for L2 templates.
+fn build_l2_final_states_with_donedata(
+    m: &ProcedureModel,
+    target: ExprTarget,
+    rename_map: &std::collections::HashMap<&str, &str>,
+) -> Vec<serde_json::Value> {
+    m.states
+        .iter()
+        .filter(|s| s.is_final && !s.done_params.is_empty())
+        .map(|s| {
+            let done_params: Vec<serde_json::Value> = s
+                .done_params
+                .iter()
+                .map(|p| {
+                    let transpiled = transpile_l2_expr(&p.expr, target, rename_map);
+                    serde_json::json!({
+                        "name": p.name,
+                        "expr": transpiled,
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "done_params": done_params,
+            })
+        })
+        .collect()
+}
+
+/// Build states that have transitions with assigns for L2 templates.
+fn build_l2_states_with_assigns(
+    m: &ProcedureModel,
+    target: ExprTarget,
+    assign_rename_map: &std::collections::HashMap<&str, &str>,
+    type_map: &std::collections::HashMap<&str, &SceType>,
+    location_transform: impl Fn(&str) -> String,
+    bytes_wrap: impl Fn(&str, &str) -> String,
+) -> Vec<serde_json::Value> {
+    m.states
+        .iter()
+        .filter(|s| s.transitions.iter().any(|tr| !tr.assigns.is_empty()))
+        .map(|s| {
+            let assign_transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .enumerate()
+                .filter(|(_, tr)| !tr.assigns.is_empty())
+                .map(|(idx, tr)| {
+                    let assigns: Vec<serde_json::Value> = tr
+                        .assigns
+                        .iter()
+                        .map(|a| {
+                            let transpiled =
+                                transpile_l2_expr(&a.expr, target, assign_rename_map);
+                            let wrapped = match type_map.get(a.location.as_str()) {
+                                Some(SceType::Bytes) if a.expr.trim() == "_event.data" => {
+                                    bytes_wrap(&transpiled, &a.location)
+                                }
+                                _ => transpiled,
+                            };
+                            serde_json::json!({
+                                "location": location_transform(&a.location),
+                                "expr": wrapped,
+                            })
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "index": idx,
+                        "assigns": assigns,
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "assign_transitions": assign_transitions,
+            })
+        })
+        .collect()
+}
+
+/// Build the type map (variable name → SceType) for assign type checking.
+fn build_l2_type_map<'a>(m: &'a ProcedureModel) -> std::collections::HashMap<&'a str, &'a SceType> {
+    m.inputs
+        .iter()
+        .chain(m.internals.iter())
+        .map(|f| (f.id.as_str(), &f.sce_type))
+        .collect()
+}
+
+/// Default zero-value for Kotlin types.
+fn kotlin_default(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8 => "0.toUByte()",
+        SceType::Uint16 => "0.toUShort()",
+        SceType::Uint32 => "0u",
+        SceType::Uint64 => "0uL",
+        SceType::Int8 | SceType::Int16 | SceType::Int32 => "0",
+        SceType::Int64 => "0L",
+        SceType::Float32 => "0.0f",
+        SceType::Float64 => "0.0",
+        SceType::Bool => "false",
+        SceType::String => "\"\"",
+        SceType::Bytes => "byteArrayOf()",
+    }
+}
+
+/// Default zero-value for Rust types.
+fn rust_default(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => "0",
+        SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => "0",
+        SceType::Float32 | SceType::Float64 => "0.0",
+        SceType::Bool => "false",
+        SceType::String => "String::new()",
+        SceType::Bytes => "Vec::new()",
+    }
+}
+
+/// Default zero-value for Python types.
+fn python_default(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => "0",
+        SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64 => "0",
+        SceType::Float32 | SceType::Float64 => "0.0",
+        SceType::Bool => "False",
+        SceType::String => "\"\"",
+        SceType::Bytes => "b\"\"",
+    }
+}
+
+// ── Procedure Level 2: Kotlin ───────────────────────────────────
+
+fn render_procedure_l2_kotlin(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let package = filters::to_snake_case(m.name.clone());
+    let common = build_l2_common(m);
+
+    // Input fields
+    let input_fields: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "id": f.id,
+                "kt_type": kotlin_type(&f.sce_type),
+                "setter_name": filters::to_pascal_case(f.id.clone()),
+                "default_value": kotlin_default(&f.sce_type),
+            })
+        })
+        .collect();
+
+    // Internal fields
+    let internal_fields: Vec<serde_json::Value> = m
+        .internals
+        .iter()
+        .map(|f| {
+            let default_val = f
+                .expr
+                .as_ref()
+                .map(|e| expr::transpile(e, ExprTarget::Kotlin).unwrap_or_else(|_| e.clone()))
+                .unwrap_or_else(|| kotlin_default(&f.sce_type).to_string());
+            serde_json::json!({
+                "id": f.id,
+                "kt_type": kotlin_type(&f.sce_type),
+                "default_value": default_val,
+            })
+        })
+        .collect();
+
+    // Rename map: Kotlin only renames _event.data → pendingEventData
+    let owned_rename: std::collections::HashMap<&str, String> =
+        std::collections::HashMap::from([("_event.data", "pendingEventData".to_string())]);
+    let rename_map: std::collections::HashMap<&str, &str> = owned_rename
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+
+    // Build assign rename map (same as rename_map for Kotlin)
+    let assign_rename_map = rename_map.clone();
+
+    let type_map = build_l2_type_map(m);
+    let states_with_entry = build_l2_states_with_entry(m, ExprTarget::Kotlin, &rename_map, None);
+    let final_states_with_donedata =
+        build_l2_final_states_with_donedata(m, ExprTarget::Kotlin, &rename_map);
+
+    // Non-final states: apply Kotlin unsigned conversion to guards if needed
+    let has_unsigned = m
+        .inputs
+        .iter()
+        .chain(m.internals.iter())
+        .any(|f| f.sce_type.is_unsigned());
+    let unsigned_conversions: Vec<(String, String)> = m
+        .inputs
+        .iter()
+        .chain(m.internals.iter())
+        .filter_map(|f| {
+            kotlin_unsigned_conversion(&f.sce_type).map(|cv| (f.id.clone(), cv.to_string()))
+        })
+        .collect();
+
+    let kt_cond_transform = |base: &str| -> String {
+        if has_unsigned && kotlin_condition_needs_conversion(base) {
+            kotlin_wrap_expr(base, &unsigned_conversions)
+        } else {
+            base.to_string()
+        }
+    };
+    let non_final_states = build_l2_non_final_states(
+        m,
+        ExprTarget::Kotlin,
+        &rename_map,
+        &common.event_name_map,
+        Some(&kt_cond_transform),
+    );
+
+    let states_with_assigns = build_l2_states_with_assigns(
+        m,
+        ExprTarget::Kotlin,
+        &assign_rename_map,
+        &type_map,
+        |loc| loc.to_string(),
+        |transpiled, _| format!("{transpiled}.toByteArray()"),
+    );
+
+    let tmpl = env
+        .get_template("procedure_l2.kt.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package,
+        class_name => &pascal,
+        pascal_name => &pascal,
+        state_enum => minijinja::Value::from_serialize(&common.state_enum),
+        event_enum => minijinja::Value::from_serialize(&common.event_enum),
+        input_fields => minijinja::Value::from_serialize(&input_fields),
+        internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        initial_state => common.initial_state,
+        final_states => minijinja::Value::from_serialize(&common.final_states),
+        states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
+        final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
+        has_external_deps => common.has_external_deps,
+        payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Procedure Level 2: Rust ─────────────────────────────────────
+
+fn render_procedure_l2_rust(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let common = build_l2_common(m);
+
+    // Build rename map: varName → self.var_name
+    let var_name_strings: Vec<String> = m
+        .inputs
+        .iter()
+        .chain(m.internals.iter())
+        .map(|f| f.id.clone())
+        .collect();
+    let owned_rename: std::collections::HashMap<&str, String> = var_name_strings
+        .iter()
+        .map(|name| {
+            (
+                name.as_str(),
+                format!("self.{}", filters::to_snake_case(name.clone())),
+            )
+        })
+        .collect();
+    // Add _event.data to both rename maps
+    let mut owned_rename_with_event = owned_rename;
+    owned_rename_with_event.insert("_event.data", "self.pending_event_data".to_string());
+    let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+    let assign_rename_map = rename_map.clone();
+
+    // Input fields
+    let input_fields: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .map(|f| {
+            let snake_id = filters::to_snake_case(f.id.clone());
+            let (setter_conv, rs_param_type) = match f.sce_type {
+                SceType::String => ("value.to_string()".to_string(), "&str".to_string()),
+                SceType::Bytes => ("value.to_vec()".to_string(), "&[u8]".to_string()),
+                _ => ("value".to_string(), rust_type(&f.sce_type).to_string()),
+            };
+            serde_json::json!({
+                "id": snake_id,
+                "rs_type": rust_type(&f.sce_type),
+                "rs_param_type": rs_param_type,
+                "setter_name": snake_id,
+                "setter_conv": setter_conv,
+                "param_name": snake_id,
+                "default_value": rust_default(&f.sce_type),
+            })
+        })
+        .collect();
+
+    // Internal fields
+    let internal_fields: Vec<serde_json::Value> = m
+        .internals
+        .iter()
+        .map(|f| {
+            let snake_id = filters::to_snake_case(f.id.clone());
+            let default_val = f
+                .expr
+                .as_ref()
+                .map(|e| expr::transpile(e, ExprTarget::Rust).unwrap_or_else(|_| e.clone()))
+                .unwrap_or_else(|| rust_default(&f.sce_type).to_string());
+            serde_json::json!({
+                "id": snake_id,
+                "rs_type": rust_type(&f.sce_type),
+                "default_value": default_val,
+            })
+        })
+        .collect();
+
+    let type_map = build_l2_type_map(m);
+
+    // Payload rename map: borrow Bytes/String fields to prevent move in fn args.
+    // e.g., computeKey(self.seed) → computeKey(&self.seed) for Vec<u8> fields.
+    let owned_payload_rename: std::collections::HashMap<&str, String> = var_name_strings
+        .iter()
+        .map(|name| {
+            let snake = filters::to_snake_case(name.clone());
+            let ty = type_map.get(name.as_str());
+            let value = match ty {
+                Some(SceType::Bytes) | Some(SceType::String) => format!("&self.{}", snake),
+                _ => format!("self.{}", snake),
+            };
+            (name.as_str(), value)
+        })
+        .chain(std::iter::once(("_event.data", "self.pending_event_data".to_string())))
+        .collect();
+    let payload_rename_map: std::collections::HashMap<&str, &str> = owned_payload_rename
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+
+    let states_with_entry =
+        build_l2_states_with_entry(m, ExprTarget::Rust, &rename_map, Some(&payload_rename_map));
+    let final_states_with_donedata =
+        build_l2_final_states_with_donedata(m, ExprTarget::Rust, &rename_map);
+    let non_final_states = build_l2_non_final_states(
+        m,
+        ExprTarget::Rust,
+        &rename_map,
+        &common.event_name_map,
+        None,
+    );
+    let states_with_assigns = build_l2_states_with_assigns(
+        m,
+        ExprTarget::Rust,
+        &assign_rename_map,
+        &type_map,
+        |loc| format!("self.{}", filters::to_snake_case(loc.to_string())),
+        |transpiled, _| format!("{transpiled}.as_bytes().to_vec()"),
+    );
+
+    let tmpl = env
+        .get_template("procedure_l2.rs.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        struct_name => &pascal,
+        snake_name => snake,
+        state_enum => minijinja::Value::from_serialize(&common.state_enum),
+        event_enum => minijinja::Value::from_serialize(&common.event_enum),
+        input_fields => minijinja::Value::from_serialize(&input_fields),
+        internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        initial_state => common.initial_state,
+        final_states => minijinja::Value::from_serialize(&common.final_states),
+        states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
+        final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
+        has_external_deps => common.has_external_deps,
+        payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Procedure Level 2: Go ───────────────────────────────────────
+
+fn render_procedure_l2_go(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let package = filters::to_snake_case(m.name.clone());
+    let common = build_l2_common(m);
+
+    // Build rename map: varName → p.varName (Go struct field access)
+    let var_name_strings: Vec<String> = m
+        .inputs
+        .iter()
+        .chain(m.internals.iter())
+        .map(|f| f.id.clone())
+        .collect();
+    let owned_rename: std::collections::HashMap<&str, String> = var_name_strings
+        .iter()
+        .map(|name| {
+            (
+                name.as_str(),
+                format!("p.{}", go_escape_builtin(name)),
+            )
+        })
+        .collect();
+    // Add _event.data to both rename maps
+    let mut owned_rename_with_event = owned_rename;
+    owned_rename_with_event.insert("_event.data", "p.pendingEventData".to_string());
+    let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+    let assign_rename_map = rename_map.clone();
+
+    // Determine if fmt import is needed (for addr string conversion)
+    let needs_fmt = m
+        .states
+        .iter()
+        .flat_map(|s| s.on_entry_sends.iter())
+        .any(|send| send.addr.is_some() || send.payload.is_some());
+
+    // Input fields
+    let input_fields: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .map(|f| {
+            let go_id = go_escape_builtin(&f.id);
+            serde_json::json!({
+                "id": go_id,
+                "raw_id": f.id,
+                "go_type": go_type(&f.sce_type),
+                "setter_name": filters::to_pascal_case(f.id.clone()),
+                "param_id": go_id,
+            })
+        })
+        .collect();
+
+    // Internal fields
+    let internal_fields: Vec<serde_json::Value> = m
+        .internals
+        .iter()
+        .map(|f| {
+            let go_id = go_escape_builtin(&f.id);
+            let default_val = f
+                .expr
+                .as_ref()
+                .map(|e| expr::transpile(e, ExprTarget::Go).unwrap_or_else(|_| e.clone()));
+            serde_json::json!({
+                "id": go_id,
+                "go_type": go_type(&f.sce_type),
+                "has_default": default_val.is_some(),
+                "default_value": default_val.unwrap_or_default(),
+            })
+        })
+        .collect();
+
+    let type_map = build_l2_type_map(m);
+    let states_with_entry = build_l2_states_with_entry(m, ExprTarget::Go, &rename_map, None);
+    let final_states_with_donedata =
+        build_l2_final_states_with_donedata(m, ExprTarget::Go, &rename_map);
+    let non_final_states = build_l2_non_final_states(
+        m,
+        ExprTarget::Go,
+        &rename_map,
+        &common.event_name_map,
+        None,
+    );
+    let states_with_assigns = build_l2_states_with_assigns(
+        m,
+        ExprTarget::Go,
+        &assign_rename_map,
+        &type_map,
+        |loc| format!("p.{}", go_escape_builtin(loc)),
+        |transpiled, _| format!("[]byte({transpiled})"),
+    );
+
+    let tmpl = env
+        .get_template("procedure_l2.go.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package,
+        class_name => &pascal,
+        pascal_name => &pascal,
+        needs_fmt => needs_fmt,
+        state_enum => minijinja::Value::from_serialize(&common.state_enum),
+        event_enum => minijinja::Value::from_serialize(&common.event_enum),
+        input_fields => minijinja::Value::from_serialize(&input_fields),
+        internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        initial_state => common.initial_state,
+        final_states => minijinja::Value::from_serialize(&common.final_states),
+        states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
+        final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
+        has_external_deps => common.has_external_deps,
+        payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Procedure Level 2: Python ───────────────────────────────────
+
+fn render_procedure_l2_python(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let snake = filters::to_snake_case(m.name.clone());
+    let common = build_l2_common(m);
+
+    // Build rename map: varName → self._var_name
+    let var_name_strings: Vec<String> = m
+        .inputs
+        .iter()
+        .chain(m.internals.iter())
+        .map(|f| f.id.clone())
+        .collect();
+    let owned_rename: std::collections::HashMap<&str, String> = var_name_strings
+        .iter()
+        .map(|name| {
+            (
+                name.as_str(),
+                format!("self._{}", filters::to_snake_case(name.clone())),
+            )
+        })
+        .collect();
+    // Add _event.data to both rename maps
+    let mut owned_rename_with_event = owned_rename;
+    owned_rename_with_event.insert("_event.data", "self._pending_event_data".to_string());
+    let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+    let assign_rename_map = rename_map.clone();
+
+    // Input fields
+    let input_fields: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .map(|f| {
+            let snake_id = filters::to_snake_case(f.id.clone());
+            serde_json::json!({
+                "snake_id": snake_id,
+                "py_type": python_type(&f.sce_type),
+                "default_value": python_default(&f.sce_type),
+            })
+        })
+        .collect();
+
+    // Internal fields
+    let internal_fields: Vec<serde_json::Value> = m
+        .internals
+        .iter()
+        .map(|f| {
+            let snake_id = filters::to_snake_case(f.id.clone());
+            let default_val = f
+                .expr
+                .as_ref()
+                .map(|e| expr::transpile(e, ExprTarget::Python).unwrap_or_else(|_| e.clone()))
+                .unwrap_or_else(|| python_default(&f.sce_type).to_string());
+            serde_json::json!({
+                "snake_id": snake_id,
+                "py_type": python_type(&f.sce_type),
+                "default_value": default_val,
+            })
+        })
+        .collect();
+
+    let type_map = build_l2_type_map(m);
+    let states_with_entry = build_l2_states_with_entry(m, ExprTarget::Python, &rename_map, None);
+    let final_states_with_donedata =
+        build_l2_final_states_with_donedata(m, ExprTarget::Python, &rename_map);
+    let non_final_states = build_l2_non_final_states(
+        m,
+        ExprTarget::Python,
+        &rename_map,
+        &common.event_name_map,
+        None,
+    );
+    let states_with_assigns = build_l2_states_with_assigns(
+        m,
+        ExprTarget::Python,
+        &assign_rename_map,
+        &type_map,
+        |loc| format!("self._{}", filters::to_snake_case(loc.to_string())),
+        |transpiled, _| format!("{transpiled}.encode()"),
+    );
+
+    let tmpl = env
+        .get_template("procedure_l2.py.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        class_name => &pascal,
+        snake_name => snake,
+        state_enum => minijinja::Value::from_serialize(&common.state_enum),
+        event_enum => minijinja::Value::from_serialize(&common.event_enum),
+        input_fields => minijinja::Value::from_serialize(&input_fields),
+        internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        initial_state => common.initial_state,
+        final_states => minijinja::Value::from_serialize(&common.final_states),
+        states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
+        final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
+        has_external_deps => common.has_external_deps,
+        payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
     };
 
     tmpl.render(ctx).map_err(generator::render_error)

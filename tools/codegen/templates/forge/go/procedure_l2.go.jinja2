@@ -1,0 +1,182 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure", Level 2)
+// Do not edit — regenerate from the source SCXML file.
+//
+// Level 2 procedure: event-driven state machine using forge.ProcedurePolicy.
+// Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
+{% if has_external_deps %}
+//
+// External dependencies (from sce:payload expressions — must be in scope):
+{% for expr in payload_exprs %}
+//   {{ expr }}
+{% endfor %}
+{% endif %}
+
+package {{ package }}
+
+import (
+{% if needs_fmt %}
+	"fmt"
+{% endif %}
+	"github.com/newmassrael/sce-go-runtime/forge"
+)
+
+// ── State and Event constants ───────────────────────────────────
+
+const (
+{% for s in state_enum %}
+	state{{ s.name }} = {{ s.index }}
+{% endfor %}
+)
+
+const (
+	eventNone = 0
+{% for e in event_enum %}
+	event{{ e.name }} = {{ e.index }}
+{% endfor %}
+)
+
+// ── Generated procedure policy ──────────────────────────────────
+
+type policy struct {
+{% for f in input_fields %}
+	{{ f.id }}	{{ f.go_type }}
+{% endfor %}
+{% for f in internal_fields %}
+	{{ f.id }}	{{ f.go_type }}
+{% endfor %}
+	serviceHandler   forge.ServiceHandler
+	doneData         map[string]string
+	pendingEventData string
+}
+
+func newPolicy(handler forge.ServiceHandler{% for f in input_fields %}, {{ f.param_id }} {{ f.go_type }}{% endfor %}) *policy {
+	return &policy{
+{% for f in input_fields %}
+		{{ f.id }}: {{ f.param_id }},
+{% endfor %}
+{% for f in internal_fields %}
+{% if f.has_default %}
+		{{ f.id }}: {{ f.default_value }},
+{% endif %}
+{% endfor %}
+		serviceHandler: handler,
+		doneData:       make(map[string]string),
+	}
+}
+
+func (p *policy) NoneEvent() int             { return eventNone }
+func (p *policy) InitialState() int          { return state{{ initial_state }} }
+func (p *policy) SetPendingEventData(d string) { p.pendingEventData = d }
+func (p *policy) DoneData() map[string]string  { return p.doneData }
+
+func (p *policy) IsFinal(s int) bool {
+	switch s {
+{% for s in final_states %}
+	case state{{ s.name }}:
+		return true
+{% endfor %}
+	}
+	return false
+}
+
+func (p *policy) FinalStateName(s int) string {
+	switch s {
+{% for s in final_states %}
+	case state{{ s.name }}:
+		return "{{ s.id }}"
+{% endfor %}
+	}
+	return ""
+}
+
+func (p *policy) ExecuteEntryActions(s int) (int, string) {
+	switch s {
+{% for s in states_with_entry %}
+	case state{{ s.name }}:
+{% for send in s.sends %}
+		if p.serviceHandler != nil {
+			req := forge.ProcedureServiceRequest{
+				Service: "{{ send.service }}",
+{% if send.subfunc %}
+				Subfunc: "{{ send.subfunc }}",
+{% endif %}
+				Params:  make(map[string]string),
+			}
+{% if send.has_addr %}
+			req.Params["addr"] = fmt.Sprint({{ send.addr_expr }})
+{% endif %}
+{% if send.payload %}
+			req.Params["payload"] = fmt.Sprint({{ send.payload_expr }})
+{% endif %}
+			resp := p.serviceHandler(req)
+			if resp.Success {
+				return eventOk, resp.Data
+			}
+			return eventFail, resp.Data
+		}
+{% endfor %}
+{% endfor %}
+{% for s in final_states_with_donedata %}
+	case state{{ s.name }}:
+{% for dp in s.done_params %}
+		p.doneData["{{ dp.name }}"] = {{ dp.expr }}
+{% endfor %}
+{% endfor %}
+	}
+	return eventNone, ""
+}
+
+func (p *policy) ProcessTransition(s int, ev int) (int, int, bool, bool) {
+	switch s {
+{% for s in non_final_states %}
+	case state{{ s.name }}:
+{% for tr in s.transitions %}
+{% if tr.has_event %}
+		if ev == event{{ tr.event_enum }} {
+{% if tr.has_cond %}
+			if {{ tr.cond }} {
+				return state{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}, true
+			}
+{% else %}
+			return state{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}, true
+{% endif %}
+		}
+{% else %}
+		if ev == eventNone {
+{% if tr.has_cond %}
+			if {{ tr.cond }} {
+				return state{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}, true
+			}
+{% else %}
+			return state{{ tr.target_name }}, {{ tr.index }}, {{ tr.has_assigns }}, true
+{% endif %}
+		}
+{% endif %}
+{% endfor %}
+{% endfor %}
+	}
+	return 0, 0, false, false
+}
+
+func (p *policy) ExecuteTransitionActions(source int, trIndex int) {
+{% for s in states_with_assigns %}
+	if source == state{{ s.name }} {
+{% for tr in s.assign_transitions %}
+		if trIndex == {{ tr.index }} {
+{% for a in tr.assigns %}
+			{{ a.location }} = {{ a.expr }}
+{% endfor %}
+		}
+{% endfor %}
+	}
+{% endfor %}
+}
+
+// ── Convenience wrapper function ────────────────────────────────
+
+// Execute runs the procedure to completion.
+func Execute(handler forge.ServiceHandler{% for f in input_fields %}, {{ f.param_id }} {{ f.go_type }}{% endfor %}) forge.ProcedureRunResult {
+	p := newPolicy(handler{% for f in input_fields %}, {{ f.param_id }}{% endfor %})
+	return forge.RunProcedure(p)
+}
+
