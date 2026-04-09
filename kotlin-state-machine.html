@@ -234,11 +234,11 @@ class WorkflowService(@Autowired val engine: ScxmlScriptEngine) {
                 SCE generates Kotlin state machine classes from SCXML at build time,
                 just like the C++ backend. The generated code implements the
                 <code>StateMachineEngine</code> interface and integrates with SCE's
-                runtime via the same code generator (Python + Jinja2 templates).
+                runtime via the same code generator.
             </p>
 
 <pre><code># Generate Kotlin state machine from SCXML
-python3 tools/codegen/codegen.py traffic_light.scxml -o ./generated/ --lang kotlin</code></pre>
+sce-codegen generate traffic_light.scxml -o ./generated/ -l kotlin</code></pre>
 
             <p>
                 The code generator analyzes the SCXML features and automatically selects
@@ -322,7 +322,7 @@ cd scxml-core-engine
         </article>
 
         <footer>
-            <p><a href="./">SCE Home</a> | <a href="cpp-state-machine.html">C++ State Machine</a> | <a href="rust-state-machine.html">Rust State Machine</a> | <a href="python-state-machine.html">Python State Machine</a></p>
+            <p><a href="./">SCE Home</a> | <a href="cpp-state-machine.html">C++ State Machine</a> | <a href="rust-state-machine.html">Rust State Machine</a> | <a href="go-state-machine.html">Go State Machine</a> | <a href="python-state-machine.html">Python State Machine</a></p>
         </footer>
     </div>
 </body>

@@ -55,7 +55,7 @@ class WasmCodegen {
      * Generate code from SCXML content for any supported language.
      *
      * @param {string} scxmlContent - SCXML file content
-     * @param {string} language - Target language: 'rust', 'cpp', 'kotlin'
+     * @param {string} language - Target language: 'rust', 'cpp', 'kotlin', 'go'
      * @param {string} filename - Original SCXML filename (for naming)
      * @returns {{ files: Array<[string, string]>, primaryCode: string }}
      */

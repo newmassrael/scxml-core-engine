@@ -3,23 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCE - SCXML Core Engine | W3C SCXML 1.0 State Machine for C++, Kotlin, Rust and Python</title>
-    <meta name="description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin/JVM, Rust, and Python bindings. Zero-overhead embedded systems, Android AAOS, and Spring Boot support.">
-    <meta name="keywords" content="SCXML, state machine, W3C SCXML, C++ state machine, Kotlin state machine, Rust state machine, Python state machine, pybind11, AOT code generator, statechart, finite state machine, embedded systems, Android AAOS, Spring Boot, SCXML engine, state machine code generator">
+    <title>SCE - SCXML Core Engine | W3C SCXML 1.0 State Machine for C++, Kotlin, Rust, Go and Python</title>
+    <meta name="description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin/JVM, Rust, Go, and Python bindings. Zero-overhead embedded systems, Android AAOS, and Spring Boot support.">
+    <meta name="keywords" content="SCXML, state machine, W3C SCXML, C++ state machine, Kotlin state machine, Rust state machine, Go state machine, Python state machine, pybind11, AOT code generator, statechart, finite state machine, embedded systems, Android AAOS, Spring Boot, SCXML engine, state machine code generator">
     <meta name="author" content="newmassrael">
     <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/">
 
     <!-- Open Graph -->
     <meta property="og:type" content="website">
     <meta property="og:title" content="SCE - SCXML Core Engine">
-    <meta property="og:description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation. Supports C++, Kotlin/JVM, Rust, and Python. Try the online code generator and DOOM demo.">
+    <meta property="og:description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation. Supports C++, Kotlin/JVM, Rust, Go, and Python. Try the online code generator and DOOM demo.">
     <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/">
     <meta property="og:site_name" content="SCXML Core Engine">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="SCE - SCXML Core Engine">
-    <meta name="twitter:description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin, Rust, and Python.">
+    <meta name="twitter:description" content="High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin, Rust, Go, and Python.">
 
     <!-- JSON-LD Structured Data -->
     <script type="application/ld+json">
@@ -27,10 +27,10 @@
         "@context": "https://schema.org",
         "@type": "SoftwareSourceCode",
         "name": "SCE - SCXML Core Engine",
-        "description": "High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin/JVM, Rust, and Python bindings",
+        "description": "High-performance W3C SCXML 1.0 state machine engine with AOT code generation for C++, Kotlin/JVM, Rust, Go, and Python bindings",
         "url": "https://github.com/newmassrael/scxml-core-engine",
         "codeRepository": "https://github.com/newmassrael/scxml-core-engine",
-        "programmingLanguage": ["C++", "Kotlin", "Rust", "Python"],
+        "programmingLanguage": ["C++", "Kotlin", "Rust", "Go", "Python"],
         "runtimePlatform": ["Linux", "Android", "QNX", "WebAssembly"],
         "license": "https://github.com/newmassrael/scxml-core-engine/blob/main/LICENSE",
         "operatingSystem": ["Linux", "Android", "QNX"],
@@ -69,6 +69,7 @@
         .badge-kotlin { background: #1f1a2e; color: #a371f7; }
         .badge-rust { background: #2a1a1a; color: #f47067; }
         .badge-python { background: #1a2a1a; color: #f1e05a; }
+        .badge-go { background: #1a2a2e; color: #00add8; }
         .badge-w3c { background: #1a2e1a; color: #3fb950; }
 
         .cards { max-width: 960px; margin: 0 auto; padding: 0 24px 60px; }
@@ -115,13 +116,14 @@
             <h1><span>SCE</span> - SCXML Core Engine</h1>
             <p class="tagline">
                 High-performance W3C SCXML 1.0 state machine engine with AOT code generation.
-                From embedded C++ to Android, Spring Boot, Rust, and Python.
+                From embedded C++ to Android, Spring Boot, Rust, Go, and Python.
             </p>
             <div class="badges">
                 <span class="badge badge-w3c">W3C SCXML 1.0 Compliant</span>
                 <span class="badge badge-cpp">C++ AOT</span>
                 <span class="badge badge-kotlin">Kotlin/JVM</span>
                 <span class="badge badge-rust">Rust</span>
+                <span class="badge badge-go">Go</span>
                 <span class="badge badge-python">Python</span>
             </div>
         </section>
@@ -159,7 +161,7 @@
                 <strong>W3C SCXML 1.0 specification</strong> — the standard for
                 describing state machines and statecharts in XML. Unlike interpreter-based
                 engines, SCE uses <strong>Ahead-of-Time (AOT) code generation</strong>
-                to compile SCXML documents into native C++, Kotlin, or Rust code at build time,
+                to compile SCXML documents into native C++, Kotlin, Rust, or Go code at build time,
                 eliminating all runtime parsing overhead. Python bindings via pybind11
                 provide direct access to the C++ interpreter engine.
             </p>
@@ -172,8 +174,8 @@
                 the compiler to fully inline state transitions.
             </p>
             <p>
-                SCE passes all 202 mandatory W3C SCXML conformance tests across all four backends
-                (C++, Kotlin, Rust, and Python) — supporting datamodels, parallel states, history states,
+                SCE passes all 202 mandatory W3C SCXML conformance tests across all five backends
+                (C++, Kotlin, Rust, Go, and Python) — supporting datamodels, parallel states, history states,
                 invocations, and delayed event delivery as specified by the W3C standard.
             </p>
         </section>
@@ -197,6 +199,11 @@
                     <a href="rust-state-machine.html" class="btn">Rust Guide</a>
                 </article>
                 <article class="card">
+                    <h3>Go State Machine</h3>
+                    <p>Native Go with generics. Pure Go Lua scripting (no CGo). 202/202 W3C compliance with zero external runtime dependencies.</p>
+                    <a href="go-state-machine.html" class="btn">Go Guide</a>
+                </article>
+                <article class="card">
                     <h3>Python State Machine</h3>
                     <p>pybind11 bindings wrapping the C++ interpreter. 202/202 W3C compliance with HTTP event support and context manager API.</p>
                     <a href="python-state-machine.html" class="btn">Python Guide</a>
@@ -216,8 +223,8 @@
                     <div class="label">W3C SCXML tests passing</div>
                 </div>
                 <div class="feature">
-                    <div class="num">4</div>
-                    <div class="label">Backend languages (C++, Kotlin, Rust, Python)</div>
+                    <div class="num">5</div>
+                    <div class="label">Backend languages (C++, Kotlin, Rust, Go, Python)</div>
                 </div>
                 <div class="feature">
                     <div class="num">0</div>

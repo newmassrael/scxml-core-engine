@@ -3,38 +3,38 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rust State Machine Library - W3C SCXML Code Generation | SCE</title>
-    <meta name="description" content="Generate type-safe Rust state machines from W3C SCXML. Full 202/202 W3C conformance, AOT code generation, compile-time state and event enums. Zero-cost abstractions for Rust state machine development.">
-    <meta name="keywords" content="Rust state machine, Rust FSM, Rust finite state machine, Rust statechart, SCXML Rust, state machine code generator, Rust state machine library, type-safe state machine">
-    <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/rust-state-machine.html">
+    <title>Go State Machine Library - W3C SCXML Code Generation | SCE</title>
+    <meta name="description" content="Generate native Go state machines from W3C SCXML with Go 1.22+ generics. Full 202/202 W3C conformance, AOT code generation, pure Go Lua scripting with no CGo.">
+    <meta name="keywords" content="Go state machine, Go FSM, Go finite state machine, Go statechart, SCXML Go, state machine code generator, Go state machine library, Go generics state machine">
+    <link rel="canonical" href="https://newmassrael.github.io/scxml-core-engine/go-state-machine.html">
 
     <!-- Open Graph -->
     <meta property="og:type" content="article">
-    <meta property="og:title" content="Rust State Machine Library - W3C SCXML Code Generation">
-    <meta property="og:description" content="Generate type-safe Rust state machines from W3C SCXML. 202/202 W3C tests passing, AOT code generation, compile-time enums.">
-    <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/rust-state-machine.html">
+    <meta property="og:title" content="Go State Machine Library - W3C SCXML Code Generation">
+    <meta property="og:description" content="Generate native Go state machines from W3C SCXML. 202/202 W3C tests passing, AOT code generation, Go 1.22+ generics.">
+    <meta property="og:url" content="https://newmassrael.github.io/scxml-core-engine/go-state-machine.html">
     <meta property="og:site_name" content="SCXML Core Engine">
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary">
-    <meta name="twitter:title" content="Rust State Machine Library with W3C SCXML Code Generation">
-    <meta name="twitter:description" content="Type-safe Rust state machines from W3C SCXML. 202/202 W3C tests passing, AOT code generation.">
+    <meta name="twitter:title" content="Go State Machine Library with W3C SCXML Code Generation">
+    <meta name="twitter:description" content="Native Go state machines from W3C SCXML. 202/202 W3C tests passing, AOT code generation.">
 
     <!-- JSON-LD -->
     <script type="application/ld+json">
     {
         "@context": "https://schema.org",
         "@type": "TechArticle",
-        "headline": "Rust State Machine Library with W3C SCXML Code Generation",
-        "description": "How to implement state machines in Rust using SCE's AOT code generator with full W3C SCXML 1.0 compliance.",
-        "url": "https://newmassrael.github.io/scxml-core-engine/rust-state-machine.html",
+        "headline": "Go State Machine Library with W3C SCXML Code Generation",
+        "description": "How to implement state machines in Go using SCE's AOT code generator with full W3C SCXML 1.0 compliance.",
+        "url": "https://newmassrael.github.io/scxml-core-engine/go-state-machine.html",
         "author": { "@type": "Person", "name": "newmassrael" },
         "publisher": { "@type": "Organization", "name": "SCXML Core Engine" },
         "about": {
             "@type": "SoftwareSourceCode",
             "name": "SCE - SCXML Core Engine",
             "codeRepository": "https://github.com/newmassrael/scxml-core-engine",
-            "programmingLanguage": "Rust"
+            "programmingLanguage": "Go"
         }
     }
     </script>
@@ -87,28 +87,28 @@
 <body>
     <div class="container">
         <header>
-            <nav><a href="./">SCE Home</a> / Rust State Machine</nav>
-            <h1>Rust State Machine Library</h1>
+            <nav><a href="./">SCE Home</a> / Go State Machine</nav>
+            <h1>Go State Machine Library</h1>
             <p class="lead">
-                Generate type-safe Rust state machines from W3C SCXML with
-                AOT code generation. Full 202/202 W3C conformance tests passing.
+                Generate native Go state machines from W3C SCXML with
+                Go 1.22+ generics. Full 202/202 W3C conformance tests passing.
+                Pure Go, no CGo required.
             </p>
             <div class="cta">
                 <a href="https://github.com/newmassrael/scxml-core-engine" class="primary">View on GitHub</a>
-                <a href="visualizer/codegen.html?lang=rust" class="secondary">Try Code Generator</a>
+                <a href="visualizer/codegen.html?lang=go" class="secondary">Try Code Generator</a>
             </div>
         </header>
 
         <article>
-            <h2>State Machines in Rust</h2>
+            <h2>State Machines in Go</h2>
 
             <p>
-                Rust's type system makes it an excellent language for implementing
-                state machines. Enums with pattern matching provide compile-time
-                exhaustiveness checks, and the ownership model prevents invalid state
-                transitions at the type level. However, <strong>hand-writing complex
-                state machines</strong> with hierarchical states, parallel regions, and
-                history states is tedious and error-prone, even in Rust.
+                Go's type system with generics (Go 1.18+) and interface-based
+                polymorphism provides a clean foundation for state machine implementations.
+                However, <strong>hand-writing complex state machines</strong> with
+                hierarchical states, parallel regions, and history states requires
+                significant boilerplate that is difficult to maintain as complexity grows.
             </p>
 
             <h3>Existing approaches compared</h3>
@@ -120,39 +120,34 @@
                     <th>Cons</th>
                 </tr>
                 <tr>
-                    <td>enum + match</td>
-                    <td>Pure Rust, exhaustive checking</td>
+                    <td>switch/case</td>
+                    <td>Simple, native Go</td>
                     <td>Manual, no hierarchy, no parallel states</td>
                 </tr>
                 <tr>
-                    <td>rust-fsm</td>
-                    <td>Derive macro, compile-time</td>
-                    <td>Flat states only, no standard compliance</td>
+                    <td>looplab/fsm</td>
+                    <td>Popular, callback-based</td>
+                    <td>String-typed states, no hierarchy, runtime only</td>
                 </tr>
                 <tr>
-                    <td>statig</td>
-                    <td>Typestate pattern, zero-cost</td>
-                    <td>No hierarchical states, limited expressiveness</td>
-                </tr>
-                <tr>
-                    <td>sfsm</td>
-                    <td>Procedural macro</td>
-                    <td>Simple transitions only, no parallel or history</td>
+                    <td>qmuntal/stateless</td>
+                    <td>Fluent API, guards</td>
+                    <td>No parallel states, no standard compliance</td>
                 </tr>
                 <tr>
                     <td><strong>SCE</strong></td>
-                    <td><strong>W3C standard, full hierarchy, AOT generated</strong></td>
+                    <td><strong>W3C standard, full hierarchy, AOT generated, generics</strong></td>
                     <td>SCXML definition required, external code generation step</td>
                 </tr>
             </table>
 
             <p>
-                SCE takes a unique approach in the Rust ecosystem: instead of
-                a proc macro or DSL, you define state machines in <strong>W3C SCXML</strong>
+                SCE takes a unique approach in the Go ecosystem: instead of a
+                runtime-configured DSL, you define state machines in <strong>W3C SCXML</strong>
                 (the international standard for statecharts), and SCE's code generator
-                produces idiomatic Rust code at build time. This gives you the full power
+                produces idiomatic Go code at build time. This gives you the full power
                 of the W3C specification -- hierarchical states, parallel regions, history,
-                invoke, delayed events -- with <strong>type-safe generated code</strong>.
+                invoke, delayed events -- with <strong>type-safe generated code using Go generics</strong>.
             </p>
 
             <h2>How It Works</h2>
@@ -173,50 +168,55 @@
   &lt;/state&gt;
 &lt;/scxml&gt;</code></pre>
 
-            <h3>Step 2: Generate Rust code</h3>
+            <h3>Step 2: Generate Go code</h3>
 
-<pre><code># Generate Rust state machine (-l rust or --lang rust)
-sce-codegen generate traffic_light.scxml -o ./src/generated/ -l rust</code></pre>
+<pre><code># Generate Go state machine (-l go or --language go)
+sce-codegen generate --scxml traffic_light.scxml --language go --output-dir ./generated/</code></pre>
 
             <p>
-                The generator produces a Rust module containing a <strong>State enum</strong>,
-                an <strong>Event enum</strong>, and a <strong>Policy struct</strong> that
-                implements the <code>StatePolicy</code> trait. The <code>Engine&lt;P&gt;</code>
-                type from <code>sce-rust-runtime</code> drives execution.
+                The generator produces a Go file containing a <strong>State type</strong>
+                (iota constants), an <strong>Event type</strong>, and a <strong>Policy struct</strong>
+                that implements the <code>StatePolicy[S, E]</code> interface. The
+                <code>Engine[S, E]</code> generic type from <code>sce-go-runtime</code>
+                drives execution.
             </p>
 
-            <h3>Step 3: Use in your Rust code</h3>
+            <h3>Step 3: Use in your Go code</h3>
 
-<pre><code>use sce_rust_runtime::Engine;
-use generated::traffic_light::{TrafficLightPolicy, TrafficLightEvent, TrafficLightState};
+<pre><code>package main
 
-fn main() {
+import (
+    sce "github.com/newmassrael/sce-go-runtime"
+    gen "your-module/generated"
+)
+
+func main() {
     // Create the policy (generated from SCXML) and engine
-    let policy = TrafficLightPolicy::new();
-    let mut engine = Engine::new(policy);
+    policy := gen.NewTrafficLightPolicy()
+    engine := sce.NewEngine[gen.TrafficLightState, gen.TrafficLightEvent](policy)
 
-    engine.initialize();                            // Enters "red" state
-    engine.process_event(TrafficLightEvent::Timer);  // red -> green
-    engine.process_event(TrafficLightEvent::Timer);  // green -> yellow
-    engine.process_event(TrafficLightEvent::Timer);  // yellow -> red
+    engine.Initialize()                                    // Enters "red" state
+    engine.ProcessEvent(gen.TrafficLightEventTimer)         // red -> green
+    engine.ProcessEvent(gen.TrafficLightEventTimer)         // green -> yellow
+    engine.ProcessEvent(gen.TrafficLightEventTimer)         // yellow -> red
 
-    assert_eq!(engine.get_current_state(), TrafficLightState::Red);
+    fmt.Println(engine.GetCurrentState() == gen.TrafficLightStateRed) // true
 }</code></pre>
 
             <p>
-                <code>process_event()</code> is a convenience method that combines
-                <code>raise_external()</code> + <code>step()</code>. For fine-grained control,
+                <code>ProcessEvent()</code> is a convenience method that combines
+                <code>RaiseExternal()</code> + <code>Step()</code>. For fine-grained control,
                 use them separately:
             </p>
 
 <pre><code>// Low-level API: queue event, then process explicitly
-engine.raise_external(TrafficLightEvent::Timer, "", "");
-engine.step();</code></pre>
+engine.RaiseExternal(gen.TrafficLightEventTimer, "", "")
+engine.Step()</code></pre>
 
-            <h2>W3C SCXML Features in Rust</h2>
+            <h2>W3C SCXML Features in Go</h2>
 
             <p>
-                SCE's Rust backend passes <strong>all 202 mandatory W3C SCXML
+                SCE's Go backend passes <strong>all 202 mandatory W3C SCXML
                 conformance tests</strong>, supporting the full specification:
             </p>
 
@@ -258,18 +258,50 @@ engine.step();</code></pre>
                 </tr>
             </table>
 
-            <h2>Why SCXML for Rust?</h2>
+            <h2>Architecture</h2>
 
             <p>
-                Using W3C SCXML instead of a Rust-specific DSL provides several advantages
-                for Rust projects:
+                The Go backend consists of three modules with clear separation of concerns:
             </p>
+
+            <table>
+                <tr>
+                    <th>Module</th>
+                    <th>Purpose</th>
+                    <th>Dependencies</th>
+                </tr>
+                <tr>
+                    <td><code>sce-go-runtime</code></td>
+                    <td><code>StatePolicy[S, E]</code> interface, <code>Engine[S, E]</code> generic engine</td>
+                    <td>Go stdlib only</td>
+                </tr>
+                <tr>
+                    <td><code>sce-go-lua</code></td>
+                    <td>Lua 5.4 script engine via Shopify/go-lua</td>
+                    <td>sce-go-runtime, go-lua</td>
+                </tr>
+                <tr>
+                    <td><code>sce-go-tests</code></td>
+                    <td>W3C SCXML conformance test suite (202 tests)</td>
+                    <td>sce-go-runtime, sce-go-lua</td>
+                </tr>
+            </table>
+
+            <p>
+                The runtime module has <strong>zero external dependencies</strong> -- it uses
+                only the Go standard library. The Lua engine uses
+                <a href="https://github.com/Shopify/go-lua">Shopify/go-lua</a>, a pure Go
+                implementation of Lua that requires no C compiler or CGo. This makes the
+                entire stack cross-compilable to any platform Go supports.
+            </p>
+
+            <h2>Why SCXML for Go?</h2>
 
             <ul>
                 <li>
                     <strong>Cross-language portability</strong> -- the same SCXML file
                     generates C++, Kotlin, Rust, and Go code. Useful for projects with
-                    multi-language codebases or when migrating between languages.
+                    multi-language codebases or microservice architectures.
                 </li>
                 <li>
                     <strong>Visual tooling</strong> -- SCXML can be visualized, simulated,
@@ -282,27 +314,31 @@ engine.step();</code></pre>
                     and parallel state synchronization. No ambiguity.
                 </li>
                 <li>
-                    <strong>Full statechart expressiveness</strong> -- hierarchical states,
-                    parallel regions, history states, guarded transitions, and invoke are
-                    all part of the standard, not afterthought extensions.
+                    <strong>Type-safe generics</strong> -- generated code uses Go 1.22+
+                    generics with <code>comparable</code> constraints, enabling compile-time
+                    type checking for state and event types.
+                </li>
+                <li>
+                    <strong>No CGo</strong> -- the entire stack is pure Go, making it
+                    easy to cross-compile and deploy anywhere Go runs.
                 </li>
             </ul>
 
-            <h2>Comparison with Rust State Machine Crates</h2>
+            <h2>Comparison with Go State Machine Libraries</h2>
 
             <table>
                 <tr>
                     <th>Feature</th>
-                    <th>enum+match</th>
-                    <th>rust-fsm</th>
-                    <th>statig</th>
+                    <th>switch/case</th>
+                    <th>looplab/fsm</th>
+                    <th>qmuntal/stateless</th>
                     <th>SCE</th>
                 </tr>
                 <tr>
                     <td>Hierarchical states</td>
                     <td>Manual</td>
                     <td>No</td>
-                    <td>No</td>
+                    <td>Yes (substates)</td>
                     <td><strong>Yes</strong></td>
                 </tr>
                 <tr>
@@ -341,6 +377,13 @@ engine.step();</code></pre>
                     <td><strong>W3C SCXML 1.0</strong></td>
                 </tr>
                 <tr>
+                    <td>Type safety</td>
+                    <td>Manual</td>
+                    <td>String-typed</td>
+                    <td>Interface-typed</td>
+                    <td><strong>Generic (comparable)</strong></td>
+                </tr>
+                <tr>
                     <td>Cross-language</td>
                     <td>No</td>
                     <td>No</td>
@@ -362,27 +405,27 @@ engine.step();</code></pre>
 git clone --recursive https://github.com/newmassrael/scxml-core-engine.git
 cd scxml-core-engine
 
-# Generate Rust state machine from SCXML
-sce-codegen generate your_machine.scxml -o ./src/generated/ -l rust
+# Generate Go state machine from SCXML
+sce-codegen generate --scxml your_machine.scxml --language go --output-dir ./generated/
 
-# Run the Rust W3C test suite
-cargo test -p sce-rust-tests</code></pre>
+# Run the Go W3C test suite
+cd sce-go-tests && go test ./...</code></pre>
 
             <p>
-                The Rust runtime (<code>sce-rust-runtime/</code>) provides the
-                <code>Engine&lt;P&gt;</code> type and <code>StatePolicy</code> trait.
-                Test infrastructure is in <code>sce-rust-tests/</code>. The code generator
-                produces standalone Rust modules that depend only on the runtime crate.
+                The Go runtime (<code>sce-go-runtime/</code>) provides the
+                <code>Engine[S, E]</code> type and <code>StatePolicy[S, E]</code> interface.
+                Test infrastructure is in <code>sce-go-tests/</code>. The code generator
+                produces standalone Go files that depend only on the runtime module.
             </p>
 
             <div class="cta">
                 <a href="https://github.com/newmassrael/scxml-core-engine" class="primary">GitHub Repository</a>
-                <a href="visualizer/codegen.html?lang=rust" class="secondary">Try Online Code Generator</a>
+                <a href="visualizer/codegen.html?lang=go" class="secondary">Try Online Code Generator</a>
             </div>
         </article>
 
         <footer>
-            <p><a href="./">SCE Home</a> | <a href="cpp-state-machine.html">C++ State Machine</a> | <a href="kotlin-state-machine.html">Kotlin State Machine</a> | <a href="go-state-machine.html">Go State Machine</a> | <a href="python-state-machine.html">Python State Machine</a></p>
+            <p><a href="./">SCE Home</a> | <a href="cpp-state-machine.html">C++ State Machine</a> | <a href="kotlin-state-machine.html">Kotlin State Machine</a> | <a href="rust-state-machine.html">Rust State Machine</a> | <a href="python-state-machine.html">Python State Machine</a></p>
         </footer>
     </div>
 </body>

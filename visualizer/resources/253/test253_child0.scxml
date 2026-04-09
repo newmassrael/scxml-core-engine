@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 
-<scxml xmlns="http://www.w3.org/2005/07/scxml" initial="sub0" version="1.0" datamodel="ecmascript">
+<scxml initial="sub0" version="1.0" datamodel="ecmascript"  xmlns="http://www.w3.org/2005/07/scxml">
          <datamodel>
           <data id="Var2"/>
            </datamodel>
@@ -26,4 +26,3 @@
            </state>
           <final id="subFinal"/>
             </scxml>
-        
