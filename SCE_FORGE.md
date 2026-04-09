@@ -377,6 +377,15 @@ The `sce:` namespace contains attributes from two distinct subsystems. Each attr
 | `sce:byte`, `sce:bit-offset`, `sce:bit-size` | SCE Forge | Build-time (codegen) | Codec field layout |
 | `sce:service`, `sce:subfunc`, `sce:addr`, `sce:payload` | SCE Forge | Build-time (codegen) | Procedure `<send>` hints |
 | `sce:unit`, `sce:default-endian` | SCE Forge | Build-time (codegen) | Documentation, endianness |
+| `sce:range-min`, `sce:range-max` | SCE Forge | Build-time (codegen) | Validator range bounds |
+| `sce:max-delta`, `sce:sample-interval` | SCE Forge | Build-time (codegen) | Validator rate-of-change |
+| `sce:plausibility` | SCE Forge | Build-time (codegen) | Validator cross-field check |
+| `sce:filter`, `sce:window`, `sce:alpha` | SCE Forge | Build-time (codegen) | Filter type and parameters |
+| `sce:interpolation`, `sce:out-of-bounds` | SCE Forge | Build-time (codegen) | Interpolation method |
+| `sce:axis-{id}` | SCE Forge | Build-time (codegen) | Interpolation axis points |
+| `sce:timer`, `sce:interval`, `sce:duration`, `sce:delay` | SCE Forge | Build-time (codegen) | Timer scheduling |
+| `sce:monitor`, `sce:enter`, `sce:leave` | SCE Forge | Build-time (codegen) | Observer threshold |
+| `sce:on-enter`, `sce:on-leave`, `sce:on-timeout` | SCE Forge | Build-time (codegen) | Observer/timer event names |
 | `sce:qos` | SCE Mesh | Runtime (transport) | Delivery guarantee |
 | `sce:deadline` | SCE Mesh | Runtime (transport) | Maximum delivery latency |
 | `sce:priority` | SCE Mesh | Runtime (transport) | Scheduling priority |
@@ -726,23 +735,27 @@ struct DtcResponse {
 
 Range check, rate-of-change detection, plausibility verification. Validator has minimal internal state (previous values for rate-of-change).
 
+Validation rules are expressed as `sce:` attributes on `<data>` elements — each rule is co-located with the field it validates:
+
 ```xml
 <scxml sce:kind="validator">
   <datamodel>
-    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="rpm" sce:type="uint16" sce:direction="in"
+          sce:range-min="0" sce:range-max="8000"
+          sce:max-delta="500" sce:sample-interval="100ms"/>
     <data id="engineState" sce:type="string" sce:direction="in"/>
-    <data id="valid" sce:type="bool" sce:direction="out"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="rpm === 0 || engineState !== 'STOP'"/>
   </datamodel>
-
-  <sce:rules>
-    <sce:range id="rpm" min="0" max="8000"/>
-    <sce:rate-of-change id="rpm" max-delta="500" sce:sample-interval="100ms"/>
-    <sce:plausibility expr="rpm === 0 || engineState !== 'STOP'"/>
-  </sce:rules>
 </scxml>
 ```
 
-`sce:sample-interval` documents the expected call frequency. The generated code uses `max-delta` as a fixed threshold per call — it does not perform automatic time-based scaling. Callers are responsible for invoking `validate()` at the declared interval.
+- `sce:range-min`, `sce:range-max` — bounds check on the input field
+- `sce:max-delta` — rate-of-change threshold per call
+- `sce:sample-interval` — documents expected call frequency (codegen does not time-scale)
+- `sce:plausibility` — cross-field boolean expression on the output field
+
+> **Migration note**: The current implementation uses the legacy `<sce:rules>` custom element syntax (see tests). The `<data>` attribute syntax above is the target format; parser support will be added alongside `<sce:rules>` deprecation in a future release.
 
 **Codegen** (C++):
 ```cpp
@@ -765,19 +778,44 @@ struct RpmValidator {
 
 ### 4.8 filter
 
-Signal filtering — moving average, low-pass, debounce.
+Signal filtering — moving average, low-pass, debounce. Filter configuration is expressed as `sce:` attributes on the output `<data>` element.
 
+**Filter types**: `moving-average`, `low-pass`, `debounce`
+
+**Moving average** — sliding window average:
 ```xml
 <scxml sce:kind="filter">
   <datamodel>
     <data id="rawTemp" sce:type="float64" sce:direction="in"/>
-    <data id="filtered" sce:type="float64" sce:direction="out"/>
+    <data id="filtered" sce:type="float64" sce:direction="out"
+          sce:filter="moving-average" sce:window="5"/>
   </datamodel>
-  <sce:filter type="moving-average" window="5"/>
 </scxml>
 ```
 
-**Codegen** (C++):
+**Low-pass** — exponential smoothing (alpha = smoothing factor, 0..1):
+```xml
+<scxml sce:kind="filter">
+  <datamodel>
+    <data id="rawSignal" sce:type="float64" sce:direction="in"/>
+    <data id="smoothed" sce:type="float64" sce:direction="out"
+          sce:filter="low-pass" sce:alpha="0.1"/>
+  </datamodel>
+</scxml>
+```
+
+**Debounce** — value must be stable for N consecutive samples:
+```xml
+<scxml sce:kind="filter">
+  <datamodel>
+    <data id="rawButton" sce:type="bool" sce:direction="in"/>
+    <data id="stable" sce:type="bool" sce:direction="out"
+          sce:filter="debounce" sce:window="3"/>
+  </datamodel>
+</scxml>
+```
+
+**Codegen** (C++, moving-average):
 ```cpp
 struct TempFilter {
     std::array<double, 5> buffer_{};
@@ -804,20 +842,22 @@ struct TempFilter {
 
 ### 4.9 interpolation
 
-1D/2D table interpolation with axis definitions.
+1D/2D table interpolation with axis definitions. Axis breakpoints are `sce:axis-{input_id}` attributes on the output `<data>` element; the table values are the element's text content (row-major for 2D).
 
-**1D example** (single axis, flat value list):
+**Interpolation methods**: `linear` (1D), `bilinear` (2D)
+**Out-of-bounds**: `clamp` (default) | `extrapolate` | `error`
+
+**1D example** (single axis):
 ```xml
 <scxml sce:kind="interpolation">
   <datamodel>
     <data id="rpm" sce:type="uint16" sce:direction="in"/>
-    <data id="torqueLimit" sce:type="float64" sce:direction="out"/>
+    <data id="torqueLimit" sce:type="float64" sce:direction="out"
+          sce:interpolation="linear" sce:out-of-bounds="clamp"
+          sce:axis-rpm="800 1200 2000 3000 4000 6000">
+      120.0 145.0 200.0 230.0 210.0 180.0
+    </data>
   </datamodel>
-
-  <sce:table type="1d" method="linear" sce:out-of-bounds="clamp">
-    <sce:axis id="rpm" points="800 1200 2000 3000 4000 6000"/>
-    <sce:values>120.0 145.0 200.0 230.0 210.0 180.0</sce:values>
-  </sce:table>
 </scxml>
 ```
 
@@ -827,25 +867,25 @@ struct TempFilter {
   <datamodel>
     <data id="rpm" sce:type="uint16" sce:direction="in"/>
     <data id="load" sce:type="uint8" sce:direction="in"/>
-    <data id="injectionTime" sce:type="float64" sce:direction="out"/>
-  </datamodel>
-
-  <!-- sce:out-of-bounds: "clamp" (default) | "extrapolate" | "error" -->
-  <!-- Values are row-major: first axis = rows, second axis = columns -->
-  <sce:table type="2d" method="bilinear" sce:out-of-bounds="clamp">
-    <sce:axis id="rpm"  points="800 1200 2000 3000 4000 6000"/>
-    <sce:axis id="load" points="10 25 50 75 100"/>
-    <sce:values>
+    <!-- Values are row-major: first axis (rpm) = rows, second axis (load) = columns -->
+    <data id="injectionTime" sce:type="float64" sce:direction="out"
+          sce:interpolation="bilinear" sce:out-of-bounds="clamp"
+          sce:axis-rpm="800 1200 2000 3000 4000 6000"
+          sce:axis-load="10 25 50 75 100">
       2.1 3.0 4.5 5.8 7.0
       2.5 3.5 5.0 6.5 8.0
       3.0 4.2 6.0 7.8 9.5
       3.5 5.0 7.0 9.0 11.0
       3.8 5.5 7.5 9.5 12.0
       4.0 5.8 8.0 10.0 12.5
-    </sce:values>
-  </sce:table>
+    </data>
+  </datamodel>
 </scxml>
 ```
+
+- `sce:axis-{id}` — axis breakpoints (space-separated), where `{id}` matches an input `<data>` id
+- Text content — interpolation values (space/newline separated)
+- Axis order determines row-major interpretation: first `sce:axis-*` = rows, second = columns
 
 **Codegen** (C++):
 ```cpp
@@ -865,24 +905,29 @@ struct InjectionMap {
 
 ### 4.10 timer
 
-Periodic, delayed, and timeout task timing.
+Periodic, delayed, and timeout task timing. Each timer is a `<data>` element with `sce:timer` attributes specifying the scheduling type and parameters.
 
 > **Naming note**: This kind is named `timer`, not `scheduler`, to avoid collision with SCE Mesh's `IScheduler` interface. `IScheduler` controls *how and when state machines process events* (tick-based vs event-driven execution model). The `timer` kind generates *periodic/delayed task timing logic* — a different abstraction level.
 
+**Timer types**: `periodic`, `timeout`, `delayed`
+
 ```xml
 <scxml sce:kind="timer">
-  <sce:tasks>
-    <sce:periodic id="testerPresent" interval="2000ms"
-                  sce:event="TesterPresent"/>
-    <sce:timeout id="responseTimeout" duration="5000ms"
-                 sce:on-timeout="handleTimeout"/>
-    <sce:delayed id="retryDelay" delay="10000ms"
-                 sce:event="retrySecurityAccess"/>
-  </sce:tasks>
+  <datamodel>
+    <data id="testerPresent" sce:timer="periodic" sce:interval="2000"
+          sce:event="TesterPresent"/>
+    <data id="responseTimeout" sce:timer="timeout" sce:duration="5000"
+          sce:on-timeout="handleTimeout"/>
+    <data id="retryDelay" sce:timer="delayed" sce:delay="10000"
+          sce:event="retrySecurityAccess"/>
+  </datamodel>
 </scxml>
 ```
 
-Actions are expressed as `sce:event` attributes on custom elements, avoiding W3C `<send>` in non-standard positions. Codegen generates the corresponding event emission code.
+- `sce:timer` — timer type: `periodic` (repeating), `timeout` (one-shot, fires on expiry), `delayed` (one-shot, fires after delay)
+- `sce:interval`, `sce:duration`, `sce:delay` — time in milliseconds
+- `sce:event` — event name to emit when timer fires
+- `sce:on-timeout` — callback name for timeout expiry (alternative to event)
 
 **Codegen** (C++):
 ```cpp
@@ -896,29 +941,35 @@ struct DiagScheduler {
 };
 ```
 
+> **Runtime dependency**: Generated code requires a platform-provided `Timer` interface. The codegen emits calls to `startPeriodic()`, `startOneShot()`, `cancel()`. The platform implementation (POSIX, FreeRTOS, etc.) is injected at link time.
+
 ### 4.11 observer
 
-Threshold monitoring with hysteresis.
+Threshold monitoring with hysteresis. Each threshold monitor is a `<data>` element with `sce:monitor` attributes defining enter/leave conditions and event names.
 
 ```xml
 <scxml sce:kind="observer">
   <datamodel>
     <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+    <data id="warning" sce:monitor="threshold"
+          sce:enter="coolantTemp &gt; 110.0"
+          sce:leave="coolantTemp &lt; 100.0"
+          sce:on-enter="emitWarning" sce:on-leave="clearWarning"/>
+    <data id="critical" sce:monitor="threshold"
+          sce:enter="coolantTemp &gt; 120.0"
+          sce:leave="coolantTemp &lt; 105.0"
+          sce:on-enter="emergencyShutdown"/>
   </datamodel>
-
-  <sce:monitors>
-    <sce:threshold id="warning"
-                   enter="coolantTemp &gt; 110.0"
-                   leave="coolantTemp &lt; 100.0"
-                   on-enter="emitWarning"
-                   on-leave="clearWarning"/>
-    <sce:threshold id="critical"
-                   enter="coolantTemp &gt; 120.0"
-                   leave="coolantTemp &lt; 105.0"
-                   on-enter="emergencyShutdown"/>
-  </sce:monitors>
 </scxml>
 ```
+
+- `sce:monitor` — monitor type (currently `threshold`; future: `rate`, `pattern`)
+- `sce:enter` — condition expression for entering the active state (hysteresis high)
+- `sce:leave` — condition expression for leaving the active state (hysteresis low)
+- `sce:on-enter` — event name emitted when entering active state
+- `sce:on-leave` — event name emitted when leaving active state (optional)
+
+Event names are auto-derived from the `sce:on-enter`/`sce:on-leave` attribute values. The generated `Events` enum contains entries like `Event::WARNING`, `Event::WARNING_CLEARED`, `Event::EMERGENCY_SHUTDOWN`.
 
 **Codegen** (C++):
 ```cpp
@@ -930,10 +981,10 @@ struct CoolantMonitor {
         Events events;
         if (!warningActive_ && coolantTemp > 110.0) {
             warningActive_ = true;
-            events.push(Event::WARNING);
+            events.push(Event::EMIT_WARNING);
         } else if (warningActive_ && coolantTemp < 100.0) {
             warningActive_ = false;
-            events.push(Event::WARNING_CLEARED);
+            events.push(Event::CLEAR_WARNING);
         }
         if (!criticalActive_ && coolantTemp > 120.0) {
             criticalActive_ = true;
@@ -1289,10 +1340,10 @@ Core kind support and codegen templates for the most common patterns.
 
 Sequential logic support and multi-language code generation.
 
-- Codegen templates for: `procedure`, `validator`
-- `sce::ProcedureStateMachine` base class in sce_runtime
+- ~~Codegen templates for: `procedure`, `validator`~~ **Done**: procedure (L1 guard-only + L2 event-driven) and validator for all 5 languages
+- ~~`sce::ProcedureStateMachine` base class in sce_runtime~~ **Done**: Per-language runtime packages (Kotlin abstract class, Rust trait, Go interface, Python ABC) with shared event loop and service types
 - Cross-file kind composition: standalone kinds referencing other standalone kinds (e.g., procedure → codec, validator → transform). Phase 1 inline kinds are within a single statechart; Phase 2 enables references across separate SCXML files.
-- ~~Go, Python codegen templates for all Phase 1+2 kinds~~ **Done (Phase 1 kinds)**: Go and Python forge codegen for `transform`, `lookup`, `condition`, `codec` — 61 conformance tests across 5 languages
+- ~~Go, Python codegen templates for all Phase 1+2 kinds~~ **Done**: All Phase 1+2 kinds generate for all 5 languages — 101 conformance tests
 
 ### Phase 3: Signal Processing + Advanced Kinds
 
@@ -1339,10 +1390,10 @@ Integration with SCE Mesh distributed runtime and tooling.
 ### Phase 1 Exit Criteria
 
 - [x] `sce:kind` attribute parsed and dispatched by sce-build
-- [x] Codegen templates for `transform`, `lookup`, `condition`, `codec` produce compilable C++/Kotlin/Rust output
+- [x] Codegen templates for `transform`, `lookup`, `condition`, `codec` produce compilable C++/Kotlin/Rust/Go/Python output
 - [x] Inline kind support generates helper functions/types within statechart
 - [ ] XSD schema validates Extended SCXML documents
-- [x] Kind conformance test suite: reference SCXML + expected codegen output per kind (34 tests, 3+ per kind per language)
+- [x] Kind conformance test suite: 101 tests across 7 kinds and 5 languages
 
 ### Overall Success Definition
 
