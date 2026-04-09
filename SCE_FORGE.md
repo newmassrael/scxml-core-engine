@@ -46,7 +46,7 @@ Value SCE Forge adds:
 
 - **Single source of truth** — one SCXML generates all target languages
 - **Beyond state machines** — 10 additional kinds covering common embedded/automotive patterns
-- **Multi-language codegen** — deterministic, identical logic across C++/Kotlin/Rust (Phase 1), with Go and Python planned for Phase 2
+- **Multi-language codegen** — deterministic, identical logic across C++/Kotlin/Rust/Go/Python
 - **W3C compatible** — Extended SCXML is valid W3C SCXML with `sce:` namespace extensions
 - **Human-readable** — every kind is editable, diffable, version-controllable
 
@@ -563,8 +563,8 @@ Sequential procedure with branching, retry, and error handling.
   <datamodel>
     <data id="ecuAddr" sce:type="uint32" sce:direction="in"/>
     <data id="seed" sce:type="bytes" sce:direction="internal"/>
-    <data id="maxRetries" expr="3" sce:type="int32"/>
-    <data id="retryCount" expr="0" sce:type="int32"/>
+    <data id="maxRetries" expr="3" sce:type="int32" sce:direction="internal"/>
+    <data id="retryCount" expr="0" sce:type="int32" sce:direction="internal"/>
   </datamodel>
 
   <state id="sendTesterPresent">
@@ -580,7 +580,7 @@ Sequential procedure with branching, retry, and error handling.
       <send sce:service="SecurityAccess" sce:subfunc="0x01"/>
     </onentry>
     <transition event="ok" target="sendKey">
-      <assign location="seed" expr="_event.data.payload"/>
+      <assign location="seed" expr="_event.data"/>
     </transition>
     <transition event="fail" target="retry"/>
   </state>
@@ -645,9 +645,9 @@ executeSecurityAccess(DiagClient& client, uint32_t ecuAddr) {
 
 The state machine class is the canonical output. The wrapper is a thin convenience layer. When invoked via `<invoke type="scxml">`, the runtime uses the state machine class directly.
 
-`runToCompletion()` is a method on `sce::ProcedureStateMachine`, a subclass of `sce::StateMachine` added to sce_runtime in Phase 2. It creates an internal event loop, drives the state machine until a `<final>` state is reached, and returns the result. This is a **blocking call** intended for test harnesses, CLI tools, and non-real-time contexts. In RTOS/embedded environments, use `<invoke>` instead — the procedure runs as an async child state machine with no blocking.
+`runToCompletion()` is a method on `ProcedureStateMachine`, a standalone base class/trait provided in each language's forge runtime package. It creates an internal event loop, drives the state machine until a `<final>` state is reached, and returns the result. This is a **blocking call** intended for test harnesses, CLI tools, and non-real-time contexts. In RTOS/embedded environments, use `<invoke>` instead — the procedure runs as an async child state machine with no blocking.
 
-`sce::ProcedureStateMachine` inherits from `sce::StateMachine` and adds only `runToCompletion()`. It does not modify the event processing model — the same instance works with both `<invoke>` (async) and `runToCompletion()` (sync).
+`ProcedureStateMachine` is separate from the W3C statechart engine (`StaticExecutionEngine` / `StateMachineEngine`). It is a lightweight execution loop for run-to-completion procedures only. Generated code extends this base class (Kotlin/Python) or implements the `ProcedurePolicy` trait/interface (Rust/Go), providing the state-specific logic as abstract method implementations.
 
 ### 4.6 codec
 
@@ -1222,7 +1222,7 @@ class DiagSession : public sce::StateMachine {
 | filter | None (internal buffer) | Yes (class with state) | No |
 | interpolation | None (internal table) | Yes (constexpr data) | No |
 | validator | None (internal prev state) | Yes (class with state) | No |
-| procedure | DiagClient, Service types | Yes (requires runtime headers) | Yes |
+| procedure | ProcedureServiceHandler, ProcedureStateMachine | Yes (requires runtime headers) | Yes |
 | timer | Timer | Yes (requires runtime headers) | Yes |
 | observer | EventBus | Yes (requires runtime headers) | Yes |
 | statechart | EventQueue, ActionHandler | Yes (requires runtime headers) | Yes (existing) |
@@ -1258,25 +1258,23 @@ The generator calls `expr::transpile()` for every `expr` and `cond` attribute in
 New kind templates are added to `sce-build` (Rust + minijinja), which is the single source of truth for code generation. Templates in `tools/codegen/templates/` are shared with the `sce-build` binary.
 
 ```
-sce-build/templates/
+tools/codegen/templates/forge/
   cpp/
-    statechart.h.jinja2      (existing, ported from Python codegen)
-    transform.h.jinja2        (new)
-    lookup.h.jinja2           (new)
-    condition.h.jinja2        (new)
-    procedure.h.jinja2        (new)
-    codec.h.jinja2            (new)
-    validator.h.jinja2        (new)
-    filter.h.jinja2           (new)
-    interpolation.h.jinja2    (new)
-    timer.h.jinja2            (new)
-    observer.h.jinja2         (new)
+    transform.h.jinja2
+    lookup.h.jinja2
+    condition.h.jinja2
+    procedure.h.jinja2        (L1: guard-only)
+    procedure_l2.h.jinja2     (L2: event-driven, StaticExecutionEngine)
+    codec.h.jinja2
+    validator.h.jinja2
   kotlin/
-    ...
-  python/
-    ...
+    ...                       (same kinds as cpp, .kt.jinja2)
   rust/
-    ...
+    ...                       (same kinds as cpp, .rs.jinja2)
+  go/
+    ...                       (same kinds as cpp, .go.jinja2)
+  python/
+    ...                       (same kinds as cpp, .py.jinja2)
 ```
 
 ### 6.4 Codegen Dispatch
@@ -1333,7 +1331,7 @@ Core kind support and codegen templates for the most common patterns.
 - Inline kind support in statechart template: `condition`, `lookup`, `codec`, `transform`
 - Schema validation (XSD) for Extended SCXML
 - C++, Kotlin, Rust codegen output (header-only / single-file generation)
-- Kind conformance test suite: 34 tests covering all 4 Phase 1 kinds across 3 languages
+- Kind conformance test suite: reference SCXML + expected codegen output per kind
 - Architecture decision for cross-file kind references (Phase 2 dependency: how sce-build resolves `<invoke src="other.scxml">` and standalone kind imports — build manifest, CMake integration, or sce-build dependency scanner)
 
 ### Phase 2: Procedural + Multi-Language
