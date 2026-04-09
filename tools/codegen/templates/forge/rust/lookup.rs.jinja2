@@ -1,0 +1,20 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
+// Do not edit — regenerate from the source SCXML file.
+
+#![allow(dead_code)]
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum {{ enum_name }} {
+{% for val in unique_values %}
+    {{ val }},
+{% endfor %}
+}
+
+pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {{ enum_name }} {
+    match {{ input_id }} {
+{% for group in entries_by_value %}
+        {{ group.keys | join(" | ") }} => {{ enum_name }}::{{ group.value }},
+{% endfor %}
+        _ => {{ enum_name }}::{{ default_value }},
+    }
+}

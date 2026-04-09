@@ -1,0 +1,22 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
+// Do not edit — regenerate from the source SCXML file.
+
+#![allow(dead_code)]
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Quality {
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+pub fn lookup_quality(level: u8) -> Quality {
+    match level {
+        3 => Quality::High,
+        1 => Quality::Low,
+        2 => Quality::Medium,
+        0 => Quality::None,
+        _ => Quality::None,
+    }
+}

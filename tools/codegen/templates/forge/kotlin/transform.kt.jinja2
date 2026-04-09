@@ -1,0 +1,9 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="transform")
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.{{ package }}
+{% for func in functions %}
+
+fun {{ func.name }}({{ func.params }}): {{ func.ret_type }} =
+    {{ func.expr }}
+{% endfor %}

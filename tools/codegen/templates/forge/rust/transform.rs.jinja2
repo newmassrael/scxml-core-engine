@@ -1,0 +1,10 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="transform")
+// Do not edit — regenerate from the source SCXML file.
+
+#![allow(dead_code, clippy::excessive_precision)]
+{% for func in functions %}
+
+pub fn {{ func.name }}({{ func.params }}) -> {{ func.ret_type }} {
+    {{ func.expr }}
+}
+{% endfor %}

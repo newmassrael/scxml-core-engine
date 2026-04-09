@@ -1,0 +1,27 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.{{ package }}
+
+data class {{ struct_name }}(
+{% for field in fields %}
+    val {{ field.id }}: {{ field.kt_type }}{{ "," if not loop.last else "" }}
+{% endfor %}
+) {
+    fun encode(): ByteArray = byteArrayOf(
+{% for expr in encode_exprs %}
+        {{ expr }}{{ "," if not loop.last else "" }}
+{% endfor %}
+    )
+
+    companion object {
+        fun decode(raw: ByteArray): {{ struct_name }}? {
+            if (raw.size < {{ min_bytes }}) return null
+            return {{ struct_name }}(
+{% for field in fields %}
+                {{ field.id }} = {{ field.decode_expr }}{{ "," if not loop.last else "" }}
+{% endfor %}
+            )
+        }
+    }
+}

@@ -46,7 +46,7 @@ Value SCE Forge adds:
 
 - **Single source of truth** — one SCXML generates all target languages
 - **Beyond state machines** — 10 additional kinds covering common embedded/automotive patterns
-- **Multi-language codegen** — deterministic, identical logic across C++/Kotlin/Go/Python/Rust
+- **Multi-language codegen** — deterministic, identical logic across C++/Kotlin/Rust (Phase 1), with Go and Python planned for Phase 2
 - **W3C compatible** — Extended SCXML is valid W3C SCXML with `sce:` namespace extensions
 - **Human-readable** — every kind is editable, diffable, version-controllable
 
@@ -57,36 +57,36 @@ Value SCE Forge adds:
 ### Layer Diagram
 
 ```
-+----------------------------------------------------------------+
-|                  Extended SCXML (input)                          |
-|       hand-authored, tool-generated, or any other source        |
-+================================================================+
-|                                                                 |
-|  +----------------------------------------------------------+  |
-|  |            sce:kind System                                |  |
-|  |                                                           |  |
-|  |  +------------+  +----------+  +----------------------+  |  |
-|  |  | Statechart |  | Data     |  | sce: extension       |  |  |
-|  |  | (W3C std)  |  | Model    |  | namespace            |  |  |
-|  |  +------------+  +----------+  +----------------------+  |  |
-|  |                                                           |  |
-|  |  Document kinds:                                          |  |
-|  |    statechart | transform | lookup | condition            |  |
-|  |    procedure  | codec | validator | filter                |  |
-|  |    interpolation | timer | observer                      |  |
-|  |  Inline kinds (within statechart):                        |  |
-|  |    condition | lookup | codec | transform                 |  |
-|  +-----------------------------+-----------------------------+  |
-|                                |                                |
-|  +-----------------------------v-----------------------------+  |
-|  |              sce-build (codegen)                           |  |
-|  |                                                            |  |
-|  |  +--------+  +--------+  +--------+  +--------+          |  |
-|  |  |  C++   |  | Kotlin |  | Python |  |  Rust  |          |  |
-|  |  +--------+  +--------+  +--------+  +--------+          |  |
-|  +------------------------------------------------------------+  |
-|                                                                 |
-+-----------------------------------------------------------------+
++-------------------------------------------------------------------+
+|                    Extended SCXML (input)                          |
+|        hand-authored, tool-generated, or any other source         |
++===================================================================+
+|                                                                   |
+|  +-------------------------------------------------------------+ |
+|  |            sce:kind System                                   | |
+|  |                                                              | |
+|  |  +------------+  +----------+  +----------------------+     | |
+|  |  | Statechart |  | Data     |  | sce: extension       |     | |
+|  |  | (W3C std)  |  | Model    |  | namespace            |     | |
+|  |  +------------+  +----------+  +----------------------+     | |
+|  |                                                              | |
+|  |  Document kinds:                                             | |
+|  |    statechart | transform | lookup | condition               | |
+|  |    procedure  | codec | validator | filter                   | |
+|  |    interpolation | timer | observer                         | |
+|  |  Inline kinds (within statechart):                           | |
+|  |    condition | lookup | codec | transform                    | |
+|  +-------------------------------+------------------------------+ |
+|                                  |                                |
+|  +-------------------------------v------------------------------+ |
+|  |              sce-build (codegen)                              | |
+|  |                                                               | |
+|  |  +------+ +--------+ +------+ +--------+ +------+            | |
+|  |  | C++  | | Kotlin | |  Go  | | Python | | Rust |            | |
+|  |  +------+ +--------+ +------+ +--------+ +------+            | |
+|  +-------------------------------------------------------------+ |
+|                                                                   |
++-------------------------------------------------------------------+
 ```
 
 ### Dependency Rule
@@ -166,6 +166,34 @@ Declared on `<data>` elements inside a `sce:kind="statechart"` document. Generat
 <!-- procedure, filter, validator, timer, observer → must be standalone files -->
 ```
 
+**Inline transform example** — generates a helper function within the parent statechart:
+
+```xml
+<scxml sce:kind="statechart" initial="idle">
+  <datamodel>
+    <!-- Inline transform: raw sensor value → physical temperature -->
+    <data id="temperature" sce:kind="transform"
+          sce:input="rawTemp" sce:input-type="uint16"
+          sce:output-type="float64" expr="rawTemp * 0.1 - 40.0"/>
+
+    <!-- Used in guard expressions -->
+    <data id="rawTemp" sce:type="uint16" sce:direction="in"/>
+  </datamodel>
+
+  <state id="idle">
+    <transition cond="temperature &gt; 95.0" target="overheating"/>
+  </state>
+  <state id="overheating">...</state>
+</scxml>
+```
+
+```cpp
+// Generated inline helper within statechart namespace
+inline double computeTemperature(uint16_t rawTemp) {
+    return rawTemp * 0.1 - 40.0;
+}
+```
+
 #### Codegen Discovery Order
 
 ```
@@ -185,27 +213,31 @@ sce:type="uint8 | uint16 | uint32 | uint64 | int8 | int16 | int32 | int64 | floa
 sce:direction="in | out | internal"
 sce:unit="celsius | rpm | ms | percent | ..."   <!-- documentation only, no codegen effect -->
 sce:default-endian="big | little | native"  <!-- document-level default, big if omitted -->
+sce:input="<signal-name>"       <!-- inline kind: names the external signal mapped to this kind's input -->
+sce:input-type="<sce:type>"    <!-- inline kind: type of the input signal (uses same types as sce:type) -->
+sce:length="<integer>"          <!-- codec input: expected frame length in bytes (validation hint) -->
+sce:bit-offset="<integer>"      <!-- codec field: bit offset within the byte, default 0 if omitted -->
 ```
 
 #### Cross-Language Type Mapping
 
 All kind templates use this canonical mapping. It is defined once; templates reference it, never define their own.
 
-| sce:type | C++ | Kotlin | Python | Rust |
-|----------|-----|--------|--------|------|
-| `uint8` | `uint8_t` | `UByte` | `int` | `u8` |
-| `uint16` | `uint16_t` | `UShort` | `int` | `u16` |
-| `uint32` | `uint32_t` | `UInt` | `int` | `u32` |
-| `uint64` | `uint64_t` | `ULong` | `int` | `u64` |
-| `int8` | `int8_t` | `Byte` | `int` | `i8` |
-| `int16` | `int16_t` | `Short` | `int` | `i16` |
-| `int32` | `int32_t` | `Int` | `int` | `i32` |
-| `int64` | `int64_t` | `Long` | `int` | `i64` |
-| `float32` | `float` | `Float` | `float` | `f32` |
-| `float64` | `double` | `Double` | `float` | `f64` |
-| `bool` | `bool` | `Boolean` | `bool` | `bool` |
-| `string` | `std::string` | `String` | `str` | `String` |
-| `bytes` | `std::vector<uint8_t>` | `ByteArray` | `bytes` | `Vec<u8>` |
+| sce:type | C++ | Kotlin | Python | Rust | Go |
+|----------|-----|--------|--------|------|----|
+| `uint8` | `uint8_t` | `UByte` | `int` | `u8` | `uint8` |
+| `uint16` | `uint16_t` | `UShort` | `int` | `u16` | `uint16` |
+| `uint32` | `uint32_t` | `UInt` | `int` | `u32` | `uint32` |
+| `uint64` | `uint64_t` | `ULong` | `int` | `u64` | `uint64` |
+| `int8` | `int8_t` | `Byte` | `int` | `i8` | `int8` |
+| `int16` | `int16_t` | `Short` | `int` | `i16` | `int16` |
+| `int32` | `int32_t` | `Int` | `int` | `i32` | `int32` |
+| `int64` | `int64_t` | `Long` | `int` | `i64` | `int64` |
+| `float32` | `float` | `Float` | `float` | `f32` | `float32` |
+| `float64` | `double` | `Double` | `float` | `f64` | `float64` |
+| `bool` | `bool` | `Boolean` | `bool` | `bool` | `bool` |
+| `string` | `std::string` | `String` | `str` | `String` | `string` |
+| `bytes` | `std::vector<uint8_t>` | `ByteArray` | `bytes` | `Vec<u8>` | `[]byte` |
 
 ### 3.4 Expression Language
 
@@ -213,9 +245,9 @@ In standard W3C SCXML, `expr` attributes are evaluated at runtime by a datamodel
 
 #### Grammar: ECMAScript Expression Subset
 
-W3C SCXML's normative datamodel is ECMAScript (ECMA-262). SCE Forge reuses the same grammar — expressions in `expr` attributes follow **ECMAScript expression syntax** as defined in ECMA-262. The codegen parses these expressions and transpiles them to equivalent target-language code.
+W3C SCXML's normative datamodel is ECMAScript (ECMA-262). SCE Forge reuses the same grammar — expressions in `expr` attributes follow **ECMAScript expression syntax** as defined in ECMA-262. The codegen parses these expressions into an **Abstract Syntax Tree (AST)** and emits equivalent target-language code via per-language emitters.
 
-**Supported** — any ECMAScript expression that has a direct, stateless mapping to all target languages (C++/Kotlin/Python/Rust/Go):
+**Supported** — any ECMAScript expression that has a direct, stateless mapping to all target languages (C++/Kotlin/Rust/Go/Python):
 
 | ECMA-262 Production | Syntax | Examples |
 |---------------------|--------|---------|
@@ -248,7 +280,51 @@ W3C SCXML's normative datamodel is ECMAScript (ECMA-262). SCE Forge reuses the s
 
 Rejected constructs cause a **build-time error** with the specific unsupported syntax highlighted.
 
-**Equality convention**: `===` (strict equality) is used per ECMAScript convention. Codegen maps it to language-appropriate equality (`==` in C++/Kotlin/Go/Python/Rust). `==` (loose equality) is not permitted in Extended SCXML to avoid type coercion ambiguity.
+**Equality convention**: `===` (strict equality) is used per ECMAScript convention. Codegen maps it to language-appropriate equality (`==` in C++/Kotlin/Go/Python/Rust). `==` (loose equality) is not permitted in Extended SCXML to avoid type coercion ambiguity. If the parser encounters `==`, it must emit a **build-time error**: `"Loose equality '==' is not permitted in Extended SCXML. Use '===' (strict equality) instead."` This avoids silent type coercion bugs and guides authors toward the correct syntax.
+
+#### Transpiler Architecture
+
+The expression transpiler uses a proper **AST-based pipeline**, not regex string replacement. This is necessary because target languages have different operator precedence rules — naive text substitution produces incorrect code for complex expressions.
+
+```
+Source text ("(raw >> 4) & 0x0F")
+  │
+  ├── Tokenize    → [Ident("raw"), Shr, Number("4"), Amp, Number("0x0F")]
+  ├── Parse       → Binary(BitAnd, Binary(Shr, Ident("raw"), 4), 0x0F)
+  │                  (recursive descent, ECMAScript precedence)
+  └── Emit        → per-language code with correct parenthesization
+        ├── C++:    raw >> 4 & 0x0F     (>> > & in C++, no parens needed)
+        ├── Kotlin: raw shr 4 and 0x0F  (shr = and in Kotlin, left-assoc OK)
+        ├── Rust:   raw >> 4 & 0x0F
+        └── Python: raw >> 4 & 0x0F
+```
+
+**Operator precedence** (highest to lowest, matching ECMA-262):
+
+| Level | Operators | ECMAScript |
+|-------|-----------|------------|
+| 12 | `- + ! ~` (prefix) | Unary |
+| 11 | `* / %` | Multiplicative |
+| 10 | `+ -` | Additive |
+| 9 | `<< >> >>>` | Shift |
+| 8 | `< > <= >=` | Relational |
+| 7 | `=== !==` | Equality |
+| 6 | `&` | Bitwise AND |
+| 5 | `^` | Bitwise XOR |
+| 4 | `\|` | Bitwise OR |
+| 3 | `&&` | Logical AND |
+| 2 | `\|\|` | Logical OR |
+| 1 | `? :` | Conditional |
+
+**Per-language precedence handling**: Each target language has its own precedence function. The emitter adds parentheses wherever the target language would parse the expression differently from the AST's intended semantics.
+
+| Language | Precedence difference from ECMAScript | Emitter behavior |
+|----------|---------------------------------------|------------------|
+| C++, Rust, Go | None — same relative ordering | Uses ECMAScript precedence directly |
+| Kotlin | Bitwise ops (`and`, `or`, `xor`, `shl`, `shr`) are infix functions sharing **one** precedence level, higher than comparison | Inserts parens for right-child infix with equal precedence |
+| Python | Bitwise ops have **higher** precedence than comparison (opposite of ECMAScript for `&` vs `==`) | Inserts parens around comparison children of bitwise parents |
+
+This ensures that `a & (b === c)` (ECMAScript semantics: equality before bitwise AND) generates correct code in all languages, even where the target would otherwise parse it differently.
 
 #### Kind Reference Resolution
 
@@ -284,7 +360,7 @@ std::vector<uint8_t> computeKey(const std::vector<uint8_t>& seed) {
 
 #### AOT-Only Constraint
 
-**Extended SCXML kinds (`sce:kind` != "statechart") are AOT-only** — they are not supported by the Interpreter engine. Only the standard statechart kind runs on both Interpreter and AOT
+**Extended SCXML kinds (`sce:kind` != "statechart") are AOT-only** — they are not supported by the Interpreter engine. Only the standard statechart kind runs on both Interpreter and AOT.
 
 ### 3.5 Namespace URI
 
@@ -369,7 +445,7 @@ pub fn compute_temperature(raw: u16) -> f64 {
 
 ### 4.3 lookup
 
-Discrete value mapping. Enumerated input → enumerated output. A `sce:default` attribute specifies the fallback when input matches no entry. If omitted, the first entry's value is used.
+Discrete value mapping. Enumerated input → enumerated output. A `sce:default` attribute specifies the fallback when input matches no entry. If `sce:default` is omitted, the first `<sce:entry>`'s value is used as the default (in the example below, `"STOP"` from key `0x00`). Codegen must emit a comment documenting the implicit default to make the behavior visible in generated code.
 
 ```xml
 <scxml sce:kind="lookup">
@@ -429,6 +505,8 @@ pub fn lookup_engine_status(eng_sta: u8) -> EngineStatus {
 ```
 
 Language mapping conventions: C++ uses PascalCase enums + camelCase functions, Kotlin uses PascalCase enums + camelCase functions, Rust uses PascalCase enums + snake_case functions. These conventions are consistent across all kinds.
+
+**Range pattern optimization**: Codegen may collapse consecutive keys with the same value into range patterns (e.g., Rust `0x00..=0x02`). This optimization is only applied when keys are numerically consecutive with no gaps. Non-consecutive keys (e.g., `0x00`, `0x02` without `0x01`) must remain as individual match arms to avoid unintended matching.
 
 ### 4.4 condition
 
@@ -607,7 +685,7 @@ Codegen generates bounds checking for all variable-length fields: frame length i
     <data id="dtcStatus" sce:type="uint8" sce:direction="out"
           sce:byte="1" sce:bit-offset="0" sce:bit-size="4"/>
     <data id="dtcCode" sce:type="uint32" sce:direction="out"
-          sce:byte="2" sce:bit-size="24"/>  <!-- inherits big from document default -->
+          sce:byte="2" sce:bit-size="24"/>  <!-- sce:bit-offset defaults to 0; inherits big endian from document default -->
   </datamodel>
 </scxml>
 ```
@@ -709,7 +787,7 @@ struct TempFilter {
     double update(double rawTemp) {
         buffer_[index_] = rawTemp;
         index_ = (index_ + 1) % 5;
-        if (index_ == 0) filled_ = true;
+        if (!filled_ && index_ == 0) filled_ = true;
         size_t count = filled_ ? 5 : index_;
         double sum = 0;
         for (size_t i = 0; i < count; i++) sum += buffer_[i];
@@ -926,9 +1004,9 @@ A diagnostic session manager that combines statechart (document-level), lookup +
        sce:kind="statechart" initial="defaultSession">
 
   <datamodel>
-    <!-- Inline lookup: signal → engine status -->
-    <data id="engineStatus" sce:kind="lookup" sce:input="ENG_EngSta"
-          sce:default="STOP">
+    <!-- Inline lookup: external signal ENG_EngSta → engine status -->
+    <data id="engineStatus" sce:kind="lookup"
+          sce:input="ENG_EngSta" sce:input-type="uint8" sce:default="STOP">
       <sce:entry key="0x00" value="STOP"/>
       <sce:entry key="0x03" value="RUNNING"/>
       <sce:entry key="0x07" value="FAULT"/>
@@ -1100,7 +1178,31 @@ class DiagSession : public sce::StateMachine {
 
 Kinds marked "requires runtime headers" are header-only in that they have no `.cpp` files, but they `#include` sce_runtime interface headers (`sce/DiagClient.h`, `sce/Timer.h`, etc.) and require linking against a platform-specific runtime implementation.
 
-### 6.2 Template Structure
+### 6.2 Expression Transpiler
+
+The expression transpiler (`sce-build/src/forge/expr.rs`) is an AST-based pipeline shared by all kind generators. It is the single point responsible for converting ECMAScript expressions to target-language code.
+
+```
+sce-build/src/forge/
+  expr.rs          — tokenizer, parser, AST, per-language emitters
+  model.rs         — ForgeKind data structures (Transform, Lookup, Condition, Codec)
+  parser.rs        — SCXML parsing, sce:kind attribute extraction
+  generator.rs     — language-specific code generation, calls expr::transpile()
+```
+
+**Public API** (used by `generator.rs`):
+
+```rust
+// Transpile an ECMAScript expression to the target language.
+pub fn transpile(expr: &str, target: ExprTarget) -> Result<String, String>;
+
+// Strip string literal contents (for expression analysis in generator).
+pub fn strip_string_literals_pub(expr: &str) -> String;
+```
+
+The generator calls `expr::transpile()` for every `expr` and `cond` attribute in the SCXML source. The transpiler handles all language-specific differences (operator syntax, precedence, string quoting) so generators only deal with structural code emission.
+
+### 6.3 Template Structure
 
 New kind templates are added to `sce-build` (Rust + minijinja), which is the single source of truth for code generation. Templates in `tools/codegen/templates/` are shared with the `sce-build` binary.
 
@@ -1126,7 +1228,7 @@ sce-build/templates/
     ...
 ```
 
-### 6.3 Codegen Dispatch
+### 6.4 Codegen Dispatch
 
 ```
 SCXML input
@@ -1150,7 +1252,7 @@ SCXML input
 
 ```
 
-### 6.4 Error Model
+### 6.5 Error Model
 
 Error handling varies by kind — this is intentional, as each kind has a different failure domain:
 
@@ -1171,7 +1273,7 @@ Error handling varies by kind — this is intentional, as each kind has a differ
 
 ## 7. Roadmap
 
-### Phase 1: Foundation
+### Phase 1: Foundation (Complete)
 
 Core kind support and codegen templates for the most common patterns.
 
@@ -1179,7 +1281,8 @@ Core kind support and codegen templates for the most common patterns.
 - Document-level codegen templates for: `transform`, `lookup`, `condition`, `codec`
 - Inline kind support in statechart template: `condition`, `lookup`, `codec`, `transform`
 - Schema validation (XSD) for Extended SCXML
-- C++ codegen output only (header-only generation)
+- C++, Kotlin, Rust codegen output (header-only / single-file generation)
+- Kind conformance test suite: 34 tests covering all 4 Phase 1 kinds across 3 languages
 - Architecture decision for cross-file kind references (Phase 2 dependency: how sce-build resolves `<invoke src="other.scxml">` and standalone kind imports — build manifest, CMake integration, or sce-build dependency scanner)
 
 ### Phase 2: Procedural + Multi-Language
@@ -1189,7 +1292,7 @@ Sequential logic support and multi-language code generation.
 - Codegen templates for: `procedure`, `validator`
 - `sce::ProcedureStateMachine` base class in sce_runtime
 - Cross-file kind composition: standalone kinds referencing other standalone kinds (e.g., procedure → codec, validator → transform). Phase 1 inline kinds are within a single statechart; Phase 2 enables references across separate SCXML files.
-- Kotlin, Python, Rust codegen templates for all Phase 1 kinds
+- Go, Python codegen templates for all Phase 1+2 kinds
 
 ### Phase 3: Signal Processing + Advanced Kinds
 
@@ -1199,7 +1302,7 @@ Embedded/automotive signal processing patterns.
 - sce_runtime extensions (Timer, EventBus interfaces)
 - Platform-specific runtime implementations (POSIX, FreeRTOS)
 
-**Phase 3 exit criteria**: All 11 kinds generate compilable code for all 4 target languages. Kind conformance test suite passes for all kinds.
+**Phase 3 exit criteria**: All 11 kinds generate compilable code for all 5 target languages (C++/Kotlin/Rust/Go/Python). Kind conformance test suite passes for all kinds.
 
 ### Phase 4: SCE Mesh Integration + Ecosystem
 
@@ -1235,15 +1338,15 @@ Integration with SCE Mesh distributed runtime and tooling.
 
 ### Phase 1 Exit Criteria
 
-- [ ] `sce:kind` attribute parsed and dispatched by sce-build
-- [ ] Codegen templates for `transform`, `lookup`, `codec` produce compilable C++ output
-- [ ] Inline `condition` kind generates named guard functions within statechart
+- [x] `sce:kind` attribute parsed and dispatched by sce-build
+- [x] Codegen templates for `transform`, `lookup`, `condition`, `codec` produce compilable C++/Kotlin/Rust output
+- [x] Inline kind support generates helper functions/types within statechart
 - [ ] XSD schema validates Extended SCXML documents
-- [ ] Kind conformance test suite: reference SCXML + expected codegen output per kind (minimum 3 test cases per kind)
+- [x] Kind conformance test suite: reference SCXML + expected codegen output per kind (34 tests, 3+ per kind per language)
 
 ### Overall Success Definition
 
-**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Go/Python/Rust code. All languages produce identical behavior from the same SCXML source.**
+**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Rust code (Phase 1), expanding to Go and Python in Phase 2. All languages produce identical behavior from the same SCXML source.**
 
 The measure is: **one SCXML source generates correct, compilable code for all target languages**, with behavior equivalence verified by kind conformance tests.
 

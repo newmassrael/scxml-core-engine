@@ -27,19 +27,20 @@ fn expected_dir() -> std::path::PathBuf {
     project_root().join("tests/forge/expected")
 }
 
-/// Generate C++ from a standalone forge SCXML and compare against expected output.
-fn assert_standalone_forge(scxml_name: &str, expected_filename: &str) {
+/// Generate code from a standalone forge SCXML for a specific language and compare
+/// against expected output.
+fn assert_standalone_forge_lang(
+    scxml_name: &str,
+    expected_filename: &str,
+    language: sce_build::generator::Language,
+) {
     let scxml_path = resource_dir().join(format!("{scxml_name}.scxml"));
     let content = std::fs::read_to_string(&scxml_path)
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
 
     let stem = scxml_name;
-    let output = sce_build::compile_forge_from_string(
-        &content,
-        stem,
-        sce_build::generator::Language::Cpp,
-    )
-    .unwrap_or_else(|e| panic!("Forge codegen failed for {scxml_name}: {e}"));
+    let output = sce_build::compile_forge_from_string(&content, stem, language)
+        .unwrap_or_else(|e| panic!("Forge codegen failed for {scxml_name} ({language:?}): {e}"));
 
     assert!(!output.files.is_empty(), "No output for {scxml_name}");
 
@@ -51,8 +52,35 @@ fn assert_standalone_forge(scxml_name: &str, expected_filename: &str) {
     assert_eq!(
         generated.trim(),
         expected.trim(),
-        "Output mismatch for {scxml_name}\n--- expected: {}\n+++ generated",
+        "Output mismatch for {scxml_name} ({language:?})\n--- expected: {}\n+++ generated",
         expected_path.display()
+    );
+}
+
+/// Generate C++ from a standalone forge SCXML and compare against expected output.
+fn assert_standalone_forge(scxml_name: &str, expected_filename: &str) {
+    assert_standalone_forge_lang(
+        scxml_name,
+        expected_filename,
+        sce_build::generator::Language::Cpp,
+    );
+}
+
+/// Generate Kotlin from a standalone forge SCXML and compare against expected output.
+fn assert_standalone_forge_kotlin(scxml_name: &str, expected_filename: &str) {
+    assert_standalone_forge_lang(
+        scxml_name,
+        expected_filename,
+        sce_build::generator::Language::Kotlin,
+    );
+}
+
+/// Generate Rust from a standalone forge SCXML and compare against expected output.
+fn assert_standalone_forge_rust(scxml_name: &str, expected_filename: &str) {
+    assert_standalone_forge_lang(
+        scxml_name,
+        expected_filename,
+        sce_build::generator::Language::Rust,
     );
 }
 
@@ -160,6 +188,150 @@ fn forge_codec_little_endian() {
 #[test]
 fn forge_codec_subbyte() {
     assert_standalone_forge("codec_subbyte", "codec_subbyte.h");
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Kotlin conformance tests ─────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+// ── Transform (Kotlin) ────────────────────────────────────────
+
+#[test]
+fn forge_kotlin_transform_temperature() {
+    assert_standalone_forge_kotlin("transform_temperature", "TransformTemperature.kt");
+}
+
+#[test]
+fn forge_kotlin_transform_multi_output() {
+    assert_standalone_forge_kotlin("transform_multi_output", "TransformMultiOutput.kt");
+}
+
+#[test]
+fn forge_kotlin_transform_bitwise() {
+    assert_standalone_forge_kotlin("transform_bitwise", "TransformBitwise.kt");
+}
+
+// ── Lookup (Kotlin) ──────────────────────────────────────────
+
+#[test]
+fn forge_kotlin_lookup_engine_status() {
+    assert_standalone_forge_kotlin("lookup_engine_status", "LookupEngineStatus.kt");
+}
+
+#[test]
+fn forge_kotlin_lookup_gear_position() {
+    assert_standalone_forge_kotlin("lookup_gear_position", "LookupGearPosition.kt");
+}
+
+#[test]
+fn forge_kotlin_lookup_single_default() {
+    assert_standalone_forge_kotlin("lookup_single_default", "LookupSingleDefault.kt");
+}
+
+// ── Condition (Kotlin) ───────────────────────────────────────
+
+#[test]
+fn forge_kotlin_condition_programming() {
+    assert_standalone_forge_kotlin("condition_programming", "ConditionProgramming.kt");
+}
+
+#[test]
+fn forge_kotlin_condition_threshold() {
+    assert_standalone_forge_kotlin("condition_threshold", "ConditionThreshold.kt");
+}
+
+#[test]
+fn forge_kotlin_condition_range() {
+    assert_standalone_forge_kotlin("condition_range", "ConditionRange.kt");
+}
+
+// ── Codec (Kotlin) ───────────────────────────────────────────
+
+#[test]
+fn forge_kotlin_codec_simple_frame() {
+    assert_standalone_forge_kotlin("codec_simple_frame", "CodecSimpleFrame.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_little_endian() {
+    assert_standalone_forge_kotlin("codec_little_endian", "CodecLittleEndian.kt");
+}
+
+#[test]
+fn forge_kotlin_codec_subbyte() {
+    assert_standalone_forge_kotlin("codec_subbyte", "CodecSubbyte.kt");
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Rust conformance tests ───────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+// ── Transform (Rust) ─────────────────────────────────────────
+
+#[test]
+fn forge_rust_transform_temperature() {
+    assert_standalone_forge_rust("transform_temperature", "transform_temperature.rs");
+}
+
+#[test]
+fn forge_rust_transform_multi_output() {
+    assert_standalone_forge_rust("transform_multi_output", "transform_multi_output.rs");
+}
+
+#[test]
+fn forge_rust_transform_bitwise() {
+    assert_standalone_forge_rust("transform_bitwise", "transform_bitwise.rs");
+}
+
+// ── Lookup (Rust) ────────────────────────────────────────────
+
+#[test]
+fn forge_rust_lookup_engine_status() {
+    assert_standalone_forge_rust("lookup_engine_status", "lookup_engine_status.rs");
+}
+
+#[test]
+fn forge_rust_lookup_gear_position() {
+    assert_standalone_forge_rust("lookup_gear_position", "lookup_gear_position.rs");
+}
+
+#[test]
+fn forge_rust_lookup_single_default() {
+    assert_standalone_forge_rust("lookup_single_default", "lookup_single_default.rs");
+}
+
+// ── Condition (Rust) ─────────────────────────────────────────
+
+#[test]
+fn forge_rust_condition_programming() {
+    assert_standalone_forge_rust("condition_programming", "condition_programming.rs");
+}
+
+#[test]
+fn forge_rust_condition_threshold() {
+    assert_standalone_forge_rust("condition_threshold", "condition_threshold.rs");
+}
+
+#[test]
+fn forge_rust_condition_range() {
+    assert_standalone_forge_rust("condition_range", "condition_range.rs");
+}
+
+// ── Codec (Rust) ─────────────────────────────────────────────
+
+#[test]
+fn forge_rust_codec_simple_frame() {
+    assert_standalone_forge_rust("codec_simple_frame", "codec_simple_frame.rs");
+}
+
+#[test]
+fn forge_rust_codec_little_endian() {
+    assert_standalone_forge_rust("codec_little_endian", "codec_little_endian.rs");
+}
+
+#[test]
+fn forge_rust_codec_subbyte() {
+    assert_standalone_forge_rust("codec_subbyte", "codec_subbyte.rs");
 }
 
 // ── Inline kind conformance ──────────────────────────────────

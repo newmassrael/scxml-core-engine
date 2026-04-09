@@ -220,10 +220,11 @@ pub fn compile_forge_from_string(
 
     match language {
         generator::Language::Cpp => forge::generator::generate_cpp(&doc, &template_base),
-        _ => Err(format!(
-            "Forge codegen for {:?} is planned for Phase 2",
-            language
-        )),
+        generator::Language::Kotlin => forge::generator::generate_kotlin(&doc, &template_base),
+        generator::Language::Rust => forge::generator::generate_rust(&doc, &template_base),
+        generator::Language::Go => Err(
+            "Forge codegen for Go is planned for a future release".to_string(),
+        ),
     }
 }
 

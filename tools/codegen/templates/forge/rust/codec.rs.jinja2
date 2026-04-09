@@ -1,0 +1,31 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Do not edit — regenerate from the source SCXML file.
+
+#![allow(dead_code)]
+
+pub struct {{ struct_name }} {
+{% for field in fields %}
+    pub {{ field.id }}: {{ field.rs_type }},
+{% endfor %}
+}
+
+impl {{ struct_name }} {
+    pub fn decode(raw: &[u8]) -> Option<Self> {
+        if raw.len() < {{ min_bytes }} {
+            return None;
+        }
+        Some(Self {
+{% for field in fields %}
+            {{ field.id }}: {{ field.decode_expr }},
+{% endfor %}
+        })
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        vec![
+{% for expr in encode_exprs %}
+            {{ expr }},
+{% endfor %}
+        ]
+    }
+}

@@ -11,7 +11,7 @@
 namespace SCE::Generated::TransformBitwise {
 
 inline uint8_t computeHighNibble(uint8_t byte) {
-    return (byte >> 4) & 0x0F;
+    return byte >> 4 & 0x0F;
 }
 
 inline uint8_t computeLowNibble(uint8_t byte) {
