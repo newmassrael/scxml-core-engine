@@ -30,6 +30,7 @@ pub enum Language {
     Cpp,
     Kotlin,
     Go,
+    Python,
 }
 
 impl std::str::FromStr for Language {
@@ -41,6 +42,7 @@ impl std::str::FromStr for Language {
             "cpp" | "c++" => Ok(Language::Cpp),
             "kotlin" | "kt" => Ok(Language::Kotlin),
             "go" | "golang" => Ok(Language::Go),
+            "python" | "py" => Ok(Language::Python),
             _ => Err(format!("Unknown language: {s}")),
         }
     }

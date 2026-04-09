@@ -149,6 +149,9 @@ pub fn compile_from_string_lang(
                 files: vec![(format!("{scxml_name}_sm.go"), code)],
             })
         }
+        generator::Language::Python => Err(
+            "Python statechart codegen is not yet supported".to_string(),
+        ),
     }
 }
 
@@ -185,6 +188,9 @@ pub fn compile_scxml_lang(
                 files: vec![(format!("{input_stem}_sm.go"), code)],
             })
         }
+        generator::Language::Python => Err(
+            "Python statechart codegen is not yet supported".to_string(),
+        ),
     }
 }
 
@@ -195,6 +201,7 @@ pub fn find_template_dir_for(language: generator::Language) -> std::path::PathBu
         generator::Language::Cpp => "",       // C++ templates at root
         generator::Language::Kotlin => "kotlin",
         generator::Language::Go => "go",
+        generator::Language::Python => "python",
     };
     let base = find_template_base();
     if subdir.is_empty() {
@@ -222,9 +229,8 @@ pub fn compile_forge_from_string(
         generator::Language::Cpp => forge::generator::generate_cpp(&doc, &template_base),
         generator::Language::Kotlin => forge::generator::generate_kotlin(&doc, &template_base),
         generator::Language::Rust => forge::generator::generate_rust(&doc, &template_base),
-        generator::Language::Go => Err(
-            "Forge codegen for Go is planned for a future release".to_string(),
-        ),
+        generator::Language::Go => forge::generator::generate_go(&doc, &template_base),
+        generator::Language::Python => forge::generator::generate_python(&doc, &template_base),
     }
 }
 

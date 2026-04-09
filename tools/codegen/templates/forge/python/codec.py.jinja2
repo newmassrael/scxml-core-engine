@@ -1,0 +1,31 @@
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+# Do not edit — regenerate from the source SCXML file.
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Optional
+
+
+@dataclass
+class {{ struct_name }}:
+{% for field in fields %}
+    {{ field.id }}: {{ field.py_type }}
+{% endfor %}
+
+    @classmethod
+    def decode(cls, raw: bytes) -> Optional[{{ struct_name }}]:
+        if len(raw) < {{ min_bytes }}:
+            return None
+        return cls(
+{% for field in fields %}
+            {{ field.id }}={{ field.decode_expr }},
+{% endfor %}
+        )
+
+    def encode(self) -> bytes:
+        return bytes([
+{% for expr in encode_exprs %}
+            {{ expr }},
+{% endfor %}
+        ])

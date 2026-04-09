@@ -1292,7 +1292,7 @@ Sequential logic support and multi-language code generation.
 - Codegen templates for: `procedure`, `validator`
 - `sce::ProcedureStateMachine` base class in sce_runtime
 - Cross-file kind composition: standalone kinds referencing other standalone kinds (e.g., procedure → codec, validator → transform). Phase 1 inline kinds are within a single statechart; Phase 2 enables references across separate SCXML files.
-- Go, Python codegen templates for all Phase 1+2 kinds
+- ~~Go, Python codegen templates for all Phase 1+2 kinds~~ **Done (Phase 1 kinds)**: Go and Python forge codegen for `transform`, `lookup`, `condition`, `codec` — 61 conformance tests across 5 languages
 
 ### Phase 3: Signal Processing + Advanced Kinds
 
@@ -1346,7 +1346,7 @@ Integration with SCE Mesh distributed runtime and tooling.
 
 ### Overall Success Definition
 
-**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Rust code (Phase 1), expanding to Go and Python in Phase 2. All languages produce identical behavior from the same SCXML source.**
+**An engineer writes an Extended SCXML file with `sce:kind`. sce-build generates working C++/Kotlin/Rust/Go/Python code (Phase 1 kinds complete for all 5 languages). All languages produce identical behavior from the same SCXML source.**
 
 The measure is: **one SCXML source generates correct, compilable code for all target languages**, with behavior equivalence verified by kind conformance tests.
 

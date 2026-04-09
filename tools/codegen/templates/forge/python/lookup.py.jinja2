@@ -1,0 +1,23 @@
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
+# Do not edit — regenerate from the source SCXML file.
+
+from enum import Enum
+
+
+class {{ enum_name }}(Enum):
+{% for val in unique_values %}
+    {{ val }} = "{{ val }}"
+{% endfor %}
+
+
+def {{ func_name }}({{ input_id }}: {{ input_type }}) -> {{ enum_name }}:
+{% for group in entries_by_value %}
+{% if loop.first %}
+    if {{ group.condition }}:
+{% else %}
+    elif {{ group.condition }}:
+{% endif %}
+        return {{ enum_name }}.{{ group.value }}
+{% endfor %}
+    else:
+        return {{ enum_name }}.{{ default_value }}

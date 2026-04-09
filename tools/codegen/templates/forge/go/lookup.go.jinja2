@@ -1,0 +1,29 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+
+// {{ enum_name }} represents the lookup output values.
+type {{ enum_name }} int
+
+const (
+{% for val in unique_values %}
+{% if loop.first %}
+	{{ enum_name }}{{ val }} {{ enum_name }} = iota
+{% else %}
+	{{ enum_name }}{{ val }}
+{% endif %}
+{% endfor %}
+)
+
+// {{ func_name }} maps {{ input_id }} to its corresponding {{ enum_name }}.
+func {{ func_name }}({{ input_id }} {{ input_type }}) {{ enum_name }} {
+	switch {{ input_id }} {
+{% for group in entries_by_value %}
+	case {{ group.keys | join(", ") }}:
+		return {{ enum_name }}{{ group.value }}
+{% endfor %}
+	default:
+		return {{ enum_name }}{{ default_value }}
+	}
+}

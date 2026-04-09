@@ -231,6 +231,11 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
                 fs::write(out.join(format!("{input_stem}_sm.go")), &stub)
                     .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
             }
+            Language::Python => {
+                let stub = "# W3C SCXML 5.8: Document rejected\n";
+                fs::write(out.join(format!("{input_stem}_sm.py")), stub)
+                    .unwrap_or_else(|e| { eprintln!("Write error: {e}"); std::process::exit(1); });
+            }
         }
         println!("Document rejected (W3C SCXML 5.8): {}", model.name);
         println!("Needs ScriptEngine: false");
@@ -283,6 +288,10 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
             GeneratedOutput {
                 files: vec![(format!("{input_stem}_sm.go"), code)],
             }
+        }
+        Language::Python => {
+            eprintln!("Python statechart codegen is not yet supported");
+            std::process::exit(1);
         }
     };
 
@@ -501,6 +510,10 @@ fn cmd_generate_w3c(language: &str, registry: Option<&str>, resources: Option<&s
         Language::Go => Box::new(GoBackend::new(&project_root)),
         Language::Kotlin => Box::new(KotlinBackend::new(&project_root)),
         Language::Cpp => Box::new(CppBackend::new(&project_root)),
+        Language::Python => {
+            eprintln!("Python W3C test generation is not yet supported");
+            std::process::exit(1);
+        }
     };
 
     generate_w3c_unified(backend.as_ref(), &resources_dir, &cmake_file, single_test, clean, list);

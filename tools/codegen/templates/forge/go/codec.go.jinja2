@@ -1,0 +1,33 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="codec")
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+
+// {{ struct_name }} represents the codec frame layout.
+type {{ struct_name }} struct {
+{% for field in fields %}
+	{{ field.id }} {{ field.go_type }}
+{% endfor %}
+}
+
+// Decode{{ struct_name }} decodes raw bytes into a {{ struct_name }}.
+// Returns nil if the input is too short.
+func Decode{{ struct_name }}(raw []byte) *{{ struct_name }} {
+	if len(raw) < {{ min_bytes }} {
+		return nil
+	}
+	return &{{ struct_name }}{
+{% for field in fields %}
+		{{ field.id }}: {{ field.decode_expr }},
+{% endfor %}
+	}
+}
+
+// Encode serializes the {{ struct_name }} into raw bytes.
+func (s *{{ struct_name }}) Encode() []byte {
+	return []byte{
+{% for expr in encode_exprs %}
+		{{ expr }},
+{% endfor %}
+	}
+}

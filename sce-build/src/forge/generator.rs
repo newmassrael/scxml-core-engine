@@ -1288,6 +1288,808 @@ fn encode_single_field_rust(
     }
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── Go code generation ───────────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+/// Map SceType to Go type name (SCE_FORGE.md Section 3.3).
+fn go_type(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8 => "uint8",
+        SceType::Uint16 => "uint16",
+        SceType::Uint32 => "uint32",
+        SceType::Uint64 => "uint64",
+        SceType::Int8 => "int8",
+        SceType::Int16 => "int16",
+        SceType::Int32 => "int32",
+        SceType::Int64 => "int64",
+        SceType::Float32 => "float32",
+        SceType::Float64 => "float64",
+        SceType::Bool => "bool",
+        SceType::String => "string",
+        SceType::Bytes => "[]byte",
+    }
+}
+
+/// Go builtin identifiers that should not be used as variable/parameter names.
+/// Keywords (func, return, etc.) are already impossible as SCXML ids.
+/// Builtins (byte, string, int, etc.) compile but shadow the built-in type.
+fn go_escape_builtin(name: &str) -> String {
+    match name {
+        "byte" | "rune" | "error" | "string" | "bool" | "int" | "uint"
+        | "int8" | "int16" | "int32" | "int64"
+        | "uint8" | "uint16" | "uint32" | "uint64"
+        | "float32" | "float64" | "complex64" | "complex128"
+        | "uintptr" | "len" | "cap" | "make" | "new" | "append" | "copy"
+        | "close" | "delete" | "panic" | "recover" | "print" | "println"
+        | "true" | "false" | "nil" | "iota" => format!("{name}_"),
+        _ => name.to_string(),
+    }
+}
+
+/// Generate code from a ForgeDocument for Go using Jinja2 templates.
+pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+    let forge_dir = template_dir.join("forge/go");
+    let mut env = generator::new_env();
+    generator::load_templates(&mut env, &forge_dir)?;
+
+    let code = match doc {
+        ForgeDocument::Transform(m) => render_transform_go(&env, m)?,
+        ForgeDocument::Lookup(m) => render_lookup_go(&env, m)?,
+        ForgeDocument::Condition(m) => render_condition_go(&env, m)?,
+        ForgeDocument::Codec(m) => render_codec_go(&env, m)?,
+    };
+
+    let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
+    Ok(GeneratedOutput {
+        files: vec![(filename, code)],
+    })
+}
+
+// ── Go: Transform ────────────────────────────────────────────
+
+fn render_transform_go(
+    env: &minijinja::Environment,
+    m: &TransformModel,
+) -> Result<String, String> {
+    let package = filters::to_snake_case(m.name.clone());
+
+    // Build rename map: SCXML id → Go-safe parameter name
+    let go_renames: Vec<(String, String)> = m
+        .inputs
+        .iter()
+        .map(|inp| (inp.id.clone(), go_escape_builtin(&inp.id)))
+        .collect();
+
+    let functions: Vec<serde_json::Value> = m
+        .outputs
+        .iter()
+        .map(|out| {
+            let mut expr_go = expr::transpile(out.expr.as_deref().unwrap_or("0"), ExprTarget::Go)?;
+
+            // Rename builtin-shadowing identifiers in expression
+            for (from, to) in &go_renames {
+                if from != to {
+                    let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(from))).unwrap();
+                    expr_go = re.replace_all(&expr_go, to.as_str()).to_string();
+                }
+            }
+
+            // Integer inputs feeding float outputs need float64() cast
+            let needs_cast = go_float_cast_needed(&m.inputs, &out.sce_type);
+            if let Some(cast_type) = needs_cast {
+                for inp in &m.inputs {
+                    if go_float_cast(&inp.sce_type, &out.sce_type).is_some() {
+                        let safe_name = go_escape_builtin(&inp.id);
+                        let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(&safe_name)))
+                            .unwrap();
+                        let cast_expr = format!("{cast_type}({safe_name})");
+                        expr_go = re.replace_all(&expr_go, cast_expr.as_str()).to_string();
+                    }
+                }
+            }
+
+            let params = m
+                .inputs
+                .iter()
+                .map(|inp| format!("{} {}", go_escape_builtin(&inp.id), go_type(&inp.sce_type)))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            Ok(serde_json::json!({
+                "ret_type": go_type(&out.sce_type),
+                "name": format!("Compute{}", filters::to_pascal_case(out.id.clone())),
+                "orig_name": out.id,
+                "params": params,
+                "expr": expr_go,
+            }))
+        })
+        .collect::<Result<_, String>>()?;
+
+    let tmpl = env
+        .get_template("transform.go.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package,
+        functions => minijinja::Value::from_serialize(&functions),
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Go: Lookup ───────────────────────────────────────────────
+
+fn render_lookup_go(
+    env: &minijinja::Environment,
+    m: &LookupModel,
+) -> Result<String, String> {
+    let package = filters::to_snake_case(m.name.clone());
+    let enum_name = filters::to_pascal_case(m.output.id.clone());
+    let func_name = format!("Lookup{}", filters::to_pascal_case(m.output.id.clone()));
+    let input_id_safe = go_escape_builtin(&m.input.id);
+
+    let entries_by_value: Vec<serde_json::Value> = m
+        .entries_by_value()
+        .into_iter()
+        .map(|(value, keys)| {
+            serde_json::json!({
+                "value": value,
+                "keys": keys,
+            })
+        })
+        .collect();
+
+    let tmpl = env
+        .get_template("lookup.go.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package,
+        enum_name => enum_name,
+        func_name => func_name,
+        input_type => go_type(&m.input.sce_type),
+        input_id => input_id_safe,
+        unique_values => minijinja::Value::from_serialize(&m.unique_values()),
+        entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
+        default_value => &m.default_value,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Go: Condition ────────────────────────────────────────────
+
+fn render_condition_go(
+    env: &minijinja::Environment,
+    m: &ConditionModel,
+) -> Result<String, String> {
+    let package = filters::to_snake_case(m.name.clone());
+    let func_name = filters::to_pascal_case(m.name.clone());
+
+    let go_renames: Vec<(String, String)> = m
+        .inputs
+        .iter()
+        .map(|inp| (inp.id.clone(), go_escape_builtin(&inp.id)))
+        .collect();
+
+    let params = m
+        .inputs
+        .iter()
+        .map(|inp| format!("{} {}", go_escape_builtin(&inp.id), go_type(&inp.sce_type)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut expr_go = expr::transpile(&m.expr, ExprTarget::Go)?;
+
+    // Rename builtin-shadowing identifiers in expression
+    for (from, to) in &go_renames {
+        if from != to {
+            let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(from))).unwrap();
+            expr_go = re.replace_all(&expr_go, to.as_str()).to_string();
+        }
+    }
+
+    let tmpl = env
+        .get_template("condition.go.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package,
+        func_name => func_name,
+        params => params,
+        expr => expr_go,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Go: Codec ────────────────────────────────────────────────
+
+fn render_codec_go(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+) -> Result<String, String> {
+    let package = filters::to_snake_case(m.name.clone());
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let fields: Vec<serde_json::Value> = m
+        .fields
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "id": filters::to_pascal_case(f.id.clone()),
+                "go_type": go_type(&f.sce_type),
+                "decode_expr": generate_decode_expr_go(f, m.default_endian),
+            })
+        })
+        .collect();
+
+    let encode_exprs = generate_encode_exprs_go(&m.fields, m.default_endian);
+
+    let tmpl = env
+        .get_template("codec.go.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package,
+        struct_name => struct_name,
+        fields => minijinja::Value::from_serialize(&fields),
+        min_bytes => m.min_frame_bytes(),
+        encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Go codec expression generation ──────────────────────────
+
+fn generate_decode_expr_go(field: &CodecField, default_endian: Endian) -> String {
+    let byte_off = field.byte_offset;
+    let bit_off = field.bit_offset.unwrap_or(0);
+    let endian = field.effective_endian(default_endian);
+
+    match &field.bit_size {
+        BitSize::Fixed { bits } => {
+            if bit_off > 0 || *bits < 8 {
+                let mask = (1u64 << bits) - 1;
+                format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
+            } else {
+                match bits {
+                    8 => format!("raw[{byte_off}]"),
+                    16 => decode_multibyte_go(byte_off, 2, endian),
+                    24 => decode_multibyte_go(byte_off, 3, endian),
+                    32 => decode_multibyte_go(byte_off, 4, endian),
+                    _ => format!("/* unsupported {bits}-bit decode */"),
+                }
+            }
+        }
+        BitSize::Tail => {
+            format!("raw[{byte_off}:]")
+        }
+        BitSize::LengthRef => {
+            let len_field = field.length_field.as_deref().unwrap_or("0");
+            format!("raw[{byte_off}:{byte_off}+int({len_field})]")
+        }
+    }
+}
+
+fn decode_multibyte_go(byte_off: u32, byte_count: u32, endian: Endian) -> String {
+    let target_type = match byte_count {
+        2 => "uint16",
+        3 | 4 => "uint32",
+        _ => "uint64",
+    };
+
+    let shifts: Vec<String> = match endian {
+        Endian::Big | Endian::Native => (0..byte_count)
+            .map(|i| {
+                let shift = (byte_count - 1 - i) * 8;
+                let off = byte_off + i;
+                if shift == 0 {
+                    format!("{target_type}(raw[{off}])")
+                } else {
+                    format!("{target_type}(raw[{off}])<<{shift}")
+                }
+            })
+            .collect(),
+        Endian::Little => (0..byte_count)
+            .map(|i| {
+                let shift = i * 8;
+                let off = byte_off + i;
+                if shift == 0 {
+                    format!("{target_type}(raw[{off}])")
+                } else {
+                    format!("{target_type}(raw[{off}])<<{shift}")
+                }
+            })
+            .collect(),
+    };
+
+    shifts.join(" | ")
+}
+
+fn generate_encode_exprs_go(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
+    let mut exprs = Vec::new();
+
+    let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
+        std::collections::BTreeMap::new();
+
+    for field in fields {
+        if field.is_variable_length() {
+            exprs.push(format!(
+                "/* variable-length field '{}' requires manual encode */",
+                field.id
+            ));
+        } else {
+            byte_groups
+                .entry(field.byte_offset)
+                .or_default()
+                .push(field);
+        }
+    }
+
+    for (_, group) in &byte_groups {
+        if group.len() == 1 {
+            encode_single_field_go(group[0], default_endian, &mut exprs);
+        } else {
+            let mut parts = Vec::new();
+            for field in group {
+                let bit_off = field.bit_offset.unwrap_or(0);
+                let bits = field.fixed_bits().unwrap_or(8);
+                let mask = (1u64 << bits) - 1;
+                let go_field = filters::to_pascal_case(field.id.clone());
+                parts.push(format!(
+                    "(s.{go_field} & 0x{mask:02X}) << {bit_off}"
+                ));
+            }
+            exprs.push(format!("byte({})", parts.join(" | ")));
+        }
+    }
+
+    exprs
+}
+
+fn encode_single_field_go(
+    field: &CodecField,
+    default_endian: Endian,
+    exprs: &mut Vec<String>,
+) {
+    let bit_off = field.bit_offset.unwrap_or(0);
+    let endian = field.effective_endian(default_endian);
+    let go_field = filters::to_pascal_case(field.id.clone());
+
+    match field.fixed_bits() {
+        Some(8) if bit_off == 0 => {
+            exprs.push(format!("byte(s.{go_field})"));
+        }
+        Some(bits) if bits < 8 || bit_off > 0 => {
+            let mask = (1u64 << bits) - 1;
+            exprs.push(format!(
+                "byte((s.{go_field} & 0x{mask:02X}) << {bit_off})"
+            ));
+        }
+        Some(byte_count @ (16 | 24 | 32)) => {
+            let n_bytes = byte_count / 8;
+            let shifts: Vec<u32> = match endian {
+                Endian::Big | Endian::Native => (0..n_bytes).rev().collect(),
+                Endian::Little => (0..n_bytes).collect(),
+            };
+            for shift_byte in shifts {
+                let shift = shift_byte * 8;
+                if shift == 0 {
+                    exprs.push(format!("byte(s.{go_field} & 0xFF)"));
+                } else {
+                    exprs.push(format!(
+                        "byte(s.{go_field} >> {shift} & 0xFF)"
+                    ));
+                }
+            }
+        }
+        _ => exprs.push(format!("/* encode {} */", field.id)),
+    }
+}
+
+/// Determine Go cast type for integer-to-float promotion in transform expressions.
+fn go_float_cast(input_type: &SceType, output_type: &SceType) -> Option<&'static str> {
+    let input_is_int = matches!(
+        input_type,
+        SceType::Uint8
+            | SceType::Uint16
+            | SceType::Uint32
+            | SceType::Uint64
+            | SceType::Int8
+            | SceType::Int16
+            | SceType::Int32
+            | SceType::Int64
+    );
+    match (input_is_int, output_type) {
+        (true, SceType::Float64) => Some("float64"),
+        (true, SceType::Float32) => Some("float32"),
+        _ => None,
+    }
+}
+
+fn go_float_cast_needed(inputs: &[ForgeField], output_type: &SceType) -> Option<&'static str> {
+    inputs
+        .iter()
+        .find_map(|inp| go_float_cast(&inp.sce_type, output_type))
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Python code generation ───────────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+/// Map SceType to Python type annotation (SCE_FORGE.md Section 3.3).
+fn python_type(ty: &SceType) -> &'static str {
+    match ty {
+        SceType::Uint8
+        | SceType::Uint16
+        | SceType::Uint32
+        | SceType::Uint64
+        | SceType::Int8
+        | SceType::Int16
+        | SceType::Int32
+        | SceType::Int64 => "int",
+        SceType::Float32 | SceType::Float64 => "float",
+        SceType::Bool => "bool",
+        SceType::String => "str",
+        SceType::Bytes => "bytes",
+    }
+}
+
+/// Generate code from a ForgeDocument for Python using Jinja2 templates.
+pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+    let forge_dir = template_dir.join("forge/python");
+    let mut env = generator::new_env();
+    generator::load_templates(&mut env, &forge_dir)?;
+
+    let code = match doc {
+        ForgeDocument::Transform(m) => render_transform_python(&env, m)?,
+        ForgeDocument::Lookup(m) => render_lookup_python(&env, m)?,
+        ForgeDocument::Condition(m) => render_condition_python(&env, m)?,
+        ForgeDocument::Codec(m) => render_codec_python(&env, m)?,
+    };
+
+    let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
+    Ok(GeneratedOutput {
+        files: vec![(filename, code)],
+    })
+}
+
+// ── Python: Transform ────────────────────────────────────────
+
+fn render_transform_python(
+    env: &minijinja::Environment,
+    m: &TransformModel,
+) -> Result<String, String> {
+    // Build name mappings for camelCase → snake_case
+    let renames: Vec<(String, String)> = m
+        .inputs
+        .iter()
+        .map(|inp| (inp.id.clone(), filters::to_snake_case(inp.id.clone())))
+        .collect();
+
+    let functions: Vec<serde_json::Value> = m
+        .outputs
+        .iter()
+        .map(|out| {
+            let mut expr_py =
+                expr::transpile(out.expr.as_deref().unwrap_or("0"), ExprTarget::Python)?;
+
+            // Rename camelCase variables to snake_case in expression
+            expr_py = rust_rename_vars(&expr_py, &renames);
+
+            let params = m
+                .inputs
+                .iter()
+                .map(|inp| {
+                    format!(
+                        "{}: {}",
+                        filters::to_snake_case(inp.id.clone()),
+                        python_type(&inp.sce_type)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            Ok(serde_json::json!({
+                "ret_type": python_type(&out.sce_type),
+                "name": format!("compute_{}", filters::to_snake_case(out.id.clone())),
+                "params": params,
+                "expr": expr_py,
+            }))
+        })
+        .collect::<Result<_, String>>()?;
+
+    let tmpl = env
+        .get_template("transform.py.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        functions => minijinja::Value::from_serialize(&functions),
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Python: Lookup ───────────────────────────────────────────
+
+fn render_lookup_python(
+    env: &minijinja::Environment,
+    m: &LookupModel,
+) -> Result<String, String> {
+    let enum_name = filters::to_pascal_case(m.output.id.clone());
+    let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
+    let input_id_snake = filters::to_snake_case(m.input.id.clone());
+
+    // Pre-compute condition expression per group: `==` for single key, `in (...)` for multiple.
+    // Single-element tuples need a trailing comma in Python: `(0x07,)`.
+    let entries_by_value: Vec<serde_json::Value> = m
+        .entries_by_value()
+        .into_iter()
+        .map(|(value, keys)| {
+            let condition = if keys.len() == 1 {
+                format!("{} == {}", input_id_snake, keys[0])
+            } else {
+                format!("{} in ({})", input_id_snake, keys.join(", "))
+            };
+            serde_json::json!({
+                "value": value,
+                "condition": condition,
+            })
+        })
+        .collect();
+
+    let tmpl = env
+        .get_template("lookup.py.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        enum_name => enum_name,
+        func_name => func_name,
+        input_type => python_type(&m.input.sce_type),
+        input_id => input_id_snake,
+        unique_values => minijinja::Value::from_serialize(&m.unique_values()),
+        entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
+        default_value => &m.default_value,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Python: Condition ────────────────────────────────────────
+
+fn render_condition_python(
+    env: &minijinja::Environment,
+    m: &ConditionModel,
+) -> Result<String, String> {
+    let func_name = filters::to_snake_case(m.name.clone());
+
+    let renames: Vec<(String, String)> = m
+        .inputs
+        .iter()
+        .map(|inp| (inp.id.clone(), filters::to_snake_case(inp.id.clone())))
+        .collect();
+
+    let params = m
+        .inputs
+        .iter()
+        .map(|inp| {
+            format!(
+                "{}: {}",
+                filters::to_snake_case(inp.id.clone()),
+                python_type(&inp.sce_type)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut expr_py = expr::transpile(&m.expr, ExprTarget::Python)?;
+    expr_py = rust_rename_vars(&expr_py, &renames);
+
+    let tmpl = env
+        .get_template("condition.py.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        func_name => func_name,
+        params => params,
+        expr => expr_py,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Python: Codec ────────────────────────────────────────────
+
+fn render_codec_python(
+    env: &minijinja::Environment,
+    m: &CodecModel,
+) -> Result<String, String> {
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let fields: Vec<serde_json::Value> = m
+        .fields
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "id": filters::to_snake_case(f.id.clone()),
+                "py_type": python_type(&f.sce_type),
+                "decode_expr": generate_decode_expr_python(f, m.default_endian),
+            })
+        })
+        .collect();
+
+    // Generate encode expressions, then rename field references to snake_case
+    let renames: Vec<(String, String)> = m
+        .fields
+        .iter()
+        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
+        .collect();
+
+    let encode_exprs: Vec<String> = generate_encode_exprs_python(&m.fields, m.default_endian)
+        .into_iter()
+        .map(|expr| rust_rename_vars(&expr, &renames))
+        .collect();
+
+    let tmpl = env
+        .get_template("codec.py.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        struct_name => struct_name,
+        fields => minijinja::Value::from_serialize(&fields),
+        min_bytes => m.min_frame_bytes(),
+        encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Python codec expression generation ──────────────────────
+
+fn generate_decode_expr_python(field: &CodecField, default_endian: Endian) -> String {
+    let byte_off = field.byte_offset;
+    let bit_off = field.bit_offset.unwrap_or(0);
+    let endian = field.effective_endian(default_endian);
+
+    match &field.bit_size {
+        BitSize::Fixed { bits } => {
+            if bit_off > 0 || *bits < 8 {
+                let mask = (1u64 << bits) - 1;
+                format!("(raw[{byte_off}] >> {bit_off}) & 0x{mask:02X}")
+            } else {
+                match bits {
+                    8 => format!("raw[{byte_off}]"),
+                    16 => decode_multibyte_python(byte_off, 2, endian),
+                    24 => decode_multibyte_python(byte_off, 3, endian),
+                    32 => decode_multibyte_python(byte_off, 4, endian),
+                    _ => format!("# unsupported {bits}-bit decode"),
+                }
+            }
+        }
+        BitSize::Tail => {
+            format!("raw[{byte_off}:]")
+        }
+        BitSize::LengthRef => {
+            let len_field = field.length_field.as_deref().unwrap_or("0");
+            format!("raw[{byte_off}:{byte_off} + {len_field}]")
+        }
+    }
+}
+
+fn decode_multibyte_python(byte_off: u32, byte_count: u32, endian: Endian) -> String {
+    let shifts: Vec<String> = match endian {
+        Endian::Big | Endian::Native => (0..byte_count)
+            .map(|i| {
+                let shift = (byte_count - 1 - i) * 8;
+                let off = byte_off + i;
+                if shift == 0 {
+                    format!("raw[{off}]")
+                } else {
+                    format!("(raw[{off}] << {shift})")
+                }
+            })
+            .collect(),
+        Endian::Little => (0..byte_count)
+            .map(|i| {
+                let shift = i * 8;
+                let off = byte_off + i;
+                if shift == 0 {
+                    format!("raw[{off}]")
+                } else {
+                    format!("(raw[{off}] << {shift})")
+                }
+            })
+            .collect(),
+    };
+
+    shifts.join(" | ")
+}
+
+fn generate_encode_exprs_python(fields: &[CodecField], default_endian: Endian) -> Vec<String> {
+    let mut exprs = Vec::new();
+
+    let mut byte_groups: std::collections::BTreeMap<u32, Vec<&CodecField>> =
+        std::collections::BTreeMap::new();
+
+    for field in fields {
+        if field.is_variable_length() {
+            exprs.push(format!(
+                "# variable-length field '{}' requires manual encode",
+                field.id
+            ));
+        } else {
+            byte_groups
+                .entry(field.byte_offset)
+                .or_default()
+                .push(field);
+        }
+    }
+
+    for (_, group) in &byte_groups {
+        if group.len() == 1 {
+            encode_single_field_python(group[0], default_endian, &mut exprs);
+        } else {
+            let mut parts = Vec::new();
+            for field in group {
+                let bit_off = field.bit_offset.unwrap_or(0);
+                let bits = field.fixed_bits().unwrap_or(8);
+                let mask = (1u64 << bits) - 1;
+                parts.push(format!(
+                    "(self.{} & 0x{mask:02X}) << {bit_off}",
+                    field.id
+                ));
+            }
+            exprs.push(format!("({}) & 0xFF", parts.join(" | ")));
+        }
+    }
+
+    exprs
+}
+
+fn encode_single_field_python(
+    field: &CodecField,
+    default_endian: Endian,
+    exprs: &mut Vec<String>,
+) {
+    let bit_off = field.bit_offset.unwrap_or(0);
+    let endian = field.effective_endian(default_endian);
+
+    match field.fixed_bits() {
+        Some(8) if bit_off == 0 => {
+            exprs.push(format!("self.{} & 0xFF", field.id));
+        }
+        Some(bits) if bits < 8 || bit_off > 0 => {
+            let mask = (1u64 << bits) - 1;
+            exprs.push(format!(
+                "(self.{} & 0x{mask:02X}) << {bit_off} & 0xFF",
+                field.id
+            ));
+        }
+        Some(byte_count @ (16 | 24 | 32)) => {
+            let n_bytes = byte_count / 8;
+            let shifts: Vec<u32> = match endian {
+                Endian::Big | Endian::Native => (0..n_bytes).rev().collect(),
+                Endian::Little => (0..n_bytes).collect(),
+            };
+            for shift_byte in shifts {
+                let shift = shift_byte * 8;
+                if shift == 0 {
+                    exprs.push(format!("self.{} & 0xFF", field.id));
+                } else {
+                    exprs.push(format!(
+                        "(self.{} >> {shift}) & 0xFF",
+                        field.id
+                    ));
+                }
+            }
+        }
+        _ => exprs.push(format!("# encode {}", field.id)),
+    }
+}
+
 // ── Inline kind rendering (policy struct member functions) ─────
 //
 // Inline kinds live inside the policy struct — they access datamodel
