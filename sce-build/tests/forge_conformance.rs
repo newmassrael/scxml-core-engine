@@ -606,6 +606,91 @@ fn forge_python_validator_plausibility_only() {
     assert_standalone_forge_python("validator_plausibility_only", "validator_plausibility_only.py");
 }
 
+// ── Procedure conformance (C++) ─────────────────────────────
+
+#[test]
+fn forge_procedure_startup_check() {
+    assert_standalone_forge("procedure_startup_check", "procedure_startup_check.h");
+}
+
+#[test]
+fn forge_procedure_linear() {
+    assert_standalone_forge("procedure_linear", "procedure_linear.h");
+}
+
+#[test]
+fn forge_procedure_diamond() {
+    assert_standalone_forge("procedure_diamond", "procedure_diamond.h");
+}
+
+// ── Procedure conformance (Kotlin) ──────────────────────────
+
+#[test]
+fn forge_kotlin_procedure_startup_check() {
+    assert_standalone_forge_kotlin("procedure_startup_check", "ProcedureStartupCheck.kt");
+}
+
+#[test]
+fn forge_kotlin_procedure_linear() {
+    assert_standalone_forge_kotlin("procedure_linear", "ProcedureLinear.kt");
+}
+
+#[test]
+fn forge_kotlin_procedure_diamond() {
+    assert_standalone_forge_kotlin("procedure_diamond", "ProcedureDiamond.kt");
+}
+
+// ── Procedure conformance (Rust) ────────────────────────────
+
+#[test]
+fn forge_rust_procedure_startup_check() {
+    assert_standalone_forge_rust("procedure_startup_check", "procedure_startup_check.rs");
+}
+
+#[test]
+fn forge_rust_procedure_linear() {
+    assert_standalone_forge_rust("procedure_linear", "procedure_linear.rs");
+}
+
+#[test]
+fn forge_rust_procedure_diamond() {
+    assert_standalone_forge_rust("procedure_diamond", "procedure_diamond.rs");
+}
+
+// ── Procedure conformance (Go) ──────────────────────────────
+
+#[test]
+fn forge_go_procedure_startup_check() {
+    assert_standalone_forge_go("procedure_startup_check", "procedure_startup_check.go");
+}
+
+#[test]
+fn forge_go_procedure_linear() {
+    assert_standalone_forge_go("procedure_linear", "procedure_linear.go");
+}
+
+#[test]
+fn forge_go_procedure_diamond() {
+    assert_standalone_forge_go("procedure_diamond", "procedure_diamond.go");
+}
+
+// ── Procedure conformance (Python) ──────────────────────────
+
+#[test]
+fn forge_python_procedure_startup_check() {
+    assert_standalone_forge_python("procedure_startup_check", "procedure_startup_check.py");
+}
+
+#[test]
+fn forge_python_procedure_linear() {
+    assert_standalone_forge_python("procedure_linear", "procedure_linear.py");
+}
+
+#[test]
+fn forge_python_procedure_diamond() {
+    assert_standalone_forge_python("procedure_diamond", "procedure_diamond.py");
+}
+
 // ── Inline kind conformance ──────────────────────────────────
 
 #[test]
@@ -637,6 +722,9 @@ fn forge_generate_golden() {
         "validator_range_only",
         "validator_signed_roc",
         "validator_plausibility_only",
+        "procedure_startup_check",
+        "procedure_linear",
+        "procedure_diamond",
     ];
 
     for name in &test_cases {

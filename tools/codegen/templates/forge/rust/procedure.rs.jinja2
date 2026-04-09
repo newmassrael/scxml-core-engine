@@ -1,0 +1,50 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
+// Do not edit — regenerate from the source SCXML file.
+
+#![allow(dead_code)]
+
+#[derive(Debug)]
+pub struct ProcedureResult {
+    pub completed: bool,
+    pub final_state: String,
+}
+
+const STATE_NAMES: [&str; {{ state_count }}] = [{% for n in state_names %}"{{ n }}"{% if not loop.last %}, {% endif %}{% endfor %}];
+
+pub fn execute({{ params }}) -> ProcedureResult {
+    let mut current: i32 = {{ initial_index }};
+    let mut iterations = 0;
+    while iterations < {{ state_count }} {
+        iterations += 1;
+        let next: i32 = match current {
+{% for s in non_final_states %}
+            {{ s.index }} => {
+{% for tr in s.transitions %}
+{% if loop.first %}
+{% if tr.has_cond %}
+                if {{ tr.cond }} { {{ tr.target_index }} }
+{% else %}
+                {{ tr.target_index }}
+{% endif %}
+{% else %}
+{% if tr.has_cond %}
+                else if {{ tr.cond }} { {{ tr.target_index }} }
+{% else %}
+                else { {{ tr.target_index }} }
+{% endif %}
+{% endif %}
+{% endfor %}
+            }
+{% endfor %}
+            _ => -1,
+        };
+        if next < 0 { break; }
+        current = next;
+        if {{ final_check }} { break; }
+    }
+    let completed = {{ final_check }};
+    ProcedureResult {
+        completed,
+        final_state: STATE_NAMES[current as usize].to_string(),
+    }
+}

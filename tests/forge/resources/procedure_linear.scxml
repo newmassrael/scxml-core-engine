@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="procedure"
+       name="linear_pipeline"
+       initial="stage_a">
+  <datamodel>
+    <data id="value" sce:type="int32" sce:direction="in"/>
+  </datamodel>
+
+  <state id="stage_a">
+    <transition target="stage_b"/>
+  </state>
+
+  <state id="stage_b">
+    <transition target="stage_c"/>
+  </state>
+
+  <state id="stage_c">
+    <transition target="done"/>
+  </state>
+
+  <final id="done"/>
+</scxml>

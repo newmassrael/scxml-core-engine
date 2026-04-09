@@ -30,9 +30,9 @@ pub enum ForgeKind {
     Condition,
     /// Byte-level encode/decode with bit-field layout.
     Codec,
-    /// Sequential procedure with branching (Phase 2).
+    /// Sequential procedure with branching: states + guarded transitions + run-to-completion.
     Procedure,
-    /// Range/plausibility/rate-of-change validation (Phase 2).
+    /// Range/plausibility/rate-of-change validation.
     Validator,
     /// Signal filtering: moving average, low-pass, debounce (Phase 3).
     Filter,
@@ -82,6 +82,7 @@ impl ForgeKind {
                 | Self::Condition
                 | Self::Codec
                 | Self::Validator
+                | Self::Procedure
         )
     }
 }
@@ -304,6 +305,43 @@ pub struct RateOfChangeRule {
     pub sample_interval_ms: u32,
 }
 
+// ── Procedure kind ────────────────────────────────────────────
+
+/// A single transition within a procedure state.
+/// Transitions are evaluated in document order; the first whose guard is satisfied
+/// (or the first unconditional one) is taken.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcedureTransition {
+    /// Target state id.
+    pub target: String,
+    /// Optional ECMAScript guard expression. `None` = unconditional (else branch).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cond: Option<String>,
+}
+
+/// A state within a procedure (either regular or final).
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcedureState {
+    pub id: String,
+    /// Whether this is a `<final>` state (terminal — no outgoing transitions).
+    pub is_final: bool,
+    /// Ordered transitions (evaluated top-to-bottom). Empty for final states.
+    pub transitions: Vec<ProcedureTransition>,
+}
+
+/// Procedure: sequential branching logic with states and guarded transitions.
+/// Has internal state (current state index). Generates a class with an `execute()`
+/// method that runs the procedure to completion and returns the final state reached.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcedureModel {
+    pub name: String,
+    pub inputs: Vec<ForgeField>,
+    /// Id of the initial state (from `initial` attribute on `<scxml>`).
+    pub initial: String,
+    /// All states in document order (regular + final).
+    pub states: Vec<ProcedureState>,
+}
+
 // ── Codec kind ─────────────────────────────────────────────────
 
 /// Endianness for byte-level operations.
@@ -468,6 +506,8 @@ pub enum ForgeDocument {
     Codec(CodecModel),
     #[serde(rename = "validator")]
     Validator(ValidatorModel),
+    #[serde(rename = "procedure")]
+    Procedure(ProcedureModel),
 }
 
 impl ForgeDocument {
@@ -478,6 +518,7 @@ impl ForgeDocument {
             Self::Condition(m) => &m.name,
             Self::Codec(m) => &m.name,
             Self::Validator(m) => &m.name,
+            Self::Procedure(m) => &m.name,
         }
     }
 
@@ -488,6 +529,7 @@ impl ForgeDocument {
             Self::Condition(_) => ForgeKind::Condition,
             Self::Codec(_) => ForgeKind::Codec,
             Self::Validator(_) => ForgeKind::Validator,
+            Self::Procedure(_) => ForgeKind::Procedure,
         }
     }
 }

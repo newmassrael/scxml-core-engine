@@ -232,6 +232,7 @@ pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<Generate
         ForgeDocument::Condition(m) => render_condition_cpp(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_cpp(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_cpp(&env, m)?,
+        ForgeDocument::Procedure(m) => render_procedure_cpp(&env, m)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -694,6 +695,7 @@ pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<Gener
         ForgeDocument::Condition(m) => render_condition_kotlin(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_kotlin(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_kotlin(&env, m)?,
+        ForgeDocument::Procedure(m) => render_procedure_kotlin(&env, m)?,
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -1159,6 +1161,7 @@ pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<Generat
         ForgeDocument::Condition(m) => render_condition_rust(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_rust(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_rust(&env, m)?,
+        ForgeDocument::Procedure(m) => render_procedure_rust(&env, m)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -1650,6 +1653,7 @@ pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<Generated
         ForgeDocument::Condition(m) => render_condition_go(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_go(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_go(&env, m)?,
+        ForgeDocument::Procedure(m) => render_procedure_go(&env, m)?,
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -2146,6 +2150,7 @@ pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<Gener
         ForgeDocument::Condition(m) => render_condition_python(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_python(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_python(&env, m)?,
+        ForgeDocument::Procedure(m) => render_procedure_python(&env, m)?,
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -2555,6 +2560,534 @@ fn render_validator_python(
         range_rules => minijinja::Value::from_serialize(&range_rules),
         roc_rules => minijinja::Value::from_serialize(&roc_rules),
         plausibility_expr => plausibility_expr,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Procedure: resolved model (state-index mapping, computed once) ──
+// ══════════════════════════════════════════════════════════════
+
+/// A transition with its target pre-resolved to a state index.
+struct ResolvedTransition {
+    target_index: usize,
+    /// Guard expression, pre-transpiled to the target language.
+    cond: Option<String>,
+}
+
+/// A state with its transitions pre-resolved.
+struct ResolvedProcedureState {
+    id: String,
+    index: usize,
+    is_final: bool,
+    transitions: Vec<ResolvedTransition>,
+}
+
+/// Procedure model with state-to-index associations pre-resolved.
+/// Eliminates repeated name lookups across 5 language renderers.
+struct ResolvedProcedure {
+    inputs: Vec<ForgeField>,
+    states: Vec<ResolvedProcedureState>,
+    initial_index: usize,
+    state_count: usize,
+}
+
+fn resolve_procedure(m: &ProcedureModel, target: ExprTarget) -> Result<ResolvedProcedure, String> {
+    // Build name→index map
+    let index_map: std::collections::BTreeMap<&str, usize> = m
+        .states
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.id.as_str(), i))
+        .collect();
+
+    let initial_index = *index_map
+        .get(m.initial.as_str())
+        .ok_or_else(|| format!("Initial state '{}' not found", m.initial))?;
+
+    let states = m
+        .states
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let transitions = s
+                .transitions
+                .iter()
+                .map(|tr| {
+                    let target_index = *index_map
+                        .get(tr.target.as_str())
+                        .ok_or_else(|| format!("Transition target '{}' not found", tr.target))?;
+                    let cond = match &tr.cond {
+                        Some(c) => Some(expr::transpile(c, target)?),
+                        None => None,
+                    };
+                    Ok(ResolvedTransition {
+                        target_index,
+                        cond,
+                    })
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+
+            Ok(ResolvedProcedureState {
+                id: s.id.clone(),
+                index: i,
+                is_final: s.is_final,
+                transitions,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(ResolvedProcedure {
+        inputs: m.inputs.clone(),
+        states,
+        initial_index,
+        state_count: m.states.len(),
+    })
+}
+
+/// Build common procedure data structures for template rendering.
+fn build_procedure_data(rp: &ResolvedProcedure) -> (Vec<serde_json::Value>, Vec<serde_json::Value>, Vec<usize>) {
+    let state_names: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .map(|s| serde_json::json!(s.id))
+        .collect();
+
+    let non_final_states: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .filter(|s| !s.is_final)
+        .map(|s| {
+            let transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .map(|tr| {
+                    serde_json::json!({
+                        "target_index": tr.target_index,
+                        "has_cond": tr.cond.is_some(),
+                        "cond": tr.cond.as_deref().unwrap_or(""),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "index": s.index,
+                "id": s.id,
+                "transitions": transitions,
+            })
+        })
+        .collect();
+
+    let final_indices: Vec<usize> = rp
+        .states
+        .iter()
+        .filter(|s| s.is_final)
+        .map(|s| s.index)
+        .collect();
+
+    (state_names, non_final_states, final_indices)
+}
+
+/// Build a final-state check expression for the given operator (e.g., "||", "or").
+fn final_check_expr(final_indices: &[usize], var: &str, op: &str) -> String {
+    final_indices
+        .iter()
+        .map(|i| format!("{var} == {i}"))
+        .collect::<Vec<_>>()
+        .join(&format!(" {op} "))
+}
+
+// ── Procedure: C++ ──────────────────────────────────────────
+
+fn render_procedure_cpp(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let rp = resolve_procedure(m, ExprTarget::Cpp)?;
+    let ns = filters::to_pascal_case(m.name.clone());
+    let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let params = rp
+        .inputs
+        .iter()
+        .map(|inp| format!("{} {}", cpp_param_type(&inp.sce_type), inp.id))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let (state_names, non_final_states, final_indices) = build_procedure_data(&rp);
+
+    let state_enum: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .map(|s| {
+            serde_json::json!({
+                "name": to_upper_snake(&s.id),
+                "index": s.index,
+            })
+        })
+        .collect();
+
+    let final_check = final_check_expr(&final_indices, "s", "||");
+
+    let tmpl = env
+        .get_template("procedure.h.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        guard => guard, namespace => ns, struct_name => struct_name,
+        params => params,
+        state_enum => minijinja::Value::from_serialize(&state_enum),
+        state_names => minijinja::Value::from_serialize(&state_names),
+        state_count => rp.state_count,
+        initial_index => rp.initial_index,
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        final_check => final_check,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Procedure: Kotlin ───────────────────────────────────────
+
+fn render_procedure_kotlin(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let rp = resolve_procedure(m, ExprTarget::Kotlin)?;
+    let package = filters::to_snake_case(m.name.clone());
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let params = rp
+        .inputs
+        .iter()
+        .map(|inp| format!("{}: {}", inp.id, kotlin_type(&inp.sce_type)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let (state_names, _, final_indices) = build_procedure_data(&rp);
+
+    // Apply unsigned conversion to guard expressions if needed
+    let has_unsigned = rp.inputs.iter().any(|f| f.sce_type.is_unsigned());
+    let non_final_states: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .filter(|s| !s.is_final)
+        .map(|s| {
+            let transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .map(|tr| {
+                    let cond = match &tr.cond {
+                        Some(c) if has_unsigned && kotlin_condition_needs_conversion(c) => {
+                            let conversions: Vec<(String, String)> = rp
+                                .inputs
+                                .iter()
+                                .filter_map(|f| {
+                                    kotlin_unsigned_conversion(&f.sce_type)
+                                        .map(|cv| (f.id.clone(), cv.to_string()))
+                                })
+                                .collect();
+                            Some(kotlin_wrap_expr(c, &conversions))
+                        }
+                        Some(c) => Some(c.clone()),
+                        None => None,
+                    };
+                    serde_json::json!({
+                        "target_index": tr.target_index,
+                        "has_cond": cond.is_some(),
+                        "cond": cond.unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "index": s.index,
+                "id": s.id,
+                "transitions": transitions,
+            })
+        })
+        .collect();
+
+    let final_check = final_check_expr(&final_indices, "current", "||");
+
+    let tmpl = env
+        .get_template("procedure.kt.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package, struct_name => struct_name,
+        params => params,
+        state_names => minijinja::Value::from_serialize(&state_names),
+        state_count => rp.state_count,
+        initial_index => rp.initial_index,
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        final_check => final_check,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Procedure: Rust ─────────────────────────────────────────
+
+fn render_procedure_rust(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let rp = resolve_procedure(m, ExprTarget::Rust)?;
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let renames: Vec<(String, String)> = rp
+        .inputs
+        .iter()
+        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
+        .collect();
+
+    let params = rp
+        .inputs
+        .iter()
+        .map(|f| {
+            format!(
+                "{}: {}",
+                filters::to_snake_case(f.id.clone()),
+                rust_param_type(&f.sce_type)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let state_names: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .map(|s| serde_json::json!(s.id))
+        .collect();
+
+    // Apply variable renames to guard expressions
+    let non_final_states: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .filter(|s| !s.is_final)
+        .map(|s| {
+            let transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .map(|tr| {
+                    let cond = tr.cond.as_ref().map(|c| rust_rename_vars(c, &renames));
+                    serde_json::json!({
+                        "target_index": tr.target_index,
+                        "has_cond": cond.is_some(),
+                        "cond": cond.unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "index": s.index,
+                "id": s.id,
+                "transitions": transitions,
+            })
+        })
+        .collect();
+
+    let final_indices: Vec<usize> = rp
+        .states
+        .iter()
+        .filter(|s| s.is_final)
+        .map(|s| s.index)
+        .collect();
+
+    let final_check = final_check_expr(&final_indices, "current", "||");
+
+    let tmpl = env
+        .get_template("procedure.rs.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        struct_name => struct_name,
+        params => params,
+        state_names => minijinja::Value::from_serialize(&state_names),
+        state_count => rp.state_count,
+        initial_index => rp.initial_index,
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        final_check => final_check,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Procedure: Go ───────────────────────────────────────────
+
+fn render_procedure_go(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let rp = resolve_procedure(m, ExprTarget::Go)?;
+    let package = filters::to_snake_case(m.name.clone());
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let go_renames: Vec<(String, String)> = rp
+        .inputs
+        .iter()
+        .map(|f| (f.id.clone(), go_escape_builtin(&f.id)))
+        .collect();
+
+    let params = rp
+        .inputs
+        .iter()
+        .map(|f| format!("{} {}", go_escape_builtin(&f.id), go_type(&f.sce_type)))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let state_names: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .map(|s| serde_json::json!(s.id))
+        .collect();
+
+    // Apply Go variable renames to guard expressions
+    let non_final_states: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .filter(|s| !s.is_final)
+        .map(|s| {
+            let transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .map(|tr| {
+                    let cond = tr.cond.as_ref().map(|c| {
+                        let mut expr = c.clone();
+                        for (from, to) in &go_renames {
+                            if from != to {
+                                let re = regex::Regex::new(&format!(
+                                    r"\b{}\b",
+                                    regex::escape(from)
+                                ))
+                                .unwrap();
+                                expr = re.replace_all(&expr, to.as_str()).to_string();
+                            }
+                        }
+                        expr
+                    });
+                    serde_json::json!({
+                        "target_index": tr.target_index,
+                        "has_cond": cond.is_some(),
+                        "cond": cond.unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "index": s.index,
+                "id": s.id,
+                "transitions": transitions,
+            })
+        })
+        .collect();
+
+    let final_indices: Vec<usize> = rp
+        .states
+        .iter()
+        .filter(|s| s.is_final)
+        .map(|s| s.index)
+        .collect();
+
+    let final_check = final_check_expr(&final_indices, "current", "||");
+
+    let tmpl = env
+        .get_template("procedure.go.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        package => package, struct_name => struct_name,
+        params => params,
+        state_names => minijinja::Value::from_serialize(&state_names),
+        state_count => rp.state_count,
+        initial_index => rp.initial_index,
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        final_check => final_check,
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+// ── Procedure: Python ───────────────────────────────────────
+
+fn render_procedure_python(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let rp = resolve_procedure(m, ExprTarget::Python)?;
+    let struct_name = filters::to_pascal_case(m.name.clone());
+
+    let renames: Vec<(String, String)> = rp
+        .inputs
+        .iter()
+        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
+        .collect();
+
+    let params = rp
+        .inputs
+        .iter()
+        .map(|f| {
+            format!(
+                "{}: {}",
+                filters::to_snake_case(f.id.clone()),
+                python_type(&f.sce_type)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let state_names: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .map(|s| serde_json::json!(s.id))
+        .collect();
+
+    // Apply variable renames to guard expressions
+    let non_final_states: Vec<serde_json::Value> = rp
+        .states
+        .iter()
+        .filter(|s| !s.is_final)
+        .map(|s| {
+            let transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .map(|tr| {
+                    let cond = tr.cond.as_ref().map(|c| rust_rename_vars(c, &renames));
+                    serde_json::json!({
+                        "target_index": tr.target_index,
+                        "has_cond": cond.is_some(),
+                        "cond": cond.unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "index": s.index,
+                "id": s.id,
+                "transitions": transitions,
+            })
+        })
+        .collect();
+
+    let final_indices: Vec<usize> = rp
+        .states
+        .iter()
+        .filter(|s| s.is_final)
+        .map(|s| s.index)
+        .collect();
+
+    let final_check = final_check_expr(&final_indices, "current", "or");
+
+    let tmpl = env
+        .get_template("procedure.py.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        struct_name => struct_name,
+        params => params,
+        state_names => minijinja::Value::from_serialize(&state_names),
+        state_count => rp.state_count,
+        initial_index => rp.initial_index,
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        final_check => final_check,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)

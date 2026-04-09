@@ -1,0 +1,49 @@
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
+# Do not edit — regenerate from the source SCXML file.
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ProcedureResult:
+    completed: bool
+    final_state: str
+
+
+_STATE_NAMES = [{% for n in state_names %}"{{ n }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+
+
+def execute({{ params }}) -> ProcedureResult:
+    current = {{ initial_index }}
+    for _ in range({{ state_count }}):
+{% for s in non_final_states %}
+{% if loop.first %}
+        if current == {{ s.index }}:
+{% else %}
+        elif current == {{ s.index }}:
+{% endif %}
+{% for tr in s.transitions %}
+{% if loop.first %}
+{% if tr.has_cond %}
+            if {{ tr.cond }}:
+                current = {{ tr.target_index }}
+{% else %}
+            current = {{ tr.target_index }}
+{% endif %}
+{% else %}
+{% if tr.has_cond %}
+            elif {{ tr.cond }}:
+                current = {{ tr.target_index }}
+{% else %}
+            else:
+                current = {{ tr.target_index }}
+{% endif %}
+{% endif %}
+{% endfor %}
+{% endfor %}
+        else:
+            break
+        if {{ final_check }}:
+            break
+    completed = {{ final_check }}
+    return ProcedureResult(completed, _STATE_NAMES[current])

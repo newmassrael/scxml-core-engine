@@ -60,6 +60,7 @@ fn parse_forge_from_node(
         ForgeKind::Condition => parse_condition(root, name).map(ForgeDocument::Condition),
         ForgeKind::Codec => parse_codec(root, name).map(ForgeDocument::Codec),
         ForgeKind::Validator => parse_validator(root, name).map(ForgeDocument::Validator),
+        ForgeKind::Procedure => parse_procedure(root, name).map(ForgeDocument::Procedure),
         ForgeKind::Statechart => Err("Statechart kind uses the standard pipeline".to_string()),
         other => Err(format!("Kind '{other}' is not yet supported")),
     }
@@ -406,6 +407,137 @@ fn parse_validator(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel,
             plausibility,
         },
     })
+}
+
+// ── Procedure parsing ──────────────────────────────────────
+
+fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel, String> {
+    let initial = root
+        .attribute("initial")
+        .ok_or("Procedure kind requires 'initial' attribute on <scxml>")?
+        .to_string();
+
+    // Parse input fields from <datamodel>
+    let mut inputs = Vec::new();
+    if let Some(datamodel) = find_child(root, "datamodel") {
+        for data in data_children(&datamodel) {
+            let field = parse_forge_field(&data)?;
+            match field.direction {
+                Direction::In => inputs.push(field),
+                Direction::Out | Direction::Internal => {
+                    // Output/internal fields are not used as execute() parameters
+                }
+            }
+        }
+    }
+
+    // Parse <state> and <final> elements
+    let mut states = Vec::new();
+    let mut state_ids = std::collections::BTreeSet::new();
+
+    for child in root.children().filter(|n| n.is_element()) {
+        let tag = child.tag_name().name();
+        let is_final = tag == "final";
+        if tag != "state" && tag != "final" {
+            continue;
+        }
+
+        let id = child
+            .attribute("id")
+            .ok_or_else(|| format!("<{tag}> element must have an 'id' attribute"))?
+            .to_string();
+
+        if !state_ids.insert(id.clone()) {
+            return Err(format!("Duplicate state id: '{id}'"));
+        }
+
+        let transitions = if is_final {
+            Vec::new()
+        } else {
+            parse_procedure_transitions(&child)?
+        };
+
+        states.push(ProcedureState {
+            id,
+            is_final,
+            transitions,
+        });
+    }
+
+    if states.is_empty() {
+        return Err("Procedure kind requires at least one <state> or <final> element".to_string());
+    }
+
+    // Validate: initial state must exist
+    if !state_ids.contains(&initial) {
+        return Err(format!(
+            "Initial state '{initial}' does not match any state (available: {})",
+            state_ids.iter().cloned().collect::<Vec<_>>().join(", ")
+        ));
+    }
+
+    // Validate: must have at least one final state
+    if !states.iter().any(|s| s.is_final) {
+        return Err("Procedure kind requires at least one <final> element".to_string());
+    }
+
+    // Validate: all transition targets must reference existing states
+    for state in &states {
+        for tr in &state.transitions {
+            if !state_ids.contains(&tr.target) {
+                return Err(format!(
+                    "Transition target '{}' in state '{}' does not match any state (available: {})",
+                    tr.target,
+                    state.id,
+                    state_ids.iter().cloned().collect::<Vec<_>>().join(", ")
+                ));
+            }
+        }
+    }
+
+    // Validate: non-final states must have at least one transition
+    for state in &states {
+        if !state.is_final && state.transitions.is_empty() {
+            return Err(format!(
+                "Non-final state '{}' must have at least one <transition>",
+                state.id
+            ));
+        }
+    }
+
+    Ok(ProcedureModel {
+        name: name.to_string(),
+        inputs,
+        initial,
+        states,
+    })
+}
+
+/// Parse <transition> children of a procedure state.
+fn parse_procedure_transitions(state: &roxmltree::Node) -> Result<Vec<ProcedureTransition>, String> {
+    let mut transitions = Vec::new();
+
+    for child in state.children().filter(|n| n.is_element()) {
+        if child.tag_name().name() != "transition" {
+            continue;
+        }
+
+        let target = child
+            .attribute("target")
+            .ok_or_else(|| {
+                format!(
+                    "<transition> in state '{}' must have a 'target' attribute",
+                    state.attribute("id").unwrap_or("?")
+                )
+            })?
+            .to_string();
+
+        let cond = child.attribute("cond").map(|s| s.to_string());
+
+        transitions.push(ProcedureTransition { target, cond });
+    }
+
+    Ok(transitions)
 }
 
 fn parse_range_rule(node: &roxmltree::Node) -> Result<RangeRule, String> {

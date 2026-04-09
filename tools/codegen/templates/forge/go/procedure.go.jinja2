@@ -1,0 +1,58 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package }}
+
+// ProcedureResult holds the outcome of a procedure execution.
+type ProcedureResult struct {
+	Completed  bool
+	FinalState string
+}
+
+var stateNames = [{{ state_count }}]string{ {% for n in state_names %}"{{ n }}"{% if not loop.last %}, {% endif %}{% endfor %} }
+
+// Execute runs the procedure to completion and returns the final state reached.
+func Execute({{ params }}) ProcedureResult {
+	current := {{ initial_index }}
+	for iterations := 0; iterations < {{ state_count }}; iterations++ {
+		next := -1
+		switch current {
+{% for s in non_final_states %}
+		case {{ s.index }}:
+{% if s.transitions | length == 1 and not s.transitions[0].has_cond %}
+			next = {{ s.transitions[0].target_index }}
+{% else %}
+{% for tr in s.transitions %}
+{% if loop.first %}
+{% if tr.has_cond %}
+			if {{ tr.cond }} {
+				next = {{ tr.target_index }}
+{% else %}
+			{
+				next = {{ tr.target_index }}
+{% endif %}
+{% else %}
+{% if tr.has_cond %}
+			} else if {{ tr.cond }} {
+				next = {{ tr.target_index }}
+{% else %}
+			} else {
+				next = {{ tr.target_index }}
+{% endif %}
+{% endif %}
+{% endfor %}
+			}
+{% endif %}
+{% endfor %}
+		}
+		if next < 0 {
+			break
+		}
+		current = next
+		if {{ final_check }} {
+			break
+		}
+	}
+	completed := {{ final_check }}
+	return ProcedureResult{Completed: completed, FinalState: stateNames[current]}
+}

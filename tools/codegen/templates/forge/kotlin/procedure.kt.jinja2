@@ -1,0 +1,44 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
+// Do not edit — regenerate from the source SCXML file.
+
+package com.sce.generated.{{ package }}
+
+data class ProcedureResult(val completed: Boolean, val finalState: String)
+
+object {{ struct_name }} {
+    private val STATE_NAMES = arrayOf({% for n in state_names %}"{{ n }}"{% if not loop.last %}, {% endif %}{% endfor %})
+
+    fun execute({{ params }}): ProcedureResult {
+        var current = {{ initial_index }}
+        var iterations = 0
+        while (iterations++ < {{ state_count }}) {
+            val next = when (current) {
+{% for s in non_final_states %}
+                {{ s.index }} -> {
+{% for tr in s.transitions %}
+{% if loop.first %}
+{% if tr.has_cond %}
+                    if ({{ tr.cond }}) {{ tr.target_index }}
+{% else %}
+                    {{ tr.target_index }}
+{% endif %}
+{% else %}
+{% if tr.has_cond %}
+                    else if ({{ tr.cond }}) {{ tr.target_index }}
+{% else %}
+                    else {{ tr.target_index }}
+{% endif %}
+{% endif %}
+{% endfor %}
+                }
+{% endfor %}
+                else -> -1
+            }
+            if (next < 0) break
+            current = next
+            if ({{ final_check }}) break
+        }
+        val completed = {{ final_check }}
+        return ProcedureResult(completed, STATE_NAMES[current])
+    }
+}

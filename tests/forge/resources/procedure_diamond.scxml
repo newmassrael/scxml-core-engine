@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       version="1.0"
+       sce:kind="procedure"
+       name="diamond_check"
+       initial="classify">
+  <datamodel>
+    <data id="sensorValue" sce:type="uint16" sce:direction="in"/>
+    <data id="mode" sce:type="string" sce:direction="in"/>
+  </datamodel>
+
+  <state id="classify">
+    <transition cond="sensorValue > 1000" target="high_path"/>
+    <transition cond="sensorValue > 500" target="mid_path"/>
+    <transition target="low_path"/>
+  </state>
+
+  <state id="high_path">
+    <transition cond="mode === 'strict'" target="reject"/>
+    <transition target="accept"/>
+  </state>
+
+  <state id="mid_path">
+    <transition target="accept"/>
+  </state>
+
+  <state id="low_path">
+    <transition target="accept"/>
+  </state>
+
+  <final id="accept"/>
+  <final id="reject"/>
+</scxml>
