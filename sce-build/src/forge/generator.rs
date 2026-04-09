@@ -232,7 +232,13 @@ pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<Generate
         ForgeDocument::Condition(m) => render_condition_cpp(&env, m)?,
         ForgeDocument::Codec(m) => render_codec_cpp(&env, m)?,
         ForgeDocument::Validator(m) => render_validator_cpp(&env, m)?,
-        ForgeDocument::Procedure(m) => render_procedure_cpp(&env, m)?,
+        ForgeDocument::Procedure(m) => {
+            if m.is_event_driven {
+                render_procedure_l2_cpp(&env, m)?
+            } else {
+                render_procedure_cpp(&env, m)?
+            }
+        }
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -2748,6 +2754,336 @@ fn render_procedure_cpp(
     tmpl.render(ctx).map_err(generator::render_error)
 }
 
+// ── Procedure Level 2: C++ (event-driven, StaticExecutionEngine) ──
+
+fn render_procedure_l2_cpp(
+    env: &minijinja::Environment,
+    m: &ProcedureModel,
+) -> Result<String, String> {
+    let pascal = filters::to_pascal_case(m.name.clone());
+    let guard = format!("SCE_FORGE_{}_L2_H", to_upper_snake(&m.name));
+    let policy_name = format!("{}Policy", &pascal);
+
+    // Build state enum
+    let state_enum: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "index": i,
+            })
+        })
+        .collect();
+
+    // Collect unique events: original SCXML string → PascalCase enum name.
+    // BTreeMap orders by raw SCXML event string (key).
+    let mut event_raw_to_pascal: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+    event_raw_to_pascal.insert("ok".to_string(), "Ok".to_string());
+    event_raw_to_pascal.insert("fail".to_string(), "Fail".to_string());
+    for s in &m.states {
+        for tr in &s.transitions {
+            if let Some(ev) = &tr.event {
+                event_raw_to_pascal
+                    .entry(ev.clone())
+                    .or_insert_with(|| filters::to_pascal_case(ev.clone()));
+            }
+        }
+    }
+
+    // Build event enum data: PascalCase enum variant name + original SCXML event string.
+    // Deduplicate by PascalCase name (multiple raw strings could map to same enum variant).
+    let mut seen_pascal: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let event_enum: Vec<serde_json::Value> = event_raw_to_pascal
+        .iter()
+        .filter(|(_, pascal)| seen_pascal.insert((*pascal).clone()))
+        .enumerate()
+        .map(|(i, (raw, pascal))| {
+            serde_json::json!({
+                "name": pascal,
+                "index": i + 1,
+                "event_name": raw,
+            })
+        })
+        .collect();
+
+    // Build event name → enum name map keyed by ORIGINAL SCXML event string.
+    // This ensures transition matching works for any casing convention
+    // (e.g., "ok", "REQUEST_COMPLETE", "requestComplete" all map correctly).
+    let event_name_map: &std::collections::BTreeMap<String, String> = &event_raw_to_pascal;
+
+    // Build input field data
+    let input_fields: Vec<serde_json::Value> = m
+        .inputs
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "id": f.id,
+                "cpp_type": cpp_type(&f.sce_type),
+                "cpp_param_type": cpp_param_type(&f.sce_type),
+                "setter_name": filters::to_pascal_case(f.id.clone()),
+            })
+        })
+        .collect();
+
+    // Build internal field data
+    let internal_fields: Vec<serde_json::Value> = m
+        .internals
+        .iter()
+        .map(|f| {
+            let default_val = f.expr.as_ref().map(|e| {
+                expr::transpile(e, ExprTarget::Cpp).unwrap_or_else(|_| e.clone())
+            });
+            serde_json::json!({
+                "id": f.id,
+                "cpp_type": cpp_type(&f.sce_type),
+                "default_value": default_val,
+            })
+        })
+        .collect();
+
+    // Initial state
+    let initial_state = filters::to_pascal_case(m.initial.clone());
+
+    // Build variable name list for expression rewriting (input + internal names)
+    let var_name_strings: Vec<String> = m
+        .inputs
+        .iter()
+        .chain(m.internals.iter())
+        .map(|f| f.id.clone())
+        .collect();
+    let var_names: Vec<&str> = var_name_strings.iter().map(|s| s.as_str()).collect();
+
+    // Pre-build rename maps once (CR#4: avoid per-expression HashMap rebuild)
+    let owned_rename_map = build_rename_map(&var_names);
+    let rename_map: std::collections::HashMap<&str, &str> = owned_rename_map
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+    let mut owned_assign_rename_map = build_rename_map(&var_names);
+    owned_assign_rename_map.insert("_event.data", "pendingEventData_".to_string());
+    let assign_rename_map: std::collections::HashMap<&str, &str> = owned_assign_rename_map
+        .iter()
+        .map(|(k, v)| (*k, v.as_str()))
+        .collect();
+
+    // Final states
+    let final_states: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .filter(|s| s.is_final)
+        .map(|s| {
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "id": s.id,
+            })
+        })
+        .collect();
+
+    // States with onentry sends
+    let states_with_entry: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .filter(|s| !s.on_entry_sends.is_empty())
+        .map(|s| {
+            let sends: Vec<serde_json::Value> = s
+                .on_entry_sends
+                .iter()
+                .map(|send| {
+                    let addr_expr = send.addr.as_ref().map(|a| {
+                        transpile_l2_expr(a, ExprTarget::Cpp, &rename_map)
+                    });
+                    let payload_expr = send.payload.as_ref().map(|p| {
+                        transpile_l2_expr(p, ExprTarget::Cpp, &rename_map)
+                    });
+                    serde_json::json!({
+                        "service": send.service,
+                        "subfunc": send.subfunc,
+                        "has_addr": send.addr.is_some(),
+                        "addr_expr": addr_expr.unwrap_or_default(),
+                        "payload": send.payload.is_some(),
+                        "payload_expr": payload_expr.unwrap_or_default(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "sends": sends,
+            })
+        })
+        .collect();
+
+    // Final states with done data
+    let final_states_with_donedata: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .filter(|s| s.is_final && !s.done_params.is_empty())
+        .map(|s| {
+            let done_params: Vec<serde_json::Value> = s
+                .done_params
+                .iter()
+                .map(|p| {
+                    let transpiled = transpile_l2_expr(&p.expr, ExprTarget::Cpp, &rename_map);
+                    serde_json::json!({
+                        "name": p.name,
+                        "expr": transpiled,
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "done_params": done_params,
+            })
+        })
+        .collect();
+
+    // Non-final states with transitions
+    let non_final_states: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .filter(|s| !s.is_final)
+        .map(|s| {
+            let transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .enumerate()
+                .map(|(idx, tr)| {
+                    let event_enum_name = tr.event.as_ref().map(|ev| {
+                        event_name_map
+                            .get(ev)
+                            .cloned()
+                            .unwrap_or_else(|| filters::to_pascal_case(ev.clone()))
+                    });
+                    let cond_transpiled = tr.cond.as_ref().map(|c| {
+                        transpile_l2_expr(c, ExprTarget::Cpp, &rename_map)
+                    });
+                    serde_json::json!({
+                        "index": idx,
+                        "has_event": tr.event.is_some(),
+                        "event_name": tr.event.as_deref().unwrap_or(""),
+                        "event_enum": event_enum_name.unwrap_or_default(),
+                        "has_cond": tr.cond.is_some(),
+                        "cond": cond_transpiled.unwrap_or_default(),
+                        "target_name": filters::to_pascal_case(tr.target.clone()),
+                        "has_assigns": !tr.assigns.is_empty(),
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "transitions": transitions,
+            })
+        })
+        .collect();
+
+    // Build type map for assign type checking (variable name → SceType)
+    let type_map: std::collections::HashMap<&str, &SceType> = m
+        .inputs
+        .iter()
+        .chain(m.internals.iter())
+        .map(|f| (f.id.as_str(), &f.sce_type))
+        .collect();
+
+    // States that have transitions with assigns
+    let states_with_assigns: Vec<serde_json::Value> = m
+        .states
+        .iter()
+        .filter(|s| s.transitions.iter().any(|tr| !tr.assigns.is_empty()))
+        .map(|s| {
+            let assign_transitions: Vec<serde_json::Value> = s
+                .transitions
+                .iter()
+                .enumerate()
+                .filter(|(_, tr)| !tr.assigns.is_empty())
+                .map(|(idx, tr)| {
+                    let assigns: Vec<serde_json::Value> = tr
+                        .assigns
+                        .iter()
+                        .map(|a| {
+                            let transpiled = transpile_l2_expr(&a.expr, ExprTarget::Cpp, &assign_rename_map);
+                            // Type-aware wrapping: if target is bytes and source is string-like,
+                            // generate explicit conversion
+                            let wrapped = match type_map.get(a.location.as_str()) {
+                                Some(SceType::Bytes) if a.expr.trim() == "_event.data" => {
+                                    // string → vector<uint8_t> conversion (exact _event.data match only)
+                                    format!("std::vector<uint8_t>({transpiled}.begin(), {transpiled}.end())")
+                                }
+                                _ => transpiled,
+                            };
+                            serde_json::json!({
+                                "location": a.location,
+                                "expr": wrapped,
+                            })
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "index": idx,
+                        "assigns": assigns,
+                    })
+                })
+                .collect();
+            serde_json::json!({
+                "name": filters::to_pascal_case(s.id.clone()),
+                "assign_transitions": assign_transitions,
+            })
+        })
+        .collect();
+
+    // Collect raw sce:payload expressions for header dependency comment (CR#6)
+    let payload_exprs: Vec<String> = m
+        .states
+        .iter()
+        .flat_map(|s| s.on_entry_sends.iter())
+        .filter_map(|send| send.payload.clone())
+        .collect();
+    let has_external_deps = !payload_exprs.is_empty();
+
+    let tmpl = env
+        .get_template("procedure_l2.h.jinja2")
+        .map_err(|e| format!("Template load error: {e}"))?;
+
+    let ctx = minijinja::context! {
+        guard => guard,
+        namespace => &pascal,
+        policy_name => policy_name,
+        class_name => &pascal,
+        pascal_name => &pascal,
+        state_enum => minijinja::Value::from_serialize(&state_enum),
+        event_enum => minijinja::Value::from_serialize(&event_enum),
+        input_fields => minijinja::Value::from_serialize(&input_fields),
+        internal_fields => minijinja::Value::from_serialize(&internal_fields),
+        initial_state => initial_state,
+        final_states => minijinja::Value::from_serialize(&final_states),
+        states_with_entry => minijinja::Value::from_serialize(&states_with_entry),
+        final_states_with_donedata => minijinja::Value::from_serialize(&final_states_with_donedata),
+        non_final_states => minijinja::Value::from_serialize(&non_final_states),
+        states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
+        has_external_deps => has_external_deps,
+        payload_exprs => minijinja::Value::from_serialize(&payload_exprs),
+    };
+
+    tmpl.render(ctx).map_err(generator::render_error)
+}
+
+/// Build a rename map from datamodel variable names to policy member names.
+/// `retryCount` → `retryCount_`. Variables not in the map (e.g., `_event`) are left as-is.
+fn build_rename_map<'a>(var_names: &'a [&'a str]) -> std::collections::HashMap<&'a str, String> {
+    var_names
+        .iter()
+        .map(|name| (*name, format!("{}_", name)))
+        .collect()
+}
+
+/// Transpile a Level 2 procedure expression with a pre-built rename map.
+/// On failure, emits a C++ comment with the error for compile-time visibility.
+fn transpile_l2_expr(raw: &str, target: ExprTarget, renames: &std::collections::HashMap<&str, &str>) -> String {
+    match expr::transpile_with_renames(raw, target, renames) {
+        Ok(result) => result,
+        Err(e) => format!("/* SCE_TRANSPILE_ERROR: {} */ {}", e, raw),
+    }
+}
+
 // ── Procedure: Kotlin ───────────────────────────────────────
 
 fn render_procedure_kotlin(
@@ -3282,6 +3618,7 @@ fn render_inline_codec_member(
 fn to_upper_snake(s: &str) -> String {
     filters::to_snake_case(s.to_string()).to_uppercase()
 }
+
 
 /// Convert all-uppercase identifiers to PascalCase for Rust enum variants.
 /// "STOP" → "Stop", "RUNNING" → "Running", "ENGINE_START" → "EngineStart".

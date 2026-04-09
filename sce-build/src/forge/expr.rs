@@ -45,6 +45,87 @@ pub fn transpile(expr: &str, target: ExprTarget) -> Result<String, String> {
     emit(&ast, target)
 }
 
+/// Transpile with identifier renaming applied at AST level.
+///
+/// Renames are applied to `Ident` nodes only — string literals, member property
+/// names, and function names are left unchanged. This is the correct place to
+/// map SCXML datamodel variable names to target-language member names
+/// (e.g., `retryCount` → `retryCount_` for C++ policy struct members).
+pub fn transpile_with_renames(
+    expr: &str,
+    target: ExprTarget,
+    renames: &std::collections::HashMap<&str, &str>,
+) -> Result<String, String> {
+    let expr = expr.trim();
+    if expr.is_empty() {
+        return Err("Empty expression".to_string());
+    }
+
+    let tokens = tokenize(expr)?;
+    let mut ast = Parser::new(&tokens).parse_expression()?;
+    rename_identifiers(&mut ast, renames);
+    emit(&ast, target)
+}
+
+/// Recursively rename identifiers in the AST.
+///
+/// Handles two cases:
+/// 1. Bare `Ident` nodes: renamed via the `renames` map (e.g., `retryCount` → `retryCount_`)
+/// 2. `Member{Ident(x), prop}` patterns: if the full `x.prop` path is in `renames`,
+///    the entire Member node is collapsed to a single `Ident` (e.g., `_event.data` → `pendingEventData_`)
+///
+/// Property names in Member access are NOT renamed — they represent struct fields.
+/// Function call names (Call.callee) ARE subject to renaming if they match a key;
+/// in practice this won't collide because datamodel variable names and function names
+/// occupy different identifier spaces in SCXML.
+fn rename_identifiers(ast: &mut Expr, renames: &std::collections::HashMap<&str, &str>) {
+    match ast {
+        Expr::Ident(name) => {
+            if let Some(renamed) = renames.get(name.as_str()) {
+                *name = renamed.to_string();
+            }
+        }
+        Expr::Binary { left, right, .. } => {
+            rename_identifiers(left, renames);
+            rename_identifiers(right, renames);
+        }
+        Expr::Unary { operand, .. } => {
+            rename_identifiers(operand, renames);
+        }
+        Expr::Conditional { condition, consequent, alternate } => {
+            rename_identifiers(condition, renames);
+            rename_identifiers(consequent, renames);
+            rename_identifiers(alternate, renames);
+        }
+        Expr::Member { object, property } => {
+            // Check if the full "object.property" path has a rename entry
+            // (e.g., "_event.data" → "pendingEventData_"). If so, collapse
+            // the entire Member node to a single Ident.
+            if let Expr::Ident(obj_name) = object.as_ref() {
+                let full_path = format!("{}.{}", obj_name, property);
+                if let Some(renamed) = renames.get(full_path.as_str()) {
+                    *ast = Expr::Ident(renamed.to_string());
+                    return;
+                }
+            }
+            // Otherwise, rename the object only (not the property)
+            rename_identifiers(object, renames);
+        }
+        Expr::Index { object, index } => {
+            rename_identifiers(object, renames);
+            rename_identifiers(index, renames);
+        }
+        Expr::Call { callee, args } => {
+            rename_identifiers(callee, renames);
+            for arg in args {
+                rename_identifiers(arg, renames);
+            }
+        }
+        // Literals have no identifiers to rename
+        Expr::NumberLit(_) | Expr::StringLit { .. } | Expr::BoolLit(_) | Expr::NullLit => {}
+    }
+}
+
 /// Replace string literal contents with spaces (used by forge generator).
 pub fn strip_string_literals(expr: &str) -> String {
     static RE_STR: LazyLock<regex::Regex> = LazyLock::new(|| {

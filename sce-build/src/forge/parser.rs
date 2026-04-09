@@ -417,19 +417,27 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
         .ok_or("Procedure kind requires 'initial' attribute on <scxml>")?
         .to_string();
 
-    // Parse input fields from <datamodel>
+    // Parse input and internal fields from <datamodel>
     let mut inputs = Vec::new();
+    let mut internals = Vec::new();
     if let Some(datamodel) = find_child(root, "datamodel") {
         for data in data_children(&datamodel) {
             let field = parse_forge_field(&data)?;
             match field.direction {
                 Direction::In => inputs.push(field),
-                Direction::Out | Direction::Internal => {
-                    // Output/internal fields are not used as execute() parameters
+                Direction::Internal => internals.push(field),
+                Direction::Out => {
+                    // Output fields are not used as execute() parameters
                 }
             }
         }
     }
+
+    // Track Level 2 feature usage for auto-detection
+    let mut has_events = false;
+    let mut has_sends = false;
+    let mut has_assigns = false;
+    let mut has_done_data = false;
 
     // Parse <state> and <final> elements
     let mut states = Vec::new();
@@ -454,13 +462,42 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
         let transitions = if is_final {
             Vec::new()
         } else {
-            parse_procedure_transitions(&child)?
+            let trs = parse_procedure_transitions(&child)?;
+            // Detect Level 2 features in transitions
+            for tr in &trs {
+                if tr.event.is_some() {
+                    has_events = true;
+                }
+                if !tr.assigns.is_empty() {
+                    has_assigns = true;
+                }
+            }
+            trs
+        };
+
+        // Parse <onentry> → <send> actions (Level 2)
+        let on_entry_sends = parse_procedure_onentry(&child)?;
+        if !on_entry_sends.is_empty() {
+            has_sends = true;
+        }
+
+        // Parse <donedata> on <final> elements (Level 2)
+        let done_params = if is_final {
+            let dp = parse_procedure_donedata(&child)?;
+            if !dp.is_empty() {
+                has_done_data = true;
+            }
+            dp
+        } else {
+            Vec::new()
         };
 
         states.push(ProcedureState {
             id,
             is_final,
             transitions,
+            on_entry_sends,
+            done_params,
         });
     }
 
@@ -505,15 +542,26 @@ fn parse_procedure(root: &roxmltree::Node, name: &str) -> Result<ProcedureModel,
         }
     }
 
+    // Auto-detect Level 2: event-driven if any L2 feature is present.
+    // Note: `!internals.is_empty()` is intentional — Level 1 procedures are stateless
+    // (parameters forwarded via variadic templates, no member variables). Internal fields
+    // require a policy struct with member storage, which is the Level 2 codegen path.
+    let is_event_driven =
+        has_events || has_sends || has_assigns || has_done_data || !internals.is_empty();
+
     Ok(ProcedureModel {
         name: name.to_string(),
         inputs,
+        internals,
         initial,
         states,
+        is_event_driven,
     })
 }
 
 /// Parse <transition> children of a procedure state.
+/// Level 1: target + cond only.
+/// Level 2: + event + <assign> children.
 fn parse_procedure_transitions(state: &roxmltree::Node) -> Result<Vec<ProcedureTransition>, String> {
     let mut transitions = Vec::new();
 
@@ -533,11 +581,92 @@ fn parse_procedure_transitions(state: &roxmltree::Node) -> Result<Vec<ProcedureT
             .to_string();
 
         let cond = child.attribute("cond").map(|s| s.to_string());
+        let event = child.attribute("event").map(|s| s.to_string());
 
-        transitions.push(ProcedureTransition { target, cond });
+        // Parse <assign> children within the transition (Level 2)
+        let assigns = parse_procedure_assigns(&child)?;
+
+        transitions.push(ProcedureTransition {
+            target,
+            cond,
+            event,
+            assigns,
+        });
     }
 
     Ok(transitions)
+}
+
+/// Parse <assign> children within a <transition> element.
+fn parse_procedure_assigns(transition: &roxmltree::Node) -> Result<Vec<ProcedureAssign>, String> {
+    let mut assigns = Vec::new();
+    for child in transition.children().filter(|n| n.is_element()) {
+        if child.tag_name().name() != "assign" {
+            continue;
+        }
+        let location = child
+            .attribute("location")
+            .ok_or("<assign> must have a 'location' attribute")?
+            .to_string();
+        let expr = child
+            .attribute("expr")
+            .ok_or("<assign> must have an 'expr' attribute")?
+            .to_string();
+        assigns.push(ProcedureAssign { location, expr });
+    }
+    Ok(assigns)
+}
+
+/// Parse <onentry> → <send> actions within a procedure state.
+fn parse_procedure_onentry(state: &roxmltree::Node) -> Result<Vec<ProcedureSendAction>, String> {
+    let mut sends = Vec::new();
+    for onentry in state.children().filter(|n| n.is_element() && n.tag_name().name() == "onentry") {
+        for child in onentry.children().filter(|n| n.is_element()) {
+            if child.tag_name().name() != "send" {
+                continue;
+            }
+            let service = sce_attr(&child, "service")
+                .ok_or("<send> in procedure <onentry> must have 'sce:service' attribute")?;
+            let subfunc = sce_attr(&child, "subfunc");
+            let addr = sce_attr(&child, "addr");
+            let payload = sce_attr(&child, "payload");
+            sends.push(ProcedureSendAction {
+                service,
+                subfunc,
+                addr,
+                payload,
+            });
+        }
+    }
+    Ok(sends)
+}
+
+/// Parse <donedata> → <param> children within a <final> element.
+fn parse_procedure_donedata(final_elem: &roxmltree::Node) -> Result<Vec<ProcedureDoneParam>, String> {
+    let mut params = Vec::new();
+    for donedata in final_elem
+        .children()
+        .filter(|n| n.is_element() && n.tag_name().name() == "donedata")
+    {
+        for child in donedata.children().filter(|n| n.is_element()) {
+            if child.tag_name().name() != "param" {
+                continue;
+            }
+            let param_name = child
+                .attribute("name")
+                .ok_or("<param> in <donedata> must have a 'name' attribute")?
+                .to_string();
+            let expr = child
+                .attribute("expr")
+                .ok_or("<param> in <donedata> must have an 'expr' attribute")?
+                .to_string();
+            params.push(ProcedureDoneParam {
+                name: param_name,
+                expr,
+            });
+        }
+    }
+    Ok(params)
 }
 
 fn parse_range_rule(node: &roxmltree::Node) -> Result<RangeRule, String> {

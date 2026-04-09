@@ -307,9 +307,51 @@ pub struct RateOfChangeRule {
 
 // ── Procedure kind ────────────────────────────────────────────
 
+// ── Level 2 types (event-driven procedure) ───────────────────
+
+/// A `<send>` action within `<onentry>` of a procedure state.
+/// Dispatches a service request through the procedure's service handler.
+/// W3C SCXML 6.2 + SCE extensions (sce:service, sce:subfunc, sce:addr, sce:payload).
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcedureSendAction {
+    /// Service name (sce:service attribute). Required.
+    pub service: String,
+    /// Sub-function code (sce:subfunc attribute). Optional.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subfunc: Option<String>,
+    /// Address expression — typically a variable name (sce:addr attribute). Optional.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub addr: Option<String>,
+    /// Payload expression (sce:payload attribute). Optional.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload: Option<String>,
+}
+
+/// An `<assign>` action within a `<transition>` body.
+/// Mutates internal state during transition execution.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcedureAssign {
+    /// Target variable name (location attribute).
+    pub location: String,
+    /// Value expression (expr attribute).
+    pub expr: String,
+}
+
+/// A `<param>` within `<donedata>` on a `<final>` state.
+/// Provides result data when the procedure completes.
+#[derive(Debug, Clone, Serialize)]
+pub struct ProcedureDoneParam {
+    /// Parameter name.
+    pub name: String,
+    /// Value expression.
+    pub expr: String,
+}
+
+// ── Shared types (Level 1 + Level 2) ─────────────────────────
+
 /// A single transition within a procedure state.
-/// Transitions are evaluated in document order; the first whose guard is satisfied
-/// (or the first unconditional one) is taken.
+/// Level 1: guard-only (cond + target).
+/// Level 2: event-driven (event + cond + target + assigns).
 #[derive(Debug, Clone, Serialize)]
 pub struct ProcedureTransition {
     /// Target state id.
@@ -317,6 +359,12 @@ pub struct ProcedureTransition {
     /// Optional ECMAScript guard expression. `None` = unconditional (else branch).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cond: Option<String>,
+    /// Event trigger (Level 2). `None` = eventless transition (guard-only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    /// Assign actions executed during transition (Level 2). Empty for Level 1.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub assigns: Vec<ProcedureAssign>,
 }
 
 /// A state within a procedure (either regular or final).
@@ -327,19 +375,33 @@ pub struct ProcedureState {
     pub is_final: bool,
     /// Ordered transitions (evaluated top-to-bottom). Empty for final states.
     pub transitions: Vec<ProcedureTransition>,
+    /// Send actions in `<onentry>` (Level 2). Empty for Level 1.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub on_entry_sends: Vec<ProcedureSendAction>,
+    /// Done data parameters (Level 2, final states only). Empty for Level 1.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub done_params: Vec<ProcedureDoneParam>,
 }
 
 /// Procedure: sequential branching logic with states and guarded transitions.
-/// Has internal state (current state index). Generates a class with an `execute()`
-/// method that runs the procedure to completion and returns the final state reached.
+/// Level 1 (guard-only): CRTP base + switch/case, stateless `execute()`.
+/// Level 2 (event-driven): StaticExecutionEngine<Policy> + `runToCompletion()`.
 #[derive(Debug, Clone, Serialize)]
 pub struct ProcedureModel {
     pub name: String,
+    /// Input parameters (sce:direction="in").
     pub inputs: Vec<ForgeField>,
+    /// Internal state variables (sce:direction="internal"). Level 2 only.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub internals: Vec<ForgeField>,
     /// Id of the initial state (from `initial` attribute on `<scxml>`).
     pub initial: String,
     /// All states in document order (regular + final).
     pub states: Vec<ProcedureState>,
+    /// Whether this procedure uses event-driven features (Level 2).
+    /// Auto-detected: true if any transition has `event`, any state has `<onentry>` sends,
+    /// any transition has `<assign>`, or any final has `<donedata>`.
+    pub is_event_driven: bool,
 }
 
 // ── Codec kind ─────────────────────────────────────────────────

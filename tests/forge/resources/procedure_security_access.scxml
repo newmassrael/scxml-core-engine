@@ -1,0 +1,50 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="sendTesterPresent" version="1.0">
+  <datamodel>
+    <data id="ecuAddr" sce:type="uint32" sce:direction="in"/>
+    <data id="seed" sce:type="bytes" sce:direction="internal"/>
+    <data id="maxRetries" expr="3" sce:type="int32" sce:direction="internal"/>
+    <data id="retryCount" expr="0" sce:type="int32" sce:direction="internal"/>
+  </datamodel>
+
+  <state id="sendTesterPresent">
+    <onentry>
+      <send sce:service="TesterPresent" sce:addr="ecuAddr"/>
+    </onentry>
+    <transition event="ok" target="requestSeed"/>
+    <transition event="fail" target="error"/>
+  </state>
+
+  <state id="requestSeed">
+    <onentry>
+      <send sce:service="SecurityAccess" sce:subfunc="0x01"/>
+    </onentry>
+    <transition event="ok" target="sendKey">
+      <assign location="seed" expr="_event.data"/>
+    </transition>
+    <transition event="fail" target="retry"/>
+  </state>
+
+  <state id="sendKey">
+    <onentry>
+      <send sce:service="SecurityAccess" sce:subfunc="0x02" sce:payload="computeKey(seed)"/>
+    </onentry>
+    <transition event="ok" target="done"/>
+    <transition event="fail" target="retry"/>
+  </state>
+
+  <state id="retry">
+    <transition cond="retryCount &lt; maxRetries" target="requestSeed">
+      <assign location="retryCount" expr="retryCount + 1"/>
+    </transition>
+    <transition cond="retryCount &gt;= maxRetries" target="error"/>
+  </state>
+
+  <final id="done">
+    <donedata><param name="result" expr="'success'"/></donedata>
+  </final>
+  <final id="error">
+    <donedata><param name="result" expr="'failure'"/></donedata>
+  </final>
+</scxml>

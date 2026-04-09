@@ -623,6 +623,13 @@ fn forge_procedure_diamond() {
     assert_standalone_forge("procedure_diamond", "procedure_diamond.h");
 }
 
+// ── Procedure Level 2 conformance (C++, event-driven) ───────
+
+#[test]
+fn forge_procedure_security_access() {
+    assert_standalone_forge("procedure_security_access", "procedure_security_access.h");
+}
+
 // ── Procedure conformance (Kotlin) ──────────────────────────
 
 #[test]
