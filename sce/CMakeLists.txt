@@ -104,26 +104,13 @@ target_compile_features(sce_core INTERFACE cxx_std_17)
 # Contains: Logger, UniqueIdGenerator, ScriptResultUtils, EventDataHelper, etc.
 # These are engine-agnostic compiled utilities needed by AOT generated code.
 # Pure static AOT consumers link only sce_base (no QuickJS/Lua).
+#
+# Source list: sce_base_sources.cmake (SSOT — shared with embed package)
+include(${CMAKE_CURRENT_SOURCE_DIR}/sce_base_sources.cmake)
+
 add_library(sce_base
-    # Common utilities (engine-agnostic)
-    src/common/EventDataHelper.cpp
-    src/common/GuardUtils.cpp
-    src/common/Logger.cpp
-    src/common/UniqueIdGenerator.cpp
-
-    # Logger backends (conditional based on SCE_USE_SPDLOG)
-    src/backends/DefaultBackend.cpp
-    $<$<BOOL:${SCE_USE_SPDLOG}>:src/backends/SpdlogBackend.cpp>
-
-    # Engine-agnostic scripting utilities (work with ScriptResult value types only)
-    src/scripting/ScriptResultUtils.cpp
-    src/scripting/XMLDOMWrapper.cpp
-    src/scripting/SessionRegistry.cpp
-    src/scripting/EcmaScriptToLuaTransformer.cpp
-
-    # Runtime utilities (engine-agnostic)
-    src/runtime/TypeRegistry.cpp
-    src/runtime/JsonUtils.cpp
+    ${SCE_BASE_SOURCES}
+    $<$<BOOL:${SCE_USE_SPDLOG}>:${SCE_BASE_SPDLOG_SOURCES}>
 )
 
 target_include_directories(sce_base

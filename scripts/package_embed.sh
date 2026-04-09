@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+#
+# package_embed.sh — Generate a self-contained C++ embed package (sce_core + sce_base)
+#
+# Produces an embed/ directory that consumer projects can vendor directly.
+# No Rust toolchain, no Git, no network required to build from the embed package.
+#
+# Usage:
+#   ./scripts/package_embed.sh [-o OUTPUT_DIR] [--with-spdlog]
+#   OUTPUT_DIR defaults to ./embed/
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+OUTPUT_DIR="${SCE_ROOT}/embed"
+WITH_SPDLOG=false
+
+# Argument parsing
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -o|--output)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        --with-spdlog)
+            WITH_SPDLOG=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [-o OUTPUT_DIR] [--with-spdlog]"
+            echo "  -o DIR         Output directory (default: ./embed/)"
+            echo "  --with-spdlog  Include bundled spdlog headers"
+            exit 0
+            ;;
+        *)
+            # Backward compat: treat positional arg as output dir
+            OUTPUT_DIR="$1"
+            shift
+            ;;
+    esac
+done
+
+echo "SCE Embed Packager"
+echo "  Source:  ${SCE_ROOT}"
+echo "  Output:  ${OUTPUT_DIR}"
+
+# Clean previous output
+rm -rf "${OUTPUT_DIR}"
+
+# ============================================================================
+# 1. Read SSOT: sce_base_sources.cmake defines all file lists
+# ============================================================================
+SOURCES_CMAKE="${SCE_ROOT}/sce/sce_base_sources.cmake"
+if [ ! -f "${SOURCES_CMAKE}" ]; then
+    echo "ERROR: ${SOURCES_CMAKE} not found" >&2
+    exit 1
+fi
+
+# Parse SCE_BASE_INCLUDE_DIRS from cmake file
+INCLUDE_DIRS=$(grep -oP '(?<=^    )\w+' "${SOURCES_CMAKE}" | tail -n +1)
+# More robust: extract from the set(SCE_BASE_INCLUDE_DIRS ...) block
+INCLUDE_DIRS=$(sed -n '/set(SCE_BASE_INCLUDE_DIRS/,/)/{ s/^[[:space:]]*//; /^set\|^)/d; p; }' "${SOURCES_CMAKE}")
+
+# Parse all .cpp files from SCE_BASE_SOURCES and SCE_BASE_SPDLOG_SOURCES
+SOURCE_FILES=$(grep '\.cpp' "${SOURCES_CMAKE}" | sed 's/^[[:space:]]*//' | grep -v '^#')
+
+# ============================================================================
+# 2. Headers — directories listed in SCE_BASE_INCLUDE_DIRS (SSOT)
+# ============================================================================
+echo "Copying headers..."
+mkdir -p "${OUTPUT_DIR}/include"
+
+# Root headers (types.h, SCXMLTypes.h, GuardUtils.h, etc.)
+find "${SCE_ROOT}/sce/include" -maxdepth 1 -name "*.h" -exec cp {} "${OUTPUT_DIR}/include/" \;
+
+# Required subdirectories from SSOT
+for dir in ${INCLUDE_DIRS}; do
+    if [ -d "${SCE_ROOT}/sce/include/${dir}" ]; then
+        cp -r "${SCE_ROOT}/sce/include/${dir}" "${OUTPUT_DIR}/include/"
+    else
+        echo "WARNING: include/${dir}/ not found" >&2
+    fi
+done
+
+# ============================================================================
+# 3. Sources — files listed in SCE_BASE_SOURCES + SCE_BASE_SPDLOG_SOURCES (SSOT)
+# ============================================================================
+echo "Copying sce_base sources..."
+
+for src in ${SOURCE_FILES}; do
+    dir=$(dirname "${src}")
+    mkdir -p "${OUTPUT_DIR}/${dir}"
+    cp "${SCE_ROOT}/sce/${src}" "${OUTPUT_DIR}/${dir}/"
+done
+
+# sce_base_sources.cmake itself (needed by embed CMakeLists.txt)
+cp "${SOURCES_CMAKE}" "${OUTPUT_DIR}/"
+
+# ============================================================================
+# 3. Third-party dependencies (header-only)
+# ============================================================================
+echo "Copying third-party headers..."
+
+# nlohmann/json (single-include)
+mkdir -p "${OUTPUT_DIR}/third_party/nlohmann_json/include/nlohmann"
+cp "${SCE_ROOT}/third_party/nlohmann_json/include/nlohmann/json.hpp" \
+   "${OUTPUT_DIR}/third_party/nlohmann_json/include/nlohmann/"
+
+# pugixml (headers only — pugixml.cpp is for sce_runtime, not sce_base)
+mkdir -p "${OUTPUT_DIR}/third_party/pugixml/src"
+cp "${SCE_ROOT}/third_party/pugixml/src/pugixml.hpp"    "${OUTPUT_DIR}/third_party/pugixml/src/"
+cp "${SCE_ROOT}/third_party/pugixml/src/pugiconfig.hpp" "${OUTPUT_DIR}/third_party/pugixml/src/"
+
+# spdlog (header-only, optional — only needed if consumer sets SCE_USE_SPDLOG=ON)
+if ${WITH_SPDLOG} && [ -d "${SCE_ROOT}/third_party/spdlog/include" ]; then
+    echo "Including bundled spdlog..."
+    mkdir -p "${OUTPUT_DIR}/third_party/spdlog"
+    cp -r "${SCE_ROOT}/third_party/spdlog/include" "${OUTPUT_DIR}/third_party/spdlog/"
+fi
+
+# ============================================================================
+# 4. CMakeLists.txt for consumer integration
+# ============================================================================
+echo "Generating CMakeLists.txt..."
+cp "${SCE_ROOT}/scripts/embed_CMakeLists.txt" "${OUTPUT_DIR}/CMakeLists.txt"
+
+# SCECodegen.cmake — provides sce_add_state_machine() for build-time codegen
+cp "${SCE_ROOT}/cmake/SCECodegen.cmake" "${OUTPUT_DIR}/"
+
+# ============================================================================
+# 5. VERSION file
+# ============================================================================
+if command -v git &>/dev/null && [ -d "${SCE_ROOT}/.git" ]; then
+    VERSION="$(cd "${SCE_ROOT}" && git describe --tags --always 2>/dev/null || echo "unknown")"
+else
+    VERSION="unknown"
+fi
+echo "${VERSION}" > "${OUTPUT_DIR}/VERSION"
+
+# ============================================================================
+# Summary
+# ============================================================================
+HEADER_COUNT=$(find "${OUTPUT_DIR}/include" -name "*.h" | wc -l)
+SOURCE_COUNT=$(find "${OUTPUT_DIR}/src" -name "*.cpp" | wc -l)
+echo ""
+echo "Embed package generated:"
+echo "  Headers:  ${HEADER_COUNT}"
+echo "  Sources:  ${SOURCE_COUNT}"
+echo "  Version:  ${VERSION}"
+echo "  Output:   ${OUTPUT_DIR}/"
+echo ""
+echo "Consumer integration:"
+echo "  add_subdirectory(third_party/sce)"
+echo "  target_link_libraries(my_app PRIVATE sce_base)"
