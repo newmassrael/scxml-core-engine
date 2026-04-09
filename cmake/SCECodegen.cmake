@@ -97,6 +97,9 @@ function(sce_add_state_machine)
     # Create output directory
     file(MAKE_DIRECTORY "${SCE_OUTPUT_DIR}")
 
+    # DEPFILE path for incremental build tracking (must be set before use in command)
+    set(_SCE_DEPFILE "${GENERATED_OUTPUT}.d")
+
     # Build codegen command with optional template dir (installed package scenario)
     set(_SCE_CODEGEN_CMD "${SCE_CODEGEN}" generate
         "${SCXML_ABS_PATH}" -o "${SCE_OUTPUT_DIR}"
@@ -108,7 +111,6 @@ function(sce_add_state_machine)
 
     # Add custom command to generate state machine code
     # Uses DEPFILE for fine-grained template dependency tracking
-    set(_SCE_DEPFILE "${GENERATED_OUTPUT}.d")
     add_custom_command(
         OUTPUT "${GENERATED_OUTPUT}"
         COMMAND ${_SCE_CODEGEN_CMD}

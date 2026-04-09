@@ -44,6 +44,25 @@ jobs:
           libfmt-dev \
           libboost-dev
 
+    - name: Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Cache Cargo (codegen)
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-codegen-${{ hashFiles('sce-build/Cargo.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-codegen-
+
+    - name: Build sce-codegen
+      run: cargo build --bin sce-codegen --features cli --release -p sce-build
+
     - name: Setup Emscripten (emsdk)
       run: |
         git clone https://github.com/emscripten-core/emsdk.git
