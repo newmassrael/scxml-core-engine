@@ -83,6 +83,11 @@ enum Commands {
         /// Path to metadata.txt
         metadata_file: String,
     },
+    /// Build forge dependency manifest (JSON)
+    Manifest {
+        /// Directory containing forge SCXML files
+        dir: String,
+    },
 }
 
 fn main() {
@@ -105,6 +110,7 @@ fn main() {
         } => cmd_generate_w3c(&language, registry.as_deref(), resources.as_deref(), test.as_deref(), clean, list),
         Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
+        Commands::Manifest { dir } => cmd_manifest(&dir),
     }
 }
 
@@ -129,7 +135,10 @@ fn cmd_generate(scxml_path: &str, language: &str, output_dir: &str, as_child: bo
             .and_then(|s| s.to_str())
             .unwrap_or("unknown");
 
-        match sce_build::compile_forge_from_string(&scxml_content, input_stem, lang) {
+        let base_dir = Path::new(scxml_path)
+            .parent()
+            .unwrap_or_else(|| Path::new("."));
+        match sce_build::compile_forge_with_imports_validated(&scxml_content, input_stem, lang, base_dir) {
             Ok(output) => {
                 let out = Path::new(output_dir);
                 for (filename, code) in &output.files {
@@ -1626,6 +1635,28 @@ fn cmd_read_metadata(metadata_file: &str) {
 
     eprintln!("ERROR: No description field found in {metadata_file}");
     std::process::exit(1);
+}
+
+// ── Subcommand: manifest ───────────────────────────────────────
+
+fn cmd_manifest(dir: &str) {
+    let dir_path = Path::new(dir);
+    if !dir_path.is_dir() {
+        eprintln!("ERROR: Not a directory: {dir}");
+        std::process::exit(1);
+    }
+
+    let manifest = sce_build::build_forge_manifest(dir_path).unwrap_or_else(|e| {
+        eprintln!("ERROR: {e}");
+        std::process::exit(1);
+    });
+
+    let json = serde_json::to_string_pretty(&manifest).unwrap_or_else(|e| {
+        eprintln!("ERROR: JSON serialization failed: {e}");
+        std::process::exit(1);
+    });
+
+    println!("{json}");
 }
 
 // ── Utility functions ───────────────────────────────────────────

@@ -1,5 +1,10 @@
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="transform")
 # Do not edit — regenerate from the source SCXML file.
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
 {% for func in functions %}
 
 

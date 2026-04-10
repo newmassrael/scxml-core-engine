@@ -12,6 +12,147 @@ use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
 use std::sync::LazyLock;
 
+// ── Cross-file import resolution ──────────────────────────────────
+
+/// Template-ready import context for a single `<sce:import>`.
+/// Per-language data is computed here; templates consume it directly.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ImportContext {
+    /// Alias from `<sce:import as="...">`.
+    pub alias: String,
+    /// Kind name (e.g., "codec", "transform").
+    pub kind: String,
+    /// PascalCase type name for the imported struct/class (stateful kinds).
+    pub type_name: String,
+    /// Language-specific include/import statement (full line).
+    pub include_stmt: String,
+    /// Whether this kind is stateful (needs member variable).
+    pub is_stateful: bool,
+    /// Language-specific member variable name (e.g., "frame_" for C++).
+    pub member_name: String,
+    /// Language-specific member type string (may differ from type_name for C++).
+    pub member_type: String,
+    /// Namespace/package for the imported kind (language-specific).
+    pub namespace: String,
+    /// For stateless kinds: the qualified function call expression that replaces
+    /// the alias in expressions. E.g., for C++ transform import:
+    /// `"SCE::Generated::TransformTemperature::computeTemperature"`.
+    /// Empty for stateful kinds (use member access) or when not yet resolved.
+    pub qualified_call: String,
+}
+
+/// Resolve a list of ForgeImport into template-ready ImportContext.
+pub fn resolve_imports(
+    imports: &[ForgeImport],
+    lang: &crate::generator::Language,
+) -> Vec<ImportContext> {
+    imports.iter().map(|imp| resolve_single_import(imp, lang)).collect()
+}
+
+/// Build template-ready import data from resolved import contexts.
+/// Returns `(has_imports, all_imports_serialized, stateful_imports_serialized)`.
+///
+/// - `all_imports`: every import (for include/import statements in templates)
+/// - `stateful_imports`: only struct-based kinds (for member variable declarations)
+fn build_template_imports(
+    imports: &[ImportContext],
+) -> (bool, minijinja::Value, minijinja::Value) {
+    let has_imports = !imports.is_empty();
+    let all = minijinja::Value::from_serialize(imports);
+    let stateful: Vec<&ImportContext> = imports.iter().filter(|i| i.is_stateful).collect();
+    let stateful_val = minijinja::Value::from_serialize(&stateful);
+    (has_imports, all, stateful_val)
+}
+
+fn resolve_single_import(
+    imp: &ForgeImport,
+    lang: &crate::generator::Language,
+) -> ImportContext {
+    let stem = Path::new(&imp.src)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(&imp.src)
+        .to_string();
+
+    let pascal = filters::to_pascal_case(stem.clone());
+    let snake = filters::to_snake_case(stem.clone());
+    let is_stateful = imp.kind.needs_instance();
+
+    match lang {
+        crate::generator::Language::Cpp => {
+            let ns = pascal.clone();
+            let type_name = pascal.clone();
+            ImportContext {
+                alias: imp.alias.clone(),
+                kind: imp.kind.to_string(),
+                include_stmt: format!("#include \"{snake}.h\""),
+                type_name: type_name.clone(),
+                is_stateful,
+                member_name: format!("{}_", imp.alias),
+                member_type: format!("::SCE::Generated::{ns}::{type_name}"),
+                namespace: format!("SCE::Generated::{ns}"),
+                qualified_call: String::new(),
+            }
+        }
+        crate::generator::Language::Kotlin => {
+            // Kotlin: same package assumed — no import statement needed.
+            // If cross-package imports become necessary, this must generate
+            // `import com.sce.generated.{package}.{Type}` statements.
+            ImportContext {
+                alias: imp.alias.clone(),
+                kind: imp.kind.to_string(),
+                include_stmt: String::new(),
+                type_name: pascal.clone(),
+                is_stateful,
+                member_name: imp.alias.clone(),
+                member_type: pascal.clone(),
+                namespace: pascal.clone(),
+                qualified_call: String::new(),
+            }
+        }
+        crate::generator::Language::Rust => {
+            ImportContext {
+                alias: imp.alias.clone(),
+                kind: imp.kind.to_string(),
+                include_stmt: format!("use super::{snake}::{pascal};"),
+                type_name: pascal.clone(),
+                is_stateful,
+                member_name: imp.alias.clone(),
+                member_type: pascal.clone(),
+                namespace: snake.clone(),
+                qualified_call: String::new(),
+            }
+        }
+        crate::generator::Language::Go => {
+            let go_pascal = filters::to_pascal_case(imp.alias.to_string());
+            ImportContext {
+                alias: imp.alias.clone(),
+                kind: imp.kind.to_string(),
+                include_stmt: format!("\t\"{snake}\""),
+                type_name: pascal.clone(),
+                is_stateful,
+                member_name: go_pascal,
+                member_type: format!("{snake}.{pascal}"),
+                namespace: snake.clone(),
+                qualified_call: String::new(),
+            }
+        }
+        crate::generator::Language::Python => {
+            ImportContext {
+                alias: imp.alias.clone(),
+                kind: imp.kind.to_string(),
+                include_stmt: format!("from .{snake} import {pascal}"),
+                type_name: pascal.clone(),
+                is_stateful,
+                member_name: imp.alias.clone(),
+                member_type: pascal.clone(),
+                namespace: snake.clone(),
+                qualified_call: String::new(),
+            }
+        }
+    }
+}
+
 // ── Cross-language type mapping (SRP: lives in generator, not model) ──
 
 /// Map SceType to C++ type name.
@@ -222,21 +363,30 @@ fn rust_param_type(ty: &SceType) -> String {
 
 /// Generate code from a ForgeDocument for C++ using Jinja2 templates.
 pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+    generate_cpp_with_imports(doc, template_dir, &[])
+}
+
+/// Generate C++ code with cross-file import support.
+pub fn generate_cpp_with_imports(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+) -> Result<GeneratedOutput, String> {
     let forge_dir = template_dir.join("forge/cpp");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_cpp(&env, m)?,
-        ForgeDocument::Lookup(m) => render_lookup_cpp(&env, m)?,
-        ForgeDocument::Condition(m) => render_condition_cpp(&env, m)?,
-        ForgeDocument::Codec(m) => render_codec_cpp(&env, m)?,
-        ForgeDocument::Validator(m) => render_validator_cpp(&env, m)?,
+        ForgeDocument::Transform(m) => render_transform_cpp(&env, m, imports)?,
+        ForgeDocument::Lookup(m) => render_lookup_cpp(&env, m, imports)?,
+        ForgeDocument::Condition(m) => render_condition_cpp(&env, m, imports)?,
+        ForgeDocument::Codec(m) => render_codec_cpp(&env, m, imports)?,
+        ForgeDocument::Validator(m) => render_validator_cpp(&env, m, imports)?,
         ForgeDocument::Procedure(m) => {
             if m.is_event_driven {
-                render_procedure_l2_cpp(&env, m)?
+                render_procedure_l2_cpp(&env, m, imports)?
             } else {
-                render_procedure_cpp(&env, m)?
+                render_procedure_cpp(&env, m, imports)?
             }
         }
     };
@@ -252,6 +402,7 @@ pub fn generate_cpp(doc: &ForgeDocument, template_dir: &Path) -> Result<Generate
 fn render_transform_cpp(
     env: &minijinja::Environment,
     m: &TransformModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
@@ -280,10 +431,15 @@ fn render_transform_cpp(
         .get_template("transform.h.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         guard => guard,
         namespace => ns,
         functions => minijinja::Value::from_serialize(&functions),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -294,6 +450,7 @@ fn render_transform_cpp(
 fn render_lookup_cpp(
     env: &minijinja::Environment,
     m: &LookupModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
@@ -315,6 +472,8 @@ fn render_lookup_cpp(
         .get_template("lookup.h.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         guard => guard,
         namespace => ns,
@@ -325,6 +484,9 @@ fn render_lookup_cpp(
         unique_values => minijinja::Value::from_serialize(&m.unique_values()),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
         default_value => &m.default_value,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -335,6 +497,7 @@ fn render_lookup_cpp(
 fn render_condition_cpp(
     env: &minijinja::Environment,
     m: &ConditionModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
@@ -353,12 +516,17 @@ fn render_condition_cpp(
         .get_template("condition.h.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         guard => guard,
         namespace => ns,
         func_name => func_name,
         params => params,
         expr => expr_cpp,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -369,6 +537,7 @@ fn render_condition_cpp(
 fn render_codec_cpp(
     env: &minijinja::Environment,
     m: &CodecModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
@@ -393,6 +562,8 @@ fn render_codec_cpp(
         .get_template("codec.h.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         guard => guard,
         namespace => ns,
@@ -400,6 +571,9 @@ fn render_codec_cpp(
         fields => minijinja::Value::from_serialize(&fields),
         min_bytes => m.min_frame_bytes(),
         encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -626,6 +800,7 @@ fn resolve_validator(m: &ValidatorModel) -> ResolvedValidator {
 fn render_validator_cpp(
     env: &minijinja::Environment,
     m: &ValidatorModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rv = resolve_validator(m);
     let ns = filters::to_pascal_case(m.name.clone());
@@ -664,14 +839,25 @@ fn render_validator_cpp(
         }))
         .collect();
 
+    // Build import alias rename map for expressions (stateless → qualified call)
+    let import_renames: std::collections::HashMap<&str, &str> = imports
+        .iter()
+        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
+        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
+        .collect();
+
     let plausibility_expr = match &rv.plausibility {
-        Some(e) => Some(expr::transpile(e, ExprTarget::Cpp)?),
+        Some(e) if import_renames.is_empty() => Some(expr::transpile(e, ExprTarget::Cpp)?),
+        Some(e) => Some(expr::transpile_with_renames(e, ExprTarget::Cpp, &import_renames)?),
         None => None,
     };
 
     let tmpl = env
         .get_template("validator.h.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
+
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
     let ctx = minijinja::context! {
         guard => guard, namespace => ns, struct_name => struct_name,
@@ -680,6 +866,9 @@ fn render_validator_cpp(
         range_rules => minijinja::Value::from_serialize(&range_rules),
         roc_rules => minijinja::Value::from_serialize(&roc_rules),
         plausibility_expr => plausibility_expr,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -691,21 +880,30 @@ fn render_validator_cpp(
 
 /// Generate code from a ForgeDocument for Kotlin using Jinja2 templates.
 pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+    generate_kotlin_with_imports(doc, template_dir, &[])
+}
+
+/// Generate Kotlin code with cross-file import support.
+pub fn generate_kotlin_with_imports(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+) -> Result<GeneratedOutput, String> {
     let forge_dir = template_dir.join("forge/kotlin");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_kotlin(&env, m)?,
-        ForgeDocument::Lookup(m) => render_lookup_kotlin(&env, m)?,
-        ForgeDocument::Condition(m) => render_condition_kotlin(&env, m)?,
-        ForgeDocument::Codec(m) => render_codec_kotlin(&env, m)?,
-        ForgeDocument::Validator(m) => render_validator_kotlin(&env, m)?,
+        ForgeDocument::Transform(m) => render_transform_kotlin(&env, m, imports)?,
+        ForgeDocument::Lookup(m) => render_lookup_kotlin(&env, m, imports)?,
+        ForgeDocument::Condition(m) => render_condition_kotlin(&env, m, imports)?,
+        ForgeDocument::Codec(m) => render_codec_kotlin(&env, m, imports)?,
+        ForgeDocument::Validator(m) => render_validator_kotlin(&env, m, imports)?,
         ForgeDocument::Procedure(m) => {
             if m.is_event_driven {
-                render_procedure_l2_kotlin(&env, m)?
+                render_procedure_l2_kotlin(&env, m, imports)?
             } else {
-                render_procedure_kotlin(&env, m)?
+                render_procedure_kotlin(&env, m, imports)?
             }
         }
     };
@@ -721,6 +919,7 @@ pub fn generate_kotlin(doc: &ForgeDocument, template_dir: &Path) -> Result<Gener
 fn render_transform_kotlin(
     env: &minijinja::Environment,
     m: &TransformModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
 
@@ -757,9 +956,14 @@ fn render_transform_kotlin(
         .get_template("transform.kt.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         functions => minijinja::Value::from_serialize(&functions),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -770,6 +974,7 @@ fn render_transform_kotlin(
 fn render_lookup_kotlin(
     env: &minijinja::Environment,
     m: &LookupModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
     let enum_name = filters::to_pascal_case(m.output.id.clone());
@@ -796,6 +1001,8 @@ fn render_lookup_kotlin(
         .get_template("lookup.kt.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         enum_name => enum_name,
@@ -806,6 +1013,9 @@ fn render_lookup_kotlin(
         unique_values => minijinja::Value::from_serialize(&m.unique_values()),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
         default_value => &m.default_value,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -816,6 +1026,7 @@ fn render_lookup_kotlin(
 fn render_condition_kotlin(
     env: &minijinja::Environment,
     m: &ConditionModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
     let func_name = filters::to_camel_case(m.name.clone());
@@ -853,11 +1064,16 @@ fn render_condition_kotlin(
         .get_template("condition.kt.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         func_name => func_name,
         params => params,
         expr => expr_kt,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -868,6 +1084,7 @@ fn render_condition_kotlin(
 fn render_codec_kotlin(
     env: &minijinja::Environment,
     m: &CodecModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -890,12 +1107,17 @@ fn render_codec_kotlin(
         .get_template("codec.kt.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         struct_name => struct_name,
         fields => minijinja::Value::from_serialize(&fields),
         min_bytes => m.min_frame_bytes(),
         encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1057,6 +1279,7 @@ fn encode_single_field_kotlin(
 fn render_validator_kotlin(
     env: &minijinja::Environment,
     m: &ValidatorModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rv = resolve_validator(m);
     let package = filters::to_snake_case(m.name.clone());
@@ -1105,9 +1328,20 @@ fn render_validator_kotlin(
         })
         .collect();
 
+    // Build import alias rename map for expressions (stateless → qualified call)
+    let import_renames: std::collections::HashMap<&str, &str> = imports
+        .iter()
+        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
+        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
+        .collect();
+
     let plausibility_expr = match &rv.plausibility {
         Some(e) => {
-            let mut expr_kt = expr::transpile(e, ExprTarget::Kotlin)?;
+            let mut expr_kt = if import_renames.is_empty() {
+                expr::transpile(e, ExprTarget::Kotlin)?
+            } else {
+                expr::transpile_with_renames(e, ExprTarget::Kotlin, &import_renames)?
+            };
             let has_unsigned = rv.inputs.iter().any(|f| f.sce_type.is_unsigned());
             if has_unsigned && kotlin_condition_needs_conversion(&expr_kt) {
                 let conversions: Vec<(String, String)> = rv.inputs.iter()
@@ -1127,6 +1361,9 @@ fn render_validator_kotlin(
         .get_template("validator.kt.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package, struct_name => struct_name,
         params => params,
@@ -1134,6 +1371,9 @@ fn render_validator_kotlin(
         range_rules => minijinja::Value::from_serialize(&range_rules),
         roc_rules => minijinja::Value::from_serialize(&roc_rules),
         plausibility_expr => plausibility_expr,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1163,21 +1403,30 @@ fn kotlin_default_value(kt_type: &str) -> &'static str {
 
 /// Generate code from a ForgeDocument for Rust using Jinja2 templates.
 pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+    generate_rust_with_imports(doc, template_dir, &[])
+}
+
+/// Generate Rust code with cross-file import support.
+pub fn generate_rust_with_imports(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+) -> Result<GeneratedOutput, String> {
     let forge_dir = template_dir.join("forge/rust");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_rust(&env, m)?,
-        ForgeDocument::Lookup(m) => render_lookup_rust(&env, m)?,
-        ForgeDocument::Condition(m) => render_condition_rust(&env, m)?,
-        ForgeDocument::Codec(m) => render_codec_rust(&env, m)?,
-        ForgeDocument::Validator(m) => render_validator_rust(&env, m)?,
+        ForgeDocument::Transform(m) => render_transform_rust(&env, m, imports)?,
+        ForgeDocument::Lookup(m) => render_lookup_rust(&env, m, imports)?,
+        ForgeDocument::Condition(m) => render_condition_rust(&env, m, imports)?,
+        ForgeDocument::Codec(m) => render_codec_rust(&env, m, imports)?,
+        ForgeDocument::Validator(m) => render_validator_rust(&env, m, imports)?,
         ForgeDocument::Procedure(m) => {
             if m.is_event_driven {
-                render_procedure_l2_rust(&env, m)?
+                render_procedure_l2_rust(&env, m, imports)?
             } else {
-                render_procedure_rust(&env, m)?
+                render_procedure_rust(&env, m, imports)?
             }
         }
     };
@@ -1193,6 +1442,7 @@ pub fn generate_rust(doc: &ForgeDocument, template_dir: &Path) -> Result<Generat
 fn render_transform_rust(
     env: &minijinja::Environment,
     m: &TransformModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     // Build name mappings for camelCase → snake_case
     let renames: Vec<(String, String)> = m
@@ -1252,8 +1502,13 @@ fn render_transform_rust(
         .get_template("transform.rs.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         functions => minijinja::Value::from_serialize(&functions),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1264,6 +1519,7 @@ fn render_transform_rust(
 fn render_lookup_rust(
     env: &minijinja::Environment,
     m: &LookupModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
@@ -1293,6 +1549,8 @@ fn render_lookup_rust(
         .get_template("lookup.rs.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         enum_name => enum_name,
         func_name => func_name,
@@ -1301,6 +1559,9 @@ fn render_lookup_rust(
         unique_values => minijinja::Value::from_serialize(&unique_values),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
         default_value => default_value,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1311,6 +1572,7 @@ fn render_lookup_rust(
 fn render_condition_rust(
     env: &minijinja::Environment,
     m: &ConditionModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let func_name = filters::to_snake_case(m.name.clone());
 
@@ -1340,10 +1602,15 @@ fn render_condition_rust(
         .get_template("condition.rs.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         func_name => func_name,
         params => params,
         expr => expr_rs,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1354,6 +1621,7 @@ fn render_condition_rust(
 fn render_codec_rust(
     env: &minijinja::Environment,
     m: &CodecModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let struct_name = filters::to_pascal_case(m.name.clone());
 
@@ -1386,11 +1654,16 @@ fn render_codec_rust(
         .get_template("codec.rs.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         struct_name => struct_name,
         fields => minijinja::Value::from_serialize(&fields),
         min_bytes => m.min_frame_bytes(),
         encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1550,6 +1823,7 @@ fn encode_single_field_rust(
 fn render_validator_rust(
     env: &minijinja::Environment,
     m: &ValidatorModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rv = resolve_validator(m);
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -1595,9 +1869,20 @@ fn render_validator_rust(
         })
         .collect();
 
+    // Build import alias rename map for expressions (stateless → qualified call)
+    let import_renames: std::collections::HashMap<&str, &str> = imports
+        .iter()
+        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
+        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
+        .collect();
+
     let plausibility_expr = match &rv.plausibility {
         Some(e) => {
-            let mut expr_rs = expr::transpile(e, ExprTarget::Rust)?;
+            let mut expr_rs = if import_renames.is_empty() {
+                expr::transpile(e, ExprTarget::Rust)?
+            } else {
+                expr::transpile_with_renames(e, ExprTarget::Rust, &import_renames)?
+            };
             expr_rs = rust_rename_vars(&expr_rs, &renames);
             Some(expr_rs)
         }
@@ -1608,6 +1893,9 @@ fn render_validator_rust(
         .get_template("validator.rs.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         struct_name => struct_name,
         params => params,
@@ -1615,6 +1903,9 @@ fn render_validator_rust(
         range_rules => minijinja::Value::from_serialize(&range_rules),
         roc_rules => minijinja::Value::from_serialize(&roc_rules),
         plausibility_expr => plausibility_expr,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1661,21 +1952,30 @@ fn go_escape_builtin(name: &str) -> String {
 
 /// Generate code from a ForgeDocument for Go using Jinja2 templates.
 pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+    generate_go_with_imports(doc, template_dir, &[])
+}
+
+/// Generate Go code with cross-file import support.
+pub fn generate_go_with_imports(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+) -> Result<GeneratedOutput, String> {
     let forge_dir = template_dir.join("forge/go");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_go(&env, m)?,
-        ForgeDocument::Lookup(m) => render_lookup_go(&env, m)?,
-        ForgeDocument::Condition(m) => render_condition_go(&env, m)?,
-        ForgeDocument::Codec(m) => render_codec_go(&env, m)?,
-        ForgeDocument::Validator(m) => render_validator_go(&env, m)?,
+        ForgeDocument::Transform(m) => render_transform_go(&env, m, imports)?,
+        ForgeDocument::Lookup(m) => render_lookup_go(&env, m, imports)?,
+        ForgeDocument::Condition(m) => render_condition_go(&env, m, imports)?,
+        ForgeDocument::Codec(m) => render_codec_go(&env, m, imports)?,
+        ForgeDocument::Validator(m) => render_validator_go(&env, m, imports)?,
         ForgeDocument::Procedure(m) => {
             if m.is_event_driven {
-                render_procedure_l2_go(&env, m)?
+                render_procedure_l2_go(&env, m, imports)?
             } else {
-                render_procedure_go(&env, m)?
+                render_procedure_go(&env, m, imports)?
             }
         }
     };
@@ -1691,6 +1991,7 @@ pub fn generate_go(doc: &ForgeDocument, template_dir: &Path) -> Result<Generated
 fn render_transform_go(
     env: &minijinja::Environment,
     m: &TransformModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
 
@@ -1750,9 +2051,14 @@ fn render_transform_go(
         .get_template("transform.go.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         functions => minijinja::Value::from_serialize(&functions),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1763,6 +2069,7 @@ fn render_transform_go(
 fn render_lookup_go(
     env: &minijinja::Environment,
     m: &LookupModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
     let enum_name = filters::to_pascal_case(m.output.id.clone());
@@ -1784,6 +2091,8 @@ fn render_lookup_go(
         .get_template("lookup.go.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         enum_name => enum_name,
@@ -1793,6 +2102,9 @@ fn render_lookup_go(
         unique_values => minijinja::Value::from_serialize(&m.unique_values()),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
         default_value => &m.default_value,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1803,6 +2115,7 @@ fn render_lookup_go(
 fn render_condition_go(
     env: &minijinja::Environment,
     m: &ConditionModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
     let func_name = filters::to_pascal_case(m.name.clone());
@@ -1834,11 +2147,16 @@ fn render_condition_go(
         .get_template("condition.go.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         func_name => func_name,
         params => params,
         expr => expr_go,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -1849,6 +2167,7 @@ fn render_condition_go(
 fn render_codec_go(
     env: &minijinja::Environment,
     m: &CodecModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -1871,12 +2190,17 @@ fn render_codec_go(
         .get_template("codec.go.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         struct_name => struct_name,
         fields => minijinja::Value::from_serialize(&fields),
         min_bytes => m.min_frame_bytes(),
         encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -2061,6 +2385,7 @@ fn go_float_cast_needed(inputs: &[ForgeField], output_type: &SceType) -> Option<
 fn render_validator_go(
     env: &minijinja::Environment,
     m: &ValidatorModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rv = resolve_validator(m);
     let package = filters::to_snake_case(m.name.clone());
@@ -2108,9 +2433,20 @@ fn render_validator_go(
         })
         .collect();
 
+    // Build import alias rename map for expressions (stateless → qualified call)
+    let import_renames: std::collections::HashMap<&str, &str> = imports
+        .iter()
+        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
+        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
+        .collect();
+
     let plausibility_expr = match &rv.plausibility {
         Some(e) => {
-            let mut expr_go = expr::transpile(e, ExprTarget::Go)?;
+            let mut expr_go = if import_renames.is_empty() {
+                expr::transpile(e, ExprTarget::Go)?
+            } else {
+                expr::transpile_with_renames(e, ExprTarget::Go, &import_renames)?
+            };
             for (from, to) in &go_renames {
                 if from != to {
                     let re =
@@ -2127,6 +2463,9 @@ fn render_validator_go(
         .get_template("validator.go.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         struct_name => struct_name,
@@ -2135,6 +2474,9 @@ fn render_validator_go(
         range_rules => minijinja::Value::from_serialize(&range_rules),
         roc_rules => minijinja::Value::from_serialize(&roc_rules),
         plausibility_expr => plausibility_expr,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -2164,21 +2506,30 @@ fn python_type(ty: &SceType) -> &'static str {
 
 /// Generate code from a ForgeDocument for Python using Jinja2 templates.
 pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<GeneratedOutput, String> {
+    generate_python_with_imports(doc, template_dir, &[])
+}
+
+/// Generate Python code with cross-file import support.
+pub fn generate_python_with_imports(
+    doc: &ForgeDocument,
+    template_dir: &Path,
+    imports: &[ImportContext],
+) -> Result<GeneratedOutput, String> {
     let forge_dir = template_dir.join("forge/python");
     let mut env = generator::new_env();
     generator::load_templates(&mut env, &forge_dir)?;
 
     let code = match doc {
-        ForgeDocument::Transform(m) => render_transform_python(&env, m)?,
-        ForgeDocument::Lookup(m) => render_lookup_python(&env, m)?,
-        ForgeDocument::Condition(m) => render_condition_python(&env, m)?,
-        ForgeDocument::Codec(m) => render_codec_python(&env, m)?,
-        ForgeDocument::Validator(m) => render_validator_python(&env, m)?,
+        ForgeDocument::Transform(m) => render_transform_python(&env, m, imports)?,
+        ForgeDocument::Lookup(m) => render_lookup_python(&env, m, imports)?,
+        ForgeDocument::Condition(m) => render_condition_python(&env, m, imports)?,
+        ForgeDocument::Codec(m) => render_codec_python(&env, m, imports)?,
+        ForgeDocument::Validator(m) => render_validator_python(&env, m, imports)?,
         ForgeDocument::Procedure(m) => {
             if m.is_event_driven {
-                render_procedure_l2_python(&env, m)?
+                render_procedure_l2_python(&env, m, imports)?
             } else {
-                render_procedure_python(&env, m)?
+                render_procedure_python(&env, m, imports)?
             }
         }
     };
@@ -2194,6 +2545,7 @@ pub fn generate_python(doc: &ForgeDocument, template_dir: &Path) -> Result<Gener
 fn render_transform_python(
     env: &minijinja::Environment,
     m: &TransformModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     // Build name mappings for camelCase → snake_case
     let renames: Vec<(String, String)> = m
@@ -2238,8 +2590,13 @@ fn render_transform_python(
         .get_template("transform.py.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         functions => minijinja::Value::from_serialize(&functions),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -2250,6 +2607,7 @@ fn render_transform_python(
 fn render_lookup_python(
     env: &minijinja::Environment,
     m: &LookupModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
@@ -2277,6 +2635,8 @@ fn render_lookup_python(
         .get_template("lookup.py.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         enum_name => enum_name,
         func_name => func_name,
@@ -2285,6 +2645,9 @@ fn render_lookup_python(
         unique_values => minijinja::Value::from_serialize(&m.unique_values()),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
         default_value => &m.default_value,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -2295,6 +2658,7 @@ fn render_lookup_python(
 fn render_condition_python(
     env: &minijinja::Environment,
     m: &ConditionModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let func_name = filters::to_snake_case(m.name.clone());
 
@@ -2324,10 +2688,15 @@ fn render_condition_python(
         .get_template("condition.py.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         func_name => func_name,
         params => params,
         expr => expr_py,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -2338,6 +2707,7 @@ fn render_condition_python(
 fn render_codec_python(
     env: &minijinja::Environment,
     m: &CodecModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let struct_name = filters::to_pascal_case(m.name.clone());
 
@@ -2369,11 +2739,16 @@ fn render_codec_python(
         .get_template("codec.py.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         struct_name => struct_name,
         fields => minijinja::Value::from_serialize(&fields),
         min_bytes => m.min_frame_bytes(),
         encode_exprs => minijinja::Value::from_serialize(&encode_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -2527,6 +2902,7 @@ fn encode_single_field_python(
 fn render_validator_python(
     env: &minijinja::Environment,
     m: &ValidatorModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rv = resolve_validator(m);
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -2570,9 +2946,20 @@ fn render_validator_python(
         })
         .collect();
 
+    // Build import alias rename map for expressions (stateless → qualified call)
+    let import_renames: std::collections::HashMap<&str, &str> = imports
+        .iter()
+        .filter(|i| !i.is_stateful && !i.qualified_call.is_empty())
+        .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
+        .collect();
+
     let plausibility_expr = match &rv.plausibility {
         Some(e) => {
-            let mut expr_py = expr::transpile(e, ExprTarget::Python)?;
+            let mut expr_py = if import_renames.is_empty() {
+                expr::transpile(e, ExprTarget::Python)?
+            } else {
+                expr::transpile_with_renames(e, ExprTarget::Python, &import_renames)?
+            };
             expr_py = rust_rename_vars(&expr_py, &renames);
             Some(expr_py)
         }
@@ -2583,6 +2970,9 @@ fn render_validator_python(
         .get_template("validator.py.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         struct_name => struct_name,
         params => params,
@@ -2590,6 +2980,9 @@ fn render_validator_python(
         range_rules => minijinja::Value::from_serialize(&range_rules),
         roc_rules => minijinja::Value::from_serialize(&roc_rules),
         plausibility_expr => plausibility_expr,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -2732,6 +3125,7 @@ fn final_check_expr(final_indices: &[usize], var: &str, op: &str) -> String {
 fn render_procedure_cpp(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rp = resolve_procedure(m, ExprTarget::Cpp)?;
     let ns = filters::to_pascal_case(m.name.clone());
@@ -2764,6 +3158,8 @@ fn render_procedure_cpp(
         .get_template("procedure.h.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         guard => guard, namespace => ns, struct_name => struct_name,
         params => params,
@@ -2773,6 +3169,9 @@ fn render_procedure_cpp(
         initial_index => rp.initial_index,
         non_final_states => minijinja::Value::from_serialize(&non_final_states),
         final_check => final_check,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -2783,6 +3182,7 @@ fn render_procedure_cpp(
 fn render_procedure_l2_cpp(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_L2_H", to_upper_snake(&m.name));
@@ -2880,12 +3280,18 @@ fn render_procedure_l2_cpp(
     let var_names: Vec<&str> = var_name_strings.iter().map(|s| s.as_str()).collect();
 
     // Pre-build rename maps once (CR#4: avoid per-expression HashMap rebuild)
-    let owned_rename_map = build_rename_map(&var_names);
+    let mut owned_rename_map = build_rename_map(&var_names);
+    // Add import alias renames: `frame` → `frame_` for C++ member access
+    for imp in imports {
+        if imp.is_stateful {
+            owned_rename_map.insert(&imp.alias, imp.member_name.clone());
+        }
+    }
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_map
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
         .collect();
-    let mut owned_assign_rename_map = build_rename_map(&var_names);
+    let mut owned_assign_rename_map = owned_rename_map.clone();
     owned_assign_rename_map.insert("_event.data", "pendingEventData_".to_string());
     let assign_rename_map: std::collections::HashMap<&str, &str> = owned_assign_rename_map
         .iter()
@@ -3067,6 +3473,9 @@ fn render_procedure_l2_cpp(
         .get_template("procedure_l2.h.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports: stateful imports become member variables
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         guard => guard,
         namespace => &pascal,
@@ -3085,6 +3494,9 @@ fn render_procedure_l2_cpp(
         states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
         has_external_deps => has_external_deps,
         payload_exprs => minijinja::Value::from_serialize(&payload_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -3113,6 +3525,7 @@ fn transpile_l2_expr(raw: &str, target: ExprTarget, renames: &std::collections::
 fn render_procedure_kotlin(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rp = resolve_procedure(m, ExprTarget::Kotlin)?;
     let package = filters::to_snake_case(m.name.clone());
@@ -3174,6 +3587,8 @@ fn render_procedure_kotlin(
         .get_template("procedure.kt.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package, struct_name => struct_name,
         params => params,
@@ -3182,6 +3597,9 @@ fn render_procedure_kotlin(
         initial_index => rp.initial_index,
         non_final_states => minijinja::Value::from_serialize(&non_final_states),
         final_check => final_check,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -3192,6 +3610,7 @@ fn render_procedure_kotlin(
 fn render_procedure_rust(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rp = resolve_procedure(m, ExprTarget::Rust)?;
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -3260,6 +3679,8 @@ fn render_procedure_rust(
         .get_template("procedure.rs.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         struct_name => struct_name,
         params => params,
@@ -3268,6 +3689,9 @@ fn render_procedure_rust(
         initial_index => rp.initial_index,
         non_final_states => minijinja::Value::from_serialize(&non_final_states),
         final_check => final_check,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -3278,6 +3702,7 @@ fn render_procedure_rust(
 fn render_procedure_go(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rp = resolve_procedure(m, ExprTarget::Go)?;
     let package = filters::to_snake_case(m.name.clone());
@@ -3354,6 +3779,8 @@ fn render_procedure_go(
         .get_template("procedure.go.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package, struct_name => struct_name,
         params => params,
@@ -3362,6 +3789,9 @@ fn render_procedure_go(
         initial_index => rp.initial_index,
         non_final_states => minijinja::Value::from_serialize(&non_final_states),
         final_check => final_check,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -3372,6 +3802,7 @@ fn render_procedure_go(
 fn render_procedure_python(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let rp = resolve_procedure(m, ExprTarget::Python)?;
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -3440,6 +3871,8 @@ fn render_procedure_python(
         .get_template("procedure.py.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         struct_name => struct_name,
         params => params,
@@ -3448,6 +3881,9 @@ fn render_procedure_python(
         initial_index => rp.initial_index,
         non_final_states => minijinja::Value::from_serialize(&non_final_states),
         final_check => final_check,
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -3770,6 +4206,7 @@ fn python_default(ty: &SceType) -> &'static str {
 fn render_procedure_l2_kotlin(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
@@ -3866,6 +4303,9 @@ fn render_procedure_l2_kotlin(
         .get_template("procedure_l2.kt.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         class_name => &pascal,
@@ -3882,6 +4322,9 @@ fn render_procedure_l2_kotlin(
         states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
         has_external_deps => common.has_external_deps,
         payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -3892,6 +4335,7 @@ fn render_procedure_l2_kotlin(
 fn render_procedure_l2_rust(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
@@ -3913,8 +4357,14 @@ fn render_procedure_l2_rust(
             )
         })
         .collect();
-    // Add _event.data to both rename maps
+    // Add import alias renames: `frame` → `self.frame` for Rust member access
     let mut owned_rename_with_event = owned_rename;
+    for imp in imports {
+        if imp.is_stateful {
+            owned_rename_with_event
+                .insert(&imp.alias, format!("self.{}", imp.member_name));
+        }
+    }
     owned_rename_with_event.insert("_event.data", "self.pending_event_data".to_string());
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
@@ -3968,7 +4418,7 @@ fn render_procedure_l2_rust(
 
     // Payload rename map: borrow Bytes/String fields to prevent move in fn args.
     // e.g., computeKey(self.seed) → computeKey(&self.seed) for Vec<u8> fields.
-    let owned_payload_rename: std::collections::HashMap<&str, String> = var_name_strings
+    let mut owned_payload_rename: std::collections::HashMap<&str, String> = var_name_strings
         .iter()
         .map(|name| {
             let snake = filters::to_snake_case(name.clone());
@@ -3981,6 +4431,13 @@ fn render_procedure_l2_rust(
         })
         .chain(std::iter::once(("_event.data", "self.pending_event_data".to_string())))
         .collect();
+    // Add import alias renames to payload map
+    for imp in imports {
+        if imp.is_stateful {
+            owned_payload_rename
+                .insert(&imp.alias, format!("self.{}", imp.member_name));
+        }
+    }
     let payload_rename_map: std::collections::HashMap<&str, &str> = owned_payload_rename
         .iter()
         .map(|(k, v)| (*k, v.as_str()))
@@ -4010,6 +4467,9 @@ fn render_procedure_l2_rust(
         .get_template("procedure_l2.rs.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         struct_name => &pascal,
         snake_name => snake,
@@ -4025,6 +4485,9 @@ fn render_procedure_l2_rust(
         states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
         has_external_deps => common.has_external_deps,
         payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -4035,6 +4498,7 @@ fn render_procedure_l2_rust(
 fn render_procedure_l2_go(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let package = filters::to_snake_case(m.name.clone());
@@ -4056,8 +4520,14 @@ fn render_procedure_l2_go(
             )
         })
         .collect();
-    // Add _event.data to both rename maps
+    // Add import alias renames: `frame` → `p.Frame` for Go struct field access
     let mut owned_rename_with_event = owned_rename;
+    for imp in imports {
+        if imp.is_stateful {
+            owned_rename_with_event
+                .insert(&imp.alias, format!("p.{}", imp.member_name));
+        }
+    }
     owned_rename_with_event.insert("_event.data", "p.pendingEventData".to_string());
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
@@ -4131,6 +4601,9 @@ fn render_procedure_l2_go(
         .get_template("procedure_l2.go.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         package => package,
         class_name => &pascal,
@@ -4148,6 +4621,9 @@ fn render_procedure_l2_go(
         states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
         has_external_deps => common.has_external_deps,
         payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)
@@ -4158,6 +4634,7 @@ fn render_procedure_l2_go(
 fn render_procedure_l2_python(
     env: &minijinja::Environment,
     m: &ProcedureModel,
+    imports: &[ImportContext],
 ) -> Result<String, String> {
     let pascal = filters::to_pascal_case(m.name.clone());
     let snake = filters::to_snake_case(m.name.clone());
@@ -4179,8 +4656,14 @@ fn render_procedure_l2_python(
             )
         })
         .collect();
-    // Add _event.data to both rename maps
+    // Add import alias renames: `frame` → `self.frame` for Python member access
     let mut owned_rename_with_event = owned_rename;
+    for imp in imports {
+        if imp.is_stateful {
+            owned_rename_with_event
+                .insert(&imp.alias, format!("self.{}", imp.member_name));
+        }
+    }
     owned_rename_with_event.insert("_event.data", "self._pending_event_data".to_string());
     let rename_map: std::collections::HashMap<&str, &str> = owned_rename_with_event
         .iter()
@@ -4245,6 +4728,9 @@ fn render_procedure_l2_python(
         .get_template("procedure_l2.py.jinja2")
         .map_err(|e| format!("Template load error: {e}"))?;
 
+    // Cross-file imports
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
     let ctx = minijinja::context! {
         class_name => &pascal,
         snake_name => snake,
@@ -4260,6 +4746,9 @@ fn render_procedure_l2_python(
         states_with_assigns => minijinja::Value::from_serialize(&states_with_assigns),
         has_external_deps => common.has_external_deps,
         payload_exprs => minijinja::Value::from_serialize(&common.payload_exprs),
+        has_imports => has_imports,
+        imports => stateful_imports,
+        all_imports => all_imports,
     };
 
     tmpl.render(ctx).map_err(generator::render_error)

@@ -3,17 +3,13 @@
 //
 // Level 2 procedure: event-driven state machine using StaticExecutionEngine.
 // Supports <onentry>/<send>, event-driven <transition>, <assign>, <donedata>.
-{% if has_external_deps %}
 //
 // External dependencies (from sce:payload expressions — must be in scope):
-{% for expr in payload_exprs %}
-//   {{ expr }}
-{% endfor %}
-{% endif %}
+//   frame.encode()
 
 #pragma once
-#ifndef {{ guard }}
-#define {{ guard }}
+#ifndef SCE_FORGE_CROSSFILE_PROCEDURE_CODEC_L2_H
+#define SCE_FORGE_CROSSFILE_PROCEDURE_CODEC_L2_H
 
 #include <cstdint>
 #include <functional>
@@ -23,54 +19,40 @@
 #include <vector>
 #include "static/StaticExecutionEngine.h"
 #include "core/ProcedureServiceTypes.h"
-{% if all_imports %}
-{% for imp in all_imports %}
-{{ imp.include_stmt }}
-{% endfor %}
-{% endif %}
+#include "codec_simple_frame.h"
 
-namespace SCE::Generated::{{ namespace }} {
+namespace SCE::Generated::CrossfileProcedureCodec {
 
 // ── State and Event enums ────────────────────────────────────────
 
 enum class State : uint8_t {
-{% for s in state_enum %}
-    {{ s.name }} = {{ s.index }}{% if not loop.last %},{% endif %}
-
-{% endfor %}
+    SendRequest = 0,
+    Decode = 1,
+    Done = 2,
+    Error = 3
 };
 
 enum class Event : uint8_t {
     NONE = 0,
-{% for e in event_enum %}
-    {{ e.name }} = {{ e.index }}{% if not loop.last %},{% endif %}
-
-{% endfor %}
+    Fail = 1,
+    Ok = 2
 };
 
 // ── State Policy ─────────────────────────────────────────────────
 
-struct {{ policy_name }} {
-    using State = ::SCE::Generated::{{ namespace }}::State;
-    using Event = ::SCE::Generated::{{ namespace }}::Event;
+struct CrossfileProcedureCodecPolicy {
+    using State = ::SCE::Generated::CrossfileProcedureCodec::State;
+    using Event = ::SCE::Generated::CrossfileProcedureCodec::Event;
 
     static constexpr bool HAS_PARALLEL_STATES = false;
     static constexpr bool NEEDS_SCRIPT_ENGINE = false;
 
     // ── Datamodel members ────────────────────────────────────────
-{% for f in input_fields %}
-    {{ f.cpp_type }} {{ f.id }}_{};
-{% endfor %}
-{% for f in internal_fields %}
-    {{ f.cpp_type }} {{ f.id }}_{% if f.default_value %} = {{ f.default_value }}{% endif %};
-{% endfor %}
-{% if has_imports %}
+    uint32_t ecuAddr_{};
+    std::vector<uint8_t> response_;
 
     // ── Imported kind members (cross-file composition) ──────────
-{% for imp in imports %}
-    {{ imp.member_type }} {{ imp.member_name }}{};
-{% endfor %}
-{% endif %}
+    ::SCE::Generated::CodecSimpleFrame::CodecSimpleFrame frame_{};
 
     // ── Service handler (for <send sce:service>) ─────────────────
     SCE::Core::ProcedureServiceHandler serviceHandler_;
@@ -89,19 +71,18 @@ struct {{ policy_name }} {
     mutable size_t lastTransitionIndex_ = 0;
     mutable bool hasTransitionActions_ = false;
 
-    {{ policy_name }}() = default;
+    CrossfileProcedureCodecPolicy() = default;
 
     // ── Hierarchy (flat — no parent states) ──────────────────────
 
     [[nodiscard]] static constexpr State initialState() noexcept {
-        return State::{{ initial_state }};
+        return State::SendRequest;
     }
 
     [[nodiscard]] static constexpr bool isFinalState(State state) noexcept {
         switch (state) {
-{% for s in final_states %}
-            case State::{{ s.name }}: return true;
-{% endfor %}
+            case State::Done: return true;
+            case State::Error: return true;
             default: return false;
         }
     }
@@ -125,18 +106,16 @@ struct {{ policy_name }} {
     [[nodiscard]] static constexpr const char* getEventName(Event event) noexcept {
         switch (event) {
             case Event::NONE: return "";
-{% for e in event_enum %}
-            case Event::{{ e.name }}: return "{{ e.event_name }}";
-{% endfor %}
+            case Event::Fail: return "fail";
+            case Event::Ok: return "ok";
             default: return "";
         }
     }
 
     [[nodiscard]] static std::optional<Event> getEventFromName(const std::string& name) noexcept {
         if (name.empty()) return std::nullopt;
-{% for e in event_enum %}
-        if (name == "{{ e.event_name }}") return Event::{{ e.name }};
-{% endfor %}
+        if (name == "fail") return Event::Fail;
+        if (name == "ok") return Event::Ok;
         return std::nullopt;
     }
 
@@ -145,39 +124,29 @@ struct {{ policy_name }} {
     template<typename Engine>
     void executeEntryActions(State state, Engine& engine) {
         switch (state) {
-{% for s in states_with_entry %}
-            case State::{{ s.name }}: {
-{% for send in s.sends %}
-                // <send sce:service="{{ send.service }}"{{ ' sce:subfunc="' ~ send.subfunc ~ '"' if send.subfunc }}{{ ' sce:addr="..."' if send.has_addr }}>
+            case State::SendRequest: {
+                // <send sce:service="Diag" sce:addr="...">
                 if (serviceHandler_) {
                     SCE::Core::ProcedureServiceRequest req;
-                    req.service = "{{ send.service }}";
-{% if send.subfunc %}
-                    req.subfunc = "{{ send.subfunc }}";
-{% endif %}
-{% if send.has_addr %}
-                    req.params.push_back({"addr", std::to_string({{ send.addr_expr }})});
-{% endif %}
-{% if send.payload %}
-                    req.params.push_back({"payload", {{ send.payload_expr }}});
-{% endif %}
+                    req.service = "Diag";
+                    req.params.push_back({"addr", std::to_string(ecuAddr_)});
+                    req.params.push_back({"payload", frame_.encode()});
                     auto resp = serviceHandler_(req);
                     engine.raise(typename Engine::EventWithMetadata(
                         resp.success ? Event::Ok : Event::Fail, resp.data));
                 }
-{% endfor %}
                 break;
             }
-{% endfor %}
-{% for s in final_states_with_donedata %}
-            case State::{{ s.name }}: {
+            case State::Done: {
                 // <donedata>
-{% for p in s.done_params %}
-                doneData_["{{ p.name }}"] = {{ p.expr }};
-{% endfor %}
+                doneData_["result"] = "success";
                 break;
             }
-{% endfor %}
+            case State::Error: {
+                // <donedata>
+                doneData_["result"] = "failure";
+                break;
+            }
             default:
                 break;
         }
@@ -197,61 +166,43 @@ struct {{ policy_name }} {
         bool transitionTaken = false;
 
         switch (currentState) {
-{% for s in non_final_states %}
-            case State::{{ s.name }}:
-{% for tr in s.transitions %}
-{% if tr.has_event %}
-                // Event-driven transition: event="{{ tr.event_name }}"
-                if (event == Event::{{ tr.event_enum }}) {
-{% if tr.has_cond %}
-                    if ({{ tr.cond }}) {
-                        lastTransitionSourceState_ = currentState;
-                        lastTransitionIsInternal_ = false;
-                        lastTransitionIsTargetless_ = false;
-                        lastTransitionIndex_ = {{ tr.index }};
-                        hasTransitionActions_ = {{ tr.has_assigns | lower }};
-                        currentState = State::{{ tr.target_name }};
-                        transitionTaken = true;
-                    }
-{% else %}
+            case State::SendRequest:
+                // Event-driven transition: event="ok"
+                if (event == Event::Ok) {
                     lastTransitionSourceState_ = currentState;
                     lastTransitionIsInternal_ = false;
                     lastTransitionIsTargetless_ = false;
-                    lastTransitionIndex_ = {{ tr.index }};
-                    hasTransitionActions_ = {{ tr.has_assigns | lower }};
-                    currentState = State::{{ tr.target_name }};
+                    lastTransitionIndex_ = 0;
+                    hasTransitionActions_ = true;
+                    currentState = State::Decode;
                     transitionTaken = true;
-{% endif %}
                 }
-{% else %}
-                // Eventless transition{% if tr.has_cond %} (guard: {{ tr.cond }}){% endif %}
-
-                if (event == Event::NONE) {
-{% if tr.has_cond %}
-                    if ({{ tr.cond }}) {
-                        lastTransitionSourceState_ = currentState;
-                        lastTransitionIsInternal_ = false;
-                        lastTransitionIsTargetless_ = false;
-                        lastTransitionIndex_ = {{ tr.index }};
-                        hasTransitionActions_ = {{ tr.has_assigns | lower }};
-                        currentState = State::{{ tr.target_name }};
-                        transitionTaken = true;
-                    }
-{% else %}
-                    lastTransitionSourceState_ = currentState;
-                    lastTransitionIsInternal_ = false;
-                    lastTransitionIsTargetless_ = false;
-                    lastTransitionIndex_ = {{ tr.index }};
-                    hasTransitionActions_ = {{ tr.has_assigns | lower }};
-                    currentState = State::{{ tr.target_name }};
-                    transitionTaken = true;
-{% endif %}
-                }
-{% endif %}
                 if (transitionTaken) return true;
-{% endfor %}
+                // Event-driven transition: event="fail"
+                if (event == Event::Fail) {
+                    lastTransitionSourceState_ = currentState;
+                    lastTransitionIsInternal_ = false;
+                    lastTransitionIsTargetless_ = false;
+                    lastTransitionIndex_ = 1;
+                    hasTransitionActions_ = false;
+                    currentState = State::Error;
+                    transitionTaken = true;
+                }
+                if (transitionTaken) return true;
                 return false;
-{% endfor %}
+            case State::Decode:
+                // Eventless transition
+                if (event == Event::NONE) {
+                    lastTransitionSourceState_ = currentState;
+                    lastTransitionIsInternal_ = false;
+                    lastTransitionIsTargetless_ = false;
+                    lastTransitionIndex_ = 0;
+                    hasTransitionActions_ = false;
+                    currentState = State::Done;
+                    transitionTaken = true;
+                }
+                if (transitionTaken) return true;
+                return false;
             default:
                 return false;
         }
@@ -262,17 +213,11 @@ struct {{ policy_name }} {
     template<typename Engine>
     void executeTransitionActions([[maybe_unused]] Engine& engine) {
         if (!hasTransitionActions_) return;
-{% for s in states_with_assigns %}
-        if (lastTransitionSourceState_ == State::{{ s.name }}) {
-{% for tr in s.assign_transitions %}
-            if (lastTransitionIndex_ == {{ tr.index }}) {
-{% for a in tr.assigns %}
-                {{ a.location }}_ = {{ a.expr }};
-{% endfor %}
+        if (lastTransitionSourceState_ == State::SendRequest) {
+            if (lastTransitionIndex_ == 0) {
+                response_ = std::vector<uint8_t>(pendingEventData_.begin(), pendingEventData_.end());
             }
-{% endfor %}
         }
-{% endfor %}
         hasTransitionActions_ = false;
     }
 
@@ -280,12 +225,12 @@ struct {{ policy_name }} {
 
 // ── State machine class ──────────────────────────────────────────
 
-class {{ class_name }} : public ::SCE::Static::StaticExecutionEngine<{{ policy_name }}> {
+class CrossfileProcedureCodec : public ::SCE::Static::StaticExecutionEngine<CrossfileProcedureCodecPolicy> {
 public:
-    using PolicyType = {{ policy_name }};
+    using PolicyType = CrossfileProcedureCodecPolicy;
     using Result = SCE::Core::ProcedureRunResult;
 
-    {{ class_name }}() = default;
+    CrossfileProcedureCodec() = default;
 
     /// Set the service handler for <send sce:service> actions.
     void setServiceHandler(SCE::Core::ProcedureServiceHandler handler) {
@@ -293,11 +238,9 @@ public:
     }
 
     /// Set input parameters before calling runToCompletion().
-{% for f in input_fields %}
-    void set{{ f.setter_name }}({{ f.cpp_param_type }} value) {
-        getPolicy().{{ f.id }}_ = value;
+    void setEcuAddr(uint32_t value) {
+        getPolicy().ecuAddr_ = value;
     }
-{% endfor %}
 
     /// Run the procedure to completion (blocking).
     /// Drives the state machine from initial state through service sends
@@ -309,9 +252,8 @@ public:
         if (result.completed) {
             // Extract state name from enum
             switch (getCurrentState()) {
-{% for s in final_states %}
-                case State::{{ s.name }}: result.final_state = "{{ s.id }}"; break;
-{% endfor %}
+                case State::Done: result.final_state = "done"; break;
+                case State::Error: result.final_state = "error"; break;
                 default: break;
             }
             result.done_data = getPolicy().doneData_;
@@ -322,23 +264,21 @@ public:
 
 // ── Convenience wrapper function ─────────────────────────────────
 
-inline {{ class_name }}::Result execute{{ pascal_name }}(
-    SCE::Core::ProcedureServiceHandler handler{% for f in input_fields %},
-    {{ f.cpp_param_type }} {{ f.id }}{% endfor %}) {
-    {{ class_name }} sm;
+inline CrossfileProcedureCodec::Result executeCrossfileProcedureCodec(
+    SCE::Core::ProcedureServiceHandler handler,
+    uint32_t ecuAddr) {
+    CrossfileProcedureCodec sm;
     sm.setServiceHandler(std::move(handler));
-{% for f in input_fields %}
-    sm.set{{ f.setter_name }}({{ f.id }});
-{% endfor %}
+    sm.setEcuAddr(ecuAddr);
     return sm.runToCompletion();
 }
 
 // ── Compile-time verification ────────────────────────────────────
 #if __cpp_concepts >= 202002L
-static_assert(::SCE::Core::EventNamingPolicy<{{ policy_name }}>,
-    "Generated {{ policy_name }} must satisfy EventNamingPolicy concept");
+static_assert(::SCE::Core::EventNamingPolicy<CrossfileProcedureCodecPolicy>,
+    "Generated CrossfileProcedureCodecPolicy must satisfy EventNamingPolicy concept");
 #endif
 
-}  // namespace SCE::Generated::{{ namespace }}
+}  // namespace SCE::Generated::CrossfileProcedureCodec
 
-#endif  // {{ guard }}
+#endif  // SCE_FORGE_CROSSFILE_PROCEDURE_CODEC_L2_H

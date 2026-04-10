@@ -2,6 +2,14 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package {{ package }}
+{% if all_imports %}
+
+import (
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+)
+{% endif %}
 
 // ProcedureResult holds the outcome of a procedure execution.
 type ProcedureResult struct {

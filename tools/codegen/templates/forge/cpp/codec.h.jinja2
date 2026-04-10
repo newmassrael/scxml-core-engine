@@ -9,6 +9,11 @@
 #include <cstring>
 #include <optional>
 #include <vector>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
 
 namespace SCE::Generated::{{ namespace }} {
 

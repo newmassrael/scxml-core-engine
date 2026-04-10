@@ -9,3 +9,4 @@ pub mod model;
 pub mod parser;
 pub mod expr;
 pub mod generator;
+pub mod manifest;

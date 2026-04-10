@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: cross-file composition — procedure importing codec -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="procedure" initial="sendRequest" version="1.0">
+  <sce:import src="codec_simple_frame.scxml" kind="codec" as="frame"/>
+
+  <datamodel>
+    <data id="ecuAddr" sce:type="uint32" sce:direction="in"/>
+    <data id="response" sce:type="bytes" sce:direction="internal"/>
+  </datamodel>
+
+  <state id="sendRequest">
+    <onentry>
+      <send sce:service="Diag" sce:addr="ecuAddr" sce:payload="frame.encode()"/>
+    </onentry>
+    <transition event="ok" target="decode">
+      <assign location="response" expr="_event.data"/>
+    </transition>
+    <transition event="fail" target="error"/>
+  </state>
+
+  <state id="decode">
+    <transition target="done"/>
+  </state>
+
+  <final id="done">
+    <donedata><param name="result" expr="'success'"/></donedata>
+  </final>
+  <final id="error">
+    <donedata><param name="result" expr="'failure'"/></donedata>
+  </final>
+</scxml>

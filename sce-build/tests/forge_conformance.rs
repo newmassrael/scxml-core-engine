@@ -39,7 +39,8 @@ fn assert_standalone_forge_lang(
         .unwrap_or_else(|e| panic!("Cannot read {}: {e}", scxml_path.display()));
 
     let stem = scxml_name;
-    let output = sce_build::compile_forge_from_string(&content, stem, language)
+    let base_dir = scxml_path.parent().unwrap();
+    let output = sce_build::compile_forge_with_imports_validated(&content, stem, language, base_dir)
         .unwrap_or_else(|e| panic!("Forge codegen failed for {scxml_name} ({language:?}): {e}"));
 
     assert!(!output.files.is_empty(), "No output for {scxml_name}");
@@ -724,6 +725,58 @@ fn forge_python_procedure_linear() {
 #[test]
 fn forge_python_procedure_diamond() {
     assert_standalone_forge_python("procedure_diamond", "procedure_diamond.py");
+}
+
+// ── Cross-file kind composition ─────────────────────────────
+
+#[test]
+fn forge_crossfile_procedure_codec_cpp() {
+    assert_standalone_forge("crossfile_procedure_codec", "crossfile_procedure_codec.h");
+}
+
+#[test]
+fn forge_crossfile_procedure_codec_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_procedure_codec", "CrossfileProcedureCodec.kt");
+}
+
+#[test]
+fn forge_crossfile_procedure_codec_rust() {
+    assert_standalone_forge_rust("crossfile_procedure_codec", "crossfile_procedure_codec.rs");
+}
+
+#[test]
+fn forge_crossfile_procedure_codec_go() {
+    assert_standalone_forge_go("crossfile_procedure_codec", "crossfile_procedure_codec.go");
+}
+
+#[test]
+fn forge_crossfile_procedure_codec_python() {
+    assert_standalone_forge_python("crossfile_procedure_codec", "crossfile_procedure_codec.py");
+}
+
+#[test]
+fn forge_crossfile_validator_transform_cpp() {
+    assert_standalone_forge("crossfile_validator_transform", "crossfile_validator_transform.h");
+}
+
+#[test]
+fn forge_crossfile_validator_transform_kotlin() {
+    assert_standalone_forge_kotlin("crossfile_validator_transform", "CrossfileValidatorTransform.kt");
+}
+
+#[test]
+fn forge_crossfile_validator_transform_rust() {
+    assert_standalone_forge_rust("crossfile_validator_transform", "crossfile_validator_transform.rs");
+}
+
+#[test]
+fn forge_crossfile_validator_transform_go() {
+    assert_standalone_forge_go("crossfile_validator_transform", "crossfile_validator_transform.go");
+}
+
+#[test]
+fn forge_crossfile_validator_transform_python() {
+    assert_standalone_forge_python("crossfile_validator_transform", "crossfile_validator_transform.py");
 }
 
 // ── Inline kind conformance ──────────────────────────────────

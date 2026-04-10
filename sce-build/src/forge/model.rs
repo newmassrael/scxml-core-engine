@@ -72,6 +72,20 @@ impl ForgeKind {
         )
     }
 
+    /// Whether this kind generates a struct/class with instance methods.
+    /// Struct-based kinds need member variables when imported cross-file.
+    /// Pure-function kinds (transform, lookup, condition) generate free functions
+    /// and only need include/import statements, not member declarations.
+    pub fn needs_instance(&self) -> bool {
+        match self {
+            Self::Codec | Self::Validator | Self::Procedure => true,
+            Self::Transform | Self::Lookup | Self::Condition => false,
+            Self::Statechart => false,
+            // Future kinds — compiler error forces explicit decision when added
+            Self::Filter | Self::Interpolation | Self::Timer | Self::Observer => false,
+        }
+    }
+
     /// Whether this kind is currently implemented and supported.
     pub fn is_supported(&self) -> bool {
         matches!(
@@ -514,6 +528,50 @@ impl CodecModel {
     }
 }
 
+// ── Cross-file import ─────────────────────────────────────────
+
+/// A cross-file kind import declared via `<sce:import>` in an Extended SCXML document.
+/// Enables kind composition: e.g., a procedure referencing a codec's encode/decode.
+///
+/// ```xml
+/// <sce:import src="can_frame.scxml" kind="codec" as="frame"/>
+/// ```
+///
+/// The `alias` is used in expressions to access the imported kind's API:
+/// - Codec: `frame.encode(...)`, `frame.decode(...)`
+/// - Transform: `keygen.compute(...)`
+/// - Condition: `check.evaluate(...)`
+/// - Lookup: `table.lookup(...)`
+/// - Validator: `val.validate(...)`
+#[derive(Debug, Clone, Serialize)]
+pub struct ForgeImport {
+    /// Relative path to the imported SCXML file.
+    pub src: String,
+    /// Kind of the imported document (for validation and API generation).
+    pub kind: ForgeKind,
+    /// Alias used in expressions to reference the imported kind.
+    pub alias: String,
+}
+
+// ── Build manifest ────────────────────────────────────────────
+
+/// A single entry in a forge build manifest.
+#[derive(Debug, Clone, Serialize)]
+pub struct ManifestEntry {
+    pub src: String,
+    pub name: String,
+    pub kind: ForgeKind,
+    pub imports: Vec<ForgeImport>,
+}
+
+/// Forge build manifest — dependency graph for a set of forge SCXML files.
+/// Includes topological build order (leaves first).
+#[derive(Debug, Clone, Serialize)]
+pub struct ForgeManifest {
+    pub entries: Vec<ManifestEntry>,
+    pub build_order: Vec<String>,
+}
+
 // ── Inline kind (within statechart) ────────────────────────────
 
 /// Inline kind data — embedded within a statechart `<data>` element.
@@ -594,4 +652,12 @@ impl ForgeDocument {
             Self::Procedure(_) => ForgeKind::Procedure,
         }
     }
+}
+
+/// Parsed forge result — combines the document model with cross-file imports.
+/// The `imports` field is empty for standalone documents (no `<sce:import>` elements).
+#[derive(Debug, Clone, Serialize)]
+pub struct ParsedForge {
+    pub document: ForgeDocument,
+    pub imports: Vec<ForgeImport>,
 }

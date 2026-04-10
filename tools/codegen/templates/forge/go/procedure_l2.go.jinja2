@@ -14,6 +14,9 @@
 package {{ package }}
 
 import (
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
 {% if needs_fmt %}
 	"fmt"
 {% endif %}
@@ -44,6 +47,12 @@ type policy struct {
 {% for f in internal_fields %}
 	{{ f.id }}	{{ f.go_type }}
 {% endfor %}
+{% if has_imports %}
+	// Imported kinds (cross-file composition)
+{% for imp in imports %}
+	{{ imp.member_name }} {{ imp.member_type }}
+{% endfor %}
+{% endif %}
 	serviceHandler   forge.ServiceHandler
 	doneData         map[string]string
 	pendingEventData string

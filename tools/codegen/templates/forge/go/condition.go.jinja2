@@ -2,6 +2,14 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package {{ package }}
+{% if all_imports %}
+
+import (
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+)
+{% endif %}
 
 // {{ func_name }} evaluates the condition.
 func {{ func_name }}({{ params }}) bool {

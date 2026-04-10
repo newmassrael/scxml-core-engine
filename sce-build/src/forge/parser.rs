@@ -19,6 +19,12 @@ pub fn detect_kind(content: &str) -> Result<Option<ForgeKind>, String> {
 /// Single-parse entry point: detect kind and parse forge document in one pass.
 /// Returns `None` if the document is a statechart (no `sce:kind` or `sce:kind="statechart"`).
 pub fn parse_forge(content: &str, name: &str) -> Result<Option<ForgeDocument>, String> {
+    parse_forge_with_imports(content, name).map(|opt| opt.map(|pf| pf.document))
+}
+
+/// Single-parse entry point that also extracts `<sce:import>` declarations.
+/// Returns `None` if the document is a statechart (no `sce:kind` or `sce:kind="statechart"`).
+pub fn parse_forge_with_imports(content: &str, name: &str) -> Result<Option<ParsedForge>, String> {
     let doc = roxmltree::Document::parse(content)
         .map_err(|e| format!("XML parse error: {e}"))?;
     let root = doc.root_element();
@@ -33,7 +39,9 @@ pub fn parse_forge(content: &str, name: &str) -> Result<Option<ForgeDocument>, S
         return Err(format!("Kind '{kind}' is not yet supported"));
     }
 
-    parse_forge_from_node(&root, name, kind).map(Some)
+    let imports = parse_imports(&root)?;
+    let document = parse_forge_from_node(&root, name, kind)?;
+    Ok(Some(ParsedForge { document, imports }))
 }
 
 // ── Internal: kind detection from parsed node ──────────────────
@@ -727,6 +735,73 @@ fn parse_time_interval(s: &str) -> Result<u32, String> {
             "Time interval must end with 'ms' or 's', got: '{s}'"
         ))
     }
+}
+
+// ── Import parsing ────────────────────────────────────────────
+
+/// Parse `<sce:import>` children from the `<scxml>` root element.
+///
+/// ```xml
+/// <sce:import src="can_frame.scxml" kind="codec" as="frame"/>
+/// ```
+///
+/// - `src` (required): relative path to the imported SCXML file.
+/// - `kind` (required): the forge kind of the imported document.
+/// - `as` (required): alias used in expressions.
+fn parse_imports(root: &roxmltree::Node) -> Result<Vec<ForgeImport>, String> {
+    let mut imports = Vec::new();
+    let mut aliases = std::collections::BTreeSet::new();
+
+    for child in root.children().filter(|n| n.is_element()) {
+        if child.tag_name().name() != "import"
+            || child.tag_name().namespace() != Some(SCE_NAMESPACE)
+        {
+            continue;
+        }
+
+        let src = child
+            .attribute("src")
+            .ok_or("<sce:import> must have a 'src' attribute")?
+            .to_string();
+
+        let kind_str = child
+            .attribute("kind")
+            .ok_or("<sce:import> must have a 'kind' attribute")?;
+        let kind = ForgeKind::from_attr(kind_str)
+            .ok_or_else(|| format!("<sce:import> unknown kind: '{kind_str}'"))?;
+        if !kind.is_supported() {
+            return Err(format!(
+                "<sce:import> kind '{kind}' is not yet supported"
+            ));
+        }
+        if kind == ForgeKind::Statechart {
+            return Err("<sce:import> cannot import a statechart".to_string());
+        }
+
+        let alias = child
+            .attribute("as")
+            .ok_or("<sce:import> must have an 'as' attribute")?
+            .to_string();
+
+        if !aliases.insert(alias.clone()) {
+            return Err(format!(
+                "<sce:import> duplicate alias: '{alias}'"
+            ));
+        }
+
+        imports.push(ForgeImport { src, kind, alias });
+    }
+
+    Ok(imports)
+}
+
+/// Extract only the import list from a forge SCXML (lightweight — no model parse).
+/// Used by the manifest scanner to build dependency graphs.
+pub fn parse_imports_only(content: &str) -> Result<Vec<ForgeImport>, String> {
+    let doc = roxmltree::Document::parse(content)
+        .map_err(|e| format!("XML parse error: {e}"))?;
+    let root = doc.root_element();
+    parse_imports(&root)
 }
 
 // ── Shared helpers ─────────────────────────────────────────────

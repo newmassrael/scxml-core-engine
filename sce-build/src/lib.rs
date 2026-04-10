@@ -234,6 +234,211 @@ pub fn compile_forge_from_string(
     }
 }
 
+/// Compile a forge SCXML with cross-file import resolution.
+///
+/// Uses `parse_forge_with_imports` to extract `<sce:import>` declarations,
+/// resolves them to per-language import contexts, and passes them to templates.
+/// Import validation (file existence, kind matching) is skipped — use
+/// `compile_forge_with_imports_validated` for full validation.
+pub fn compile_forge_with_imports(
+    content: &str,
+    name: &str,
+    language: generator::Language,
+) -> Result<generator::GeneratedOutput, String> {
+    compile_forge_with_imports_impl(content, name, language, None)
+}
+
+/// Compile a forge SCXML with cross-file import validation.
+///
+/// When `base_dir` is provided, validates each `<sce:import>`:
+/// 1. The referenced `src` file exists relative to `base_dir`
+/// 2. The file is a valid forge document
+/// 3. The declared `kind` matches the actual kind in the file
+pub fn compile_forge_with_imports_validated(
+    content: &str,
+    name: &str,
+    language: generator::Language,
+    base_dir: &Path,
+) -> Result<generator::GeneratedOutput, String> {
+    compile_forge_with_imports_impl(content, name, language, Some(base_dir))
+}
+
+fn compile_forge_with_imports_impl(
+    content: &str,
+    name: &str,
+    language: generator::Language,
+    base_dir: Option<&Path>,
+) -> Result<generator::GeneratedOutput, String> {
+    let parsed = forge::parser::parse_forge_with_imports(content, name)?
+        .ok_or("Not a forge document (statechart or no sce:kind)")?;
+
+    let template_base = find_template_base();
+    let mut import_ctx = forge::generator::resolve_imports(&parsed.imports, &language);
+
+    // Validate and enrich imports in a single pass (one file read per import)
+    if let Some(dir) = base_dir {
+        validate_and_enrich_imports(&mut import_ctx, &parsed.imports, dir, &language)?;
+    }
+
+    match language {
+        generator::Language::Cpp => {
+            forge::generator::generate_cpp_with_imports(&parsed.document, &template_base, &import_ctx)
+        }
+        generator::Language::Kotlin => {
+            forge::generator::generate_kotlin_with_imports(&parsed.document, &template_base, &import_ctx)
+        }
+        generator::Language::Rust => {
+            forge::generator::generate_rust_with_imports(&parsed.document, &template_base, &import_ctx)
+        }
+        generator::Language::Go => {
+            forge::generator::generate_go_with_imports(&parsed.document, &template_base, &import_ctx)
+        }
+        generator::Language::Python => {
+            forge::generator::generate_python_with_imports(&parsed.document, &template_base, &import_ctx)
+        }
+    }
+}
+
+/// Validate and enrich `<sce:import>` declarations in a single pass.
+///
+/// For each import, reads the file once and performs:
+/// 1. Existence check (`src` file must exist relative to `base_dir`)
+/// 2. Kind validation (declared kind must match actual `sce:kind` in file)
+/// 3. API enrichment for stateless kinds (discover primary function name
+///    and build language-specific qualified call for expression aliasing)
+fn validate_and_enrich_imports(
+    import_ctx: &mut [forge::generator::ImportContext],
+    imports: &[forge::model::ForgeImport],
+    base_dir: &Path,
+    language: &generator::Language,
+) -> Result<(), String> {
+    for (ctx, imp) in import_ctx.iter_mut().zip(imports.iter()) {
+        let src_path = base_dir.join(&imp.src);
+
+        // 1. Existence
+        if !src_path.exists() {
+            return Err(format!(
+                "<sce:import src=\"{}\">: file not found (searched: {})",
+                imp.src,
+                src_path.display()
+            ));
+        }
+
+        // Read once
+        let content = std::fs::read_to_string(&src_path)
+            .map_err(|e| format!("<sce:import src=\"{}\">: cannot read: {e}", imp.src))?;
+
+        // 2. Kind validation
+        let actual_kind = forge::parser::detect_kind(&content)?
+            .ok_or_else(|| {
+                format!(
+                    "<sce:import src=\"{}\">: not a forge document (no sce:kind)",
+                    imp.src
+                )
+            })?;
+
+        if actual_kind != imp.kind {
+            return Err(format!(
+                "<sce:import src=\"{}\" kind=\"{}\">: actual kind is '{}' (mismatch)",
+                imp.src, imp.kind, actual_kind
+            ));
+        }
+
+        // 3. Stateless API enrichment (reuse already-read content)
+        if !ctx.is_stateful {
+            let stem = src_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("unknown");
+
+            if let Some(doc) = forge::parser::parse_forge(&content, stem)? {
+                if let Some(name) = discover_primary_function(&doc, language) {
+                    ctx.qualified_call = build_qualified_call(&name, &ctx.namespace, language);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Discover the primary function name generated by a stateless forge document.
+fn discover_primary_function(
+    doc: &forge::model::ForgeDocument,
+    language: &generator::Language,
+) -> Option<String> {
+    match doc {
+        forge::model::ForgeDocument::Transform(m) => {
+            let output_id = m.outputs.first()?.id.clone();
+            Some(match language {
+                generator::Language::Cpp | generator::Language::Kotlin => {
+                    format!("compute{}", filters::to_pascal_case(output_id))
+                }
+                generator::Language::Rust | generator::Language::Python => {
+                    format!("compute_{}", filters::to_snake_case(output_id))
+                }
+                generator::Language::Go => {
+                    format!("Compute{}", filters::to_pascal_case(output_id))
+                }
+            })
+        }
+        forge::model::ForgeDocument::Condition(m) => {
+            Some(match language {
+                generator::Language::Cpp | generator::Language::Kotlin => {
+                    filters::to_camel_case(m.name.clone())
+                }
+                generator::Language::Rust | generator::Language::Python => {
+                    filters::to_snake_case(m.name.clone())
+                }
+                generator::Language::Go => {
+                    filters::to_pascal_case(m.name.clone())
+                }
+            })
+        }
+        forge::model::ForgeDocument::Lookup(m) => {
+            Some(match language {
+                generator::Language::Cpp | generator::Language::Kotlin => {
+                    format!("lookup{}", filters::to_pascal_case(m.output.id.clone()))
+                }
+                generator::Language::Rust | generator::Language::Python => {
+                    format!("lookup_{}", filters::to_snake_case(m.output.id.clone()))
+                }
+                generator::Language::Go => {
+                    format!("Lookup{}", filters::to_pascal_case(m.output.id.clone()))
+                }
+            })
+        }
+        // Stateful kinds (Codec, Validator, Procedure) use member access,
+        // not free function calls. They are handled by the member rename
+        // mechanism in procedure_l2 and validator render functions.
+        forge::model::ForgeDocument::Codec(_)
+        | forge::model::ForgeDocument::Validator(_)
+        | forge::model::ForgeDocument::Procedure(_) => None,
+    }
+}
+
+/// Build a language-specific qualified function call from function name + namespace.
+fn build_qualified_call(
+    func_name: &str,
+    namespace: &str,
+    language: &generator::Language,
+) -> String {
+    match language {
+        generator::Language::Cpp => format!("{namespace}::{func_name}"),
+        generator::Language::Kotlin => func_name.to_string(), // Same package
+        generator::Language::Rust => format!("{namespace}::{func_name}"),
+        generator::Language::Go => format!("{namespace}.{func_name}"),
+        generator::Language::Python => func_name.to_string(), // Direct import
+    }
+}
+
+/// Build a forge dependency manifest from a directory of SCXML files.
+///
+/// Scans `dir` for `.scxml` files, extracts `sce:kind` and `<sce:import>`,
+/// and produces a JSON-serializable manifest with topological build order.
+pub fn build_forge_manifest(dir: &std::path::Path) -> Result<forge::model::ForgeManifest, String> {
+    forge::manifest::build_manifest(dir)
+}
+
 /// Detect if an SCXML file uses a non-statechart `sce:kind`.
 pub fn is_forge_document(content: &str) -> bool {
     forge::parser::detect_kind(content)

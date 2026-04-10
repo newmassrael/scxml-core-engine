@@ -7,6 +7,11 @@
 
 #include <cstdint>
 #include <string>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
 
 namespace SCE::Generated::{{ namespace }} {
 
@@ -19,6 +24,13 @@ struct {{ struct_name }} {
 {% for pv in prev_vars %}
     {{ pv.type }} {{ pv.name }}_ = {};
 {% endfor %}
+{% if has_imports %}
+
+    // Imported kinds (cross-file composition)
+{% for imp in imports %}
+    {{ imp.member_type }} {{ imp.member_name }}{};
+{% endfor %}
+{% endif %}
 
     ValidationResult validate({{ params }}) {
 {% for rule in range_rules %}

@@ -6,6 +6,11 @@
 #define {{ guard }}
 
 #include <cstdint>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
 
 namespace SCE::Generated::{{ namespace }} {
 

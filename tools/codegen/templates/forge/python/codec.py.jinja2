@@ -2,6 +2,11 @@
 # Do not edit — regenerate from the source SCXML file.
 
 from __future__ import annotations
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
 
 from dataclasses import dataclass
 from typing import Optional
