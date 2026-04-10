@@ -14,8 +14,8 @@ object ProcedureDiamond {
         while (iterations++ < 6) {
             val next = when (current) {
                 0 -> {
-                    if (sensorValue.toInt() > 1000) 1
-                    else if (sensorValue.toInt() > 500) 2
+                    if (sensorValue > 1000.toUShort()) 1
+                    else if (sensorValue > 500.toUShort()) 2
                     else 3
                 }
                 1 -> {

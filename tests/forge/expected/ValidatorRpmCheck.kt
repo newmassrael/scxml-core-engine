@@ -16,7 +16,7 @@ class ValidatorRpmCheck {
             if (delta > 500)
                 return ValidationResult(false, "rpm_rate_of_change_exceeded")
         }
-        if (!(rpm.toInt() == 0 || engineState != "STOP"))
+        if (!(rpm == 0.toUShort() || engineState != "STOP"))
             return ValidationResult(false, "plausibility_failed")
         prevRpm = rpm
         return ValidationResult(true, "")

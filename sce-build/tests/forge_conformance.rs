@@ -47,6 +47,18 @@ fn assert_standalone_forge_lang(
 
     let (_, generated) = &output.files[0];
     let expected_path = expected_dir().join(expected_filename);
+
+    // Golden update mode: when UPDATE_GOLDEN=1 is set, overwrite the expected
+    // file with the freshly generated output instead of comparing. Used after
+    // intentional emitter changes (e.g. cosmetic refactors of the typed AST
+    // pipeline) to refresh stale goldens. Requires manual review of the diff
+    // before committing.
+    if std::env::var("UPDATE_GOLDEN").is_ok() {
+        std::fs::write(&expected_path, generated.trim().to_string() + "\n")
+            .unwrap_or_else(|e| panic!("Cannot write {}: {e}", expected_path.display()));
+        return;
+    }
+
     let expected = std::fs::read_to_string(&expected_path)
         .unwrap_or_else(|e| panic!("Cannot read expected {}: {e}", expected_path.display()));
 
@@ -112,6 +124,18 @@ fn assert_inline_kinds(scxml_name: &str) {
 
     // Compare against expected output (path-agnostic)
     let expected_path = expected_dir().join(format!("{scxml_name}_sm.h"));
+    if std::env::var("UPDATE_GOLDEN").is_ok() {
+        // Preserve the path-agnostic relative `// From:` line that the
+        // committed golden uses; the live codegen embeds an absolute path
+        // which would otherwise leak into the regenerated golden and be
+        // machine-specific.
+        let absolute = scxml_path.to_string_lossy().into_owned();
+        let relative = format!("tests/forge/resources/{scxml_name}.scxml");
+        let normalized = header.replace(&absolute, &relative);
+        std::fs::write(&expected_path, normalized)
+            .unwrap_or_else(|e| panic!("Cannot write {}: {e}", expected_path.display()));
+        return;
+    }
     if expected_path.exists() {
         let expected = std::fs::read_to_string(&expected_path).unwrap();
         assert_eq!(

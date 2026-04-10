@@ -1062,14 +1062,37 @@ fn binary_operand_type(op: BinOp, left: InferredType, right: InferredType) -> In
 // C++ has implicit numeric conversions covering every case we care about:
 // integer ↔ float, narrower ↔ wider, signed ↔ unsigned. The emitter does
 // not insert `static_cast` — the compiler warns on narrowing conversions
-// but accepts them. Untyped integer literals are emitted verbatim; the
-// compiler picks the right literal type from context. Untyped float
-// literals are emitted verbatim as well.
+// but accepts them. Untyped float literals are emitted verbatim.
 //
-// The only text transformation C++ does is mapping quote characters in
+// Untyped decimal integer literals appearing in a float context get a `.0`
+// suffix. The C++ compiler would auto-promote without it, but the explicit
+// form survives manual review and matches the cross-language convention
+// shared with Rust/Kotlin/Go/Python.
+//
+// The only other text transformation C++ does is mapping quote characters in
 // string literals (single → double) and emitting `nullptr` for null.
 
-fn emit_cpp(expr: &TypedExpr, _expected: InferredType) -> String {
+fn emit_cpp(expr: &TypedExpr, expected: InferredType) -> String {
+    // Push-down: arith binary in float context propagates the float expectation
+    // through to the literal leaves so they get the `.0` suffix.
+    if let ExprKind::Binary { op, left, right } = &expr.kind {
+        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+            let l_raw = emit_cpp(left, expected);
+            let r_raw = emit_cpp(right, expected);
+            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            return format!("{l} {} {r}", cpp_binop(*op));
+        }
+    }
+    let raw = cpp_emit_node(expr);
+    cpp_coerce(raw, expr.ty, expected, expr)
+}
+
+fn cpp_emit_node(expr: &TypedExpr) -> String {
     match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
         ExprKind::StringLit { value, .. } => format!("\"{value}\""),
@@ -1127,6 +1150,23 @@ fn emit_cpp(expr: &TypedExpr, _expected: InferredType) -> String {
             )
         }
     }
+}
+
+fn cpp_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+    use InferredType::*;
+    if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
+        return raw;
+    }
+    // C++ has wide implicit conversions, so the emitter only needs the cosmetic
+    // float-literal promotion for cross-language consistency.
+    if let (UntypedInt, Float { .. }) = (from, to) {
+        if let ExprKind::NumberLit(text) = &node.kind {
+            if is_decimal_integer_literal(text) {
+                return format!("{raw}.0");
+            }
+        }
+    }
+    raw
 }
 
 fn cpp_binop(op: BinOp) -> &'static str {
@@ -1673,7 +1713,19 @@ fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr
         return raw;
     }
     match (from, to) {
-        // Untyped literals — Go's untyped constants auto-convert; no-op.
+        // Untyped decimal integer literal → float context: append `.0` so the
+        // emitted source is visually unambiguous (Go's untyped constants would
+        // auto-convert at compile time, but the explicit form survives manual
+        // review and matches the cross-language convention).
+        (UntypedInt, Float { .. }) => {
+            if let ExprKind::NumberLit(text) = &node.kind {
+                if is_decimal_integer_literal(text) {
+                    return format!("{raw}.0");
+                }
+            }
+            raw
+        }
+        // Other untyped literals — Go's untyped constants auto-convert; no-op.
         (UntypedInt, _) | (UntypedFloat, _) => raw,
         // Concrete int → float: explicit `float64(x)` / `float32(x)`.
         (Int { .. }, Float { bits: 64 }) => format!("float64({raw})"),
@@ -1686,10 +1738,7 @@ fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr
             let target = go_int_type(s2, b2);
             format!("{target}({raw})")
         }
-        _ => {
-            let _ = node;
-            raw
-        }
+        _ => raw,
     }
 }
 
@@ -1720,17 +1769,42 @@ fn has_ternary(expr: &TypedExpr) -> bool {
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //
 // Python duck-types numeric values: `int * 0.1` auto-promotes, no explicit
-// cast is ever required. The emitter's only responsibilities are:
+// cast is ever required. The emitter's responsibilities are:
 //
 // * Rename identifiers to `snake_case` (Python convention).
 // * Translate operators (`===` → `==`, `&&` → `and`, `||` → `or`, etc.).
 // * Translate literals (`true`/`false` → `True`/`False`, `null` → `None`).
 // * Translate ternary: `X ? Y : Z` → `Y if X else Z`.
+// * Single-quoted string literals (PEP 8 idiomatic style).
+// * Untyped decimal integer literal in float context → append `.0` so the
+//   emitted source survives manual review even though Python's `/` is float
+//   division by default. Matches the cross-language convention shared with
+//   Rust/Kotlin/Go/C++.
 
-fn emit_python(expr: &TypedExpr, _expected: InferredType) -> String {
+fn emit_python(expr: &TypedExpr, expected: InferredType) -> String {
+    // Push-down: arith binary in float context propagates the float expectation
+    // through to the literal leaves so they get the `.0` suffix.
+    if let ExprKind::Binary { op, left, right } = &expr.kind {
+        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+            let l_raw = emit_python(left, expected);
+            let r_raw = emit_python(right, expected);
+            let l = if child_needs_parens(left, *op, true, python_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, python_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            return format!("{l} {} {r}", python_binop(*op));
+        }
+    }
+    let raw = python_emit_node(expr);
+    python_coerce(raw, expr.ty, expected, expr)
+}
+
+fn python_emit_node(expr: &TypedExpr) -> String {
     match &expr.kind {
         ExprKind::NumberLit(n) => n.clone(),
-        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::StringLit { value, .. } => format!("'{value}'"),
         ExprKind::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
         ExprKind::NullLit => "None".to_string(),
         ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
@@ -1788,6 +1862,23 @@ fn emit_python(expr: &TypedExpr, _expected: InferredType) -> String {
             )
         }
     }
+}
+
+fn python_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+    use InferredType::*;
+    if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
+        return raw;
+    }
+    // Python is duck-typed; the only coercion the emitter has to render is the
+    // cosmetic float-literal promotion for cross-language consistency.
+    if let (UntypedInt, Float { .. }) = (from, to) {
+        if let ExprKind::NumberLit(text) = &node.kind {
+            if is_decimal_integer_literal(text) {
+                return format!("{raw}.0");
+            }
+        }
+    }
+    raw
 }
 
 fn python_binop(op: BinOp) -> &'static str {

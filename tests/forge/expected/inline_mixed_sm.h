@@ -108,7 +108,7 @@ struct inline_mixedPolicy {
     }
     // SCE Forge: Inline transform 'toFahrenheit'
     [[nodiscard]] double computeToFahrenheit() const {
-        return celsius * 1.8 + 32;
+        return celsius * 1.8 + 32.0;
     }
 
     // Session ID for JSEngine/Invoke (lazy-initialized)
