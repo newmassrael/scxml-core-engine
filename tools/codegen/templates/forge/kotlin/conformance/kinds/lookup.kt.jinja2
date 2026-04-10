@@ -1,0 +1,22 @@
+{# Lookup kind — finite key→value mapping. on_miss=error generates V?
+   (null is a hard failure since happy-path fixtures hit every key);
+   on_miss=default generates raw V via fallback. #}
+        val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
+        for (case in cases) {
+            val args = case.jsonObject["args"]!!.jsonArray
+{% for arg_ty in f.args %}
+            val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
+{% endfor %}
+            val expected = {{ "case.jsonObject[\"expected\"]!!" | kt_unmarshal(f.output.type) }}
+{% if f.on_miss == "error" %}
+            val actual = {{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+                ?: error("{{ f.name }} happy-path lookup miss")
+{% else %}
+            val actual = {{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% endif %}
+{% if f.output.compare == "tolerance" %}
+            assertEquals(expected, actual, tol, "{{ f.name }}")
+{% else %}
+            assertEquals(expected, actual, "{{ f.name }}")
+{% endif %}
+        }

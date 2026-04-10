@@ -181,6 +181,23 @@ fn forge_lookup_single_default() {
     assert_standalone_forge("lookup_single_default", "lookup_single_default.h");
 }
 
+// Numeric-output lookup with on-miss=error: shares the lookup kind but
+// triggers the parallel-array codegen branch instead of enum dispatch.
+#[test]
+fn forge_lookup_alarm_code() {
+    assert_standalone_forge("lookup_alarm_code", "lookup_alarm_code.h");
+}
+
+#[test]
+fn forge_lookup_state_action() {
+    assert_standalone_forge("lookup_state_action", "lookup_state_action.h");
+}
+
+#[test]
+fn forge_lookup_unit_scale() {
+    assert_standalone_forge("lookup_unit_scale", "lookup_unit_scale.h");
+}
+
 // ── Condition conformance (3 tests) ───────────────────────────
 
 #[test]
@@ -253,6 +270,21 @@ fn forge_kotlin_lookup_single_default() {
     assert_standalone_forge_kotlin("lookup_single_default", "LookupSingleDefault.kt");
 }
 
+#[test]
+fn forge_kotlin_lookup_alarm_code() {
+    assert_standalone_forge_kotlin("lookup_alarm_code", "LookupAlarmCode.kt");
+}
+
+#[test]
+fn forge_kotlin_lookup_state_action() {
+    assert_standalone_forge_kotlin("lookup_state_action", "LookupStateAction.kt");
+}
+
+#[test]
+fn forge_kotlin_lookup_unit_scale() {
+    assert_standalone_forge_kotlin("lookup_unit_scale", "LookupUnitScale.kt");
+}
+
 // ── Condition (Kotlin) ───────────────────────────────────────
 
 #[test]
@@ -323,6 +355,21 @@ fn forge_rust_lookup_gear_position() {
 #[test]
 fn forge_rust_lookup_single_default() {
     assert_standalone_forge_rust("lookup_single_default", "lookup_single_default.rs");
+}
+
+#[test]
+fn forge_rust_lookup_alarm_code() {
+    assert_standalone_forge_rust("lookup_alarm_code", "lookup_alarm_code.rs");
+}
+
+#[test]
+fn forge_rust_lookup_state_action() {
+    assert_standalone_forge_rust("lookup_state_action", "lookup_state_action.rs");
+}
+
+#[test]
+fn forge_rust_lookup_unit_scale() {
+    assert_standalone_forge_rust("lookup_unit_scale", "lookup_unit_scale.rs");
 }
 
 // ── Condition (Rust) ─────────────────────────────────────────
@@ -406,6 +453,21 @@ fn forge_go_lookup_single_default() {
     assert_standalone_forge_go("lookup_single_default", "lookup_single_default.go");
 }
 
+#[test]
+fn forge_go_lookup_alarm_code() {
+    assert_standalone_forge_go("lookup_alarm_code", "lookup_alarm_code.go");
+}
+
+#[test]
+fn forge_go_lookup_state_action() {
+    assert_standalone_forge_go("lookup_state_action", "lookup_state_action.go");
+}
+
+#[test]
+fn forge_go_lookup_unit_scale() {
+    assert_standalone_forge_go("lookup_unit_scale", "lookup_unit_scale.go");
+}
+
 // ── Condition (Go) ──────────────────────────────────────────
 
 #[test]
@@ -485,6 +547,21 @@ fn forge_python_lookup_gear_position() {
 #[test]
 fn forge_python_lookup_single_default() {
     assert_standalone_forge_python("lookup_single_default", "lookup_single_default.py");
+}
+
+#[test]
+fn forge_python_lookup_alarm_code() {
+    assert_standalone_forge_python("lookup_alarm_code", "lookup_alarm_code.py");
+}
+
+#[test]
+fn forge_python_lookup_state_action() {
+    assert_standalone_forge_python("lookup_state_action", "lookup_state_action.py");
+}
+
+#[test]
+fn forge_python_lookup_unit_scale() {
+    assert_standalone_forge_python("lookup_unit_scale", "lookup_unit_scale.py");
 }
 
 // ── Condition (Python) ──────────────────────────────────────

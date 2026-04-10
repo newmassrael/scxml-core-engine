@@ -132,7 +132,8 @@ fn parse_lookup(root: &roxmltree::Node, name: &str) -> Result<LookupModel, Strin
     let mut input: Option<ForgeField> = None;
     let mut output: Option<ForgeField> = None;
     let mut entries = Vec::new();
-    let mut default_value = String::new();
+    let mut explicit_default: Option<String> = None;
+    let mut on_miss_attr: Option<String> = None;
 
     for data in data_children(&datamodel) {
         let dir = sce_attr(&data, "direction");
@@ -143,7 +144,10 @@ fn parse_lookup(root: &roxmltree::Node, name: &str) -> Result<LookupModel, Strin
             output = Some(parse_forge_field(&data)?);
         } else {
             if let Some(def) = sce_attr(&data, "default") {
-                default_value = def;
+                explicit_default = Some(def);
+            }
+            if let Some(oms) = sce_attr(&data, "on-miss") {
+                on_miss_attr = Some(oms);
             }
             entries.extend(parse_sce_entries(&data)?);
         }
@@ -156,16 +160,49 @@ fn parse_lookup(root: &roxmltree::Node, name: &str) -> Result<LookupModel, Strin
         return Err("Lookup kind requires at least one <sce:entry>".to_string());
     }
 
-    if default_value.is_empty() {
-        default_value = entries[0].value.clone();
+    // Key uniqueness is required by both miss policies: duplicates make the
+    // lookup non-deterministic for the colliding key.
+    let mut seen_keys = std::collections::BTreeSet::new();
+    for entry in &entries {
+        if !seen_keys.insert(entry.key.clone()) {
+            return Err(format!(
+                "Lookup kind: duplicate key '{}' in <sce:entry>",
+                entry.key
+            ));
+        }
     }
+
+    let miss_policy = match on_miss_attr.as_deref() {
+        Some("error") => {
+            if explicit_default.is_some() {
+                return Err(
+                    "Lookup kind: sce:on-miss=\"error\" is incompatible with sce:default; \
+                     an error policy has no fallback value"
+                        .to_string(),
+                );
+            }
+            MissPolicy::Error
+        }
+        Some("default") | None => {
+            // Absent attribute matches the historical behaviour: fall back to
+            // the explicit sce:default value, or the first entry if none.
+            let value = explicit_default.unwrap_or_else(|| entries[0].value.clone());
+            MissPolicy::Default(value)
+        }
+        Some(other) => {
+            return Err(format!(
+                "Lookup kind: unknown sce:on-miss value '{other}' \
+                 (expected 'default' or 'error')"
+            ));
+        }
+    };
 
     Ok(LookupModel {
         name: name.to_string(),
         input,
         output,
         entries,
-        default_value,
+        miss_policy,
     })
 }
 

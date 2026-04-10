@@ -78,7 +78,7 @@ fn main() {
 
     // Step 3: render the cross-language test harness from the shared template.
     let harness =
-        conformance::render_harness(&manifest, Language::Rust, &template_base)
+        conformance::render_harness(&manifest, Language::Rust, &template_base, &resource_dir)
             .unwrap_or_else(|e| panic!("render conformance harness: {e}"));
     let harness_path =
         Path::new(&out_dir).join(conformance::harness_filename(Language::Rust));

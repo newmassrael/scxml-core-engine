@@ -7,6 +7,7 @@ package com.sce.generated.{{ package }}
 {{ imp.include_stmt }}
 {% endif %}
 {% endfor %}
+{% if output_is_string %}
 
 enum class {{ enum_name }} { {{ unique_values | join(", ") }} }
 
@@ -16,3 +17,17 @@ fun {{ func_name }}({{ input_id }}: {{ input_type }}): {{ enum_name }} = when ({
 {% endfor %}
     else -> {{ enum_name }}.{{ default_value }}
 }
+{% else %}
+
+import com.sce.forge.runtime.lookup
+
+private val KEYS: List<{{ input_type }}> = listOf({{ keys_literal | join(", ") }})
+private val VALUES: List<{{ value_type }}> = listOf({{ values_literal | join(", ") }})
+
+fun {{ func_name }}({{ input_id }}: {{ input_type }}): {% if on_miss_error %}{{ value_type }}?{% else %}{{ value_type }}{% endif %} =
+{% if on_miss_error %}
+    lookup(KEYS, VALUES, {{ input_id }})
+{% else %}
+    lookup(KEYS, VALUES, {{ input_id }}) ?: {{ default_literal }}
+{% endif %}
+{% endif %}

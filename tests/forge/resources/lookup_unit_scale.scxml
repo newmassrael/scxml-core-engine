@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: lookup kind — float-valued lookup table with
+     error-on-miss. Maps a unit enum (millimetre, centimetre, ...) to its
+     scale factor in metres. Demonstrates the parallel-array codegen path
+     that the existing string-output enum strategy cannot reach. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="unit_scale">
+  <datamodel>
+    <data id="unit" sce:type="int32" sce:direction="in"/>
+    <data id="scale" sce:type="float64" sce:direction="out"/>
+    <data id="mapping" sce:on-miss="error">
+      <sce:entry key="1" value="0.001"/>
+      <sce:entry key="2" value="0.01"/>
+      <sce:entry key="3" value="0.1"/>
+      <sce:entry key="4" value="1.0"/>
+      <sce:entry key="5" value="10.0"/>
+      <sce:entry key="6" value="100.0"/>
+    </data>
+  </datamodel>
+</scxml>

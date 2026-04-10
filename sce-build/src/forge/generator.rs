@@ -286,6 +286,96 @@ fn rust_param_type(ty: &SceType) -> String {
     }
 }
 
+// ── Per-language literal formatters ───────────────────────────
+//
+// Convert a raw value text from SCXML (e.g. `"100"`, `"0.25"`, `"true"`) into
+// a language-correct literal of the requested SceType. Used by lookup const
+// arrays where the same fixture must compile in five target languages whose
+// literal grammar varies (Kotlin requires `u` suffix for unsigned, Float
+// needs `f` suffix; Rust accepts bare numerics in typed array context but
+// needs `.0` for float promotion when the source text is an integer).
+//
+// The text is trusted to already parse as the requested type — the parser
+// catches malformed values upstream. These helpers only adapt syntax, not
+// semantics.
+
+/// True if `n` is a textual integer (no decimal point or exponent).
+fn looks_like_int(n: &str) -> bool {
+    !n.contains('.') && !n.contains('e') && !n.contains('E')
+}
+
+fn rust_literal(text: &str, ty: &SceType) -> String {
+    match ty {
+        SceType::Float32 if looks_like_int(text) => format!("{text}.0_f32"),
+        SceType::Float64 if looks_like_int(text) => format!("{text}.0"),
+        SceType::Float32 => format!("{text}_f32"),
+        SceType::Float64 => text.to_string(),
+        SceType::Bool | SceType::String => text.to_string(),
+        _ => text.to_string(),
+    }
+}
+
+fn cpp_literal(text: &str, ty: &SceType) -> String {
+    match ty {
+        SceType::Float32 if looks_like_int(text) => format!("{text}.0f"),
+        SceType::Float32 => format!("{text}f"),
+        SceType::Float64 if looks_like_int(text) => format!("{text}.0"),
+        _ => text.to_string(),
+    }
+}
+
+fn go_literal(text: &str, ty: &SceType) -> String {
+    // Go's untyped constants auto-convert in typed array context, but emit
+    // explicit `.0` for float literals to match the cross-language style and
+    // keep manual review readable.
+    match ty {
+        SceType::Float32 | SceType::Float64 if looks_like_int(text) => format!("{text}.0"),
+        _ => text.to_string(),
+    }
+}
+
+fn kotlin_literal(text: &str, ty: &SceType) -> String {
+    match ty {
+        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64 => {
+            // `100u.toUByte()` etc. — `u` suffix marks the literal as unsigned,
+            // then narrow to the exact type. Kotlin has no UByte/UShort literal
+            // form so the conversion is mandatory.
+            let suffix = match ty {
+                SceType::Uint8 => "toUByte",
+                SceType::Uint16 => "toUShort",
+                SceType::Uint32 => "toUInt",
+                SceType::Uint64 => "toULong",
+                _ => unreachable!(),
+            };
+            format!("{text}u.{suffix}()")
+        }
+        SceType::Int8 => format!("({text}).toByte()"),
+        SceType::Int16 => format!("({text}).toShort()"),
+        SceType::Int64 if looks_like_int(text) => format!("{text}L"),
+        SceType::Float32 if looks_like_int(text) => format!("{text}.0f"),
+        SceType::Float32 => format!("{text}f"),
+        SceType::Float64 if looks_like_int(text) => format!("{text}.0"),
+        SceType::String => format!("\"{text}\""),
+        _ => text.to_string(),
+    }
+}
+
+fn python_literal(text: &str, ty: &SceType) -> String {
+    match ty {
+        SceType::Float32 | SceType::Float64 if looks_like_int(text) => format!("{text}.0"),
+        SceType::String => format!("'{text}'"),
+        SceType::Bool => {
+            // Python uses Title-cased booleans.
+            match text {
+                "true" => "True".to_string(),
+                "false" => "False".to_string(),
+                _ => text.to_string(),
+            }
+        }
+        _ => text.to_string(),
+    }
+}
+
 // ── Public API ─────────────────────────────────────────────────
 
 /// Generate code from a ForgeDocument for C++ using Jinja2 templates.
@@ -398,16 +488,44 @@ fn render_lookup_cpp(
     let enum_name = filters::to_pascal_case(m.output.id.clone());
     let func_name = format!("lookup{}", filters::to_pascal_case(m.output.id.clone()));
 
-    let entries_by_value: Vec<serde_json::Value> = m
-        .entries_by_value()
-        .into_iter()
-        .map(|(value, keys)| {
-            serde_json::json!({
-                "value": value,
-                "keys": keys,
-            })
-        })
-        .collect();
+    let output_is_string = m.output_is_string();
+    let on_miss_error = m.miss_policy.is_error();
+
+    let (entries_by_value, unique_values, default_value) = if output_is_string {
+        let ebv: Vec<serde_json::Value> = m
+            .entries_by_value()
+            .into_iter()
+            .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
+            .collect();
+        let uv = m.unique_values();
+        let dv = match &m.miss_policy {
+            MissPolicy::Default(s) => s.clone(),
+            MissPolicy::Error => String::new(),
+        };
+        (ebv, uv, dv)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
+
+    let (keys_literal, values_literal, default_literal) = if !output_is_string {
+        let kl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| cpp_literal(&e.key, &m.input.sce_type))
+            .collect();
+        let vl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| cpp_literal(&e.value, &m.output.sce_type))
+            .collect();
+        let dl = match &m.miss_policy {
+            MissPolicy::Default(s) => cpp_literal(s, &m.output.sce_type),
+            MissPolicy::Error => String::new(),
+        };
+        (kl, vl, dl)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
 
     let tmpl = env
         .get_template("lookup.h.jinja2")
@@ -421,10 +539,17 @@ fn render_lookup_cpp(
         enum_name => enum_name,
         func_name => func_name,
         input_type => cpp_param_type(&m.input.sce_type),
+        value_type => cpp_param_type(&m.output.sce_type),
         input_id => &m.input.id,
-        unique_values => minijinja::Value::from_serialize(&m.unique_values()),
+        unique_values => minijinja::Value::from_serialize(&unique_values),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => &m.default_value,
+        default_value => default_value,
+        default_literal => default_literal,
+        output_is_string => output_is_string,
+        on_miss_error => on_miss_error,
+        keys_literal => minijinja::Value::from_serialize(&keys_literal),
+        values_literal => minijinja::Value::from_serialize(&values_literal),
+        n => m.entries.len(),
         has_imports => has_imports,
         imports => stateful_imports,
         all_imports => all_imports,
@@ -946,16 +1071,44 @@ fn render_lookup_kotlin(
         None => String::new(),
     };
 
-    let entries_by_value: Vec<serde_json::Value> = m
-        .entries_by_value()
-        .into_iter()
-        .map(|(value, keys)| {
-            serde_json::json!({
-                "value": value,
-                "keys": keys,
-            })
-        })
-        .collect();
+    let output_is_string = m.output_is_string();
+    let on_miss_error = m.miss_policy.is_error();
+
+    let (entries_by_value, unique_values, default_value) = if output_is_string {
+        let ebv: Vec<serde_json::Value> = m
+            .entries_by_value()
+            .into_iter()
+            .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
+            .collect();
+        let uv = m.unique_values();
+        let dv = match &m.miss_policy {
+            MissPolicy::Default(s) => s.clone(),
+            MissPolicy::Error => String::new(),
+        };
+        (ebv, uv, dv)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
+
+    let (keys_literal, values_literal, default_literal) = if !output_is_string {
+        let kl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| kotlin_literal(&e.key, &m.input.sce_type))
+            .collect();
+        let vl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| kotlin_literal(&e.value, &m.output.sce_type))
+            .collect();
+        let dl = match &m.miss_policy {
+            MissPolicy::Default(s) => kotlin_literal(s, &m.output.sce_type),
+            MissPolicy::Error => String::new(),
+        };
+        (kl, vl, dl)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
 
     let tmpl = env
         .get_template("lookup.kt.jinja2")
@@ -968,11 +1121,18 @@ fn render_lookup_kotlin(
         enum_name => enum_name,
         func_name => func_name,
         input_type => kotlin_type(&m.input.sce_type),
+        value_type => kotlin_type(&m.output.sce_type),
         input_id => &m.input.id,
         match_suffix => match_suffix,
-        unique_values => minijinja::Value::from_serialize(&m.unique_values()),
+        unique_values => minijinja::Value::from_serialize(&unique_values),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => &m.default_value,
+        default_value => default_value,
+        default_literal => default_literal,
+        output_is_string => output_is_string,
+        on_miss_error => on_miss_error,
+        keys_literal => minijinja::Value::from_serialize(&keys_literal),
+        values_literal => minijinja::Value::from_serialize(&values_literal),
+        n => m.entries.len(),
         has_imports => has_imports,
         imports => stateful_imports,
         all_imports => all_imports,
@@ -1450,25 +1610,56 @@ fn render_lookup_rust(
     let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
     let input_id_snake = filters::to_snake_case(m.input.id.clone());
 
-    // Convert enum values to PascalCase for Rust convention
-    let unique_values: Vec<String> = m
-        .unique_values()
-        .into_iter()
-        .map(|v| to_rust_variant(&v))
-        .collect();
+    let output_is_string = m.output_is_string();
+    let on_miss_error = m.miss_policy.is_error();
 
-    let entries_by_value: Vec<serde_json::Value> = m
-        .entries_by_value()
-        .into_iter()
-        .map(|(value, keys)| {
-            serde_json::json!({
-                "value": to_rust_variant(&value),
-                "keys": keys,
+    // Per-strategy bindings: only the chosen branch's data is computed; the
+    // unused branch passes empty placeholders that the template's
+    // {% if output_is_string %} gate never reads.
+    let (unique_values, entries_by_value, default_value) = if output_is_string {
+        let uv: Vec<String> = m
+            .unique_values()
+            .into_iter()
+            .map(|v| to_rust_variant(&v))
+            .collect();
+        let ebv: Vec<serde_json::Value> = m
+            .entries_by_value()
+            .into_iter()
+            .map(|(value, keys)| {
+                serde_json::json!({
+                    "value": to_rust_variant(&value),
+                    "keys": keys,
+                })
             })
-        })
-        .collect();
+            .collect();
+        let dv = match &m.miss_policy {
+            MissPolicy::Default(s) => to_rust_variant(s),
+            MissPolicy::Error => String::new(),
+        };
+        (uv, ebv, dv)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
 
-    let default_value = to_rust_variant(&m.default_value);
+    let (keys_literal, values_literal, default_literal) = if !output_is_string {
+        let kl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| rust_literal(&e.key, &m.input.sce_type))
+            .collect();
+        let vl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| rust_literal(&e.value, &m.output.sce_type))
+            .collect();
+        let dl = match &m.miss_policy {
+            MissPolicy::Default(s) => rust_literal(s, &m.output.sce_type),
+            MissPolicy::Error => String::new(),
+        };
+        (kl, vl, dl)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
 
     let tmpl = env
         .get_template("lookup.rs.jinja2")
@@ -1480,10 +1671,17 @@ fn render_lookup_rust(
         enum_name => enum_name,
         func_name => func_name,
         input_type => rust_param_type(&m.input.sce_type),
+        value_type => rust_param_type(&m.output.sce_type),
         input_id => input_id_snake,
         unique_values => minijinja::Value::from_serialize(&unique_values),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
         default_value => default_value,
+        default_literal => default_literal,
+        output_is_string => output_is_string,
+        on_miss_error => on_miss_error,
+        keys_literal => minijinja::Value::from_serialize(&keys_literal),
+        values_literal => minijinja::Value::from_serialize(&values_literal),
+        n => m.entries.len(),
         has_imports => has_imports,
         imports => stateful_imports,
         all_imports => all_imports,
@@ -1980,16 +2178,44 @@ fn render_lookup_go(
     let func_name = format!("Lookup{}", filters::to_pascal_case(m.output.id.clone()));
     let input_id_safe = go_escape_builtin(&m.input.id);
 
-    let entries_by_value: Vec<serde_json::Value> = m
-        .entries_by_value()
-        .into_iter()
-        .map(|(value, keys)| {
-            serde_json::json!({
-                "value": value,
-                "keys": keys,
-            })
-        })
-        .collect();
+    let output_is_string = m.output_is_string();
+    let on_miss_error = m.miss_policy.is_error();
+
+    let (entries_by_value, unique_values, default_value) = if output_is_string {
+        let ebv: Vec<serde_json::Value> = m
+            .entries_by_value()
+            .into_iter()
+            .map(|(value, keys)| serde_json::json!({"value": value, "keys": keys}))
+            .collect();
+        let uv = m.unique_values();
+        let dv = match &m.miss_policy {
+            MissPolicy::Default(s) => s.clone(),
+            MissPolicy::Error => String::new(),
+        };
+        (ebv, uv, dv)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
+
+    let (keys_literal, values_literal, default_literal) = if !output_is_string {
+        let kl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| go_literal(&e.key, &m.input.sce_type))
+            .collect();
+        let vl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| go_literal(&e.value, &m.output.sce_type))
+            .collect();
+        let dl = match &m.miss_policy {
+            MissPolicy::Default(s) => go_literal(s, &m.output.sce_type),
+            MissPolicy::Error => String::new(),
+        };
+        (kl, vl, dl)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
 
     let tmpl = env
         .get_template("lookup.go.jinja2")
@@ -2002,10 +2228,17 @@ fn render_lookup_go(
         enum_name => enum_name,
         func_name => func_name,
         input_type => go_type(&m.input.sce_type),
+        value_type => go_type(&m.output.sce_type),
         input_id => input_id_safe,
-        unique_values => minijinja::Value::from_serialize(&m.unique_values()),
+        unique_values => minijinja::Value::from_serialize(&unique_values),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => &m.default_value,
+        default_value => default_value,
+        default_literal => default_literal,
+        output_is_string => output_is_string,
+        on_miss_error => on_miss_error,
+        keys_literal => minijinja::Value::from_serialize(&keys_literal),
+        values_literal => minijinja::Value::from_serialize(&values_literal),
+        n => m.entries.len(),
         has_imports => has_imports,
         imports => stateful_imports,
         all_imports => all_imports,
@@ -2499,23 +2732,53 @@ fn render_lookup_python(
     let func_name = format!("lookup_{}", filters::to_snake_case(m.output.id.clone()));
     let input_id_snake = filters::to_snake_case(m.input.id.clone());
 
+    let output_is_string = m.output_is_string();
+    let on_miss_error = m.miss_policy.is_error();
+
     // Pre-compute condition expression per group: `==` for single key, `in (...)` for multiple.
     // Single-element tuples need a trailing comma in Python: `(0x07,)`.
-    let entries_by_value: Vec<serde_json::Value> = m
-        .entries_by_value()
-        .into_iter()
-        .map(|(value, keys)| {
-            let condition = if keys.len() == 1 {
-                format!("{} == {}", input_id_snake, keys[0])
-            } else {
-                format!("{} in ({})", input_id_snake, keys.join(", "))
-            };
-            serde_json::json!({
-                "value": value,
-                "condition": condition,
+    let (entries_by_value, unique_values, default_value) = if output_is_string {
+        let ebv: Vec<serde_json::Value> = m
+            .entries_by_value()
+            .into_iter()
+            .map(|(value, keys)| {
+                let condition = if keys.len() == 1 {
+                    format!("{} == {}", input_id_snake, keys[0])
+                } else {
+                    format!("{} in ({})", input_id_snake, keys.join(", "))
+                };
+                serde_json::json!({"value": value, "condition": condition})
             })
-        })
-        .collect();
+            .collect();
+        let uv = m.unique_values();
+        let dv = match &m.miss_policy {
+            MissPolicy::Default(s) => s.clone(),
+            MissPolicy::Error => String::new(),
+        };
+        (ebv, uv, dv)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
+
+    let (keys_literal, values_literal, default_literal) = if !output_is_string {
+        let kl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| python_literal(&e.key, &m.input.sce_type))
+            .collect();
+        let vl: Vec<String> = m
+            .entries
+            .iter()
+            .map(|e| python_literal(&e.value, &m.output.sce_type))
+            .collect();
+        let dl = match &m.miss_policy {
+            MissPolicy::Default(s) => python_literal(s, &m.output.sce_type),
+            MissPolicy::Error => String::new(),
+        };
+        (kl, vl, dl)
+    } else {
+        (Vec::new(), Vec::new(), String::new())
+    };
 
     let tmpl = env
         .get_template("lookup.py.jinja2")
@@ -2527,10 +2790,17 @@ fn render_lookup_python(
         enum_name => enum_name,
         func_name => func_name,
         input_type => python_type(&m.input.sce_type),
+        value_type => python_type(&m.output.sce_type),
         input_id => input_id_snake,
-        unique_values => minijinja::Value::from_serialize(&m.unique_values()),
+        unique_values => minijinja::Value::from_serialize(&unique_values),
         entries_by_value => minijinja::Value::from_serialize(&entries_by_value),
-        default_value => &m.default_value,
+        default_value => default_value,
+        default_literal => default_literal,
+        output_is_string => output_is_string,
+        on_miss_error => on_miss_error,
+        keys_literal => minijinja::Value::from_serialize(&keys_literal),
+        values_literal => minijinja::Value::from_serialize(&values_literal),
+        n => m.entries.len(),
         has_imports => has_imports,
         imports => stateful_imports,
         all_imports => all_imports,

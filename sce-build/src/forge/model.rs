@@ -239,18 +239,63 @@ pub struct LookupEntry {
     pub value: String,
 }
 
-/// Lookup: discrete value mapping. Generates switch/match + enum.
+/// Miss-handling policy for `sce:kind="lookup"`. Captured from the
+/// `sce:on-miss` attribute on the mapping `<data>` element, with `sce:default`
+/// implied as `Default`. These are two orthogonal codegen strategies, not two
+/// different kinds — see SCE_FORGE.md Section 4.9.
+///
+/// `Default(fallback)`: total function — every input produces an output, and
+/// the fallback string is the value returned when no entry key matches. Used
+/// by symbolic dispatch (gear positions, engine status, etc.).
+///
+/// `Error`: partial function — the generated `lookup(x)` returns
+/// `Option<V>` / `std::optional<V>` / `(V, bool)` / `V?` depending on the
+/// target language. Callers must handle the miss case explicitly. Used by
+/// numeric data tables where an unknown key is a bug, not a fallback case.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", content = "value")]
+pub enum MissPolicy {
+    #[serde(rename = "default")]
+    Default(String),
+    #[serde(rename = "error")]
+    Error,
+}
+
+impl MissPolicy {
+    pub fn is_error(&self) -> bool {
+        matches!(self, Self::Error)
+    }
+}
+
+/// Lookup: finite key→value mapping with an explicit miss policy.
+///
+/// Two orthogonal codegen strategies are chosen by the generator based on
+/// `output.sce_type`:
+///   * `string` output → enum + switch/case (symbolic dispatch). Every
+///     unique value becomes an enum variant; input matches select the
+///     variant. The `Default` policy embeds a `default:` branch; the
+///     `Error` policy wraps the return in the language's optional type.
+///   * non-string output → parallel `KEYS[]` / `VALUES[]` constants plus a
+///     call into `sce_forge_runtime::lookup::lookup()`. The `Default` policy
+///     unwraps with `or(default)`; the `Error` policy forwards the optional.
 #[derive(Debug, Clone, Serialize)]
 pub struct LookupModel {
     pub name: String,
     pub input: ForgeField,
     pub output: ForgeField,
     pub entries: Vec<LookupEntry>,
-    /// Fallback value when no entry matches. If empty, uses first entry's value.
-    pub default_value: String,
+    pub miss_policy: MissPolicy,
 }
 
 impl LookupModel {
+    /// The codegen strategy contract: string output → enum dispatch + switch/case;
+    /// any non-string output → parallel const arrays + runtime helper. The two
+    /// branches are *exclusive*, never combined. See `MissPolicy` for the
+    /// orthogonal miss-handling axis. SCE_FORGE.md §4.9 documents the rationale.
+    pub fn output_is_string(&self) -> bool {
+        matches!(self.output.sce_type, SceType::String)
+    }
+
     /// Collect unique output values (for enum generation), preserving insertion order.
     pub fn unique_values(&self) -> Vec<String> {
         let mut seen = std::collections::BTreeSet::new();

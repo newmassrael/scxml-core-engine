@@ -141,6 +141,43 @@
         {"args": [11.5, 79.5], "expected": {"completed": true, "final_state": "success"},       "note": "inclusive voltage low boundary"},
         {"args": [14.5, 79.5], "expected": {"completed": true, "final_state": "success"},       "note": "inclusive voltage high boundary"}
       ]
+    },
+
+    "lookup_alarm_code": {
+      "fixture": "lookup_severity",
+      "signature": "(code: i32) -> Option<i32>",
+      "description": "Fault code -> severity level. Exact-match lookup with error-on-miss; happy-path inputs only (every key hits the table).",
+      "cases": [
+        {"args": [100], "expected": 1, "note": "low alarm"},
+        {"args": [200], "expected": 2, "note": "medium alarm"},
+        {"args": [300], "expected": 3, "note": "high alarm"},
+        {"args": [400], "expected": 2, "note": "duplicate value (medium) — exercises non-injective mapping"},
+        {"args": [500], "expected": 4, "note": "critical alarm"}
+      ]
+    },
+    "lookup_state_action": {
+      "fixture": "lookup_action",
+      "signature": "(state: i32) -> Option<i32>",
+      "description": "State code -> action code. Exact-match lookup with error-on-miss.",
+      "cases": [
+        {"args": [0], "expected": 10, "note": "idle -> noop+10"},
+        {"args": [1], "expected": 20, "note": "ready -> noop+20"},
+        {"args": [2], "expected": 30, "note": "running -> noop+30"},
+        {"args": [3], "expected": 40, "note": "done -> noop+40"}
+      ]
+    },
+    "lookup_unit_scale": {
+      "fixture": "lookup_scale",
+      "signature": "(unit: i32) -> Option<f64>",
+      "description": "Unit enum (1=mm, 2=cm, 3=dm, 4=m, 5=dam, 6=hm) -> metres-per-unit. Float-output lookup; the existing string-output enum-dispatch path cannot represent f64 values.",
+      "cases": [
+        {"args": [1], "expected": 0.001, "note": "millimetre"},
+        {"args": [2], "expected": 0.01,  "note": "centimetre"},
+        {"args": [3], "expected": 0.1,   "note": "decimetre"},
+        {"args": [4], "expected": 1.0,   "note": "metre"},
+        {"args": [5], "expected": 10.0,  "note": "decametre"},
+        {"args": [6], "expected": 100.0, "note": "hectometre"}
+      ]
     }
   },
 

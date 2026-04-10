@@ -97,7 +97,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": ["interpolation", "transform", "condition", "filter", "observer", "procedure"]
+          "enum": ["interpolation", "transform", "condition", "filter", "observer", "procedure", "lookup"]
         },
         "ref_section": {
           "type": "string",
@@ -120,12 +120,17 @@
         },
         "function": {
           "type": "string",
-          "description": "Free-function name for kind=condition."
+          "description": "Free-function name for kind=condition. Lookup's function name is derived from the SCXML output id at harness-rendering time and must NOT be specified here."
         },
         "event_tags": {
           "type": "array",
           "description": "Observer kind: ordered list of emitted event tag names.",
           "items": { "type": "string" }
+        },
+        "on_miss": {
+          "type": "string",
+          "enum": ["error", "default"],
+          "description": "Lookup kind only: miss-handling policy. error → generated function returns Option<V> and harness unwraps; default → generated function returns raw V via fallback."
         }
       },
       "allOf": [
@@ -157,6 +162,13 @@
               { "required": ["output"], "not": { "required": ["compound_outputs"] } },
               { "required": ["compound_outputs"], "not": { "required": ["output"] } }
             ]
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "lookup" } }, "required": ["kind"] },
+          "then": {
+            "required": ["args", "output", "on_miss"],
+            "not": { "required": ["function"] }
           }
         }
       ]

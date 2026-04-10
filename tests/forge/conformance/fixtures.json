@@ -8,7 +8,8 @@
     "condition":     "Pure boolean predicate. Free function <name>(args) -> bool. Reference section: pure_functions.",
     "filter":        "Stateful signal filter. Instance::update(input) -> output, one output per sequence step. Reference section: stateful_filters.",
     "observer":      "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
-    "procedure":     "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions."
+    "procedure":     "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions.",
+    "lookup":        "Finite key→value mapping with on-miss=error policy. Free function lookup_<name>(key) -> Option<V>. Numeric output only — string outputs go through the existing enum-dispatch lookup path tested by forge_conformance goldens. Reference section: pure_functions."
   },
   "canonical_types": {
     "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++).",
@@ -130,6 +131,31 @@
       "kind": "procedure",
       "ref_section": "pure_functions",
       "args": ["f32", "f32"]
+    },
+
+    {
+      "name": "lookup_alarm_code",
+      "kind": "lookup",
+      "ref_section": "pure_functions",
+      "on_miss": "error",
+      "args": ["i32"],
+      "output": {"type": "i32", "compare": "equality"}
+    },
+    {
+      "name": "lookup_state_action",
+      "kind": "lookup",
+      "ref_section": "pure_functions",
+      "on_miss": "error",
+      "args": ["i32"],
+      "output": {"type": "i32", "compare": "equality"}
+    },
+    {
+      "name": "lookup_unit_scale",
+      "kind": "lookup",
+      "ref_section": "pure_functions",
+      "on_miss": "error",
+      "args": ["i32"],
+      "output": {"type": "f64", "compare": "tolerance"}
     }
   ]
 }

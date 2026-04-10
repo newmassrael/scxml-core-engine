@@ -1707,11 +1707,22 @@ fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &st
         });
 
     let template_base = sce_build::find_template_base();
-    let rendered = sce_build::conformance::render_harness(&manifest, lang, &template_base)
-        .unwrap_or_else(|e| {
-            eprintln!("ERROR: {e}");
+    // Resource dir is the sibling of the manifest's parent (manifest lives at
+    // tests/forge/conformance/, SCXML files at tests/forge/resources/).
+    let resource_dir = Path::new(manifest_path)
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.join("resources"))
+        .unwrap_or_else(|| {
+            eprintln!("ERROR: cannot derive resource_dir from manifest path {manifest_path}");
             std::process::exit(1);
         });
+    let rendered =
+        sce_build::conformance::render_harness(&manifest, lang, &template_base, &resource_dir)
+            .unwrap_or_else(|e| {
+                eprintln!("ERROR: {e}");
+                std::process::exit(1);
+            });
 
     let out_dir = Path::new(output_dir);
     fs::create_dir_all(out_dir).unwrap_or_else(|e| {

@@ -2,6 +2,7 @@
 // Do not edit — regenerate from the source SCXML file.
 
 package {{ package }}
+{% if output_is_string %}
 {% if all_imports %}
 
 import (
@@ -35,3 +36,22 @@ func {{ func_name }}({{ input_id }} {{ input_type }}) {{ enum_name }} {
 		return {{ enum_name }}{{ default_value }}
 	}
 }
+{% else %}
+
+import "github.com/newmassrael/sce-forge-runtime/lookup"
+
+var keys = [{{ n }}]{{ input_type }}{ {{ keys_literal | join(", ") }} }
+var values = [{{ n }}]{{ value_type }}{ {{ values_literal | join(", ") }} }
+
+// {{ func_name }} returns the value paired with {{ input_id }}, or {% if on_miss_error %}(zero, false) on miss{% else %}{{ default_literal }} on miss{% endif %}.
+func {{ func_name }}({{ input_id }} {{ input_type }}) {% if on_miss_error %}({{ value_type }}, bool){% else %}{{ value_type }}{% endif %} {
+{% if on_miss_error %}
+	return lookup.Lookup(keys[:], values[:], {{ input_id }})
+{% else %}
+	if v, ok := lookup.Lookup(keys[:], values[:], {{ input_id }}); ok {
+		return v
+	}
+	return {{ default_literal }}
+{% endif %}
+}
+{% endif %}

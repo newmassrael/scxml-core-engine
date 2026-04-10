@@ -1,8 +1,6 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
 // Do not edit — regenerate from the source SCXML file.
 
-#![allow(dead_code)]
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     Stop,

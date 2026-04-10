@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: lookup kind — numeric output, error-on-miss policy.
+     Maps a fault code to a severity level. Cross-language exact-match lookup
+     with no fallback: an unknown code returns Option/None/null/etc., which
+     callers must handle explicitly. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="alarm_code">
+  <datamodel>
+    <data id="code" sce:type="int32" sce:direction="in"/>
+    <data id="severity" sce:type="int32" sce:direction="out"/>
+    <data id="mapping" sce:on-miss="error">
+      <sce:entry key="100" value="1"/>
+      <sce:entry key="200" value="2"/>
+      <sce:entry key="300" value="3"/>
+      <sce:entry key="400" value="2"/>
+      <sce:entry key="500" value="4"/>
+    </data>
+  </datamodel>
+</scxml>

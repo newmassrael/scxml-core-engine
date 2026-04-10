@@ -1,0 +1,24 @@
+{# Lookup kind — finite key→value mapping. on_miss=error generates
+   std::optional<V> (unwrapped here since happy-path fixtures hit every key);
+   on_miss=default generates raw V via fallback. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    for (const auto &c : spec["cases"]) {
+{% for arg_ty in f.args %}
+        auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
+{% endfor %}
+        auto expected = c["expected"].get<{{ f.output.type | cpp_type }}>();
+{% if f.on_miss == "error" %}
+        auto actual_opt = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        CHECK(actual_opt.has_value(), "{{ f.name }}: happy-path lookup miss");
+        if (!actual_opt.has_value()) continue;
+        auto actual = actual_opt.value();
+{% else %}
+        auto actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% endif %}
+{% if f.output.compare == "tolerance" %}
+        assert_close(static_cast<double>(actual), static_cast<double>(expected), tol, "{{ f.name }}");
+{% else %}
+        CHECK(actual == expected, "{{ f.name }}: actual=%lld expected=%lld",
+              static_cast<long long>(actual), static_cast<long long>(expected));
+{% endif %}
+    }

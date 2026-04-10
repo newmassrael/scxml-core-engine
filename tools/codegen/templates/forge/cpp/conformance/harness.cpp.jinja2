@@ -83,8 +83,8 @@ const char *{{ f.name | to_camel_case }}_tag_name(
 
 {% for f in fixtures %}
 // ── {{ f.kind }}: {{ f.name }} ────────────────────────────
-void test_{{ f.name }}(const json &ref{% if f.kind == "interpolation" or f.kind == "transform" or f.kind == "filter" %}, double tol{% endif %}) {
-{% if f.kind == "transform" or f.kind == "filter" %}
+void test_{{ f.name }}(const json &ref{% if f.kind == "interpolation" or f.kind == "transform" or f.kind == "filter" or f.kind == "lookup" %}, double tol{% endif %}) {
+{% if f.kind == "transform" or f.kind == "filter" or f.kind == "lookup" %}
     (void)tol;  // silence -Wunused-parameter for equality-only fixtures
 {% endif %}
 {% set _kind_tmpl = "kinds/" ~ f.kind ~ ".cpp.jinja2" %}
@@ -101,7 +101,7 @@ int main() {
     (void)tol;
 
 {% for f in fixtures %}
-    test_{{ f.name }}(ref{% if f.kind == "interpolation" or f.kind == "transform" or f.kind == "filter" %}, tol{% endif %});
+    test_{{ f.name }}(ref{% if f.kind == "interpolation" or f.kind == "transform" or f.kind == "filter" or f.kind == "lookup" %}, tol{% endif %});
 {% endfor %}
 
     if (g_failures > 0) {

@@ -6,6 +6,10 @@
 #define {{ guard }}
 
 #include <cstdint>
+{% if not output_is_string %}
+#include <optional>
+#include "sce/forge/lookup.h"
+{% endif %}
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -13,6 +17,7 @@
 {% endif %}
 
 namespace SCE::Generated::{{ namespace }} {
+{% if output_is_string %}
 
 enum class {{ enum_name }} { {{ unique_values | join(", ") }} };
 
@@ -27,6 +32,21 @@ inline {{ enum_name }} {{ func_name }}({{ input_type }} {{ input_id }}) {
         default: return {{ enum_name }}::{{ default_value }};
     }
 }
+{% else %}
+
+constexpr {{ input_type }} KEYS[{{ n }}] = { {{ keys_literal | join(", ") }} };
+constexpr {{ value_type }} VALUES[{{ n }}] = { {{ values_literal | join(", ") }} };
+
+{% if on_miss_error %}
+inline std::optional<{{ value_type }}> {{ func_name }}({{ input_type }} {{ input_id }}) {
+    return sce::forge::lookup(KEYS, VALUES, {{ input_id }});
+}
+{% else %}
+inline {{ value_type }} {{ func_name }}({{ input_type }} {{ input_id }}) {
+    return sce::forge::lookup(KEYS, VALUES, {{ input_id }}).value_or({{ default_literal }});
+}
+{% endif %}
+{% endif %}
 
 }  // namespace SCE::Generated::{{ namespace }}
 

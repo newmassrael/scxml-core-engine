@@ -1,0 +1,15 @@
+{# Lookup kind — finite key→value mapping. on_miss=error returns Optional[V]
+   (None is a hard failure since happy-path fixtures hit every key);
+   on_miss=default returns raw V via fallback. #}
+        for case in spec["cases"]:
+            args = case["args"]
+            expected = case["expected"]
+            actual = {{ f.name }}.{{ f.function }}(*args)
+{% if f.on_miss == "error" %}
+            self.assertIsNotNone(actual, "{{ f.name }} happy-path lookup miss")
+{% endif %}
+{% if f.output.compare == "tolerance" %}
+            self.assertAlmostEqual(actual, expected, delta=self.tol, msg="{{ f.name }}")
+{% else %}
+            self.assertEqual(actual, expected, "{{ f.name }}")
+{% endif %}

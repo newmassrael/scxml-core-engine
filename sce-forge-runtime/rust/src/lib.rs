@@ -12,6 +12,7 @@
 
 pub mod filter;
 pub mod interpolation;
+pub mod lookup;
 pub mod observer;
 pub mod timer;
 
@@ -19,6 +20,7 @@ pub mod timer;
 mod smoke_tests {
     use super::filter::{Debounce, LowPass, MovingAverage};
     use super::interpolation::{bilinear, linear};
+    use super::lookup::lookup;
     use super::observer::{EventDomain, EventQueue, ThresholdState};
     use super::timer::{Timer, TimerCallback};
     use core::ffi::c_void;
@@ -28,6 +30,14 @@ mod smoke_tests {
         let axis = [0.0, 1.0, 2.0, 3.0];
         let vals = [10.0, 20.0, 30.0, 40.0];
         assert!((linear(&axis, &vals, 1.5) - 25.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn lookup_exact_hit_and_miss() {
+        let keys: [u16; 3] = [100, 200, 300];
+        let values: [u8; 3] = [1, 2, 4];
+        assert_eq!(lookup(&keys, &values, 200), Some(2));
+        assert_eq!(lookup(&keys, &values, 250), None);
     }
 
     #[test]

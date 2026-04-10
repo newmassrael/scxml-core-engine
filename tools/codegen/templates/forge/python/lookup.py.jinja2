@@ -5,6 +5,7 @@
 {{ imp.include_stmt }}
 {% endfor %}
 {% endif %}
+{% if output_is_string %}
 
 from enum import Enum
 
@@ -26,3 +27,21 @@ def {{ func_name }}({{ input_id }}: {{ input_type }}) -> {{ enum_name }}:
 {% endfor %}
     else:
         return {{ enum_name }}.{{ default_value }}
+{% else %}
+
+from typing import Optional
+
+from sce_forge_runtime.lookup import lookup as _lookup
+
+_KEYS = [{{ keys_literal | join(", ") }}]
+_VALUES = [{{ values_literal | join(", ") }}]
+
+
+def {{ func_name }}({{ input_id }}: {{ input_type }}) -> {% if on_miss_error %}Optional[{{ value_type }}]{% else %}{{ value_type }}{% endif %}:
+{% if on_miss_error %}
+    return _lookup(_KEYS, _VALUES, {{ input_id }})
+{% else %}
+    result = _lookup(_KEYS, _VALUES, {{ input_id }})
+    return result if result is not None else {{ default_literal }}
+{% endif %}
+{% endif %}

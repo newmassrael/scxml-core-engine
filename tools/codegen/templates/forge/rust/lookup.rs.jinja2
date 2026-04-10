@@ -1,13 +1,12 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="lookup")
 // Do not edit — regenerate from the source SCXML file.
-
-#![allow(dead_code)]
 {% if all_imports %}
 
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
 {% endfor %}
 {% endif %}
+{% if output_is_string %}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum {{ enum_name }} {
@@ -16,11 +15,27 @@ pub enum {{ enum_name }} {
 {% endfor %}
 }
 
-pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {{ enum_name }} {
+pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {% if on_miss_error %}Option<{{ enum_name }}>{% else %}{{ enum_name }}{% endif %} {
     match {{ input_id }} {
 {% for group in entries_by_value %}
-        {{ group.keys | join(" | ") }} => {{ enum_name }}::{{ group.value }},
+        {{ group.keys | join(" | ") }} => {% if on_miss_error %}Some({{ enum_name }}::{{ group.value }}){% else %}{{ enum_name }}::{{ group.value }}{% endif %},
 {% endfor %}
-        _ => {{ enum_name }}::{{ default_value }},
+        _ => {% if on_miss_error %}None{% else %}{{ enum_name }}::{{ default_value }}{% endif %},
     }
 }
+{% else %}
+use sce_forge_runtime::lookup::lookup;
+
+const KEYS: [{{ input_type }}; {{ n }}] = [{{ keys_literal | join(", ") }}];
+const VALUES: [{{ value_type }}; {{ n }}] = [{{ values_literal | join(", ") }}];
+
+{% if on_miss_error %}
+pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> Option<{{ value_type }}> {
+    lookup(&KEYS, &VALUES, {{ input_id }})
+}
+{% else %}
+pub fn {{ func_name }}({{ input_id }}: {{ input_type }}) -> {{ value_type }} {
+    lookup(&KEYS, &VALUES, {{ input_id }}).unwrap_or({{ default_literal }})
+}
+{% endif %}
+{% endif %}

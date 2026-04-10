@@ -40,6 +40,24 @@ pub enum CompareMode {
     Equality,
 }
 
+/// `kind = "lookup"` miss-handling policy. Mirrors `forge::model::MissPolicy`
+/// but stays in the conformance manifest namespace so the harness manifest
+/// parser does not have to depend on the SCE Forge model types.
+///
+/// `Error`: the generated function returns the language's optional type;
+/// fixtures must hit a key on every input (happy-path only) and the harness
+/// fragment unwraps with `.expect()` / `.value()` / `?: error()`.
+///
+/// `Default`: the generated function returns the raw value with a fallback;
+/// fixtures may include miss inputs that test the fallback path. The
+/// reference oracle simply lists the expected fallback value for those cases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LookupMissPolicy {
+    Error,
+    Default,
+}
+
 /// Scalar output descriptor for fixtures whose `expected` JSON value is a
 /// single primitive.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,6 +115,12 @@ pub struct Fixture {
     /// Observer kind: ordered list of emitted event tag names.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub event_tags: Vec<String>,
+
+    /// Lookup kind: declared miss-handling policy. Required for `kind=lookup`,
+    /// rejected for every other kind. The harness fragment branches on this
+    /// to choose the correct unwrap strategy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_miss: Option<LookupMissPolicy>,
 }
 
 /// The `kind` discriminator. Mirrors SCE Forge `sce:kind` attribute values
@@ -111,6 +135,7 @@ pub enum FixtureKind {
     Filter,
     Observer,
     Procedure,
+    Lookup,
 }
 
 impl FixtureKind {
@@ -123,6 +148,7 @@ impl FixtureKind {
             FixtureKind::Filter => "filter",
             FixtureKind::Observer => "observer",
             FixtureKind::Procedure => "procedure",
+            FixtureKind::Lookup => "lookup",
         }
     }
 }
@@ -315,7 +341,8 @@ impl Manifest {
                 }
                 FixtureKind::Interpolation
                 | FixtureKind::Condition
-                | FixtureKind::Procedure => {
+                | FixtureKind::Procedure
+                | FixtureKind::Lookup => {
                     if f.args.is_empty() {
                         return Err(format!(
                             "fixture {}: kind={} requires non-empty `args`",
@@ -351,12 +378,45 @@ impl Manifest {
                 FixtureKind::Condition => {
                     if f.function.is_none() {
                         return Err(format!(
-                            "fixture {}: condition requires `function`",
+                            "fixture {}: kind=condition requires `function`",
+                            f.name
+                        ));
+                    }
+                }
+                FixtureKind::Lookup => {
+                    // Lookup function name is derived from the SCXML output
+                    // field id at harness-rendering time, not stored in the
+                    // manifest. Reject the field here so the SCXML stays the
+                    // single source of truth.
+                    if f.function.is_some() {
+                        return Err(format!(
+                            "fixture {}: lookup `function` is derived from \
+                             the SCXML output id; remove it from fixtures.json",
+                            f.name
+                        ));
+                    }
+                    if f.output.is_none() {
+                        return Err(format!(
+                            "fixture {}: lookup requires `output`",
+                            f.name
+                        ));
+                    }
+                    if f.on_miss.is_none() {
+                        return Err(format!(
+                            "fixture {}: lookup requires `on_miss` (\"error\" | \"default\")",
                             f.name
                         ));
                     }
                 }
                 _ => {}
+            }
+            // `on_miss` is meaningful only for lookup; reject elsewhere.
+            if f.on_miss.is_some() && f.kind != FixtureKind::Lookup {
+                return Err(format!(
+                    "fixture {}: `on_miss` is only valid for kind=lookup, not {}",
+                    f.name,
+                    f.kind.as_str()
+                ));
             }
         }
         Ok(())
@@ -421,8 +481,45 @@ pub fn harness_filename(language: Language) -> &'static str {
     harness_layout(language).output_filename
 }
 
+/// Parse a `<scxml sce:kind="lookup">` source file and return the
+/// `<data sce:direction="out">` field's id (in source case). The conformance
+/// harness uses this to derive the generated lookup function name without
+/// duplicating it in fixtures.json — the SCXML file is the single source of
+/// truth.
+fn read_lookup_output_id(scxml_path: &Path) -> Result<String, String> {
+    let text = std::fs::read_to_string(scxml_path)
+        .map_err(|e| format!("cannot read {}: {e}", scxml_path.display()))?;
+    let doc = roxmltree::Document::parse(&text)
+        .map_err(|e| format!("invalid SCXML at {}: {e}", scxml_path.display()))?;
+    let scxml_ns = "http://www.w3.org/2005/07/scxml";
+    let sce_ns = crate::forge::model::SCE_NAMESPACE;
+    let datamodel = doc
+        .root_element()
+        .children()
+        .find(|n| n.is_element() && n.tag_name().name() == "datamodel" && n.tag_name().namespace() == Some(scxml_ns))
+        .ok_or_else(|| format!("{}: missing <datamodel>", scxml_path.display()))?;
+    for data in datamodel.children().filter(|n| n.is_element() && n.tag_name().name() == "data") {
+        let dir = data.attribute((sce_ns, "direction")).unwrap_or("");
+        if dir == "out" {
+            return data
+                .attribute("id")
+                .map(|s| s.to_string())
+                .ok_or_else(|| format!("{}: <data sce:direction=\"out\"> missing id", scxml_path.display()));
+        }
+    }
+    Err(format!(
+        "{}: no <data sce:direction=\"out\"> found",
+        scxml_path.display()
+    ))
+}
+
 /// Render the per-language conformance harness from a manifest, returning
 /// the rendered source code.
+///
+/// `resource_dir` is the directory containing the per-fixture `<name>.scxml`
+/// files. The harness generator parses each lookup fixture's SCXML to derive
+/// its generated function name (avoiding the SCXML/manifest duplication
+/// footgun where the user has to keep both in sync).
 ///
 /// This is the shared entry point used by both the `sce-codegen
 /// generate-conformance` subcommand and any language's build system calling
@@ -431,6 +528,7 @@ pub fn render_harness(
     manifest: &Manifest,
     language: Language,
     template_base: &Path,
+    resource_dir: &Path,
 ) -> Result<String, String> {
     let layout = harness_layout(language);
     let template_dir: PathBuf = template_base.join(layout.template_subdir);
@@ -463,8 +561,24 @@ pub fn render_harness(
         .get_template(tmpl_name)
         .map_err(|e| format!("template {tmpl_name} not found: {e}"))?;
 
+    // Clone fixtures so we can fill the derived `function` field for lookup
+    // entries from the SCXML output id without mutating the manifest.
+    let mut fixtures = manifest.fixtures.clone();
+    for f in fixtures.iter_mut() {
+        if f.kind == FixtureKind::Lookup {
+            let scxml_path = resource_dir.join(format!("{}.scxml", f.name));
+            let output_id = read_lookup_output_id(&scxml_path)?;
+            // Function naming convention: lookup_<output_id_snake>. Per-language
+            // case conversion (camel/pascal) is applied by template filters.
+            f.function = Some(format!(
+                "lookup_{}",
+                crate::filters::to_snake_case(output_id)
+            ));
+        }
+    }
+
     let ctx = minijinja::context! {
-        fixtures => minijinja::Value::from_serialize(&manifest.fixtures),
+        fixtures => minijinja::Value::from_serialize(&fixtures),
     };
 
     tmpl.render(ctx)

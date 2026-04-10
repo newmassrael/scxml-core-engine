@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SCE Forge conformance: lookup kind — integer dispatch table with
+     error-on-miss. Maps a state code to an action code. Single-output, no
+     duplicate values. -->
+<scxml xmlns="http://www.w3.org/2005/07/scxml"
+       xmlns:sce="http://sce.dev/ext"
+       sce:kind="lookup" name="state_action">
+  <datamodel>
+    <data id="state" sce:type="int32" sce:direction="in"/>
+    <data id="action" sce:type="int32" sce:direction="out"/>
+    <data id="mapping" sce:on-miss="error">
+      <sce:entry key="0" value="10"/>
+      <sce:entry key="1" value="20"/>
+      <sce:entry key="2" value="30"/>
+      <sce:entry key="3" value="40"/>
+    </data>
+  </datamodel>
+</scxml>
