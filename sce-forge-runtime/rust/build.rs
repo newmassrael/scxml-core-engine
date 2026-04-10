@@ -24,6 +24,15 @@ const FIXTURES: &[&str] = &[
     "interpolation_1d_linear",
     "interpolation_2d_bilinear",
     "observer_coolant",
+    "transform_temperature",
+    "transform_bitwise",
+    "transform_multi_output",
+    "condition_threshold",
+    "condition_range",
+    "condition_programming",
+    "procedure_linear",
+    "procedure_diamond",
+    "procedure_startup_check",
 ];
 
 fn main() {

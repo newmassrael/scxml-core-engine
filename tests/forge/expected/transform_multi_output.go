@@ -5,7 +5,7 @@ package transform_multi_output
 
 // ComputeFahrenheit computes the fahrenheit output.
 func ComputeFahrenheit(celsius float64) float64 {
-	return celsius * 9 / 5 + 32
+	return celsius * 9.0 / 5.0 + 32.0
 }
 
 // ComputeKelvin computes the kelvin output.

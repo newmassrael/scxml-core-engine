@@ -11,11 +11,32 @@
 // classpath alongside this file. No committed Kotlin goldens are consumed;
 // the single source of truth is the SCXML and the codegen.
 //
-// The generated Forge Kotlin fixtures do not declare a package, so this
-// test file deliberately stays in the default (unnamed) package — classes
-// in the unnamed package cannot be imported from named packages on the JVM.
+// All Kotlin Forge templates emit `package com.sce.generated.<name>`, so
+// this test imports each fixture from its named package. The test file
+// itself is package-free only because keeping it in the default package
+// avoids having to pick an arbitrary package name for a single test class.
 
 import com.sce.forge.runtime.EventQueue
+import com.sce.generated.condition_programming.conditionProgramming
+import com.sce.generated.condition_range.conditionRange
+import com.sce.generated.condition_threshold.conditionThreshold
+import com.sce.generated.filter_debounce.FilterDebounce
+import com.sce.generated.filter_moving_average.FilterMovingAverage
+import com.sce.generated.interpolation_1d_linear.Interpolation1dLinear
+import com.sce.generated.interpolation_2d_bilinear.Interpolation2dBilinear
+import com.sce.generated.observer_coolant.ForgeDomainTag
+import com.sce.generated.observer_coolant.ObserverCoolant
+import com.sce.generated.procedure_diamond.ProcedureDiamond
+import com.sce.generated.procedure_diamond.ProcedureResult as DiamondResult
+import com.sce.generated.procedure_linear.ProcedureLinear
+import com.sce.generated.procedure_linear.ProcedureResult as LinearResult
+import com.sce.generated.procedure_startup_check.ProcedureResult as StartupResult
+import com.sce.generated.procedure_startup_check.ProcedureStartupCheck
+import com.sce.generated.transform_bitwise.computeHighNibble
+import com.sce.generated.transform_bitwise.computeLowNibble
+import com.sce.generated.transform_multi_output.computeFahrenheit
+import com.sce.generated.transform_multi_output.computeKelvin
+import com.sce.generated.transform_temperature.computeTemperature
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.boolean
@@ -50,10 +71,12 @@ class NumericalConformanceTest {
         )
     }
 
+    private fun pureCases(name: String) =
+        ref["pure_functions"]!!.jsonObject[name]!!.jsonObject["cases"]!!.jsonArray
+
     @Test
     fun interpolation1dLinearMatchesReference() {
-        val spec = ref["pure_functions"]!!.jsonObject["interpolation_1d_linear"]!!.jsonObject
-        for (case in spec["cases"]!!.jsonArray) {
+        for (case in pureCases("interpolation_1d_linear")) {
             val rpm = case.jsonObject["args"]!!.jsonArray[0].jsonPrimitive.int.toUShort()
             val expected = case.jsonObject["expected"]!!.jsonPrimitive.double
             val actual = Interpolation1dLinear.lookup(rpm)
@@ -63,8 +86,7 @@ class NumericalConformanceTest {
 
     @Test
     fun interpolation2dBilinearMatchesReference() {
-        val spec = ref["pure_functions"]!!.jsonObject["interpolation_2d_bilinear"]!!.jsonObject
-        for (case in spec["cases"]!!.jsonArray) {
+        for (case in pureCases("interpolation_2d_bilinear")) {
             val args = case.jsonObject["args"]!!.jsonArray
             val rpm = args[0].jsonPrimitive.int.toUShort()
             val load = args[1].jsonPrimitive.int.toUByte()
@@ -110,6 +132,125 @@ class NumericalConformanceTest {
             val queue: EventQueue<ForgeDomainTag> = observer.update(input)
             val actualEvents = queue.asList().map { it.name }
             assertEquals(expectedEvents, actualEvents, "observer_coolant step $i input=$input")
+        }
+    }
+
+    @Test
+    fun transformTemperatureMatchesReference() {
+        for (case in pureCases("transform_temperature")) {
+            val raw = case.jsonObject["args"]!!.jsonArray[0].jsonPrimitive.int.toUShort()
+            val expected = case.jsonObject["expected"]!!.jsonPrimitive.double
+            val actual = computeTemperature(raw)
+            assertClose(actual, expected, "transform_temperature($raw)")
+        }
+    }
+
+    @Test
+    fun transformBitwiseMatchesReference() {
+        for (case in pureCases("transform_bitwise")) {
+            val byte = case.jsonObject["args"]!!.jsonArray[0].jsonPrimitive.int.toUByte()
+            val expected = case.jsonObject["expected"]!!.jsonObject
+            val expectedHigh = expected["high_nibble"]!!.jsonPrimitive.int.toUByte()
+            val expectedLow = expected["low_nibble"]!!.jsonPrimitive.int.toUByte()
+            val actualHigh = computeHighNibble(byte)
+            val actualLow = computeLowNibble(byte)
+            assertEquals(expectedHigh, actualHigh, "transform_bitwise($byte) high")
+            assertEquals(expectedLow, actualLow, "transform_bitwise($byte) low")
+        }
+    }
+
+    @Test
+    fun transformMultiOutputMatchesReference() {
+        for (case in pureCases("transform_multi_output")) {
+            val celsius = case.jsonObject["args"]!!.jsonArray[0].jsonPrimitive.double
+            val expected = case.jsonObject["expected"]!!.jsonObject
+            val expectedF = expected["fahrenheit"]!!.jsonPrimitive.double
+            val expectedK = expected["kelvin"]!!.jsonPrimitive.double
+            val actualF = computeFahrenheit(celsius)
+            val actualK = computeKelvin(celsius)
+            assertClose(actualF, expectedF, "transform_multi_output($celsius) fahrenheit")
+            assertClose(actualK, expectedK, "transform_multi_output($celsius) kelvin")
+        }
+    }
+
+    @Test
+    fun conditionThresholdMatchesReference() {
+        for (case in pureCases("condition_threshold")) {
+            val args = case.jsonObject["args"]!!.jsonArray
+            val coolant = args[0].jsonPrimitive.double
+            val oil = args[1].jsonPrimitive.double
+            val maxTemp = args[2].jsonPrimitive.double
+            val expected = case.jsonObject["expected"]!!.jsonPrimitive.boolean
+            val actual = conditionThreshold(coolant, oil, maxTemp)
+            assertEquals(expected, actual, "condition_threshold($coolant, $oil, $maxTemp)")
+        }
+    }
+
+    @Test
+    fun conditionRangeMatchesReference() {
+        for (case in pureCases("condition_range")) {
+            val args = case.jsonObject["args"]!!.jsonArray
+            val rpm = args[0].jsonPrimitive.int.toUInt()
+            val minRpm = args[1].jsonPrimitive.int.toUInt()
+            val maxRpm = args[2].jsonPrimitive.int.toUInt()
+            val expected = case.jsonObject["expected"]!!.jsonPrimitive.boolean
+            val actual = conditionRange(rpm, minRpm, maxRpm)
+            assertEquals(expected, actual, "condition_range($rpm, $minRpm, $maxRpm)")
+        }
+    }
+
+    @Test
+    fun conditionProgrammingMatchesReference() {
+        for (case in pureCases("condition_programming")) {
+            val args = case.jsonObject["args"]!!.jsonArray
+            val engineStop = args[0].jsonPrimitive.boolean
+            val ignition = args[1].jsonPrimitive.boolean
+            val expected = case.jsonObject["expected"]!!.jsonPrimitive.boolean
+            val actual = conditionProgramming(engineStop, ignition)
+            assertEquals(expected, actual, "condition_programming($engineStop, $ignition)")
+        }
+    }
+
+    @Test
+    fun procedureLinearMatchesReference() {
+        for (case in pureCases("procedure_linear")) {
+            val value = case.jsonObject["args"]!!.jsonArray[0].jsonPrimitive.int
+            val expected = case.jsonObject["expected"]!!.jsonObject
+            val expectedCompleted = expected["completed"]!!.jsonPrimitive.boolean
+            val expectedFinal = expected["final_state"]!!.jsonPrimitive.content
+            val result: LinearResult = ProcedureLinear.execute(value)
+            assertEquals(expectedCompleted, result.completed, "procedure_linear($value).completed")
+            assertEquals(expectedFinal, result.finalState, "procedure_linear($value).final_state")
+        }
+    }
+
+    @Test
+    fun procedureDiamondMatchesReference() {
+        for (case in pureCases("procedure_diamond")) {
+            val args = case.jsonObject["args"]!!.jsonArray
+            val sensor = args[0].jsonPrimitive.int.toUShort()
+            val mode = args[1].jsonPrimitive.content
+            val expected = case.jsonObject["expected"]!!.jsonObject
+            val expectedCompleted = expected["completed"]!!.jsonPrimitive.boolean
+            val expectedFinal = expected["final_state"]!!.jsonPrimitive.content
+            val result: DiamondResult = ProcedureDiamond.execute(sensor, mode)
+            assertEquals(expectedCompleted, result.completed, "procedure_diamond($sensor, $mode).completed")
+            assertEquals(expectedFinal, result.finalState, "procedure_diamond($sensor, $mode).final_state")
+        }
+    }
+
+    @Test
+    fun procedureStartupCheckMatchesReference() {
+        for (case in pureCases("procedure_startup_check")) {
+            val args = case.jsonObject["args"]!!.jsonArray
+            val voltage = args[0].jsonPrimitive.double.toFloat()
+            val temperature = args[1].jsonPrimitive.double.toFloat()
+            val expected = case.jsonObject["expected"]!!.jsonObject
+            val expectedCompleted = expected["completed"]!!.jsonPrimitive.boolean
+            val expectedFinal = expected["final_state"]!!.jsonPrimitive.content
+            val result: StartupResult = ProcedureStartupCheck.execute(voltage, temperature)
+            assertEquals(expectedCompleted, result.completed, "procedure_startup_check($voltage, $temperature).completed")
+            assertEquals(expectedFinal, result.finalState, "procedure_startup_check($voltage, $temperature).final_state")
         }
     }
 }

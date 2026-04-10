@@ -5036,6 +5036,9 @@ impl Phase3Lang {
             crate::generator::Language::Go => {
                 m.insert("package_name".into(), filters::to_snake_case(name.to_string()).into());
             }
+            crate::generator::Language::Kotlin => {
+                m.insert("package".into(), filters::to_snake_case(name.to_string()).into());
+            }
             _ => {}
         }
         m

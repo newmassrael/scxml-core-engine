@@ -32,6 +32,15 @@ filter_debounce = importlib.import_module("filter_debounce")
 interpolation_1d_linear = importlib.import_module("interpolation_1d_linear")
 interpolation_2d_bilinear = importlib.import_module("interpolation_2d_bilinear")
 observer_coolant = importlib.import_module("observer_coolant")
+transform_temperature = importlib.import_module("transform_temperature")
+transform_bitwise = importlib.import_module("transform_bitwise")
+transform_multi_output = importlib.import_module("transform_multi_output")
+condition_threshold = importlib.import_module("condition_threshold")
+condition_range = importlib.import_module("condition_range")
+condition_programming = importlib.import_module("condition_programming")
+procedure_linear = importlib.import_module("procedure_linear")
+procedure_diamond = importlib.import_module("procedure_diamond")
+procedure_startup_check = importlib.import_module("procedure_startup_check")
 
 
 class TestNumericalConformance(unittest.TestCase):
@@ -99,6 +108,137 @@ class TestNumericalConformance(unittest.TestCase):
                 actual,
                 step["expected_events"],
                 f"observer_coolant step {i} input={step['input']}",
+            )
+
+    def test_transform_temperature(self) -> None:
+        spec = self.ref["pure_functions"]["transform_temperature"]
+        for case in spec["cases"]:
+            raw = case["args"][0]
+            expected = case["expected"]
+            actual = transform_temperature.compute_temperature(raw)
+            self.assert_close(actual, expected, f"transform_temperature({raw})")
+
+    def test_transform_bitwise(self) -> None:
+        spec = self.ref["pure_functions"]["transform_bitwise"]
+        for case in spec["cases"]:
+            byte = case["args"][0]
+            expected = case["expected"]
+            actual_high = transform_bitwise.compute_high_nibble(byte)
+            actual_low = transform_bitwise.compute_low_nibble(byte)
+            self.assertEqual(
+                actual_high,
+                expected["high_nibble"],
+                f"transform_bitwise({byte}) high",
+            )
+            self.assertEqual(
+                actual_low,
+                expected["low_nibble"],
+                f"transform_bitwise({byte}) low",
+            )
+
+    def test_transform_multi_output(self) -> None:
+        spec = self.ref["pure_functions"]["transform_multi_output"]
+        for case in spec["cases"]:
+            celsius = case["args"][0]
+            expected = case["expected"]
+            actual_f = transform_multi_output.compute_fahrenheit(celsius)
+            actual_k = transform_multi_output.compute_kelvin(celsius)
+            self.assert_close(
+                actual_f,
+                expected["fahrenheit"],
+                f"transform_multi_output({celsius}) fahrenheit",
+            )
+            self.assert_close(
+                actual_k,
+                expected["kelvin"],
+                f"transform_multi_output({celsius}) kelvin",
+            )
+
+    def test_condition_threshold(self) -> None:
+        spec = self.ref["pure_functions"]["condition_threshold"]
+        for case in spec["cases"]:
+            coolant, oil, maxt = case["args"]
+            expected = case["expected"]
+            actual = condition_threshold.condition_threshold(coolant, oil, maxt)
+            self.assertEqual(
+                actual,
+                expected,
+                f"condition_threshold({coolant}, {oil}, {maxt})",
+            )
+
+    def test_condition_range(self) -> None:
+        spec = self.ref["pure_functions"]["condition_range"]
+        for case in spec["cases"]:
+            rpm, min_rpm, max_rpm = case["args"]
+            expected = case["expected"]
+            actual = condition_range.condition_range(rpm, min_rpm, max_rpm)
+            self.assertEqual(
+                actual,
+                expected,
+                f"condition_range({rpm}, {min_rpm}, {max_rpm})",
+            )
+
+    def test_condition_programming(self) -> None:
+        spec = self.ref["pure_functions"]["condition_programming"]
+        for case in spec["cases"]:
+            engine_stop, ignition = case["args"]
+            expected = case["expected"]
+            actual = condition_programming.condition_programming(engine_stop, ignition)
+            self.assertEqual(
+                actual,
+                expected,
+                f"condition_programming({engine_stop}, {ignition})",
+            )
+
+    def test_procedure_linear(self) -> None:
+        spec = self.ref["pure_functions"]["procedure_linear"]
+        for case in spec["cases"]:
+            value = case["args"][0]
+            expected = case["expected"]
+            result = procedure_linear.execute(value)
+            self.assertEqual(
+                result.completed,
+                expected["completed"],
+                f"procedure_linear({value}).completed",
+            )
+            self.assertEqual(
+                result.final_state,
+                expected["final_state"],
+                f"procedure_linear({value}).final_state",
+            )
+
+    def test_procedure_diamond(self) -> None:
+        spec = self.ref["pure_functions"]["procedure_diamond"]
+        for case in spec["cases"]:
+            sensor, mode = case["args"]
+            expected = case["expected"]
+            result = procedure_diamond.execute(sensor, mode)
+            self.assertEqual(
+                result.completed,
+                expected["completed"],
+                f"procedure_diamond({sensor}, {mode}).completed",
+            )
+            self.assertEqual(
+                result.final_state,
+                expected["final_state"],
+                f"procedure_diamond({sensor}, {mode}).final_state",
+            )
+
+    def test_procedure_startup_check(self) -> None:
+        spec = self.ref["pure_functions"]["procedure_startup_check"]
+        for case in spec["cases"]:
+            voltage, temperature = case["args"]
+            expected = case["expected"]
+            result = procedure_startup_check.execute(voltage, temperature)
+            self.assertEqual(
+                result.completed,
+                expected["completed"],
+                f"procedure_startup_check({voltage}, {temperature}).completed",
+            )
+            self.assertEqual(
+                result.final_state,
+                expected["final_state"],
+                f"procedure_startup_check({voltage}, {temperature}).final_state",
             )
 
 

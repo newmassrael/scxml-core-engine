@@ -1,6 +1,8 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation")
 // Do not edit — regenerate from the source SCXML file.
 
+package com.sce.generated.interpolation_2d_bilinear
+
 import com.sce.forge.runtime.bilinear
 
 object Interpolation2dBilinear {

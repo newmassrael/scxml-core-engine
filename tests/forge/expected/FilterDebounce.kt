@@ -1,6 +1,8 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="filter")
 // Do not edit — regenerate from the source SCXML file.
 
+package com.sce.generated.filter_debounce
+
 import com.sce.forge.runtime.Debounce
 
 class FilterDebounce {

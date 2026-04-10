@@ -1,6 +1,8 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
 // Do not edit — regenerate from the source SCXML file.
 
+package com.sce.generated.observer_coolant
+
 import com.sce.forge.runtime.EventDomain
 import com.sce.forge.runtime.EventQueue
 import com.sce.forge.runtime.ThresholdState

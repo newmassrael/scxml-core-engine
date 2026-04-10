@@ -1,6 +1,8 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
 // Do not edit — regenerate from the source SCXML file.
 
+package com.sce.generated.timer_diag_scheduler
+
 import com.sce.forge.runtime.Timer
 
 /**

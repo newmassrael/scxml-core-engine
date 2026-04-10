@@ -4,7 +4,7 @@
 package com.sce.generated.transform_multi_output
 
 fun computeFahrenheit(celsius: Double): Double =
-    celsius * 9 / 5 + 32
+    celsius * 9.0 / 5.0 + 32.0
 
 fun computeKelvin(celsius: Double): Double =
     celsius + 273.15

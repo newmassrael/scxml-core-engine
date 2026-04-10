@@ -1,8 +1,6 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="procedure")
 // Do not edit — regenerate from the source SCXML file.
 
-#![allow(dead_code)]
-
 #[derive(Debug)]
 pub struct ProcedureResult {
     pub completed: bool,

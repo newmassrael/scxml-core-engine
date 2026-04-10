@@ -2,6 +2,7 @@
   "version": 1,
   "description": "Cross-language numerical conformance reference for sce_forge_runtime generated code. All five languages (C++, Rust, Python, Kotlin, Go) MUST produce these exact outputs. Every entry is computed by hand from the algorithms in sce-forge-runtime/rust/src/ and verified against the live Rust smoke tests. If any language disagrees, the bug is in that language's codegen template or runtime helper — not in this file.",
   "float_tolerance": 1e-12,
+  "expected_shape": "For fixtures with a single output, 'expected' is a scalar (number or bool). For compound-output fixtures (procedures returning ProcedureResult, transforms with multiple <data direction=out>), 'expected' is a JSON object whose keys are the SCXML data ids in snake_case. Each language test must map those canonical keys to its own identifier case (camelCase / PascalCase / snake_case).",
 
   "pure_functions": {
     "interpolation_1d_linear": {
@@ -35,6 +36,110 @@
         {"args": [3000, 100], "expected": 11.0,  "note": "upper corner"},
         {"args": [1000, 30],  "expected": 3.525, "note": "interior: tx=0.5 ty=0.5, (2.1,4.5,2.5,5.0) -> 3.525"},
         {"args": [500, 5],    "expected": 2.1,   "note": "below both axes, clamped to corner"}
+      ]
+    },
+
+    "transform_temperature": {
+      "fixture": "compute_temperature",
+      "signature": "(raw: u16) -> f64",
+      "formula": "raw * 0.1 - 40.0",
+      "cases": [
+        {"args": [0],     "expected": -40.0,  "note": "raw=0 -> -40 C sentinel"},
+        {"args": [400],   "expected": 0.0,    "note": "freezing point"},
+        {"args": [1000],  "expected": 60.0,   "note": "typical running temperature"},
+        {"args": [2000],  "expected": 160.0,  "note": "high temperature"}
+      ]
+    },
+    "transform_bitwise": {
+      "fixture": "compute_high_nibble / compute_low_nibble",
+      "signature": "(byte: u8) -> {high_nibble: u8, low_nibble: u8}",
+      "formula": "high = (byte >> 4) & 0x0F; low = byte & 0x0F",
+      "cases": [
+        {"args": [171], "expected": {"high_nibble": 10, "low_nibble": 11}, "note": "0xAB"},
+        {"args": [0],   "expected": {"high_nibble": 0,  "low_nibble": 0},  "note": "0x00"},
+        {"args": [255], "expected": {"high_nibble": 15, "low_nibble": 15}, "note": "0xFF"},
+        {"args": [240], "expected": {"high_nibble": 15, "low_nibble": 0},  "note": "0xF0"},
+        {"args": [15],  "expected": {"high_nibble": 0,  "low_nibble": 15}, "note": "0x0F"}
+      ]
+    },
+    "transform_multi_output": {
+      "fixture": "compute_fahrenheit / compute_kelvin",
+      "signature": "(celsius: f64) -> {fahrenheit: f64, kelvin: f64}",
+      "formula": "fahrenheit = celsius * 9 / 5 + 32; kelvin = celsius + 273.15",
+      "cases": [
+        {"args": [0.0],   "expected": {"fahrenheit": 32.0,   "kelvin": 273.15}, "note": "freezing point"},
+        {"args": [100.0], "expected": {"fahrenheit": 212.0,  "kelvin": 373.15}, "note": "boiling point"},
+        {"args": [-40.0], "expected": {"fahrenheit": -40.0,  "kelvin": 233.15}, "note": "scales cross at -40"},
+        {"args": [37.0],  "expected": {"fahrenheit": 98.6,   "kelvin": 310.15}, "note": "body temperature"}
+      ]
+    },
+
+    "condition_threshold": {
+      "fixture": "condition_threshold",
+      "signature": "(coolant_temp: f64, oil_temp: f64, max_temp: f64) -> bool",
+      "formula": "coolant_temp > max_temp || oil_temp > max_temp",
+      "cases": [
+        {"args": [90.0,  95.0,  100.0], "expected": false, "note": "both below"},
+        {"args": [105.0, 95.0,  100.0], "expected": true,  "note": "coolant exceeds"},
+        {"args": [90.0,  110.0, 100.0], "expected": true,  "note": "oil exceeds"},
+        {"args": [100.0, 100.0, 100.0], "expected": false, "note": "equal to max is not >"}
+      ]
+    },
+    "condition_range": {
+      "fixture": "condition_range",
+      "signature": "(rpm: u32, min_rpm: u32, max_rpm: u32) -> bool",
+      "formula": "rpm >= min_rpm && rpm <= max_rpm",
+      "cases": [
+        {"args": [1000, 500, 2000], "expected": true,  "note": "interior"},
+        {"args": [500,  500, 2000], "expected": true,  "note": "inclusive low boundary"},
+        {"args": [2000, 500, 2000], "expected": true,  "note": "inclusive high boundary"},
+        {"args": [499,  500, 2000], "expected": false, "note": "one below low"},
+        {"args": [2001, 500, 2000], "expected": false, "note": "one above high"}
+      ]
+    },
+    "condition_programming": {
+      "fixture": "condition_programming",
+      "signature": "(engine_stop: bool, ignition: bool) -> bool",
+      "formula": "engine_stop == true && ignition == true",
+      "cases": [
+        {"args": [true,  true],  "expected": true,  "note": "both on"},
+        {"args": [true,  false], "expected": false, "note": "no ignition"},
+        {"args": [false, true],  "expected": false, "note": "engine running"},
+        {"args": [false, false], "expected": false, "note": "both off"}
+      ]
+    },
+
+    "procedure_linear": {
+      "fixture": "ProcedureLinear::execute",
+      "signature": "(value: i32) -> ProcedureResult{completed, final_state}",
+      "description": "Unconditional pipeline stage_a -> stage_b -> stage_c -> done. All inputs reach done.",
+      "cases": [
+        {"args": [42], "expected": {"completed": true, "final_state": "done"}, "note": "typical"},
+        {"args": [0],  "expected": {"completed": true, "final_state": "done"}, "note": "zero still reaches done"}
+      ]
+    },
+    "procedure_diamond": {
+      "fixture": "ProcedureDiamond::execute",
+      "signature": "(sensor_value: u16, mode: string) -> ProcedureResult{completed, final_state}",
+      "description": "classify -> {high_path|mid_path|low_path} -> {accept|reject}. high_path rejects only in strict mode; mid/low always accept.",
+      "cases": [
+        {"args": [1500, "strict"], "expected": {"completed": true, "final_state": "reject"}, "note": "high path + strict -> reject"},
+        {"args": [1500, "normal"], "expected": {"completed": true, "final_state": "accept"}, "note": "high path + non-strict -> accept"},
+        {"args": [750,  "strict"], "expected": {"completed": true, "final_state": "accept"}, "note": "mid path accepts regardless of mode"},
+        {"args": [100,  "strict"], "expected": {"completed": true, "final_state": "accept"}, "note": "low path accepts regardless of mode"}
+      ]
+    },
+    "procedure_startup_check": {
+      "fixture": "ProcedureStartupCheck::execute",
+      "signature": "(voltage: f32, temperature: f32) -> ProcedureResult{completed, final_state}",
+      "description": "check_voltage (11.5 <= v <= 14.5) -> check_temp (< 80.0) -> success. Out-of-range voltage -> fail_voltage; overtemp -> fail_overtemp.",
+      "cases": [
+        {"args": [12.5, 60.0], "expected": {"completed": true, "final_state": "success"},       "note": "nominal"},
+        {"args": [10.0, 60.0], "expected": {"completed": true, "final_state": "fail_voltage"},  "note": "undervoltage"},
+        {"args": [15.0, 60.0], "expected": {"completed": true, "final_state": "fail_voltage"},  "note": "overvoltage"},
+        {"args": [12.5, 90.0], "expected": {"completed": true, "final_state": "fail_overtemp"}, "note": "overtemp"},
+        {"args": [11.5, 79.5], "expected": {"completed": true, "final_state": "success"},       "note": "inclusive voltage low boundary"},
+        {"args": [14.5, 79.5], "expected": {"completed": true, "final_state": "success"},       "note": "inclusive voltage high boundary"}
       ]
     }
   },

@@ -11,7 +11,7 @@
 namespace SCE::Generated::TransformMultiOutput {
 
 inline double computeFahrenheit(double celsius) {
-    return celsius * 9 / 5 + 32;
+    return celsius * 9.0 / 5.0 + 32.0;
 }
 
 inline double computeKelvin(double celsius) {
