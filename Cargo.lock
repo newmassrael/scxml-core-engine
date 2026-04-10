@@ -1252,6 +1252,10 @@ dependencies = [
 [[package]]
 name = "sce-forge-runtime"
 version = "0.1.0"
+dependencies = [
+ "sce-build",
+ "serde_json",
+]
 
 [[package]]
 name = "sce-rust-lua"

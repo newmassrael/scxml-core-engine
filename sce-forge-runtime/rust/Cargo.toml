@@ -10,7 +10,24 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 description = "Header-only-equivalent algorithm and HAL library for SCE Forge generated code (filter, interpolation, timer, observer kinds). See SCE_FORGE.md Section 2.1."
+build = "build.rs"
 
 [lib]
 name = "sce_forge_runtime"
 path = "src/lib.rs"
+
+# Cross-language numerical conformance harness. build.rs invokes
+# sce_build::compile_forge_with_imports_validated() at build time to generate
+# Rust fixtures into OUT_DIR from the SCXML sources in tests/forge/resources.
+# The test binary then includes those OUT_DIR files and runs them against
+# tests/forge/conformance/numerical_reference.json. Single source of truth =
+# the SCXML sources themselves; no committed Rust goldens are consumed.
+[build-dependencies]
+sce-build = { path = "../../sce-build" }
+
+[dev-dependencies]
+serde_json = "1"
+
+[[test]]
+name = "numerical_conformance"
+path = "tests/numerical_conformance.rs"
