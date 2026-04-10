@@ -1,0 +1,10 @@
+{# Condition kind — pure boolean predicate via a free function. #}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for case in spec["cases"].as_array().expect("cases must be array") {
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% endfor %}
+        let expected = case["expected"].as_bool().expect("expected is bool");
+        let actual = fixtures::{{ f.name }}::{{ f.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        assert_eq!(actual, expected, "{{ f.name }}");
+    }

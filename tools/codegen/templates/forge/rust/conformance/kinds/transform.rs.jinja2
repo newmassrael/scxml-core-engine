@@ -1,0 +1,34 @@
+{# Transform kind — pure free function(s), single or compound output. #}
+{% if f.output %}
+    let tol = tolerance(&reference);
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for case in spec["cases"].as_array().expect("cases must be array") {
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% endfor %}
+        let expected = case["expected"].as_f64().expect("expected is number");
+        let actual = fixtures::{{ f.name }}::{{ f.output.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        assert_close(actual, expected, tol, "{{ f.name }}");
+    }
+{% else %}
+{% set ns = namespace(needs_tol=false) %}
+{% for co in f.compound_outputs %}{% if co.compare == "tolerance" %}{% set ns.needs_tol = true %}{% endif %}{% endfor %}
+{% if ns.needs_tol %}
+    let tol = tolerance(&reference);
+{% endif %}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for case in spec["cases"].as_array().expect("cases must be array") {
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% endfor %}
+{% for co in f.compound_outputs %}
+        let expected_{{ co.key }} = {{ ("case[\"expected\"][\"" ~ co.key ~ "\"]") | rust_unmarshal(co["type"]) }};
+        let actual_{{ co.key }} = fixtures::{{ f.name }}::{{ co.function }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% if co.compare == "tolerance" %}
+        assert_close(actual_{{ co.key }}, expected_{{ co.key }}, tol, "{{ f.name }} {{ co.key }}");
+{% else %}
+        assert_eq!(actual_{{ co.key }}, expected_{{ co.key }}, "{{ f.name }} {{ co.key }}");
+{% endif %}
+{% endfor %}
+    }
+{% endif %}

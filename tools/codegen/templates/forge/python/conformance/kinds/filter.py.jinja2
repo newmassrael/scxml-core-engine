@@ -1,0 +1,17 @@
+{# Filter kind — stateful filt.update(input) over a fixed sequence. #}
+        filt = {{ f.name }}.{{ f.name | to_pascal_case }}()
+        for i, step in enumerate(spec["sequence"]):
+            actual = filt.update(step["input"])
+{% if f.output.compare == "tolerance" %}
+            self.assert_close(
+                actual,
+                step["expected"],
+                f"{{ f.name }} step {i} input={step['input']}",
+            )
+{% else %}
+            self.assertEqual(
+                actual,
+                step["expected"],
+                f"{{ f.name }} step {i} input={step['input']}",
+            )
+{% endif %}

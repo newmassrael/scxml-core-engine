@@ -88,6 +88,33 @@ enum Commands {
         /// Directory containing forge SCXML files
         dir: String,
     },
+    /// Generate a cross-language numerical conformance test harness from a
+    /// fixture catalog (single source of truth for all 5 languages).
+    GenerateConformance {
+        /// Target language (rust, cpp, kotlin, go, python)
+        #[arg(short, long)]
+        language: String,
+        /// Path to fixture catalog JSON (tests/forge/conformance/fixtures.json)
+        #[arg(short, long)]
+        manifest: String,
+        /// Output directory for the generated harness file
+        #[arg(short, long)]
+        output_dir: String,
+    },
+    /// Print the conformance fixture name list from a manifest. Build
+    /// systems consume this so they don't need a native JSON parser
+    /// (CMake, Gradle, plain Bash) to enumerate fixtures.
+    ListFixtures {
+        /// Path to fixture catalog JSON (tests/forge/conformance/fixtures.json)
+        #[arg(short, long)]
+        manifest: String,
+        /// Output format. `plain` (default) is one fixture name per line,
+        /// suitable for `for fixture in $(sce-codegen list-fixtures ...)`.
+        /// `cmake` emits a single semicolon-separated CMake list literal.
+        /// `space` emits a single space-separated line.
+        #[arg(short, long, default_value = "plain")]
+        format: String,
+    },
 }
 
 fn main() {
@@ -111,6 +138,12 @@ fn main() {
         Commands::FixScxmlName { scxml, name } => cmd_fix_scxml_name(&scxml, &name),
         Commands::ReadMetadata { metadata_file } => cmd_read_metadata(&metadata_file),
         Commands::Manifest { dir } => cmd_manifest(&dir),
+        Commands::GenerateConformance {
+            language,
+            manifest,
+            output_dir,
+        } => cmd_generate_conformance(&language, &manifest, &output_dir),
+        Commands::ListFixtures { manifest, format } => cmd_list_fixtures(&manifest, &format),
     }
 }
 
@@ -1657,6 +1690,64 @@ fn cmd_manifest(dir: &str) {
     });
 
     println!("{json}");
+}
+
+// ── Subcommand: generate-conformance ───────────────────────────
+
+fn cmd_generate_conformance(language: &str, manifest_path: &str, output_dir: &str) {
+    let lang: Language = language.parse().unwrap_or_else(|_| {
+        eprintln!("Unknown language: {language}. Use rust, cpp, kotlin, go, or python.");
+        std::process::exit(1);
+    });
+
+    let manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
+        .unwrap_or_else(|e| {
+            eprintln!("ERROR: {e}");
+            std::process::exit(1);
+        });
+
+    let template_base = sce_build::find_template_base();
+    let rendered = sce_build::conformance::render_harness(&manifest, lang, &template_base)
+        .unwrap_or_else(|e| {
+            eprintln!("ERROR: {e}");
+            std::process::exit(1);
+        });
+
+    let out_dir = Path::new(output_dir);
+    fs::create_dir_all(out_dir).unwrap_or_else(|e| {
+        eprintln!("ERROR: create {}: {e}", out_dir.display());
+        std::process::exit(1);
+    });
+    let out_path = out_dir.join(sce_build::conformance::harness_filename(lang));
+    fs::write(&out_path, rendered).unwrap_or_else(|e| {
+        eprintln!("ERROR: write {}: {e}", out_path.display());
+        std::process::exit(1);
+    });
+    println!("Generated conformance harness: {}", out_path.display());
+}
+
+// ── Subcommand: list-fixtures ──────────────────────────────────
+
+fn cmd_list_fixtures(manifest_path: &str, format: &str) {
+    let manifest = sce_build::conformance::Manifest::load(Path::new(manifest_path))
+        .unwrap_or_else(|e| {
+            eprintln!("ERROR: {e}");
+            std::process::exit(1);
+        });
+    let names: Vec<&str> = manifest.fixtures.iter().map(|f| f.name.as_str()).collect();
+    match format {
+        "plain" => {
+            for n in &names {
+                println!("{n}");
+            }
+        }
+        "cmake" => println!("{}", names.join(";")),
+        "space" => println!("{}", names.join(" ")),
+        other => {
+            eprintln!("ERROR: unknown --format {other}; expected plain|cmake|space");
+            std::process::exit(1);
+        }
+    }
 }
 
 // ── Utility functions ───────────────────────────────────────────

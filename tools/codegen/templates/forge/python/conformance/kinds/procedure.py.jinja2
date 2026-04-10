@@ -1,0 +1,15 @@
+{# Procedure kind — execute(args) -> result with .completed and .final_state. #}
+        for case in spec["cases"]:
+            args = case["args"]
+            expected = case["expected"]
+            result = {{ f.name }}.execute(*args)
+            self.assertEqual(
+                result.completed,
+                expected["completed"],
+                "{{ f.name }}.completed",
+            )
+            self.assertEqual(
+                result.final_state,
+                expected["final_state"],
+                "{{ f.name }}.final_state",
+            )

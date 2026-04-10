@@ -1,0 +1,19 @@
+{# Filter kind — stateful filter.update(input) over a fixed sequence. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} filter{};
+    int i = 0;
+    for (const auto &step : spec["sequence"]) {
+        auto input = step["input"].get<{{ f.input | cpp_type }}>();
+        auto expected = step["expected"].get<{{ f.output["type"] | cpp_type }}>();
+        auto actual = filter.update(input);
+{% if f.output.compare == "tolerance" %}
+        char label[128];
+        std::snprintf(label, sizeof(label), "{{ f.name }} step %d", i);
+        assert_close(static_cast<double>(actual), static_cast<double>(expected), tol, label);
+{% else %}
+        CHECK(actual == expected,
+              "{{ f.name }} step %d: actual=%d expected=%d",
+              i, static_cast<int>(actual), static_cast<int>(expected));
+{% endif %}
+        ++i;
+    }

@@ -1,0 +1,29 @@
+{# Filter kind — stateful filter::update(input) over a per-step sequence. #}
+{% if f.output.compare == "tolerance" %}
+    let tol = tolerance(&reference);
+{% endif %}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    let mut filter = {{ f.name | to_pascal_case }}::new();
+    for (i, step) in spec["sequence"]
+        .as_array()
+        .expect("sequence must be array")
+        .iter()
+        .enumerate()
+    {
+        let input = {{ "step[\"input\"]" | rust_unmarshal(f.input) }};
+        let expected = {{ "step[\"expected\"]" | rust_unmarshal(f.output["type"]) }};
+        let actual = filter.update(input);
+{% if f.output.compare == "tolerance" %}
+        assert_close(
+            actual,
+            expected,
+            tol,
+            &format!("{{ f.name }} step {i} input={input}"),
+        );
+{% else %}
+        assert_eq!(
+            actual, expected,
+            "{{ f.name }} step {i} input={input}"
+        );
+{% endif %}
+    }

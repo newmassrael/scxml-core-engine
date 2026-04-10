@@ -1,0 +1,21 @@
+{# Observer kind — stateful observer.update(input) producing a tag queue. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} observer{};
+    int i = 0;
+    for (const auto &step : spec["sequence"]) {
+        auto input = step["input"].get<{{ f.input | cpp_type }}>();
+        std::vector<std::string> expected_events;
+        for (const auto &e : step["expected_events"]) {
+            expected_events.push_back(e.get<std::string>());
+        }
+        auto queue = observer.update(input);
+        std::vector<std::string> actual_events;
+        for (std::size_t j = 0; j < queue.size(); ++j) {
+            actual_events.emplace_back({{ f.name | to_camel_case }}_tag_name(queue[j].tag));
+        }
+        if (actual_events != expected_events) {
+            std::printf("FAIL: {{ f.name }} step %d: events differ\n", i);
+            ++g_failures;
+        }
+        ++i;
+    }

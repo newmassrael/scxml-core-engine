@@ -1,0 +1,6 @@
+{# Interpolation kind — pure Class.lookup(args), tolerance-compared. #}
+        for case in spec["cases"]:
+            args = case["args"]
+            expected = case["expected"]
+            actual = {{ f.name }}.lookup(*args)
+            self.assert_close(actual, expected, "{{ f.name }}")

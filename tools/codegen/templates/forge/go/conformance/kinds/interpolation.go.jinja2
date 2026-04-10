@@ -1,0 +1,12 @@
+{# Interpolation kind — pure Lookup(args) -> float64, tolerance-compared. #}
+	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
+	for _, c := range cases {
+{% for arg_ty in f.args %}
+		var arg{{ loop.index0 }} {{ arg_ty | go_type }}
+		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
+{% endfor %}
+		var expected float64
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		actual := {{ f.name }}.Lookup({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		assertClose(t, actual, expected, ref.FloatTolerance, "{{ f.name }}")
+	}

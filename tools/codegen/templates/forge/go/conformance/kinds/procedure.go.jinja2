@@ -1,0 +1,18 @@
+{# Procedure kind — Execute(args) -> ProcedureResult{Completed, FinalState}. #}
+	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
+	for _, c := range cases {
+{% for arg_ty in f.args %}
+		var arg{{ loop.index0 }} {{ arg_ty | go_type }}
+		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
+{% endfor %}
+		var expected struct {
+			Completed  bool   `json:"completed"`
+			FinalState string `json:"final_state"`
+		}
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		result := {{ f.name }}.Execute({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		if result.Completed != expected.Completed || result.FinalState != expected.FinalState {
+			t.Errorf("{{ f.name }}: actual=(%v,%q) expected=(%v,%q)",
+				result.Completed, result.FinalState, expected.Completed, expected.FinalState)
+		}
+	}

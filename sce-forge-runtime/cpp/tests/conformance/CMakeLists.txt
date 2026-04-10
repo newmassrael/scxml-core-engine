@@ -30,6 +30,8 @@ get_filename_component(REPO_ROOT "${REPO_ROOT}" ABSOLUTE)
 set(SCE_CODEGEN "${REPO_ROOT}/target/release/sce-codegen")
 set(RESOURCE_DIR "${REPO_ROOT}/tests/forge/resources")
 set(REFERENCE_JSON "${REPO_ROOT}/tests/forge/conformance/numerical_reference.json")
+set(FIXTURE_MANIFEST "${REPO_ROOT}/tests/forge/conformance/fixtures.json")
+set(CONFORMANCE_TEMPLATE_DIR "${REPO_ROOT}/tools/codegen/templates/forge/cpp/conformance")
 set(RUNTIME_INCLUDE_DIR "${REPO_ROOT}/sce-forge-runtime/cpp/include")
 set(NLOHMANN_JSON_INCLUDE_DIR "${REPO_ROOT}/third_party/nlohmann_json/include")
 
@@ -51,26 +53,26 @@ if(NOT EXISTS "${NLOHMANN_JSON_INCLUDE_DIR}/nlohmann/json.hpp")
     )
 endif()
 
-set(FIXTURES
-    filter_moving_average
-    filter_debounce
-    interpolation_1d_linear
-    interpolation_2d_bilinear
-    observer_coolant
-    transform_temperature
-    transform_bitwise
-    transform_multi_output
-    condition_threshold
-    condition_range
-    condition_programming
-    procedure_linear
-    procedure_diamond
-    procedure_startup_check
+# Pull the fixture catalog from sce-codegen itself in the cmake-list format
+# (single semicolon-separated literal). The Rust binary already owns the
+# manifest schema, so cmake never has to touch JSON or shell out to python.
+execute_process(
+    COMMAND "${SCE_CODEGEN}" list-fixtures
+            --manifest "${FIXTURE_MANIFEST}"
+            --format cmake
+    OUTPUT_VARIABLE FIXTURES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    RESULT_VARIABLE _manifest_rc
 )
+if(NOT _manifest_rc EQUAL 0)
+    message(FATAL_ERROR
+        "sce-codegen list-fixtures failed for ${FIXTURE_MANIFEST}")
+endif()
 
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 
+# Step 1: per-fixture product code generation.
 set(GENERATED_HEADERS "")
 foreach(fixture IN LISTS FIXTURES)
     set(out_header "${GENERATED_DIR}/${fixture}.h")
@@ -87,11 +89,34 @@ foreach(fixture IN LISTS FIXTURES)
     list(APPEND GENERATED_HEADERS "${out_header}")
 endforeach()
 
-add_custom_target(generate_forge_fixtures_cpp DEPENDS ${GENERATED_HEADERS})
-
-add_executable(numerical_conformance_test
-    numerical_conformance_test.cpp
+# Step 2: render the test harness itself from the shared template. The
+# scaffold pulls in per-kind fragments via dynamic Jinja2 include, so the
+# DEPENDS list must enumerate every fragment as well — otherwise editing
+# kinds/filter.cpp.jinja2 alone would silently leave a stale harness.
+file(GLOB CONFORMANCE_KIND_TEMPLATES
+    CONFIGURE_DEPENDS
+    "${CONFORMANCE_TEMPLATE_DIR}/kinds/*.cpp.jinja2"
 )
+set(HARNESS_SRC "${GENERATED_DIR}/numerical_conformance_test.cpp")
+add_custom_command(
+    OUTPUT "${HARNESS_SRC}"
+    COMMAND "${SCE_CODEGEN}" generate-conformance
+            --language cpp
+            --manifest "${FIXTURE_MANIFEST}"
+            --output-dir "${GENERATED_DIR}"
+    DEPENDS "${FIXTURE_MANIFEST}"
+            "${CONFORMANCE_TEMPLATE_DIR}/harness.cpp.jinja2"
+            ${CONFORMANCE_KIND_TEMPLATES}
+            "${SCE_CODEGEN}"
+    COMMENT "Generating C++ conformance harness from template"
+    VERBATIM
+)
+
+add_custom_target(generate_forge_fixtures_cpp
+    DEPENDS ${GENERATED_HEADERS} "${HARNESS_SRC}"
+)
+
+add_executable(numerical_conformance_test "${HARNESS_SRC}")
 add_dependencies(numerical_conformance_test generate_forge_fixtures_cpp)
 
 target_include_directories(numerical_conformance_test PRIVATE

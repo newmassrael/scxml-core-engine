@@ -1,0 +1,25 @@
+{# Transform kind — pure free function(s), single or compound output. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    for (const auto &c : spec["cases"]) {
+{% for arg_ty in f.args %}
+        auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
+{% endfor %}
+{% if f.output %}
+        auto expected = c["expected"].get<double>();
+        double actual = SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.output.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        assert_close(actual, expected, tol, "{{ f.name }}");
+{% else %}
+{% for co in f.compound_outputs %}
+        auto expected_{{ co.key }} = c["expected"]["{{ co.key }}"].get<{{ co["type"] | cpp_type }}>();
+        auto actual_{{ co.key }} = SCE::Generated::{{ f.name | to_pascal_case }}::{{ co.function | to_camel_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+{% if co.compare == "tolerance" %}
+        assert_close(actual_{{ co.key }}, expected_{{ co.key }}, tol, "{{ f.name }} {{ co.key }}");
+{% else %}
+        CHECK(actual_{{ co.key }} == expected_{{ co.key }},
+              "{{ f.name }} {{ co.key }}: actual=%u expected=%u",
+              static_cast<unsigned>(actual_{{ co.key }}),
+              static_cast<unsigned>(expected_{{ co.key }}));
+{% endif %}
+{% endfor %}
+{% endif %}
+    }

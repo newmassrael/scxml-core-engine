@@ -1,0 +1,135 @@
+{
+  "$schema": "./fixtures.schema.json",
+  "version": 1,
+  "description": "Cross-language conformance fixture catalog. NOTE: the $schema above is editor/IDE only — sce-build/src/conformance.rs hand-rolls runtime validation; the JSON schema is never consulted at codegen time. Each entry declares a fixture's structural metadata (kind, arg types, output shape) so sce-codegen can render per-language test harnesses from a single source. The oracle values — expected outputs — live in numerical_reference.json. Adding a new fixture requires (1) an SCXML file under tests/forge/resources/, (2) an entry here, and (3) an expected-value entry in numerical_reference.json. No language-specific test code should ever need to be hand-written.",
+  "kinds": {
+    "interpolation": "Pure lookup table with numeric interpolation. Struct::lookup(args) -> scalar. Reference section: pure_functions.",
+    "transform":     "Pure value transform. Free function(s) compute_*(args) -> scalar or multi-output. Reference section: pure_functions.",
+    "condition":     "Pure boolean predicate. Free function <name>(args) -> bool. Reference section: pure_functions.",
+    "filter":        "Stateful signal filter. Instance::update(input) -> output, one output per sequence step. Reference section: stateful_filters.",
+    "observer":      "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
+    "procedure":     "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions."
+  },
+  "canonical_types": {
+    "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++).",
+    "types": ["bool", "i32", "u8", "u16", "u32", "f32", "f64", "string"]
+  },
+  "fixtures": [
+    {
+      "name": "interpolation_1d_linear",
+      "kind": "interpolation",
+      "ref_section": "pure_functions",
+      "args": ["u16"],
+      "output": {"type": "f64", "compare": "tolerance"}
+    },
+    {
+      "name": "interpolation_2d_bilinear",
+      "kind": "interpolation",
+      "ref_section": "pure_functions",
+      "args": ["u16", "u8"],
+      "output": {"type": "f64", "compare": "tolerance"}
+    },
+
+    {
+      "name": "transform_temperature",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": ["u16"],
+      "output": {"type": "f64", "compare": "tolerance", "function": "compute_temperature"}
+    },
+    {
+      "name": "transform_bitwise",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": ["u8"],
+      "compound_outputs": [
+        {"key": "high_nibble", "function": "compute_high_nibble", "type": "u8", "compare": "equality"},
+        {"key": "low_nibble",  "function": "compute_low_nibble",  "type": "u8", "compare": "equality"}
+      ]
+    },
+    {
+      "name": "transform_multi_output",
+      "kind": "transform",
+      "ref_section": "pure_functions",
+      "args": ["f64"],
+      "compound_outputs": [
+        {"key": "fahrenheit", "function": "compute_fahrenheit", "type": "f64", "compare": "tolerance"},
+        {"key": "kelvin",     "function": "compute_kelvin",     "type": "f64", "compare": "tolerance"}
+      ]
+    },
+
+    {
+      "name": "condition_threshold",
+      "kind": "condition",
+      "ref_section": "pure_functions",
+      "function": "condition_threshold",
+      "args": ["f64", "f64", "f64"],
+      "output": {"type": "bool", "compare": "equality"}
+    },
+    {
+      "name": "condition_range",
+      "kind": "condition",
+      "ref_section": "pure_functions",
+      "function": "condition_range",
+      "args": ["u32", "u32", "u32"],
+      "output": {"type": "bool", "compare": "equality"}
+    },
+    {
+      "name": "condition_programming",
+      "kind": "condition",
+      "ref_section": "pure_functions",
+      "function": "condition_programming",
+      "args": ["bool", "bool"],
+      "output": {"type": "bool", "compare": "equality"}
+    },
+
+    {
+      "name": "filter_moving_average",
+      "kind": "filter",
+      "ref_section": "stateful_filters",
+      "input": "f64",
+      "output": {"type": "f64", "compare": "tolerance"}
+    },
+    {
+      "name": "filter_debounce",
+      "kind": "filter",
+      "ref_section": "stateful_filters",
+      "input": "bool",
+      "output": {"type": "bool", "compare": "equality"}
+    },
+    {
+      "name": "filter_low_pass",
+      "kind": "filter",
+      "ref_section": "stateful_filters",
+      "input": "f64",
+      "output": {"type": "f64", "compare": "tolerance"}
+    },
+
+    {
+      "name": "observer_coolant",
+      "kind": "observer",
+      "ref_section": "observers",
+      "input": "f64",
+      "event_tags": ["EMIT_WARNING", "CLEAR_WARNING", "EMERGENCY_SHUTDOWN"]
+    },
+
+    {
+      "name": "procedure_linear",
+      "kind": "procedure",
+      "ref_section": "pure_functions",
+      "args": ["i32"]
+    },
+    {
+      "name": "procedure_diamond",
+      "kind": "procedure",
+      "ref_section": "pure_functions",
+      "args": ["u16", "string"]
+    },
+    {
+      "name": "procedure_startup_check",
+      "kind": "procedure",
+      "ref_section": "pure_functions",
+      "args": ["f32", "f32"]
+    }
+  ]
+}

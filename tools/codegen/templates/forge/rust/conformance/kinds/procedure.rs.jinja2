@@ -1,0 +1,23 @@
+{# Procedure kind — execute(args) -> ProcedureResult{completed, final_state}. #}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for case in spec["cases"].as_array().expect("cases must be array") {
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% endfor %}
+        let expected_completed = case["expected"]["completed"]
+            .as_bool()
+            .expect("completed is bool");
+        let expected_final = case["expected"]["final_state"]
+            .as_str()
+            .expect("final_state is string");
+        let result = fixtures::{{ f.name }}::execute({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        assert_eq!(
+            result.completed, expected_completed,
+            "{{ f.name }}.completed"
+        );
+        assert_eq!(
+            result.final_state.as_str(),
+            expected_final,
+            "{{ f.name }}.final_state"
+        );
+    }

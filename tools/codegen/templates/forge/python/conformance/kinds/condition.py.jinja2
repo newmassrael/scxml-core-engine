@@ -1,0 +1,6 @@
+{# Condition kind — pure boolean predicate free function. #}
+        for case in spec["cases"]:
+            args = case["args"]
+            expected = case["expected"]
+            actual = {{ f.name }}.{{ f.function }}(*args)
+            self.assertEqual(actual, expected, "{{ f.name }}")

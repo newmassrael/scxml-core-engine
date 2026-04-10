@@ -1,0 +1,18 @@
+{# Filter kind — stateful Update(input) over a fixed sequence. #}
+	steps := ref.sequenceSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
+	filt := {{ f.name }}.New{{ f.name | to_pascal_case }}()
+	for i, step := range steps {
+		var input {{ f.input | go_type }}
+		var expected {{ f.output["type"] | go_type }}
+		unmarshalOrFatal(t, step.Input, &input, "{{ f.name }} input")
+		unmarshalOrFatal(t, step.Expected, &expected, "{{ f.name }} expected")
+		actual := filt.Update(input)
+{% if f.output.compare == "tolerance" %}
+		assertClose(t, float64(actual), float64(expected), ref.FloatTolerance, "{{ f.name }}")
+{% else %}
+		if actual != expected {
+			t.Errorf("{{ f.name }} step %d: actual=%v expected=%v", i, actual, expected)
+		}
+{% endif %}
+		_ = i
+	}

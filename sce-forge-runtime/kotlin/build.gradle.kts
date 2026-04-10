@@ -5,6 +5,7 @@
 // Forge (filter, interpolation, timer, observer kinds). See SCE_FORGE.md
 // Section 2.1 for the runtime library policy.
 
+import java.io.ByteArrayOutputStream
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
@@ -29,15 +30,15 @@ plugins {
 group = "com.sce.forge"
 version = "0.1.0"
 
-// Cross-language numerical conformance harness: invoke the sce-codegen CLI on
-// each fixture SCXML in tests/forge/resources/ and write the generated Kotlin
-// files into build/generated/conformance/kotlin/. That directory is wired
-// into the jvmTest source set below so the test binary compiles the live
-// codegen output instead of a committed golden. The task depends on the
-// sce-codegen release binary being present — see SCE_FORGE.md Section 2.1.
+// Cross-language numerical conformance: invoke the sce-codegen CLI on every
+// fixture declared in tests/forge/conformance/fixtures.json AND render the
+// test harness itself from the shared Jinja2 template. Both outputs land
+// under build/generated/conformance/kotlin/, which is wired into the jvmTest
+// source set so the test binary compiles live codegen — no committed goldens
+// on the conformance path. See SCE_FORGE.md Section 2.1.
 //
-// Declared as a custom DefaultTask with properties and ExecOperations
-// injection so it remains compatible with the Gradle configuration cache.
+// Task is configuration-cache-safe: inputs are declared properties and the
+// work happens through ExecOperations.
 abstract class GenerateForgeFixtures : DefaultTask() {
     @get:InputFile
     @get:PathSensitive(PathSensitivity.ABSOLUTE)
@@ -47,11 +48,16 @@ abstract class GenerateForgeFixtures : DefaultTask() {
     @get:PathSensitive(PathSensitivity.RELATIVE)
     abstract val resourceDir: DirectoryProperty
 
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val manifest: RegularFileProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val conformanceTemplateDir: DirectoryProperty
+
     @get:OutputDirectory
     abstract val outputDir: DirectoryProperty
-
-    @get:Input
-    abstract val fixtures: ListProperty<String>
 
     @get:Inject
     abstract val execOperations: ExecOperations
@@ -68,9 +74,31 @@ abstract class GenerateForgeFixtures : DefaultTask() {
         }
         val res = resourceDir.get().asFile
         val out = outputDir.get().asFile
+        val manifestFile = manifest.get().asFile
         out.deleteRecursively()
         out.mkdirs()
-        for (fixture in fixtures.get()) {
+
+        // Pull the fixture name list from sce-codegen itself so this script
+        // never has to parse JSON natively. The Rust binary owns the
+        // manifest schema (see sce-build/src/conformance.rs).
+        val listOut = ByteArrayOutputStream()
+        execOperations.exec {
+            commandLine(
+                bin.absolutePath,
+                "list-fixtures",
+                "--manifest", manifestFile.absolutePath,
+                "--format", "plain",
+            )
+            standardOutput = listOut
+        }
+        val fixtureNames = listOut.toString(Charsets.UTF_8)
+            .lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toList()
+
+        // Step 1: per-fixture product code generation.
+        for (fixture in fixtureNames) {
             execOperations.exec {
                 commandLine(
                     bin.absolutePath,
@@ -81,31 +109,29 @@ abstract class GenerateForgeFixtures : DefaultTask() {
                 )
             }
         }
+
+        // Step 2: render the NumericalConformanceTest.kt harness from the
+        // shared template. No test code is hand-maintained in this module.
+        execOperations.exec {
+            commandLine(
+                bin.absolutePath,
+                "generate-conformance",
+                "--language", "kotlin",
+                "--manifest", manifestFile.absolutePath,
+                "--output-dir", out.absolutePath,
+            )
+        }
     }
 }
 
 val generateForgeFixtures by tasks.registering(GenerateForgeFixtures::class) {
     sceCodegen.set(rootProject.layout.projectDirectory.file("target/release/sce-codegen"))
     resourceDir.set(rootProject.layout.projectDirectory.dir("tests/forge/resources"))
-    outputDir.set(layout.buildDirectory.dir("generated/conformance/kotlin"))
-    fixtures.set(
-        listOf(
-            "filter_moving_average",
-            "filter_debounce",
-            "interpolation_1d_linear",
-            "interpolation_2d_bilinear",
-            "observer_coolant",
-            "transform_temperature",
-            "transform_bitwise",
-            "transform_multi_output",
-            "condition_threshold",
-            "condition_range",
-            "condition_programming",
-            "procedure_linear",
-            "procedure_diamond",
-            "procedure_startup_check",
-        ),
+    manifest.set(rootProject.layout.projectDirectory.file("tests/forge/conformance/fixtures.json"))
+    conformanceTemplateDir.set(
+        rootProject.layout.projectDirectory.dir("tools/codegen/templates/forge/kotlin/conformance"),
     )
+    outputDir.set(layout.buildDirectory.dir("generated/conformance/kotlin"))
 }
 
 kotlin {

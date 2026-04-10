@@ -1,0 +1,22 @@
+{# Transform kind — pure free function(s), single or compound output. #}
+        for case in spec["cases"]:
+            args = case["args"]
+{% if f.output %}
+            expected = case["expected"]
+            actual = {{ f.name }}.{{ f.output.function }}(*args)
+{% if f.output.compare == "tolerance" %}
+            self.assert_close(actual, expected, "{{ f.name }}")
+{% else %}
+            self.assertEqual(actual, expected, "{{ f.name }}")
+{% endif %}
+{% else %}
+            expected = case["expected"]
+{% for co in f.compound_outputs %}
+            actual_{{ co.key }} = {{ f.name }}.{{ co.function }}(*args)
+{% if co.compare == "tolerance" %}
+            self.assert_close(actual_{{ co.key }}, expected["{{ co.key }}"], "{{ f.name }} {{ co.key }}")
+{% else %}
+            self.assertEqual(actual_{{ co.key }}, expected["{{ co.key }}"], "{{ f.name }} {{ co.key }}")
+{% endif %}
+{% endfor %}
+{% endif %}

@@ -1,0 +1,12 @@
+{# Observer kind — stateful observer.update(input) returning EventQueue<Tag>. #}
+        val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
+        val observer = {{ f.name | to_pascal_case }}()
+        for ((i, step) in spec["sequence"]!!.jsonArray.withIndex()) {
+            val input = {{ "step.jsonObject[\"input\"]!!" | kt_unmarshal(f.input) }}
+            val expectedEvents = step.jsonObject["expected_events"]!!.jsonArray.map {
+                it.jsonPrimitive.content
+            }
+            val queue: EventQueue<{{ f.name | to_pascal_case }}Tag> = observer.update(input)
+            val actualEvents = queue.asList().map { it.name }
+            assertEquals(expectedEvents, actualEvents, "{{ f.name }} step $i input=$input")
+        }

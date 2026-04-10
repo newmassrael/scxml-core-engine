@@ -430,7 +430,7 @@ fn load_template_strings(
 }
 
 /// Recursively load all .jinja2 templates from a directory.
-pub(crate) fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), String> {
+pub fn load_templates(env: &mut Environment<'_>, dir: &Path) -> Result<(), String> {
     if !dir.exists() {
         return Err(format!("Template directory not found: {}", dir.display()));
     }

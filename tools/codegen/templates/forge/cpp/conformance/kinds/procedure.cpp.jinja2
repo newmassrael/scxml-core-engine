@@ -1,0 +1,17 @@
+{# Procedure kind — sm.execute(args) -> ProcedureResult{completed, final_state}. #}
+    const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
+    for (const auto &c : spec["cases"]) {
+{% for arg_ty in f.args %}
+        auto arg{{ loop.index0 }} = c["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
+{% endfor %}
+        auto expected_completed = c["expected"]["completed"].get<bool>();
+        auto expected_final = c["expected"]["final_state"].get<std::string>();
+        SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} sm;
+        auto result = sm.execute({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        CHECK(result.completed == expected_completed,
+              "{{ f.name }}.completed: actual=%d expected=%d",
+              static_cast<int>(result.completed), static_cast<int>(expected_completed));
+        CHECK(result.final_state == expected_final,
+              "{{ f.name }}.final_state: actual=%s expected=%s",
+              result.final_state.c_str(), expected_final.c_str());
+    }

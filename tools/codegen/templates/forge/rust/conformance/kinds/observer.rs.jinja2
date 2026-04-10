@@ -1,0 +1,27 @@
+{# Observer kind — stateful observer::update(input) producing an event queue. #}
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    let mut observer = {{ f.name | to_pascal_case }}::new();
+    for (i, step) in spec["sequence"]
+        .as_array()
+        .expect("sequence must be array")
+        .iter()
+        .enumerate()
+    {
+        let input = {{ "step[\"input\"]" | rust_unmarshal(f.input) }};
+        let expected_events: Vec<String> = step["expected_events"]
+            .as_array()
+            .expect("expected_events must be array")
+            .iter()
+            .map(|v| v.as_str().expect("event tag must be string").to_string())
+            .collect();
+        let queue = observer.update(input);
+        let actual_events: Vec<String> = queue
+            .as_slice()
+            .iter()
+            .map(|e| format!("{:?}", e.tag))
+            .collect();
+        assert_eq!(
+            actual_events, expected_events,
+            "{{ f.name }} step {i} input={input}"
+        );
+    }

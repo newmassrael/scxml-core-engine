@@ -1,0 +1,31 @@
+{# Transform kind — pure free function(s), single or compound output. #}
+	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
+	for _, c := range cases {
+{% for arg_ty in f.args %}
+		var arg{{ loop.index0 }} {{ arg_ty | go_type }}
+		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
+{% endfor %}
+{% if f.output %}
+		var expected float64
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+		actual := {{ f.name }}.{{ f.output.function | to_pascal_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+		assertClose(t, actual, expected, ref.FloatTolerance, "{{ f.name }}")
+{% else %}
+		var expected struct {
+{% for co in f.compound_outputs %}
+			{{ co.key | to_pascal_case }} {{ co["type"] | go_type }} `json:"{{ co.key }}"`
+{% endfor %}
+		}
+		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
+{% for co in f.compound_outputs %}
+		actual{{ co.key | to_pascal_case }} := {{ f.name }}.{{ co.function | to_pascal_case }}({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
+{% if co.compare == "tolerance" %}
+		assertClose(t, actual{{ co.key | to_pascal_case }}, expected.{{ co.key | to_pascal_case }}, ref.FloatTolerance, "{{ f.name }} {{ co.key }}")
+{% else %}
+		if actual{{ co.key | to_pascal_case }} != expected.{{ co.key | to_pascal_case }} {
+			t.Errorf("{{ f.name }} {{ co.key }}: actual=%v expected=%v", actual{{ co.key | to_pascal_case }}, expected.{{ co.key | to_pascal_case }})
+		}
+{% endif %}
+{% endfor %}
+{% endif %}
+	}

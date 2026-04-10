@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/newmassrael/scxml-core-engine/tests/forge/conformance/fixtures.schema.json",
+  "title": "SCE Forge conformance fixture catalog",
+  "description": "Single source of truth for cross-language numerical conformance fixtures. Consumed by sce-codegen to render per-language test harnesses (Rust, Python, Go, Kotlin, C++) and by every language's build system to enumerate which fixtures participate.",
+  "type": "object",
+  "required": ["version", "fixtures"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON schema URL; present only for editor integration and ignored by the Rust parser."
+    },
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Manifest schema version. Bump only when adding/removing top-level fields."
+    },
+    "description": {
+      "type": "string"
+    },
+    "kinds": {
+      "type": "object",
+      "description": "Documentation-only map of kind -> human description. Parser ignores it.",
+      "additionalProperties": { "type": "string" }
+    },
+    "canonical_types": {
+      "type": "object",
+      "description": "Documentation-only enumeration of canonical primitive types. The Rust enum in sce-build is the authoritative source.",
+      "properties": {
+        "description": { "type": "string" },
+        "types": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/canonicalType" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "fixtures": {
+      "type": "array",
+      "description": "One entry per conformance fixture. Adding a fixture requires only this entry plus an SCXML file and a numerical_reference.json entry.",
+      "items": { "$ref": "#/$defs/fixture" }
+    }
+  },
+  "$defs": {
+    "canonicalType": {
+      "type": "string",
+      "enum": ["bool", "i32", "u8", "u16", "u32", "f32", "f64", "string"],
+      "description": "Canonical primitive type. Each per-language template maps these to its native type system."
+    },
+    "compareMode": {
+      "type": "string",
+      "enum": ["tolerance", "equality"],
+      "description": "tolerance: assert |actual-expected| <= float_tolerance. equality: assert actual == expected."
+    },
+    "scalarOutput": {
+      "type": "object",
+      "description": "Single primitive expected value.",
+      "required": ["type", "compare"],
+      "additionalProperties": false,
+      "properties": {
+        "type": { "$ref": "#/$defs/canonicalType" },
+        "compare": { "$ref": "#/$defs/compareMode" },
+        "function": {
+          "type": "string",
+          "description": "Free-function name (transform kind with a single output function)."
+        }
+      }
+    },
+    "compoundOutput": {
+      "type": "object",
+      "description": "One named field of a multi-output transform fixture.",
+      "required": ["key", "function", "type", "compare"],
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "type": "string",
+          "description": "JSON key in numerical_reference.json expected.{key}."
+        },
+        "function": {
+          "type": "string",
+          "description": "Free function that computes this output."
+        },
+        "type": { "$ref": "#/$defs/canonicalType" },
+        "compare": { "$ref": "#/$defs/compareMode" }
+      }
+    },
+    "fixture": {
+      "type": "object",
+      "required": ["name", "kind", "ref_section"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Fixture identifier; must match the SCXML filename stem (tests/forge/resources/{name}.scxml)."
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["interpolation", "transform", "condition", "filter", "observer", "procedure"]
+        },
+        "ref_section": {
+          "type": "string",
+          "enum": ["pure_functions", "stateful_filters", "observers"],
+          "description": "Top-level key in numerical_reference.json that holds the oracle entries for this fixture."
+        },
+        "args": {
+          "type": "array",
+          "description": "Pure-function kinds (interpolation/transform/condition/procedure): argument types in declaration order.",
+          "items": { "$ref": "#/$defs/canonicalType" }
+        },
+        "input": {
+          "$ref": "#/$defs/canonicalType",
+          "description": "Stateful kinds (filter/observer): per-step input type."
+        },
+        "output": { "$ref": "#/$defs/scalarOutput" },
+        "compound_outputs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/compoundOutput" }
+        },
+        "function": {
+          "type": "string",
+          "description": "Free-function name for kind=condition."
+        },
+        "event_tags": {
+          "type": "array",
+          "description": "Observer kind: ordered list of emitted event tag names.",
+          "items": { "type": "string" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "filter" } }, "required": ["kind"] },
+          "then": { "required": ["input", "output"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "observer" } }, "required": ["kind"] },
+          "then": { "required": ["input", "event_tags"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "interpolation" } }, "required": ["kind"] },
+          "then": { "required": ["args", "output"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "condition" } }, "required": ["kind"] },
+          "then": { "required": ["args", "function", "output"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "procedure" } }, "required": ["kind"] },
+          "then": { "required": ["args"] }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "transform" } }, "required": ["kind"] },
+          "then": {
+            "required": ["args"],
+            "oneOf": [
+              { "required": ["output"], "not": { "required": ["compound_outputs"] } },
+              { "required": ["compound_outputs"], "not": { "required": ["output"] } }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

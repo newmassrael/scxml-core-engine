@@ -1,0 +1,11 @@
+{# Interpolation kind — pure Struct::lookup(args) -> f64, tolerance-compared. #}
+    let tol = tolerance(&reference);
+    let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
+    for case in spec["cases"].as_array().expect("cases must be array") {
+{% for arg_ty in f.args %}
+        let arg{{ loop.index0 }} = {{ ("case[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
+{% endfor %}
+        let expected = case["expected"].as_f64().expect("expected is number");
+        let actual = {{ f.name | to_pascal_case }}::lookup({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
+        assert_close(actual, expected, tol, "{{ f.name }}");
+    }

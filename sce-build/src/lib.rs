@@ -22,6 +22,7 @@ pub mod filters;
 pub mod generator;
 pub mod kotlin;
 pub mod lua_transformer;
+pub mod conformance;
 pub mod forge;
 #[cfg(feature = "wasm")]
 mod wasm;
@@ -571,7 +572,7 @@ pub fn is_forge_document(content: &str) -> bool {
 }
 
 /// Locate the base template directory (contains rust/, kotlin/, actions/).
-fn find_template_base() -> std::path::PathBuf {
+pub fn find_template_base() -> std::path::PathBuf {
     if let Ok(dir) = std::env::var("SCE_TEMPLATE_DIR") {
         // If pointing to a language subdir, go up one level
         let p = Path::new(&dir);
