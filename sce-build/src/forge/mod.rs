@@ -7,6 +7,8 @@
 
 pub mod model;
 pub mod parser;
+pub mod types;
+pub mod type_ctx;
 pub mod expr;
 pub mod generator;
 pub mod manifest;

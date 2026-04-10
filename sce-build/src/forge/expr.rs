@@ -1,21 +1,61 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
 //
-// SCE Forge expression transpiler — ECMAScript subset to target language.
+// SCE Forge expression transpiler — ECMAScript subset → target language.
 //
-// Architecture: source text -> tokenize -> parse (recursive descent) -> AST -> emit.
+// Architecture:
 //
-// The AST captures ECMAScript semantics. Each target language has its own
-// precedence function; the emitter adds parentheses wherever the target
-// would parse the expression differently from the AST's intended meaning.
+//   source text
+//     │
+//     ▼
+//   tokenize  (`tokenize`)
+//     │
+//     ▼
+//   parse     (`Parser::parse_expression`)
+//     │   produces a `TypedExpr` whose every node has `ty: Unknown`
+//     ▼
+//   rename    (`rename_identifiers`, optional)
+//     │   applies user-supplied ident → ident map (e.g. `_event.data` collapse,
+//     │   datamodel → struct field rename)
+//     ▼
+//   infer     (`infer_types`)
+//     │   bottom-up annotation using `TypeCtx` (variable types + function sigs)
+//     │   and the lattice in `forge::types::{join_arith, join_int}`
+//     ▼
+//   emit      (`emit_cpp` / `emit_rust` / `emit_go` / `emit_kotlin` / `emit_python`)
+//         each emitter consumes the typed AST plus an `expected: InferredType`
+//         context propagated top-down, and inserts language-specific coercions
+//         at the points where `child.ty != expected` or where operand types in
+//         a binary operation differ from the computed result type
 //
-// Limitations:
-// - `>>>` (unsigned right shift) maps to `>>` in C++/Rust/Go. For signed
-//   types this produces arithmetic shift, not logical shift. SCXML authors
-//   should ensure `>>>` operands are unsigned, or use explicit masking.
-// - String escape sequences (e.g. `\'`) are passed through verbatim.
-//   Target languages may have different escape rules; SCXML strings should
-//   use only ASCII content without language-specific escapes.
+// Design principles:
+//
+// * **No post-emit regex hacking**: all type-aware behavior lives in this file.
+//   The generator passes a `TypeCtx` and an expected output type; the emitter
+//   handles every coercion, cast, and literal promotion inside its own arm.
+//
+// * **Untyped literal polymorphism**: decimal integer literals are `UntypedInt`,
+//   decimal floats are `UntypedFloat`. They adopt the context type. Example:
+//   `celsius * 9 / 5 + 32` with `celsius: f64` emits `celsius * 9.0 / 5.0 + 32.0`
+//   in Rust because the untyped literals flow into a float context.
+//
+// * **Hex/binary/octal literals reject float promotion**: `x * 0xFF` with
+//   `x: f64` is an error (`cannot coerce hex/oct/bin literal '0xFF' to float`),
+//   not a silent cast. Users must use a decimal float literal explicitly.
+//
+// * **Unknown is contagious but non-fatal**: missing identifiers, opaque
+//   member accesses, and unresolved function calls produce `Unknown`, which
+//   propagates through `join_arith` / `join_int`. Emitters emit the ident
+//   verbatim (no cast) when operand type is `Unknown` — the generated code
+//   relies on the target language to reject invalid expressions. This matches
+//   how the old untyped transpiler worked, so pre-typed use cases (e.g.
+//   built-in `computeKey(seed)` helpers) still compile.
+//
+// * **`>>>` unsigned right shift**: Rust/C++/Go have no unsigned-shift operator,
+//   so `>>>` maps to `>>`. SCXML authors must ensure operands are unsigned or
+//   use explicit masking. Kotlin has `ushr` and Python promotes to big-int.
 
+use crate::forge::types::{join_arith, join_int, InferredType, TypeCtx};
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::LazyLock;
 
@@ -33,28 +73,32 @@ pub enum ExprTarget {
     Python,
 }
 
-/// Transpile an ECMAScript expression to the target language.
-pub fn transpile(expr: &str, target: ExprTarget) -> Result<String, String> {
-    let expr = expr.trim();
-    if expr.is_empty() {
-        return Err("Empty expression".to_string());
-    }
-
-    let tokens = tokenize(expr)?;
-    let ast = Parser::new(&tokens).parse_expression()?;
-    emit(&ast, target)
-}
-
-/// Transpile with identifier renaming applied at AST level.
+/// Transpile an ECMAScript expression to the target language with full
+/// type-aware coercion.
 ///
-/// Renames are applied to `Ident` nodes only — string literals, member property
-/// names, and function names are left unchanged. This is the correct place to
-/// map SCXML datamodel variable names to target-language member names
-/// (e.g., `retryCount` → `retryCount_` for C++ policy struct members).
-pub fn transpile_with_renames(
+/// * `expr` — source expression in the ECMAScript subset permitted by
+///   Extended SCXML (no `new`, `var`, `let`, arrow functions, template
+///   literals, spread, optional chaining, nullish coalescing; strict
+///   equality required).
+/// * `target` — the language to emit.
+/// * `ctx` — typed context: `vars` maps identifier names to their
+///   [`InferredType`]; `funcs` maps function names (typically cross-file
+///   imports) to their signatures.
+/// * `renames` — identifier renaming applied before inference. This lets
+///   callers map e.g. `_event.data` → `pendingEventData_` or camelCase
+///   datamodel names → member-field names. Both plain idents and
+///   `object.property` paths (as a single key like `"_event.data"`) are
+///   recognized; see [`rename_identifiers`] for the full contract.
+/// * `expected` — the type the enclosing context expects this whole
+///   expression to produce. Drives top-level literal promotion and
+///   back-conversion. Pass [`InferredType::Unknown`] if the caller does not
+///   have a firm expectation (no top-level coercion will be applied).
+pub fn transpile_typed(
     expr: &str,
     target: ExprTarget,
-    renames: &std::collections::HashMap<&str, &str>,
+    ctx: &TypeCtx<'_>,
+    renames: &HashMap<&str, &str>,
+    expected: InferredType,
 ) -> Result<String, String> {
     let expr = expr.trim();
     if expr.is_empty() {
@@ -63,96 +107,60 @@ pub fn transpile_with_renames(
 
     let tokens = tokenize(expr)?;
     let mut ast = Parser::new(&tokens).parse_expression()?;
-    rename_identifiers(&mut ast, renames);
-    emit(&ast, target)
-}
+    if !renames.is_empty() {
+        rename_identifiers(&mut ast, renames);
+    }
+    infer_types(&mut ast, ctx);
 
-/// Recursively rename identifiers in the AST.
-///
-/// Handles two cases:
-/// 1. Bare `Ident` nodes: renamed via the `renames` map (e.g., `retryCount` → `retryCount_`)
-/// 2. `Member{Ident(x), prop}` patterns: if the full `x.prop` path is in `renames`,
-///    the entire Member node is collapsed to a single `Ident` (e.g., `_event.data` → `pendingEventData_`)
-///
-/// Property names in Member access are NOT renamed — they represent struct fields.
-/// Function call names (Call.callee) ARE subject to renaming if they match a key;
-/// in practice this won't collide because datamodel variable names and function names
-/// occupy different identifier spaces in SCXML.
-fn rename_identifiers(ast: &mut Expr, renames: &std::collections::HashMap<&str, &str>) {
-    match ast {
-        Expr::Ident(name) => {
-            if let Some(renamed) = renames.get(name.as_str()) {
-                *name = renamed.to_string();
-            }
-        }
-        Expr::Binary { left, right, .. } => {
-            rename_identifiers(left, renames);
-            rename_identifiers(right, renames);
-        }
-        Expr::Unary { operand, .. } => {
-            rename_identifiers(operand, renames);
-        }
-        Expr::Conditional { condition, consequent, alternate } => {
-            rename_identifiers(condition, renames);
-            rename_identifiers(consequent, renames);
-            rename_identifiers(alternate, renames);
-        }
-        Expr::Member { object, property } => {
-            // Check if the full "object.property" path has a rename entry
-            // (e.g., "_event.data" → "pendingEventData_"). If so, collapse
-            // the entire Member node to a single Ident.
-            if let Expr::Ident(obj_name) = object.as_ref() {
-                let full_path = format!("{}.{}", obj_name, property);
-                if let Some(renamed) = renames.get(full_path.as_str()) {
-                    *ast = Expr::Ident(renamed.to_string());
-                    return;
-                }
-            }
-            // Otherwise, rename the object only (not the property)
-            rename_identifiers(object, renames);
-        }
-        Expr::Index { object, index } => {
-            rename_identifiers(object, renames);
-            rename_identifiers(index, renames);
-        }
-        Expr::Call { callee, args } => {
-            rename_identifiers(callee, renames);
-            for arg in args {
-                rename_identifiers(arg, renames);
-            }
-        }
-        // Literals have no identifiers to rename
-        Expr::NumberLit(_) | Expr::StringLit { .. } | Expr::BoolLit(_) | Expr::NullLit => {}
+    match target {
+        ExprTarget::Cpp => Ok(emit_cpp(&ast, expected)),
+        ExprTarget::Kotlin => Ok(emit_kotlin(&ast, expected)),
+        ExprTarget::Rust => emit_rust(&ast, expected),
+        ExprTarget::Go => emit_go(&ast, expected),
+        ExprTarget::Python => Ok(emit_python(&ast, expected)),
     }
 }
 
-/// Replace string literal contents with spaces (used by forge generator).
-pub fn strip_string_literals(expr: &str) -> String {
-    static RE_STR: LazyLock<regex::Regex> = LazyLock::new(|| {
-        regex::Regex::new(r#"'[^']*'|"[^"]*""#).unwrap()
-    });
-    RE_STR
-        .replace_all(expr, |caps: &regex::Captures| " ".repeat(caps[0].len()))
-        .to_string()
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Typed AST
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// A node in the expression AST, paired with its inferred type.
+///
+/// Every node carries exactly one `ty` slot. The parser initializes
+/// `ty = InferredType::Unknown`, and [`infer_types`] overwrites it in a
+/// bottom-up pass. Emitters then consume the annotated tree.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct TypedExpr {
+    pub kind: ExprKind,
+    pub ty: InferredType,
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// AST
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+impl TypedExpr {
+    fn new(kind: ExprKind) -> Self {
+        Self { kind, ty: InferredType::Unknown }
+    }
+}
 
+/// The structural content of an expression node. Does not carry type
+/// information on its own — that lives in the enclosing [`TypedExpr`].
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) enum Expr {
+pub(crate) enum ExprKind {
     NumberLit(String),
     StringLit { value: String, quote: char },
     BoolLit(bool),
     NullLit,
     Ident(String),
-    Binary { op: BinOp, left: Box<Expr>, right: Box<Expr> },
-    Unary { op: UnaryOp, operand: Box<Expr> },
-    Conditional { condition: Box<Expr>, consequent: Box<Expr>, alternate: Box<Expr> },
-    Member { object: Box<Expr>, property: String },
-    Index { object: Box<Expr>, index: Box<Expr> },
-    Call { callee: Box<Expr>, args: Vec<Expr> },
+    Binary { op: BinOp, left: Box<TypedExpr>, right: Box<TypedExpr> },
+    Unary { op: UnaryOp, operand: Box<TypedExpr> },
+    Conditional {
+        condition: Box<TypedExpr>,
+        consequent: Box<TypedExpr>,
+        alternate: Box<TypedExpr>,
+    },
+    Member { object: Box<TypedExpr>, property: String },
+    Index { object: Box<TypedExpr>, index: Box<TypedExpr> },
+    Call { callee: Box<TypedExpr>, args: Vec<TypedExpr> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,9 +172,46 @@ pub(crate) enum BinOp {
     Shl, Shr, UShr,
 }
 
+impl BinOp {
+    fn is_arith(self) -> bool {
+        matches!(self, Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Mod)
+    }
+    fn is_comparison(self) -> bool {
+        matches!(
+            self,
+            Self::StrictEq | Self::StrictNeq | Self::Lt | Self::Gt | Self::LtEq | Self::GtEq
+        )
+    }
+    fn is_logical(self) -> bool {
+        matches!(self, Self::And | Self::Or)
+    }
+    fn is_bitwise(self) -> bool {
+        matches!(
+            self,
+            Self::BitAnd | Self::BitOr | Self::BitXor | Self::Shl | Self::Shr | Self::UShr
+        )
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum UnaryOp {
     Neg, Pos, Not, BitNot,
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Public helper: string-literal stripping (used by generator-side
+// tooling that pre-scans SCXML expressions without full parsing)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Replace the contents of every string literal with spaces of equal length,
+/// preserving expression length and non-string token positions.
+pub fn strip_string_literals(expr: &str) -> String {
+    static RE_STR: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r#"'[^']*'|"[^"]*""#).unwrap()
+    });
+    RE_STR
+        .replace_all(expr, |caps: &regex::Captures| " ".repeat(caps[0].len()))
+        .to_string()
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -281,18 +326,16 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     _ => {}
                 }
             }
-            while i < len && bytes[i].is_ascii_digit() { i += 1; }
-            if i < len && bytes[i] == b'.' && (i + 1 >= len || bytes[i + 1] != b'.') {
+            while i < len && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
                 i += 1;
-                while i < len && bytes[i].is_ascii_digit() { i += 1; }
             }
             if i < len && (bytes[i] == b'e' || bytes[i] == b'E') {
                 i += 1;
                 if i < len && (bytes[i] == b'+' || bytes[i] == b'-') { i += 1; }
                 while i < len && bytes[i].is_ascii_digit() { i += 1; }
             }
-            // Normalize `.5` -> `0.5` (not valid in Rust/Kotlin)
             let mut num = input[start..i].to_string();
+            // Normalize `.5` -> `0.5` (not valid in Rust/Kotlin)
             if starts_with_dot {
                 num.insert(0, '0');
             }
@@ -313,7 +356,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
         }
 
         // Reject unsupported multi-char constructs with clear diagnostics.
-        // These would otherwise produce confusing parse errors.
         if i + 1 < len && &input[i..i + 2] == "=>" {
             return Err(
                 "Unsupported ECMAScript construct: arrow function (=>). \
@@ -363,8 +405,6 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
         if i + 1 < len {
             let two = &input[i..i + 2];
             let tok = match two {
-                // `!==` is already consumed by the 3-char check above.
-                // Any remaining `==` or `!=` is the loose variant — reject.
                 "==" => {
                     return Err(
                         "Loose equality '==' is not permitted in Extended SCXML. \
@@ -434,9 +474,10 @@ fn validate_keyword(word: &str) -> Result<(), String> {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Recursive descent parser
+// Recursive descent parser — produces a `TypedExpr` whose every
+// node has `ty: InferredType::Unknown`. `infer_types` fills those in.
 //
-// Precedence (lowest to highest, matching ECMAScript):
+// Precedence (lowest → highest, matching ECMAScript):
 //   1. Conditional     ( ? : )
 //   2. Logical OR      ( || )
 //   3. Logical AND     ( && )
@@ -475,7 +516,7 @@ impl<'a> Parser<'a> {
         else { Err(format!("Expected '{expected}', got '{tok}'")) }
     }
 
-    fn parse_expression(&mut self) -> Result<Expr, String> {
+    fn parse_expression(&mut self) -> Result<TypedExpr, String> {
         let expr = self.parse_conditional()?;
         if *self.peek() != Token::Eof {
             return Err(format!("Unexpected token after expression: '{}'", self.peek()));
@@ -483,73 +524,83 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_conditional(&mut self) -> Result<Expr, String> {
+    fn parse_conditional(&mut self) -> Result<TypedExpr, String> {
         let expr = self.parse_logical_or()?;
         if *self.peek() == Token::Question {
             self.advance();
             let consequent = self.parse_conditional()?;
             self.expect(&Token::Colon)?;
             let alternate = self.parse_conditional()?;
-            return Ok(Expr::Conditional {
+            return Ok(TypedExpr::new(ExprKind::Conditional {
                 condition: Box::new(expr),
                 consequent: Box::new(consequent),
                 alternate: Box::new(alternate),
-            });
+            }));
         }
         Ok(expr)
     }
 
-    fn parse_logical_or(&mut self) -> Result<Expr, String> {
+    fn parse_logical_or(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_logical_and()?;
         while *self.peek() == Token::PipePipe {
             self.advance();
             let right = self.parse_logical_and()?;
-            left = Expr::Binary { op: BinOp::Or, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op: BinOp::Or, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_logical_and(&mut self) -> Result<Expr, String> {
+    fn parse_logical_and(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_bitwise_or()?;
         while *self.peek() == Token::AmpAmp {
             self.advance();
             let right = self.parse_bitwise_or()?;
-            left = Expr::Binary { op: BinOp::And, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op: BinOp::And, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_bitwise_or(&mut self) -> Result<Expr, String> {
+    fn parse_bitwise_or(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_bitwise_xor()?;
         while *self.peek() == Token::Pipe {
             self.advance();
             let right = self.parse_bitwise_xor()?;
-            left = Expr::Binary { op: BinOp::BitOr, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op: BinOp::BitOr, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_bitwise_xor(&mut self) -> Result<Expr, String> {
+    fn parse_bitwise_xor(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_bitwise_and()?;
         while *self.peek() == Token::Caret {
             self.advance();
             let right = self.parse_bitwise_and()?;
-            left = Expr::Binary { op: BinOp::BitXor, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op: BinOp::BitXor, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_bitwise_and(&mut self) -> Result<Expr, String> {
+    fn parse_bitwise_and(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_equality()?;
         while *self.peek() == Token::Amp {
             self.advance();
             let right = self.parse_equality()?;
-            left = Expr::Binary { op: BinOp::BitAnd, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op: BinOp::BitAnd, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_equality(&mut self) -> Result<Expr, String> {
+    fn parse_equality(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_relational()?;
         loop {
             let op = match self.peek() {
@@ -559,12 +610,14 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_relational()?;
-            left = Expr::Binary { op, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_relational(&mut self) -> Result<Expr, String> {
+    fn parse_relational(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_shift()?;
         loop {
             let op = match self.peek() {
@@ -574,12 +627,14 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_shift()?;
-            left = Expr::Binary { op, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_shift(&mut self) -> Result<Expr, String> {
+    fn parse_shift(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_additive()?;
         loop {
             let op = match self.peek() {
@@ -588,12 +643,14 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_additive()?;
-            left = Expr::Binary { op, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_additive(&mut self) -> Result<Expr, String> {
+    fn parse_additive(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_multiplicative()?;
         loop {
             let op = match self.peek() {
@@ -602,12 +659,14 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_multiplicative()?;
-            left = Expr::Binary { op, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_multiplicative(&mut self) -> Result<Expr, String> {
+    fn parse_multiplicative(&mut self) -> Result<TypedExpr, String> {
         let mut left = self.parse_unary()?;
         loop {
             let op = match self.peek() {
@@ -616,12 +675,14 @@ impl<'a> Parser<'a> {
             };
             self.advance();
             let right = self.parse_unary()?;
-            left = Expr::Binary { op, left: Box::new(left), right: Box::new(right) };
+            left = TypedExpr::new(ExprKind::Binary {
+                op, left: Box::new(left), right: Box::new(right),
+            });
         }
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<Expr, String> {
+    fn parse_unary(&mut self) -> Result<TypedExpr, String> {
         let op = match self.peek() {
             Token::Minus => Some(UnaryOp::Neg), Token::Plus => Some(UnaryOp::Pos),
             Token::Bang => Some(UnaryOp::Not), Token::Tilde => Some(UnaryOp::BitNot),
@@ -630,12 +691,14 @@ impl<'a> Parser<'a> {
         if let Some(op) = op {
             self.advance();
             let operand = self.parse_unary()?;
-            return Ok(Expr::Unary { op, operand: Box::new(operand) });
+            return Ok(TypedExpr::new(ExprKind::Unary {
+                op, operand: Box::new(operand),
+            }));
         }
         self.parse_postfix()
     }
 
-    fn parse_postfix(&mut self) -> Result<Expr, String> {
+    fn parse_postfix(&mut self) -> Result<TypedExpr, String> {
         let mut expr = self.parse_primary()?;
         loop {
             match self.peek() {
@@ -645,13 +708,17 @@ impl<'a> Parser<'a> {
                         Token::Ident(s) => s,
                         other => return Err(format!("Expected property name after '.', got '{other}'")),
                     };
-                    expr = Expr::Member { object: Box::new(expr), property: prop };
+                    expr = TypedExpr::new(ExprKind::Member {
+                        object: Box::new(expr), property: prop,
+                    });
                 }
                 Token::LBracket => {
                     self.advance();
                     let index = self.parse_conditional()?;
                     self.expect(&Token::RBracket)?;
-                    expr = Expr::Index { object: Box::new(expr), index: Box::new(index) };
+                    expr = TypedExpr::new(ExprKind::Index {
+                        object: Box::new(expr), index: Box::new(index),
+                    });
                 }
                 Token::LParen => {
                     self.advance();
@@ -664,7 +731,9 @@ impl<'a> Parser<'a> {
                         }
                     }
                     self.expect(&Token::RParen)?;
-                    expr = Expr::Call { callee: Box::new(expr), args };
+                    expr = TypedExpr::new(ExprKind::Call {
+                        callee: Box::new(expr), args,
+                    });
                 }
                 _ => break,
             }
@@ -672,14 +741,16 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn parse_primary(&mut self) -> Result<Expr, String> {
+    fn parse_primary(&mut self) -> Result<TypedExpr, String> {
         match self.advance().clone() {
-            Token::Number(n) => Ok(Expr::NumberLit(n)),
-            Token::String { value, quote } => Ok(Expr::StringLit { value, quote }),
-            Token::Ident(s) if s == "true" => Ok(Expr::BoolLit(true)),
-            Token::Ident(s) if s == "false" => Ok(Expr::BoolLit(false)),
-            Token::Ident(s) if s == "null" => Ok(Expr::NullLit),
-            Token::Ident(s) => Ok(Expr::Ident(s)),
+            Token::Number(n) => Ok(TypedExpr::new(ExprKind::NumberLit(n))),
+            Token::String { value, quote } => {
+                Ok(TypedExpr::new(ExprKind::StringLit { value, quote }))
+            }
+            Token::Ident(s) if s == "true" => Ok(TypedExpr::new(ExprKind::BoolLit(true))),
+            Token::Ident(s) if s == "false" => Ok(TypedExpr::new(ExprKind::BoolLit(false))),
+            Token::Ident(s) if s == "null" => Ok(TypedExpr::new(ExprKind::NullLit)),
+            Token::Ident(s) => Ok(TypedExpr::new(ExprKind::Ident(s))),
             Token::LParen => {
                 let inner = self.parse_conditional()?;
                 self.expect(&Token::RParen)?;
@@ -691,15 +762,181 @@ impl<'a> Parser<'a> {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Operator Precedence (per target language)
-//
-// The AST captures ECMAScript semantics. When emitting, we must add
-// parentheses wherever the TARGET language's precedence would cause
-// a different parse tree.
+// Rename pass — applied before inference
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-/// ECMAScript operator precedence (higher = binds tighter).
-/// Also matches C++ relative ordering (equality > bitwise).
+/// Apply an identifier rename map to the AST.
+///
+/// Handles two cases:
+/// 1. Bare `Ident` nodes: renamed via the `renames` map
+///    (e.g., `retryCount` → `retryCount_`).
+/// 2. `Member{Ident(x), prop}` patterns: if the full `x.prop` path is in
+///    `renames`, the entire Member node collapses to a single `Ident`
+///    (e.g., `_event.data` → `pendingEventData_`).
+///
+/// Property names in Member access are NOT renamed — they represent struct
+/// fields. Function call names (`Call.callee`) ARE subject to renaming if
+/// they match a key; datamodel variable names and function names occupy
+/// different identifier spaces in SCXML, so collisions are rare in practice.
+fn rename_identifiers(ast: &mut TypedExpr, renames: &HashMap<&str, &str>) {
+    match &mut ast.kind {
+        ExprKind::Ident(name) => {
+            if let Some(renamed) = renames.get(name.as_str()) {
+                *name = renamed.to_string();
+            }
+        }
+        ExprKind::Binary { left, right, .. } => {
+            rename_identifiers(left, renames);
+            rename_identifiers(right, renames);
+        }
+        ExprKind::Unary { operand, .. } => {
+            rename_identifiers(operand, renames);
+        }
+        ExprKind::Conditional { condition, consequent, alternate } => {
+            rename_identifiers(condition, renames);
+            rename_identifiers(consequent, renames);
+            rename_identifiers(alternate, renames);
+        }
+        ExprKind::Member { object, property } => {
+            if let ExprKind::Ident(obj_name) = &object.kind {
+                let full_path = format!("{}.{}", obj_name, property);
+                if let Some(renamed) = renames.get(full_path.as_str()) {
+                    ast.kind = ExprKind::Ident(renamed.to_string());
+                    ast.ty = InferredType::Unknown;
+                    return;
+                }
+            }
+            rename_identifiers(object, renames);
+        }
+        ExprKind::Index { object, index } => {
+            rename_identifiers(object, renames);
+            rename_identifiers(index, renames);
+        }
+        ExprKind::Call { callee, args } => {
+            rename_identifiers(callee, renames);
+            for arg in args {
+                rename_identifiers(arg, renames);
+            }
+        }
+        ExprKind::NumberLit(_) | ExprKind::StringLit { .. }
+        | ExprKind::BoolLit(_) | ExprKind::NullLit => {}
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Inference pass — annotates every node's `ty` bottom-up
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Recursively infer the natural type of every node in the AST using the
+/// provided context.
+///
+/// This is a simple bottom-up pass: each node's type is computed from its
+/// children's types plus the context (for identifiers and calls). The pass
+/// does NOT propagate an "expected" type top-down — that is handled at
+/// emission time, where each language emitter decides how to coerce an
+/// operand's natural type to the surrounding context.
+///
+/// Rationale for separating inference and coercion: the natural type of an
+/// expression is language-agnostic (governed by the lattice in `forge::types`),
+/// but the syntax of a coercion (e.g., `x as f64` vs `float64(x)` vs
+/// `x.toDouble()`) is language-specific. Emitters keep their knowledge
+/// localized by consulting the tree's natural types.
+fn infer_types(expr: &mut TypedExpr, ctx: &TypeCtx<'_>) {
+    expr.ty = match &mut expr.kind {
+        ExprKind::NumberLit(n) => {
+            if is_float_literal_text(n) {
+                InferredType::UntypedFloat
+            } else {
+                InferredType::UntypedInt
+            }
+        }
+        ExprKind::StringLit { .. } => InferredType::Str,
+        ExprKind::BoolLit(_) => InferredType::Bool,
+        ExprKind::NullLit => InferredType::Null,
+        ExprKind::Ident(name) => ctx.lookup_var(name.as_str()),
+        ExprKind::Binary { op, left, right } => {
+            infer_types(left, ctx);
+            infer_types(right, ctx);
+            if op.is_arith() {
+                join_arith(left.ty, right.ty)
+            } else if op.is_comparison() || op.is_logical() {
+                InferredType::Bool
+            } else if op.is_bitwise() {
+                join_int(left.ty, right.ty)
+            } else {
+                InferredType::Unknown
+            }
+        }
+        ExprKind::Unary { op, operand } => {
+            infer_types(operand, ctx);
+            match op {
+                UnaryOp::Neg | UnaryOp::Pos => operand.ty,
+                UnaryOp::Not => InferredType::Bool,
+                UnaryOp::BitNot => operand.ty,
+            }
+        }
+        ExprKind::Conditional { condition, consequent, alternate } => {
+            infer_types(condition, ctx);
+            infer_types(consequent, ctx);
+            infer_types(alternate, ctx);
+            join_arith(consequent.ty, alternate.ty)
+        }
+        ExprKind::Member { object, .. } => {
+            infer_types(object, ctx);
+            // Member access into opaque structs — cannot infer field type
+            // from local information. Future extension: dispatch on a
+            // per-object member type table.
+            InferredType::Unknown
+        }
+        ExprKind::Index { object, index } => {
+            infer_types(object, ctx);
+            infer_types(index, ctx);
+            match object.ty {
+                InferredType::Bytes => InferredType::Int { signed: false, bits: 8 },
+                _ => InferredType::Unknown,
+            }
+        }
+        ExprKind::Call { callee, args } => {
+            infer_types(callee, ctx);
+            for a in args.iter_mut() {
+                infer_types(a, ctx);
+            }
+            // If the callee is a bare identifier registered in the function
+            // signature table, we know the return type. Otherwise opaque.
+            if let ExprKind::Ident(name) = &callee.kind {
+                if let Some(sig) = ctx.lookup_func(name.as_str()) {
+                    sig.ret
+                } else {
+                    InferredType::Unknown
+                }
+            } else {
+                InferredType::Unknown
+            }
+        }
+    };
+}
+
+/// True if a numeric literal's text shape is float-like (has `.`, `e`, `E`).
+fn is_float_literal_text(n: &str) -> bool {
+    n.contains('.') || n.contains('e') || n.contains('E')
+}
+
+/// True if an integer literal string is a decimal form that can be safely
+/// rewritten as a float literal by appending `.0`. Hex/binary/octal literals
+/// must NOT be float-promoted — the resulting text would be invalid in every
+/// target language.
+fn is_decimal_integer_literal(n: &str) -> bool {
+    !n.is_empty()
+        && !is_float_literal_text(n)
+        && !n.starts_with("0x") && !n.starts_with("0X")
+        && !n.starts_with("0b") && !n.starts_with("0B")
+        && !n.starts_with("0o") && !n.starts_with("0O")
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Operator precedence (per target language) + paren insertion
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 fn ecma_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
@@ -715,8 +952,6 @@ fn ecma_precedence(op: BinOp) -> u8 {
     }
 }
 
-/// Kotlin operator precedence. Bitwise ops (and/or/xor/shl/shr/ushr) are infix
-/// functions sharing one precedence level, HIGHER than equality and comparison.
 fn kotlin_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
@@ -730,17 +965,6 @@ fn kotlin_precedence(op: BinOp) -> u8 {
     }
 }
 
-/// Go operator precedence. Differs significantly from ECMAScript:
-/// - `&`, `<<`, `>>` grouped with `*` at level 5 (higher than `+`)
-/// - `|`, `^` grouped with `+` at level 4
-/// - All comparison at level 3 (lower than all bitwise ops)
-///
-/// Reference: Go spec "Operator precedence"
-///   5: *  /  %  <<  >>  &  &^
-///   4: +  -  |  ^
-///   3: ==  !=  <  <=  >  >=
-///   2: &&
-///   1: ||
 fn go_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
@@ -753,11 +977,6 @@ fn go_precedence(op: BinOp) -> u8 {
     }
 }
 
-/// Rust operator precedence. Bitwise ops are above comparison (like Python,
-/// unlike ECMAScript/C++ where equality is above bitwise AND/XOR/OR).
-///
-/// Reference: Rust Reference "Expression precedence"
-///   &  >  ^  >  |  >  ==, !=, <, >, <=, >=
 fn rust_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
@@ -773,8 +992,6 @@ fn rust_precedence(op: BinOp) -> u8 {
     }
 }
 
-/// Python operator precedence. Same relative ordering as Rust:
-/// bitwise ops are above comparison.
 fn python_precedence(op: BinOp) -> u8 {
     match op {
         BinOp::Or => 1,
@@ -790,83 +1007,124 @@ fn python_precedence(op: BinOp) -> u8 {
     }
 }
 
-/// Check if a child expression needs parentheses in a binary context.
-fn child_needs_parens(child: &Expr, parent_op: BinOp, is_left: bool, prec: fn(BinOp) -> u8) -> bool {
-    match child {
-        Expr::Binary { op: child_op, .. } => {
+fn child_needs_parens(child: &TypedExpr, parent_op: BinOp, is_left: bool, prec: fn(BinOp) -> u8) -> bool {
+    match &child.kind {
+        ExprKind::Binary { op: child_op, .. } => {
             let cp = prec(*child_op);
             let pp = prec(parent_op);
-            // Left child: parens if child has strictly lower precedence
-            // Right child: parens if lower or equal (left-to-right associativity)
             if is_left { cp < pp } else { cp <= pp }
         }
-        Expr::Conditional { .. } => true,
+        ExprKind::Conditional { .. } => true,
         _ => false,
     }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Emitters
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-fn emit(expr: &Expr, target: ExprTarget) -> Result<String, String> {
-    match target {
-        ExprTarget::Cpp => Ok(emit_cpp(expr)),
-        ExprTarget::Kotlin => Ok(emit_kotlin(expr)),
-        ExprTarget::Rust => Ok(emit_rust(expr)),
-        ExprTarget::Go => emit_go(expr),
-        ExprTarget::Python => Ok(emit_python(expr)),
-    }
-}
-
-/// Wrap emitted sub-expression in parens when used as postfix base (before `.`, `[`, `(`).
-fn wrap_postfix(expr: &Expr, emitted: String) -> String {
-    if matches!(expr, Expr::Binary { .. } | Expr::Conditional { .. } | Expr::Unary { .. }) {
+/// Wrap an emitted sub-expression in parens when it is used as the base of a
+/// postfix access (`.`, `[]`, `()`) and the underlying AST shape would
+/// otherwise bind differently than intended.
+fn wrap_postfix(expr: &TypedExpr, emitted: String) -> String {
+    if matches!(
+        &expr.kind,
+        ExprKind::Binary { .. } | ExprKind::Conditional { .. } | ExprKind::Unary { .. }
+    ) {
         format!("({emitted})")
     } else {
         emitted
     }
 }
 
-/// Emit binary child with precedence-aware parenthesization.
-fn emit_child(
-    child: &Expr,
-    parent_op: BinOp,
-    is_left: bool,
-    prec: fn(BinOp) -> u8,
-    emit_fn: &dyn Fn(&Expr) -> String,
-) -> String {
-    let raw = emit_fn(child);
-    if child_needs_parens(child, parent_op, is_left, prec) { format!("({raw})") } else { raw }
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Emission helpers — per-Binary operand type computation
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Compute the type both operands of a binary node should be coerced to
+/// before the operator executes. For arithmetic and comparison this is the
+/// lattice join; for bitwise it is the int join; for logical it is Bool.
+fn binary_operand_type(op: BinOp, left: InferredType, right: InferredType) -> InferredType {
+    if op.is_arith() {
+        join_arith(left, right)
+    } else if op.is_comparison() {
+        // Comparison returns Bool but operands must share a numeric type.
+        join_arith(left, right)
+    } else if op.is_logical() {
+        InferredType::Bool
+    } else if op.is_bitwise() {
+        join_int(left, right)
+    } else {
+        InferredType::Unknown
+    }
 }
 
-// ── C++ ──────────────────────────────────────────────────────────
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Emitter — C++
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// C++ has implicit numeric conversions covering every case we care about:
+// integer ↔ float, narrower ↔ wider, signed ↔ unsigned. The emitter does
+// not insert `static_cast` — the compiler warns on narrowing conversions
+// but accepts them. Untyped integer literals are emitted verbatim; the
+// compiler picks the right literal type from context. Untyped float
+// literals are emitted verbatim as well.
+//
+// The only text transformation C++ does is mapping quote characters in
+// string literals (single → double) and emitting `nullptr` for null.
 
-fn emit_cpp(expr: &Expr) -> String {
-    match expr {
-        Expr::NumberLit(n) => n.clone(),
-        Expr::StringLit { value, .. } => format!("\"{value}\""),
-        Expr::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        Expr::NullLit => "nullptr".to_string(),
-        Expr::Ident(s) => s.clone(),
-        Expr::Binary { op, left, right } => {
-            let l = emit_child(left, *op, true, ecma_precedence, &emit_cpp);
-            let r = emit_child(right, *op, false, ecma_precedence, &emit_cpp);
+fn emit_cpp(expr: &TypedExpr, _expected: InferredType) -> String {
+    match &expr.kind {
+        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
+        ExprKind::NullLit => "nullptr".to_string(),
+        ExprKind::Ident(s) => s.clone(),
+        ExprKind::Binary { op, left, right } => {
+            let operand_ty = binary_operand_type(*op, left.ty, right.ty);
+            let l_raw = emit_cpp(left, operand_ty);
+            let r_raw = emit_cpp(right, operand_ty);
+            let l = if child_needs_parens(left, *op, true, ecma_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, ecma_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
             format!("{l} {} {r}", cpp_binop(*op))
         }
-        Expr::Unary { op, operand } => {
-            let inner = emit_cpp(operand);
-            let wrap = matches!(operand.as_ref(), Expr::Binary { .. } | Expr::Conditional { .. });
-            if wrap { format!("{}({inner})", cpp_unary(*op)) }
-            else { format!("{}{inner}", cpp_unary(*op)) }
+        ExprKind::Unary { op, operand } => {
+            let inner = emit_cpp(operand, expr.ty);
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            if wrap {
+                format!("{}({inner})", cpp_unary(*op))
+            } else {
+                format!("{}{inner}", cpp_unary(*op))
+            }
         }
-        Expr::Conditional { condition, consequent, alternate } =>
-            format!("{} ? {} : {}", emit_cpp(condition), emit_cpp(consequent), emit_cpp(alternate)),
-        Expr::Member { object, property } => format!("{}.{property}", wrap_postfix(object, emit_cpp(object))),
-        Expr::Index { object, index } => format!("{}[{}]", wrap_postfix(object, emit_cpp(object)), emit_cpp(index)),
-        Expr::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_cpp(a)).collect();
-            format!("{}({})", wrap_postfix(callee, emit_cpp(callee)), a.join(", "))
+        ExprKind::Conditional { condition, consequent, alternate } => {
+            format!(
+                "{} ? {} : {}",
+                emit_cpp(condition, InferredType::Bool),
+                emit_cpp(consequent, expr.ty),
+                emit_cpp(alternate, expr.ty),
+            )
+        }
+        ExprKind::Member { object, property } => {
+            format!("{}.{property}", wrap_postfix(object, emit_cpp(object, InferredType::Unknown)))
+        }
+        ExprKind::Index { object, index } => {
+            format!(
+                "{}[{}]",
+                wrap_postfix(object, emit_cpp(object, InferredType::Unknown)),
+                emit_cpp(index, InferredType::Unknown),
+            )
+        }
+        ExprKind::Call { callee, args } => {
+            let a: Vec<_> = args.iter().map(|a| emit_cpp(a, InferredType::Unknown)).collect();
+            format!(
+                "{}({})",
+                wrap_postfix(callee, emit_cpp(callee, InferredType::Unknown)),
+                a.join(", "),
+            )
         }
     }
 }
@@ -879,7 +1137,7 @@ fn cpp_binop(op: BinOp) -> &'static str {
         BinOp::And => "&&", BinOp::Or => "||",
         BinOp::BitAnd => "&", BinOp::BitOr => "|", BinOp::BitXor => "^",
         BinOp::Shl => "<<", BinOp::Shr => ">>",
-        BinOp::UShr => ">>", // W3C SCXML: unsigned shift — correct only for unsigned operands
+        BinOp::UShr => ">>",
     }
 }
 
@@ -887,35 +1145,129 @@ fn cpp_unary(op: UnaryOp) -> &'static str {
     match op { UnaryOp::Neg => "-", UnaryOp::Pos => "+", UnaryOp::Not => "!", UnaryOp::BitNot => "~" }
 }
 
-// ── Kotlin ───────────────────────────────────────────────────────
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Emitter — Kotlin
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Kotlin is the strictest target: no implicit numeric conversions at all.
+// Every type change requires an explicit `.toX()` call.
+//
+// * `Int{u,..} + Int{i,..}` — Kotlin does not permit mixing UInt/Int, so
+//   unsigned operands get `.toInt()` / `.toLong()` in signed context.
+// * `Int{..} op Float{..}` — int side needs `.toDouble()` / `.toFloat()`.
+// * Untyped integer literals inside a float context — append `.0` to the
+//   literal text so the emitted source is a `Double` literal.
+// * Unsigned output coercion at the top level — when the caller's expected
+//   type is `Int{u, bits}`, the emitted expression (which may have computed
+//   in signed domain to satisfy Kotlin arithmetic) is wrapped with
+//   `.toUByte()` / `.toUShort()` / `.toUInt()` / `.toULong()`.
 
-fn emit_kotlin(expr: &Expr) -> String {
-    match expr {
-        Expr::NumberLit(n) => n.clone(),
-        Expr::StringLit { value, .. } => format!("\"{value}\""),
-        Expr::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        Expr::NullLit => "null".to_string(),
-        Expr::Ident(s) => s.clone(),
-        Expr::Binary { op, left, right } => {
-            let l = emit_child(left, *op, true, kotlin_precedence, &emit_kotlin);
-            let r = emit_child(right, *op, false, kotlin_precedence, &emit_kotlin);
+fn emit_kotlin(expr: &TypedExpr, expected: InferredType) -> String {
+    // Push-down: see emit_rust for rationale.
+    if let ExprKind::Binary { op, left, right } = &expr.kind {
+        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+            let l_raw = emit_kotlin(left, expected);
+            let r_raw = emit_kotlin(right, expected);
+            let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            return format!("{l} {} {r}", kotlin_binop(*op));
+        }
+        // Kotlin's narrow unsigned types (UByte/UShort) do not support
+        // bitwise/shift operations directly — `UByte shr Int` does not
+        // resolve, and `UByte.toUByte` is a method reference, not a call.
+        // Widen to signed Int32 for the operation, then coerce back to the
+        // caller-requested type. The outer kotlin_coerce handles the
+        // Int32 → UByte/UShort reverse conversion via `.toUByte()`.
+        if op.is_bitwise() && (is_narrow_unsigned(left.ty) || is_narrow_unsigned(right.ty)) {
+            let widened = InferredType::Int { signed: true, bits: 32 };
+            let l_raw = emit_kotlin(left, widened);
+            let r_raw = emit_kotlin(right, widened);
+            let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            let inner = format!("{l} {} {r}", kotlin_binop(*op));
+            return kotlin_coerce(inner, widened, expected, expr);
+        }
+    }
+    let raw = kotlin_emit_node(expr);
+    kotlin_coerce(raw, expr.ty, expected, expr)
+}
+
+/// A narrow unsigned integer — UByte (8) or UShort (16). Kotlin stdlib does
+/// not define bitwise/shift ops on these; widen to signed Int32 for ops.
+fn is_narrow_unsigned(ty: InferredType) -> bool {
+    matches!(ty, InferredType::Int { signed: false, bits: 8 | 16 })
+}
+
+fn kotlin_emit_node(expr: &TypedExpr) -> String {
+    match &expr.kind {
+        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
+        ExprKind::NullLit => "null".to_string(),
+        ExprKind::Ident(s) => s.clone(),
+        ExprKind::Binary { op, left, right } => {
+            let operand_ty = binary_operand_type(*op, left.ty, right.ty);
+            let l_raw = emit_kotlin(left, operand_ty);
+            let r_raw = emit_kotlin(right, operand_ty);
+            let l = if child_needs_parens(left, *op, true, kotlin_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, kotlin_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
             format!("{l} {} {r}", kotlin_binop(*op))
         }
-        Expr::Unary { op: UnaryOp::BitNot, operand } =>
-            format!("{}.inv()", wrap_postfix(operand, emit_kotlin(operand))),
-        Expr::Unary { op, operand } => {
-            let inner = emit_kotlin(operand);
-            let prefix = match op { UnaryOp::Neg => "-", UnaryOp::Pos => "+", UnaryOp::Not => "!", _ => unreachable!() };
-            let wrap = matches!(operand.as_ref(), Expr::Binary { .. } | Expr::Conditional { .. });
+        ExprKind::Unary { op: UnaryOp::BitNot, operand } => {
+            format!(
+                "{}.inv()",
+                wrap_postfix(operand, emit_kotlin(operand, expr.ty))
+            )
+        }
+        ExprKind::Unary { op, operand } => {
+            let inner = emit_kotlin(operand, expr.ty);
+            let prefix = match op {
+                UnaryOp::Neg => "-", UnaryOp::Pos => "+", UnaryOp::Not => "!",
+                UnaryOp::BitNot => unreachable!(),
+            };
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
             if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
         }
-        Expr::Conditional { condition, consequent, alternate } =>
-            format!("if ({}) {} else {}", emit_kotlin(condition), emit_kotlin(consequent), emit_kotlin(alternate)),
-        Expr::Member { object, property } => format!("{}.{property}", wrap_postfix(object, emit_kotlin(object))),
-        Expr::Index { object, index } => format!("{}[{}]", wrap_postfix(object, emit_kotlin(object)), emit_kotlin(index)),
-        Expr::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_kotlin(a)).collect();
-            format!("{}({})", wrap_postfix(callee, emit_kotlin(callee)), a.join(", "))
+        ExprKind::Conditional { condition, consequent, alternate } => {
+            format!(
+                "if ({}) {} else {}",
+                emit_kotlin(condition, InferredType::Bool),
+                emit_kotlin(consequent, expr.ty),
+                emit_kotlin(alternate, expr.ty),
+            )
+        }
+        ExprKind::Member { object, property } => {
+            format!("{}.{property}", wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)))
+        }
+        ExprKind::Index { object, index } => {
+            format!(
+                "{}[{}]",
+                wrap_postfix(object, emit_kotlin(object, InferredType::Unknown)),
+                emit_kotlin(index, InferredType::Unknown),
+            )
+        }
+        ExprKind::Call { callee, args } => {
+            let a: Vec<_> = args.iter().map(|a| emit_kotlin(a, InferredType::Unknown)).collect();
+            format!(
+                "{}({})",
+                wrap_postfix(callee, emit_kotlin(callee, InferredType::Unknown)),
+                a.join(", "),
+            )
         }
     }
 }
@@ -931,43 +1283,198 @@ fn kotlin_binop(op: BinOp) -> &'static str {
     }
 }
 
-// ── Rust ─────────────────────────────────────────────────────────
-// Note: Rust uses `!` for both logical NOT (bool) and bitwise NOT (integer).
-// The AST distinguishes `UnaryOp::Not` from `UnaryOp::BitNot`, but both
-// emit `!` in Rust. This is correct because Rust's type system resolves
-// the operation at compile time.
+/// Apply language-specific coercion from a child's natural type to the
+/// expected parent type.
+fn kotlin_coerce(
+    raw: String,
+    from: InferredType,
+    to: InferredType,
+    node: &TypedExpr,
+) -> String {
+    use InferredType::*;
+    if from == to || matches!(to, Unknown) {
+        return raw;
+    }
+    match (from, to) {
+        // Literal promotion for untyped integers into float context.
+        (UntypedInt, Float { .. }) | (UntypedInt, UntypedFloat) => {
+            if let ExprKind::NumberLit(text) = &node.kind {
+                if is_decimal_integer_literal(text) {
+                    return format!("{raw}.0");
+                }
+            }
+            // Computed subtree or hex/bin/oct literal — explicit cast.
+            format!("({raw}).toDouble()")
+        }
+        // Concrete int → float: explicit `.toDouble()` / `.toFloat()`.
+        (Int { .. }, Float { bits: 64 }) => wrap_dotcall(raw, node, "toDouble"),
+        (Int { .. }, Float { bits: 32 }) => wrap_dotcall(raw, node, "toFloat"),
+        (UntypedInt, Int { signed: false, bits }) => {
+            // Literal adopting unsigned concrete type.
+            let suffix = kotlin_unsigned_ctor(bits);
+            format!("{raw}.{suffix}()")
+        }
+        (UntypedInt, Int { signed: true, .. }) => raw,
+        // Unsigned → signed: required for mixed-sign arithmetic in Kotlin.
+        (Int { signed: false, bits: bfrom }, Int { signed: true, bits: bto }) => {
+            let ctor = kotlin_signed_ctor(bfrom.max(bto));
+            wrap_dotcall(raw, node, ctor)
+        }
+        // Signed → unsigned: result suffix for unsigned outputs.
+        (Int { signed: true, .. }, Int { signed: false, bits: bto }) => {
+            let ctor = kotlin_unsigned_ctor(bto);
+            wrap_dotcall(raw, node, ctor)
+        }
+        // Int widening among same signedness.
+        (Int { signed: s1, bits: b1 }, Int { signed: s2, bits: b2 }) if s1 == s2 && b1 != b2 => {
+            let ctor = if s1 { kotlin_signed_ctor(b2) } else { kotlin_unsigned_ctor(b2) };
+            wrap_dotcall(raw, node, ctor)
+        }
+        // Float widening.
+        (Float { bits: 32 }, Float { bits: 64 }) => wrap_dotcall(raw, node, "toDouble"),
+        (Float { bits: 64 }, Float { bits: 32 }) => wrap_dotcall(raw, node, "toFloat"),
+        // Untyped float → concrete float: leave text alone (compiler accepts).
+        (UntypedFloat, Float { .. }) => raw,
+        // Unknown on either side → no coercion.
+        (Unknown, _) | (_, Unknown) => raw,
+        // Anything else — no coercion (would be a semantic error in a textbook
+        // implementation, but we follow C++ precedent of emitting verbatim to
+        // let the target compiler reject it with its own diagnostic).
+        _ => raw,
+    }
+}
 
-fn emit_rust(expr: &Expr) -> String {
-    match expr {
-        Expr::NumberLit(n) => n.clone(),
-        Expr::StringLit { value, .. } => format!("\"{value}\""),
-        Expr::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        Expr::NullLit => "None".to_string(),
-        // Identifiers are normalized to snake_case to match Rust naming
-        // convention, so an SCXML expression like `coolantTemp > 110.0`
-        // becomes `coolant_temp > 110.0`. Member properties (struct fields)
-        // are emitted verbatim — only bare `Ident` nodes are renormalized.
-        Expr::Ident(s) => crate::filters::to_snake_case(s.clone()),
-        Expr::Binary { op, left, right } => {
-            let l = emit_child(left, *op, true, rust_precedence, &emit_rust);
-            let r = emit_child(right, *op, false, rust_precedence, &emit_rust);
-            format!("{l} {} {r}", rust_binop(*op))
-        }
-        Expr::Unary { op, operand } => {
-            let inner = emit_rust(operand);
-            let wrap = matches!(operand.as_ref(), Expr::Binary { .. } | Expr::Conditional { .. });
-            let prefix = match op { UnaryOp::Neg => "-", UnaryOp::Pos => "", UnaryOp::Not | UnaryOp::BitNot => "!" };
-            if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
-        }
-        Expr::Conditional { condition, consequent, alternate } =>
-            format!("if {} {{ {} }} else {{ {} }}", emit_rust(condition), emit_rust(consequent), emit_rust(alternate)),
-        Expr::Member { object, property } => format!("{}.{property}", wrap_postfix(object, emit_rust(object))),
-        Expr::Index { object, index } => format!("{}[{}]", wrap_postfix(object, emit_rust(object)), emit_rust(index)),
-        Expr::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_rust(a)).collect();
-            format!("{}({})", wrap_postfix(callee, emit_rust(callee)), a.join(", "))
+fn kotlin_signed_ctor(bits: u8) -> &'static str {
+    match bits {
+        8 => "toByte", 16 => "toShort", 32 => "toInt", 64 => "toLong",
+        _ => "toInt",
+    }
+}
+
+fn kotlin_unsigned_ctor(bits: u8) -> &'static str {
+    match bits {
+        8 => "toUByte", 16 => "toUShort", 32 => "toUInt", 64 => "toULong",
+        _ => "toUInt",
+    }
+}
+
+/// Wrap a raw emitted string with `.call()` suffix, adding parens around the
+/// target if its AST shape would otherwise bind the call incorrectly.
+fn wrap_dotcall(raw: String, node: &TypedExpr, method: &str) -> String {
+    if matches!(
+        &node.kind,
+        ExprKind::Binary { .. } | ExprKind::Conditional { .. } | ExprKind::Unary { .. }
+    ) {
+        format!("({raw}).{method}()")
+    } else {
+        format!("{raw}.{method}()")
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Emitter — Rust
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Rust rules:
+//
+// * Bare identifiers are normalized to `snake_case` to match Rust naming
+//   convention. Member property names are emitted verbatim.
+// * Integer literal promotion to float: append `.0` for decimal literals.
+// * Concrete integer ident → float: `ident as f64` (or f32).
+// * Concrete float{32} ↔ float{64}: `x as f64` / `x as f32`.
+// * Integer widening is left implicit (Rust rejects mismatched integer
+//   widths at the type system level; the generator is expected to pass a
+//   well-typed context to begin with). For robustness we still emit
+//   `expr as iN` when widening is necessary.
+// * Hex/bin/oct literal in float context: hard error.
+
+fn emit_rust(expr: &TypedExpr, expected: InferredType) -> Result<String, String> {
+    // Push-down: for arithmetic binary ops with a concrete-float expected
+    // type, emit operands at the expected type directly. Without this, a
+    // mixed expression like `raw * 0.1` (raw: UInt16, expected: Float64)
+    // infers operand_ty = Float32 from join_arith, producing
+    // `(raw as f32 * 0.1) as f64` instead of `raw as f64 * 0.1`.
+    if let ExprKind::Binary { op, left, right } = &expr.kind {
+        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+            let l_raw = emit_rust(left, expected)?;
+            let r_raw = emit_rust(right, expected)?;
+            let l = if child_needs_parens(left, *op, true, rust_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, rust_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            return Ok(format!("{l} {} {r}", rust_binop(*op)));
         }
     }
+    let raw = rust_emit_node(expr)?;
+    rust_coerce(raw, expr.ty, expected, expr)
+}
+
+fn rust_emit_node(expr: &TypedExpr) -> Result<String, String> {
+    Ok(match &expr.kind {
+        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
+        ExprKind::NullLit => "None".to_string(),
+        ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
+        ExprKind::Binary { op, left, right } => {
+            let operand_ty = binary_operand_type(*op, left.ty, right.ty);
+            let l_raw = emit_rust(left, operand_ty)?;
+            let r_raw = emit_rust(right, operand_ty)?;
+            let l = if child_needs_parens(left, *op, true, rust_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, rust_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            format!("{l} {} {r}", rust_binop(*op))
+        }
+        ExprKind::Unary { op, operand } => {
+            let inner = emit_rust(operand, expr.ty)?;
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            let prefix = match op {
+                UnaryOp::Neg => "-", UnaryOp::Pos => "",
+                UnaryOp::Not | UnaryOp::BitNot => "!",
+            };
+            if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
+        }
+        ExprKind::Conditional { condition, consequent, alternate } => {
+            format!(
+                "if {} {{ {} }} else {{ {} }}",
+                emit_rust(condition, InferredType::Bool)?,
+                emit_rust(consequent, expr.ty)?,
+                emit_rust(alternate, expr.ty)?,
+            )
+        }
+        ExprKind::Member { object, property } => {
+            format!(
+                "{}.{property}",
+                wrap_postfix(object, emit_rust(object, InferredType::Unknown)?)
+            )
+        }
+        ExprKind::Index { object, index } => {
+            format!(
+                "{}[{}]",
+                wrap_postfix(object, emit_rust(object, InferredType::Unknown)?),
+                emit_rust(index, InferredType::Unknown)?,
+            )
+        }
+        ExprKind::Call { callee, args } => {
+            let mut emitted_args = Vec::with_capacity(args.len());
+            for a in args {
+                emitted_args.push(emit_rust(a, InferredType::Unknown)?);
+            }
+            format!(
+                "{}({})",
+                wrap_postfix(callee, emit_rust(callee, InferredType::Unknown)?),
+                emitted_args.join(", "),
+            )
+        }
+    })
 }
 
 fn rust_binop(op: BinOp) -> &'static str {
@@ -978,60 +1485,174 @@ fn rust_binop(op: BinOp) -> &'static str {
         BinOp::And => "&&", BinOp::Or => "||",
         BinOp::BitAnd => "&", BinOp::BitOr => "|", BinOp::BitXor => "^",
         BinOp::Shl => "<<", BinOp::Shr => ">>",
-        BinOp::UShr => ">>", // W3C SCXML: unsigned shift — correct only for unsigned operands
+        BinOp::UShr => ">>",
     }
 }
 
-// ── Go ───────────────────────────────────────────────────────────
+fn rust_coerce(
+    raw: String,
+    from: InferredType,
+    to: InferredType,
+    node: &TypedExpr,
+) -> Result<String, String> {
+    use InferredType::*;
+    if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
+        return Ok(raw);
+    }
+    match (from, to) {
+        // Literal promotion for untyped decimal integers into float context.
+        (UntypedInt, Float { .. }) | (UntypedInt, UntypedFloat) => {
+            if let ExprKind::NumberLit(text) = &node.kind {
+                if is_decimal_integer_literal(text) {
+                    return Ok(format!("{raw}.0"));
+                }
+                // Hex/bin/oct literal in float context — textbook strict: error.
+                return Err(format!(
+                    "cannot coerce integer literal '{text}' to float: \
+                     hex/binary/octal literals are not promotable. \
+                     Use a decimal float literal (e.g. `1.0`, `255.0`) instead.",
+                ));
+            }
+            // Computed subtree: explicit cast.
+            let target = match to {
+                Float { bits: 32 } => "f32",
+                _ => "f64",
+            };
+            Ok(format!("{raw} as {target}"))
+        }
+        // Concrete int → float: explicit cast.
+        (Int { .. }, Float { bits: 64 }) => Ok(rust_cast(raw, node, "f64")),
+        (Int { .. }, Float { bits: 32 }) => Ok(rust_cast(raw, node, "f32")),
+        // Untyped int adopts concrete int — no cast needed at source level.
+        (UntypedInt, Int { .. }) => Ok(raw),
+        // Untyped float → concrete float: emit as-is; Rust infers.
+        (UntypedFloat, Float { .. }) => Ok(raw),
+        // Concrete int widening.
+        (Int { signed: s1, bits: b1 }, Int { signed: s2, bits: b2 }) if (s1, b1) != (s2, b2) => {
+            let target = rust_int_type(s2, b2);
+            Ok(rust_cast(raw, node, target))
+        }
+        // Float widening or narrowing.
+        (Float { bits: b1 }, Float { bits: b2 }) if b1 != b2 => {
+            let target = if b2 == 64 { "f64" } else { "f32" };
+            Ok(rust_cast(raw, node, target))
+        }
+        _ => Ok(raw),
+    }
+}
 
-fn emit_go(expr: &Expr) -> Result<String, String> {
+fn rust_cast(raw: String, node: &TypedExpr, target: &str) -> String {
+    if matches!(
+        &node.kind,
+        ExprKind::Binary { .. } | ExprKind::Conditional { .. } | ExprKind::Unary { .. }
+    ) {
+        format!("({raw}) as {target}")
+    } else {
+        format!("{raw} as {target}")
+    }
+}
+
+fn rust_int_type(signed: bool, bits: u8) -> &'static str {
+    match (signed, bits) {
+        (true, 8) => "i8", (true, 16) => "i16", (true, 32) => "i32", (true, 64) => "i64",
+        (false, 8) => "u8", (false, 16) => "u16", (false, 32) => "u32", (false, 64) => "u64",
+        _ => "i64",
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Emitter — Go
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Go has untyped constants: `9`, `5`, `32` used in a `float64` expression
+// auto-convert at compile time. So Go's emitter leaves untyped literals
+// alone — no `.0` suffix needed.
+//
+// Concrete integer variables DO need explicit conversion: `float64(raw)`.
+// Integer widening: `int64(x)`. Ternary does not exist — we reject it at
+// emit time with a clear error.
+
+fn emit_go(expr: &TypedExpr, expected: InferredType) -> Result<String, String> {
     if has_ternary(expr) {
         return Err(
-            "Go does not support ternary expressions. \
-             Refactor the SCXML expression to avoid `? :` for Go targets.".to_string(),
+            "Cannot transpile ternary expression to Go: Go has no conditional \
+             expression. Rewrite the SCXML expression using explicit if/else \
+             or move the logic into the state machine."
+                .to_string(),
         );
     }
-    Ok(emit_go_inner(expr))
-}
-
-fn has_ternary(expr: &Expr) -> bool {
-    match expr {
-        Expr::Conditional { .. } => true,
-        Expr::Binary { left, right, .. } => has_ternary(left) || has_ternary(right),
-        Expr::Unary { operand, .. } => has_ternary(operand),
-        Expr::Member { object, .. } => has_ternary(object),
-        Expr::Index { object, index } => has_ternary(object) || has_ternary(index),
-        Expr::Call { callee, args } => has_ternary(callee) || args.iter().any(has_ternary),
-        _ => false,
+    // Push-down: see emit_rust for rationale.
+    if let ExprKind::Binary { op, left, right } = &expr.kind {
+        if op.is_arith() && matches!(expected, InferredType::Float { .. }) {
+            let l_raw = emit_go(left, expected)?;
+            let r_raw = emit_go(right, expected)?;
+            let l = if child_needs_parens(left, *op, true, go_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, go_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
+            return Ok(format!("{l} {} {r}", go_binop(*op)));
+        }
     }
+    let raw = go_emit_node(expr)?;
+    Ok(go_coerce(raw, expr.ty, expected, expr))
 }
 
-fn emit_go_inner(expr: &Expr) -> String {
-    match expr {
-        Expr::NumberLit(n) => n.clone(),
-        Expr::StringLit { value, .. } => format!("\"{value}\""),
-        Expr::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
-        Expr::NullLit => "nil".to_string(),
-        Expr::Ident(s) => s.clone(),
-        Expr::Binary { op, left, right } => {
-            let l = emit_child(left, *op, true, go_precedence, &emit_go_inner);
-            let r = emit_child(right, *op, false, go_precedence, &emit_go_inner);
+fn go_emit_node(expr: &TypedExpr) -> Result<String, String> {
+    Ok(match &expr.kind {
+        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
+        ExprKind::NullLit => "nil".to_string(),
+        ExprKind::Ident(s) => s.clone(),
+        ExprKind::Binary { op, left, right } => {
+            let operand_ty = binary_operand_type(*op, left.ty, right.ty);
+            let l_raw = emit_go(left, operand_ty)?;
+            let r_raw = emit_go(right, operand_ty)?;
+            let l = if child_needs_parens(left, *op, true, go_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, go_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
             format!("{l} {} {r}", go_binop(*op))
         }
-        Expr::Unary { op, operand } => {
-            let inner = emit_go_inner(operand);
-            let prefix = match op { UnaryOp::Neg => "-", UnaryOp::Pos => "+", UnaryOp::Not => "!", UnaryOp::BitNot => "^" };
-            let wrap = matches!(operand.as_ref(), Expr::Binary { .. });
+        ExprKind::Unary { op, operand } => {
+            let inner = emit_go(operand, expr.ty)?;
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            let prefix = match op {
+                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
+                UnaryOp::Not => "!", UnaryOp::BitNot => "^",
+            };
             if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
         }
-        Expr::Conditional { .. } => unreachable!("ternary rejected before emission"),
-        Expr::Member { object, property } => format!("{}.{property}", wrap_postfix(object, emit_go_inner(object))),
-        Expr::Index { object, index } => format!("{}[{}]", wrap_postfix(object, emit_go_inner(object)), emit_go_inner(index)),
-        Expr::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_go_inner(a)).collect();
-            format!("{}({})", wrap_postfix(callee, emit_go_inner(callee)), a.join(", "))
+        ExprKind::Conditional { .. } => unreachable!("has_ternary guard"),
+        ExprKind::Member { object, property } => {
+            format!("{}.{property}", wrap_postfix(object, emit_go(object, InferredType::Unknown)?))
         }
-    }
+        ExprKind::Index { object, index } => {
+            format!(
+                "{}[{}]",
+                wrap_postfix(object, emit_go(object, InferredType::Unknown)?),
+                emit_go(index, InferredType::Unknown)?,
+            )
+        }
+        ExprKind::Call { callee, args } => {
+            let mut a = Vec::with_capacity(args.len());
+            for arg in args {
+                a.push(emit_go(arg, InferredType::Unknown)?);
+            }
+            format!(
+                "{}({})",
+                wrap_postfix(callee, emit_go(callee, InferredType::Unknown)?),
+                a.join(", "),
+            )
+        }
+    })
 }
 
 fn go_binop(op: BinOp) -> &'static str {
@@ -1042,53 +1663,129 @@ fn go_binop(op: BinOp) -> &'static str {
         BinOp::And => "&&", BinOp::Or => "||",
         BinOp::BitAnd => "&", BinOp::BitOr => "|", BinOp::BitXor => "^",
         BinOp::Shl => "<<", BinOp::Shr => ">>",
-        BinOp::UShr => ">>", // W3C SCXML: unsigned shift — correct only for unsigned operands
+        BinOp::UShr => ">>",
     }
 }
 
-// ── Python ───────────────────────────────────────────────────────
+fn go_coerce(raw: String, from: InferredType, to: InferredType, node: &TypedExpr) -> String {
+    use InferredType::*;
+    if from == to || matches!(to, Unknown) || matches!(from, Unknown) {
+        return raw;
+    }
+    match (from, to) {
+        // Untyped literals — Go's untyped constants auto-convert; no-op.
+        (UntypedInt, _) | (UntypedFloat, _) => raw,
+        // Concrete int → float: explicit `float64(x)` / `float32(x)`.
+        (Int { .. }, Float { bits: 64 }) => format!("float64({raw})"),
+        (Int { .. }, Float { bits: 32 }) => format!("float32({raw})"),
+        // Float widening.
+        (Float { bits: 32 }, Float { bits: 64 }) => format!("float64({raw})"),
+        (Float { bits: 64 }, Float { bits: 32 }) => format!("float32({raw})"),
+        // Integer conversions.
+        (Int { signed: s1, bits: b1 }, Int { signed: s2, bits: b2 }) if (s1, b1) != (s2, b2) => {
+            let target = go_int_type(s2, b2);
+            format!("{target}({raw})")
+        }
+        _ => {
+            let _ = node;
+            raw
+        }
+    }
+}
 
-fn emit_python(expr: &Expr) -> String {
-    match expr {
-        Expr::NumberLit(n) => n.clone(),
-        Expr::StringLit { value, quote } => format!("{quote}{value}{quote}"),
-        Expr::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
-        Expr::NullLit => "None".to_string(),
-        // Identifiers are normalized to snake_case to match Python naming
-        // convention. Member properties (attribute names) are emitted verbatim.
-        Expr::Ident(s) => crate::filters::to_snake_case(s.clone()),
-        Expr::Binary { op, left, right } => {
-            let l = emit_child(left, *op, true, python_precedence, &emit_python);
-            let r = emit_child(right, *op, false, python_precedence, &emit_python);
+fn go_int_type(signed: bool, bits: u8) -> &'static str {
+    match (signed, bits) {
+        (true, 8) => "int8", (true, 16) => "int16", (true, 32) => "int32", (true, 64) => "int64",
+        (false, 8) => "uint8", (false, 16) => "uint16", (false, 32) => "uint32", (false, 64) => "uint64",
+        _ => "int64",
+    }
+}
+
+fn has_ternary(expr: &TypedExpr) -> bool {
+    match &expr.kind {
+        ExprKind::Conditional { .. } => true,
+        ExprKind::Binary { left, right, .. } => has_ternary(left) || has_ternary(right),
+        ExprKind::Unary { operand, .. } => has_ternary(operand),
+        ExprKind::Member { object, .. } => has_ternary(object),
+        ExprKind::Index { object, index } => has_ternary(object) || has_ternary(index),
+        ExprKind::Call { callee, args } => {
+            has_ternary(callee) || args.iter().any(has_ternary)
+        }
+        _ => false,
+    }
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Emitter — Python
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Python duck-types numeric values: `int * 0.1` auto-promotes, no explicit
+// cast is ever required. The emitter's only responsibilities are:
+//
+// * Rename identifiers to `snake_case` (Python convention).
+// * Translate operators (`===` → `==`, `&&` → `and`, `||` → `or`, etc.).
+// * Translate literals (`true`/`false` → `True`/`False`, `null` → `None`).
+// * Translate ternary: `X ? Y : Z` → `Y if X else Z`.
+
+fn emit_python(expr: &TypedExpr, _expected: InferredType) -> String {
+    match &expr.kind {
+        ExprKind::NumberLit(n) => n.clone(),
+        ExprKind::StringLit { value, .. } => format!("\"{value}\""),
+        ExprKind::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
+        ExprKind::NullLit => "None".to_string(),
+        ExprKind::Ident(s) => crate::filters::to_snake_case(s.clone()),
+        ExprKind::Binary { op, left, right } => {
+            let operand_ty = binary_operand_type(*op, left.ty, right.ty);
+            let l_raw = emit_python(left, operand_ty);
+            let r_raw = emit_python(right, operand_ty);
+            let l = if child_needs_parens(left, *op, true, python_precedence) {
+                format!("({l_raw})")
+            } else { l_raw };
+            let r = if child_needs_parens(right, *op, false, python_precedence) {
+                format!("({r_raw})")
+            } else { r_raw };
             format!("{l} {} {r}", python_binop(*op))
         }
-        Expr::Unary { op, operand } => {
-            let inner = emit_python(operand);
-            let wrap = matches!(operand.as_ref(), Expr::Binary { .. } | Expr::Conditional { .. });
-            match op {
-                UnaryOp::Not => if wrap { format!("not ({inner})") } else { format!("not {inner}") },
-                UnaryOp::Neg => if wrap { format!("-({inner})") } else { format!("-{inner}") },
-                UnaryOp::Pos => if wrap { format!("+({inner})") } else { format!("+{inner}") },
-                UnaryOp::BitNot => if wrap { format!("~({inner})") } else { format!("~{inner}") },
-            }
-        }
-        Expr::Conditional { condition, consequent, alternate } => {
-            // In Python `X if C else Y`, a ternary in X position must be
-            // parenthesized: `(1 if b else 2) if a else 3`, otherwise
-            // Python parses `1 if b else 2 if a else 3` as `1 if b else (2 if a else 3)`.
-            let cons = emit_python(consequent);
-            let cons = if matches!(consequent.as_ref(), Expr::Conditional { .. }) {
-                format!("({cons})")
-            } else {
-                cons
+        ExprKind::Unary { op, operand } => {
+            let inner = emit_python(operand, expr.ty);
+            let wrap = matches!(
+                &operand.kind,
+                ExprKind::Binary { .. } | ExprKind::Conditional { .. }
+            );
+            let prefix = match op {
+                UnaryOp::Neg => "-", UnaryOp::Pos => "+",
+                UnaryOp::Not => "not ", UnaryOp::BitNot => "~",
             };
-            format!("{cons} if {} else {}", emit_python(condition), emit_python(alternate))
+            if wrap { format!("{prefix}({inner})") } else { format!("{prefix}{inner}") }
         }
-        Expr::Member { object, property } => format!("{}.{property}", wrap_postfix(object, emit_python(object))),
-        Expr::Index { object, index } => format!("{}[{}]", wrap_postfix(object, emit_python(object)), emit_python(index)),
-        Expr::Call { callee, args } => {
-            let a: Vec<_> = args.iter().map(|a| emit_python(a)).collect();
-            format!("{}({})", wrap_postfix(callee, emit_python(callee)), a.join(", "))
+        ExprKind::Conditional { condition, consequent, alternate } => {
+            let cons = emit_python(consequent, expr.ty);
+            let cons = if matches!(&consequent.kind, ExprKind::Conditional { .. }) {
+                format!("({cons})")
+            } else { cons };
+            format!(
+                "{cons} if {} else {}",
+                emit_python(condition, InferredType::Bool),
+                emit_python(alternate, expr.ty),
+            )
+        }
+        ExprKind::Member { object, property } => {
+            format!("{}.{property}", wrap_postfix(object, emit_python(object, InferredType::Unknown)))
+        }
+        ExprKind::Index { object, index } => {
+            format!(
+                "{}[{}]",
+                wrap_postfix(object, emit_python(object, InferredType::Unknown)),
+                emit_python(index, InferredType::Unknown),
+            )
+        }
+        ExprKind::Call { callee, args } => {
+            let a: Vec<_> = args.iter().map(|a| emit_python(a, InferredType::Unknown)).collect();
+            format!(
+                "{}({})",
+                wrap_postfix(callee, emit_python(callee, InferredType::Unknown)),
+                a.join(", "),
+            )
         }
     }
 }
@@ -1111,411 +1808,499 @@ fn python_binop(op: BinOp) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forge::types::{FuncSig, InferredType};
 
-    // ── Original tests (backwards compatible) ───────────────────
+    // ── Helpers ─────────────────────────────────────────────────
+
+    fn empty_ctx() -> TypeCtx<'static> { TypeCtx::new() }
+    fn empty_renames() -> HashMap<&'static str, &'static str> { HashMap::new() }
+
+    fn tp(expr: &str, target: ExprTarget) -> String {
+        transpile_typed(expr, target, &empty_ctx(), &empty_renames(), InferredType::Unknown).unwrap()
+    }
+
+    fn tp_err(expr: &str, target: ExprTarget) -> String {
+        transpile_typed(expr, target, &empty_ctx(), &empty_renames(), InferredType::Unknown).unwrap_err()
+    }
+
+    fn float(bits: u8) -> InferredType { InferredType::Float { bits } }
+    fn int(signed: bool, bits: u8) -> InferredType { InferredType::Int { signed, bits } }
+
+    // ── Arithmetic (untyped contexts, verbatim) ─────────────────
 
     #[test]
-    fn test_transpile_arithmetic_cpp() {
-        assert_eq!(transpile("raw * 0.1 - 40.0", ExprTarget::Cpp).unwrap(), "raw * 0.1 - 40.0");
+    fn cpp_arithmetic_verbatim() {
+        assert_eq!(tp("raw * 0.1 - 40.0", ExprTarget::Cpp), "raw * 0.1 - 40.0");
     }
 
     #[test]
-    fn test_transpile_strict_equality_cpp() {
-        assert_eq!(transpile("status === 'OK'", ExprTarget::Cpp).unwrap(), "status == \"OK\"");
+    fn cpp_strict_equality_maps_to_double_equals() {
+        assert_eq!(tp("status === 'OK'", ExprTarget::Cpp), "status == \"OK\"");
     }
 
     #[test]
-    fn test_transpile_logical_cpp() {
-        assert_eq!(transpile("engineStop && ignOn", ExprTarget::Cpp).unwrap(), "engineStop && ignOn");
+    fn cpp_logical_verbatim() {
+        assert_eq!(tp("engineStop && ignOn", ExprTarget::Cpp), "engineStop && ignOn");
     }
 
     #[test]
-    fn test_transpile_comparison_rust() {
-        assert_eq!(transpile("rpm > 8000", ExprTarget::Rust).unwrap(), "rpm > 8000");
+    fn rust_comparison_verbatim() {
+        assert_eq!(tp("rpm > 8000", ExprTarget::Rust), "rpm > 8000");
     }
 
     #[test]
-    fn test_transpile_ternary_rust() {
+    fn rust_ternary_if_else() {
         assert_eq!(
-            transpile("status === 'OK' ? 1 : 0", ExprTarget::Rust).unwrap(),
+            tp("status === 'OK' ? 1 : 0", ExprTarget::Rust),
             "if status == \"OK\" { 1 } else { 0 }"
         );
     }
 
     #[test]
-    fn test_transpile_logical_python() {
-        assert_eq!(transpile("engineStop && ignOn", ExprTarget::Python).unwrap(), "engineStop and ignOn");
-    }
-
-    #[test]
-    fn test_transpile_booleans_python() {
+    fn python_logical_with_snake_case() {
+        // Python ident convention is snake_case — emitter normalizes.
         assert_eq!(
-            transpile("ignition === true && engineStop === false", ExprTarget::Python).unwrap(),
-            "ignition == True and engineStop == False"
+            tp("engineStop && ignOn", ExprTarget::Python),
+            "engine_stop and ign_on"
         );
     }
 
     #[test]
-    fn test_reject_arrow_function() {
-        assert!(transpile("() => x + 1", ExprTarget::Cpp).is_err());
-    }
-
-    #[test]
-    fn test_reject_new() {
-        let r = transpile("new Map()", ExprTarget::Cpp);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("new"));
-    }
-
-    #[test]
-    fn test_bitwise_cpp() {
-        assert_eq!(transpile("raw & 0x0F", ExprTarget::Cpp).unwrap(), "raw & 0x0F");
-    }
-
-    #[test]
-    fn test_shift_cpp() {
-        assert_eq!(transpile("(raw[1] >> 4) & 0x0F", ExprTarget::Cpp).unwrap(), "raw[1] >> 4 & 0x0F");
-    }
-
-    #[test]
-    fn test_string_literal_not_flagged() {
-        assert_eq!(transpile("status === 'new'", ExprTarget::Cpp).unwrap(), "status == \"new\"");
-    }
-
-    #[test]
-    fn test_string_literal_contents_preserved() {
-        assert_eq!(transpile("x === 'a === b'", ExprTarget::Cpp).unwrap(), "x == \"a === b\"");
-    }
-
-    #[test]
-    fn test_go_rejects_ternary() {
-        let r = transpile("x > 0 ? 1 : 0", ExprTarget::Go);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("ternary"));
-    }
-
-    #[test]
-    fn test_kotlin_bitwise_shift() {
-        assert_eq!(transpile("(byte >> 4) & 0x0F", ExprTarget::Kotlin).unwrap(), "byte shr 4 and 0x0F");
-    }
-
-    #[test]
-    fn test_kotlin_bitwise_preserves_logical() {
-        assert_eq!(transpile("a && b || c", ExprTarget::Kotlin).unwrap(), "a && b || c");
-    }
-
-    #[test]
-    fn test_kotlin_bitwise_mixed() {
+    fn python_booleans_with_snake_case() {
         assert_eq!(
-            transpile("(x >> 4) & 0x0F && y === true", ExprTarget::Kotlin).unwrap(),
+            tp("ignition === true && engineStop === false", ExprTarget::Python),
+            "ignition == True and engine_stop == False"
+        );
+    }
+
+    // ── Rejection rules ──────────────────────────────────────────
+
+    #[test]
+    fn reject_arrow_function() {
+        assert!(transpile_typed("() => x + 1", ExprTarget::Cpp, &empty_ctx(), &empty_renames(), InferredType::Unknown).is_err());
+    }
+
+    #[test]
+    fn reject_new_keyword() {
+        let e = tp_err("new Map()", ExprTarget::Cpp);
+        assert!(e.contains("new"));
+    }
+
+    #[test]
+    fn cpp_bitwise() {
+        assert_eq!(tp("raw & 0x0F", ExprTarget::Cpp), "raw & 0x0F");
+    }
+
+    #[test]
+    fn cpp_shift_and_mask() {
+        assert_eq!(tp("(raw[1] >> 4) & 0x0F", ExprTarget::Cpp), "raw[1] >> 4 & 0x0F");
+    }
+
+    #[test]
+    fn cpp_string_literal_preserved() {
+        assert_eq!(tp("status === 'new'", ExprTarget::Cpp), "status == \"new\"");
+    }
+
+    #[test]
+    fn cpp_string_literal_contents_preserved() {
+        assert_eq!(tp("x === 'a === b'", ExprTarget::Cpp), "x == \"a === b\"");
+    }
+
+    #[test]
+    fn go_rejects_ternary_with_message() {
+        let e = tp_err("x > 0 ? 1 : 0", ExprTarget::Go);
+        assert!(e.contains("ternary") || e.contains("conditional"));
+    }
+
+    #[test]
+    fn kotlin_bitwise_shift_infix() {
+        assert_eq!(tp("(byte >> 4) & 0x0F", ExprTarget::Kotlin), "byte shr 4 and 0x0F");
+    }
+
+    #[test]
+    fn kotlin_logical_preserved() {
+        assert_eq!(tp("a && b || c", ExprTarget::Kotlin), "a && b || c");
+    }
+
+    #[test]
+    fn kotlin_bitwise_mixed_with_logical() {
+        assert_eq!(
+            tp("(x >> 4) & 0x0F && y === true", ExprTarget::Kotlin),
             "x shr 4 and 0x0F && y == true"
         );
     }
 
     #[test]
-    fn test_kotlin_left_shift() {
-        assert_eq!(transpile("x << 8", ExprTarget::Kotlin).unwrap(), "x shl 8");
+    fn kotlin_left_shift() {
+        assert_eq!(tp("x << 8", ExprTarget::Kotlin), "x shl 8");
     }
 
     #[test]
-    fn test_kotlin_unsigned_shift() {
-        assert_eq!(transpile("x >>> 4", ExprTarget::Kotlin).unwrap(), "x ushr 4");
+    fn kotlin_unsigned_shift() {
+        assert_eq!(tp("x >>> 4", ExprTarget::Kotlin), "x ushr 4");
     }
 
     #[test]
-    fn test_kotlin_xor() {
-        assert_eq!(transpile("a ^ b", ExprTarget::Kotlin).unwrap(), "a xor b");
+    fn kotlin_xor() {
+        assert_eq!(tp("a ^ b", ExprTarget::Kotlin), "a xor b");
     }
 
     #[test]
-    fn test_kotlin_bitwise_not() {
-        assert_eq!(transpile("~mask", ExprTarget::Kotlin).unwrap(), "mask.inv()");
+    fn kotlin_bitwise_not() {
+        assert_eq!(tp("~mask", ExprTarget::Kotlin), "mask.inv()");
     }
 
-    // ── Complex expressions ─────────────────────────────────────
-
     #[test]
-    fn test_nested_ternary_rust() {
+    fn rust_nested_ternary() {
         assert_eq!(
-            transpile("a > 0 ? (b > 1 ? 2 : 3) : 4", ExprTarget::Rust).unwrap(),
+            tp("a > 0 ? (b > 1 ? 2 : 3) : 4", ExprTarget::Rust),
             "if a > 0 { if b > 1 { 2 } else { 3 } } else { 4 }"
         );
     }
 
     #[test]
-    fn test_nested_bitwise_not_kotlin() {
-        assert_eq!(transpile("~(a & (b | c))", ExprTarget::Kotlin).unwrap(), "(a and (b or c)).inv()");
+    fn kotlin_nested_bitwise_not() {
+        assert_eq!(tp("~(a & (b | c))", ExprTarget::Kotlin), "(a and (b or c)).inv()");
     }
 
     #[test]
-    fn test_chained_member_access() {
-        assert_eq!(transpile("_event.data.payload", ExprTarget::Cpp).unwrap(), "_event.data.payload");
+    fn cpp_chained_member_access() {
+        assert_eq!(tp("_event.data.payload", ExprTarget::Cpp), "_event.data.payload");
     }
 
     #[test]
-    fn test_function_call_multiple_args() {
-        assert_eq!(transpile("computeKey(seed, 0x01)", ExprTarget::Cpp).unwrap(), "computeKey(seed, 0x01)");
+    fn cpp_function_call_multi_args() {
+        assert_eq!(tp("computeKey(seed, 0x01)", ExprTarget::Cpp), "computeKey(seed, 0x01)");
     }
 
     #[test]
-    fn test_method_call_on_member() {
+    fn cpp_method_call_on_member() {
         assert_eq!(
-            transpile("securityResponse.decode(_event.data)", ExprTarget::Cpp).unwrap(),
+            tp("securityResponse.decode(_event.data)", ExprTarget::Cpp),
             "securityResponse.decode(_event.data)"
         );
     }
 
     #[test]
-    fn test_complex_codec_expression() {
+    fn cpp_complex_codec_expression() {
         assert_eq!(
-            transpile("(raw[2] << 16) | (raw[3] << 8) | raw[4]", ExprTarget::Cpp).unwrap(),
+            tp("(raw[2] << 16) | (raw[3] << 8) | raw[4]", ExprTarget::Cpp),
             "raw[2] << 16 | raw[3] << 8 | raw[4]"
         );
     }
 
     #[test]
-    fn test_complex_codec_kotlin() {
-        // In Kotlin, shl and or are infix functions at the same precedence.
-        // Right-child parens required to prevent left-to-right misparsing.
+    fn kotlin_complex_codec_expression() {
         assert_eq!(
-            transpile("(raw[2] << 16) | (raw[3] << 8) | raw[4]", ExprTarget::Kotlin).unwrap(),
+            tp("(raw[2] << 16) | (raw[3] << 8) | raw[4]", ExprTarget::Kotlin),
             "raw[2] shl 16 or (raw[3] shl 8) or raw[4]"
         );
     }
 
     #[test]
-    fn test_operator_precedence_bitwise_vs_comparison() {
-        assert_eq!(transpile("a & 0xFF === b", ExprTarget::Cpp).unwrap(), "a & 0xFF == b");
+    fn cpp_precedence_bitwise_vs_comparison() {
+        assert_eq!(tp("a & 0xFF === b", ExprTarget::Cpp), "a & 0xFF == b");
     }
 
     #[test]
-    fn test_nested_function_calls() {
-        assert_eq!(transpile("encode(computeKey(seed), 0x02)", ExprTarget::Rust).unwrap(), "encode(computeKey(seed), 0x02)");
-    }
-
-    #[test]
-    fn test_unary_in_binary() {
-        assert_eq!(transpile("-a + b", ExprTarget::Cpp).unwrap(), "-a + b");
-    }
-
-    #[test]
-    fn test_reject_loose_equality() {
-        let r = transpile("x == y", ExprTarget::Cpp);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("==="));
-    }
-
-    #[test]
-    fn test_reject_loose_inequality() {
-        let r = transpile("x != y", ExprTarget::Cpp);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("!=="));
-    }
-
-    #[test]
-    fn test_hex_literal() {
-        assert_eq!(transpile("0xF190", ExprTarget::Cpp).unwrap(), "0xF190");
-    }
-
-    #[test]
-    fn test_python_ternary() {
-        assert_eq!(transpile("x > 0 ? 1 : 0", ExprTarget::Python).unwrap(), "1 if x > 0 else 0");
-    }
-
-    #[test]
-    fn test_python_not() {
-        assert_eq!(transpile("!valid", ExprTarget::Python).unwrap(), "not valid");
-    }
-
-    #[test]
-    fn test_go_bitwise_not() {
-        assert_eq!(transpile("~mask", ExprTarget::Go).unwrap(), "^mask");
-    }
-
-    #[test]
-    fn test_encode_method_with_args() {
+    fn rust_nested_function_calls_rendered_snake_case() {
+        // Rust ident convention: identifiers normalized to snake_case by emitter.
+        // Member/property/function call names defined in user space follow the
+        // same rule because SCXML authors write camelCase but Rust idiom is
+        // snake_case functions.
         assert_eq!(
-            transpile("writeDataRequest.encode(0xF190, writeData)", ExprTarget::Cpp).unwrap(),
-            "writeDataRequest.encode(0xF190, writeData)"
+            tp("encode(computeKey(seed), 0x02)", ExprTarget::Rust),
+            "encode(compute_key(seed), 0x02)"
         );
     }
 
     #[test]
-    fn test_complex_guard_expression() {
-        assert_eq!(
-            transpile("engineStatus === 'STOP' && ignition === true", ExprTarget::Kotlin).unwrap(),
-            "engineStatus == \"STOP\" && ignition == true"
+    fn cpp_unary_in_binary() {
+        assert_eq!(tp("-a + b", ExprTarget::Cpp), "-a + b");
+    }
+
+    #[test]
+    fn reject_loose_equality() {
+        let e = tp_err("x == y", ExprTarget::Cpp);
+        assert!(e.contains("Loose equality"));
+    }
+
+    #[test]
+    fn reject_loose_inequality() {
+        let e = tp_err("x != y", ExprTarget::Cpp);
+        assert!(e.contains("Loose inequality"));
+    }
+
+    #[test]
+    fn reject_optional_chaining() {
+        let e = tp_err("a?.b", ExprTarget::Cpp);
+        assert!(e.contains("optional chaining"));
+    }
+
+    #[test]
+    fn reject_spread() {
+        let e = tp_err("f(...args)", ExprTarget::Cpp);
+        assert!(e.contains("spread/rest"));
+    }
+
+    #[test]
+    fn reject_template_literal() {
+        let e = tp_err("`hello ${x}`", ExprTarget::Cpp);
+        assert!(e.contains("template literal"));
+    }
+
+    #[test]
+    fn reject_nullish_coalescing() {
+        let e = tp_err("a ?? b", ExprTarget::Cpp);
+        assert!(e.contains("nullish"));
+    }
+
+    #[test]
+    fn double_bitnot() {
+        assert_eq!(tp("~~mask", ExprTarget::Cpp), "~~mask");
+        assert_eq!(tp("~~mask", ExprTarget::Kotlin), "(mask.inv()).inv()");
+    }
+
+    #[test]
+    fn leading_dot_float_literal_normalized() {
+        assert_eq!(tp(".5 + x", ExprTarget::Cpp), "0.5 + x");
+    }
+
+    #[test]
+    fn scientific_notation_preserved() {
+        assert_eq!(tp("1.5e10 * factor", ExprTarget::Cpp), "1.5e10 * factor");
+    }
+
+    #[test]
+    fn null_literal_by_language() {
+        assert_eq!(tp("x === null", ExprTarget::Cpp), "x == nullptr");
+        assert_eq!(tp("x === null", ExprTarget::Kotlin), "x == null");
+        assert_eq!(tp("x === null", ExprTarget::Python), "x == None");
+        assert_eq!(tp("x === null", ExprTarget::Go), "x == nil");
+    }
+
+    // ── Type-aware coercion: Rust ───────────────────────────────
+
+    fn ctx_with_float(name: &'static str) -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var(name, float(64));
+        ctx
+    }
+
+    fn ctx_with_uint(name: &'static str, bits: u8) -> TypeCtx<'static> {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var(name, int(false, bits));
+        ctx
+    }
+
+    #[test]
+    fn rust_promotes_decimal_literal_in_float_binary() {
+        let ctx = ctx_with_float("celsius");
+        let out = transpile_typed(
+            "celsius * 9 / 5 + 32",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "celsius * 9.0 / 5.0 + 32.0");
+    }
+
+    #[test]
+    fn rust_keeps_float_literals_unchanged() {
+        let ctx = ctx_with_uint("raw", 16);
+        let out = transpile_typed(
+            "raw * 0.1 - 40.0",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        // Concrete int `raw` coerced to f64, float literals untouched.
+        assert_eq!(out, "raw as f64 * 0.1 - 40.0");
+    }
+
+    #[test]
+    fn rust_rejects_hex_literal_in_float_context() {
+        let ctx = ctx_with_float("x");
+        let err = transpile_typed(
+            "x * 0xFF",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap_err();
+        assert!(err.contains("hex/binary/octal"), "error: {err}");
+    }
+
+    #[test]
+    fn rust_condition_with_float_field_promotes_literal() {
+        let ctx = ctx_with_float("temperature");
+        let out = transpile_typed(
+            "temperature > 100 && temperature < 200",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            InferredType::Bool,
+        ).unwrap();
+        assert_eq!(out, "temperature > 100.0 && temperature < 200.0");
+    }
+
+    #[test]
+    fn rust_integer_only_expression_untouched() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("counter", int(true, 32));
+        let out = transpile_typed(
+            "counter + 1",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            int(true, 32),
+        ).unwrap();
+        assert_eq!(out, "counter + 1");
+    }
+
+    #[test]
+    fn rust_top_level_bare_integer_literal_promotes() {
+        let ctx = empty_ctx();
+        let out = transpile_typed("42", ExprTarget::Rust, &ctx, &empty_renames(), float(64)).unwrap();
+        assert_eq!(out, "42.0");
+    }
+
+    // ── Type-aware coercion: Go ─────────────────────────────────
+
+    #[test]
+    fn go_wraps_concrete_int_ident_with_float64() {
+        let ctx = ctx_with_uint("raw", 16);
+        let out = transpile_typed(
+            "raw * 0.1",
+            ExprTarget::Go,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        // Go untyped literal auto-converts, concrete ident needs wrap.
+        assert_eq!(out, "float64(raw) * 0.1");
+    }
+
+    #[test]
+    fn go_untyped_literal_not_promoted_in_float_context() {
+        let ctx = ctx_with_float("celsius");
+        let out = transpile_typed(
+            "celsius * 9 / 5 + 32",
+            ExprTarget::Go,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        // Go compiler will promote 9/5/32 implicitly; emitter leaves verbatim.
+        assert_eq!(out, "celsius * 9 / 5 + 32");
+    }
+
+    // ── Type-aware coercion: Kotlin ─────────────────────────────
+
+    #[test]
+    fn kotlin_promotes_decimal_literal_to_double_in_float_context() {
+        let ctx = ctx_with_float("celsius");
+        let out = transpile_typed(
+            "celsius * 9 / 5 + 32",
+            ExprTarget::Kotlin,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "celsius * 9.0 / 5.0 + 32.0");
+    }
+
+    #[test]
+    fn kotlin_wraps_concrete_int_with_to_double() {
+        let ctx = ctx_with_uint("raw", 16);
+        let out = transpile_typed(
+            "raw * 0.1",
+            ExprTarget::Kotlin,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "raw.toDouble() * 0.1");
+    }
+
+    // ── Type-aware coercion: C++ / Python ───────────────────────
+
+    #[test]
+    fn cpp_float_context_leaves_literal_alone() {
+        // C++ implicit conversion handles it — emitter stays out of the way.
+        let ctx = ctx_with_float("celsius");
+        let out = transpile_typed(
+            "celsius * 9 / 5 + 32",
+            ExprTarget::Cpp,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "celsius * 9 / 5 + 32");
+    }
+
+    #[test]
+    fn python_float_context_leaves_literal_alone() {
+        let ctx = ctx_with_float("celsius");
+        let out = transpile_typed(
+            "celsius * 9 / 5 + 32",
+            ExprTarget::Python,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "celsius * 9 / 5 + 32");
+    }
+
+    // ── Function signature lookup ───────────────────────────────
+
+    #[test]
+    fn rust_call_with_known_float_return_propagates_type() {
+        let mut ctx = TypeCtx::new();
+        ctx.insert_var("raw", int(false, 16));
+        ctx.insert_func(
+            "temp_xform",
+            FuncSig { params: vec![int(false, 16)], ret: float(64) },
         );
+        let out = transpile_typed(
+            "temp_xform(raw) * 2 + 1",
+            ExprTarget::Rust,
+            &ctx,
+            &empty_renames(),
+            float(64),
+        ).unwrap();
+        assert_eq!(out, "temp_xform(raw) * 2.0 + 1.0");
+    }
+
+    // ── Rename map ──────────────────────────────────────────────
+
+    #[test]
+    fn rename_event_data_to_member_field() {
+        let mut renames = HashMap::new();
+        renames.insert("_event.data", "pendingEventData_");
+        let out = transpile_typed(
+            "_event.data + 1",
+            ExprTarget::Cpp,
+            &empty_ctx(),
+            &renames,
+            InferredType::Unknown,
+        ).unwrap();
+        assert_eq!(out, "pendingEventData_ + 1");
     }
 
     #[test]
-    fn test_null_literal() {
-        assert_eq!(transpile("null", ExprTarget::Cpp).unwrap(), "nullptr");
-        assert_eq!(transpile("null", ExprTarget::Rust).unwrap(), "None");
-        assert_eq!(transpile("null", ExprTarget::Python).unwrap(), "None");
-        assert_eq!(transpile("null", ExprTarget::Go).unwrap(), "nil");
-        assert_eq!(transpile("null", ExprTarget::Kotlin).unwrap(), "null");
-    }
-
-    // ── Precedence correctness ──────────────────────────────────
-
-    #[test]
-    fn test_deeply_nested_parens() {
-        assert_eq!(transpile("((a + b) * (c - d))", ExprTarget::Cpp).unwrap(), "(a + b) * (c - d)");
-    }
-
-    #[test]
-    fn test_precedence_add_in_mul_right() {
-        assert_eq!(transpile("a * (b + c)", ExprTarget::Cpp).unwrap(), "a * (b + c)");
-    }
-
-    #[test]
-    fn test_precedence_sub_associativity() {
-        assert_eq!(transpile("a - (b - c)", ExprTarget::Cpp).unwrap(), "a - (b - c)");
-    }
-
-    #[test]
-    fn test_precedence_left_assoc_no_parens() {
-        assert_eq!(transpile("(a - b) - c", ExprTarget::Cpp).unwrap(), "a - b - c");
-    }
-
-    #[test]
-    fn test_kotlin_precedence_eq_vs_infix() {
-        assert_eq!(transpile("a & (b === c)", ExprTarget::Kotlin).unwrap(), "a and (b == c)");
-    }
-
-    #[test]
-    fn test_python_precedence_eq_vs_bitwise() {
-        assert_eq!(transpile("a & (b === c)", ExprTarget::Python).unwrap(), "a & (b == c)");
-    }
-
-    #[test]
-    fn test_go_precedence_bitwise_vs_comparison() {
-        // Go: & (prec 5) > == (prec 3), opposite of ECMAScript.
-        // ECMAScript AST: BitAnd(a, StrictEq(0xFF, b)) means `a & (0xFF === b)`.
-        // Go without parens: `a & 0xFF == b` → Go parses as `(a & 0xFF) == b` (wrong).
-        // Emitter must add parens: `a & (0xFF == b)`.
-        assert_eq!(transpile("a & 0xFF === b", ExprTarget::Go).unwrap(), "a & (0xFF == b)");
-    }
-
-    #[test]
-    fn test_go_precedence_bitor_vs_comparison() {
-        // Go: | (prec 4) > == (prec 3), opposite of ECMAScript.
-        assert_eq!(transpile("a | b === c", ExprTarget::Go).unwrap(), "a | (b == c)");
-    }
-
-    #[test]
-    fn test_rust_precedence_bitwise_vs_comparison() {
-        // Rust: & > ^ > | > == (bitwise above comparison, opposite of ECMAScript/C++).
-        // ECMAScript `a & (b === c)` must keep parens in Rust.
-        assert_eq!(transpile("a & (b === c)", ExprTarget::Rust).unwrap(), "a & (b == c)");
-    }
-
-    #[test]
-    fn test_rust_precedence_bitor_vs_comparison() {
-        // Rust: | > == (bitwise OR above comparison).
-        assert_eq!(transpile("a | b === c", ExprTarget::Rust).unwrap(), "a | (b == c)");
-    }
-
-    #[test]
-    fn test_rust_precedence_implicit_from_ecma() {
-        // ECMAScript: `a & 0xFF === b` means `a & (0xFF === b)` (=== binds tighter).
-        // Rust emitter must add parens because Rust has & > ==.
-        assert_eq!(transpile("a & 0xFF === b", ExprTarget::Rust).unwrap(), "a & (0xFF == b)");
-    }
-
-    #[test]
-    fn test_python_nested_ternary_consequent() {
-        // ECMAScript: `a ? (b ? 1 : 2) : 3` → consequent is itself a ternary.
-        // Python must wrap consequent: `(1 if b else 2) if a else 3`.
-        assert_eq!(
-            transpile("a ? (b ? 1 : 2) : 3", ExprTarget::Python).unwrap(),
-            "(1 if b else 2) if a else 3"
-        );
-    }
-
-    #[test]
-    fn test_python_nested_ternary_alternate() {
-        // Alternate ternary is naturally right-associative in Python — no parens needed.
-        assert_eq!(
-            transpile("a ? 1 : b ? 2 : 3", ExprTarget::Python).unwrap(),
-            "1 if a else 2 if b else 3"
-        );
-    }
-
-    // ── Tokenizer edge cases ────────────────────────────────────
-
-    #[test]
-    fn test_float_starting_with_dot() {
-        assert_eq!(transpile(".5 + 1", ExprTarget::Cpp).unwrap(), "0.5 + 1");
-    }
-
-    #[test]
-    fn test_scientific_notation() {
-        assert_eq!(transpile("1e3 + 2.5e-1", ExprTarget::Cpp).unwrap(), "1e3 + 2.5e-1");
-    }
-
-    #[test]
-    fn test_kotlin_conditional() {
-        assert_eq!(transpile("x > 0 ? 1 : 0", ExprTarget::Kotlin).unwrap(), "if (x > 0) 1 else 0");
-    }
-
-    // ── Parser/emitter edge cases ───────────────────────────────
-
-    #[test]
-    fn test_empty_call() {
-        assert_eq!(transpile("f()", ExprTarget::Cpp).unwrap(), "f()");
-    }
-
-    #[test]
-    fn test_chained_index() {
-        assert_eq!(transpile("a[0][1]", ExprTarget::Cpp).unwrap(), "a[0][1]");
-    }
-
-    #[test]
-    fn test_double_not() {
-        assert_eq!(transpile("!!valid", ExprTarget::Cpp).unwrap(), "!!valid");
-        assert_eq!(transpile("!!valid", ExprTarget::Python).unwrap(), "not not valid");
-    }
-
-    #[test]
-    fn test_reject_arrow_function_explicit() {
-        let r = transpile("x => x + 1", ExprTarget::Cpp);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("arrow function"));
-    }
-
-    #[test]
-    fn test_reject_nullish_coalescing() {
-        let r = transpile("a ?? b", ExprTarget::Cpp);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("nullish coalescing"));
-    }
-
-    #[test]
-    fn test_reject_optional_chaining() {
-        let r = transpile("a?.b", ExprTarget::Cpp);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("optional chaining"));
-    }
-
-    #[test]
-    fn test_reject_spread() {
-        let r = transpile("f(...args)", ExprTarget::Cpp);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("spread/rest"));
-    }
-
-    #[test]
-    fn test_reject_template_literal() {
-        let r = transpile("`hello ${x}`", ExprTarget::Cpp);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().contains("template literal"));
-    }
-
-    #[test]
-    fn test_double_bitnot() {
-        assert_eq!(transpile("~~mask", ExprTarget::Cpp).unwrap(), "~~mask");
-        assert_eq!(transpile("~~mask", ExprTarget::Kotlin).unwrap(), "(mask.inv()).inv()");
+    fn rename_camel_case_to_member() {
+        let mut renames = HashMap::new();
+        renames.insert("retryCount", "retryCount_");
+        let out = transpile_typed(
+            "retryCount + 1",
+            ExprTarget::Cpp,
+            &empty_ctx(),
+            &renames,
+            InferredType::Unknown,
+        ).unwrap();
+        assert_eq!(out, "retryCount_ + 1");
     }
 }

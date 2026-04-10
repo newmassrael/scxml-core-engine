@@ -10,7 +10,6 @@ use crate::forge::expr::{self, ExprTarget};
 use crate::forge::model::*;
 use crate::generator::{self, GeneratedOutput};
 use std::path::Path;
-use std::sync::LazyLock;
 
 // ── Cross-file import resolution ──────────────────────────────────
 
@@ -39,6 +38,37 @@ pub struct ImportContext {
     /// `"SCE::Generated::TransformTemperature::computeTemperature"`.
     /// Empty for stateful kinds (use member access) or when not yet resolved.
     pub qualified_call: String,
+
+    /// For stateless kinds: parameter types in positional order. For condition
+    /// imports the parameters are the model's inputs; for transform imports
+    /// they are the inputs; for lookup imports, a single input.
+    ///
+    /// Populated by `validate_and_enrich_imports` from the parsed imported
+    /// ForgeDocument. Consumed by `forge::type_ctx` builders when constructing
+    /// the TypeCtx for a kind that imports this alias — the inferred function
+    /// signature flows into `TypeCtx::funcs`.
+    ///
+    /// Empty for stateful kinds and for stateless kinds before enrichment.
+    /// Skipped in serialization — templates do not read this field.
+    #[serde(skip)]
+    pub param_types: Vec<SceType>,
+
+    /// For stateless kinds: return type of the imported function. Transform →
+    /// first output type (or `None` for multi-output); Condition → `Bool`;
+    /// Lookup → output type. `None` for stateful kinds or unresolved imports.
+    #[serde(skip)]
+    pub ret_type: Option<SceType>,
+
+    /// For stateful kinds: member fields exposed to user expressions as
+    /// `alias_.field_name` (or equivalent member access syntax). Each entry
+    /// maps a field name (as seen in the user's SCXML expression) to its
+    /// concrete SceType. Empty for stateless kinds and unresolved imports.
+    ///
+    /// Populated by `validate_and_enrich_imports` from the imported
+    /// ForgeDocument's kind-specific field list (e.g. `CodecModel.fields`,
+    /// `ValidatorModel.inputs`, `FilterModel.output` + `FilterModel.input`).
+    #[serde(skip)]
+    pub member_field_types: Vec<(String, SceType)>,
 }
 
 /// Resolve a list of ForgeImport into template-ready ImportContext.
@@ -92,6 +122,9 @@ fn resolve_single_import(
                 member_type: format!("::SCE::Generated::{ns}::{type_name}"),
                 namespace: format!("SCE::Generated::{ns}"),
                 qualified_call: String::new(),
+                param_types: Vec::new(),
+                ret_type: None,
+                member_field_types: Vec::new(),
             }
         }
         crate::generator::Language::Kotlin => {
@@ -108,6 +141,9 @@ fn resolve_single_import(
                 member_type: pascal.clone(),
                 namespace: pascal.clone(),
                 qualified_call: String::new(),
+                param_types: Vec::new(),
+                ret_type: None,
+                member_field_types: Vec::new(),
             }
         }
         crate::generator::Language::Rust => {
@@ -121,6 +157,9 @@ fn resolve_single_import(
                 member_type: pascal.clone(),
                 namespace: snake.clone(),
                 qualified_call: String::new(),
+                param_types: Vec::new(),
+                ret_type: None,
+                member_field_types: Vec::new(),
             }
         }
         crate::generator::Language::Go => {
@@ -135,6 +174,9 @@ fn resolve_single_import(
                 member_type: format!("{snake}.{pascal}"),
                 namespace: snake.clone(),
                 qualified_call: String::new(),
+                param_types: Vec::new(),
+                ret_type: None,
+                member_field_types: Vec::new(),
             }
         }
         crate::generator::Language::Python => {
@@ -148,6 +190,9 @@ fn resolve_single_import(
                 member_type: pascal.clone(),
                 namespace: snake.clone(),
                 qualified_call: String::new(),
+                param_types: Vec::new(),
+                ret_type: None,
+                member_field_types: Vec::new(),
             }
         }
     }
@@ -201,134 +246,16 @@ fn kotlin_type(ty: &SceType) -> &'static str {
     }
 }
 
-/// Kotlin conversion method for unsigned types in arithmetic/comparison context.
-/// Returns None for types that support arithmetic operators natively.
+/// Kotlin conversion method suffix for unsigned-to-signed narrowing, used by
+/// non-expression template fields (lookup `when` clauses, validator range
+/// bounds). Expression-level coercion is handled by the typed emitter in
+/// `forge::expr::emit_kotlin`.
 fn kotlin_unsigned_conversion(ty: &SceType) -> Option<&'static str> {
     match ty {
         SceType::Uint8 | SceType::Uint16 => Some("toInt"),
         SceType::Uint32 | SceType::Uint64 => Some("toLong"),
         _ => None,
     }
-}
-
-/// Compute Kotlin expression conversions for a transform function.
-/// Returns (variable_conversions, result_suffix).
-///
-/// Instead of shadowing parameters, the expression is modified directly:
-/// - Integer inputs feeding float outputs → `.toDouble()` / `.toFloat()`
-/// - Unsigned inputs feeding integer outputs → `.toInt()` / `.toLong()` (for bitwise/arithmetic)
-/// - Result suffix converts back to unsigned when output is unsigned
-fn kotlin_transform_conversions(
-    inputs: &[ForgeField],
-    output_type: &SceType,
-) -> (Vec<(String, String)>, &'static str) {
-    let mut conversions = Vec::new();
-
-    let output_is_float = matches!(output_type, SceType::Float32 | SceType::Float64);
-    let output_is_unsigned = matches!(
-        output_type,
-        SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
-    );
-
-    for inp in inputs {
-        let is_unsigned = matches!(
-            inp.sce_type,
-            SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
-        );
-        let is_integer = is_unsigned
-            || matches!(
-                inp.sce_type,
-                SceType::Int8 | SceType::Int16 | SceType::Int32 | SceType::Int64
-            );
-
-        if output_is_float && is_integer {
-            let conv = if *output_type == SceType::Float32 {
-                "toFloat"
-            } else {
-                "toDouble"
-            };
-            conversions.push((inp.id.clone(), conv.to_string()));
-        } else if is_unsigned {
-            let conv = match inp.sce_type {
-                SceType::Uint8 | SceType::Uint16 => "toInt",
-                _ => "toLong",
-            };
-            conversions.push((inp.id.clone(), conv.to_string()));
-        }
-    }
-
-    // Suffix converts arithmetic result back to unsigned output type
-    let has_integer_input = inputs.iter().any(|inp| {
-        matches!(
-            inp.sce_type,
-            SceType::Uint8
-                | SceType::Uint16
-                | SceType::Uint32
-                | SceType::Uint64
-                | SceType::Int8
-                | SceType::Int16
-                | SceType::Int32
-                | SceType::Int64
-        )
-    });
-
-    let suffix = if output_is_unsigned && has_integer_input {
-        match output_type {
-            SceType::Uint8 => ".toUByte()",
-            SceType::Uint16 => ".toUShort()",
-            SceType::Uint32 => ".toUInt()",
-            SceType::Uint64 => ".toULong()",
-            _ => "",
-        }
-    } else {
-        ""
-    };
-
-    (conversions, suffix)
-}
-
-/// Wrap variable references in a Kotlin expression with type conversion calls.
-/// Uses word-boundary matching to avoid partial replacements.
-fn kotlin_wrap_expr(expr: &str, conversions: &[(String, String)]) -> String {
-    let mut result = expr.to_string();
-    for (name, conv) in conversions {
-        let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(name))).unwrap();
-        let replacement = format!("{name}.{conv}()");
-        result = re.replace_all(&result, replacement.as_str()).to_string();
-    }
-    result
-}
-
-/// Check if a condition expression needs unsigned-to-signed conversion.
-/// Only needed when integer literals appear (e.g., `rpm > 8000`).
-/// Variable-to-variable comparisons on unsigned types work natively in Kotlin.
-fn kotlin_condition_needs_conversion(expr: &str) -> bool {
-    let stripped = super::expr::strip_string_literals(expr);
-    // Remove float literals first (e.g., 0.1, 95.0)
-    static RE_FLOAT: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"\d+\.\d+").unwrap());
-    let no_floats = RE_FLOAT.replace_all(&stripped, " ");
-    // Check for remaining integer/hex literals
-    static RE_INT: LazyLock<regex::Regex> =
-        LazyLock::new(|| regex::Regex::new(r"\b\d+\b|0x[0-9a-fA-F]+\b").unwrap());
-    RE_INT.is_match(&no_floats)
-}
-
-/// Replace camelCase variable references with snake_case in expressions.
-/// Sorts by name length descending to prevent partial replacements.
-fn rust_rename_vars(expr: &str, renames: &[(String, String)]) -> String {
-    let mut sorted: Vec<_> = renames.to_vec();
-    sorted.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
-
-    let mut result = expr.to_string();
-    for (from, to) in &sorted {
-        if from == to {
-            continue;
-        }
-        let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(from))).unwrap();
-        result = re.replace_all(&result, to.as_str()).to_string();
-    }
-    result
 }
 
 /// Map SceType to Rust type name (SCE_FORGE.md Section 3.3).
@@ -411,11 +338,21 @@ fn render_transform_cpp(
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
 
+    let type_ctx = crate::forge::type_ctx::transform(m, imports);
+    let empty_renames = std::collections::HashMap::new();
+
     let functions: Vec<serde_json::Value> = m
         .outputs
         .iter()
         .map(|out| {
-            let expr_cpp = expr::transpile(out.expr.as_deref().unwrap_or("0"), ExprTarget::Cpp)?;
+            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
+            let expr_cpp = expr::transpile_typed(
+                out.expr.as_deref().unwrap_or("0"),
+                ExprTarget::Cpp,
+                &type_ctx,
+                &empty_renames,
+                expected,
+            )?;
             let params = m
                 .inputs
                 .iter()
@@ -514,7 +451,14 @@ fn render_condition_cpp(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let expr_cpp = expr::transpile(&m.expr, ExprTarget::Cpp)?;
+    let type_ctx = crate::forge::type_ctx::condition(m, imports);
+    let expr_cpp = expr::transpile_typed(
+        &m.expr,
+        ExprTarget::Cpp,
+        &type_ctx,
+        &std::collections::HashMap::new(),
+        crate::forge::types::InferredType::Bool,
+    )?;
 
     let tmpl = env
         .get_template("condition.h.jinja2")
@@ -850,9 +794,15 @@ fn render_validator_cpp(
         .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
         .collect();
 
+    let type_ctx = crate::forge::type_ctx::validator(m, imports);
     let plausibility_expr = match &rv.plausibility {
-        Some(e) if import_renames.is_empty() => Some(expr::transpile(e, ExprTarget::Cpp)?),
-        Some(e) => Some(expr::transpile_with_renames(e, ExprTarget::Cpp, &import_renames)?),
+        Some(e) => Some(expr::transpile_typed(
+            e,
+            ExprTarget::Cpp,
+            &type_ctx,
+            &import_renames,
+            crate::forge::types::InferredType::Bool,
+        )?),
         None => None,
     };
 
@@ -931,25 +881,27 @@ fn render_transform_kotlin(
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
 
+    let type_ctx = crate::forge::type_ctx::transform(m, imports);
+    let empty_renames = std::collections::HashMap::new();
+
     let functions: Vec<serde_json::Value> = m
         .outputs
         .iter()
         .map(|out| {
-            let expr_kt = expr::transpile(out.expr.as_deref().unwrap_or("0"), ExprTarget::Kotlin)?;
+            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
+            let final_expr = expr::transpile_typed(
+                out.expr.as_deref().unwrap_or("0"),
+                ExprTarget::Kotlin,
+                &type_ctx,
+                &empty_renames,
+                expected,
+            )?;
             let params = m
                 .inputs
                 .iter()
                 .map(|inp| format!("{}: {}", inp.id, kotlin_type(&inp.sce_type)))
                 .collect::<Vec<_>>()
                 .join(", ");
-
-            // Type-aware expression wrapping (no parameter shadowing)
-            let (conversions, suffix) =
-                kotlin_transform_conversions(&m.inputs, &out.sce_type);
-            let mut final_expr = kotlin_wrap_expr(&expr_kt, &conversions);
-            if !suffix.is_empty() {
-                final_expr = format!("({final_expr}){suffix}");
-            }
 
             Ok(serde_json::json!({
                 "ret_type": kotlin_type(&out.sce_type),
@@ -1046,27 +998,14 @@ fn render_condition_kotlin(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let mut expr_kt = expr::transpile(&m.expr, ExprTarget::Kotlin)?;
-
-    // Only wrap unsigned inputs when the expression contains integer literal comparisons.
-    // Variable-to-variable comparisons (UInt >= UInt) work natively in Kotlin.
-    let has_unsigned = m.inputs.iter().any(|inp| {
-        matches!(
-            inp.sce_type,
-            SceType::Uint8 | SceType::Uint16 | SceType::Uint32 | SceType::Uint64
-        )
-    });
-    if has_unsigned && kotlin_condition_needs_conversion(&expr_kt) {
-        let conversions: Vec<(String, String)> = m
-            .inputs
-            .iter()
-            .filter_map(|inp| {
-                kotlin_unsigned_conversion(&inp.sce_type)
-                    .map(|conv| (inp.id.clone(), conv.to_string()))
-            })
-            .collect();
-        expr_kt = kotlin_wrap_expr(&expr_kt, &conversions);
-    }
+    let type_ctx = crate::forge::type_ctx::condition(m, imports);
+    let expr_kt = expr::transpile_typed(
+        &m.expr,
+        ExprTarget::Kotlin,
+        &type_ctx,
+        &std::collections::HashMap::new(),
+        crate::forge::types::InferredType::Bool,
+    )?;
 
     let tmpl = env
         .get_template("condition.kt.jinja2")
@@ -1343,25 +1282,15 @@ fn render_validator_kotlin(
         .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
         .collect();
 
+    let type_ctx = crate::forge::type_ctx::validator(m, imports);
     let plausibility_expr = match &rv.plausibility {
-        Some(e) => {
-            let mut expr_kt = if import_renames.is_empty() {
-                expr::transpile(e, ExprTarget::Kotlin)?
-            } else {
-                expr::transpile_with_renames(e, ExprTarget::Kotlin, &import_renames)?
-            };
-            let has_unsigned = rv.inputs.iter().any(|f| f.sce_type.is_unsigned());
-            if has_unsigned && kotlin_condition_needs_conversion(&expr_kt) {
-                let conversions: Vec<(String, String)> = rv.inputs.iter()
-                    .filter_map(|f| {
-                        kotlin_unsigned_conversion(&f.sce_type)
-                            .map(|c| (f.id.clone(), c.to_string()))
-                    })
-                    .collect();
-                expr_kt = kotlin_wrap_expr(&expr_kt, &conversions);
-            }
-            Some(expr_kt)
-        }
+        Some(e) => Some(expr::transpile_typed(
+            e,
+            ExprTarget::Kotlin,
+            &type_ctx,
+            &import_renames,
+            crate::forge::types::InferredType::Bool,
+        )?),
         None => None,
     };
 
@@ -1456,22 +1385,21 @@ fn render_transform_rust(
     m: &TransformModel,
     imports: &[ImportContext],
 ) -> Result<String, String> {
-    // Build name mappings for camelCase → snake_case
-    let renames: Vec<(String, String)> = m
-        .inputs
-        .iter()
-        .map(|inp| (inp.id.clone(), filters::to_snake_case(inp.id.clone())))
-        .collect();
+    let type_ctx = crate::forge::type_ctx::transform(m, imports);
+    let empty_renames = std::collections::HashMap::new();
 
     let functions: Vec<serde_json::Value> = m
         .outputs
         .iter()
         .map(|out| {
-            let mut expr_rs =
-                expr::transpile(out.expr.as_deref().unwrap_or("0"), ExprTarget::Rust)?;
-
-            // Rename camelCase variables to snake_case in expression
-            expr_rs = rust_rename_vars(&expr_rs, &renames);
+            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
+            let expr_rs = expr::transpile_typed(
+                out.expr.as_deref().unwrap_or("0"),
+                ExprTarget::Rust,
+                &type_ctx,
+                &empty_renames,
+                expected,
+            )?;
 
             let params = m
                 .inputs
@@ -1485,21 +1413,6 @@ fn render_transform_rust(
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-
-            // Integer inputs feeding float outputs need `as f64` cast in expression
-            let needs_cast = rust_float_cast_needed(&m.inputs, &out.sce_type);
-            if let Some(cast_type) = needs_cast {
-                // Wrap each integer input reference with `as f64`
-                for inp in &m.inputs {
-                    if rust_float_cast(&inp.sce_type, &out.sce_type).is_some() {
-                        let snake = filters::to_snake_case(inp.id.clone());
-                        let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(&snake)))
-                            .unwrap();
-                        let cast_expr = format!("{snake} as {cast_type}");
-                        expr_rs = re.replace_all(&expr_rs, cast_expr.as_str()).to_string();
-                    }
-                }
-            }
 
             Ok(serde_json::json!({
                 "ret_type": rust_type(&out.sce_type),
@@ -1588,12 +1501,6 @@ fn render_condition_rust(
 ) -> Result<String, String> {
     let func_name = filters::to_snake_case(m.name.clone());
 
-    let renames: Vec<(String, String)> = m
-        .inputs
-        .iter()
-        .map(|inp| (inp.id.clone(), filters::to_snake_case(inp.id.clone())))
-        .collect();
-
     let params = m
         .inputs
         .iter()
@@ -1607,8 +1514,14 @@ fn render_condition_rust(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let mut expr_rs = expr::transpile(&m.expr, ExprTarget::Rust)?;
-    expr_rs = rust_rename_vars(&expr_rs, &renames);
+    let type_ctx = crate::forge::type_ctx::condition(m, imports);
+    let expr_rs = expr::transpile_typed(
+        &m.expr,
+        ExprTarget::Rust,
+        &type_ctx,
+        &std::collections::HashMap::new(),
+        crate::forge::types::InferredType::Bool,
+    )?;
 
     let tmpl = env
         .get_template("condition.rs.jinja2")
@@ -1637,13 +1550,6 @@ fn render_codec_rust(
 ) -> Result<String, String> {
     let struct_name = filters::to_pascal_case(m.name.clone());
 
-    // Build rename mapping for camelCase field ids → snake_case
-    let renames: Vec<(String, String)> = m
-        .fields
-        .iter()
-        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
-        .collect();
-
     let fields: Vec<serde_json::Value> = m
         .fields
         .iter()
@@ -1656,11 +1562,7 @@ fn render_codec_rust(
         })
         .collect();
 
-    // Generate encode expressions, then rename field references to snake_case
-    let encode_exprs: Vec<String> = generate_encode_exprs_rust(&m.fields, m.default_endian)
-        .into_iter()
-        .map(|expr| rust_rename_vars(&expr, &renames))
-        .collect();
+    let encode_exprs: Vec<String> = generate_encode_exprs_rust(&m.fields, m.default_endian);
 
     let tmpl = env
         .get_template("codec.rs.jinja2")
@@ -1758,7 +1660,7 @@ fn generate_encode_exprs_rust(fields: &[CodecField], default_endian: Endian) -> 
         if field.is_variable_length() {
             exprs.push(format!(
                 "/* variable-length field '{}' requires manual encode */",
-                field.id
+                filters::to_snake_case(field.id.clone())
             ));
         } else {
             byte_groups
@@ -1777,9 +1679,9 @@ fn generate_encode_exprs_rust(fields: &[CodecField], default_endian: Endian) -> 
                 let bit_off = field.bit_offset.unwrap_or(0);
                 let bits = field.fixed_bits().unwrap_or(8);
                 let mask = (1u64 << bits) - 1;
+                let name = filters::to_snake_case(field.id.clone());
                 parts.push(format!(
-                    "((self.{} & 0x{mask:02X}) << {bit_off})",
-                    field.id
+                    "((self.{name} & 0x{mask:02X}) << {bit_off})"
                 ));
             }
             exprs.push(format!("({}) as u8", parts.join(" | ")));
@@ -1796,16 +1698,16 @@ fn encode_single_field_rust(
 ) {
     let bit_off = field.bit_offset.unwrap_or(0);
     let endian = field.effective_endian(default_endian);
+    let name = filters::to_snake_case(field.id.clone());
 
     match field.fixed_bits() {
         Some(8) if bit_off == 0 => {
-            exprs.push(format!("self.{}", field.id));
+            exprs.push(format!("self.{name}"));
         }
         Some(bits) if bits < 8 || bit_off > 0 => {
             let mask = (1u64 << bits) - 1;
             exprs.push(format!(
-                "((self.{} & 0x{mask:02X}) << {bit_off}) as u8",
-                field.id
+                "((self.{name} & 0x{mask:02X}) << {bit_off}) as u8"
             ));
         }
         Some(byte_count @ (16 | 24 | 32)) => {
@@ -1817,16 +1719,15 @@ fn encode_single_field_rust(
             for shift_byte in shifts {
                 let shift = shift_byte * 8;
                 if shift == 0 {
-                    exprs.push(format!("(self.{} & 0xFF) as u8", field.id));
+                    exprs.push(format!("(self.{name} & 0xFF) as u8"));
                 } else {
                     exprs.push(format!(
-                        "(self.{} >> {shift} & 0xFF) as u8",
-                        field.id
+                        "(self.{name} >> {shift} & 0xFF) as u8"
                     ));
                 }
             }
         }
-        _ => exprs.push(format!("/* encode {} */", field.id)),
+        _ => exprs.push(format!("/* encode {name} */")),
     }
 }
 
@@ -1839,10 +1740,6 @@ fn render_validator_rust(
 ) -> Result<String, String> {
     let rv = resolve_validator(m);
     let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let renames: Vec<(String, String)> = rv.inputs.iter()
-        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
-        .collect();
 
     let params = rv.inputs.iter()
         .map(|f| format!("{}: {}", filters::to_snake_case(f.id.clone()), rust_param_type(&f.sce_type)))
@@ -1888,16 +1785,15 @@ fn render_validator_rust(
         .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
         .collect();
 
+    let type_ctx = crate::forge::type_ctx::validator(m, imports);
     let plausibility_expr = match &rv.plausibility {
-        Some(e) => {
-            let mut expr_rs = if import_renames.is_empty() {
-                expr::transpile(e, ExprTarget::Rust)?
-            } else {
-                expr::transpile_with_renames(e, ExprTarget::Rust, &import_renames)?
-            };
-            expr_rs = rust_rename_vars(&expr_rs, &renames);
-            Some(expr_rs)
-        }
+        Some(e) => Some(expr::transpile_typed(
+            e,
+            ExprTarget::Rust,
+            &type_ctx,
+            &import_renames,
+            crate::forge::types::InferredType::Bool,
+        )?),
         None => None,
     };
 
@@ -2011,40 +1907,32 @@ fn render_transform_go(
 ) -> Result<String, String> {
     let package = filters::to_snake_case(m.name.clone());
 
-    // Build rename map: SCXML id → Go-safe parameter name
-    let go_renames: Vec<(String, String)> = m
+    // Rename map: SCXML id → Go-safe parameter name (for builtins like `len`, `new`)
+    let go_rename_strings: Vec<(String, String)> = m
         .inputs
         .iter()
         .map(|inp| (inp.id.clone(), go_escape_builtin(&inp.id)))
+        .filter(|(f, t)| f != t)
         .collect();
+    let go_renames: std::collections::HashMap<&str, &str> = go_rename_strings
+        .iter()
+        .map(|(f, t)| (f.as_str(), t.as_str()))
+        .collect();
+
+    let type_ctx = crate::forge::type_ctx::transform(m, imports);
 
     let functions: Vec<serde_json::Value> = m
         .outputs
         .iter()
         .map(|out| {
-            let mut expr_go = expr::transpile(out.expr.as_deref().unwrap_or("0"), ExprTarget::Go)?;
-
-            // Rename builtin-shadowing identifiers in expression
-            for (from, to) in &go_renames {
-                if from != to {
-                    let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(from))).unwrap();
-                    expr_go = re.replace_all(&expr_go, to.as_str()).to_string();
-                }
-            }
-
-            // Integer inputs feeding float outputs need float64() cast
-            let needs_cast = go_float_cast_needed(&m.inputs, &out.sce_type);
-            if let Some(cast_type) = needs_cast {
-                for inp in &m.inputs {
-                    if go_float_cast(&inp.sce_type, &out.sce_type).is_some() {
-                        let safe_name = go_escape_builtin(&inp.id);
-                        let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(&safe_name)))
-                            .unwrap();
-                        let cast_expr = format!("{cast_type}({safe_name})");
-                        expr_go = re.replace_all(&expr_go, cast_expr.as_str()).to_string();
-                    }
-                }
-            }
+            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
+            let expr_go = expr::transpile_typed(
+                out.expr.as_deref().unwrap_or("0"),
+                ExprTarget::Go,
+                &type_ctx,
+                &go_renames,
+                expected,
+            )?;
 
             let params = m
                 .inputs
@@ -2136,10 +2024,15 @@ fn render_condition_go(
     let package = filters::to_snake_case(m.name.clone());
     let func_name = filters::to_pascal_case(m.name.clone());
 
-    let go_renames: Vec<(String, String)> = m
+    let go_rename_strings: Vec<(String, String)> = m
         .inputs
         .iter()
         .map(|inp| (inp.id.clone(), go_escape_builtin(&inp.id)))
+        .filter(|(f, t)| f != t)
+        .collect();
+    let go_renames: std::collections::HashMap<&str, &str> = go_rename_strings
+        .iter()
+        .map(|(f, t)| (f.as_str(), t.as_str()))
         .collect();
 
     let params = m
@@ -2149,15 +2042,14 @@ fn render_condition_go(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let mut expr_go = expr::transpile(&m.expr, ExprTarget::Go)?;
-
-    // Rename builtin-shadowing identifiers in expression
-    for (from, to) in &go_renames {
-        if from != to {
-            let re = regex::Regex::new(&format!(r"\b{}\b", regex::escape(from))).unwrap();
-            expr_go = re.replace_all(&expr_go, to.as_str()).to_string();
-        }
-    }
+    let type_ctx = crate::forge::type_ctx::condition(m, imports);
+    let expr_go = expr::transpile_typed(
+        &m.expr,
+        ExprTarget::Go,
+        &type_ctx,
+        &go_renames,
+        crate::forge::types::InferredType::Bool,
+    )?;
 
     let tmpl = env
         .get_template("condition.go.jinja2")
@@ -2370,32 +2262,6 @@ fn encode_single_field_go(
     }
 }
 
-/// Determine Go cast type for integer-to-float promotion in transform expressions.
-fn go_float_cast(input_type: &SceType, output_type: &SceType) -> Option<&'static str> {
-    let input_is_int = matches!(
-        input_type,
-        SceType::Uint8
-            | SceType::Uint16
-            | SceType::Uint32
-            | SceType::Uint64
-            | SceType::Int8
-            | SceType::Int16
-            | SceType::Int32
-            | SceType::Int64
-    );
-    match (input_is_int, output_type) {
-        (true, SceType::Float64) => Some("float64"),
-        (true, SceType::Float32) => Some("float32"),
-        _ => None,
-    }
-}
-
-fn go_float_cast_needed(inputs: &[ForgeField], output_type: &SceType) -> Option<&'static str> {
-    inputs
-        .iter()
-        .find_map(|inp| go_float_cast(&inp.sce_type, output_type))
-}
-
 // ── Go: Validator ────────────────────────────────────────────
 
 fn render_validator_go(
@@ -2407,8 +2273,9 @@ fn render_validator_go(
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
 
-    let go_renames: Vec<(String, String)> = rv.inputs.iter()
+    let go_rename_strings: Vec<(String, String)> = rv.inputs.iter()
         .map(|f| (f.id.clone(), go_escape_builtin(&f.id)))
+        .filter(|(f, t)| f != t)
         .collect();
 
     let params = rv.inputs.iter()
@@ -2456,22 +2323,22 @@ fn render_validator_go(
         .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
         .collect();
 
+    let type_ctx = crate::forge::type_ctx::validator(m, imports);
+    let mut combined_renames: std::collections::HashMap<&str, &str> = go_rename_strings
+        .iter()
+        .map(|(f, t)| (f.as_str(), t.as_str()))
+        .collect();
+    for (k, v) in &import_renames {
+        combined_renames.insert(*k, *v);
+    }
     let plausibility_expr = match &rv.plausibility {
-        Some(e) => {
-            let mut expr_go = if import_renames.is_empty() {
-                expr::transpile(e, ExprTarget::Go)?
-            } else {
-                expr::transpile_with_renames(e, ExprTarget::Go, &import_renames)?
-            };
-            for (from, to) in &go_renames {
-                if from != to {
-                    let re =
-                        regex::Regex::new(&format!(r"\b{}\b", regex::escape(from))).unwrap();
-                    expr_go = re.replace_all(&expr_go, to.as_str()).to_string();
-                }
-            }
-            Some(expr_go)
-        }
+        Some(e) => Some(expr::transpile_typed(
+            e,
+            ExprTarget::Go,
+            &type_ctx,
+            &combined_renames,
+            crate::forge::types::InferredType::Bool,
+        )?),
         None => None,
     };
 
@@ -2567,22 +2434,21 @@ fn render_transform_python(
     m: &TransformModel,
     imports: &[ImportContext],
 ) -> Result<String, String> {
-    // Build name mappings for camelCase → snake_case
-    let renames: Vec<(String, String)> = m
-        .inputs
-        .iter()
-        .map(|inp| (inp.id.clone(), filters::to_snake_case(inp.id.clone())))
-        .collect();
+    let type_ctx = crate::forge::type_ctx::transform(m, imports);
+    let empty_renames = std::collections::HashMap::new();
 
     let functions: Vec<serde_json::Value> = m
         .outputs
         .iter()
         .map(|out| {
-            let mut expr_py =
-                expr::transpile(out.expr.as_deref().unwrap_or("0"), ExprTarget::Python)?;
-
-            // Rename camelCase variables to snake_case in expression
-            expr_py = rust_rename_vars(&expr_py, &renames);
+            let expected = crate::forge::types::InferredType::from_sce_type(&out.sce_type);
+            let expr_py = expr::transpile_typed(
+                out.expr.as_deref().unwrap_or("0"),
+                ExprTarget::Python,
+                &type_ctx,
+                &empty_renames,
+                expected,
+            )?;
 
             let params = m
                 .inputs
@@ -2682,12 +2548,6 @@ fn render_condition_python(
 ) -> Result<String, String> {
     let func_name = filters::to_snake_case(m.name.clone());
 
-    let renames: Vec<(String, String)> = m
-        .inputs
-        .iter()
-        .map(|inp| (inp.id.clone(), filters::to_snake_case(inp.id.clone())))
-        .collect();
-
     let params = m
         .inputs
         .iter()
@@ -2701,8 +2561,14 @@ fn render_condition_python(
         .collect::<Vec<_>>()
         .join(", ");
 
-    let mut expr_py = expr::transpile(&m.expr, ExprTarget::Python)?;
-    expr_py = rust_rename_vars(&expr_py, &renames);
+    let type_ctx = crate::forge::type_ctx::condition(m, imports);
+    let expr_py = expr::transpile_typed(
+        &m.expr,
+        ExprTarget::Python,
+        &type_ctx,
+        &std::collections::HashMap::new(),
+        crate::forge::types::InferredType::Bool,
+    )?;
 
     let tmpl = env
         .get_template("condition.py.jinja2")
@@ -2743,17 +2609,7 @@ fn render_codec_python(
         })
         .collect();
 
-    // Generate encode expressions, then rename field references to snake_case
-    let renames: Vec<(String, String)> = m
-        .fields
-        .iter()
-        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
-        .collect();
-
-    let encode_exprs: Vec<String> = generate_encode_exprs_python(&m.fields, m.default_endian)
-        .into_iter()
-        .map(|expr| rust_rename_vars(&expr, &renames))
-        .collect();
+    let encode_exprs: Vec<String> = generate_encode_exprs_python(&m.fields, m.default_endian);
 
     let tmpl = env
         .get_template("codec.py.jinja2")
@@ -2845,7 +2701,7 @@ fn generate_encode_exprs_python(fields: &[CodecField], default_endian: Endian) -
         if field.is_variable_length() {
             exprs.push(format!(
                 "# variable-length field '{}' requires manual encode",
-                field.id
+                filters::to_snake_case(field.id.clone())
             ));
         } else {
             byte_groups
@@ -2864,9 +2720,9 @@ fn generate_encode_exprs_python(fields: &[CodecField], default_endian: Endian) -
                 let bit_off = field.bit_offset.unwrap_or(0);
                 let bits = field.fixed_bits().unwrap_or(8);
                 let mask = (1u64 << bits) - 1;
+                let name = filters::to_snake_case(field.id.clone());
                 parts.push(format!(
-                    "(self.{} & 0x{mask:02X}) << {bit_off}",
-                    field.id
+                    "(self.{name} & 0x{mask:02X}) << {bit_off}"
                 ));
             }
             exprs.push(format!("({}) & 0xFF", parts.join(" | ")));
@@ -2883,16 +2739,16 @@ fn encode_single_field_python(
 ) {
     let bit_off = field.bit_offset.unwrap_or(0);
     let endian = field.effective_endian(default_endian);
+    let name = filters::to_snake_case(field.id.clone());
 
     match field.fixed_bits() {
         Some(8) if bit_off == 0 => {
-            exprs.push(format!("self.{} & 0xFF", field.id));
+            exprs.push(format!("self.{name} & 0xFF"));
         }
         Some(bits) if bits < 8 || bit_off > 0 => {
             let mask = (1u64 << bits) - 1;
             exprs.push(format!(
-                "(self.{} & 0x{mask:02X}) << {bit_off} & 0xFF",
-                field.id
+                "(self.{name} & 0x{mask:02X}) << {bit_off} & 0xFF"
             ));
         }
         Some(byte_count @ (16 | 24 | 32)) => {
@@ -2904,16 +2760,15 @@ fn encode_single_field_python(
             for shift_byte in shifts {
                 let shift = shift_byte * 8;
                 if shift == 0 {
-                    exprs.push(format!("self.{} & 0xFF", field.id));
+                    exprs.push(format!("self.{name} & 0xFF"));
                 } else {
                     exprs.push(format!(
-                        "(self.{} >> {shift}) & 0xFF",
-                        field.id
+                        "(self.{name} >> {shift}) & 0xFF"
                     ));
                 }
             }
         }
-        _ => exprs.push(format!("# encode {}", field.id)),
+        _ => exprs.push(format!("# encode {name}")),
     }
 }
 
@@ -2926,10 +2781,6 @@ fn render_validator_python(
 ) -> Result<String, String> {
     let rv = resolve_validator(m);
     let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let renames: Vec<(String, String)> = rv.inputs.iter()
-        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
-        .collect();
 
     let params = rv.inputs.iter()
         .map(|f| format!("{}: {}", filters::to_snake_case(f.id.clone()), python_type(&f.sce_type)))
@@ -2973,16 +2824,15 @@ fn render_validator_python(
         .map(|i| (i.alias.as_str(), i.qualified_call.as_str()))
         .collect();
 
+    let type_ctx = crate::forge::type_ctx::validator(m, imports);
     let plausibility_expr = match &rv.plausibility {
-        Some(e) => {
-            let mut expr_py = if import_renames.is_empty() {
-                expr::transpile(e, ExprTarget::Python)?
-            } else {
-                expr::transpile_with_renames(e, ExprTarget::Python, &import_renames)?
-            };
-            expr_py = rust_rename_vars(&expr_py, &renames);
-            Some(expr_py)
-        }
+        Some(e) => Some(expr::transpile_typed(
+            e,
+            ExprTarget::Python,
+            &type_ctx,
+            &import_renames,
+            crate::forge::types::InferredType::Bool,
+        )?),
         None => None,
     };
 
@@ -3036,7 +2886,11 @@ struct ResolvedProcedure {
     state_count: usize,
 }
 
-fn resolve_procedure(m: &ProcedureModel, target: ExprTarget) -> Result<ResolvedProcedure, String> {
+fn resolve_procedure(
+    m: &ProcedureModel,
+    target: ExprTarget,
+    imports: &[ImportContext],
+) -> Result<ResolvedProcedure, String> {
     // Build name→index map
     let index_map: std::collections::BTreeMap<&str, usize> = m
         .states
@@ -3048,6 +2902,9 @@ fn resolve_procedure(m: &ProcedureModel, target: ExprTarget) -> Result<ResolvedP
     let initial_index = *index_map
         .get(m.initial.as_str())
         .ok_or_else(|| format!("Initial state '{}' not found", m.initial))?;
+
+    let type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let empty_renames = std::collections::HashMap::new();
 
     let states = m
         .states
@@ -3062,7 +2919,13 @@ fn resolve_procedure(m: &ProcedureModel, target: ExprTarget) -> Result<ResolvedP
                         .get(tr.target.as_str())
                         .ok_or_else(|| format!("Transition target '{}' not found", tr.target))?;
                     let cond = match &tr.cond {
-                        Some(c) => Some(expr::transpile(c, target)?),
+                        Some(c) => Some(expr::transpile_typed(
+                            c,
+                            target,
+                            &type_ctx,
+                            &empty_renames,
+                            crate::forge::types::InferredType::Bool,
+                        )?),
                         None => None,
                     };
                     Ok(ResolvedTransition {
@@ -3147,7 +3010,7 @@ fn render_procedure_cpp(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Cpp)?;
+    let rp = resolve_procedure(m, ExprTarget::Cpp, imports)?;
     let ns = filters::to_pascal_case(m.name.clone());
     let guard = format!("SCE_FORGE_{}_H", to_upper_snake(&m.name));
     let struct_name = filters::to_pascal_case(m.name.clone());
@@ -3271,13 +3134,25 @@ fn render_procedure_l2_cpp(
         })
         .collect();
 
-    // Build internal field data
+    // Build the typed context once — every expression in this render
+    // function (internal defaults, guards, assigns, sends, donedata) sees
+    // the same set of procedure inputs/internals as identifiers.
+    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let l2_empty_renames = std::collections::HashMap::new();
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
         .map(|f| {
+            let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = f.expr.as_ref().map(|e| {
-                expr::transpile(e, ExprTarget::Cpp).unwrap_or_else(|_| e.clone())
+                expr::transpile_typed(
+                    e,
+                    ExprTarget::Cpp,
+                    &l2_type_ctx,
+                    &l2_empty_renames,
+                    expected,
+                )
+                .unwrap_or_else(|_| e.clone())
             });
             serde_json::json!({
                 "id": f.id,
@@ -3342,10 +3217,22 @@ fn render_procedure_l2_cpp(
                 .iter()
                 .map(|send| {
                     let addr_expr = send.addr.as_ref().map(|a| {
-                        transpile_l2_expr(a, ExprTarget::Cpp, &rename_map)
+                        transpile_l2_expr(
+                            a,
+                            ExprTarget::Cpp,
+                            &l2_type_ctx,
+                            &rename_map,
+                            crate::forge::types::InferredType::Unknown,
+                        )
                     });
                     let payload_expr = send.payload.as_ref().map(|p| {
-                        transpile_l2_expr(p, ExprTarget::Cpp, &rename_map)
+                        transpile_l2_expr(
+                            p,
+                            ExprTarget::Cpp,
+                            &l2_type_ctx,
+                            &rename_map,
+                            crate::forge::types::InferredType::Unknown,
+                        )
                     });
                     serde_json::json!({
                         "service": send.service,
@@ -3374,7 +3261,13 @@ fn render_procedure_l2_cpp(
                 .done_params
                 .iter()
                 .map(|p| {
-                    let transpiled = transpile_l2_expr(&p.expr, ExprTarget::Cpp, &rename_map);
+                    let transpiled = transpile_l2_expr(
+                        &p.expr,
+                        ExprTarget::Cpp,
+                        &l2_type_ctx,
+                        &rename_map,
+                        crate::forge::types::InferredType::Unknown,
+                    );
                     serde_json::json!({
                         "name": p.name,
                         "expr": transpiled,
@@ -3406,7 +3299,13 @@ fn render_procedure_l2_cpp(
                             .unwrap_or_else(|| filters::to_pascal_case(ev.clone()))
                     });
                     let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        transpile_l2_expr(c, ExprTarget::Cpp, &rename_map)
+                        transpile_l2_expr(
+                            c,
+                            ExprTarget::Cpp,
+                            &l2_type_ctx,
+                            &rename_map,
+                            crate::forge::types::InferredType::Bool,
+                        )
                     });
                     serde_json::json!({
                         "index": idx,
@@ -3451,7 +3350,17 @@ fn render_procedure_l2_cpp(
                         .assigns
                         .iter()
                         .map(|a| {
-                            let transpiled = transpile_l2_expr(&a.expr, ExprTarget::Cpp, &assign_rename_map);
+                            let expected = type_map
+                                .get(a.location.as_str())
+                                .map(|t| crate::forge::types::InferredType::from_sce_type(t))
+                                .unwrap_or(crate::forge::types::InferredType::Unknown);
+                            let transpiled = transpile_l2_expr(
+                                &a.expr,
+                                ExprTarget::Cpp,
+                                &l2_type_ctx,
+                                &assign_rename_map,
+                                expected,
+                            );
                             // Type-aware wrapping: if target is bytes and source is string-like,
                             // generate explicit conversion
                             let wrapped = match type_map.get(a.location.as_str()) {
@@ -3531,10 +3440,22 @@ fn build_rename_map<'a>(var_names: &'a [&'a str]) -> std::collections::HashMap<&
         .collect()
 }
 
-/// Transpile a Level 2 procedure expression with a pre-built rename map.
-/// On failure, emits a C++ comment with the error for compile-time visibility.
-fn transpile_l2_expr(raw: &str, target: ExprTarget, renames: &std::collections::HashMap<&str, &str>) -> String {
-    match expr::transpile_with_renames(raw, target, renames) {
+/// Transpile a Level 2 procedure expression with a pre-built rename map and
+/// type context. On failure, emits a C++ comment with the error for
+/// compile-time visibility.
+///
+/// `expected` drives top-level coercion — pass `InferredType::Bool` for
+/// guard conditions, the target field type for assignments, and
+/// `InferredType::Unknown` for payloads/sends where the consumer accepts
+/// any value.
+fn transpile_l2_expr(
+    raw: &str,
+    target: ExprTarget,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
+    renames: &std::collections::HashMap<&str, &str>,
+    expected: crate::forge::types::InferredType,
+) -> String {
+    match expr::transpile_typed(raw, target, type_ctx, renames, expected) {
         Ok(result) => result,
         Err(e) => format!("/* SCE_TRANSPILE_ERROR: {} */ {}", e, raw),
     }
@@ -3547,7 +3468,7 @@ fn render_procedure_kotlin(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Kotlin)?;
+    let rp = resolve_procedure(m, ExprTarget::Kotlin, imports)?;
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
 
@@ -3560,8 +3481,8 @@ fn render_procedure_kotlin(
 
     let (state_names, _, final_indices) = build_procedure_data(&rp);
 
-    // Apply unsigned conversion to guard expressions if needed
-    let has_unsigned = rp.inputs.iter().any(|f| f.sce_type.is_unsigned());
+    // Guard expressions are already fully transpiled (with Kotlin unsigned
+    // coercion applied internally by the typed emitter) inside resolve_procedure.
     let non_final_states: Vec<serde_json::Value> = rp
         .states
         .iter()
@@ -3571,25 +3492,10 @@ fn render_procedure_kotlin(
                 .transitions
                 .iter()
                 .map(|tr| {
-                    let cond = match &tr.cond {
-                        Some(c) if has_unsigned && kotlin_condition_needs_conversion(c) => {
-                            let conversions: Vec<(String, String)> = rp
-                                .inputs
-                                .iter()
-                                .filter_map(|f| {
-                                    kotlin_unsigned_conversion(&f.sce_type)
-                                        .map(|cv| (f.id.clone(), cv.to_string()))
-                                })
-                                .collect();
-                            Some(kotlin_wrap_expr(c, &conversions))
-                        }
-                        Some(c) => Some(c.clone()),
-                        None => None,
-                    };
                     serde_json::json!({
                         "target_index": tr.target_index,
-                        "has_cond": cond.is_some(),
-                        "cond": cond.unwrap_or_default(),
+                        "has_cond": tr.cond.is_some(),
+                        "cond": tr.cond.clone().unwrap_or_default(),
                     })
                 })
                 .collect();
@@ -3632,14 +3538,8 @@ fn render_procedure_rust(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Rust)?;
+    let rp = resolve_procedure(m, ExprTarget::Rust, imports)?;
     let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let renames: Vec<(String, String)> = rp
-        .inputs
-        .iter()
-        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
-        .collect();
 
     let params = rp
         .inputs
@@ -3660,7 +3560,8 @@ fn render_procedure_rust(
         .map(|s| serde_json::json!(s.id))
         .collect();
 
-    // Apply variable renames to guard expressions
+    // Guard expressions are already fully transpiled (with Rust snake_case
+    // rename applied internally by the typed emitter) inside resolve_procedure.
     let non_final_states: Vec<serde_json::Value> = rp
         .states
         .iter()
@@ -3670,11 +3571,10 @@ fn render_procedure_rust(
                 .transitions
                 .iter()
                 .map(|tr| {
-                    let cond = tr.cond.as_ref().map(|c| rust_rename_vars(c, &renames));
                     serde_json::json!({
                         "target_index": tr.target_index,
-                        "has_cond": cond.is_some(),
-                        "cond": cond.unwrap_or_default(),
+                        "has_cond": tr.cond.is_some(),
+                        "cond": tr.cond.clone().unwrap_or_default(),
                     })
                 })
                 .collect();
@@ -3724,7 +3624,7 @@ fn render_procedure_go(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Go)?;
+    let rp = resolve_procedure(m, ExprTarget::Go, imports)?;
     let package = filters::to_snake_case(m.name.clone());
     let struct_name = filters::to_pascal_case(m.name.clone());
 
@@ -3824,14 +3724,8 @@ fn render_procedure_python(
     m: &ProcedureModel,
     imports: &[ImportContext],
 ) -> Result<String, String> {
-    let rp = resolve_procedure(m, ExprTarget::Python)?;
+    let rp = resolve_procedure(m, ExprTarget::Python, imports)?;
     let struct_name = filters::to_pascal_case(m.name.clone());
-
-    let renames: Vec<(String, String)> = rp
-        .inputs
-        .iter()
-        .map(|f| (f.id.clone(), filters::to_snake_case(f.id.clone())))
-        .collect();
 
     let params = rp
         .inputs
@@ -3862,11 +3756,10 @@ fn render_procedure_python(
                 .transitions
                 .iter()
                 .map(|tr| {
-                    let cond = tr.cond.as_ref().map(|c| rust_rename_vars(c, &renames));
                     serde_json::json!({
                         "target_index": tr.target_index,
-                        "has_cond": cond.is_some(),
-                        "cond": cond.unwrap_or_default(),
+                        "has_cond": tr.cond.is_some(),
+                        "cond": tr.cond.clone().unwrap_or_default(),
                     })
                 })
                 .collect();
@@ -3998,13 +3891,12 @@ fn build_l2_common(m: &ProcedureModel) -> L2Common {
 }
 
 /// Build non-final state transition data for L2 templates.
-/// `cond_transform` allows Kotlin to apply unsigned conversion to guard expressions.
 fn build_l2_non_final_states(
     m: &ProcedureModel,
     target: ExprTarget,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
     rename_map: &std::collections::HashMap<&str, &str>,
     event_name_map: &std::collections::BTreeMap<String, String>,
-    cond_transform: Option<&dyn Fn(&str) -> String>,
 ) -> Vec<serde_json::Value> {
     m.states
         .iter()
@@ -4022,11 +3914,13 @@ fn build_l2_non_final_states(
                             .unwrap_or_else(|| filters::to_pascal_case(ev.clone()))
                     });
                     let cond_transpiled = tr.cond.as_ref().map(|c| {
-                        let base = transpile_l2_expr(c, target, rename_map);
-                        match cond_transform {
-                            Some(f) => f(&base),
-                            None => base,
-                        }
+                        transpile_l2_expr(
+                            c,
+                            target,
+                            type_ctx,
+                            rename_map,
+                            crate::forge::types::InferredType::Bool,
+                        )
                     });
                     serde_json::json!({
                         "index": idx,
@@ -4049,10 +3943,10 @@ fn build_l2_non_final_states(
 }
 
 /// Build states with onentry sends for L2 templates.
-/// `payload_rename_map` allows Rust to borrow non-Copy types in payload expressions.
 fn build_l2_states_with_entry(
     m: &ProcedureModel,
     target: ExprTarget,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
     rename_map: &std::collections::HashMap<&str, &str>,
     payload_rename_map: Option<&std::collections::HashMap<&str, &str>>,
 ) -> Vec<serde_json::Value> {
@@ -4065,14 +3959,24 @@ fn build_l2_states_with_entry(
                 .on_entry_sends
                 .iter()
                 .map(|send| {
-                    let addr_expr = send
-                        .addr
-                        .as_ref()
-                        .map(|a| transpile_l2_expr(a, target, rename_map));
-                    let payload_expr = send
-                        .payload
-                        .as_ref()
-                        .map(|p| transpile_l2_expr(p, target, payload_map));
+                    let addr_expr = send.addr.as_ref().map(|a| {
+                        transpile_l2_expr(
+                            a,
+                            target,
+                            type_ctx,
+                            rename_map,
+                            crate::forge::types::InferredType::Unknown,
+                        )
+                    });
+                    let payload_expr = send.payload.as_ref().map(|p| {
+                        transpile_l2_expr(
+                            p,
+                            target,
+                            type_ctx,
+                            payload_map,
+                            crate::forge::types::InferredType::Unknown,
+                        )
+                    });
                     serde_json::json!({
                         "service": send.service,
                         "subfunc": send.subfunc,
@@ -4095,6 +3999,7 @@ fn build_l2_states_with_entry(
 fn build_l2_final_states_with_donedata(
     m: &ProcedureModel,
     target: ExprTarget,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
     rename_map: &std::collections::HashMap<&str, &str>,
 ) -> Vec<serde_json::Value> {
     m.states
@@ -4105,7 +4010,13 @@ fn build_l2_final_states_with_donedata(
                 .done_params
                 .iter()
                 .map(|p| {
-                    let transpiled = transpile_l2_expr(&p.expr, target, rename_map);
+                    let transpiled = transpile_l2_expr(
+                        &p.expr,
+                        target,
+                        type_ctx,
+                        rename_map,
+                        crate::forge::types::InferredType::Unknown,
+                    );
                     serde_json::json!({
                         "name": p.name,
                         "expr": transpiled,
@@ -4124,6 +4035,7 @@ fn build_l2_final_states_with_donedata(
 fn build_l2_states_with_assigns(
     m: &ProcedureModel,
     target: ExprTarget,
+    type_ctx: &crate::forge::types::TypeCtx<'_>,
     assign_rename_map: &std::collections::HashMap<&str, &str>,
     type_map: &std::collections::HashMap<&str, &SceType>,
     location_transform: impl Fn(&str) -> String,
@@ -4143,8 +4055,17 @@ fn build_l2_states_with_assigns(
                         .assigns
                         .iter()
                         .map(|a| {
-                            let transpiled =
-                                transpile_l2_expr(&a.expr, target, assign_rename_map);
+                            let expected = type_map
+                                .get(a.location.as_str())
+                                .map(|t| crate::forge::types::InferredType::from_sce_type(t))
+                                .unwrap_or(crate::forge::types::InferredType::Unknown);
+                            let transpiled = transpile_l2_expr(
+                                &a.expr,
+                                target,
+                                type_ctx,
+                                assign_rename_map,
+                                expected,
+                            );
                             let wrapped = match type_map.get(a.location.as_str()) {
                                 Some(SceType::Bytes) if a.expr.trim() == "_event.data" => {
                                     bytes_wrap(&transpiled, &a.location)
@@ -4246,15 +4167,25 @@ fn render_procedure_l2_kotlin(
         })
         .collect();
 
+    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let l2_empty_renames = std::collections::HashMap::new();
+
     // Internal fields
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
         .map(|f| {
+            let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = f
                 .expr
                 .as_ref()
-                .map(|e| expr::transpile(e, ExprTarget::Kotlin).unwrap_or_else(|_| e.clone()))
+                .map(|e| expr::transpile_typed(
+                    e,
+                    ExprTarget::Kotlin,
+                    &l2_type_ctx,
+                    &l2_empty_renames,
+                    expected,
+                ).unwrap_or_else(|_| e.clone()))
                 .unwrap_or_else(|| kotlin_default(&f.sce_type).to_string());
             serde_json::json!({
                 "id": f.id,
@@ -4276,43 +4207,23 @@ fn render_procedure_l2_kotlin(
     let assign_rename_map = rename_map.clone();
 
     let type_map = build_l2_type_map(m);
-    let states_with_entry = build_l2_states_with_entry(m, ExprTarget::Kotlin, &rename_map, None);
+    let states_with_entry =
+        build_l2_states_with_entry(m, ExprTarget::Kotlin, &l2_type_ctx, &rename_map, None);
     let final_states_with_donedata =
-        build_l2_final_states_with_donedata(m, ExprTarget::Kotlin, &rename_map);
+        build_l2_final_states_with_donedata(m, ExprTarget::Kotlin, &l2_type_ctx, &rename_map);
 
-    // Non-final states: apply Kotlin unsigned conversion to guards if needed
-    let has_unsigned = m
-        .inputs
-        .iter()
-        .chain(m.internals.iter())
-        .any(|f| f.sce_type.is_unsigned());
-    let unsigned_conversions: Vec<(String, String)> = m
-        .inputs
-        .iter()
-        .chain(m.internals.iter())
-        .filter_map(|f| {
-            kotlin_unsigned_conversion(&f.sce_type).map(|cv| (f.id.clone(), cv.to_string()))
-        })
-        .collect();
-
-    let kt_cond_transform = |base: &str| -> String {
-        if has_unsigned && kotlin_condition_needs_conversion(base) {
-            kotlin_wrap_expr(base, &unsigned_conversions)
-        } else {
-            base.to_string()
-        }
-    };
     let non_final_states = build_l2_non_final_states(
         m,
         ExprTarget::Kotlin,
+        &l2_type_ctx,
         &rename_map,
         &common.event_name_map,
-        Some(&kt_cond_transform),
     );
 
     let states_with_assigns = build_l2_states_with_assigns(
         m,
         ExprTarget::Kotlin,
+        &l2_type_ctx,
         &assign_rename_map,
         &type_map,
         |loc| loc.to_string(),
@@ -4415,16 +4326,26 @@ fn render_procedure_l2_rust(
         })
         .collect();
 
+    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let l2_empty_renames = std::collections::HashMap::new();
+
     // Internal fields
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
         .map(|f| {
             let snake_id = filters::to_snake_case(f.id.clone());
+            let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = f
                 .expr
                 .as_ref()
-                .map(|e| expr::transpile(e, ExprTarget::Rust).unwrap_or_else(|_| e.clone()))
+                .map(|e| expr::transpile_typed(
+                    e,
+                    ExprTarget::Rust,
+                    &l2_type_ctx,
+                    &l2_empty_renames,
+                    expected,
+                ).unwrap_or_else(|_| e.clone()))
                 .unwrap_or_else(|| rust_default(&f.sce_type).to_string());
             serde_json::json!({
                 "id": snake_id,
@@ -4463,20 +4384,26 @@ fn render_procedure_l2_rust(
         .map(|(k, v)| (*k, v.as_str()))
         .collect();
 
-    let states_with_entry =
-        build_l2_states_with_entry(m, ExprTarget::Rust, &rename_map, Some(&payload_rename_map));
+    let states_with_entry = build_l2_states_with_entry(
+        m,
+        ExprTarget::Rust,
+        &l2_type_ctx,
+        &rename_map,
+        Some(&payload_rename_map),
+    );
     let final_states_with_donedata =
-        build_l2_final_states_with_donedata(m, ExprTarget::Rust, &rename_map);
+        build_l2_final_states_with_donedata(m, ExprTarget::Rust, &l2_type_ctx, &rename_map);
     let non_final_states = build_l2_non_final_states(
         m,
         ExprTarget::Rust,
+        &l2_type_ctx,
         &rename_map,
         &common.event_name_map,
-        None,
     );
     let states_with_assigns = build_l2_states_with_assigns(
         m,
         ExprTarget::Rust,
+        &l2_type_ctx,
         &assign_rename_map,
         &type_map,
         |loc| format!("self.{}", filters::to_snake_case(loc.to_string())),
@@ -4578,16 +4505,26 @@ fn render_procedure_l2_go(
         })
         .collect();
 
+    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let l2_empty_renames = std::collections::HashMap::new();
+
     // Internal fields
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
         .map(|f| {
             let go_id = go_escape_builtin(&f.id);
-            let default_val = f
-                .expr
-                .as_ref()
-                .map(|e| expr::transpile(e, ExprTarget::Go).unwrap_or_else(|_| e.clone()));
+            let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
+            let default_val = f.expr.as_ref().map(|e| {
+                expr::transpile_typed(
+                    e,
+                    ExprTarget::Go,
+                    &l2_type_ctx,
+                    &l2_empty_renames,
+                    expected,
+                )
+                .unwrap_or_else(|_| e.clone())
+            });
             serde_json::json!({
                 "id": go_id,
                 "go_type": go_type(&f.sce_type),
@@ -4598,19 +4535,21 @@ fn render_procedure_l2_go(
         .collect();
 
     let type_map = build_l2_type_map(m);
-    let states_with_entry = build_l2_states_with_entry(m, ExprTarget::Go, &rename_map, None);
+    let states_with_entry =
+        build_l2_states_with_entry(m, ExprTarget::Go, &l2_type_ctx, &rename_map, None);
     let final_states_with_donedata =
-        build_l2_final_states_with_donedata(m, ExprTarget::Go, &rename_map);
+        build_l2_final_states_with_donedata(m, ExprTarget::Go, &l2_type_ctx, &rename_map);
     let non_final_states = build_l2_non_final_states(
         m,
         ExprTarget::Go,
+        &l2_type_ctx,
         &rename_map,
         &common.event_name_map,
-        None,
     );
     let states_with_assigns = build_l2_states_with_assigns(
         m,
         ExprTarget::Go,
+        &l2_type_ctx,
         &assign_rename_map,
         &type_map,
         |loc| format!("p.{}", go_escape_builtin(loc)),
@@ -4705,16 +4644,26 @@ fn render_procedure_l2_python(
         })
         .collect();
 
+    let l2_type_ctx = crate::forge::type_ctx::procedure(m, imports);
+    let l2_empty_renames = std::collections::HashMap::new();
+
     // Internal fields
     let internal_fields: Vec<serde_json::Value> = m
         .internals
         .iter()
         .map(|f| {
             let snake_id = filters::to_snake_case(f.id.clone());
+            let expected = crate::forge::types::InferredType::from_sce_type(&f.sce_type);
             let default_val = f
                 .expr
                 .as_ref()
-                .map(|e| expr::transpile(e, ExprTarget::Python).unwrap_or_else(|_| e.clone()))
+                .map(|e| expr::transpile_typed(
+                    e,
+                    ExprTarget::Python,
+                    &l2_type_ctx,
+                    &l2_empty_renames,
+                    expected,
+                ).unwrap_or_else(|_| e.clone()))
                 .unwrap_or_else(|| python_default(&f.sce_type).to_string());
             serde_json::json!({
                 "snake_id": snake_id,
@@ -4725,19 +4674,21 @@ fn render_procedure_l2_python(
         .collect();
 
     let type_map = build_l2_type_map(m);
-    let states_with_entry = build_l2_states_with_entry(m, ExprTarget::Python, &rename_map, None);
+    let states_with_entry =
+        build_l2_states_with_entry(m, ExprTarget::Python, &l2_type_ctx, &rename_map, None);
     let final_states_with_donedata =
-        build_l2_final_states_with_donedata(m, ExprTarget::Python, &rename_map);
+        build_l2_final_states_with_donedata(m, ExprTarget::Python, &l2_type_ctx, &rename_map);
     let non_final_states = build_l2_non_final_states(
         m,
         ExprTarget::Python,
+        &l2_type_ctx,
         &rename_map,
         &common.event_name_map,
-        None,
     );
     let states_with_assigns = build_l2_states_with_assigns(
         m,
         ExprTarget::Python,
+        &l2_type_ctx,
         &assign_rename_map,
         &type_map,
         |loc| format!("self._{}", filters::to_snake_case(loc.to_string())),
@@ -4812,12 +4763,27 @@ fn render_single_inline_kind_member(kind: &InlineKind) -> Result<String, String>
 }
 
 /// Inline transform: const member function returning computed value from member variables.
+///
+/// Inline kinds are embedded in a statechart's `<data>` element and reference
+/// the enclosing statechart's member variables, whose types we do not have
+/// direct access to in this rendering path. We therefore build an empty
+/// TypeCtx and rely on C++'s implicit numeric conversions — the emitted
+/// `return` statement will be type-checked by the host compiler.
 fn render_inline_transform_member(
     id: &str,
     raw_expr: &str,
     output_type: &SceType,
 ) -> Result<String, String> {
-    let expr_cpp = expr::transpile(raw_expr, ExprTarget::Cpp)?;
+    let empty_ctx = crate::forge::type_ctx::empty();
+    let empty_renames = std::collections::HashMap::new();
+    let expected = crate::forge::types::InferredType::from_sce_type(output_type);
+    let expr_cpp = expr::transpile_typed(
+        raw_expr,
+        ExprTarget::Cpp,
+        &empty_ctx,
+        &empty_renames,
+        expected,
+    )?;
     let func_name = format!("compute{}", filters::to_pascal_case(id.to_string()));
     let ret_type = cpp_type(output_type);
 
@@ -4891,7 +4857,15 @@ fn render_inline_condition_member(
     id: &str,
     raw_expr: &str,
 ) -> Result<String, String> {
-    let expr_cpp = expr::transpile(raw_expr, ExprTarget::Cpp)?;
+    let empty_ctx = crate::forge::type_ctx::empty();
+    let empty_renames = std::collections::HashMap::new();
+    let expr_cpp = expr::transpile_typed(
+        raw_expr,
+        ExprTarget::Cpp,
+        &empty_ctx,
+        &empty_renames,
+        crate::forge::types::InferredType::Bool,
+    )?;
     let func_name = filters::to_camel_case(id.to_string());
 
     Ok(format!(
@@ -5209,12 +5183,28 @@ fn render_observer(
     let mut ctx = l.base_context(&m.name);
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
+    let obs_type_ctx = crate::forge::type_ctx::observer(m, imports);
+    let obs_empty_renames = std::collections::HashMap::new();
+
     let monitors: Vec<serde_json::Value> = m.monitors.iter().map(|mon| {
-        // Identifier snake_case-ing is applied at the expr emitter (see
-        // expr::emit_rust / emit_python), so plain transpile is enough.
-        let enter_expr = expr::transpile(&mon.enter_expr, l.expr_target()).unwrap_or_default();
-        let leave_expr = mon.leave_expr.as_ref()
-            .map(|e| expr::transpile(e, l.expr_target()).unwrap_or_default());
+        let enter_expr = expr::transpile_typed(
+            &mon.enter_expr,
+            l.expr_target(),
+            &obs_type_ctx,
+            &obs_empty_renames,
+            crate::forge::types::InferredType::Bool,
+        )
+        .unwrap_or_default();
+        let leave_expr = mon.leave_expr.as_ref().map(|e| {
+            expr::transpile_typed(
+                e,
+                l.expr_target(),
+                &obs_type_ctx,
+                &obs_empty_renames,
+                crate::forge::types::InferredType::Bool,
+            )
+            .unwrap_or_default()
+        });
 
         let active_var = match lang {
             crate::generator::Language::Cpp => format!("{}Active_", mon.id),
@@ -5289,30 +5279,3 @@ fn to_rust_variant(s: &str) -> String {
     }
 }
 
-/// Determine Rust cast type for integer-to-float promotion in transform expressions.
-/// Returns Some("f64") when an integer input feeds a float output.
-fn rust_float_cast(input_type: &SceType, output_type: &SceType) -> Option<&'static str> {
-    let input_is_int = matches!(
-        input_type,
-        SceType::Uint8
-            | SceType::Uint16
-            | SceType::Uint32
-            | SceType::Uint64
-            | SceType::Int8
-            | SceType::Int16
-            | SceType::Int32
-            | SceType::Int64
-    );
-    match (input_is_int, output_type) {
-        (true, SceType::Float64) => Some("f64"),
-        (true, SceType::Float32) => Some("f32"),
-        _ => None,
-    }
-}
-
-/// Check if any integer input needs a float cast for the given output type.
-fn rust_float_cast_needed(inputs: &[ForgeField], output_type: &SceType) -> Option<&'static str> {
-    inputs
-        .iter()
-        .find_map(|inp| rust_float_cast(&inp.sce_type, output_type))
-}

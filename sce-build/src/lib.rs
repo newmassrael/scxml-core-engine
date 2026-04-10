@@ -344,21 +344,128 @@ fn validate_and_enrich_imports(
             ));
         }
 
-        // 3. Stateless API enrichment (reuse already-read content)
-        if !ctx.is_stateful {
-            let stem = src_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("unknown");
+        // 3. API enrichment (reuse already-read content). We parse the
+        //    imported document once and extract both:
+        //      • the qualified function call for stateless kinds (existing
+        //        behavior), and
+        //      • type information (param/return types for stateless kinds,
+        //        member field types for stateful kinds) used by the typed
+        //        expression transpiler pipeline in `forge::type_ctx`.
+        let stem = src_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("unknown");
 
-            if let Some(doc) = forge::parser::parse_forge(&content, stem)? {
+        if let Some(doc) = forge::parser::parse_forge(&content, stem)? {
+            if !ctx.is_stateful {
                 if let Some(name) = discover_primary_function(&doc, language) {
                     ctx.qualified_call = build_qualified_call(&name, &ctx.namespace, language);
                 }
+                let (params, ret) = discover_stateless_signature(&doc);
+                ctx.param_types = params;
+                ctx.ret_type = ret;
+            } else {
+                ctx.member_field_types = discover_stateful_member_fields(&doc);
             }
         }
     }
     Ok(())
+}
+
+/// Extract parameter and return types for a stateless imported kind.
+///
+/// * Transform → parameters are `inputs`, return is the first `outputs` entry
+///   (transforms with multiple outputs cannot be represented as a single call
+///   return — the expression transpiler treats them as opaque in that case).
+/// * Condition → parameters are `inputs`, return is `Bool`.
+/// * Lookup → parameter is `input`, return is `output`.
+/// * Interpolation → parameters are opaque (vector-valued); returns `Float64`.
+fn discover_stateless_signature(
+    doc: &forge::model::ForgeDocument,
+) -> (Vec<forge::model::SceType>, Option<forge::model::SceType>) {
+    use forge::model::{ForgeDocument, SceType};
+    match doc {
+        ForgeDocument::Transform(m) => {
+            let params: Vec<SceType> = m.inputs.iter().map(|f| f.sce_type.clone()).collect();
+            let ret = if m.outputs.len() == 1 {
+                Some(m.outputs[0].sce_type.clone())
+            } else {
+                None
+            };
+            (params, ret)
+        }
+        ForgeDocument::Condition(m) => {
+            let params: Vec<SceType> = m.inputs.iter().map(|f| f.sce_type.clone()).collect();
+            (params, Some(SceType::Bool))
+        }
+        ForgeDocument::Lookup(m) => {
+            (vec![m.input.sce_type.clone()], Some(m.output.sce_type.clone()))
+        }
+        ForgeDocument::Interpolation(_) => {
+            // Interpolation takes a typed input (x, or x+y for 2D) and returns
+            // float64. Without opening up the Interpolation model further, we
+            // treat parameters as empty (opaque) and return Float64.
+            (Vec::new(), Some(SceType::Float64))
+        }
+        _ => (Vec::new(), None),
+    }
+}
+
+/// Extract the list of (field_name, type) pairs exposed to user expressions
+/// for a stateful imported kind.
+///
+/// The returned names must match the text a user would write in an expression
+/// like `alias_.field_name` or `alias.field_name`, which corresponds to the
+/// field IDs in the underlying kind's model.
+///
+/// * Codec → every field in `CodecModel.fields`.
+/// * Validator → `inputs` (validator exposes the validated input value as its
+///   primary field on the result; prev-values are internal).
+/// * Filter → `output` and `input`.
+/// * Observer → `inputs` and any exposed monitor state.
+/// * Procedure → `inputs` + `internals` (stateful state machine fields).
+/// * Timer → nothing (no user-visible fields in expressions).
+fn discover_stateful_member_fields(
+    doc: &forge::model::ForgeDocument,
+) -> Vec<(String, forge::model::SceType)> {
+    use forge::model::ForgeDocument;
+    let mut out = Vec::new();
+    match doc {
+        ForgeDocument::Codec(m) => {
+            for f in &m.fields {
+                out.push((f.id.clone(), f.sce_type.clone()));
+            }
+        }
+        ForgeDocument::Validator(m) => {
+            for f in &m.inputs {
+                out.push((f.id.clone(), f.sce_type.clone()));
+            }
+        }
+        ForgeDocument::Filter(m) => {
+            out.push((m.output.id.clone(), m.output.sce_type.clone()));
+            out.push((m.input.id.clone(), m.input.sce_type.clone()));
+        }
+        ForgeDocument::Observer(m) => {
+            for f in &m.inputs {
+                out.push((f.id.clone(), f.sce_type.clone()));
+            }
+        }
+        ForgeDocument::Procedure(m) => {
+            for f in &m.inputs {
+                out.push((f.id.clone(), f.sce_type.clone()));
+            }
+            for f in &m.internals {
+                out.push((f.id.clone(), f.sce_type.clone()));
+            }
+        }
+        ForgeDocument::Timer(_) => {}
+        // Stateless kinds handled via stateless_signature path.
+        ForgeDocument::Transform(_)
+        | ForgeDocument::Condition(_)
+        | ForgeDocument::Lookup(_)
+        | ForgeDocument::Interpolation(_) => {}
+    }
+    out
 }
 
 /// Discover the primary function name generated by a stateless forge document.
