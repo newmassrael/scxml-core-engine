@@ -7,10 +7,7 @@
   <datamodel>
     <data id="voltage" sce:type="float64" sce:direction="in"/>
     <data id="current" sce:type="float64" sce:direction="in"/>
-    <data id="valid" sce:type="bool" sce:direction="out"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="voltage * current &lt;= 1000.0"/>
   </datamodel>
-
-  <sce:rules>
-    <sce:plausibility expr="voltage * current &lt;= 1000.0"/>
-  </sce:rules>
 </scxml>

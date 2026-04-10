@@ -6,11 +6,9 @@
   <sce:import src="transform_temperature.scxml" kind="transform" as="tempConvert"/>
 
   <datamodel>
-    <data id="rawTemp" sce:type="uint16" sce:direction="in"/>
+    <data id="rawTemp" sce:type="uint16" sce:direction="in"
+          sce:range-min="0" sce:range-max="4095"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="tempConvert(rawTemp) &gt; -40 &amp;&amp; tempConvert(rawTemp) &lt; 200"/>
   </datamodel>
-
-  <sce:rules>
-    <sce:range id="rawTemp" min="0" max="4095"/>
-    <sce:plausibility expr="tempConvert(rawTemp) > -40 &amp;&amp; tempConvert(rawTemp) &lt; 200"/>
-  </sce:rules>
 </scxml>

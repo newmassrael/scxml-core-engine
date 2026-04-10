@@ -5,14 +5,11 @@
        sce:kind="validator"
        name="rpm_validator">
   <datamodel>
-    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="rpm" sce:type="uint16" sce:direction="in"
+          sce:range-min="0" sce:range-max="8000"
+          sce:max-delta="500" sce:sample-interval="100ms"/>
     <data id="engineState" sce:type="string" sce:direction="in"/>
-    <data id="valid" sce:type="bool" sce:direction="out"/>
+    <data id="valid" sce:type="bool" sce:direction="out"
+          sce:plausibility="rpm === 0 || engineState !== 'STOP'"/>
   </datamodel>
-
-  <sce:rules>
-    <sce:range id="rpm" min="0" max="8000"/>
-    <sce:rate-of-change id="rpm" max-delta="500" sce:sample-interval="100ms"/>
-    <sce:plausibility expr="rpm === 0 || engineState !== 'STOP'"/>
-  </sce:rules>
 </scxml>

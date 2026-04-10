@@ -315,13 +315,48 @@ fn parse_validator(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel,
         .ok_or("Validator kind requires a <datamodel> element")?;
 
     let mut inputs = Vec::new();
+    let mut ranges = Vec::new();
+    let mut rate_of_changes = Vec::new();
+    let mut plausibility: Option<String> = None;
 
     for data in data_children(&datamodel) {
         let field = parse_forge_field(&data)?;
         match field.direction {
-            Direction::In => inputs.push(field),
+            Direction::In => {
+                // Extract validator rules from sce: attributes on input <data> elements.
+                let has_range_min = sce_attr(&data, "range-min");
+                let has_range_max = sce_attr(&data, "range-max");
+                if has_range_min.is_some() || has_range_max.is_some() {
+                    ranges.push(RangeRule {
+                        id: field.id.clone(),
+                        min: has_range_min,
+                        max: has_range_max,
+                    });
+                }
+
+                if let Some(max_delta) = sce_attr(&data, "max-delta") {
+                    let sample_interval_str = sce_attr(&data, "sample-interval")
+                        .unwrap_or_else(|| "100ms".to_string());
+                    let sample_interval_ms = parse_time_interval(&sample_interval_str)?;
+                    rate_of_changes.push(RateOfChangeRule {
+                        id: field.id.clone(),
+                        max_delta,
+                        sample_interval_ms,
+                    });
+                }
+
+                inputs.push(field);
+            }
             Direction::Out => {
-                // Output field (bool valid) is implicit in the generated ValidationResult
+                // Extract sce:plausibility expression from output <data> element.
+                if let Some(expr) = sce_attr(&data, "plausibility") {
+                    if plausibility.is_some() {
+                        return Err(
+                            "Only one sce:plausibility attribute allowed".to_string(),
+                        );
+                    }
+                    plausibility = Some(expr);
+                }
             }
             Direction::Internal => {
                 return Err(format!(
@@ -336,74 +371,11 @@ fn parse_validator(root: &roxmltree::Node, name: &str) -> Result<ValidatorModel,
         return Err("Validator kind requires at least one input field".to_string());
     }
 
-    // Parse <sce:rules> element
-    let rules_elem = root
-        .children()
-        .find(|n| {
-            n.is_element()
-                && n.tag_name().name() == "rules"
-                && n.tag_name().namespace() == Some(SCE_NAMESPACE)
-        })
-        .ok_or("Validator kind requires a <sce:rules> element")?;
-
-    let mut ranges = Vec::new();
-    let mut rate_of_changes = Vec::new();
-    let mut plausibility: Option<String> = None;
-
-    for child in rules_elem.children().filter(|n| n.is_element()) {
-        if child.tag_name().namespace() != Some(SCE_NAMESPACE) {
-            continue;
-        }
-        match child.tag_name().name() {
-            "range" => {
-                ranges.push(parse_range_rule(&child)?);
-            }
-            "rate-of-change" => {
-                rate_of_changes.push(parse_rate_of_change_rule(&child)?);
-            }
-            "plausibility" => {
-                if plausibility.is_some() {
-                    return Err(
-                        "Only one <sce:plausibility> element allowed".to_string(),
-                    );
-                }
-                plausibility = Some(
-                    child
-                        .attribute("expr")
-                        .ok_or("<sce:plausibility> must have 'expr' attribute")?
-                        .to_string(),
-                );
-            }
-            _ => {}
-        }
-    }
-
     if ranges.is_empty() && rate_of_changes.is_empty() && plausibility.is_none() {
         return Err(
-            "Validator kind requires at least one rule (range, rate-of-change, or plausibility)"
+            "Validator kind requires at least one rule (sce:range-min/max, sce:max-delta, or sce:plausibility)"
                 .to_string(),
         );
-    }
-
-    // Validate that rule IDs reference existing input fields
-    let input_ids: Vec<&str> = inputs.iter().map(|f| f.id.as_str()).collect();
-    for r in &ranges {
-        if !input_ids.contains(&r.id.as_str()) {
-            return Err(format!(
-                "<sce:range id='{}'> does not match any input field (available: {})",
-                r.id,
-                input_ids.join(", ")
-            ));
-        }
-    }
-    for roc in &rate_of_changes {
-        if !input_ids.contains(&roc.id.as_str()) {
-            return Err(format!(
-                "<sce:rate-of-change id='{}'> does not match any input field (available: {})",
-                roc.id,
-                input_ids.join(", ")
-            ));
-        }
     }
 
     Ok(ValidatorModel {
@@ -675,47 +647,6 @@ fn parse_procedure_donedata(final_elem: &roxmltree::Node) -> Result<Vec<Procedur
         }
     }
     Ok(params)
-}
-
-fn parse_range_rule(node: &roxmltree::Node) -> Result<RangeRule, String> {
-    let id = node
-        .attribute("id")
-        .ok_or("<sce:range> must have 'id' attribute")?
-        .to_string();
-
-    let min = node.attribute("min").map(|s| s.to_string());
-    let max = node.attribute("max").map(|s| s.to_string());
-
-    if min.is_none() && max.is_none() {
-        return Err(format!(
-            "<sce:range id='{id}'> must have at least 'min' or 'max' attribute"
-        ));
-    }
-
-    Ok(RangeRule { id, min, max })
-}
-
-fn parse_rate_of_change_rule(node: &roxmltree::Node) -> Result<RateOfChangeRule, String> {
-    let id = node
-        .attribute("id")
-        .ok_or("<sce:rate-of-change> must have 'id' attribute")?
-        .to_string();
-
-    let max_delta = node
-        .attribute("max-delta")
-        .ok_or("<sce:rate-of-change> must have 'max-delta' attribute")?
-        .to_string();
-
-    let sample_interval_str = sce_attr(node, "sample-interval")
-        .unwrap_or_else(|| "100ms".to_string());
-
-    let sample_interval_ms = parse_time_interval(&sample_interval_str)?;
-
-    Ok(RateOfChangeRule {
-        id,
-        max_delta,
-        sample_interval_ms,
-    })
 }
 
 /// Parse time interval like "100ms" or "1s" into milliseconds.

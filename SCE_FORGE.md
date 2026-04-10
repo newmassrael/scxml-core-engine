@@ -653,6 +653,8 @@ The state machine class is the canonical output. The wrapper is a thin convenien
 
 Byte-level encode/decode. Bit position, size, endianness.
 
+**Element syntax rule**: Standalone codec (document-level `sce:kind="codec"`) defines fields as `<data>` elements with `sce:byte`/`sce:bit-size` attributes. Inline codec (within a statechart's `<datamodel>`) defines fields as `<sce:field>` child elements under the parent `<data>` element. This distinction is mandatory — using `<sce:field>` in standalone or `<data>` in inline is an error.
+
 **Endianness**: default is `big` (automotive CAN/UDS convention). Override per-field with `sce:endian="little"` or per-document with `sce:default-endian="little"` on the `<scxml>` root.
 
 **`sce:bit-size` values**: a fixed integer (`8`, `16`, `24`, `32`, `64`) or one of:
@@ -735,6 +737,8 @@ struct DtcResponse {
 
 Range check, rate-of-change detection, plausibility verification. Validator has minimal internal state (previous values for rate-of-change).
 
+**Kind boundary**: condition produces a single boolean with no explanation. Validator produces a result with a failure reason, supports multiple rule types (range, rate-of-change, plausibility), and may hold state for rate-of-change tracking. Use `condition` for simple guards; use `validator` when the caller needs to know *why* validation failed.
+
 Validation rules are expressed as `sce:` attributes on `<data>` elements — each rule is co-located with the field it validates:
 
 ```xml
@@ -750,12 +754,10 @@ Validation rules are expressed as `sce:` attributes on `<data>` elements — eac
 </scxml>
 ```
 
-- `sce:range-min`, `sce:range-max` — bounds check on the input field
+- `sce:range-min`, `sce:range-max` — bounds check on the input field. Either or both may be omitted (open-ended range).
 - `sce:max-delta` — rate-of-change threshold per call
 - `sce:sample-interval` — documents expected call frequency (codegen does not time-scale)
-- `sce:plausibility` — cross-field boolean expression on the output field
-
-> **Migration note**: The current implementation uses the legacy `<sce:rules>` custom element syntax (see tests). The `<data>` attribute syntax above is the target format; parser support will be added alongside `<sce:rules>` deprecation in a future release.
+- `sce:plausibility` — cross-field boolean expression on the output `<data>` element
 
 **Codegen** (C++):
 ```cpp
