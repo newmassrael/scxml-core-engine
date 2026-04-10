@@ -1,6 +1,12 @@
 # SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation")
 # Do not edit — regenerate from the source SCXML file.
 
+{% if is_bilinear %}
+from sce_forge_runtime.interpolation import bilinear
+{% else %}
+from sce_forge_runtime.interpolation import linear
+{% endif %}
+
 {% for axis in axes %}
 {{ axis.var_name }} = [{% for bp in axis.breakpoints %}{{ bp }}{% if not loop.last %}, {% endif %}{% endfor %}]
 {% endfor %}
@@ -17,63 +23,11 @@ VALUES = [{% for v in values %}{{ v }}{% if not loop.last %}, {% endif %}{% endf
 
 def lookup({{ params }}) -> {{ output_type }}:
 {% if is_bilinear %}
-    return _bilinear_interpolate(
+    return bilinear(
         {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,
         float({{ axes[0].input_id }}), float({{ axes[1].input_id }}))
 {% else %}
-    return _linear_interpolate(
+    return linear(
         {{ axes[0].var_name }}, VALUES,
         float({{ axes[0].input_id }}))
-{% endif %}
-
-
-def _linear_interpolate(axis: list[float], values: list[float], x: float) -> float:
-    n = len(axis)
-{% if out_of_bounds == "clamp" %}
-    if x <= axis[0]:
-        return values[0]
-    if x >= axis[n - 1]:
-        return values[n - 1]
-{% elif out_of_bounds == "error" %}
-    if x < axis[0] or x > axis[n - 1]:
-        return 0.0
-{% endif %}
-    for i in range(n - 1):
-        if x <= axis[i + 1]:
-            t = (x - axis[i]) / (axis[i + 1] - axis[i])
-            return values[i] + t * (values[i + 1] - values[i])
-    return values[n - 1]
-{% if is_bilinear %}
-
-
-def _bilinear_interpolate(
-        axis_x: list[float], axis_y: list[float],
-        table: list[list[float]],
-        x_in: float, y_in: float) -> float:
-{% if out_of_bounds == "clamp" %}
-    x = max(axis_x[0], min(x_in, axis_x[-1]))
-    y = max(axis_y[0], min(y_in, axis_y[-1]))
-{% elif out_of_bounds == "error" %}
-    if x_in < axis_x[0] or x_in > axis_x[-1]:
-        return 0.0
-    if y_in < axis_y[0] or y_in > axis_y[-1]:
-        return 0.0
-    x, y = x_in, y_in
-{% else %}
-    x, y = x_in, y_in
-{% endif %}
-    ix, iy = 0, 0
-    for i in range(len(axis_x) - 1):
-        ix = i
-        if x <= axis_x[i + 1]:
-            break
-    for i in range(len(axis_y) - 1):
-        iy = i
-        if y <= axis_y[i + 1]:
-            break
-    tx = (x - axis_x[ix]) / (axis_x[ix + 1] - axis_x[ix])
-    ty = (y - axis_y[iy]) / (axis_y[iy + 1] - axis_y[iy])
-    a = table[ix][iy] + tx * (table[ix + 1][iy] - table[ix][iy])
-    b = table[ix][iy + 1] + tx * (table[ix + 1][iy + 1] - table[ix][iy + 1])
-    return a + ty * (b - a)
 {% endif %}

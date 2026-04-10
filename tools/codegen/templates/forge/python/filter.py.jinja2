@@ -2,69 +2,26 @@
 # Do not edit — regenerate from the source SCXML file.
 
 {% if filter_type == "moving_average" %}
-class {{ struct_name }}:
-    def __init__(self) -> None:
-        self._buffer: list[{{ output_type }}] = [0.0] * {{ window }}
-        self._index: int = 0
-        self._filled: bool = False
-
-    def update(self, {{ input_id }}: {{ input_type }}) -> {{ output_type }}:
-        self._buffer[self._index] = {{ output_type }}({{ input_id }})
-        self._index = (self._index + 1) % {{ window }}
-        if not self._filled and self._index == 0:
-            self._filled = True
-        count = {{ window }} if self._filled else self._index
-        return sum(self._buffer[:count]) / count
-
-    def reset(self) -> None:
-        self._buffer = [0.0] * {{ window }}
-        self._index = 0
-        self._filled = False
+from sce_forge_runtime.filter import MovingAverage
 {% elif filter_type == "low_pass" %}
-class {{ struct_name }}:
-    def __init__(self) -> None:
-        self._prev: {{ output_type }} = 0.0
-        self._initialized: bool = False
-
-    def update(self, {{ input_id }}: {{ input_type }}) -> {{ output_type }}:
-        if not self._initialized:
-            self._prev = {{ output_type }}({{ input_id }})
-            self._initialized = True
-            return self._prev
-        self._prev = {{ alpha }} * {{ output_type }}({{ input_id }}) + (1.0 - {{ alpha }}) * self._prev
-        return self._prev
-
-    def reset(self) -> None:
-        self._prev = 0.0
-        self._initialized = False
+from sce_forge_runtime.filter import LowPass
 {% elif filter_type == "debounce" %}
+from sce_forge_runtime.filter import Debounce
+{% endif %}
+
+
 class {{ struct_name }}:
     def __init__(self) -> None:
-        self._stable_value: {{ output_type }} = {{ output_type }}()
-        self._candidate: {{ output_type }} = {{ output_type }}()
-        self._count: int = 0
-        self._initialized: bool = False
+{% if filter_type == "moving_average" %}
+        self._impl = MovingAverage(window={{ window }})
+{% elif filter_type == "low_pass" %}
+        self._impl = LowPass(alpha={{ alpha }})
+{% elif filter_type == "debounce" %}
+        self._impl = Debounce(window={{ window }})
+{% endif %}
 
     def update(self, {{ input_id }}: {{ input_type }}) -> {{ output_type }}:
-        value = {{ input_id }}
-        if not self._initialized:
-            self._stable_value = value
-            self._candidate = value
-            self._count = 1
-            self._initialized = True
-            return self._stable_value
-        if value == self._candidate:
-            self._count += 1
-            if self._count >= {{ window }}:
-                self._stable_value = self._candidate
-        else:
-            self._candidate = value
-            self._count = 1
-        return self._stable_value
+        return self._impl.update({{ output_type }}({{ input_id }}))
 
     def reset(self) -> None:
-        self._stable_value = {{ output_type }}()
-        self._candidate = {{ output_type }}()
-        self._count = 0
-        self._initialized = False
-{% endif %}
+        self._impl.reset()

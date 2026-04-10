@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sce-forge-runtime"
+version = "0.1.0"
+description = "Algorithm and HAL library for SCE Forge generated Python code (filter, interpolation, timer, observer kinds). See SCE_FORGE.md Section 2.1."
+license = { text = "LGPL-2.1-or-later OR LicenseRef-SCE-Commercial" }
+authors = [{ name = "newmassrael", email = "newmassrael@gmail.com" }]
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["sce_forge_runtime*"]
