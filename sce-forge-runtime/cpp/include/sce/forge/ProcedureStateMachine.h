@@ -18,7 +18,7 @@
 
 #include <string>
 
-namespace SCE::Core {
+namespace SCE::Forge {
 
 /// Result of a procedure execution via runToCompletion().
 struct ProcedureResult {
@@ -64,4 +64,4 @@ public:
     }
 };
 
-}  // namespace SCE::Core
+}  // namespace SCE::Forge

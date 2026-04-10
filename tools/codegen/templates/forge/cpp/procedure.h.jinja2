@@ -7,7 +7,7 @@
 
 #include <cstdint>
 #include <string>
-#include "core/ProcedureStateMachine.h"
+#include "sce/forge/ProcedureStateMachine.h"
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -16,7 +16,7 @@
 
 namespace SCE::Generated::{{ namespace }} {
 
-struct {{ struct_name }} : public SCE::Core::ProcedureStateMachine<{{ struct_name }}> {
+struct {{ struct_name }} : public SCE::Forge::ProcedureStateMachine<{{ struct_name }}> {
     enum State : int {
 {% for s in state_enum %}
         {{ s.name }} = {{ s.index }},

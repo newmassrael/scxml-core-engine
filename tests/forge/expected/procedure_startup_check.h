@@ -7,11 +7,11 @@
 
 #include <cstdint>
 #include <string>
-#include "core/ProcedureStateMachine.h"
+#include "sce/forge/ProcedureStateMachine.h"
 
 namespace SCE::Generated::ProcedureStartupCheck {
 
-struct ProcedureStartupCheck : public SCE::Core::ProcedureStateMachine<ProcedureStartupCheck> {
+struct ProcedureStartupCheck : public SCE::Forge::ProcedureStateMachine<ProcedureStartupCheck> {
     enum State : int {
         CHECK_VOLTAGE = 0,
         CHECK_TEMP = 1,

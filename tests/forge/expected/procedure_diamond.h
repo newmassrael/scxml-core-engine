@@ -7,11 +7,11 @@
 
 #include <cstdint>
 #include <string>
-#include "core/ProcedureStateMachine.h"
+#include "sce/forge/ProcedureStateMachine.h"
 
 namespace SCE::Generated::ProcedureDiamond {
 
-struct ProcedureDiamond : public SCE::Core::ProcedureStateMachine<ProcedureDiamond> {
+struct ProcedureDiamond : public SCE::Forge::ProcedureStateMachine<ProcedureDiamond> {
     enum State : int {
         CLASSIFY = 0,
         HIGH_PATH = 1,

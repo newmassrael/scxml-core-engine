@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 #include "static/StaticExecutionEngine.h"
-#include "core/ProcedureServiceTypes.h"
+#include "sce/forge/ProcedureServiceTypes.h"
 
 namespace SCE::Generated::ProcedureSecurityAccess {
 
@@ -55,7 +55,7 @@ struct ProcedureSecurityAccessPolicy {
     int32_t retryCount_ = 0;
 
     // ── Service handler (for <send sce:service>) ─────────────────
-    SCE::Core::ProcedureServiceHandler serviceHandler_;
+    SCE::Forge::ProcedureServiceHandler serviceHandler_;
 
     // ── Done data storage ────────────────────────────────────────
     mutable std::map<std::string, std::string> doneData_;
@@ -127,7 +127,7 @@ struct ProcedureSecurityAccessPolicy {
             case State::SendTesterPresent: {
                 // <send sce:service="TesterPresent" sce:addr="...">
                 if (serviceHandler_) {
-                    SCE::Core::ProcedureServiceRequest req;
+                    SCE::Forge::ProcedureServiceRequest req;
                     req.service = "TesterPresent";
                     req.params.push_back({"addr", std::to_string(ecuAddr_)});
                     auto resp = serviceHandler_(req);
@@ -139,7 +139,7 @@ struct ProcedureSecurityAccessPolicy {
             case State::RequestSeed: {
                 // <send sce:service="SecurityAccess" sce:subfunc="0x01">
                 if (serviceHandler_) {
-                    SCE::Core::ProcedureServiceRequest req;
+                    SCE::Forge::ProcedureServiceRequest req;
                     req.service = "SecurityAccess";
                     req.subfunc = "0x01";
                     auto resp = serviceHandler_(req);
@@ -151,7 +151,7 @@ struct ProcedureSecurityAccessPolicy {
             case State::SendKey: {
                 // <send sce:service="SecurityAccess" sce:subfunc="0x02">
                 if (serviceHandler_) {
-                    SCE::Core::ProcedureServiceRequest req;
+                    SCE::Forge::ProcedureServiceRequest req;
                     req.service = "SecurityAccess";
                     req.subfunc = "0x02";
                     req.params.push_back({"payload", computeKey(seed_)});
@@ -320,12 +320,12 @@ struct ProcedureSecurityAccessPolicy {
 class ProcedureSecurityAccess : public ::SCE::Static::StaticExecutionEngine<ProcedureSecurityAccessPolicy> {
 public:
     using PolicyType = ProcedureSecurityAccessPolicy;
-    using Result = SCE::Core::ProcedureRunResult;
+    using Result = SCE::Forge::ProcedureRunResult;
 
     ProcedureSecurityAccess() = default;
 
     /// Set the service handler for <send sce:service> actions.
-    void setServiceHandler(SCE::Core::ProcedureServiceHandler handler) {
+    void setServiceHandler(SCE::Forge::ProcedureServiceHandler handler) {
         getPolicy().serviceHandler_ = std::move(handler);
     }
 
@@ -357,7 +357,7 @@ public:
 // ── Convenience wrapper function ─────────────────────────────────
 
 inline ProcedureSecurityAccess::Result executeProcedureSecurityAccess(
-    SCE::Core::ProcedureServiceHandler handler,
+    SCE::Forge::ProcedureServiceHandler handler,
     uint32_t ecuAddr) {
     ProcedureSecurityAccess sm;
     sm.setServiceHandler(std::move(handler));

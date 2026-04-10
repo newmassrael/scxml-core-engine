@@ -7,11 +7,11 @@
 
 #include <cstdint>
 #include <string>
-#include "core/ProcedureStateMachine.h"
+#include "sce/forge/ProcedureStateMachine.h"
 
 namespace SCE::Generated::ProcedureLinear {
 
-struct ProcedureLinear : public SCE::Core::ProcedureStateMachine<ProcedureLinear> {
+struct ProcedureLinear : public SCE::Forge::ProcedureStateMachine<ProcedureLinear> {
     enum State : int {
         STAGE_A = 0,
         STAGE_B = 1,

@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 #include "static/StaticExecutionEngine.h"
-#include "core/ProcedureServiceTypes.h"
+#include "sce/forge/ProcedureServiceTypes.h"
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -73,7 +73,7 @@ struct {{ policy_name }} {
 {% endif %}
 
     // ── Service handler (for <send sce:service>) ─────────────────
-    SCE::Core::ProcedureServiceHandler serviceHandler_;
+    SCE::Forge::ProcedureServiceHandler serviceHandler_;
 
     // ── Done data storage ────────────────────────────────────────
     mutable std::map<std::string, std::string> doneData_;
@@ -150,7 +150,7 @@ struct {{ policy_name }} {
 {% for send in s.sends %}
                 // <send sce:service="{{ send.service }}"{{ ' sce:subfunc="' ~ send.subfunc ~ '"' if send.subfunc }}{{ ' sce:addr="..."' if send.has_addr }}>
                 if (serviceHandler_) {
-                    SCE::Core::ProcedureServiceRequest req;
+                    SCE::Forge::ProcedureServiceRequest req;
                     req.service = "{{ send.service }}";
 {% if send.subfunc %}
                     req.subfunc = "{{ send.subfunc }}";
@@ -283,12 +283,12 @@ struct {{ policy_name }} {
 class {{ class_name }} : public ::SCE::Static::StaticExecutionEngine<{{ policy_name }}> {
 public:
     using PolicyType = {{ policy_name }};
-    using Result = SCE::Core::ProcedureRunResult;
+    using Result = SCE::Forge::ProcedureRunResult;
 
     {{ class_name }}() = default;
 
     /// Set the service handler for <send sce:service> actions.
-    void setServiceHandler(SCE::Core::ProcedureServiceHandler handler) {
+    void setServiceHandler(SCE::Forge::ProcedureServiceHandler handler) {
         getPolicy().serviceHandler_ = std::move(handler);
     }
 
@@ -323,7 +323,7 @@ public:
 // ── Convenience wrapper function ─────────────────────────────────
 
 inline {{ class_name }}::Result execute{{ pascal_name }}(
-    SCE::Core::ProcedureServiceHandler handler{% for f in input_fields %},
+    SCE::Forge::ProcedureServiceHandler handler{% for f in input_fields %},
     {{ f.cpp_param_type }} {{ f.id }}{% endfor %}) {
     {{ class_name }} sm;
     sm.setServiceHandler(std::move(handler));

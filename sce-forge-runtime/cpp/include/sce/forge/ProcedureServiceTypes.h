@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-namespace SCE::Core {
+namespace SCE::Forge {
 
 /// Service request dispatched by procedure <send sce:service> actions.
 /// SCE_FORGE.md Section 4.5: sce:service and sce:subfunc are codegen hints
@@ -70,4 +70,4 @@ struct ProcedureRunResult {
     std::map<std::string, std::string> done_data;
 };
 
-}  // namespace SCE::Core
+}  // namespace SCE::Forge

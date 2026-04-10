@@ -18,7 +18,7 @@
 #include <string>
 #include <vector>
 #include "static/StaticExecutionEngine.h"
-#include "core/ProcedureServiceTypes.h"
+#include "sce/forge/ProcedureServiceTypes.h"
 #include "codec_simple_frame.h"
 
 namespace SCE::Generated::CrossfileProcedureCodec {
@@ -55,7 +55,7 @@ struct CrossfileProcedureCodecPolicy {
     ::SCE::Generated::CodecSimpleFrame::CodecSimpleFrame frame_{};
 
     // ── Service handler (for <send sce:service>) ─────────────────
-    SCE::Core::ProcedureServiceHandler serviceHandler_;
+    SCE::Forge::ProcedureServiceHandler serviceHandler_;
 
     // ── Done data storage ────────────────────────────────────────
     mutable std::map<std::string, std::string> doneData_;
@@ -127,7 +127,7 @@ struct CrossfileProcedureCodecPolicy {
             case State::SendRequest: {
                 // <send sce:service="Diag" sce:addr="...">
                 if (serviceHandler_) {
-                    SCE::Core::ProcedureServiceRequest req;
+                    SCE::Forge::ProcedureServiceRequest req;
                     req.service = "Diag";
                     req.params.push_back({"addr", std::to_string(ecuAddr_)});
                     req.params.push_back({"payload", frame_.encode()});
@@ -228,12 +228,12 @@ struct CrossfileProcedureCodecPolicy {
 class CrossfileProcedureCodec : public ::SCE::Static::StaticExecutionEngine<CrossfileProcedureCodecPolicy> {
 public:
     using PolicyType = CrossfileProcedureCodecPolicy;
-    using Result = SCE::Core::ProcedureRunResult;
+    using Result = SCE::Forge::ProcedureRunResult;
 
     CrossfileProcedureCodec() = default;
 
     /// Set the service handler for <send sce:service> actions.
-    void setServiceHandler(SCE::Core::ProcedureServiceHandler handler) {
+    void setServiceHandler(SCE::Forge::ProcedureServiceHandler handler) {
         getPolicy().serviceHandler_ = std::move(handler);
     }
 
@@ -265,7 +265,7 @@ public:
 // ── Convenience wrapper function ─────────────────────────────────
 
 inline CrossfileProcedureCodec::Result executeCrossfileProcedureCodec(
-    SCE::Core::ProcedureServiceHandler handler,
+    SCE::Forge::ProcedureServiceHandler handler,
     uint32_t ecuAddr) {
     CrossfileProcedureCodec sm;
     sm.setServiceHandler(std::move(handler));
