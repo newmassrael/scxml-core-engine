@@ -1,0 +1,8 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="filter">
+  <datamodel>
+    <data id="rawSignal" sce:type="float64" sce:direction="in"/>
+    <data id="smoothed" sce:type="float64" sce:direction="out"
+          sce:filter="low-pass" sce:alpha="0.1"/>
+  </datamodel>
+</scxml>

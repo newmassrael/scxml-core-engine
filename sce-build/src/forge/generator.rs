@@ -389,6 +389,10 @@ pub fn generate_cpp_with_imports(
                 render_procedure_cpp(&env, m, imports)?
             }
         }
+        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Cpp)?,
+        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Cpp)?,
     };
 
     let filename = format!("{}.h", filters::to_snake_case(doc.name().to_string()));
@@ -906,6 +910,10 @@ pub fn generate_kotlin_with_imports(
                 render_procedure_kotlin(&env, m, imports)?
             }
         }
+        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Kotlin)?,
+        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Kotlin)?,
     };
 
     let filename = format!("{}.kt", filters::to_pascal_case(doc.name().to_string()));
@@ -1429,6 +1437,10 @@ pub fn generate_rust_with_imports(
                 render_procedure_rust(&env, m, imports)?
             }
         }
+        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Rust)?,
+        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Rust)?,
     };
 
     let filename = format!("{}.rs", filters::to_snake_case(doc.name().to_string()));
@@ -1978,6 +1990,10 @@ pub fn generate_go_with_imports(
                 render_procedure_go(&env, m, imports)?
             }
         }
+        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Go)?,
+        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Go)?,
     };
 
     let filename = format!("{}.go", filters::to_snake_case(doc.name().to_string()));
@@ -2532,6 +2548,10 @@ pub fn generate_python_with_imports(
                 render_procedure_python(&env, m, imports)?
             }
         }
+        ForgeDocument::Filter(m) => render_filter(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Interpolation(m) => render_interpolation(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Timer(m) => render_timer(&env, m, imports, crate::generator::Language::Python)?,
+        ForgeDocument::Observer(m) => render_observer(&env, m, imports, crate::generator::Language::Python)?,
     };
 
     let filename = format!("{}.py", filters::to_snake_case(doc.name().to_string()));
@@ -4936,6 +4956,276 @@ fn render_inline_codec_member(
     code.push_str("    };");
 
     Ok(code)
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Phase 3: unified render functions (language-parameterized) ──
+// ══════════════════════════════════════════════════════════════
+
+/// Language-specific helpers for Phase 3 kind rendering.
+/// Eliminates per-language duplication across filter/interpolation/timer/observer.
+struct Phase3Lang {
+    lang: crate::generator::Language,
+}
+
+impl Phase3Lang {
+    fn new(lang: crate::generator::Language) -> Self {
+        Self { lang }
+    }
+
+    fn type_name(&self, ty: &SceType) -> &'static str {
+        match self.lang {
+            crate::generator::Language::Cpp => cpp_type(ty),
+            crate::generator::Language::Kotlin => kotlin_type(ty),
+            crate::generator::Language::Rust => rust_type(ty),
+            crate::generator::Language::Go => go_type(ty),
+            crate::generator::Language::Python => python_type(ty),
+        }
+    }
+
+    fn param_str(&self, fields: &[ForgeField]) -> String {
+        fields.iter()
+            .map(|f| {
+                let id = match self.lang {
+                    crate::generator::Language::Rust | crate::generator::Language::Python =>
+                        filters::to_snake_case(f.id.clone()),
+                    _ => f.id.clone(),
+                };
+                match self.lang {
+                    crate::generator::Language::Cpp => format!("{} {}", cpp_param_type(&f.sce_type), id),
+                    crate::generator::Language::Kotlin => format!("{}: {}", id, kotlin_type(&f.sce_type)),
+                    crate::generator::Language::Rust => format!("{}: {}", id, rust_type(&f.sce_type)),
+                    crate::generator::Language::Go => format!("{} {}", id, go_type(&f.sce_type)),
+                    crate::generator::Language::Python => format!("{}: {}", id, python_type(&f.sce_type)),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    fn template_ext(&self) -> &'static str {
+        match self.lang {
+            crate::generator::Language::Cpp => "h",
+            crate::generator::Language::Kotlin => "kt",
+            crate::generator::Language::Rust => "rs",
+            crate::generator::Language::Go => "go",
+            crate::generator::Language::Python => "py",
+        }
+    }
+
+    fn expr_target(&self) -> ExprTarget {
+        match self.lang {
+            crate::generator::Language::Cpp => ExprTarget::Cpp,
+            crate::generator::Language::Kotlin => ExprTarget::Kotlin,
+            crate::generator::Language::Rust => ExprTarget::Rust,
+            crate::generator::Language::Go => ExprTarget::Go,
+            crate::generator::Language::Python => ExprTarget::Python,
+        }
+    }
+
+    /// Base context fields common to all Phase 3 kinds.
+    fn base_context(&self, name: &str) -> serde_json::Map<String, serde_json::Value> {
+        let mut m = serde_json::Map::new();
+        let struct_name = filters::to_pascal_case(name.to_string());
+        m.insert("struct_name".into(), struct_name.clone().into());
+        match self.lang {
+            crate::generator::Language::Cpp => {
+                m.insert("guard".into(), format!("SCE_FORGE_{}_H", to_upper_snake(name)).into());
+                m.insert("namespace".into(), struct_name.into());
+            }
+            crate::generator::Language::Go => {
+                m.insert("package_name".into(), filters::to_snake_case(name.to_string()).into());
+            }
+            _ => {}
+        }
+        m
+    }
+
+    /// Event name formatting per language convention.
+    fn event_name(&self, s: &str) -> String {
+        match self.lang {
+            crate::generator::Language::Go => filters::to_pascal_case(s.to_string()),
+            _ => to_upper_snake(s),
+        }
+    }
+}
+
+fn render_phase3(
+    env: &minijinja::Environment,
+    template_name: &str,
+    ctx: serde_json::Map<String, serde_json::Value>,
+) -> Result<String, String> {
+    let tmpl = env
+        .get_template(template_name)
+        .map_err(|e| format!("Template load error: {e}"))?;
+    let value = minijinja::Value::from_serialize(&ctx);
+    tmpl.render(value).map_err(generator::render_error)
+}
+
+// ── Filter (unified) ──────────────────────────────────────────
+
+fn render_filter(
+    env: &minijinja::Environment,
+    m: &FilterModel,
+    imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, String> {
+    let l = Phase3Lang::new(lang);
+    let mut ctx = l.base_context(&m.name);
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
+    ctx.insert("filter_type".into(), m.filter_type.as_str().into());
+    ctx.insert("input_id".into(), m.input.id.clone().into());
+    ctx.insert("input_type".into(), l.type_name(&m.input.sce_type).into());
+    ctx.insert("output_type".into(), l.type_name(&m.output.sce_type).into());
+    ctx.insert("window".into(), serde_json::json!(m.window));
+    ctx.insert("alpha".into(), serde_json::json!(m.alpha));
+    ctx.insert("has_imports".into(), has_imports.into());
+    ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
+    ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+
+    render_phase3(env, &format!("filter.{}.jinja2", l.template_ext()), ctx)
+}
+
+// ── Interpolation (unified) ───────────────────────────────────
+
+fn render_interpolation(
+    env: &minijinja::Environment,
+    m: &InterpolationModel,
+    imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, String> {
+    let l = Phase3Lang::new(lang);
+    let mut ctx = l.base_context(&m.name);
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
+    let axes: Vec<serde_json::Value> = m.axes.iter().map(|a| {
+        let var_name = match lang {
+            crate::generator::Language::Go =>
+                format!("axis{}", filters::to_pascal_case(a.input_id.clone())),
+            _ => format!("AXIS_{}", a.input_id.to_uppercase()),
+        };
+        serde_json::json!({
+            "input_id": a.input_id,
+            "var_name": var_name,
+            "breakpoints": a.breakpoints,
+            "size": a.breakpoints.len(),
+        })
+    }).collect();
+
+    let is_bilinear = m.method == InterpolationMethod::Bilinear;
+    let rows = m.axes[0].breakpoints.len();
+    let cols = if is_bilinear { m.axes[1].breakpoints.len() } else { 0 };
+
+    ctx.insert("is_bilinear".into(), is_bilinear.into());
+    ctx.insert("axes".into(), serde_json::json!(axes));
+    ctx.insert("values".into(), serde_json::json!(m.values));
+    ctx.insert("rows".into(), rows.into());
+    ctx.insert("cols".into(), cols.into());
+    ctx.insert("output_type".into(), l.type_name(&m.output.sce_type).into());
+    ctx.insert("params".into(), l.param_str(&m.inputs).into());
+    ctx.insert("out_of_bounds".into(), m.out_of_bounds.as_str().into());
+    ctx.insert("has_imports".into(), has_imports.into());
+    ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
+    ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+
+    render_phase3(env, &format!("interpolation.{}.jinja2", l.template_ext()), ctx)
+}
+
+// ── Timer (unified) ───────────────────────────────────────────
+
+fn render_timer(
+    env: &minijinja::Environment,
+    m: &TimerModel,
+    imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, String> {
+    let l = Phase3Lang::new(lang);
+    let mut ctx = l.base_context(&m.name);
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
+    let timers: Vec<serde_json::Value> = m.timers.iter().map(|t| {
+        let callback = t.event.as_deref()
+            .or(t.on_timeout.as_deref())
+            .unwrap_or(&t.id);
+        serde_json::json!({
+            "id": t.id,
+            "id_pascal": filters::to_pascal_case(t.id.clone()),
+            "id_snake": filters::to_snake_case(t.id.clone()),
+            "timer_type": t.timer_type.as_str(),
+            "time_ms": t.time_ms,
+            "event": t.event,
+            "on_timeout": t.on_timeout,
+            "callback": callback,
+            "callback_pascal": filters::to_pascal_case(callback.to_string()),
+            "callback_snake": filters::to_snake_case(callback.to_string()),
+            "is_periodic": t.timer_type == TimerType::Periodic,
+        })
+    }).collect();
+
+    ctx.insert("timers".into(), serde_json::json!(timers));
+    ctx.insert("has_imports".into(), has_imports.into());
+    ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
+    ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+
+    render_phase3(env, &format!("timer.{}.jinja2", l.template_ext()), ctx)
+}
+
+// ── Observer (unified) ────────────────────────────────────────
+
+fn render_observer(
+    env: &minijinja::Environment,
+    m: &ObserverModel,
+    imports: &[ImportContext],
+    lang: crate::generator::Language,
+) -> Result<String, String> {
+    let l = Phase3Lang::new(lang);
+    let mut ctx = l.base_context(&m.name);
+    let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
+
+    let monitors: Vec<serde_json::Value> = m.monitors.iter().map(|mon| {
+        let enter_expr = expr::transpile(&mon.enter_expr, l.expr_target()).unwrap_or_default();
+        let leave_expr = mon.leave_expr.as_ref()
+            .map(|e| expr::transpile(e, l.expr_target()).unwrap_or_default());
+
+        let active_var = match lang {
+            crate::generator::Language::Cpp => format!("{}Active_", mon.id),
+            crate::generator::Language::Kotlin => format!("{}Active", mon.id),
+            crate::generator::Language::Go => format!("{}Active", mon.id),
+            crate::generator::Language::Rust | crate::generator::Language::Python =>
+                format!("{}_active", filters::to_snake_case(mon.id.clone())),
+        };
+
+        serde_json::json!({
+            "id": mon.id,
+            "active_var": active_var,
+            "enter_expr": enter_expr,
+            "leave_expr": leave_expr,
+            "has_leave": mon.leave_expr.is_some(),
+            "on_enter": mon.on_enter,
+            "on_leave": mon.on_leave,
+            "has_on_leave": mon.on_leave.is_some(),
+            "event_enter": l.event_name(&mon.on_enter),
+            "event_leave": mon.on_leave.as_ref().map(|s| l.event_name(s)),
+        })
+    }).collect();
+
+    let mut events = Vec::new();
+    for mon in &m.monitors {
+        events.push(l.event_name(&mon.on_enter));
+        if let Some(ref on_leave) = mon.on_leave {
+            events.push(l.event_name(on_leave));
+        }
+    }
+
+    ctx.insert("params".into(), l.param_str(&m.inputs).into());
+    ctx.insert("monitors".into(), serde_json::json!(monitors));
+    ctx.insert("events".into(), serde_json::json!(events));
+    ctx.insert("has_imports".into(), has_imports.into());
+    ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
+    ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
+
+    render_phase3(env, &format!("observer.{}.jinja2", l.template_ext()), ctx)
 }
 
 // ── Naming helpers (delegating to filters where possible) ──────

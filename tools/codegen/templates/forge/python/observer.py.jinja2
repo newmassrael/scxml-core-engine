@@ -1,0 +1,33 @@
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
+# Do not edit — regenerate from the source SCXML file.
+
+from enum import Enum, auto
+
+
+class Event(Enum):
+{% for ev in events %}
+    {{ ev }} = auto()
+{% endfor %}
+
+
+class {{ struct_name }}:
+    def __init__(self) -> None:
+{% for mon in monitors %}
+        self._{{ mon.active_var }}: bool = False
+{% endfor %}
+
+    def update(self, {{ params }}) -> list[Event]:
+        events: list[Event] = []
+{% for mon in monitors %}
+        if not self._{{ mon.active_var }} and ({{ mon.enter_expr }}):
+            self._{{ mon.active_var }} = True
+            events.append(Event.{{ mon.event_enter }})
+{% if mon.has_leave %}
+        elif self._{{ mon.active_var }} and ({{ mon.leave_expr }}):
+            self._{{ mon.active_var }} = False
+{% if mon.has_on_leave %}
+            events.append(Event.{{ mon.event_leave }})
+{% endif %}
+{% endif %}
+{% endfor %}
+        return events

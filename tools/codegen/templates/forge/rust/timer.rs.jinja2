@@ -1,0 +1,43 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+// Do not edit — regenerate from the source SCXML file.
+
+/// Platform timer trait (injected at runtime).
+pub trait Timer {
+    fn start_periodic(&mut self, interval_ms: u32, callback: Box<dyn Fn()>);
+    fn start_one_shot(&mut self, delay_ms: u32, callback: Box<dyn Fn()>);
+    fn cancel(&mut self);
+}
+
+pub struct {{ struct_name }} {
+{% for timer in timers %}
+    pub {{ timer.id }}_timer: Option<Box<dyn Timer>>,
+{% endfor %}
+}
+
+impl {{ struct_name }} {
+    pub fn new() -> Self {
+        Self {
+{% for timer in timers %}
+            {{ timer.id }}_timer: None,
+{% endfor %}
+        }
+    }
+{% for timer in timers %}
+
+    pub fn start_{{ timer.id }}(&mut self) {
+        if let Some(ref mut timer) = self.{{ timer.id }}_timer {
+{% if timer.is_periodic %}
+            timer.start_periodic({{ timer.time_ms }}, Box::new(|| { /* {{ timer.callback }} */ }));
+{% else %}
+            timer.start_one_shot({{ timer.time_ms }}, Box::new(|| { /* {{ timer.callback }} */ }));
+{% endif %}
+        }
+    }
+
+    pub fn cancel_{{ timer.id }}(&mut self) {
+        if let Some(ref mut timer) = self.{{ timer.id }}_timer {
+            timer.cancel();
+        }
+    }
+{% endfor %}
+}

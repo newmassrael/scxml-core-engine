@@ -1,0 +1,32 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+// Do not edit — regenerate from the source SCXML file.
+
+interface ITimer {
+    fun startPeriodic(intervalMs: Long, callback: () -> Unit)
+    fun startOneShot(delayMs: Long, callback: () -> Unit)
+    fun cancel()
+}
+
+class {{ struct_name }} {
+{% for timer in timers %}
+    var {{ timer.id }}Timer: ITimer? = null
+{% endfor %}
+{% for timer in timers %}
+
+    fun start{{ timer.id | capitalize }}() {
+{% if timer.is_periodic %}
+        {{ timer.id }}Timer?.startPeriodic({{ timer.time_ms }}L) { on{{ timer.callback | capitalize }}() }
+{% else %}
+        {{ timer.id }}Timer?.startOneShot({{ timer.time_ms }}L) { on{{ timer.callback | capitalize }}() }
+{% endif %}
+    }
+
+    fun cancel{{ timer.id | capitalize }}() {
+        {{ timer.id }}Timer?.cancel()
+    }
+{% endfor %}
+
+{% for timer in timers %}
+    private fun on{{ timer.callback | capitalize }}() { /* platform callback */ }
+{% endfor %}
+}

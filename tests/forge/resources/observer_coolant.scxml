@@ -1,0 +1,14 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="observer">
+  <datamodel>
+    <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
+    <data id="warning" sce:monitor="threshold"
+          sce:enter="coolantTemp &gt; 110.0"
+          sce:leave="coolantTemp &lt; 100.0"
+          sce:on-enter="emitWarning" sce:on-leave="clearWarning"/>
+    <data id="critical" sce:monitor="threshold"
+          sce:enter="coolantTemp &gt; 120.0"
+          sce:leave="coolantTemp &lt; 105.0"
+          sce:on-enter="emergencyShutdown"/>
+  </datamodel>
+</scxml>

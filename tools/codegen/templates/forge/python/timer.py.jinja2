@@ -1,0 +1,36 @@
+# SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+# Do not edit — regenerate from the source SCXML file.
+
+from typing import Callable, Protocol
+
+
+class Timer(Protocol):
+    def start_periodic(self, interval_ms: int, callback: Callable[[], None]) -> None: ...
+    def start_one_shot(self, delay_ms: int, callback: Callable[[], None]) -> None: ...
+    def cancel(self) -> None: ...
+
+
+class {{ struct_name }}:
+    def __init__(self) -> None:
+{% for timer in timers %}
+        self.{{ timer.id_snake }}_timer: Timer | None = None
+{% endfor %}
+{% for timer in timers %}
+
+    def start_{{ timer.id_snake }}(self) -> None:
+        if self.{{ timer.id_snake }}_timer is not None:
+{% if timer.is_periodic %}
+            self.{{ timer.id_snake }}_timer.start_periodic({{ timer.time_ms }}, self._on_{{ timer.callback_snake }})
+{% else %}
+            self.{{ timer.id_snake }}_timer.start_one_shot({{ timer.time_ms }}, self._on_{{ timer.callback_snake }})
+{% endif %}
+
+    def cancel_{{ timer.id_snake }}(self) -> None:
+        if self.{{ timer.id_snake }}_timer is not None:
+            self.{{ timer.id_snake }}_timer.cancel()
+{% endfor %}
+{% for timer in timers %}
+
+    def _on_{{ timer.callback_snake }}(self) -> None:
+        pass  # platform callback
+{% endfor %}

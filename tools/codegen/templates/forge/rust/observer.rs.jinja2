@@ -1,0 +1,43 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
+// Do not edit — regenerate from the source SCXML file.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event {
+{% for ev in events %}
+    {{ ev }},
+{% endfor %}
+}
+
+pub struct {{ struct_name }} {
+{% for mon in monitors %}
+    {{ mon.active_var }}: bool,
+{% endfor %}
+}
+
+impl {{ struct_name }} {
+    pub fn new() -> Self {
+        Self {
+{% for mon in monitors %}
+            {{ mon.active_var }}: false,
+{% endfor %}
+        }
+    }
+
+    pub fn update(&mut self, {{ params }}) -> Vec<Event> {
+        let mut events = Vec::new();
+{% for mon in monitors %}
+        if !self.{{ mon.active_var }} && ({{ mon.enter_expr }}) {
+            self.{{ mon.active_var }} = true;
+            events.push(Event::{{ mon.event_enter }});
+{% if mon.has_leave %}
+        } else if self.{{ mon.active_var }} && ({{ mon.leave_expr }}) {
+            self.{{ mon.active_var }} = false;
+{% if mon.has_on_leave %}
+            events.push(Event::{{ mon.event_leave }});
+{% endif %}
+{% endif %}
+        }
+{% endfor %}
+        events
+    }
+}

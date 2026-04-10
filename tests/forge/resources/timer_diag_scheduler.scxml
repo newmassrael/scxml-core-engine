@@ -1,0 +1,11 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="timer">
+  <datamodel>
+    <data id="testerPresent" sce:timer="periodic" sce:interval="2000"
+          sce:event="TesterPresent"/>
+    <data id="responseTimeout" sce:timer="timeout" sce:duration="5000"
+          sce:on-timeout="handleTimeout"/>
+    <data id="retryDelay" sce:timer="delayed" sce:delay="10000"
+          sce:event="retrySecurityAccess"/>
+  </datamodel>
+</scxml>

@@ -45,3 +45,5 @@ crate-type = ["cdylib", "rlib"]
 name = "sce-codegen"
 path = "src/bin/sce_codegen.rs"
 required-features = ["cli"]
+
+

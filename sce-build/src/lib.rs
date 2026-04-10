@@ -407,12 +407,28 @@ fn discover_primary_function(
                 }
             })
         }
-        // Stateful kinds (Codec, Validator, Procedure) use member access,
-        // not free function calls. They are handled by the member rename
-        // mechanism in procedure_l2 and validator render functions.
+        forge::model::ForgeDocument::Interpolation(_) => {
+            Some(match language {
+                generator::Language::Cpp | generator::Language::Kotlin => {
+                    "lookup".to_string()
+                }
+                generator::Language::Rust | generator::Language::Python => {
+                    "lookup".to_string()
+                }
+                generator::Language::Go => {
+                    "Lookup".to_string()
+                }
+            })
+        }
+        // Stateful kinds (Codec, Validator, Procedure, Filter, Observer, Timer)
+        // use member access, not free function calls. They are handled by the
+        // member rename mechanism in procedure_l2 and validator render functions.
         forge::model::ForgeDocument::Codec(_)
         | forge::model::ForgeDocument::Validator(_)
-        | forge::model::ForgeDocument::Procedure(_) => None,
+        | forge::model::ForgeDocument::Procedure(_)
+        | forge::model::ForgeDocument::Filter(_)
+        | forge::model::ForgeDocument::Observer(_)
+        | forge::model::ForgeDocument::Timer(_) => None,
     }
 }
 

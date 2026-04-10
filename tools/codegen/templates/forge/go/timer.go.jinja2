@@ -1,0 +1,39 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package_name }}
+
+// Timer is the platform timer interface (injected at runtime).
+type Timer interface {
+	StartPeriodic(intervalMs uint32, callback func())
+	StartOneShot(delayMs uint32, callback func())
+	Cancel()
+}
+
+type {{ struct_name }} struct {
+{% for timer in timers %}
+	{{ timer.id_pascal }}Timer Timer
+{% endfor %}
+}
+{% for timer in timers %}
+
+func (s *{{ struct_name }}) Start{{ timer.id_pascal }}() {
+	if s.{{ timer.id_pascal }}Timer != nil {
+{% if timer.is_periodic %}
+		s.{{ timer.id_pascal }}Timer.StartPeriodic({{ timer.time_ms }}, func() { s.on{{ timer.callback_pascal }}() })
+{% else %}
+		s.{{ timer.id_pascal }}Timer.StartOneShot({{ timer.time_ms }}, func() { s.on{{ timer.callback_pascal }}() })
+{% endif %}
+	}
+}
+
+func (s *{{ struct_name }}) Cancel{{ timer.id_pascal }}() {
+	if s.{{ timer.id_pascal }}Timer != nil {
+		s.{{ timer.id_pascal }}Timer.Cancel()
+	}
+}
+{% endfor %}
+{% for timer in timers %}
+
+func (s *{{ struct_name }}) on{{ timer.callback_pascal }}() { /* platform callback */ }
+{% endfor %}

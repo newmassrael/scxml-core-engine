@@ -1,0 +1,63 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <functional>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+/// Timer callback type.
+using TimerCallback = std::function<void()>;
+
+/// Platform timer interface (injected at link time).
+struct ITimer {
+    virtual ~ITimer() = default;
+    virtual void startPeriodic(uint32_t intervalMs, TimerCallback cb) = 0;
+    virtual void startOneShot(uint32_t delayMs, TimerCallback cb) = 0;
+    virtual void cancel() = 0;
+};
+
+struct {{ struct_name }} {
+{% for timer in timers %}
+    ITimer* {{ timer.id }}Timer_ = nullptr;
+{% endfor %}
+
+    /// Inject platform timer implementations.
+    void init({% for timer in timers %}ITimer* {{ timer.id }}Timer{% if not loop.last %}, {% endif %}{% endfor %}) {
+{% for timer in timers %}
+        {{ timer.id }}Timer_ = {{ timer.id }}Timer;
+{% endfor %}
+    }
+{% for timer in timers %}
+
+    void start{{ timer.id | capitalize }}() {
+{% if timer.is_periodic %}
+        if ({{ timer.id }}Timer_) {{ timer.id }}Timer_->startPeriodic({{ timer.time_ms }}, [this]{ on{{ timer.callback | capitalize }}(); });
+{% else %}
+        if ({{ timer.id }}Timer_) {{ timer.id }}Timer_->startOneShot({{ timer.time_ms }}, [this]{ on{{ timer.callback | capitalize }}(); });
+{% endif %}
+    }
+
+    void cancel{{ timer.id | capitalize }}() {
+        if ({{ timer.id }}Timer_) {{ timer.id }}Timer_->cancel();
+    }
+{% endfor %}
+
+private:
+{% for timer in timers %}
+    void on{{ timer.callback | capitalize }}();
+{% endfor %}
+};
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

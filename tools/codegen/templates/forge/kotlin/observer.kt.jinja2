@@ -1,0 +1,33 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
+// Do not edit — regenerate from the source SCXML file.
+
+enum class Event {
+{% for ev in events %}
+    {{ ev }}{% if not loop.last %},{% endif %}
+
+{% endfor %}
+}
+
+class {{ struct_name }} {
+{% for mon in monitors %}
+    private var {{ mon.active_var }} = false
+{% endfor %}
+
+    fun update({{ params }}): List<Event> {
+        val events = mutableListOf<Event>()
+{% for mon in monitors %}
+        if (!{{ mon.active_var }} && ({{ mon.enter_expr }})) {
+            {{ mon.active_var }} = true
+            events.add(Event.{{ mon.event_enter }})
+{% if mon.has_leave %}
+        } else if ({{ mon.active_var }} && ({{ mon.leave_expr }})) {
+            {{ mon.active_var }} = false
+{% if mon.has_on_leave %}
+            events.add(Event.{{ mon.event_leave }})
+{% endif %}
+{% endif %}
+        }
+{% endfor %}
+        return events
+    }
+}

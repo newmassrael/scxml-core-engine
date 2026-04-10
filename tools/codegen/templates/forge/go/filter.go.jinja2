@@ -1,0 +1,90 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="filter")
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package_name }}
+
+{% if filter_type == "moving_average" %}
+type {{ struct_name }} struct {
+	buffer  [{{ window }}]{{ output_type }}
+	index   int
+	filled  bool
+}
+
+func (f *{{ struct_name }}) Update({{ input_id }} {{ input_type }}) {{ output_type }} {
+	f.buffer[f.index] = {{ output_type }}({{ input_id }})
+	f.index = (f.index + 1) % {{ window }}
+	if !f.filled && f.index == 0 {
+		f.filled = true
+	}
+	count := {{ window }}
+	if !f.filled {
+		count = f.index
+	}
+	var sum {{ output_type }}
+	for i := 0; i < count; i++ {
+		sum += f.buffer[i]
+	}
+	return sum / {{ output_type }}(count)
+}
+
+func (f *{{ struct_name }}) Reset() {
+	f.buffer = [{{ window }}]{{ output_type }}{}
+	f.index = 0
+	f.filled = false
+}
+{% elif filter_type == "low_pass" %}
+type {{ struct_name }} struct {
+	prev        {{ output_type }}
+	initialized bool
+}
+
+func (f *{{ struct_name }}) Update({{ input_id }} {{ input_type }}) {{ output_type }} {
+	if !f.initialized {
+		f.prev = {{ output_type }}({{ input_id }})
+		f.initialized = true
+		return f.prev
+	}
+	f.prev = {{ alpha }} * {{ output_type }}({{ input_id }}) + (1.0 - {{ alpha }}) * f.prev
+	return f.prev
+}
+
+func (f *{{ struct_name }}) Reset() {
+	f.prev = 0
+	f.initialized = false
+}
+{% elif filter_type == "debounce" %}
+type {{ struct_name }} struct {
+	stableValue {{ output_type }}
+	candidate   {{ output_type }}
+	count       int
+	initialized bool
+}
+
+func (f *{{ struct_name }}) Update({{ input_id }} {{ input_type }}) {{ output_type }} {
+	value := {{ input_id }}
+	if !f.initialized {
+		f.stableValue = value
+		f.candidate = value
+		f.count = 1
+		f.initialized = true
+		return f.stableValue
+	}
+	if value == f.candidate {
+		f.count++
+		if f.count >= {{ window }} {
+			f.stableValue = f.candidate
+		}
+	} else {
+		f.candidate = value
+		f.count = 1
+	}
+	return f.stableValue
+}
+
+func (f *{{ struct_name }}) Reset() {
+	f.stableValue = false
+	f.candidate = false
+	f.count = 0
+	f.initialized = false
+}
+{% endif %}

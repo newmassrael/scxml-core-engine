@@ -786,6 +786,197 @@ fn forge_inline_mixed() {
     assert_inline_kinds("inline_mixed");
 }
 
+// ══════════════════════════════════════════════════════════════
+// ── Phase 3: Interpolation conformance ──────────────────────
+// ══════════════════════════════════════════════════════════════
+
+#[test]
+fn forge_interpolation_1d_linear_cpp() {
+    assert_standalone_forge("interpolation_1d_linear", "interpolation_1d_linear.h");
+}
+
+#[test]
+fn forge_interpolation_1d_linear_kotlin() {
+    assert_standalone_forge_kotlin("interpolation_1d_linear", "Interpolation1dLinear.kt");
+}
+
+#[test]
+fn forge_interpolation_1d_linear_rust() {
+    assert_standalone_forge_rust("interpolation_1d_linear", "interpolation_1d_linear.rs");
+}
+
+#[test]
+fn forge_interpolation_1d_linear_go() {
+    assert_standalone_forge_go("interpolation_1d_linear", "interpolation_1d_linear.go");
+}
+
+#[test]
+fn forge_interpolation_1d_linear_python() {
+    assert_standalone_forge_python("interpolation_1d_linear", "interpolation_1d_linear.py");
+}
+
+#[test]
+fn forge_interpolation_2d_bilinear_cpp() {
+    assert_standalone_forge("interpolation_2d_bilinear", "interpolation_2d_bilinear.h");
+}
+
+#[test]
+fn forge_interpolation_2d_bilinear_kotlin() {
+    assert_standalone_forge_kotlin("interpolation_2d_bilinear", "Interpolation2dBilinear.kt");
+}
+
+#[test]
+fn forge_interpolation_2d_bilinear_rust() {
+    assert_standalone_forge_rust("interpolation_2d_bilinear", "interpolation_2d_bilinear.rs");
+}
+
+#[test]
+fn forge_interpolation_2d_bilinear_go() {
+    assert_standalone_forge_go("interpolation_2d_bilinear", "interpolation_2d_bilinear.go");
+}
+
+#[test]
+fn forge_interpolation_2d_bilinear_python() {
+    assert_standalone_forge_python("interpolation_2d_bilinear", "interpolation_2d_bilinear.py");
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Phase 3: Filter conformance ─────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+#[test]
+fn forge_filter_moving_average_cpp() {
+    assert_standalone_forge("filter_moving_average", "filter_moving_average.h");
+}
+
+#[test]
+fn forge_filter_moving_average_kotlin() {
+    assert_standalone_forge_kotlin("filter_moving_average", "FilterMovingAverage.kt");
+}
+
+#[test]
+fn forge_filter_moving_average_rust() {
+    assert_standalone_forge_rust("filter_moving_average", "filter_moving_average.rs");
+}
+
+#[test]
+fn forge_filter_moving_average_go() {
+    assert_standalone_forge_go("filter_moving_average", "filter_moving_average.go");
+}
+
+#[test]
+fn forge_filter_moving_average_python() {
+    assert_standalone_forge_python("filter_moving_average", "filter_moving_average.py");
+}
+
+#[test]
+fn forge_filter_low_pass_cpp() {
+    assert_standalone_forge("filter_low_pass", "filter_low_pass.h");
+}
+
+#[test]
+fn forge_filter_low_pass_kotlin() {
+    assert_standalone_forge_kotlin("filter_low_pass", "FilterLowPass.kt");
+}
+
+#[test]
+fn forge_filter_low_pass_rust() {
+    assert_standalone_forge_rust("filter_low_pass", "filter_low_pass.rs");
+}
+
+#[test]
+fn forge_filter_low_pass_go() {
+    assert_standalone_forge_go("filter_low_pass", "filter_low_pass.go");
+}
+
+#[test]
+fn forge_filter_low_pass_python() {
+    assert_standalone_forge_python("filter_low_pass", "filter_low_pass.py");
+}
+
+#[test]
+fn forge_filter_debounce_cpp() {
+    assert_standalone_forge("filter_debounce", "filter_debounce.h");
+}
+
+#[test]
+fn forge_filter_debounce_kotlin() {
+    assert_standalone_forge_kotlin("filter_debounce", "FilterDebounce.kt");
+}
+
+#[test]
+fn forge_filter_debounce_rust() {
+    assert_standalone_forge_rust("filter_debounce", "filter_debounce.rs");
+}
+
+#[test]
+fn forge_filter_debounce_go() {
+    assert_standalone_forge_go("filter_debounce", "filter_debounce.go");
+}
+
+#[test]
+fn forge_filter_debounce_python() {
+    assert_standalone_forge_python("filter_debounce", "filter_debounce.py");
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Phase 3: Observer conformance ───────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+#[test]
+fn forge_observer_coolant_cpp() {
+    assert_standalone_forge("observer_coolant", "observer_coolant.h");
+}
+
+#[test]
+fn forge_observer_coolant_kotlin() {
+    assert_standalone_forge_kotlin("observer_coolant", "ObserverCoolant.kt");
+}
+
+#[test]
+fn forge_observer_coolant_rust() {
+    assert_standalone_forge_rust("observer_coolant", "observer_coolant.rs");
+}
+
+#[test]
+fn forge_observer_coolant_go() {
+    assert_standalone_forge_go("observer_coolant", "observer_coolant.go");
+}
+
+#[test]
+fn forge_observer_coolant_python() {
+    assert_standalone_forge_python("observer_coolant", "observer_coolant.py");
+}
+
+// ══════════════════════════════════════════════════════════════
+// ── Phase 3: Timer conformance ──────────────────────────────
+// ══════════════════════════════════════════════════════════════
+
+#[test]
+fn forge_timer_diag_scheduler_cpp() {
+    assert_standalone_forge("timer_diag_scheduler", "timer_diag_scheduler.h");
+}
+
+#[test]
+fn forge_timer_diag_scheduler_kotlin() {
+    assert_standalone_forge_kotlin("timer_diag_scheduler", "TimerDiagScheduler.kt");
+}
+
+#[test]
+fn forge_timer_diag_scheduler_rust() {
+    assert_standalone_forge_rust("timer_diag_scheduler", "timer_diag_scheduler.rs");
+}
+
+#[test]
+fn forge_timer_diag_scheduler_go() {
+    assert_standalone_forge_go("timer_diag_scheduler", "timer_diag_scheduler.go");
+}
+
+#[test]
+fn forge_timer_diag_scheduler_python() {
+    assert_standalone_forge_python("timer_diag_scheduler", "timer_diag_scheduler.py");
+}
+
 // ── Golden file generator ───────────────────────────────────
 
 /// Generate golden files for Go and Python. Run with:

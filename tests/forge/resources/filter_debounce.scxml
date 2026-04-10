@@ -1,0 +1,8 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="filter">
+  <datamodel>
+    <data id="rawButton" sce:type="bool" sce:direction="in"/>
+    <data id="stable" sce:type="bool" sce:direction="out"
+          sce:filter="debounce" sce:window="3"/>
+  </datamodel>
+</scxml>

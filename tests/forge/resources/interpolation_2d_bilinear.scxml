@@ -1,0 +1,16 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="interpolation">
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="load" sce:type="uint8" sce:direction="in"/>
+    <data id="injectionTime" sce:type="float64" sce:direction="out"
+          sce:interpolation="bilinear" sce:out-of-bounds="clamp"
+          sce:axis-rpm="800 1200 2000 3000"
+          sce:axis-load="10 50 100">
+      2.1 4.5 7.0
+      2.5 5.0 8.0
+      3.0 6.0 9.5
+      3.5 7.0 11.0
+    </data>
+  </datamodel>
+</scxml>

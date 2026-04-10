@@ -1,0 +1,53 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
+// Do not edit — regenerate from the source SCXML file.
+
+#pragma once
+#ifndef {{ guard }}
+#define {{ guard }}
+
+#include <cstdint>
+#include <vector>
+{% if all_imports %}
+{% for imp in all_imports %}
+{{ imp.include_stmt }}
+{% endfor %}
+{% endif %}
+
+namespace SCE::Generated::{{ namespace }} {
+
+enum class Event {
+{% for ev in events %}
+    {{ ev }}{% if not loop.last %},{% endif %}
+
+{% endfor %}
+};
+
+using Events = std::vector<Event>;
+
+struct {{ struct_name }} {
+{% for mon in monitors %}
+    bool {{ mon.active_var }} = false;
+{% endfor %}
+
+    Events update({{ params }}) {
+        Events events;
+{% for mon in monitors %}
+        if (!{{ mon.active_var }} && ({{ mon.enter_expr }})) {
+            {{ mon.active_var }} = true;
+            events.push_back(Event::{{ mon.event_enter }});
+{% if mon.has_leave %}
+        } else if ({{ mon.active_var }} && ({{ mon.leave_expr }})) {
+            {{ mon.active_var }} = false;
+{% if mon.has_on_leave %}
+            events.push_back(Event::{{ mon.event_leave }});
+{% endif %}
+{% endif %}
+        }
+{% endfor %}
+        return events;
+    }
+};
+
+}  // namespace SCE::Generated::{{ namespace }}
+
+#endif  // {{ guard }}

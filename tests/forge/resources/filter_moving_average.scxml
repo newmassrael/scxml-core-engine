@@ -1,0 +1,8 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="filter">
+  <datamodel>
+    <data id="rawTemp" sce:type="float64" sce:direction="in"/>
+    <data id="filtered" sce:type="float64" sce:direction="out"
+          sce:filter="moving-average" sce:window="5"/>
+  </datamodel>
+</scxml>

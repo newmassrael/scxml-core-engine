@@ -1,0 +1,35 @@
+// SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
+// Do not edit — regenerate from the source SCXML file.
+
+package {{ package_name }}
+
+type Event int
+
+const (
+{% for ev in events %}
+	Event{{ ev }} Event = {{ loop.index0 }}
+{% endfor %}
+)
+
+type {{ struct_name }} struct {
+{% for mon in monitors %}
+	{{ mon.active_var }} bool
+{% endfor %}
+}
+func (o *{{ struct_name }}) Update({{ params }}) []Event {
+	var events []Event
+{% for mon in monitors %}
+	if !o.{{ mon.active_var }} && ({{ mon.enter_expr }}) {
+		o.{{ mon.active_var }} = true
+		events = append(events, Event{{ mon.event_enter }})
+{% if mon.has_leave %}
+	} else if o.{{ mon.active_var }} && ({{ mon.leave_expr }}) {
+		o.{{ mon.active_var }} = false
+{% if mon.has_on_leave %}
+		events = append(events, Event{{ mon.event_leave }})
+{% endif %}
+{% endif %}
+	}
+{% endfor %}
+	return events
+}

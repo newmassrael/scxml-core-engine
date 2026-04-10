@@ -69,8 +69,11 @@ fn parse_forge_from_node(
         ForgeKind::Codec => parse_codec(root, name).map(ForgeDocument::Codec),
         ForgeKind::Validator => parse_validator(root, name).map(ForgeDocument::Validator),
         ForgeKind::Procedure => parse_procedure(root, name).map(ForgeDocument::Procedure),
+        ForgeKind::Filter => parse_filter(root, name).map(ForgeDocument::Filter),
+        ForgeKind::Interpolation => parse_interpolation(root, name).map(ForgeDocument::Interpolation),
+        ForgeKind::Timer => parse_timer(root, name).map(ForgeDocument::Timer),
+        ForgeKind::Observer => parse_observer(root, name).map(ForgeDocument::Observer),
         ForgeKind::Statechart => Err("Statechart kind uses the standard pipeline".to_string()),
-        other => Err(format!("Kind '{other}' is not yet supported")),
     }
 }
 
@@ -666,6 +669,333 @@ fn parse_time_interval(s: &str) -> Result<u32, String> {
             "Time interval must end with 'ms' or 's', got: '{s}'"
         ))
     }
+}
+
+// ── Filter parsing ────────────────────────────────────────────
+
+fn parse_filter(root: &roxmltree::Node, name: &str) -> Result<FilterModel, String> {
+    let datamodel = find_child(root, "datamodel")
+        .ok_or("Filter kind requires a <datamodel> element")?;
+
+    let mut input: Option<ForgeField> = None;
+    let mut output: Option<ForgeField> = None;
+    let mut filter_type: Option<FilterType> = None;
+    let mut window: Option<u32> = None;
+    let mut alpha: Option<f64> = None;
+
+    for data in data_children(&datamodel) {
+        let dir = sce_attr(&data, "direction");
+        match dir.as_deref() {
+            Some("in") => {
+                input = Some(parse_forge_field(&data)?);
+            }
+            Some("out") => {
+                output = Some(parse_forge_field(&data)?);
+
+                let ft_str = sce_attr(&data, "filter")
+                    .ok_or("Filter output must have 'sce:filter' attribute")?;
+                filter_type = Some(
+                    FilterType::from_attr(&ft_str)
+                        .ok_or_else(|| format!("Unknown sce:filter value: '{ft_str}'"))?,
+                );
+
+                window = sce_attr(&data, "window").and_then(|s| s.parse::<u32>().ok());
+                alpha = sce_attr(&data, "alpha").and_then(|s| s.parse::<f64>().ok());
+            }
+            _ => {
+                return Err("Filter kind only supports 'in' and 'out' directions".to_string());
+            }
+        }
+    }
+
+    let input = input.ok_or("Filter kind requires an input field (sce:direction=\"in\")")?;
+    let output = output.ok_or("Filter kind requires an output field (sce:direction=\"out\")")?;
+    let filter_type = filter_type.ok_or("Filter output must have 'sce:filter' attribute")?;
+
+    // Validate required parameters per filter type
+    match filter_type {
+        FilterType::MovingAverage => {
+            if window.is_none() {
+                return Err("Moving-average filter requires 'sce:window' attribute".to_string());
+            }
+        }
+        FilterType::LowPass => {
+            if alpha.is_none() {
+                return Err("Low-pass filter requires 'sce:alpha' attribute".to_string());
+            }
+        }
+        FilterType::Debounce => {
+            if window.is_none() {
+                return Err("Debounce filter requires 'sce:window' attribute".to_string());
+            }
+        }
+    }
+
+    Ok(FilterModel {
+        name: name.to_string(),
+        input,
+        output,
+        filter_type,
+        window,
+        alpha,
+    })
+}
+
+// ── Interpolation parsing ─────────────────────────────────────
+
+fn parse_interpolation(root: &roxmltree::Node, name: &str) -> Result<InterpolationModel, String> {
+    let datamodel = find_child(root, "datamodel")
+        .ok_or("Interpolation kind requires a <datamodel> element")?;
+
+    let mut inputs = Vec::new();
+    let mut output: Option<ForgeField> = None;
+    let mut method: Option<InterpolationMethod> = None;
+    let mut out_of_bounds = OutOfBounds::default();
+    let mut axes = Vec::new();
+    let mut values = Vec::new();
+
+    for data in data_children(&datamodel) {
+        let dir = sce_attr(&data, "direction");
+        match dir.as_deref() {
+            Some("in") => {
+                inputs.push(parse_forge_field(&data)?);
+            }
+            Some("out") => {
+                output = Some(parse_forge_field(&data)?);
+
+                let method_str = sce_attr(&data, "interpolation")
+                    .ok_or("Interpolation output must have 'sce:interpolation' attribute")?;
+                method = Some(
+                    InterpolationMethod::from_attr(&method_str)
+                        .ok_or_else(|| format!("Unknown sce:interpolation value: '{method_str}'"))?,
+                );
+
+                if let Some(oob_str) = sce_attr(&data, "out-of-bounds") {
+                    out_of_bounds = OutOfBounds::from_attr(&oob_str)
+                        .ok_or_else(|| format!("Unknown sce:out-of-bounds value: '{oob_str}'"))?;
+                }
+
+                // Parse sce:axis-{input_id} attributes
+                for inp in &inputs {
+                    let axis_attr = format!("axis-{}", inp.id);
+                    if let Some(bp_str) = sce_attr(&data, &axis_attr) {
+                        let breakpoints: Result<Vec<f64>, _> = bp_str
+                            .split_whitespace()
+                            .map(|s| s.parse::<f64>())
+                            .collect();
+                        let breakpoints = breakpoints
+                            .map_err(|e| format!("Invalid breakpoints in sce:axis-{}: {e}", inp.id))?;
+                        axes.push(InterpolationAxis {
+                            input_id: inp.id.clone(),
+                            breakpoints,
+                        });
+                    }
+                }
+
+                // Parse table values from text content
+                let text = data.text().unwrap_or("").trim().to_string();
+                if !text.is_empty() {
+                    values = text
+                        .split_whitespace()
+                        .map(|s| s.parse::<f64>())
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(|e| format!("Invalid table values: {e}"))?;
+                }
+            }
+            _ => {
+                return Err("Interpolation kind only supports 'in' and 'out' directions".to_string());
+            }
+        }
+    }
+
+    let output = output.ok_or("Interpolation kind requires an output field (sce:direction=\"out\")")?;
+    let method = method.ok_or("Interpolation output must have 'sce:interpolation' attribute")?;
+
+    if inputs.is_empty() {
+        return Err("Interpolation kind requires at least one input field".to_string());
+    }
+    if axes.is_empty() {
+        return Err("Interpolation kind requires at least one sce:axis-* attribute".to_string());
+    }
+    if values.is_empty() {
+        return Err("Interpolation kind requires table values in the output element text".to_string());
+    }
+
+    // Validate axis count matches method
+    match method {
+        InterpolationMethod::Linear => {
+            if axes.len() != 1 {
+                return Err("Linear interpolation requires exactly 1 axis".to_string());
+            }
+            if values.len() != axes[0].breakpoints.len() {
+                return Err(format!(
+                    "Linear interpolation: value count ({}) must match axis breakpoints ({})",
+                    values.len(),
+                    axes[0].breakpoints.len()
+                ));
+            }
+        }
+        InterpolationMethod::Bilinear => {
+            if axes.len() != 2 {
+                return Err("Bilinear interpolation requires exactly 2 axes".to_string());
+            }
+            let expected = axes[0].breakpoints.len() * axes[1].breakpoints.len();
+            if values.len() != expected {
+                return Err(format!(
+                    "Bilinear interpolation: value count ({}) must equal rows({}) x cols({}) = {}",
+                    values.len(),
+                    axes[0].breakpoints.len(),
+                    axes[1].breakpoints.len(),
+                    expected
+                ));
+            }
+        }
+    }
+
+    Ok(InterpolationModel {
+        name: name.to_string(),
+        inputs,
+        output,
+        method,
+        out_of_bounds,
+        axes,
+        values,
+    })
+}
+
+// ── Timer parsing ─────────────────────────────────────────────
+
+fn parse_timer(root: &roxmltree::Node, name: &str) -> Result<TimerModel, String> {
+    let datamodel = find_child(root, "datamodel")
+        .ok_or("Timer kind requires a <datamodel> element")?;
+
+    let mut timers = Vec::new();
+
+    for data in data_children(&datamodel) {
+        let timer_str = match sce_attr(&data, "timer") {
+            Some(s) => s,
+            None => continue,
+        };
+
+        let id = data
+            .attribute("id")
+            .ok_or("Timer <data> must have an 'id' attribute")?
+            .to_string();
+
+        let timer_type = TimerType::from_attr(&timer_str)
+            .ok_or_else(|| format!("Unknown sce:timer value: '{timer_str}'"))?;
+
+        let time_ms = match timer_type {
+            TimerType::Periodic => {
+                let s = sce_attr(&data, "interval")
+                    .ok_or_else(|| format!("Periodic timer '{id}' requires 'sce:interval'"))?;
+                s.parse::<u32>()
+                    .map_err(|_| format!("Invalid sce:interval value: '{s}'"))?
+            }
+            TimerType::Timeout => {
+                let s = sce_attr(&data, "duration")
+                    .ok_or_else(|| format!("Timeout timer '{id}' requires 'sce:duration'"))?;
+                s.parse::<u32>()
+                    .map_err(|_| format!("Invalid sce:duration value: '{s}'"))?
+            }
+            TimerType::Delayed => {
+                let s = sce_attr(&data, "delay")
+                    .ok_or_else(|| format!("Delayed timer '{id}' requires 'sce:delay'"))?;
+                s.parse::<u32>()
+                    .map_err(|_| format!("Invalid sce:delay value: '{s}'"))?
+            }
+        };
+
+        let event = sce_attr(&data, "event");
+        let on_timeout = sce_attr(&data, "on-timeout");
+
+        if event.is_none() && on_timeout.is_none() {
+            return Err(format!(
+                "Timer '{id}' must have either 'sce:event' or 'sce:on-timeout'"
+            ));
+        }
+
+        timers.push(TimerEntry {
+            id,
+            timer_type,
+            time_ms,
+            event,
+            on_timeout,
+        });
+    }
+
+    if timers.is_empty() {
+        return Err("Timer kind requires at least one <data> with 'sce:timer' attribute".to_string());
+    }
+
+    Ok(TimerModel {
+        name: name.to_string(),
+        timers,
+    })
+}
+
+// ── Observer parsing ──────────────────────────────────────────
+
+fn parse_observer(root: &roxmltree::Node, name: &str) -> Result<ObserverModel, String> {
+    let datamodel = find_child(root, "datamodel")
+        .ok_or("Observer kind requires a <datamodel> element")?;
+
+    let mut inputs = Vec::new();
+    let mut monitors = Vec::new();
+
+    for data in data_children(&datamodel) {
+        let dir = sce_attr(&data, "direction");
+
+        if dir.as_deref() == Some("in") {
+            inputs.push(parse_forge_field(&data)?);
+            continue;
+        }
+
+        // Monitor definitions have sce:monitor attribute
+        if let Some(monitor_type) = sce_attr(&data, "monitor") {
+            if monitor_type != "threshold" {
+                return Err(format!(
+                    "Unknown sce:monitor type: '{monitor_type}' (only 'threshold' is supported)"
+                ));
+            }
+
+            let id = data
+                .attribute("id")
+                .ok_or("Observer monitor <data> must have an 'id' attribute")?
+                .to_string();
+
+            let enter_expr = sce_attr(&data, "enter")
+                .ok_or_else(|| format!("Monitor '{id}' must have 'sce:enter' attribute"))?;
+
+            let leave_expr = sce_attr(&data, "leave");
+
+            let on_enter = sce_attr(&data, "on-enter")
+                .ok_or_else(|| format!("Monitor '{id}' must have 'sce:on-enter' attribute"))?;
+
+            let on_leave = sce_attr(&data, "on-leave");
+
+            monitors.push(ThresholdMonitor {
+                id,
+                enter_expr,
+                leave_expr,
+                on_enter,
+                on_leave,
+            });
+        }
+    }
+
+    if inputs.is_empty() {
+        return Err("Observer kind requires at least one input field".to_string());
+    }
+    if monitors.is_empty() {
+        return Err("Observer kind requires at least one monitor definition".to_string());
+    }
+
+    Ok(ObserverModel {
+        name: name.to_string(),
+        inputs,
+        monitors,
+    })
 }
 
 // ── Import parsing ────────────────────────────────────────────

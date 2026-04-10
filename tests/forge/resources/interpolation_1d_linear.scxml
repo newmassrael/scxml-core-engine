@@ -1,0 +1,11 @@
+<scxml xmlns="http://www.w3.org/2005/07/scxml" xmlns:sce="http://sce.dev/ext"
+       version="1.0" sce:kind="interpolation">
+  <datamodel>
+    <data id="rpm" sce:type="uint16" sce:direction="in"/>
+    <data id="torqueLimit" sce:type="float64" sce:direction="out"
+          sce:interpolation="linear" sce:out-of-bounds="clamp"
+          sce:axis-rpm="800 1200 2000 3000 4000 6000">
+      120.0 145.0 200.0 230.0 210.0 180.0
+    </data>
+  </datamodel>
+</scxml>

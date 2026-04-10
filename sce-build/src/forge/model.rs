@@ -79,10 +79,10 @@ impl ForgeKind {
     pub fn needs_instance(&self) -> bool {
         match self {
             Self::Codec | Self::Validator | Self::Procedure => true,
+            Self::Filter | Self::Observer | Self::Timer => true,
             Self::Transform | Self::Lookup | Self::Condition => false,
+            Self::Interpolation => false,
             Self::Statechart => false,
-            // Future kinds — compiler error forces explicit decision when added
-            Self::Filter | Self::Interpolation | Self::Timer | Self::Observer => false,
         }
     }
 
@@ -97,6 +97,10 @@ impl ForgeKind {
                 | Self::Codec
                 | Self::Validator
                 | Self::Procedure
+                | Self::Filter
+                | Self::Interpolation
+                | Self::Timer
+                | Self::Observer
         )
     }
 }
@@ -528,6 +532,212 @@ impl CodecModel {
     }
 }
 
+// ── Filter kind ───────────────────────────────────────────────
+
+/// Filter type: algorithm used for signal filtering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum FilterType {
+    MovingAverage,
+    LowPass,
+    Debounce,
+}
+
+impl FilterType {
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match s {
+            "moving-average" => Some(Self::MovingAverage),
+            "low-pass" => Some(Self::LowPass),
+            "debounce" => Some(Self::Debounce),
+            _ => None,
+        }
+    }
+
+    /// Template-safe identifier (snake_case, no hyphens).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::MovingAverage => "moving_average",
+            Self::LowPass => "low_pass",
+            Self::Debounce => "debounce",
+        }
+    }
+}
+
+/// Filter: signal filtering with internal state (moving average, low-pass, debounce).
+/// Generates a struct with `update()` and `reset()` methods.
+#[derive(Debug, Clone, Serialize)]
+pub struct FilterModel {
+    pub name: String,
+    pub input: ForgeField,
+    pub output: ForgeField,
+    pub filter_type: FilterType,
+    /// Window size for moving-average and debounce.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<u32>,
+    /// Smoothing factor (0..1) for low-pass filter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alpha: Option<f64>,
+}
+
+// ── Interpolation kind ────────────────────────────────────────
+
+/// Interpolation method.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum InterpolationMethod {
+    Linear,
+    Bilinear,
+}
+
+impl InterpolationMethod {
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match s {
+            "linear" => Some(Self::Linear),
+            "bilinear" => Some(Self::Bilinear),
+            _ => None,
+        }
+    }
+}
+
+/// Out-of-bounds handling for interpolation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutOfBounds {
+    Clamp,
+    Extrapolate,
+    Error,
+}
+
+impl OutOfBounds {
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match s {
+            "clamp" => Some(Self::Clamp),
+            "extrapolate" => Some(Self::Extrapolate),
+            "error" => Some(Self::Error),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Clamp => "clamp",
+            Self::Extrapolate => "extrapolate",
+            Self::Error => "error",
+        }
+    }
+}
+
+impl Default for OutOfBounds {
+    fn default() -> Self {
+        Self::Clamp
+    }
+}
+
+/// Axis definition for interpolation (breakpoints for one dimension).
+#[derive(Debug, Clone, Serialize)]
+pub struct InterpolationAxis {
+    /// Input field id this axis corresponds to.
+    pub input_id: String,
+    /// Breakpoint values (monotonically increasing).
+    pub breakpoints: Vec<f64>,
+}
+
+/// Interpolation: 1D/2D table lookup with linear/bilinear interpolation.
+/// Generates a struct with static tables and a `lookup()` method.
+#[derive(Debug, Clone, Serialize)]
+pub struct InterpolationModel {
+    pub name: String,
+    pub inputs: Vec<ForgeField>,
+    pub output: ForgeField,
+    pub method: InterpolationMethod,
+    pub out_of_bounds: OutOfBounds,
+    /// Axes in order (1 for linear, 2 for bilinear). First = rows, second = columns.
+    pub axes: Vec<InterpolationAxis>,
+    /// Table values (flat, row-major for 2D).
+    pub values: Vec<f64>,
+}
+
+// ── Timer kind ────────────────────────────────────────────────
+
+/// Timer scheduling type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TimerType {
+    Periodic,
+    Timeout,
+    Delayed,
+}
+
+impl TimerType {
+    pub fn from_attr(s: &str) -> Option<Self> {
+        match s {
+            "periodic" => Some(Self::Periodic),
+            "timeout" => Some(Self::Timeout),
+            "delayed" => Some(Self::Delayed),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Periodic => "periodic",
+            Self::Timeout => "timeout",
+            Self::Delayed => "delayed",
+        }
+    }
+}
+
+/// A single timer definition within a timer kind.
+#[derive(Debug, Clone, Serialize)]
+pub struct TimerEntry {
+    pub id: String,
+    pub timer_type: TimerType,
+    /// Time in milliseconds (interval for periodic, duration for timeout, delay for delayed).
+    pub time_ms: u32,
+    /// Event name to emit when timer fires.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    /// Callback name for timeout expiry (alternative to event).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_timeout: Option<String>,
+}
+
+/// Timer: periodic/delayed/timeout task scheduling.
+/// Generates a struct with timer members and start/cancel methods.
+#[derive(Debug, Clone, Serialize)]
+pub struct TimerModel {
+    pub name: String,
+    pub timers: Vec<TimerEntry>,
+}
+
+// ── Observer kind ─────────────────────────────────────────────
+
+/// A single threshold monitor within an observer kind.
+#[derive(Debug, Clone, Serialize)]
+pub struct ThresholdMonitor {
+    pub id: String,
+    /// ECMAScript expression for entering the active state.
+    pub enter_expr: String,
+    /// ECMAScript expression for leaving the active state. Optional.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leave_expr: Option<String>,
+    /// Event name emitted on entering active state.
+    pub on_enter: String,
+    /// Event name emitted on leaving active state. Optional.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub on_leave: Option<String>,
+}
+
+/// Observer: threshold monitoring with hysteresis.
+/// Generates a struct with per-monitor boolean state and an `update()` method
+/// returning a collection of triggered events.
+#[derive(Debug, Clone, Serialize)]
+pub struct ObserverModel {
+    pub name: String,
+    pub inputs: Vec<ForgeField>,
+    pub monitors: Vec<ThresholdMonitor>,
+}
+
 // ── Cross-file import ─────────────────────────────────────────
 
 /// A cross-file kind import declared via `<sce:import>` in an Extended SCXML document.
@@ -628,6 +838,14 @@ pub enum ForgeDocument {
     Validator(ValidatorModel),
     #[serde(rename = "procedure")]
     Procedure(ProcedureModel),
+    #[serde(rename = "filter")]
+    Filter(FilterModel),
+    #[serde(rename = "interpolation")]
+    Interpolation(InterpolationModel),
+    #[serde(rename = "timer")]
+    Timer(TimerModel),
+    #[serde(rename = "observer")]
+    Observer(ObserverModel),
 }
 
 impl ForgeDocument {
@@ -639,6 +857,10 @@ impl ForgeDocument {
             Self::Codec(m) => &m.name,
             Self::Validator(m) => &m.name,
             Self::Procedure(m) => &m.name,
+            Self::Filter(m) => &m.name,
+            Self::Interpolation(m) => &m.name,
+            Self::Timer(m) => &m.name,
+            Self::Observer(m) => &m.name,
         }
     }
 
@@ -650,6 +872,10 @@ impl ForgeDocument {
             Self::Codec(_) => ForgeKind::Codec,
             Self::Validator(_) => ForgeKind::Validator,
             Self::Procedure(_) => ForgeKind::Procedure,
+            Self::Filter(_) => ForgeKind::Filter,
+            Self::Interpolation(_) => ForgeKind::Interpolation,
+            Self::Timer(_) => ForgeKind::Timer,
+            Self::Observer(_) => ForgeKind::Observer,
         }
     }
 }
