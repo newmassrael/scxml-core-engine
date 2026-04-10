@@ -3,37 +3,49 @@
 
 package {{ package_name }}
 
-// Timer is the platform timer interface (injected at runtime).
-type Timer interface {
-	StartPeriodic(intervalMs uint32, callback func())
-	StartOneShot(delayMs uint32, callback func())
-	Cancel()
+import "github.com/newmassrael/sce-forge-runtime/timer"
+
+// {{ struct_name }}Handler is the user-supplied callback interface.
+// Missing methods produce a compile error at the constructor call site —
+// Go's structural interface satisfaction is checked when New{{ struct_name }}
+// is invoked, so there is no silent fallback.
+type {{ struct_name }}Handler interface {
+{% for cb in unique_callbacks %}
+	Fire{{ cb.callback_pascal }}()
+{% endfor %}
 }
 
 type {{ struct_name }} struct {
+	handler {{ struct_name }}Handler
 {% for timer in timers %}
-	{{ timer.id_pascal }}Timer Timer
+	{{ timer.id }}Timer timer.Timer
 {% endfor %}
+}
+
+func New{{ struct_name }}(
+	handler {{ struct_name }}Handler,
+{% for timer in timers %}
+	{{ timer.id }}Timer timer.Timer,
+{% endfor %}
+) *{{ struct_name }} {
+	return &{{ struct_name }}{
+		handler: handler,
+{% for timer in timers %}
+		{{ timer.id }}Timer: {{ timer.id }}Timer,
+{% endfor %}
+	}
 }
 {% for timer in timers %}
 
 func (s *{{ struct_name }}) Start{{ timer.id_pascal }}() {
-	if s.{{ timer.id_pascal }}Timer != nil {
 {% if timer.is_periodic %}
-		s.{{ timer.id_pascal }}Timer.StartPeriodic({{ timer.time_ms }}, func() { s.on{{ timer.callback_pascal }}() })
+	s.{{ timer.id }}Timer.StartPeriodic({{ timer.time_ms }}, func() { s.handler.Fire{{ timer.callback_pascal }}() })
 {% else %}
-		s.{{ timer.id_pascal }}Timer.StartOneShot({{ timer.time_ms }}, func() { s.on{{ timer.callback_pascal }}() })
+	s.{{ timer.id }}Timer.StartOneShot({{ timer.time_ms }}, func() { s.handler.Fire{{ timer.callback_pascal }}() })
 {% endif %}
-	}
 }
 
 func (s *{{ struct_name }}) Cancel{{ timer.id_pascal }}() {
-	if s.{{ timer.id_pascal }}Timer != nil {
-		s.{{ timer.id_pascal }}Timer.Cancel()
-	}
+	s.{{ timer.id }}Timer.Cancel()
 }
-{% endfor %}
-{% for timer in timers %}
-
-func (s *{{ struct_name }}) on{{ timer.callback_pascal }}() { /* platform callback */ }
 {% endfor %}

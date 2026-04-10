@@ -3,30 +3,47 @@
 
 package {{ package_name }}
 
-type Event int
+import "github.com/newmassrael/sce-forge-runtime/observer"
+
+{% if has_event_domain %}
+// Event domain "{{ event_domain }}" is declared by the consuming module
+// (typically a statechart that aggregates events from multiple observers in
+// this domain). The user must provide a `{{ event_domain }}Tag` type and the
+// constants below in a shared package, then import them here. See
+// SCE_FORGE.md Section 4.11.
+type ForgeDomainTag = {{ event_domain }}Tag
+{% else %}
+// No sce:event-domain declared on this <scxml> root: the observer falls back
+// to a file-local domain. The resulting EventQueue type cannot be composed
+// with observers in other files. To enable cross-file composition, add
+// sce:event-domain="..." to the source SCXML. See SCE_FORGE.md Section 4.11.
+type ForgeDomainTag int
 
 const (
 {% for ev in events %}
-	Event{{ ev }} Event = {{ loop.index0 }}
+	ForgeDomainTag{{ ev }} ForgeDomainTag = {{ loop.index0 }}
 {% endfor %}
 )
+{% endif %}
 
 type {{ struct_name }} struct {
 {% for mon in monitors %}
-	{{ mon.active_var }} bool
+	{{ mon.id }} observer.ThresholdState
 {% endfor %}
 }
-func (o *{{ struct_name }}) Update({{ params }}) []Event {
-	var events []Event
+
+func (o *{{ struct_name }}) Update({{ params }}) *observer.EventQueue[ForgeDomainTag] {
+	events := observer.NewEventQueue[ForgeDomainTag]()
 {% for mon in monitors %}
-	if !o.{{ mon.active_var }} && ({{ mon.enter_expr }}) {
-		o.{{ mon.active_var }} = true
-		events = append(events, Event{{ mon.event_enter }})
+	if o.{{ mon.id }}.EnterIf({{ mon.enter_expr }}) {
+		events.Push(ForgeDomainTag{{ mon.event_enter }})
 {% if mon.has_leave %}
-	} else if o.{{ mon.active_var }} && ({{ mon.leave_expr }}) {
-		o.{{ mon.active_var }} = false
 {% if mon.has_on_leave %}
-		events = append(events, Event{{ mon.event_leave }})
+	} else if o.{{ mon.id }}.LeaveIf({{ mon.leave_expr }}) {
+		events.Push(ForgeDomainTag{{ mon.event_leave }})
+{% else %}
+	} else {
+		o.{{ mon.id }}.LeaveIf({{ mon.leave_expr }})
 {% endif %}
 {% endif %}
 	}

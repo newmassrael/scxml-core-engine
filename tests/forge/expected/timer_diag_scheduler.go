@@ -3,57 +3,59 @@
 
 package timer_diag_scheduler
 
-// Timer is the platform timer interface (injected at runtime).
-type Timer interface {
-	StartPeriodic(intervalMs uint32, callback func())
-	StartOneShot(delayMs uint32, callback func())
-	Cancel()
+import "github.com/newmassrael/sce-forge-runtime/timer"
+
+// TimerDiagSchedulerHandler is the user-supplied callback interface.
+// Missing methods produce a compile error at the constructor call site —
+// Go's structural interface satisfaction is checked when NewTimerDiagScheduler
+// is invoked, so there is no silent fallback.
+type TimerDiagSchedulerHandler interface {
+	FireTesterPresent()
+	FireHandleTimeout()
+	FireRetrySecurityAccess()
 }
 
 type TimerDiagScheduler struct {
-	TesterPresentTimer Timer
-	ResponseTimeoutTimer Timer
-	RetryDelayTimer Timer
+	handler TimerDiagSchedulerHandler
+	testerPresentTimer timer.Timer
+	responseTimeoutTimer timer.Timer
+	retryDelayTimer timer.Timer
+}
+
+func NewTimerDiagScheduler(
+	handler TimerDiagSchedulerHandler,
+	testerPresentTimer timer.Timer,
+	responseTimeoutTimer timer.Timer,
+	retryDelayTimer timer.Timer,
+) *TimerDiagScheduler {
+	return &TimerDiagScheduler{
+		handler: handler,
+		testerPresentTimer: testerPresentTimer,
+		responseTimeoutTimer: responseTimeoutTimer,
+		retryDelayTimer: retryDelayTimer,
+	}
 }
 
 func (s *TimerDiagScheduler) StartTesterPresent() {
-	if s.TesterPresentTimer != nil {
-		s.TesterPresentTimer.StartPeriodic(2000, func() { s.onTesterPresent() })
-	}
+	s.testerPresentTimer.StartPeriodic(2000, func() { s.handler.FireTesterPresent() })
 }
 
 func (s *TimerDiagScheduler) CancelTesterPresent() {
-	if s.TesterPresentTimer != nil {
-		s.TesterPresentTimer.Cancel()
-	}
+	s.testerPresentTimer.Cancel()
 }
 
 func (s *TimerDiagScheduler) StartResponseTimeout() {
-	if s.ResponseTimeoutTimer != nil {
-		s.ResponseTimeoutTimer.StartOneShot(5000, func() { s.onHandleTimeout() })
-	}
+	s.responseTimeoutTimer.StartOneShot(5000, func() { s.handler.FireHandleTimeout() })
 }
 
 func (s *TimerDiagScheduler) CancelResponseTimeout() {
-	if s.ResponseTimeoutTimer != nil {
-		s.ResponseTimeoutTimer.Cancel()
-	}
+	s.responseTimeoutTimer.Cancel()
 }
 
 func (s *TimerDiagScheduler) StartRetryDelay() {
-	if s.RetryDelayTimer != nil {
-		s.RetryDelayTimer.StartOneShot(10000, func() { s.onRetrySecurityAccess() })
-	}
+	s.retryDelayTimer.StartOneShot(10000, func() { s.handler.FireRetrySecurityAccess() })
 }
 
 func (s *TimerDiagScheduler) CancelRetryDelay() {
-	if s.RetryDelayTimer != nil {
-		s.RetryDelayTimer.Cancel()
-	}
+	s.retryDelayTimer.Cancel()
 }
-
-func (s *TimerDiagScheduler) onTesterPresent() { /* platform callback */ }
-
-func (s *TimerDiagScheduler) onHandleTimeout() { /* platform callback */ }
-
-func (s *TimerDiagScheduler) onRetrySecurityAccess() { /* platform callback */ }

@@ -3,22 +3,22 @@
 
 package filter_low_pass
 
+import "github.com/newmassrael/sce-forge-runtime/filter"
+
 type FilterLowPass struct {
-	prev        float64
-	initialized bool
+	impl *filter.LowPass[float64]
+}
+
+func NewFilterLowPass() *FilterLowPass {
+	return &FilterLowPass{
+		impl: filter.NewLowPass[float64](0.1),
+	}
 }
 
 func (f *FilterLowPass) Update(rawSignal float64) float64 {
-	if !f.initialized {
-		f.prev = float64(rawSignal)
-		f.initialized = true
-		return f.prev
-	}
-	f.prev = 0.1 * float64(rawSignal) + (1.0 - 0.1) * f.prev
-	return f.prev
+	return f.impl.Update(rawSignal)
 }
 
 func (f *FilterLowPass) Reset() {
-	f.prev = 0
-	f.initialized = false
+	f.impl.Reset()
 }
