@@ -14,6 +14,7 @@ members = [
     "sce-rust-lua",
     "sce-rust-tests",
     "sce-build",
+    "sce-forge-runtime/rust",
 ]
 
 [workspace.package]

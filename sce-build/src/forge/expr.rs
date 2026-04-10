@@ -943,7 +943,11 @@ fn emit_rust(expr: &Expr) -> String {
         Expr::StringLit { value, .. } => format!("\"{value}\""),
         Expr::BoolLit(b) => if *b { "true" } else { "false" }.to_string(),
         Expr::NullLit => "None".to_string(),
-        Expr::Ident(s) => s.clone(),
+        // Identifiers are normalized to snake_case to match Rust naming
+        // convention, so an SCXML expression like `coolantTemp > 110.0`
+        // becomes `coolant_temp > 110.0`. Member properties (struct fields)
+        // are emitted verbatim — only bare `Ident` nodes are renormalized.
+        Expr::Ident(s) => crate::filters::to_snake_case(s.clone()),
         Expr::Binary { op, left, right } => {
             let l = emit_child(left, *op, true, rust_precedence, &emit_rust);
             let r = emit_child(right, *op, false, rust_precedence, &emit_rust);
@@ -1050,7 +1054,9 @@ fn emit_python(expr: &Expr) -> String {
         Expr::StringLit { value, quote } => format!("{quote}{value}{quote}"),
         Expr::BoolLit(b) => if *b { "True" } else { "False" }.to_string(),
         Expr::NullLit => "None".to_string(),
-        Expr::Ident(s) => s.clone(),
+        // Identifiers are normalized to snake_case to match Python naming
+        // convention. Member properties (attribute names) are emitted verbatim.
+        Expr::Ident(s) => crate::filters::to_snake_case(s.clone()),
         Expr::Binary { op, left, right } => {
             let l = emit_child(left, *op, true, python_precedence, &emit_python);
             let r = emit_child(right, *op, false, python_precedence, &emit_python);

@@ -10,10 +10,24 @@
 
 namespace SCE::Generated::TimerDiagScheduler {
 
+/// Handler concept for TimerDiagScheduler.
+///
+/// The user-supplied `Handler` template parameter must declare these member
+/// functions. Missing methods produce a precise compile error at template
+/// instantiation time, because the trampolines below call them by name.
+///
+/// Required interface:
+///     void fireTesterPresent();   // TesterPresent
+///     void fireHandleTimeout();   // handleTimeout
+///     void fireRetrySecurityAccess();   // retrySecurityAccess
+///
+/// Inheriting from a base class is not required — duck typing is sufficient.
+
+template <typename Handler>
 class TimerDiagScheduler {
 public:
-    TimerDiagScheduler(sce::forge::ITimer& testerPresentTimer, sce::forge::ITimer& responseTimeoutTimer, sce::forge::ITimer& retryDelayTimer)
-        : testerPresentTimer_(testerPresentTimer), responseTimeoutTimer_(responseTimeoutTimer), retryDelayTimer_(retryDelayTimer) {}
+    TimerDiagScheduler(Handler& handler, sce::forge::ITimer& testerPresentTimer, sce::forge::ITimer& responseTimeoutTimer, sce::forge::ITimer& retryDelayTimer)
+        : handler_(handler), testerPresentTimer_(testerPresentTimer), responseTimeoutTimer_(responseTimeoutTimer), retryDelayTimer_(retryDelayTimer) {}
 
     void startTesterPresent() {
         testerPresentTimer_.startPeriodic(2000, &onTesterPresent, this);
@@ -40,23 +54,20 @@ public:
     }
 
 private:
+    Handler& handler_;
     sce::forge::ITimer& testerPresentTimer_;
     sce::forge::ITimer& responseTimeoutTimer_;
     sce::forge::ITimer& retryDelayTimer_;
 
     static void onTesterPresent(void* ctx) {
-        static_cast<TimerDiagScheduler*>(ctx)->fireTesterPresent();
+        static_cast<TimerDiagScheduler*>(ctx)->handler_.fireTesterPresent();
     }
     static void onHandleTimeout(void* ctx) {
-        static_cast<TimerDiagScheduler*>(ctx)->fireHandleTimeout();
+        static_cast<TimerDiagScheduler*>(ctx)->handler_.fireHandleTimeout();
     }
     static void onRetrySecurityAccess(void* ctx) {
-        static_cast<TimerDiagScheduler*>(ctx)->fireRetrySecurityAccess();
+        static_cast<TimerDiagScheduler*>(ctx)->handler_.fireRetrySecurityAccess();
     }
-
-    void fireTesterPresent();
-    void fireHandleTimeout();
-    void fireRetrySecurityAccess();
 };
 
 }  // namespace SCE::Generated::TimerDiagScheduler

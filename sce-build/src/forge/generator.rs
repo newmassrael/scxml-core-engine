@@ -5163,7 +5163,30 @@ fn render_timer(
         })
     }).collect();
 
+    // Deduplicate callbacks: two timers may target the same handler method,
+    // but the handler trait/concept lists each method exactly once. Insertion-
+    // order preserved (BTreeMap keyed by encounter index) so output is stable.
+    let mut seen = std::collections::BTreeSet::new();
+    let unique_callbacks: Vec<serde_json::Value> = m.timers.iter()
+        .filter_map(|t| {
+            let callback = t.event.as_deref()
+                .or(t.on_timeout.as_deref())
+                .unwrap_or(&t.id)
+                .to_string();
+            if seen.insert(callback.clone()) {
+                Some(serde_json::json!({
+                    "callback": callback.clone(),
+                    "callback_pascal": filters::to_pascal_case(callback.clone()),
+                    "callback_snake": filters::to_snake_case(callback),
+                }))
+            } else {
+                None
+            }
+        })
+        .collect();
+
     ctx.insert("timers".into(), serde_json::json!(timers));
+    ctx.insert("unique_callbacks".into(), serde_json::json!(unique_callbacks));
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
     ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());
@@ -5184,6 +5207,8 @@ fn render_observer(
     let (has_imports, all_imports, stateful_imports) = build_template_imports(imports);
 
     let monitors: Vec<serde_json::Value> = m.monitors.iter().map(|mon| {
+        // Identifier snake_case-ing is applied at the expr emitter (see
+        // expr::emit_rust / emit_python), so plain transpile is enough.
         let enter_expr = expr::transpile(&mon.enter_expr, l.expr_target()).unwrap_or_default();
         let leave_expr = mon.leave_expr.as_ref()
             .map(|e| expr::transpile(e, l.expr_target()).unwrap_or_default());

@@ -1,43 +1,70 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
 // Do not edit — regenerate from the source SCXML file.
 
-/// Platform timer trait (injected at runtime).
-pub trait Timer {
-    fn start_periodic(&mut self, interval_ms: u32, callback: Box<dyn Fn()>);
-    fn start_one_shot(&mut self, delay_ms: u32, callback: Box<dyn Fn()>);
-    fn cancel(&mut self);
-}
+use core::ffi::c_void;
+use core::marker::PhantomData;
+use sce_forge_runtime::timer::Timer;
 
-pub struct {{ struct_name }} {
-{% for timer in timers %}
-    pub {{ timer.id }}_timer: Option<Box<dyn Timer>>,
+/// Handler trait for [`{{ struct_name }}`]. The user implements these methods
+/// on a state struct and passes a mutable reference to [`{{ struct_name }}::new`].
+/// The compiler enforces that every method exists; there is no silent fallback.
+pub trait {{ struct_name }}Handler {
+{% for cb in unique_callbacks %}
+    fn fire_{{ cb.callback_snake }}(&mut self);
 {% endfor %}
 }
 
-impl {{ struct_name }} {
-    pub fn new() -> Self {
+/// Generated scheduler. Generic over a concrete platform [`Timer`] type and a
+/// user-supplied [`{{ struct_name }}Handler`]. References to both are taken
+/// for the lifetime `'a`; the borrow checker keeps them alive for as long as
+/// this scheduler exists. Trampolines erase the lifetime via raw pointer when
+/// crossing the FFI boundary, but the contract is that the scheduler must be
+/// dropped (or all timers cancelled) before any borrow is invalidated.
+pub struct {{ struct_name }}<'a, H: {{ struct_name }}Handler, T: Timer> {
+    handler: *mut H,
+{% for timer in timers %}
+    {{ timer.id_snake }}_timer: *mut T,
+{% endfor %}
+    _marker: PhantomData<&'a mut (H, T)>,
+}
+
+impl<'a, H: {{ struct_name }}Handler, T: Timer> {{ struct_name }}<'a, H, T> {
+    pub fn new(handler: &'a mut H{% for timer in timers %}, {{ timer.id_snake }}_timer: &'a mut T{% endfor %}) -> Self {
         Self {
+            handler: handler as *mut H,
 {% for timer in timers %}
-            {{ timer.id }}_timer: None,
+            {{ timer.id_snake }}_timer: {{ timer.id_snake }}_timer as *mut T,
 {% endfor %}
+            _marker: PhantomData,
         }
     }
 {% for timer in timers %}
 
-    pub fn start_{{ timer.id }}(&mut self) {
-        if let Some(ref mut timer) = self.{{ timer.id }}_timer {
+    pub fn start_{{ timer.id_snake }}(&mut self) {
+        // SAFETY: handler and timer references are valid for `'a`, which
+        // outlives this method invocation by construction.
+        unsafe {
 {% if timer.is_periodic %}
-            timer.start_periodic({{ timer.time_ms }}, Box::new(|| { /* {{ timer.callback }} */ }));
+            (*self.{{ timer.id_snake }}_timer).start_periodic({{ timer.time_ms }}, Self::on_{{ timer.callback_snake }}_trampoline, self.handler as *mut c_void);
 {% else %}
-            timer.start_one_shot({{ timer.time_ms }}, Box::new(|| { /* {{ timer.callback }} */ }));
+            (*self.{{ timer.id_snake }}_timer).start_one_shot({{ timer.time_ms }}, Self::on_{{ timer.callback_snake }}_trampoline, self.handler as *mut c_void);
 {% endif %}
         }
     }
 
-    pub fn cancel_{{ timer.id }}(&mut self) {
-        if let Some(ref mut timer) = self.{{ timer.id }}_timer {
-            timer.cancel();
-        }
+    pub fn cancel_{{ timer.id_snake }}(&mut self) {
+        // SAFETY: see start_{{ timer.id_snake }}
+        unsafe { (*self.{{ timer.id_snake }}_timer).cancel(); }
+    }
+{% endfor %}
+{% for cb in unique_callbacks %}
+
+    extern "C" fn on_{{ cb.callback_snake }}_trampoline(ctx: *mut c_void) {
+        // SAFETY: ctx came from `self.handler as *mut H` and is valid for the
+        // entire lifetime of the enclosing scheduler. The reference is dropped
+        // before this function returns, so it cannot outlive the borrow.
+        let h = unsafe { &mut *(ctx as *mut H) };
+        h.fire_{{ cb.callback_snake }}();
     }
 {% endfor %}
 }

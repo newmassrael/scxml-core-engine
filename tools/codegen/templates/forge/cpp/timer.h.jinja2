@@ -15,10 +15,24 @@
 
 namespace SCE::Generated::{{ namespace }} {
 
+/// Handler concept for {{ struct_name }}.
+///
+/// The user-supplied `Handler` template parameter must declare these member
+/// functions. Missing methods produce a precise compile error at template
+/// instantiation time, because the trampolines below call them by name.
+///
+/// Required interface:
+{% for cb in unique_callbacks %}
+///     void fire{{ cb.callback_pascal }}();   // {{ cb.callback }}
+{% endfor %}
+///
+/// Inheriting from a base class is not required — duck typing is sufficient.
+
+template <typename Handler>
 class {{ struct_name }} {
 public:
-    {{ struct_name }}({% for timer in timers %}sce::forge::ITimer& {{ timer.id }}Timer{% if not loop.last %}, {% endif %}{% endfor %})
-        : {% for timer in timers %}{{ timer.id }}Timer_({{ timer.id }}Timer){% if not loop.last %}, {% endif %}{% endfor %} {}
+    {{ struct_name }}(Handler& handler{% for timer in timers %}, sce::forge::ITimer& {{ timer.id }}Timer{% endfor %})
+        : handler_(handler){% for timer in timers %}, {{ timer.id }}Timer_({{ timer.id }}Timer){% endfor %} {}
 {% for timer in timers %}
 
     void start{{ timer.id_pascal }}() {
@@ -35,18 +49,15 @@ public:
 {% endfor %}
 
 private:
+    Handler& handler_;
 {% for timer in timers %}
     sce::forge::ITimer& {{ timer.id }}Timer_;
 {% endfor %}
 
-{% for timer in timers %}
-    static void on{{ timer.callback_pascal }}(void* ctx) {
-        static_cast<{{ struct_name }}*>(ctx)->fire{{ timer.callback_pascal }}();
+{% for cb in unique_callbacks %}
+    static void on{{ cb.callback_pascal }}(void* ctx) {
+        static_cast<{{ struct_name }}*>(ctx)->handler_.fire{{ cb.callback_pascal }}();
     }
-{% endfor %}
-
-{% for timer in timers %}
-    void fire{{ timer.callback_pascal }}();
 {% endfor %}
 };
 

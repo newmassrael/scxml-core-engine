@@ -108,7 +108,7 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
                         service: "TesterPresent".to_string(),
                         subfunc: "".to_string(),
                         params: HashMap::from([
-                            ("addr".to_string(), self.ecu_addr.to_string()),
+                            ("addr".to_string(), self_ecu_addr.to_string()),
                         ]),
                     };
                     let resp = handler(&req);
@@ -134,7 +134,7 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
                         service: "SecurityAccess".to_string(),
                         subfunc: "0x02".to_string(),
                         params: HashMap::from([
-                            ("payload".to_string(), computeKey(&self.seed).to_string()),
+                            ("payload".to_string(), compute_key(&self_seed).to_string()),
                         ]),
                     };
                     let resp = handler(&req);
@@ -181,12 +181,12 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
             }
             State::Retry => {
                 if event == Event::None {
-                    if self.retry_count < self.max_retries {
+                    if self_retry_count < self_max_retries {
                         return Some((State::RequestSeed, 0, true));
                     }
                 }
                 if event == Event::None {
-                    if self.retry_count >= self.max_retries {
+                    if self_retry_count >= self_max_retries {
                         return Some((State::Error, 1, false));
                     }
                 }
@@ -199,12 +199,12 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
     fn execute_transition_actions(&mut self, source: State, tr_index: usize) {
         if source == State::RequestSeed {
             if tr_index == 0 {
-                self.seed = self.pending_event_data.as_bytes().to_vec();
+                self.seed = self_pending_event_data.as_bytes().to_vec();
             }
         }
         if source == State::Retry {
             if tr_index == 0 {
-                self.retry_count = self.retry_count + 1;
+                self.retry_count = self_retry_count + 1;
             }
         }
     }

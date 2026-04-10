@@ -1,6 +1,12 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation")
 // Do not edit — regenerate from the source SCXML file.
 
+{% if is_bilinear %}
+use sce_forge_runtime::interpolation::bilinear;
+{% else %}
+use sce_forge_runtime::interpolation::linear;
+{% endif %}
+
 pub struct {{ struct_name }};
 
 impl {{ struct_name }} {
@@ -19,57 +25,19 @@ impl {{ struct_name }} {
 
     pub fn lookup({{ params }}) -> {{ output_type }} {
 {% if is_bilinear %}
-        Self::bilinear_interpolate(
-            &Self::{{ axes[0].var_name }}, &Self::{{ axes[1].var_name }}, &Self::VALUES,
-            {{ axes[0].input_id }} as {{ output_type }}, {{ axes[1].input_id }} as {{ output_type }})
+        bilinear(
+            &Self::{{ axes[0].var_name }},
+            &Self::{{ axes[1].var_name }},
+            &Self::VALUES,
+            {{ axes[0].input_id }} as {{ output_type }},
+            {{ axes[1].input_id }} as {{ output_type }},
+        )
 {% else %}
-        Self::linear_interpolate(
-            &Self::{{ axes[0].var_name }}, &Self::VALUES,
-            {{ axes[0].input_id }} as {{ output_type }})
+        linear(
+            &Self::{{ axes[0].var_name }},
+            &Self::VALUES,
+            {{ axes[0].input_id }} as {{ output_type }},
+        )
 {% endif %}
     }
-
-    fn linear_interpolate(axis: &[{{ output_type }}], values: &[{{ output_type }}], x: {{ output_type }}) -> {{ output_type }} {
-        let n = axis.len();
-{% if out_of_bounds == "clamp" %}
-        if x <= axis[0] { return values[0]; }
-        if x >= axis[n - 1] { return values[n - 1]; }
-{% elif out_of_bounds == "error" %}
-        if x < axis[0] || x > axis[n - 1] { return 0.0; }
-{% endif %}
-        for i in 0..n - 1 {
-            if x <= axis[i + 1] {
-                let t = (x - axis[i]) / (axis[i + 1] - axis[i]);
-                return values[i] + t * (values[i + 1] - values[i]);
-            }
-        }
-        values[n - 1]
-    }
-{% if is_bilinear %}
-
-    fn bilinear_interpolate(
-            axis_x: &[{{ output_type }}], axis_y: &[{{ output_type }}],
-            table: &[[{{ output_type }}; {{ cols }}]; {{ rows }}],
-            x_in: {{ output_type }}, y_in: {{ output_type }}) -> {{ output_type }} {
-{% if out_of_bounds == "clamp" %}
-        let x = x_in.clamp(axis_x[0], axis_x[axis_x.len() - 1]);
-        let y = y_in.clamp(axis_y[0], axis_y[axis_y.len() - 1]);
-{% elif out_of_bounds == "error" %}
-        if x_in < axis_x[0] || x_in > axis_x[axis_x.len() - 1] { return 0.0; }
-        if y_in < axis_y[0] || y_in > axis_y[axis_y.len() - 1] { return 0.0; }
-        let (x, y) = (x_in, y_in);
-{% else %}
-        let (x, y) = (x_in, y_in);
-{% endif %}
-        let mut ix = 0;
-        let mut iy = 0;
-        for i in 0..axis_x.len() - 1 { if x <= axis_x[i + 1] { ix = i; break; } ix = i; }
-        for i in 0..axis_y.len() - 1 { if y <= axis_y[i + 1] { iy = i; break; } iy = i; }
-        let tx = (x - axis_x[ix]) / (axis_x[ix + 1] - axis_x[ix]);
-        let ty = (y - axis_y[iy]) / (axis_y[iy + 1] - axis_y[iy]);
-        let a = table[ix][iy] + tx * (table[ix + 1][iy] - table[ix][iy]);
-        let b = table[ix][iy + 1] + tx * (table[ix + 1][iy + 1] - table[ix][iy + 1]);
-        a + ty * (b - a)
-    }
-{% endif %}
 }

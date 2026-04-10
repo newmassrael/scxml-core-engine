@@ -107,8 +107,8 @@ impl ProcedurePolicy for CrossfileProcedureCodec {
                         service: "Diag".to_string(),
                         subfunc: "".to_string(),
                         params: HashMap::from([
-                            ("addr".to_string(), self.ecu_addr.to_string()),
-                            ("payload".to_string(), self.frame.encode().to_string()),
+                            ("addr".to_string(), self_ecu_addr.to_string()),
+                            ("payload".to_string(), self_frame.encode().to_string()),
                         ]),
                     };
                     let resp = handler(&req);
@@ -150,7 +150,7 @@ impl ProcedurePolicy for CrossfileProcedureCodec {
     fn execute_transition_actions(&mut self, source: State, tr_index: usize) {
         if source == State::SendRequest {
             if tr_index == 0 {
-                self.response = self.pending_event_data.as_bytes().to_vec();
+                self.response = self_pending_event_data.as_bytes().to_vec();
             }
         }
     }

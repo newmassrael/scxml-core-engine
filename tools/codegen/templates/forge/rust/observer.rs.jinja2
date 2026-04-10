@@ -1,16 +1,51 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
 // Do not edit — regenerate from the source SCXML file.
 
+use sce_forge_runtime::observer::{EventDomain, EventQueue, ThresholdState};
+
+{% if has_event_domain %}
+// Event domain "{{ event_domain }}" is declared by the consuming translation
+// unit (typically a statechart that aggregates events from multiple observers
+// in this domain). The user must provide a struct of the form:
+//
+//     pub struct {{ event_domain }};
+//     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+//     pub enum {{ event_domain }}Tag {
+//         #[default]
+//         {{ events[0] }},{% for ev in events[1:] %}
+//         {{ ev }},{% endfor %}
+//         /* aggregated across the whole domain */
+//     }
+//     impl EventDomain for {{ event_domain }} {
+//         type Tag = {{ event_domain }}Tag;
+//     }
+//
+// before referencing this module. See SCE_FORGE.md Section 4.11.
+pub use crate::{{ event_domain }} as ForgeDomain;
+pub use crate::{{ event_domain }}Tag as ForgeDomainTag;
+{% else %}
+// No sce:event-domain declared on this <scxml> root: the observer falls back
+// to a file-local domain. The resulting Event<> type cannot be composed with
+// other observers. To enable cross-file composition, add
+// sce:event-domain="..." to the source SCXML. See SCE_FORGE.md Section 4.11.
+pub struct ForgeDomain;
+
+#[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Event {
+pub enum ForgeDomainTag {
 {% for ev in events %}
     {{ ev }},
 {% endfor %}
 }
 
+impl EventDomain for ForgeDomain {
+    type Tag = ForgeDomainTag;
+}
+{% endif %}
+
 pub struct {{ struct_name }} {
 {% for mon in monitors %}
-    {{ mon.active_var }}: bool,
+    {{ mon.id }}: ThresholdState,
 {% endfor %}
 }
 
@@ -18,26 +53,35 @@ impl {{ struct_name }} {
     pub fn new() -> Self {
         Self {
 {% for mon in monitors %}
-            {{ mon.active_var }}: false,
+            {{ mon.id }}: ThresholdState::new(),
 {% endfor %}
         }
     }
 
-    pub fn update(&mut self, {{ params }}) -> Vec<Event> {
-        let mut events = Vec::new();
+    pub fn update(&mut self, {{ params }}) -> EventQueue<ForgeDomain> {
+        let mut events: EventQueue<ForgeDomain> = EventQueue::new();
 {% for mon in monitors %}
-        if !self.{{ mon.active_var }} && ({{ mon.enter_expr }}) {
-            self.{{ mon.active_var }} = true;
-            events.push(Event::{{ mon.event_enter }});
-{% if mon.has_leave %}
-        } else if self.{{ mon.active_var }} && ({{ mon.leave_expr }}) {
-            self.{{ mon.active_var }} = false;
-{% if mon.has_on_leave %}
-            events.push(Event::{{ mon.event_leave }});
-{% endif %}
-{% endif %}
+        if self.{{ mon.id }}.enter_if({{ mon.enter_expr }}) {
+            events.push(ForgeDomainTag::{{ mon.event_enter }});
         }
+{% if mon.has_leave %}
+{% if mon.has_on_leave %}
+        else if self.{{ mon.id }}.leave_if({{ mon.leave_expr }}) {
+            events.push(ForgeDomainTag::{{ mon.event_leave }});
+        }
+{% else %}
+        else {
+            self.{{ mon.id }}.leave_if({{ mon.leave_expr }});
+        }
+{% endif %}
+{% endif %}
 {% endfor %}
         events
+    }
+}
+
+impl Default for {{ struct_name }} {
+    fn default() -> Self {
+        Self::new()
     }
 }

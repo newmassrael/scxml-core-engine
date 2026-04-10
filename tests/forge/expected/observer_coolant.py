@@ -17,15 +17,15 @@ class ObserverCoolant:
 
     def update(self, coolant_temp: float) -> list[Event]:
         events: list[Event] = []
-        if not self._warning_active and (coolantTemp > 110.0):
+        if not self._warning_active and (coolant_temp > 110.0):
             self._warning_active = True
             events.append(Event.EMIT_WARNING)
-        elif self._warning_active and (coolantTemp < 100.0):
+        elif self._warning_active and (coolant_temp < 100.0):
             self._warning_active = False
             events.append(Event.CLEAR_WARNING)
-        if not self._critical_active and (coolantTemp > 120.0):
+        if not self._critical_active and (coolant_temp > 120.0):
             self._critical_active = True
             events.append(Event.EMERGENCY_SHUTDOWN)
-        elif self._critical_active and (coolantTemp < 105.0):
+        elif self._critical_active and (coolant_temp < 105.0):
             self._critical_active = False
         return events

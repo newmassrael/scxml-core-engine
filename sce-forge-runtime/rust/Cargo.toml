@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: LGPL-2.1-or-later OR LicenseRef-SCE-Commercial
+# SPDX-FileCopyrightText: Copyright (c) 2025 newmassrael
+
+[package]
+name = "sce-forge-runtime"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Header-only-equivalent algorithm and HAL library for SCE Forge generated code (filter, interpolation, timer, observer kinds). See SCE_FORGE.md Section 2.1."
+
+[lib]
+name = "sce_forge_runtime"
+path = "src/lib.rs"
