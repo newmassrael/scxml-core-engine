@@ -94,8 +94,50 @@ Value SCE Forge adds:
 - Extended SCXML is valid W3C SCXML + custom `sce:` namespace extensions
 - Standard SCXML parsers can read the files (ignoring `sce:` attributes)
 - Codegen reads `sce:kind` to select the appropriate generation template
-- Target code depends only on sce_runtime interfaces
+- Generated code depends on **two** runtime libraries, both statically linked at build time:
+  1. `sce_runtime` — statechart execution runtime (existing, used by `sce:kind="statechart"` output)
+  2. `sce_forge_runtime` — header-only / inline-able algorithm and interface library for non-statechart kinds (see §2.1)
+- Neither runtime introduces any dynamic (shared-object) dependency at load time
 - How SCXML files are authored (manually, by tools, etc.) is outside this specification
+
+### 2.1 Runtime Library Policy
+
+SCE Forge generated code may depend on **runtime libraries**, subject to two non-negotiable constraints rooted in embedded deployment requirements.
+
+**C1. Static linking only.** Generated code must not incur any dynamic (shared-object) dependency at load time. All runtime helpers must resolve at link time, so the output remains deployable on embedded targets that have no dynamic linker (FreeRTOS, Zephyr, bare-metal, automotive ECUs).
+
+**C2. No stateful global services.** Runtime libraries must not introduce hidden global state, threads, allocators, or I/O. Each generated unit controls its own lifecycle. The runtime provides only pure functions, class templates, and abstract interface declarations. Allocation, scheduling, and I/O are user concerns, injected via interfaces (see HAL pattern below).
+
+Within those constraints, the following **are explicitly permitted and preferred**:
+
+- **Header-only template libraries** (`sce_forge_runtime`) for shared algorithms — linear/bilinear interpolation, moving average, low-pass, debounce, hysteresis tracking. One algorithm, one implementation per language, instantiated at compile time with the SCXML-derived configuration.
+- **Abstract interface declarations** (HAL pattern) that the user implements to inject platform services. Example: `sce::forge::ITimer` declares `startPeriodic`/`startOneShot`/`cancel`; the platform implementation (POSIX, FreeRTOS, Zephyr, etc.) is a user-supplied subclass injected by reference. Generated code holds an `ITimer&` member, never owns the timer object. This is the textbook Dependency Inversion Principle applied at the language boundary.
+- **C-style callback signatures** (`void(*)(void* ctx)` plus a `void* ctx` argument) for any callback the runtime invokes. This avoids `std::function`-style type erasure (which can heap-allocate) and maps 1:1 to native RTOS APIs (`pthread_create`, `xTimerCreate`, `k_timer_init`). Generated code uses static member functions as trampolines to bridge into instance methods.
+- **Generic tagged types** parameterized by user-declared domains (e.g., `sce::forge::Event<MyDomain>`) for cross-unit composition while preserving type safety.
+
+**What stays per-file generated:**
+
+- Configuration data: axis breakpoints, lookup tables, constant arrays.
+- Parsed expressions: codegen output of `expr`, `sce:enter`, `sce:leave`, etc.
+- Kind-specific type names and method signatures derived from the SCXML document (`struct InjectionMap { ... }`).
+- Trampoline static methods that bind a runtime callback to a generated instance method.
+
+**What moves to the runtime library:**
+
+- Any algorithm whose body is identical across SCXML inputs of the same kind (the bilinear formula, the moving-average update loop, the hysteresis state transition, the threshold debounce sequence).
+- Any interface that the platform implements exactly once per deployment (`ITimer`, future `IClock`, etc.).
+
+**Rationale.** Static linking is a *deployment* constraint. Per-file inlining of algorithms is an *implementation* choice that was previously conflated with the deployment constraint. Separating the two eliminates N-way duplication of numerical code (5 languages × multiple kinds × multiple variants), establishes a single source of truth for behavior, and enables cross-file composition patterns (domain-tagged events, shared HAL interfaces) that per-file types cannot support. The constraints C1/C2 ensure the embedded suitability that originally motivated the inlining is preserved.
+
+**Packaging.** `sce_forge_runtime` ships as five parallel implementations, one per target language. All implementations are bit-identical in numerical behavior (enforced by cross-language conformance tests on the same SCXML inputs):
+
+| Language | Form | Linking |
+|----------|------|---------|
+| C++ | header-only templates in `sce/forge/*.h` | CMake `INTERFACE` library |
+| Rust | `#[inline]` functions and traits in `sce-forge-runtime` crate | cargo dependency |
+| Kotlin | `commonMain` inline functions and interfaces | Gradle module |
+| Go | pure-Go package `github.com/sce/forge-runtime` | Go module |
+| Python | pure-Python module `sce_forge_runtime` | pip package |
 
 ### Relationship to Existing SCE Architecture
 
@@ -385,6 +427,7 @@ The `sce:` namespace contains attributes from two distinct subsystems. Each attr
 | `sce:axis-{id}` | SCE Forge | Build-time (codegen) | Interpolation axis points |
 | `sce:timer`, `sce:interval`, `sce:duration`, `sce:delay` | SCE Forge | Build-time (codegen) | Timer scheduling |
 | `sce:monitor`, `sce:enter`, `sce:leave` | SCE Forge | Build-time (codegen) | Observer threshold |
+| `sce:event-domain` | SCE Forge | Build-time (codegen) | Observer cross-file event namespace (§4.11) |
 | `sce:on-enter`, `sce:on-leave`, `sce:on-timeout` | SCE Forge | Build-time (codegen) | Observer/timer event names |
 | `sce:qos` | SCE Mesh | Runtime (transport) | Delivery guarantee |
 | `sce:deadline` | SCE Mesh | Runtime (transport) | Maximum delivery latency |
@@ -817,30 +860,20 @@ Signal filtering — moving average, low-pass, debounce. Filter configuration is
 </scxml>
 ```
 
-**Codegen** (C++, moving-average):
+**Codegen** (C++, moving-average) — the filter algorithm comes from `sce_forge_runtime`. The generated file only binds the configuration (window size, type) and exposes the kind-specific method signature:
+
 ```cpp
+#include <sce/forge/filter.h>
+
 struct TempFilter {
-    std::array<double, 5> buffer_{};
-    size_t index_ = 0;
-    bool filled_ = false;
+    sce::forge::MovingAverage<double, 5> impl_;
 
-    double update(double rawTemp) {
-        buffer_[index_] = rawTemp;
-        index_ = (index_ + 1) % 5;
-        if (!filled_ && index_ == 0) filled_ = true;
-        size_t count = filled_ ? 5 : index_;
-        double sum = 0;
-        for (size_t i = 0; i < count; i++) sum += buffer_[i];
-        return sum / count;
-    }
-
-    void reset() {
-        buffer_ = {};
-        index_ = 0;
-        filled_ = false;
-    }
+    double update(double rawTemp) { return impl_.update(rawTemp); }
+    void reset()                  { impl_.reset(); }
 };
 ```
+
+The class templates `MovingAverage<T, Window>`, `LowPass<T>`, and `Debounce<T, Window>` are header-only and live in `sce_forge_runtime`. Per-file generated content is limited to the wrapper struct name and the input/output type — the algorithm body itself is shared. See §2.1 for the runtime library policy.
 
 ### 4.9 interpolation
 
@@ -891,19 +924,22 @@ struct TempFilter {
 
 **Codegen** (C++):
 ```cpp
+#include <sce/forge/interpolation.h>
+
 struct InjectionMap {
-    static constexpr double AXIS_RPM[] = {800, 1200, 2000, 3000, 4000, 6000};
-    static constexpr double AXIS_LOAD[] = {10, 25, 50, 75, 100};
+    static constexpr double AXIS_RPM[]   = {800, 1200, 2000, 3000, 4000, 6000};
+    static constexpr double AXIS_LOAD[]  = {10, 25, 50, 75, 100};
     static constexpr double VALUES[6][5] = { /* ... */ };
 
     static double lookup(uint16_t rpm, uint8_t load) {
-        return bilinearInterpolate(AXIS_RPM, 6, AXIS_LOAD, 5, VALUES, rpm, load);
+        return sce::forge::bilinear(AXIS_RPM, AXIS_LOAD, VALUES,
+                                    static_cast<double>(rpm),
+                                    static_cast<double>(load));
     }
-
-    // bilinearInterpolate is generated inline by codegen (no runtime dependency)
-    static double bilinearInterpolate(/* ... */) { /* ... */ }
 };
 ```
+
+The `linear<N>` and `bilinear<Rows, Cols>` function templates are header-only and provided by `sce_forge_runtime`. Per-file generated content is limited to the configuration arrays (axes, values) and the kind-specific `lookup()` signature derived from input/output `<data>` declarations. See §2.1.
 
 ### 4.10 timer
 
@@ -931,26 +967,59 @@ Periodic, delayed, and timeout task timing. Each timer is a `<data>` element wit
 - `sce:event` — event name to emit when timer fires
 - `sce:on-timeout` — callback name for timeout expiry (alternative to event)
 
-**Codegen** (C++):
-```cpp
-struct DiagScheduler {
-    Timer testerPresentTimer_{2000ms, [this]{ sendTesterPresent(); }};
-    Timer responseTimeout_{5000ms, [this]{ handleTimeout(); }};
+**Codegen** (C++) — follows the HAL pattern from §2.1: the generated struct receives `ITimer&` references by constructor injection, never owns the timer objects, and bridges to instance methods through static trampolines:
 
-    void start() { testerPresentTimer_.startPeriodic(); }
-    void waitResponse() { responseTimeout_.startOneShot(); }
-    void onResponse() { responseTimeout_.cancel(); }
+```cpp
+#include <sce/forge/timer.h>
+
+class DiagScheduler {
+public:
+    DiagScheduler(sce::forge::ITimer& testerTimer,
+                  sce::forge::ITimer& responseTimer)
+        : testerPresentTimer_(testerTimer),
+          responseTimeout_(responseTimer) {}
+
+    void start()        { testerPresentTimer_.startPeriodic(2000, &onTesterTick, this); }
+    void waitResponse() { responseTimeout_.startOneShot(5000, &onResponseTimeout, this); }
+    void onResponse()   { responseTimeout_.cancel(); }
+
+private:
+    sce::forge::ITimer& testerPresentTimer_;
+    sce::forge::ITimer& responseTimeout_;
+
+    // Trampolines: bridge C-style callbacks back into instance methods (no std::function, no heap)
+    static void onTesterTick(void* ctx)      { static_cast<DiagScheduler*>(ctx)->emitTesterPresent(); }
+    static void onResponseTimeout(void* ctx) { static_cast<DiagScheduler*>(ctx)->handleTimeout(); }
+
+    void emitTesterPresent();   // forward-declared; implemented by user or by statechart integration layer
+    void handleTimeout();
 };
 ```
 
-> **Runtime dependency**: Generated code requires a platform-provided `Timer` interface. The codegen emits calls to `startPeriodic()`, `startOneShot()`, `cancel()`. The platform implementation (POSIX, FreeRTOS, etc.) is injected at link time.
+The corresponding interface in `sce_forge_runtime`:
+
+```cpp
+namespace sce::forge {
+    using TimerCallback = void(*)(void* ctx);
+
+    class ITimer {
+    public:
+        virtual ~ITimer() = default;
+        virtual void startPeriodic(uint32_t intervalMs, TimerCallback cb, void* ctx) = 0;
+        virtual void startOneShot(uint32_t delayMs,    TimerCallback cb, void* ctx) = 0;
+        virtual void cancel() = 0;
+    };
+}
+```
+
+> **Runtime dependency**: The `sce::forge::ITimer` interface is declared once in `sce_forge_runtime` (header-only). The user supplies a concrete implementation (POSIX `timer_create`, FreeRTOS `xTimerCreate`, Zephyr `k_timer`, std::thread, etc.) and injects it into the generated struct's constructor. The C-style `void(*)(void*)` + `void* ctx` callback shape avoids `std::function` heap allocation and maps 1:1 to native RTOS timer APIs. This is the textbook Hardware Abstraction Layer pattern; see §2.1 for the runtime library policy.
 
 ### 4.11 observer
 
 Threshold monitoring with hysteresis. Each threshold monitor is a `<data>` element with `sce:monitor` attributes defining enter/leave conditions and event names.
 
 ```xml
-<scxml sce:kind="observer">
+<scxml sce:kind="observer" sce:event-domain="VehicleAlerts">
   <datamodel>
     <data id="coolantTemp" sce:type="float64" sce:direction="in"/>
     <data id="warning" sce:monitor="threshold"
@@ -970,34 +1039,58 @@ Threshold monitoring with hysteresis. Each threshold monitor is a `<data>` eleme
 - `sce:leave` — condition expression for leaving the active state (hysteresis low)
 - `sce:on-enter` — event name emitted when entering active state
 - `sce:on-leave` — event name emitted when leaving active state (optional)
+- `sce:event-domain` — optional, declared on `<scxml>` root; see Event Domain Model below
 
-Event names are auto-derived from the `sce:on-enter`/`sce:on-leave` attribute values. The generated `Events` enum contains entries like `Event::WARNING`, `Event::WARNING_CLEARED`, `Event::EMERGENCY_SHUTDOWN`.
+#### Event Domain Model
 
-**Codegen** (C++):
+Observer events typically participate in cross-file composition: a statechart reacts to events emitted by one or more observer files, an observer may share its event vocabulary with sibling observers monitoring the same physical subsystem, etc. To make events type-safe across files without forcing a single monolithic enum, observers use the **domain-tagged event** pattern.
+
+**With explicit domain (recommended for any composition use case):**
+
+- Declare a domain on the `<scxml>` root: `sce:event-domain="VehicleAlerts"`
+- All observers (and statecharts) referencing the same domain share a common event type: `sce::forge::Event<VehicleAlerts>`
+- `VehicleAlerts` is a user-meaningful tag type, generated once per domain by whichever translation unit `#include`s `<sce/forge/observer.h>` and declares the domain via the `SCE_FORGE_EVENT_DOMAIN` macro
+- Event names derived from `sce:on-enter` / `sce:on-leave` are aggregated across all files in the domain into a single typed enumeration
+- Generated observer code emits `sce::forge::EventQueue<VehicleAlerts>` from `update()`; downstream consumers (statecharts, other observers) receive the same type and dispatch on it
+
+**Without a domain:**
+
+- The observer falls back to a file-local enum (`FileName::Event`) and **cannot** be composed with other observers or referenced from other generated files
+- Permitted for self-contained diagnostics where the event vocabulary never crosses a file boundary
+- Composition-heavy projects should always declare a domain
+
+**Codegen** (C++) — uses `ThresholdState` and `EventQueue<D>` from `sce_forge_runtime`; only the configuration (thresholds, event tags) and the `update()` signature are per-file generated:
+
 ```cpp
-struct CoolantMonitor {
-    bool warningActive_ = false;
-    bool criticalActive_ = false;
+#include <sce/forge/observer.h>
 
-    Events update(double coolantTemp) {
-        Events events;
-        if (!warningActive_ && coolantTemp > 110.0) {
-            warningActive_ = true;
-            events.push(Event::EMIT_WARNING);
-        } else if (warningActive_ && coolantTemp < 100.0) {
-            warningActive_ = false;
-            events.push(Event::CLEAR_WARNING);
-        }
-        if (!criticalActive_ && coolantTemp > 120.0) {
-            criticalActive_ = true;
-            events.push(Event::EMERGENCY_SHUTDOWN);
-        } else if (criticalActive_ && coolantTemp < 105.0) {
-            criticalActive_ = false;
-        }
+// Domain tag — declared once per domain in the consuming statechart, or in a shared header.
+// Example:
+//     struct VehicleAlerts {
+//         enum Tag { EMIT_WARNING, CLEAR_WARNING, EMERGENCY_SHUTDOWN /* aggregated across domain */ };
+//     };
+
+class CoolantMonitor {
+public:
+    sce::forge::EventQueue<VehicleAlerts> update(double coolantTemp) {
+        sce::forge::EventQueue<VehicleAlerts> events;
+
+        if      (warning_.enterIf(coolantTemp > 110.0)) events.push(VehicleAlerts::EMIT_WARNING);
+        else if (warning_.leaveIf(coolantTemp < 100.0)) events.push(VehicleAlerts::CLEAR_WARNING);
+
+        if      (critical_.enterIf(coolantTemp > 120.0)) events.push(VehicleAlerts::EMERGENCY_SHUTDOWN);
+        else                                              critical_.leaveIf(coolantTemp < 105.0);
+
         return events;
     }
+
+private:
+    sce::forge::ThresholdState warning_;   // hysteresis bookkeeping (one bool, header-only)
+    sce::forge::ThresholdState critical_;
 };
 ```
+
+`sce::forge::ThresholdState` (a `bool` wrapper exposing `enterIf`/`leaveIf`), `sce::forge::EventQueue<D>` (a fixed-capacity queue parameterized by domain), and the `Event<D>` tagged type all live in `sce_forge_runtime`. The hysteresis state-transition logic exists in exactly one place per language; the generated file contains only the per-monitor thresholds and the per-domain event tags. See §2.1.
 
 ---
 
@@ -1213,23 +1306,25 @@ class DiagSession : public sce::StateMachine {
 
 ## 6. Code Generation Architecture
 
-### 6.1 Self-Contained vs Runtime-Dependent
+### 6.1 Runtime Dependency Matrix
 
-| Kind | Dependencies | C++ Header-Only | Needs sce_runtime |
-|------|-------------|-----------------|-------------------|
-| transform | None | Yes (pure inline) | No |
-| lookup | None | Yes (pure inline) | No |
-| condition | None | Yes (pure inline) | No |
-| codec | None | Yes (pure inline) | No |
-| filter | None (internal buffer) | Yes (class with state) | No |
-| interpolation | None (internal table) | Yes (constexpr data) | No |
-| validator | None (internal prev state) | Yes (class with state) | No |
-| procedure | ProcedureServiceHandler, ProcedureStateMachine | Yes (requires runtime headers) | Yes |
-| timer | Timer | Yes (requires runtime headers) | Yes |
-| observer | EventBus | Yes (requires runtime headers) | Yes |
-| statechart | EventQueue, ActionHandler | Yes (requires runtime headers) | Yes (existing) |
+This matrix records, for each kind, which of the two runtime libraries (defined in §2.1) the generated code links against. All kinds remain header-only at the generated-file level — i.e. no `.cpp` is emitted — but most include `sce_forge_runtime` headers for shared algorithms or HAL interfaces.
 
-Kinds marked "requires runtime headers" are header-only in that they have no `.cpp` files, but they `#include` sce_runtime interface headers (`sce/DiagClient.h`, `sce/Timer.h`, etc.) and require linking against a platform-specific runtime implementation.
+| Kind | Needs `sce_forge_runtime` | Needs `sce_runtime` | Notes |
+|------|---------------------------|---------------------|-------|
+| transform | No | No | Pure inline expression |
+| lookup | No | No | Pure inline switch / map literal |
+| condition | No | No | Pure inline boolean expression |
+| codec | No | No | Pure inline byte packing/unpacking |
+| filter | Yes (`sce/forge/filter.h`) | No | `MovingAverage<T,N>`, `LowPass<T>`, `Debounce<T,N>` templates |
+| interpolation | Yes (`sce/forge/interpolation.h`) | No | `linear<N>`, `bilinear<R,C>` function templates |
+| validator | Yes (`sce/forge/validator.h`) | No | Range / rate-of-change helpers (planned migration) |
+| timer | Yes (`sce/forge/timer.h`) | No | `ITimer` interface (HAL pattern, see §4.10) |
+| observer | Yes (`sce/forge/observer.h`) | No | `ThresholdState`, `EventQueue<D>`, `Event<D>` |
+| procedure | No | Yes (`ProcedureServiceHandler`, `ProcedureStateMachine`) | Statechart-adjacent — uses statechart runtime |
+| statechart | No | Yes (existing: `EventQueue`, `ActionHandler`, ...) | Existing W3C statechart runtime |
+
+The two runtime libraries are independent: `sce_forge_runtime` has no dependency on `sce_runtime`, and a deployment that only generates `transform` / `lookup` kinds links neither. Both libraries satisfy the static-linking and no-stateful-globals constraints from §2.1; `sce_forge_runtime` is header-only across all five target languages (CMake `INTERFACE`, cargo crate, Gradle module, Go package, pip module).
 
 ### 6.2 Expression Transpiler
 
@@ -1350,8 +1445,8 @@ Sequential logic support and multi-language code generation.
 Embedded/automotive signal processing patterns.
 
 - Codegen templates for: `filter`, `interpolation`, `timer`, `observer`
-- sce_runtime extensions (Timer, EventBus interfaces)
-- Platform-specific runtime implementations (POSIX, FreeRTOS)
+- `sce_forge_runtime` library (header-only / inline-able) — shared algorithms (`linear`, `bilinear`, `MovingAverage`, `LowPass`, `Debounce`, `ThresholdState`, `EventQueue<D>`) and HAL interfaces (`ITimer`); see §2.1
+- User-supplied platform implementations of HAL interfaces (POSIX, FreeRTOS, Zephyr, etc.) — out of scope for `sce_forge_runtime` itself
 
 **Phase 3 exit criteria**: All 11 kinds generate compilable code for all 5 target languages (C++/Kotlin/Rust/Go/Python). Kind conformance test suite passes for all kinds.
 
