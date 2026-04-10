@@ -17,6 +17,9 @@ dependencyResolutionManagement {
 
 rootProject.name = "scxml-core-engine"
 
+include(":sce-forge-runtime-kotlin")
+project(":sce-forge-runtime-kotlin").projectDir = file("sce-forge-runtime/kotlin")
+
 include(":sce-kotlin-runtime")
 include(":sce-kotlin-rhino")
 include(":sce-kotlin-lua")

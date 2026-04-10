@@ -1,37 +1,16 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="filter")
 // Do not edit — regenerate from the source SCXML file.
 
+import com.sce.forge.runtime.Debounce
+
 class FilterDebounce {
-    private var stableValue: Boolean = false
-    private var candidate: Boolean = false
-    private var count = 0
-    private var initialized = false
+    private val impl = Debounce<Boolean>(window = 3)
 
     fun update(rawButton: Boolean): Boolean {
-        val value = rawButton
-        if (!initialized) {
-            stableValue = value
-            candidate = value
-            count = 1
-            initialized = true
-            return stableValue
-        }
-        if (value == candidate) {
-            count++
-            if (count >= 3) {
-                stableValue = candidate
-            }
-        } else {
-            candidate = value
-            count = 1
-        }
-        return stableValue
+        return impl.update(rawButton)
     }
 
     fun reset() {
-        stableValue = false
-        candidate = false
-        count = 0
-        initialized = false
+        impl.reset()
     }
 }

@@ -2,81 +2,31 @@
 // Do not edit — regenerate from the source SCXML file.
 
 {% if filter_type == "moving_average" %}
-class {{ struct_name }} {
-    private val buffer = {{ output_type }}Array({{ window }})
-    private var index = 0
-    private var filled = false
-
-    fun update({{ input_id }}: {{ input_type }}): {{ output_type }} {
-        buffer[index] = {{ input_id }}.to{{ output_type }}()
-        index = (index + 1) % {{ window }}
-        if (!filled && index == 0) filled = true
-        val count = if (filled) {{ window }} else index
-        var sum: {{ output_type }} = {{ "0.0" if output_type == "Double" else "0.0f" }}
-        for (i in 0 until count) sum += buffer[i]
-        return sum / count.to{{ output_type }}()
-    }
-
-    fun reset() {
-        buffer.fill({{ "0.0" if output_type == "Double" else "0.0f" }})
-        index = 0
-        filled = false
-    }
-}
+import com.sce.forge.runtime.MovingAverage
 {% elif filter_type == "low_pass" %}
-class {{ struct_name }} {
-    private var prev: {{ output_type }} = {{ "0.0" if output_type == "Double" else "0.0f" }}
-    private var initialized = false
-
-    fun update({{ input_id }}: {{ input_type }}): {{ output_type }} {
-        if (!initialized) {
-            prev = {{ input_id }}.to{{ output_type }}()
-            initialized = true
-            return prev
-        }
-        prev = {{ alpha }}.to{{ output_type }}() * {{ input_id }}.to{{ output_type }}() + (1.0 - {{ alpha }}).to{{ output_type }}() * prev
-        return prev
-    }
-
-    fun reset() {
-        prev = {{ "0.0" if output_type == "Double" else "0.0f" }}
-        initialized = false
-    }
-}
+import com.sce.forge.runtime.LowPass
 {% elif filter_type == "debounce" %}
+import com.sce.forge.runtime.Debounce
+{% endif %}
+
 class {{ struct_name }} {
-    private var stableValue: {{ output_type }} = {{ "false" if output_type == "Boolean" else "0" }}
-    private var candidate: {{ output_type }} = {{ "false" if output_type == "Boolean" else "0" }}
-    private var count = 0
-    private var initialized = false
+{% if filter_type == "moving_average" %}
+    private val impl = MovingAverage(window = {{ window }})
+{% elif filter_type == "low_pass" %}
+    private val impl = LowPass(alpha = {{ alpha }})
+{% elif filter_type == "debounce" %}
+    private val impl = Debounce<{{ output_type }}>(window = {{ window }})
+{% endif %}
 
     fun update({{ input_id }}: {{ input_type }}): {{ output_type }} {
-        val value = {{ input_id }}{% if input_type != output_type %}.to{{ output_type }}(){% endif %}
-
-        if (!initialized) {
-            stableValue = value
-            candidate = value
-            count = 1
-            initialized = true
-            return stableValue
-        }
-        if (value == candidate) {
-            count++
-            if (count >= {{ window }}) {
-                stableValue = candidate
-            }
-        } else {
-            candidate = value
-            count = 1
-        }
-        return stableValue
+{% if input_type == output_type %}
+        return impl.update({{ input_id }})
+{% else %}
+        return impl.update({{ input_id }}.to{{ output_type }}())
+{% endif %}
     }
 
     fun reset() {
-        stableValue = {{ "false" if output_type == "Boolean" else "0" }}
-        candidate = {{ "false" if output_type == "Boolean" else "0" }}
-        count = 0
-        initialized = false
+        impl.reset()
     }
 }
-{% endif %}

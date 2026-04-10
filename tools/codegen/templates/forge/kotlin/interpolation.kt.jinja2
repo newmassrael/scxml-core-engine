@@ -1,6 +1,12 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="interpolation")
 // Do not edit — regenerate from the source SCXML file.
 
+{% if is_bilinear %}
+import com.sce.forge.runtime.bilinear
+{% else %}
+import com.sce.forge.runtime.linear
+{% endif %}
+
 object {{ struct_name }} {
 {% for axis in axes %}
     private val {{ axis.var_name }} = doubleArrayOf({% for bp in axis.breakpoints %}{{ bp }}{% if not loop.last %}, {% endif %}{% endfor %})
@@ -18,52 +24,15 @@ object {{ struct_name }} {
 
     fun lookup({{ params }}): {{ output_type }} {
 {% if is_bilinear %}
-        return bilinearInterpolate(
+        return bilinear(
             {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,
-            {{ axes[0].input_id }}.toDouble(), {{ axes[1].input_id }}.toDouble())
+            {{ axes[0].input_id }}.toDouble(), {{ axes[1].input_id }}.toDouble()
+        )
 {% else %}
-        return linearInterpolate(
+        return linear(
             {{ axes[0].var_name }}, VALUES,
-            {{ axes[0].input_id }}.toDouble())
+            {{ axes[0].input_id }}.toDouble()
+        )
 {% endif %}
     }
-
-    private fun linearInterpolate(axis: DoubleArray, values: DoubleArray, x: Double): Double {
-{% if out_of_bounds == "clamp" %}
-        if (x <= axis[0]) return values[0]
-        if (x >= axis[axis.size - 1]) return values[axis.size - 1]
-{% elif out_of_bounds == "error" %}
-        if (x < axis[0] || x > axis[axis.size - 1]) return 0.0
-{% endif %}
-        for (i in 0 until axis.size - 1) {
-            if (x <= axis[i + 1]) {
-                val t = (x - axis[i]) / (axis[i + 1] - axis[i])
-                return values[i] + t * (values[i + 1] - values[i])
-            }
-        }
-        return values[axis.size - 1]
-    }
-{% if is_bilinear %}
-
-    private fun bilinearInterpolate(
-            axisX: DoubleArray, axisY: DoubleArray, table: Array<DoubleArray>,
-            xIn: Double, yIn: Double): Double {
-        var x = xIn; var y = yIn
-{% if out_of_bounds == "clamp" %}
-        if (x <= axisX[0]) x = axisX[0] else if (x >= axisX[axisX.size - 1]) x = axisX[axisX.size - 1]
-        if (y <= axisY[0]) y = axisY[0] else if (y >= axisY[axisY.size - 1]) y = axisY[axisY.size - 1]
-{% elif out_of_bounds == "error" %}
-        if (x < axisX[0] || x > axisX[axisX.size - 1]) return 0.0
-        if (y < axisY[0] || y > axisY[axisY.size - 1]) return 0.0
-{% endif %}
-        var ix = 0; var iy = 0
-        for (i in 0 until axisX.size - 1) { if (x <= axisX[i + 1]) { ix = i; break }; ix = i }
-        for (i in 0 until axisY.size - 1) { if (y <= axisY[i + 1]) { iy = i; break }; iy = i }
-        val tx = (x - axisX[ix]) / (axisX[ix + 1] - axisX[ix])
-        val ty = (y - axisY[iy]) / (axisY[iy + 1] - axisY[iy])
-        val a = table[ix][iy] + tx * (table[ix + 1][iy] - table[ix][iy])
-        val b = table[ix][iy + 1] + tx * (table[ix + 1][iy + 1] - table[ix][iy + 1])
-        return a + ty * (b - a)
-    }
-{% endif %}
 }

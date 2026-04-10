@@ -1,22 +1,16 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="filter")
 // Do not edit — regenerate from the source SCXML file.
 
+import com.sce.forge.runtime.LowPass
+
 class FilterLowPass {
-    private var prev: Double = 0.0
-    private var initialized = false
+    private val impl = LowPass(alpha = 0.1)
 
     fun update(rawSignal: Double): Double {
-        if (!initialized) {
-            prev = rawSignal.toDouble()
-            initialized = true
-            return prev
-        }
-        prev = 0.1.toDouble() * rawSignal.toDouble() + (1.0 - 0.1).toDouble() * prev
-        return prev
+        return impl.update(rawSignal)
     }
 
     fun reset() {
-        prev = 0.0
-        initialized = false
+        impl.reset()
     }
 }

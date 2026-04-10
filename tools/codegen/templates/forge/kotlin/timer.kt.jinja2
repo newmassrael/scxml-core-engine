@@ -1,32 +1,38 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
 // Do not edit — regenerate from the source SCXML file.
 
-interface ITimer {
-    fun startPeriodic(intervalMs: Long, callback: () -> Unit)
-    fun startOneShot(delayMs: Long, callback: () -> Unit)
-    fun cancel()
+import com.sce.forge.runtime.Timer
+
+/**
+ * Handler interface for [{{ struct_name }}]. The user implements these methods
+ * on a state class and passes the instance to the [{{ struct_name }}] constructor.
+ * Missing methods produce a compile-time error, so there is no silent fallback.
+ */
+interface {{ struct_name }}Handler {
+{% for cb in unique_callbacks %}
+    fun fire{{ cb.callback_pascal }}()
+{% endfor %}
 }
 
-class {{ struct_name }} {
+class {{ struct_name }}(
+    private val handler: {{ struct_name }}Handler,
 {% for timer in timers %}
-    var {{ timer.id }}Timer: ITimer? = null
+    private val {{ timer.id }}Timer: Timer{% if not loop.last %},{% endif %}
+
 {% endfor %}
+) {
 {% for timer in timers %}
 
-    fun start{{ timer.id | capitalize }}() {
+    fun start{{ timer.id_pascal }}() {
 {% if timer.is_periodic %}
-        {{ timer.id }}Timer?.startPeriodic({{ timer.time_ms }}L) { on{{ timer.callback | capitalize }}() }
+        {{ timer.id }}Timer.startPeriodic({{ timer.time_ms }}L) { handler.fire{{ timer.callback_pascal }}() }
 {% else %}
-        {{ timer.id }}Timer?.startOneShot({{ timer.time_ms }}L) { on{{ timer.callback | capitalize }}() }
+        {{ timer.id }}Timer.startOneShot({{ timer.time_ms }}L) { handler.fire{{ timer.callback_pascal }}() }
 {% endif %}
     }
 
-    fun cancel{{ timer.id | capitalize }}() {
-        {{ timer.id }}Timer?.cancel()
+    fun cancel{{ timer.id_pascal }}() {
+        {{ timer.id }}Timer.cancel()
     }
-{% endfor %}
-
-{% for timer in timers %}
-    private fun on{{ timer.callback | capitalize }}() { /* platform callback */ }
 {% endfor %}
 }

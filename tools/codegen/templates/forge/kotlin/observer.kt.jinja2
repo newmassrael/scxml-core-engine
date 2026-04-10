@@ -1,32 +1,64 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
 // Do not edit — regenerate from the source SCXML file.
 
-enum class Event {
+import com.sce.forge.runtime.EventDomain
+import com.sce.forge.runtime.EventQueue
+import com.sce.forge.runtime.ThresholdState
+
+{% if has_event_domain %}
+// Event domain "{{ event_domain }}" is declared by the consuming module
+// (typically a statechart that aggregates events from multiple observers in
+// this domain). The user must provide:
+//
+//     enum class {{ event_domain }}Tag {
+{% for ev in events %}
+//         {{ ev }},
+{% endfor %}
+//         /* aggregated across the whole domain */
+//     }
+//     class {{ event_domain }} : EventDomain<{{ event_domain }}Tag>
+//
+// importable from the user-side module. See SCE_FORGE.md Section 4.11.
+typealias ForgeDomain = {{ event_domain }}
+typealias ForgeDomainTag = {{ event_domain }}Tag
+{% else %}
+// No sce:event-domain declared on this <scxml> root: the observer falls back
+// to a file-local domain. The resulting EventQueue type cannot be composed
+// with other observers. To enable cross-file composition, add
+// sce:event-domain="..." to the source SCXML. See SCE_FORGE.md Section 4.11.
+@Suppress("EnumEntryName")
+enum class ForgeDomainTag {
 {% for ev in events %}
     {{ ev }}{% if not loop.last %},{% endif %}
 
 {% endfor %}
 }
 
+class ForgeDomain : EventDomain<ForgeDomainTag>
+{% endif %}
+
 class {{ struct_name }} {
 {% for mon in monitors %}
-    private var {{ mon.active_var }} = false
+    private val {{ mon.id }} = ThresholdState()
 {% endfor %}
 
-    fun update({{ params }}): List<Event> {
-        val events = mutableListOf<Event>()
+    fun update({{ params }}): EventQueue<ForgeDomainTag> {
+        val events = EventQueue<ForgeDomainTag>()
 {% for mon in monitors %}
-        if (!{{ mon.active_var }} && ({{ mon.enter_expr }})) {
-            {{ mon.active_var }} = true
-            events.add(Event.{{ mon.event_enter }})
-{% if mon.has_leave %}
-        } else if ({{ mon.active_var }} && ({{ mon.leave_expr }})) {
-            {{ mon.active_var }} = false
-{% if mon.has_on_leave %}
-            events.add(Event.{{ mon.event_leave }})
-{% endif %}
-{% endif %}
+        if ({{ mon.id }}.enterIf({{ mon.enter_expr }})) {
+            events.push(ForgeDomainTag.{{ mon.event_enter }})
         }
+{% if mon.has_leave %}
+{% if mon.has_on_leave %}
+        else if ({{ mon.id }}.leaveIf({{ mon.leave_expr }})) {
+            events.push(ForgeDomainTag.{{ mon.event_leave }})
+        }
+{% else %}
+        else {
+            {{ mon.id }}.leaveIf({{ mon.leave_expr }})
+        }
+{% endif %}
+{% endif %}
 {% endfor %}
         return events
     }

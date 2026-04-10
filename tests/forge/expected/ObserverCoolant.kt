@@ -1,30 +1,40 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="observer")
 // Do not edit — regenerate from the source SCXML file.
 
-enum class Event {
+import com.sce.forge.runtime.EventDomain
+import com.sce.forge.runtime.EventQueue
+import com.sce.forge.runtime.ThresholdState
+
+// No sce:event-domain declared on this <scxml> root: the observer falls back
+// to a file-local domain. The resulting EventQueue type cannot be composed
+// with other observers. To enable cross-file composition, add
+// sce:event-domain="..." to the source SCXML. See SCE_FORGE.md Section 4.11.
+@Suppress("EnumEntryName")
+enum class ForgeDomainTag {
     EMIT_WARNING,
     CLEAR_WARNING,
     EMERGENCY_SHUTDOWN
 }
 
-class ObserverCoolant {
-    private var warningActive = false
-    private var criticalActive = false
+class ForgeDomain : EventDomain<ForgeDomainTag>
 
-    fun update(coolantTemp: Double): List<Event> {
-        val events = mutableListOf<Event>()
-        if (!warningActive && (coolantTemp > 110.0)) {
-            warningActive = true
-            events.add(Event.EMIT_WARNING)
-        } else if (warningActive && (coolantTemp < 100.0)) {
-            warningActive = false
-            events.add(Event.CLEAR_WARNING)
+class ObserverCoolant {
+    private val warning = ThresholdState()
+    private val critical = ThresholdState()
+
+    fun update(coolantTemp: Double): EventQueue<ForgeDomainTag> {
+        val events = EventQueue<ForgeDomainTag>()
+        if (warning.enterIf(coolantTemp > 110.0)) {
+            events.push(ForgeDomainTag.EMIT_WARNING)
         }
-        if (!criticalActive && (coolantTemp > 120.0)) {
-            criticalActive = true
-            events.add(Event.EMERGENCY_SHUTDOWN)
-        } else if (criticalActive && (coolantTemp < 105.0)) {
-            criticalActive = false
+        else if (warning.leaveIf(coolantTemp < 100.0)) {
+            events.push(ForgeDomainTag.CLEAR_WARNING)
+        }
+        if (critical.enterIf(coolantTemp > 120.0)) {
+            events.push(ForgeDomainTag.EMERGENCY_SHUTDOWN)
+        }
+        else {
+            critical.leaveIf(coolantTemp < 105.0)
         }
         return events
     }

@@ -1,42 +1,47 @@
 // SCE Forge: Auto-generated from Extended SCXML (sce:kind="timer")
 // Do not edit — regenerate from the source SCXML file.
 
-interface ITimer {
-    fun startPeriodic(intervalMs: Long, callback: () -> Unit)
-    fun startOneShot(delayMs: Long, callback: () -> Unit)
-    fun cancel()
+import com.sce.forge.runtime.Timer
+
+/**
+ * Handler interface for [TimerDiagScheduler]. The user implements these methods
+ * on a state class and passes the instance to the [TimerDiagScheduler] constructor.
+ * Missing methods produce a compile-time error, so there is no silent fallback.
+ */
+interface TimerDiagSchedulerHandler {
+    fun fireTesterPresent()
+    fun fireHandleTimeout()
+    fun fireRetrySecurityAccess()
 }
 
-class TimerDiagScheduler {
-    var testerPresentTimer: ITimer? = null
-    var responseTimeoutTimer: ITimer? = null
-    var retryDelayTimer: ITimer? = null
+class TimerDiagScheduler(
+    private val handler: TimerDiagSchedulerHandler,
+    private val testerPresentTimer: Timer,
+    private val responseTimeoutTimer: Timer,
+    private val retryDelayTimer: Timer
+) {
 
-    fun startTesterpresent() {
-        testerPresentTimer?.startPeriodic(2000L) { onTesterpresent() }
+    fun startTesterPresent() {
+        testerPresentTimer.startPeriodic(2000L) { handler.fireTesterPresent() }
     }
 
-    fun cancelTesterpresent() {
-        testerPresentTimer?.cancel()
+    fun cancelTesterPresent() {
+        testerPresentTimer.cancel()
     }
 
-    fun startResponsetimeout() {
-        responseTimeoutTimer?.startOneShot(5000L) { onHandletimeout() }
+    fun startResponseTimeout() {
+        responseTimeoutTimer.startOneShot(5000L) { handler.fireHandleTimeout() }
     }
 
-    fun cancelResponsetimeout() {
-        responseTimeoutTimer?.cancel()
+    fun cancelResponseTimeout() {
+        responseTimeoutTimer.cancel()
     }
 
-    fun startRetrydelay() {
-        retryDelayTimer?.startOneShot(10000L) { onRetrysecurityaccess() }
+    fun startRetryDelay() {
+        retryDelayTimer.startOneShot(10000L) { handler.fireRetrySecurityAccess() }
     }
 
-    fun cancelRetrydelay() {
-        retryDelayTimer?.cancel()
+    fun cancelRetryDelay() {
+        retryDelayTimer.cancel()
     }
-
-    private fun onTesterpresent() { /* platform callback */ }
-    private fun onHandletimeout() { /* platform callback */ }
-    private fun onRetrysecurityaccess() { /* platform callback */ }
 }
