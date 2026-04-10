@@ -6,61 +6,57 @@
 #define SCE_FORGE_TIMER_DIAG_SCHEDULER_H
 
 #include <cstdint>
-#include <functional>
+#include <sce/forge/timer.h>
 
 namespace SCE::Generated::TimerDiagScheduler {
 
-/// Timer callback type.
-using TimerCallback = std::function<void()>;
+class TimerDiagScheduler {
+public:
+    TimerDiagScheduler(sce::forge::ITimer& testerPresentTimer, sce::forge::ITimer& responseTimeoutTimer, sce::forge::ITimer& retryDelayTimer)
+        : testerPresentTimer_(testerPresentTimer), responseTimeoutTimer_(responseTimeoutTimer), retryDelayTimer_(retryDelayTimer) {}
 
-/// Platform timer interface (injected at link time).
-struct ITimer {
-    virtual ~ITimer() = default;
-    virtual void startPeriodic(uint32_t intervalMs, TimerCallback cb) = 0;
-    virtual void startOneShot(uint32_t delayMs, TimerCallback cb) = 0;
-    virtual void cancel() = 0;
-};
-
-struct TimerDiagScheduler {
-    ITimer* testerPresentTimer_ = nullptr;
-    ITimer* responseTimeoutTimer_ = nullptr;
-    ITimer* retryDelayTimer_ = nullptr;
-
-    /// Inject platform timer implementations.
-    void init(ITimer* testerPresentTimer, ITimer* responseTimeoutTimer, ITimer* retryDelayTimer) {
-        testerPresentTimer_ = testerPresentTimer;
-        responseTimeoutTimer_ = responseTimeoutTimer;
-        retryDelayTimer_ = retryDelayTimer;
+    void startTesterPresent() {
+        testerPresentTimer_.startPeriodic(2000, &onTesterPresent, this);
     }
 
-    void startTesterpresent() {
-        if (testerPresentTimer_) testerPresentTimer_->startPeriodic(2000, [this]{ onTesterpresent(); });
+    void cancelTesterPresent() {
+        testerPresentTimer_.cancel();
     }
 
-    void cancelTesterpresent() {
-        if (testerPresentTimer_) testerPresentTimer_->cancel();
+    void startResponseTimeout() {
+        responseTimeoutTimer_.startOneShot(5000, &onHandleTimeout, this);
     }
 
-    void startResponsetimeout() {
-        if (responseTimeoutTimer_) responseTimeoutTimer_->startOneShot(5000, [this]{ onHandletimeout(); });
+    void cancelResponseTimeout() {
+        responseTimeoutTimer_.cancel();
     }
 
-    void cancelResponsetimeout() {
-        if (responseTimeoutTimer_) responseTimeoutTimer_->cancel();
+    void startRetryDelay() {
+        retryDelayTimer_.startOneShot(10000, &onRetrySecurityAccess, this);
     }
 
-    void startRetrydelay() {
-        if (retryDelayTimer_) retryDelayTimer_->startOneShot(10000, [this]{ onRetrysecurityaccess(); });
-    }
-
-    void cancelRetrydelay() {
-        if (retryDelayTimer_) retryDelayTimer_->cancel();
+    void cancelRetryDelay() {
+        retryDelayTimer_.cancel();
     }
 
 private:
-    void onTesterpresent();
-    void onHandletimeout();
-    void onRetrysecurityaccess();
+    sce::forge::ITimer& testerPresentTimer_;
+    sce::forge::ITimer& responseTimeoutTimer_;
+    sce::forge::ITimer& retryDelayTimer_;
+
+    static void onTesterPresent(void* ctx) {
+        static_cast<TimerDiagScheduler*>(ctx)->fireTesterPresent();
+    }
+    static void onHandleTimeout(void* ctx) {
+        static_cast<TimerDiagScheduler*>(ctx)->fireHandleTimeout();
+    }
+    static void onRetrySecurityAccess(void* ctx) {
+        static_cast<TimerDiagScheduler*>(ctx)->fireRetrySecurityAccess();
+    }
+
+    void fireTesterPresent();
+    void fireHandleTimeout();
+    void fireRetrySecurityAccess();
 };
 
 }  // namespace SCE::Generated::TimerDiagScheduler

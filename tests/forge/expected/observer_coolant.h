@@ -6,39 +6,44 @@
 #define SCE_FORGE_OBSERVER_COOLANT_H
 
 #include <cstdint>
-#include <vector>
+#include <sce/forge/observer.h>
 
 namespace SCE::Generated::ObserverCoolant {
 
-enum class Event {
-    EMIT_WARNING,
-    CLEAR_WARNING,
-    EMERGENCY_SHUTDOWN
+// No sce:event-domain declared on this <scxml> root: the observer falls back
+// to a file-local domain. The resulting Event<> type cannot be composed with
+// other observers. To enable cross-file composition, add
+// sce:event-domain="..." to the source SCXML. See SCE_FORGE.md §4.11.
+struct ForgeDomain {
+    enum Tag {
+        EMIT_WARNING,
+        CLEAR_WARNING,
+        EMERGENCY_SHUTDOWN
+    };
 };
 
-using Events = std::vector<Event>;
-
-struct ObserverCoolant {
-    bool warningActive_ = false;
-    bool criticalActive_ = false;
-
-    Events update(double coolantTemp) {
-        Events events;
-        if (!warningActive_ && (coolantTemp > 110.0)) {
-            warningActive_ = true;
-            events.push_back(Event::EMIT_WARNING);
-        } else if (warningActive_ && (coolantTemp < 100.0)) {
-            warningActive_ = false;
-            events.push_back(Event::CLEAR_WARNING);
+class ObserverCoolant {
+public:
+    sce::forge::EventQueue<ForgeDomain> update(double coolantTemp) {
+        sce::forge::EventQueue<ForgeDomain> events;
+        if (warning_.enterIf(coolantTemp > 110.0)) {
+            events.push(ForgeDomain::EMIT_WARNING);
         }
-        if (!criticalActive_ && (coolantTemp > 120.0)) {
-            criticalActive_ = true;
-            events.push_back(Event::EMERGENCY_SHUTDOWN);
-        } else if (criticalActive_ && (coolantTemp < 105.0)) {
-            criticalActive_ = false;
+        else if (warning_.leaveIf(coolantTemp < 100.0)) {
+            events.push(ForgeDomain::CLEAR_WARNING);
+        }
+        if (critical_.enterIf(coolantTemp > 120.0)) {
+            events.push(ForgeDomain::EMERGENCY_SHUTDOWN);
+        }
+        else {
+            critical_.leaveIf(coolantTemp < 105.0);
         }
         return events;
     }
+
+private:
+    sce::forge::ThresholdState warning_;
+    sce::forge::ThresholdState critical_;
 };
 
 }  // namespace SCE::Generated::ObserverCoolant

@@ -5221,6 +5221,8 @@ fn render_observer(
     ctx.insert("params".into(), l.param_str(&m.inputs).into());
     ctx.insert("monitors".into(), serde_json::json!(monitors));
     ctx.insert("events".into(), serde_json::json!(events));
+    ctx.insert("has_event_domain".into(), m.event_domain.is_some().into());
+    ctx.insert("event_domain".into(), serde_json::json!(m.event_domain));
     ctx.insert("has_imports".into(), has_imports.into());
     ctx.insert("imports".into(), serde_json::to_value(&stateful_imports).unwrap_or_default());
     ctx.insert("all_imports".into(), serde_json::to_value(&all_imports).unwrap_or_default());

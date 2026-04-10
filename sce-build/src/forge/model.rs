@@ -736,6 +736,12 @@ pub struct ObserverModel {
     pub name: String,
     pub inputs: Vec<ForgeField>,
     pub monitors: Vec<ThresholdMonitor>,
+    /// Optional event domain tag declared via `sce:event-domain` on the
+    /// `<scxml>` root. When present, generated code emits events of type
+    /// `sce::forge::Event<Domain>`, enabling cross-file observer composition.
+    /// When absent, the observer falls back to a file-local enum and cannot
+    /// be composed with other observers (see SCE_FORGE.md §4.11).
+    pub event_domain: Option<String>,
 }
 
 // ── Cross-file import ─────────────────────────────────────────

@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <sce/forge/interpolation.h>
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -32,65 +33,16 @@ struct {{ struct_name }} {
 
     static {{ output_type }} lookup({{ params }}) {
 {% if is_bilinear %}
-        return bilinearInterpolate(
-            {{ axes[0].var_name }}, {{ axes[0].size }},
-            {{ axes[1].var_name }}, {{ axes[1].size }},
-            VALUES,
+        return sce::forge::bilinear(
+            {{ axes[0].var_name }}, {{ axes[1].var_name }}, VALUES,
             static_cast<{{ output_type }}>({{ axes[0].input_id }}),
             static_cast<{{ output_type }}>({{ axes[1].input_id }}));
 {% else %}
-        return linearInterpolate(
-            {{ axes[0].var_name }}, VALUES, {{ axes[0].size }},
+        return sce::forge::linear(
+            {{ axes[0].var_name }}, VALUES,
             static_cast<{{ output_type }}>({{ axes[0].input_id }}));
 {% endif %}
     }
-
-private:
-    static {{ output_type }} linearInterpolate(
-            const {{ output_type }}* axis, const {{ output_type }}* values, size_t n,
-            {{ output_type }} x) {
-{% if out_of_bounds == "clamp" %}
-        if (x <= axis[0]) return values[0];
-        if (x >= axis[n - 1]) return values[n - 1];
-{% elif out_of_bounds == "error" %}
-        if (x < axis[0] || x > axis[n - 1]) return {};
-{% endif %}
-        for (size_t i = 0; i + 1 < n; i++) {
-            if (x <= axis[i + 1]) {
-                {{ output_type }} t = (x - axis[i]) / (axis[i + 1] - axis[i]);
-                return values[i] + t * (values[i + 1] - values[i]);
-            }
-        }
-        return values[n - 1];
-    }
-{% if is_bilinear %}
-
-    static {{ output_type }} bilinearInterpolate(
-            const {{ output_type }}* axisX, size_t nx,
-            const {{ output_type }}* axisY, size_t ny,
-            const {{ output_type }} table[][{{ cols }}],
-            {{ output_type }} x, {{ output_type }} y) {
-{% if out_of_bounds == "clamp" %}
-        if (x <= axisX[0]) x = axisX[0];
-        else if (x >= axisX[nx - 1]) x = axisX[nx - 1];
-        if (y <= axisY[0]) y = axisY[0];
-        else if (y >= axisY[ny - 1]) y = axisY[ny - 1];
-{% elif out_of_bounds == "error" %}
-        if (x < axisX[0] || x > axisX[nx - 1]) return {};
-        if (y < axisY[0] || y > axisY[ny - 1]) return {};
-{% endif %}
-        size_t ix = 0, iy = 0;
-        for (size_t i = 0; i + 1 < nx; i++) { if (x <= axisX[i + 1]) { ix = i; break; } ix = i; }
-        for (size_t i = 0; i + 1 < ny; i++) { if (y <= axisY[i + 1]) { iy = i; break; } iy = i; }
-        {{ output_type }} tx = (x - axisX[ix]) / (axisX[ix + 1] - axisX[ix]);
-        {{ output_type }} ty = (y - axisY[iy]) / (axisY[iy + 1] - axisY[iy]);
-        {{ output_type }} c00 = table[ix][iy], c01 = table[ix][iy + 1];
-        {{ output_type }} c10 = table[ix + 1][iy], c11 = table[ix + 1][iy + 1];
-        {{ output_type }} a = c00 + tx * (c10 - c00);
-        {{ output_type }} b = c01 + tx * (c11 - c01);
-        return a + ty * (b - a);
-    }
-{% endif %}
 };
 
 }  // namespace SCE::Generated::{{ namespace }}

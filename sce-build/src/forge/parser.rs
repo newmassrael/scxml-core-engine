@@ -940,6 +940,8 @@ fn parse_observer(root: &roxmltree::Node, name: &str) -> Result<ObserverModel, S
     let datamodel = find_child(root, "datamodel")
         .ok_or("Observer kind requires a <datamodel> element")?;
 
+    let event_domain = sce_attr(root, "event-domain");
+
     let mut inputs = Vec::new();
     let mut monitors = Vec::new();
 
@@ -995,6 +997,7 @@ fn parse_observer(root: &roxmltree::Node, name: &str) -> Result<ObserverModel, S
         name: name.to_string(),
         inputs,
         monitors,
+        event_domain,
     })
 }
 

@@ -6,29 +6,19 @@
 #define SCE_FORGE_FILTER_MOVING_AVERAGE_H
 
 #include <cstdint>
-#include <array>
+#include <sce/forge/filter.h>
 
 namespace SCE::Generated::FilterMovingAverage {
 
 struct FilterMovingAverage {
-    std::array<double, 5> buffer_{};
-    size_t index_ = 0;
-    bool filled_ = false;
+    sce::forge::MovingAverage<double, 5> impl_;
 
     double update(double rawTemp) {
-        buffer_[index_] = static_cast<double>(rawTemp);
-        index_ = (index_ + 1) % 5;
-        if (!filled_ && index_ == 0) filled_ = true;
-        size_t count = filled_ ? 5 : index_;
-        double sum = 0;
-        for (size_t i = 0; i < count; i++) sum += buffer_[i];
-        return sum / static_cast<double>(count);
+        return impl_.update(static_cast<double>(rawTemp));
     }
 
     void reset() {
-        buffer_ = {};
-        index_ = 0;
-        filled_ = false;
+        impl_.reset();
     }
 };
 

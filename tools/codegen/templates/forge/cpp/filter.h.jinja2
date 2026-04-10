@@ -6,7 +6,7 @@
 #define {{ guard }}
 
 #include <cstdint>
-#include <array>
+#include <sce/forge/filter.h>
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -17,76 +17,20 @@ namespace SCE::Generated::{{ namespace }} {
 
 struct {{ struct_name }} {
 {% if filter_type == "moving_average" %}
-    std::array<{{ output_type }}, {{ window }}> buffer_{};
-    size_t index_ = 0;
-    bool filled_ = false;
-
-    {{ output_type }} update({{ input_type }} {{ input_id }}) {
-        buffer_[index_] = static_cast<{{ output_type }}>({{ input_id }});
-        index_ = (index_ + 1) % {{ window }};
-        if (!filled_ && index_ == 0) filled_ = true;
-        size_t count = filled_ ? {{ window }} : index_;
-        {{ output_type }} sum = 0;
-        for (size_t i = 0; i < count; i++) sum += buffer_[i];
-        return sum / static_cast<{{ output_type }}>(count);
-    }
-
-    void reset() {
-        buffer_ = {};
-        index_ = 0;
-        filled_ = false;
-    }
+    sce::forge::MovingAverage<{{ output_type }}, {{ window }}> impl_;
 {% elif filter_type == "low_pass" %}
-    {{ output_type }} prev_ = {};
-    bool initialized_ = false;
-
-    {{ output_type }} update({{ input_type }} {{ input_id }}) {
-        if (!initialized_) {
-            prev_ = static_cast<{{ output_type }}>({{ input_id }});
-            initialized_ = true;
-            return prev_;
-        }
-        prev_ = static_cast<{{ output_type }}>({{ alpha }}) * static_cast<{{ output_type }}>({{ input_id }}) + (1.0 - static_cast<{{ output_type }}>({{ alpha }})) * prev_;
-        return prev_;
-    }
-
-    void reset() {
-        prev_ = {};
-        initialized_ = false;
-    }
+    sce::forge::LowPass<{{ output_type }}> impl_{static_cast<{{ output_type }}>({{ alpha }})};
 {% elif filter_type == "debounce" %}
-    {{ output_type }} stableValue_{};
-    {{ output_type }} candidate_{};
-    size_t count_ = 0;
-    bool initialized_ = false;
+    sce::forge::Debounce<{{ output_type }}, {{ window }}> impl_;
+{% endif %}
 
     {{ output_type }} update({{ input_type }} {{ input_id }}) {
-        if (!initialized_) {
-            stableValue_ = static_cast<{{ output_type }}>({{ input_id }});
-            candidate_ = stableValue_;
-            count_ = 1;
-            initialized_ = true;
-            return stableValue_;
-        }
-        if (static_cast<{{ output_type }}>({{ input_id }}) == candidate_) {
-            count_++;
-            if (count_ >= {{ window }}) {
-                stableValue_ = candidate_;
-            }
-        } else {
-            candidate_ = static_cast<{{ output_type }}>({{ input_id }});
-            count_ = 1;
-        }
-        return stableValue_;
+        return impl_.update(static_cast<{{ output_type }}>({{ input_id }}));
     }
 
     void reset() {
-        stableValue_ = {};
-        candidate_ = {};
-        count_ = 0;
-        initialized_ = false;
+        impl_.reset();
     }
-{% endif %}
 };
 
 }  // namespace SCE::Generated::{{ namespace }}

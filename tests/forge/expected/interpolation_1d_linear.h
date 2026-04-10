@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <sce/forge/interpolation.h>
 
 namespace SCE::Generated::Interpolation1dLinear {
 
@@ -15,24 +16,9 @@ struct Interpolation1dLinear {
     static constexpr double VALUES[] = { 120.0, 145.0, 200.0, 230.0, 210.0, 180.0 };
 
     static double lookup(uint16_t rpm) {
-        return linearInterpolate(
-            AXIS_RPM, VALUES, 6,
+        return sce::forge::linear(
+            AXIS_RPM, VALUES,
             static_cast<double>(rpm));
-    }
-
-private:
-    static double linearInterpolate(
-            const double* axis, const double* values, size_t n,
-            double x) {
-        if (x <= axis[0]) return values[0];
-        if (x >= axis[n - 1]) return values[n - 1];
-        for (size_t i = 0; i + 1 < n; i++) {
-            if (x <= axis[i + 1]) {
-                double t = (x - axis[i]) / (axis[i + 1] - axis[i]);
-                return values[i] + t * (values[i + 1] - values[i]);
-            }
-        }
-        return values[n - 1];
     }
 };
 

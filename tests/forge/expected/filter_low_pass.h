@@ -6,27 +6,19 @@
 #define SCE_FORGE_FILTER_LOW_PASS_H
 
 #include <cstdint>
-#include <array>
+#include <sce/forge/filter.h>
 
 namespace SCE::Generated::FilterLowPass {
 
 struct FilterLowPass {
-    double prev_ = {};
-    bool initialized_ = false;
+    sce::forge::LowPass<double> impl_{static_cast<double>(0.1)};
 
     double update(double rawSignal) {
-        if (!initialized_) {
-            prev_ = static_cast<double>(rawSignal);
-            initialized_ = true;
-            return prev_;
-        }
-        prev_ = static_cast<double>(0.1) * static_cast<double>(rawSignal) + (1.0 - static_cast<double>(0.1)) * prev_;
-        return prev_;
+        return impl_.update(static_cast<double>(rawSignal));
     }
 
     void reset() {
-        prev_ = {};
-        initialized_ = false;
+        impl_.reset();
     }
 };
 

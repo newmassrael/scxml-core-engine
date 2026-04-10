@@ -6,7 +6,7 @@
 #define {{ guard }}
 
 #include <cstdint>
-#include <functional>
+#include <sce/forge/timer.h>
 {% if all_imports %}
 {% for imp in all_imports %}
 {{ imp.include_stmt }}
@@ -15,46 +15,38 @@
 
 namespace SCE::Generated::{{ namespace }} {
 
-/// Timer callback type.
-using TimerCallback = std::function<void()>;
-
-/// Platform timer interface (injected at link time).
-struct ITimer {
-    virtual ~ITimer() = default;
-    virtual void startPeriodic(uint32_t intervalMs, TimerCallback cb) = 0;
-    virtual void startOneShot(uint32_t delayMs, TimerCallback cb) = 0;
-    virtual void cancel() = 0;
-};
-
-struct {{ struct_name }} {
-{% for timer in timers %}
-    ITimer* {{ timer.id }}Timer_ = nullptr;
-{% endfor %}
-
-    /// Inject platform timer implementations.
-    void init({% for timer in timers %}ITimer* {{ timer.id }}Timer{% if not loop.last %}, {% endif %}{% endfor %}) {
-{% for timer in timers %}
-        {{ timer.id }}Timer_ = {{ timer.id }}Timer;
-{% endfor %}
-    }
+class {{ struct_name }} {
+public:
+    {{ struct_name }}({% for timer in timers %}sce::forge::ITimer& {{ timer.id }}Timer{% if not loop.last %}, {% endif %}{% endfor %})
+        : {% for timer in timers %}{{ timer.id }}Timer_({{ timer.id }}Timer){% if not loop.last %}, {% endif %}{% endfor %} {}
 {% for timer in timers %}
 
-    void start{{ timer.id | capitalize }}() {
+    void start{{ timer.id_pascal }}() {
 {% if timer.is_periodic %}
-        if ({{ timer.id }}Timer_) {{ timer.id }}Timer_->startPeriodic({{ timer.time_ms }}, [this]{ on{{ timer.callback | capitalize }}(); });
+        {{ timer.id }}Timer_.startPeriodic({{ timer.time_ms }}, &on{{ timer.callback_pascal }}, this);
 {% else %}
-        if ({{ timer.id }}Timer_) {{ timer.id }}Timer_->startOneShot({{ timer.time_ms }}, [this]{ on{{ timer.callback | capitalize }}(); });
+        {{ timer.id }}Timer_.startOneShot({{ timer.time_ms }}, &on{{ timer.callback_pascal }}, this);
 {% endif %}
     }
 
-    void cancel{{ timer.id | capitalize }}() {
-        if ({{ timer.id }}Timer_) {{ timer.id }}Timer_->cancel();
+    void cancel{{ timer.id_pascal }}() {
+        {{ timer.id }}Timer_.cancel();
     }
 {% endfor %}
 
 private:
 {% for timer in timers %}
-    void on{{ timer.callback | capitalize }}();
+    sce::forge::ITimer& {{ timer.id }}Timer_;
+{% endfor %}
+
+{% for timer in timers %}
+    static void on{{ timer.callback_pascal }}(void* ctx) {
+        static_cast<{{ struct_name }}*>(ctx)->fire{{ timer.callback_pascal }}();
+    }
+{% endfor %}
+
+{% for timer in timers %}
+    void fire{{ timer.callback_pascal }}();
 {% endfor %}
 };
 
