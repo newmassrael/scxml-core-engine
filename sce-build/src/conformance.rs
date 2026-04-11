@@ -81,6 +81,24 @@ pub struct CompoundOutput {
     pub compare: CompareMode,
 }
 
+/// Struct-return output descriptor for fixtures whose `expected` JSON value is
+/// an object matching the layout of a generated return struct — a single call
+/// returns multiple fields (e.g. `ValidationResult { valid, reason }`). This
+/// differs from [`CompoundOutput`] in that every field comes from the *same*
+/// call site rather than a distinct free function, so the fragment emits one
+/// `validate(...)` / `decode(...)` and then iterates the fields to generate
+/// per-field assertions. The descriptor is intentionally kept minimal — name,
+/// type, compare mode — because the forge product code generator is the
+/// authority on the struct layout; this manifest entry exists only so the
+/// conformance fragments don't have to hard-code field names in five places.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructField {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub ty: CanonicalType,
+    pub compare: CompareMode,
+}
+
 /// One fixture entry. `name` and `ref_section` are common to every kind;
 /// kind-specific data lives in the `spec` tagged enum below. The
 /// `#[serde(flatten)]` on `spec` means the on-disk JSON stays a single flat
@@ -147,14 +165,22 @@ pub enum FixtureSpec {
         function: Option<String>,
     },
     /// Stateful data validator. Generated struct exposes
-    /// `validate(args...) -> ValidationResult { valid: bool, reason: String }`.
-    /// Internal state (previous sample memory for rate-of-change checks) is
-    /// implicit in the struct — not modelled in the manifest. The oracle lives
-    /// in the `validators` reference section and uses stateful sequences that
-    /// exercise range / ROC / plausibility branches and the documented rule
-    /// that state only advances on a successful validation.
+    /// `validate(args...) -> <ReturnStruct>` where `<ReturnStruct>` has the
+    /// fields listed in `output` (canonical order). Internal sample memory
+    /// for rate-of-change checks is implicit in the struct — not modelled in
+    /// the manifest. The oracle lives in the `validators` reference section
+    /// and uses stateful sequences that exercise range / ROC / plausibility
+    /// branches and the documented rule that state only advances on a
+    /// successful validation.
+    ///
+    /// Every existing forge validator returns `ValidationResult { valid, reason }`,
+    /// but modelling the return shape as `Vec<StructField>` keeps the oracle
+    /// format, the conformance fragments, and future multi-field codec-style
+    /// kinds all sharing one descriptor instead of every fragment carrying a
+    /// duplicated hard-coded list of field names.
     Validator {
         args: Vec<CanonicalType>,
+        output: Vec<StructField>,
     },
 }
 
@@ -343,6 +369,9 @@ impl Manifest {
     /// * fixture names must be unique across the catalog,
     /// * `transform` fixtures must carry at least one of the two output
     ///   shapes (`output` scalar OR non-empty `compound_outputs`),
+    /// * `validator` fixtures must declare at least one output field — an
+    ///   empty `output` would render a test body with no assertions and
+    ///   silently pass regardless of the generated struct's behaviour,
     /// * `lookup` fixtures must not preset `function` — it is derived from
     ///   the SCXML output id at harness-rendering time, and letting users
     ///   supply it in the manifest would invite the SCXML/manifest pair to
@@ -381,12 +410,21 @@ impl Manifest {
                         ));
                     }
                 }
+                FixtureSpec::Validator { output, .. } => {
+                    if output.is_empty() {
+                        return Err(format!(
+                            "fixture {}: validator requires at least one \
+                             `output` field — an empty output would render \
+                             an assertion-free test body",
+                            f.name
+                        ));
+                    }
+                }
                 FixtureSpec::Interpolation { .. }
                 | FixtureSpec::Condition { .. }
                 | FixtureSpec::Filter { .. }
                 | FixtureSpec::Observer { .. }
-                | FixtureSpec::Procedure { .. }
-                | FixtureSpec::Validator { .. } => {}
+                | FixtureSpec::Procedure { .. } => {}
             }
         }
         Ok(())

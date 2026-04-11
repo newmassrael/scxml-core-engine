@@ -1,14 +1,11 @@
-{# Validator kind — stateful validator.validate(*args) -> ValidationResult(valid, reason). #}
+{# Validator kind — stateful validator.validate(*args) returning a dataclass whose fields are declared in `f.output`. #}
         validator = {{ f.name }}.{{ f.name | to_pascal_case }}()
         for i, step in enumerate(spec["sequence"]):
             result = validator.validate(*step["args"])
+{% for field in f.output %}
             self.assertEqual(
-                result.valid,
-                step["expected"]["valid"],
-                f"{{ f.name }} step {i} valid",
+                getattr(result, "{{ field.name }}"),
+                step["expected"]["{{ field.name }}"],
+                f"{{ f.name }} step {i} {{ field.name }}",
             )
-            self.assertEqual(
-                result.reason,
-                step["expected"]["reason"],
-                f"{{ f.name }} step {i} reason",
-            )
+{% endfor %}

@@ -10,7 +10,7 @@
     "observer":      "Stateful event observer. Instance::update(input) -> event queue, zero-or-more events per step. Reference section: observers.",
     "procedure":     "Pure procedure result. Language-specific binding returns ProcedureResult{completed, final_state}. Reference section: pure_functions.",
     "lookup":        "Finite key→value mapping with on-miss=error policy. Free function lookup_<name>(key) -> Option<V>. Numeric output only — string outputs go through the existing enum-dispatch lookup path tested by forge_conformance goldens. Reference section: pure_functions.",
-    "validator":     "Stateful data validator. Instance::validate(args...) -> ValidationResult{valid, reason}. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators."
+    "validator":     "Stateful data validator. Instance::validate(args...) returns a struct whose layout is declared per fixture under `output` as a list of {name, type, compare} entries; the fragment iterates those fields to build per-field assertions, which keeps the forge product's return-struct shape (currently always {valid, reason}) out of the five per-language fragment templates. Internal sample memory (for rate-of-change checks) advances only on a successful validation, so oracle sequences exercise range / ROC / plausibility branches and the state-non-update rule. Reference section: validators."
   },
   "canonical_types": {
     "description": "Canonical arg/input/output types. Each per-language template maps these to its own type system (e.g. u16 -> uint16 in Go, UShort in Kotlin, std::uint16_t in C++).",
@@ -163,25 +163,41 @@
       "name": "validator_range_only",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["f64"]
+      "args": ["f64"],
+      "output": [
+        {"name": "valid",  "type": "bool",   "compare": "equality"},
+        {"name": "reason", "type": "string", "compare": "equality"}
+      ]
     },
     {
       "name": "validator_plausibility_only",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["f64", "f64"]
+      "args": ["f64", "f64"],
+      "output": [
+        {"name": "valid",  "type": "bool",   "compare": "equality"},
+        {"name": "reason", "type": "string", "compare": "equality"}
+      ]
     },
     {
       "name": "validator_rpm_check",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["u16", "string"]
+      "args": ["u16", "string"],
+      "output": [
+        {"name": "valid",  "type": "bool",   "compare": "equality"},
+        {"name": "reason", "type": "string", "compare": "equality"}
+      ]
     },
     {
       "name": "validator_signed_roc",
       "kind": "validator",
       "ref_section": "validators",
-      "args": ["i32", "f64"]
+      "args": ["i32", "f64"],
+      "output": [
+        {"name": "valid",  "type": "bool",   "compare": "equality"},
+        {"name": "reason", "type": "string", "compare": "equality"}
+      ]
     }
   ]
 }

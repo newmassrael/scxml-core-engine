@@ -1,4 +1,4 @@
-{# Validator kind — stateful sm.validate(args...) -> ValidationResult{valid, reason}. #}
+{# Validator kind — stateful sm.validate(args...) returning a struct whose field layout is declared in `f.output`. #}
     const auto &spec = ref["{{ f.ref_section }}"]["{{ f.name }}"];
     SCE::Generated::{{ f.name | to_pascal_case }}::{{ f.name | to_pascal_case }} validator{};
     int i = 0;
@@ -6,14 +6,24 @@
 {% for arg_ty in f.args %}
         auto arg{{ loop.index0 }} = step["args"][{{ loop.index0 }}].get<{{ arg_ty | cpp_type }}>();
 {% endfor %}
-        auto expected_valid = step["expected"]["valid"].get<bool>();
-        auto expected_reason = step["expected"]["reason"].get<std::string>();
+{% for field in f.output %}
+        auto expected_{{ field.name }} = step["expected"]["{{ field.name }}"].get<{{ field.type | cpp_type }}>();
+{% endfor %}
         auto result = validator.validate({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
-        CHECK(result.valid == expected_valid,
-              "{{ f.name }} step %d valid: actual=%d expected=%d",
-              i, static_cast<int>(result.valid), static_cast<int>(expected_valid));
-        CHECK(result.reason == expected_reason,
-              "{{ f.name }} step %d reason: actual=\"%s\" expected=\"%s\"",
-              i, result.reason.c_str(), expected_reason.c_str());
+{% for field in f.output %}
+{% if field.type == "bool" %}
+        CHECK(result.{{ field.name }} == expected_{{ field.name }},
+              "{{ f.name }} step %d {{ field.name }}: actual=%d expected=%d",
+              i, static_cast<int>(result.{{ field.name }}), static_cast<int>(expected_{{ field.name }}));
+{% elif field.type == "string" %}
+        CHECK(result.{{ field.name }} == expected_{{ field.name }},
+              "{{ f.name }} step %d {{ field.name }}: actual=\"%s\" expected=\"%s\"",
+              i, result.{{ field.name }}.c_str(), expected_{{ field.name }}.c_str());
+{% else %}
+        CHECK(result.{{ field.name }} == expected_{{ field.name }},
+              "{{ f.name }} step %d {{ field.name }}: actual=%s expected=%s",
+              i, std::to_string(result.{{ field.name }}).c_str(), std::to_string(expected_{{ field.name }}).c_str());
+{% endif %}
+{% endfor %}
         ++i;
     }

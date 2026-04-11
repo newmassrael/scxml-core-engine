@@ -1,9 +1,10 @@
-{# Validator kind — stateful Validate(args...) -> ValidationResult{Valid, Reason}. #}
+{# Validator kind — stateful Validate(args...) returning a struct whose fields are declared in `f.output`. #}
 	steps := ref.validatorSteps(t, "{{ f.ref_section }}", "{{ f.name }}")
 	var validator {{ f.name }}.{{ f.name | to_pascal_case }}
 	type expectedShape struct {
-		Valid  bool   `json:"valid"`
-		Reason string `json:"reason"`
+{% for field in f.output %}
+		{{ field.name | to_pascal_case }} {{ field.type | go_type }} `json:"{{ field.name }}"`
+{% endfor %}
 	}
 	for i, step := range steps {
 {% for arg_ty in f.args %}
@@ -13,10 +14,9 @@
 		var expected expectedShape
 		unmarshalOrFatal(t, step.Expected, &expected, "{{ f.name }} expected")
 		result := validator.Validate({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
-		if result.Valid != expected.Valid {
-			t.Errorf("{{ f.name }} step %d valid: actual=%v expected=%v", i, result.Valid, expected.Valid)
+{% for field in f.output %}
+		if result.{{ field.name | to_pascal_case }} != expected.{{ field.name | to_pascal_case }} {
+			t.Errorf("{{ f.name }} step %d {{ field.name }}: actual=%v expected=%v", i, result.{{ field.name | to_pascal_case }}, expected.{{ field.name | to_pascal_case }})
 		}
-		if result.Reason != expected.Reason {
-			t.Errorf("{{ f.name }} step %d reason: actual=%q expected=%q", i, result.Reason, expected.Reason)
-		}
+{% endfor %}
 	}

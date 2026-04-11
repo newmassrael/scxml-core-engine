@@ -1,4 +1,4 @@
-{# Validator kind — stateful validator.validate(args...) -> ValidationResult(valid, reason). #}
+{# Validator kind — stateful validator.validate(args...) returning a data class whose fields are declared in `f.output`. #}
         val spec = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject
         val validator = {{ f.name | to_pascal_case }}()
         spec["sequence"]!!.jsonArray.forEachIndexed { i, step ->
@@ -7,9 +7,15 @@
             val arg{{ loop.index0 }} = {{ ("args[" ~ loop.index0 ~ "]") | kt_unmarshal(arg_ty) }}
 {% endfor %}
             val expected = step.jsonObject["expected"]!!.jsonObject
-            val expectedValid = expected["valid"]!!.jsonPrimitive.boolean
-            val expectedReason = expected["reason"]!!.jsonPrimitive.content
+{% for field in f.output %}
+            val expected{{ field.name | to_pascal_case }} = {{ ('expected["' ~ field.name ~ '"]!!') | kt_unmarshal(field.type) }}
+{% endfor %}
             val result = validator.validate({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %})
-            assertEquals(expectedValid, result.valid, "{{ f.name }} step $i valid")
-            assertEquals(expectedReason, result.reason, "{{ f.name }} step $i reason")
+{% for field in f.output %}
+{% if field.compare == "tolerance" %}
+            assertClose(result.{{ field.name | to_camel_case }}, expected{{ field.name | to_pascal_case }}, "{{ f.name }} step $i {{ field.name }}")
+{% else %}
+            assertEquals(expected{{ field.name | to_pascal_case }}, result.{{ field.name | to_camel_case }}, "{{ f.name }} step $i {{ field.name }}")
+{% endif %}
+{% endfor %}
         }

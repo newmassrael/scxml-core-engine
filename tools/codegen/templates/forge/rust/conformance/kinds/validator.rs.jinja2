@@ -1,4 +1,9 @@
-{# Validator kind — stateful instance::validate(args...) -> ValidationResult. #}
+{# Validator kind — stateful instance::validate(args...) returning a struct whose field layout is declared in `f.output`. #}
+{% set ns = namespace(needs_tol=false) %}
+{% for field in f.output %}{% if field.compare == "tolerance" %}{% set ns.needs_tol = true %}{% endif %}{% endfor %}
+{% if ns.needs_tol %}
+    let tol = tolerance(&reference);
+{% endif %}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     let mut validator = {{ f.name | to_pascal_case }}::new();
     for (i, step) in spec["sequence"]
@@ -10,19 +15,23 @@
 {% for arg_ty in f.args %}
         let arg{{ loop.index0 }} = {{ ("step[\"args\"][" ~ loop.index0 ~ "]") | rust_unmarshal(arg_ty) }};
 {% endfor %}
-        let expected_valid = step["expected"]["valid"]
-            .as_bool()
-            .expect("expected.valid is bool");
-        let expected_reason = step["expected"]["reason"]
-            .as_str()
-            .expect("expected.reason is string");
+{% for field in f.output %}
+        let expected_{{ field.name }} = {{ ('step["expected"]["' ~ field.name ~ '"]') | rust_unmarshal(field.type) }};
+{% endfor %}
         let result = validator.validate({% for arg_ty in f.args %}arg{{ loop.index0 }}{% if not loop.last %}, {% endif %}{% endfor %});
-        assert_eq!(
-            result.valid, expected_valid,
-            "{{ f.name }} step {i} valid mismatch"
+{% for field in f.output %}
+{% if field.compare == "tolerance" %}
+        assert_close(
+            result.{{ field.name }},
+            expected_{{ field.name }},
+            tol,
+            &format!("{{ f.name }} step {i} {{ field.name }}"),
         );
+{% else %}
         assert_eq!(
-            result.reason.as_str(), expected_reason,
-            "{{ f.name }} step {i} reason mismatch"
+            result.{{ field.name }}, expected_{{ field.name }},
+            "{{ f.name }} step {i} {{ field.name }}"
         );
+{% endif %}
+{% endfor %}
     }
