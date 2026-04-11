@@ -1,4 +1,4 @@
-{# Procedure kind — execute(handler, args) -> ProcedureRunResult{completed, finalState}. #}
+{# Procedure kind — execute(handler, args) with payload capture + bytewise oracle. #}
         val cases = ref["{{ f.ref_section }}"]!!.jsonObject["{{ f.name }}"]!!.jsonObject["cases"]!!.jsonArray
         for (case in cases) {
             val args = case.jsonObject["args"]!!.jsonArray
@@ -8,10 +8,26 @@
             val expected = case.jsonObject["expected"]!!.jsonObject
             val expectedCompleted = expected["completed"]!!.jsonPrimitive.boolean
             val expectedFinal = expected["final_state"]!!.jsonPrimitive.content
-            val handler: com.sce.runtime.forge.ProcedureServiceHandler = { _ ->
+            val captured = mutableListOf<ByteArray>()
+            val handler: com.sce.runtime.forge.ProcedureServiceHandler = { req ->
+                req.payload?.let { captured.add(it) }
                 com.sce.runtime.forge.ProcedureServiceResponse(success = true, data = "")
             }
             val result: com.sce.runtime.forge.ProcedureRunResult = com.sce.generated.{{ f.name }}.execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
             assertEquals(expectedCompleted, result.completed, "{{ f.name }}.completed")
             assertEquals(expectedFinal, result.finalState, "{{ f.name }}.final_state")
+            val expectedBytes: List<ByteArray> = expected["dispatched_payload_bytes"]
+                ?.jsonArray
+                ?.map { inner ->
+                    inner.jsonArray.map { it.jsonPrimitive.int.toByte() }.toByteArray()
+                }
+                ?: emptyList()
+            assertEquals(
+                expectedBytes.size,
+                captured.size,
+                "{{ f.name }}.dispatched_payload_bytes count",
+            )
+            expectedBytes.zip(captured).forEachIndexed { i, (exp, act) ->
+                assertContentEquals(exp, act, "{{ f.name }}.dispatched_payload_bytes[$i]")
+            }
         }

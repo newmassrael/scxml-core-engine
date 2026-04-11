@@ -1,4 +1,4 @@
-{# Procedure kind — execute(handler, args) -> ProcedureRunResult{completed, final_state}. #}
+{# Procedure kind — execute(handler, args) with payload capture + bytewise oracle. #}
     let spec = &reference["{{ f.ref_section }}"]["{{ f.name }}"];
     for case in spec["cases"].as_array().expect("cases must be array") {
 {% for arg_ty in f.args %}
@@ -10,10 +10,18 @@
         let expected_final = case["expected"]["final_state"]
             .as_str()
             .expect("final_state is string");
-        let handler = |_req: &sce_rust_runtime::forge::ProcedureServiceRequest| {
-            sce_rust_runtime::forge::ProcedureServiceResponse {
-                success: true,
-                data: String::new(),
+        let captured: std::rc::Rc<std::cell::RefCell<Vec<Vec<u8>>>> =
+            std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+        let handler = {
+            let captured = captured.clone();
+            move |req: &sce_rust_runtime::forge::ProcedureServiceRequest| {
+                if let Some(ref bytes) = req.payload {
+                    captured.borrow_mut().push(bytes.clone());
+                }
+                sce_rust_runtime::forge::ProcedureServiceResponse {
+                    success: true,
+                    data: String::new(),
+                }
             }
         };
         let result = fixtures::{{ f.name }}::execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %});
@@ -25,5 +33,26 @@
             result.final_state.as_str(),
             expected_final,
             "{{ f.name }}.final_state"
+        );
+        let expected_bytes: Vec<Vec<u8>> = case["expected"]
+            .get("dispatched_payload_bytes")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .map(|inner| {
+                        inner
+                            .as_array()
+                            .expect("dispatched_payload_bytes inner must be array")
+                            .iter()
+                            .map(|b| b.as_u64().expect("byte must be u64") as u8)
+                            .collect::<Vec<u8>>()
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        let actual_bytes = captured.borrow().clone();
+        assert_eq!(
+            actual_bytes, expected_bytes,
+            "{{ f.name }}.dispatched_payload_bytes"
         );
     }

@@ -19,6 +19,9 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+{% if has_procedure %}
+	"reflect"
+{% endif %}
 	"runtime"
 	"testing"
 

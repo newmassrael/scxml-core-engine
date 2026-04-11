@@ -1,4 +1,4 @@
-{# Procedure kind — Execute(handler, args) -> ProcedureRunResult{Completed, FinalState}. #}
+{# Procedure kind — Execute(handler, args) with payload capture + bytewise oracle. #}
 	cases := ref.pureCases(t, "{{ f.ref_section }}", "{{ f.name }}")
 	for _, c := range cases {
 {% for arg_ty in f.args %}
@@ -6,16 +6,29 @@
 		unmarshalOrFatal(t, c.Args[{{ loop.index0 }}], &arg{{ loop.index0 }}, "{{ f.name }} arg{{ loop.index0 }}")
 {% endfor %}
 		var expected struct {
-			Completed  bool   `json:"completed"`
-			FinalState string `json:"final_state"`
+			Completed              bool    `json:"completed"`
+			FinalState             string  `json:"final_state"`
+			DispatchedPayloadBytes [][]int `json:"dispatched_payload_bytes"`
 		}
 		unmarshalOrFatal(t, c.Expected, &expected, "{{ f.name }} expected")
-		handler := func(_ forge.ProcedureServiceRequest) forge.ProcedureServiceResponse {
+		var captured [][]int
+		handler := func(req forge.ProcedureServiceRequest) forge.ProcedureServiceResponse {
+			if req.Payload != nil {
+				asInts := make([]int, len(req.Payload))
+				for i, b := range req.Payload {
+					asInts[i] = int(b)
+				}
+				captured = append(captured, asInts)
+			}
 			return forge.ProcedureServiceResponse{Success: true, Data: ""}
 		}
 		result := {{ f.name }}.Execute(handler{% for arg_ty in f.args %}, arg{{ loop.index0 }}{% endfor %})
 		if result.Completed != expected.Completed || result.FinalState != expected.FinalState {
 			t.Errorf("{{ f.name }}: actual=(%v,%q) expected=(%v,%q)",
 				result.Completed, result.FinalState, expected.Completed, expected.FinalState)
+		}
+		if !reflect.DeepEqual(captured, expected.DispatchedPayloadBytes) {
+			t.Errorf("{{ f.name }}.dispatched_payload_bytes: actual=%v expected=%v",
+				captured, expected.DispatchedPayloadBytes)
 		}
 	}

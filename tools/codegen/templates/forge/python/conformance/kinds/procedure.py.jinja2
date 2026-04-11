@@ -1,10 +1,13 @@
-{# Procedure kind — execute(handler, args) -> result with .completed and .final_state. #}
+{# Procedure kind — execute(handler, args) with payload capture + bytewise oracle. #}
         from sce_forge import ProcedureServiceResponse
-        def _handler(_req):
-            return ProcedureServiceResponse(success=True, data="")
         for case in spec["cases"]:
             args = case["args"]
             expected = case["expected"]
+            captured = []
+            def _handler(req, _captured=captured):
+                if req.payload is not None:
+                    _captured.append(list(req.payload))
+                return ProcedureServiceResponse(success=True, data="")
             result = {{ f.name }}.execute(_handler, *args)
             self.assertEqual(
                 result.completed,
@@ -15,4 +18,9 @@
                 result.final_state,
                 expected["final_state"],
                 "{{ f.name }}.final_state",
+            )
+            self.assertEqual(
+                captured,
+                expected.get("dispatched_payload_bytes", []),
+                "{{ f.name }}.dispatched_payload_bytes",
             )

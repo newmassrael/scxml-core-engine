@@ -46,6 +46,9 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+{% if has_procedure %}
+import kotlin.test.assertContentEquals
+{% endif %}
 
 class NumericalConformanceTest {
     private val ref: JsonObject
