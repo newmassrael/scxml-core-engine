@@ -1,5 +1,5 @@
 {# Procedure kind — execute(handler, args) with payload capture + bytewise oracle. #}
-        from sce_forge import ProcedureServiceResponse
+        from sce_forge_runtime.procedure import ProcedureServiceResponse
         for case in spec["cases"]:
             args = case["args"]
             expected = case["expected"]

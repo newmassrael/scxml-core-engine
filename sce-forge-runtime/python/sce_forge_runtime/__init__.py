@@ -9,6 +9,6 @@ for HAL interfaces (so missing methods are caught at instantiation time), and
 generic event-domain types for cross-file observer composition.
 """
 
-from . import filter, interpolation, lookup, observer, timer
+from . import filter, interpolation, lookup, observer, procedure, timer
 
-__all__ = ["filter", "interpolation", "lookup", "observer", "timer"]
+__all__ = ["filter", "interpolation", "lookup", "observer", "procedure", "timer"]

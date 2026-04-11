@@ -12,7 +12,7 @@ from .codec_simple_frame import CodecSimpleFrame
 from enum import IntEnum
 from typing import Callable, Optional, Tuple
 
-from sce_forge import (
+from sce_forge_runtime.procedure import (
     ProcedureRunResult,
     ProcedureServiceRequest,
     ProcedureServiceResponse,

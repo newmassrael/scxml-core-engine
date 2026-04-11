@@ -31,10 +31,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_SRC = REPO_ROOT / "sce-forge-runtime" / "python"
-# sce_forge procedure types (ProcedureStateMachine, ProcedureServiceRequest,
-# ProcedureRunResult) live in the sce-python-forge package. Generated procedure
-# fixtures emit `from sce_forge import (...)` — same import path product consumers use.
-PROCEDURE_TYPES_SRC = REPO_ROOT / "sce-python-forge"
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
 MANIFEST = REPO_ROOT / "tests" / "forge" / "conformance" / "fixtures.json"
 SCE_CODEGEN = REPO_ROOT / "target" / "release" / "sce-codegen"
@@ -168,10 +164,6 @@ def bootstrap() -> Path:
     # Runtime first so fixtures can resolve `from sce_forge_runtime...` imports.
     if str(RUNTIME_SRC) not in sys.path:
         sys.path.insert(0, str(RUNTIME_SRC))
-    # Procedure types package (`sce_forge`) is separate from the algorithm runtime
-    # package (`sce_forge_runtime`). Procedure fixtures depend on it.
-    if str(PROCEDURE_TYPES_SRC) not in sys.path:
-        sys.path.insert(0, str(PROCEDURE_TYPES_SRC))
     # Install a synthetic parent package whose submodule search path is the
     # generated output directory. With this in place, every fixture file is
     # importable as `_sce_conformance.<name>` and the canonical relative
