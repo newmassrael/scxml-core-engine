@@ -2996,6 +2996,7 @@ fn render_codec_python(
             serde_json::json!({
                 "id": filters::to_snake_case(f.id.clone()),
                 "py_type": python_type(&f.sce_type),
+                "default_value": python_default(&f.sce_type),
                 "decode_expr": generate_decode_expr_python(f, m.default_endian),
             })
         })

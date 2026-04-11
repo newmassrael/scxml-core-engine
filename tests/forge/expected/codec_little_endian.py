@@ -9,9 +9,9 @@ from typing import Optional
 
 @dataclass
 class CodecLittleEndian:
-    sensor_id: int
-    value: int
-    status: int
+    sensor_id: int = 0
+    value: int = 0
+    status: int = 0
 
     @classmethod
     def decode(cls, raw: bytes) -> Optional[CodecLittleEndian]:

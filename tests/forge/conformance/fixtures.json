@@ -134,6 +134,12 @@
       "ref_section": "pure_functions",
       "args": ["f32", "f32"]
     },
+    {
+      "name": "crossfile_procedure_codec",
+      "kind": "procedure",
+      "ref_section": "pure_functions",
+      "args": ["u32"]
+    },
 
     {
       "name": "lookup_alarm_code",

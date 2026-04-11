@@ -9,9 +9,9 @@ from typing import Optional
 
 @dataclass
 class CodecSubbyte:
-    priority: int
-    channel: int
-    direction: int
+    priority: int = 0
+    channel: int = 0
+    direction: int = 0
 
     @classmethod
     def decode(cls, raw: bytes) -> Optional[CodecSubbyte]:

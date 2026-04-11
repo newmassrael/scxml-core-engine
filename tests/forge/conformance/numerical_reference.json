@@ -142,6 +142,22 @@
         {"args": [14.5, 79.5], "expected": {"completed": true, "final_state": "success"},       "note": "inclusive voltage high boundary"}
       ]
     },
+    "crossfile_procedure_codec": {
+      "fixture": "CrossfileProcedureCodec::execute",
+      "signature": "(ecu_addr: u32) -> ProcedureRunResult{completed, final_state, dispatched_payload_bytes}",
+      "description": "Procedure with an <sce:import kind=codec> member. The sendRequest state emits <send sce:payload='frame.encode()'>, dispatching the codec's 4-byte encoding through the service handler. Frame is default-initialized by the generated procedure ctor, so encode() returns [0, 0, 0, 0]. Loud-failing on drift proves that cross-file codec member calls are wired into the procedure's payload capture path end-to-end across all five languages.",
+      "cases": [
+        {
+          "args": [305419896],
+          "expected": {
+            "completed": true,
+            "final_state": "done",
+            "dispatched_payload_bytes": [[0, 0, 0, 0]]
+          },
+          "note": "default-initialized frame emits zero bytes; no codec-state mutation path yet"
+        }
+      ]
+    },
 
     "lookup_alarm_code": {
       "fixture": "lookup_severity",

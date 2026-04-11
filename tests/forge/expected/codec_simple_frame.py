@@ -9,9 +9,9 @@ from typing import Optional
 
 @dataclass
 class CodecSimpleFrame:
-    msg_id: int
-    length: int
-    payload: int
+    msg_id: int = 0
+    length: int = 0
+    payload: int = 0
 
     @classmethod
     def decode(cls, raw: bytes) -> Optional[CodecSimpleFrame]:
