@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SCE Forge Extension Schema for W3C SCXML
+  Namespace: http://sce.dev/ext
+
+  Defines extension attributes and elements for the SCE kind system.
+  W3C SCXML Section 3.1 explicitly allows foreign namespace attributes on any element.
+  This schema validates Extended SCXML documents that use sce: namespace extensions.
+
+  Usage:
+    <scxml xmlns="http://www.w3.org/2005/07/scxml"
+           xmlns:sce="http://sce.dev/ext"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="http://sce.dev/ext sce-forge.xsd"
+           sce:kind="statechart" ...>
+
+  Covers:
+    - SCE Forge (kind system, build-time codegen)
+    - SCE Mesh  (transport QoS, runtime attributes)
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:sce="http://sce.dev/ext"
+           targetNamespace="http://sce.dev/ext"
+           elementFormDefault="qualified"
+           attributeFormDefault="unqualified">
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       Simple Types
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- SCE Forge Section 3.2: Document-level and inline kind values -->
+  <xs:simpleType name="kindType">
+    <xs:restriction base="xs:string">
+      <!-- Phase 1 -->
+      <xs:enumeration value="statechart"/>
+      <xs:enumeration value="transform"/>
+      <xs:enumeration value="lookup"/>
+      <xs:enumeration value="condition"/>
+      <xs:enumeration value="codec"/>
+      <!-- Phase 2 -->
+      <xs:enumeration value="procedure"/>
+      <xs:enumeration value="validator"/>
+      <!-- Phase 3 -->
+      <xs:enumeration value="filter"/>
+      <xs:enumeration value="interpolation"/>
+      <xs:enumeration value="timer"/>
+      <xs:enumeration value="observer"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- SCE Forge Section 3.3: Cross-language type system -->
+  <xs:simpleType name="sceType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="uint8"/>
+      <xs:enumeration value="uint16"/>
+      <xs:enumeration value="uint32"/>
+      <xs:enumeration value="uint64"/>
+      <xs:enumeration value="int8"/>
+      <xs:enumeration value="int16"/>
+      <xs:enumeration value="int32"/>
+      <xs:enumeration value="int64"/>
+      <xs:enumeration value="float32"/>
+      <xs:enumeration value="float64"/>
+      <xs:enumeration value="bool"/>
+      <xs:enumeration value="string"/>
+      <xs:enumeration value="bytes"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- SCE Forge Section 3.3: Data flow direction -->
+  <xs:simpleType name="directionType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="in"/>
+      <xs:enumeration value="out"/>
+      <xs:enumeration value="internal"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- SCE Forge Section 3.3: Byte order -->
+  <xs:simpleType name="endianType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="big"/>
+      <xs:enumeration value="little"/>
+      <xs:enumeration value="native"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Codec field bit-size: fixed integer, "tail", or "length-ref" -->
+  <xs:simpleType name="bitSizeType">
+    <xs:union>
+      <xs:simpleType>
+        <xs:restriction base="xs:nonNegativeInteger"/>
+      </xs:simpleType>
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:enumeration value="tail"/>
+          <xs:enumeration value="length-ref"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:union>
+  </xs:simpleType>
+
+  <!-- SCE Forge Section 4.8: Filter algorithm types -->
+  <xs:simpleType name="filterType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="moving-average"/>
+      <xs:enumeration value="low-pass"/>
+      <xs:enumeration value="debounce"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- SCE Forge Section 4.9: Interpolation method -->
+  <xs:simpleType name="interpolationType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="linear"/>
+      <xs:enumeration value="bilinear"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- SCE Forge Section 4.9: Out-of-bounds handling -->
+  <xs:simpleType name="outOfBoundsType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="clamp"/>
+      <xs:enumeration value="extrapolate"/>
+      <xs:enumeration value="error"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- SCE Forge Section 4.10: Timer scheduling type -->
+  <xs:simpleType name="timerType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="periodic"/>
+      <xs:enumeration value="timeout"/>
+      <xs:enumeration value="delayed"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- SCE Forge Section 4.11: Monitor type -->
+  <xs:simpleType name="monitorType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="threshold"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Duration with unit suffix (e.g., "100ms", "5s", "2000") -->
+  <xs:simpleType name="durationType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="\d+(\.\d+)?(ms|s|m|h)?"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       Attribute Declarations — SCE Forge (build-time codegen)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Section 3.2: Kind selector — on <scxml> root or <data> elements -->
+  <xs:attribute name="kind" type="sce:kindType"/>
+
+  <!-- Section 3.3: Common data attributes — on <data> elements -->
+  <xs:attribute name="type" type="sce:sceType"/>
+  <xs:attribute name="direction" type="sce:directionType"/>
+  <xs:attribute name="unit" type="xs:string"/>
+  <xs:attribute name="default" type="xs:string"/>
+  <xs:attribute name="input" type="xs:string"/>
+  <xs:attribute name="input-type" type="sce:sceType"/>
+
+  <!-- Section 4.6: Codec — document-level default endianness -->
+  <xs:attribute name="default-endian" type="sce:endianType"/>
+
+  <!-- Section 4.6: Codec field layout — on <data> or <sce:field> -->
+  <xs:attribute name="byte" type="xs:nonNegativeInteger"/>
+  <xs:attribute name="bit-offset" type="xs:nonNegativeInteger"/>
+  <xs:attribute name="bit-size" type="sce:bitSizeType"/>
+  <xs:attribute name="endian" type="sce:endianType"/>
+  <xs:attribute name="max-size" type="xs:nonNegativeInteger"/>
+  <xs:attribute name="length" type="xs:nonNegativeInteger"/>
+  <xs:attribute name="length-field" type="xs:string"/>
+
+  <!-- Section 4.5: Procedure <send> hints -->
+  <xs:attribute name="service" type="xs:string"/>
+  <xs:attribute name="subfunc" type="xs:string"/>
+  <xs:attribute name="addr" type="xs:string"/>
+  <xs:attribute name="payload" type="xs:string"/>
+
+  <!-- Section 4.7: Validator — data-attribute form (target format) -->
+  <xs:attribute name="range-min" type="xs:string"/>
+  <xs:attribute name="range-max" type="xs:string"/>
+  <xs:attribute name="max-delta" type="xs:string"/>
+  <xs:attribute name="sample-interval" type="sce:durationType"/>
+  <xs:attribute name="plausibility" type="xs:string"/>
+
+  <!-- Section 4.8: Filter — on output <data> element -->
+  <xs:attribute name="filter" type="sce:filterType"/>
+  <xs:attribute name="window" type="xs:positiveInteger"/>
+  <xs:attribute name="alpha" type="xs:decimal"/>
+
+  <!-- Section 4.9: Interpolation — on output <data> element -->
+  <xs:attribute name="interpolation" type="sce:interpolationType"/>
+  <xs:attribute name="out-of-bounds" type="sce:outOfBoundsType"/>
+  <!--
+    Axis breakpoint attributes follow the pattern sce:axis-{input_id}
+    (e.g., sce:axis-rpm="800 1200 2000 3000").
+    XSD 1.0 cannot express wildcard attribute names; these are validated
+    by the sce-build parser at build time. Documents using sce:axis-*
+    attributes remain schema-valid via xs:anyAttribute on the host element.
+  -->
+
+  <!-- Section 4.10: Timer — on <data> elements -->
+  <xs:attribute name="timer" type="sce:timerType"/>
+  <xs:attribute name="interval" type="xs:nonNegativeInteger"/>
+  <xs:attribute name="duration" type="xs:nonNegativeInteger"/>
+  <xs:attribute name="delay" type="xs:nonNegativeInteger"/>
+  <xs:attribute name="event" type="xs:string"/>
+  <xs:attribute name="on-timeout" type="xs:string"/>
+
+  <!-- Section 4.11: Observer — on <data> elements -->
+  <xs:attribute name="monitor" type="sce:monitorType"/>
+  <xs:attribute name="enter" type="xs:string"/>
+  <xs:attribute name="leave" type="xs:string"/>
+  <xs:attribute name="on-enter" type="xs:string"/>
+  <xs:attribute name="on-leave" type="xs:string"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       Attribute Declarations — SCE Mesh (runtime transport)
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <xs:attribute name="qos" type="xs:string"/>
+  <xs:attribute name="deadline" type="xs:string"/>
+  <xs:attribute name="priority" type="xs:string"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       Element Declarations
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Section 5: Cross-file kind import -->
+  <xs:element name="import">
+    <xs:complexType>
+      <xs:attribute name="src" type="xs:string" use="required"/>
+      <xs:attribute name="kind" type="sce:kindType" use="required"/>
+      <xs:attribute name="as" type="xs:NCName" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Section 4.3: Lookup key-value mapping entry -->
+  <xs:element name="entry">
+    <xs:complexType>
+      <xs:attribute name="key" type="xs:string" use="required"/>
+      <xs:attribute name="value" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Section 4.6: Codec field definition with byte layout -->
+  <xs:element name="field">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute ref="sce:type" use="required"/>
+      <xs:attribute ref="sce:byte" use="required"/>
+      <xs:attribute ref="sce:bit-size" use="required"/>
+      <xs:attribute ref="sce:bit-offset"/>
+      <xs:attribute ref="sce:endian"/>
+      <xs:attribute ref="sce:max-size"/>
+      <xs:attribute ref="sce:length-field"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!--
+    Section 4.7: Validator rules use data-attribute form only.
+    Validation attributes (sce:range-min, sce:range-max, sce:max-delta,
+    sce:sample-interval, sce:plausibility) are declared as global attributes
+    above and applied directly to <data> elements.
+  -->
+
+</xs:schema>

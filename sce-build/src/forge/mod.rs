@@ -12,3 +12,4 @@ pub mod type_ctx;
 pub mod expr;
 pub mod generator;
 pub mod manifest;
+pub mod xsd_validator;

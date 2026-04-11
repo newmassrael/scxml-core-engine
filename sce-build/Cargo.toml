@@ -19,6 +19,11 @@ description = "SCXML code generator for sce-rust-runtime (build.rs helper)"
 [dependencies]
 # XML parsing — read-only DOM, zero-copy, fast
 roxmltree = "0.20"
+# libxml2 FFI for XSD schema validation. Used at the parser entry point
+# to validate the sce: extension namespace against schemas/sce-forge.xsd
+# before any structural parsing runs. Build dependency: libxml2-dev
+# (Debian/Ubuntu) / libxml2 (macOS Homebrew) / libxml2 (Windows vcpkg).
+libxml = "0.3"
 # Jinja2-compatible template engine (renders existing .jinja2 templates)
 minijinja = { version = "2", features = ["builtins"] }
 # Serialization for template context

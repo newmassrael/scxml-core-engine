@@ -164,11 +164,20 @@ cmake .. -DBUILD_TESTS=ON
 cmake --build . -j$(nproc)
 ```
 
-**C++ Requirements**: CMake 3.14+, C++17 compiler (C++20 for full runtime)
+**C++ Requirements**: CMake 3.14+, C++17 compiler (C++20 for full runtime), `libxml2-dev`
 **Kotlin/JVM Requirements**: JDK 17+, Gradle 8.11+ (wrapper included)
-**Rust Requirements**: Rust 1.75+, Cargo
-**Go Requirements**: Go 1.22+
+**Rust Requirements**: Rust 1.75+, Cargo, `libxml2-dev` (build-time dependency of `sce-build` for XSD schema validation of Extended SCXML — see SCE_FORGE.md §7.1)
+**Go Requirements**: Go 1.22+, `libxml2` runtime (loaded by the `sce-codegen` binary)
 **Python Requirements**: Python 3.9+, pybind11
+
+**Linux install** (Debian/Ubuntu):
+```bash
+sudo apt-get install -y libxml2-dev pkg-config
+```
+**macOS install**:
+```bash
+brew install libxml2 pkg-config
+```
 
 ### Python Bindings
 

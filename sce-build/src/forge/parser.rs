@@ -24,7 +24,20 @@ pub fn parse_forge(content: &str, name: &str) -> Result<Option<ForgeDocument>, S
 
 /// Single-parse entry point that also extracts `<sce:import>` declarations.
 /// Returns `None` if the document is a statechart (no `sce:kind` or `sce:kind="statechart"`).
+///
+/// XSD validation runs as the first step: the document is checked against
+/// `schemas/sce-forge.xsd` (W3C wrapper importing the `sce:` namespace
+/// extension schema). Any violation — bad enum value, malformed
+/// `sce:bit-size`, missing required attribute on `<sce:field>` /
+/// `<sce:entry>` / `<sce:import>` — is rejected here with line/column
+/// info before any kind-specific parsing runs. If the schema cannot be
+/// located (e.g. `sce-build` vendored without the `schemas/` directory),
+/// validation is silently skipped — see
+/// `xsd_validator::validate_or_skip` for the rationale.
 pub fn parse_forge_with_imports(content: &str, name: &str) -> Result<Option<ParsedForge>, String> {
+    crate::forge::xsd_validator::validate_or_skip(content, name)
+        .map_err(|errs| format!("XSD validation failed for {name}:\n{errs}"))?;
+
     let doc = roxmltree::Document::parse(content)
         .map_err(|e| format!("XML parse error: {e}"))?;
     let root = doc.root_element();

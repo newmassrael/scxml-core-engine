@@ -48,6 +48,16 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+    - name: Install Dependencies
+      # libxml2-dev is a build-time requirement for the `libxml` crate used
+      # by sce-build's forge::xsd_validator (wraps libxml2 for XSD schema
+      # checks). The runtime library itself is pre-installed on
+      # ubuntu-latest, but the dev headers must be added for `pkg-config
+      # --libs libxml-2.0` to succeed during the cargo build below.
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxml2-dev pkg-config
+
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -87,6 +97,14 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Install Dependencies
+      # libxml2-dev needed because sce-forge-runtime's build.rs pulls in
+      # sce-build as a build-dependency, which transitively requires the
+      # `libxml` crate for XSD validation in forge::xsd_validator.
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxml2-dev pkg-config
 
     - name: Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
@@ -137,6 +155,13 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+    - name: Install libxml2 runtime
+      # The downloaded sce-codegen binary dynamically links libxml2 for
+      # XSD validation. ubuntu-latest pre-installs it, but list it
+      # explicitly so a base-image drift surfaces as a clear install
+      # failure rather than a mysterious "symbol not found" at runtime.
+      run: sudo apt-get install -y libxml2
+
     - name: Download sce-codegen Binary
       uses: actions/download-artifact@v4
       with:
@@ -184,6 +209,10 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Install libxml2 runtime
+      # See conformance-python for rationale.
+      run: sudo apt-get install -y libxml2
 
     - name: Download sce-codegen Binary
       uses: actions/download-artifact@v4
@@ -249,6 +278,10 @@ jobs:
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - name: Install libxml2 runtime
+      # See conformance-python for rationale.
+      run: sudo apt-get install -y libxml2
 
     - name: Download sce-codegen Binary
       uses: actions/download-artifact@v4
@@ -322,9 +355,13 @@ jobs:
         submodules: recursive
 
     - name: Install Dependencies
+      # libxml2 (runtime) is required because the downloaded sce-codegen
+      # binary dynamically links libxml2 for XSD validation via the
+      # `libxml` crate. Ubuntu runners pre-install it, but listing it
+      # explicitly guards against drift if the base image changes.
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake ninja-build pkg-config
+        sudo apt-get install -y build-essential cmake ninja-build pkg-config libxml2
 
     - name: Download sce-codegen Binary
       uses: actions/download-artifact@v4
