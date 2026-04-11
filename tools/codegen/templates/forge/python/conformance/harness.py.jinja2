@@ -25,7 +25,7 @@ REFERENCE_JSON = (
 )
 
 {% for f in fixtures %}
-{{ f.name }} = importlib.import_module("{{ f.name }}")
+{{ f.name }} = importlib.import_module(".{{ f.name }}", package=__package__)
 {% endfor %}
 
 class TestNumericalConformance(unittest.TestCase):

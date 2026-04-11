@@ -291,6 +291,22 @@
         {"args": [150,  300.0],   "expected": {"valid": true,  "reason": ""},                               "note": "recovery: from (100, 200) deltas are (50, 100) ok; prev -> (150, 300)"},
         {"args": [100,  200.0],   "expected": {"valid": true,  "reason": ""},                               "note": "reverse step also at boundary; prev -> (100, 200)"}
       ]
+    },
+    "crossfile_validator_transform": {
+      "fixture": "CrossfileValidatorTransform::validate",
+      "signature": "(rawTemp: u16) -> ValidationResult{valid, reason}",
+      "description": "Cross-file composition fixture: validator imports transform_temperature as `tempConvert` and uses it inside a plausibility predicate. Stateless single-input validator. Evaluation order: range check (rawTemp in [0, 4095]) -> plausibility (tempConvert(rawTemp) > -40 AND tempConvert(rawTemp) < 200). Transform formula: tempConvert(raw) = raw * 0.1 - 40.0, so plausibility passes iff rawTemp ∈ (0, 2400) (both bounds exclusive). The two-rule order means raw values above 4095 always surface as raw_temp_out_of_range, never as plausibility_failed. This is the first conformance entry that exercises sce:import composition through the numerical harness — every language must resolve the imported transform to identical IEEE 754 results so the boundary cases match bytewise.",
+      "sequence": [
+        {"args": [400],   "expected": {"valid": true,  "reason": ""},                          "note": "raw=400 -> temp=0.0; well inside both bounds"},
+        {"args": [2000],  "expected": {"valid": true,  "reason": ""},                          "note": "raw=2000 -> temp=160.0; mid-band typical"},
+        {"args": [1],     "expected": {"valid": true,  "reason": ""},                          "note": "raw=1 -> temp=-39.9; just inside the lower exclusive plausibility bound (-40 < temp)"},
+        {"args": [2399],  "expected": {"valid": true,  "reason": ""},                          "note": "raw=2399 -> temp=199.9; just inside the upper exclusive plausibility bound (temp < 200)"},
+        {"args": [0],     "expected": {"valid": false, "reason": "plausibility_failed"},       "note": "raw=0 -> temp=-40.0 exactly; -40 > -40 is false so plausibility fails (range still passes since 0 ∈ [0,4095])"},
+        {"args": [2400],  "expected": {"valid": false, "reason": "plausibility_failed"},       "note": "raw=2400 -> temp=200.0 exactly; 200 < 200 is false so plausibility fails"},
+        {"args": [4095],  "expected": {"valid": false, "reason": "plausibility_failed"},       "note": "raw=4095 -> temp=369.5; in range but well above plausibility upper bound"},
+        {"args": [4096],  "expected": {"valid": false, "reason": "raw_temp_out_of_range"},     "note": "raw=4096 -> just above range; range check fires first, plausibility never runs"},
+        {"args": [10000], "expected": {"valid": false, "reason": "raw_temp_out_of_range"},     "note": "raw=10000 -> well above range; same range-first ordering as the previous case"}
+      ]
     }
   },
 

@@ -26,6 +26,7 @@ import fcntl
 import shutil
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -33,6 +34,16 @@ RUNTIME_SRC = REPO_ROOT / "sce-forge-runtime" / "python"
 RESOURCE_DIR = REPO_ROOT / "tests" / "forge" / "resources"
 MANIFEST = REPO_ROOT / "tests" / "forge" / "conformance" / "fixtures.json"
 SCE_CODEGEN = REPO_ROOT / "target" / "release" / "sce-codegen"
+
+# Synthetic package name under which generated fixtures and the harness are
+# loaded. Cross-file Forge fixtures emit canonical relative imports
+# (`from . import transform_temperature`), which only resolve when the
+# importing module belongs to a parent package. The output directory itself
+# (`target/conformance_generated/python/`) is named for human navigation, not
+# as a Python identifier, so we install a synthetic in-memory package whose
+# `__path__` points at it. The leading underscore documents that the package
+# is internal to the conformance harness and not part of any public API.
+CONFORMANCE_PACKAGE = "_sce_conformance"
 
 
 def _ensure_codegen() -> None:
@@ -150,13 +161,20 @@ def bootstrap() -> Path:
             _generate_harness(out_dir)
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-    # Runtime first so fixtures can resolve `from sce_forge_runtime...` imports,
-    # then the generated directory so `import <fixture>` + `import
-    # test_numerical_conformance` both work.
+    # Runtime first so fixtures can resolve `from sce_forge_runtime...` imports.
     if str(RUNTIME_SRC) not in sys.path:
         sys.path.insert(0, str(RUNTIME_SRC))
-    if str(out_dir) not in sys.path:
-        sys.path.insert(0, str(out_dir))
+    # Install a synthetic parent package whose submodule search path is the
+    # generated output directory. With this in place, every fixture file is
+    # importable as `_sce_conformance.<name>` and the canonical relative
+    # imports the Forge codegen emits (`from . import transform_temperature`)
+    # resolve through this parent. We deliberately avoid adding `out_dir`
+    # itself to `sys.path` — top-level imports of fixture names would mask
+    # the package boundary and make the relative imports inert.
+    if CONFORMANCE_PACKAGE not in sys.modules:
+        pkg = types.ModuleType(CONFORMANCE_PACKAGE)
+        pkg.__path__ = [str(out_dir)]
+        sys.modules[CONFORMANCE_PACKAGE] = pkg
     return out_dir
 
 

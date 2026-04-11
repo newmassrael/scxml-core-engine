@@ -13,4 +13,6 @@
 
 import conftest  # noqa: F401 — runs bootstrap() at import time
 
-from conformance_generated import TestNumericalConformance  # noqa: F401
+# Loaded as a submodule of the synthetic conftest.CONFORMANCE_PACKAGE so its
+# own relative-import line resolves the way the Forge codegen expects.
+from _sce_conformance.conformance_generated import TestNumericalConformance  # noqa: F401
