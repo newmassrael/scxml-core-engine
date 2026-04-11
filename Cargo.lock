@@ -1353,7 +1353,6 @@ name = "sce-forge-runtime"
 version = "0.1.0"
 dependencies = [
  "sce-build",
- "sce-rust-runtime",
  "serde_json",
 ]
 
@@ -1373,6 +1372,7 @@ version = "0.1.0"
 dependencies = [
  "env_logger",
  "log",
+ "sce-forge-runtime",
  "thiserror",
 ]
 

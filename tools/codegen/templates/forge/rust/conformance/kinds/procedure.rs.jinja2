@@ -14,11 +14,11 @@
             std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
         let handler = {
             let captured = captured.clone();
-            move |req: &sce_rust_runtime::forge::ProcedureServiceRequest| {
+            move |req: &sce_forge_runtime::procedure::ProcedureServiceRequest| {
                 if let Some(ref bytes) = req.payload {
                     captured.borrow_mut().push(bytes.clone());
                 }
-                sce_rust_runtime::forge::ProcedureServiceResponse {
+                sce_forge_runtime::procedure::ProcedureServiceResponse {
                     success: true,
                     data: String::new(),
                 }

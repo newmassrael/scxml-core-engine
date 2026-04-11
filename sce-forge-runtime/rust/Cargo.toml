@@ -16,6 +16,17 @@ build = "build.rs"
 name = "sce_forge_runtime"
 path = "src/lib.rs"
 
+[features]
+# Procedure kind runtime is enabled by default because the vast majority of
+# consumers run on a target with a heap. Pure `no_std + no alloc` embedded
+# targets that only use the algorithm modules (filter, interpolation,
+# lookup, observer, timer) can opt out with `default-features = false`.
+default = ["alloc"]
+# Compile the procedure module (ProcedurePolicy, ProcedureServiceRequest,
+# ProcedureRunResult, run_procedure). Requires a heap allocator because
+# procedures carry owned strings, byte payloads, and a BTreeMap of donedata.
+alloc = []
+
 # Cross-language numerical conformance harness. build.rs invokes
 # sce_build::compile_forge_with_imports() at build time to generate
 # Rust fixtures into OUT_DIR from the SCXML sources in tests/forge/resources.
@@ -27,11 +38,6 @@ sce-build = { path = "../../sce-build" }
 
 [dev-dependencies]
 serde_json = "1"
-# Procedure kind runtime types (ProcedurePolicy, ProcedureServiceRequest, run_procedure).
-# Integration tests compile generated procedure fixtures which use
-# `sce_rust_runtime::forge::*` — the same import path product consumers use.
-# no-script feature keeps the script engine out of the test dep graph.
-sce-rust-runtime = { path = "../../sce-rust-runtime", default-features = false, features = ["no-script"] }
 
 [[test]]
 name = "numerical_conformance"

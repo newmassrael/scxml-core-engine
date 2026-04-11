@@ -30,6 +30,11 @@ test-clock = []
 [dependencies]
 log = { workspace = true }
 thiserror = { workspace = true }
+# Procedure runtime types (ProcedurePolicy, ProcedureServiceRequest,
+# ProcedureRunResult, run_procedure) live under sce-forge-runtime now;
+# the `forge` module in this crate re-exports them for backward compat
+# with existing `sce_rust_runtime::forge::*` import paths.
+sce-forge-runtime = { path = "../sce-forge-runtime/rust" }
 
 [dev-dependencies]
 # Env-based log output during tests

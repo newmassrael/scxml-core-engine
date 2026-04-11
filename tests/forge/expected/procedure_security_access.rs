@@ -8,8 +8,8 @@
 // External dependencies (from sce:payload expressions — must be in scope):
 //   computeKey(seed)
 
-use std::collections::HashMap;
-use sce_rust_runtime::forge::{
+use std::collections::BTreeMap;
+use sce_forge_runtime::procedure::{
     ProcedurePolicy, ProcedureRunResult, ProcedureServiceRequest, ProcedureServiceResponse,
     run_procedure,
 };
@@ -44,7 +44,7 @@ pub struct ProcedureSecurityAccess {
     max_retries: i32,
     retry_count: i32,
     service_handler: Option<Box<dyn Fn(&ProcedureServiceRequest) -> ProcedureServiceResponse>>,
-    done_data: HashMap<String, String>,
+    done_data: BTreeMap<String, String>,
     pending_event_data: String,
 }
 
@@ -57,7 +57,7 @@ impl ProcedureSecurityAccess {
             max_retries: 3,
             retry_count: 0,
             service_handler: None,
-            done_data: HashMap::new(),
+            done_data: BTreeMap::new(),
             pending_event_data: String::new(),
         }
     }
@@ -99,7 +99,7 @@ impl ProcedurePolicy for ProcedureSecurityAccess {
         self.pending_event_data = data;
     }
 
-    fn done_data(&self) -> &HashMap<String, String> {
+    fn done_data(&self) -> &BTreeMap<String, String> {
         &self.done_data
     }
 
